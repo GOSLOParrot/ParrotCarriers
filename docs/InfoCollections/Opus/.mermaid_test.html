@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>ParrotCarriers Mermaid 渲染测试</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
+h2 { margin-top: 40px; color: #333; }
+.mermaid { background: white; padding: 20px; border-radius: 8px; margin: 10px 0; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+.error { color: red; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>ParrotCarriers 架构图渲染测试</h1>
+<p id="status">正在初始化 Mermaid...</p>
+
+<h2>图1：宏观拓扑 (bus_v4.md)</h2>
+<div class="mermaid" id="chart1">
+graph TB
+    classDef bus fill:#fff3e0,stroke:#ef6c00,stroke-width:3px
+    classDef core fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef perception fill:#fce4ec,stroke:#c62828,stroke-width:2px
+    classDef worker fill:#eceff1,stroke:#455a64,stroke-width:2px,stroke-dasharray: 5 5
+    classDef bridge fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    classDef client fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef redis fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+    classDef graphiti fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    subgraph BUS ["ParrotCarriers Bus (三层)"]
+        direction TB
+
+        subgraph L1_BUS ["L1 实时层: LiveKit Room parrot-main"]
+            LK_Room["LiveKit Server\nRoom: parrot-main\nRPC + Track + DataChannel Router"]:::bus
+        end
+
+        subgraph L2_BUS ["L2 状态层: Redis"]
+            Redis_BB["Blackboard\nparrot_state / scene_context\nresource_locks"]:::redis
+            Redis_PS["Pub/Sub\nparrot.events.firehose\nparrot.brain / dsg / scheduler\nnanobot / external"]:::redis
+            Redis_Q["Streams\ntask_queue / event_log"]:::redis
+        end
+
+        subgraph L3_BUS ["L3 知识层: Graphiti + Neo4j"]
+            Graphiti["Graphiti Core\nepisodic / objects\npersonality / vocabulary\nnanobot_research"]:::graphiti
+            Neo4j[("Neo4j\nLeiden Community\nBolt :7687")]:::graphiti
+            Graphiti <--> Neo4j
+        end
+    end
+
+    subgraph CORE ["Core Modules — Castle ecs.g9i.large 常驻"]
+        Brain["Brain Agent\nGemini RealtimeModel\nAgentSession / ParrotSoul\nContext Injector / Tool Forwarding"]:::core
+        Scheduler["Scheduler\nMVP: SimpleRouter\nPhase3: py-trees BT\nResourceLockManager"]:::core
+    end
+
+    subgraph PERCEPTION ["Perception Modules — Mecha A10 按需"]
+        DSG["DSG Worker\n可热插拔\nL1: YOLO+SAM2+DINOv2\nL2-A: RustworkX 空间图\nL2-B: RustworkX 语义图\nL3: Observer Pipeline"]:::perception
+        SVA["SVA Vision\n可选扩展\nStream Processor\n多模型编排"]:::perception
+    end
+
+    subgraph WORKERS ["Worker Modules — Castle 常驻"]
+        Nanobot["Nanobot Worker\nresearch\nmemory_consolidation\nvocabulary_learn\nreminder_check"]:::worker
+        NanobotB["Nanobot Worker B\n可水平扩展"]:::worker
+    end
+
+    subgraph BRIDGES ["Bridge Modules — 可选挂载"]
+        MCP["MCP Sidecar\nFastMCP + FastAPI\n/mcp SSE\n/api/v1 REST\n/ws WebSocket"]:::bridge
+        Lobe["LobeChat Bridge\nAgent Teams\n大姐 / 妹妹 / 猫猫\n多智能体群聊"]:::bridge
+        Obsidian["Obsidian Bridge\nMCP Client\nCanvas 读写\n知识同步"]:::bridge
+    end
+
+    subgraph CLIENTS ["Client Modules"]
+        Unity["Unity AR Client\nclient-sdk-unity v1.3.3\nARCore / XR Hands\nAnimator HSM\nRPC Handler"]:::client
+        WebClient["Web Client\n可选调试\nLiveKit JS SDK"]:::client
+    end
+
+    Brain <-- "WebRTC\nRPC + Audio + Video" --> LK_Room
+    Scheduler <-- "RPC + DataChannel" --> LK_Room
+    DSG <-- "Video Track + DataChannel" --> LK_Room
+    SVA -. "Video Track 可选" .-> LK_Room
+    Unity <-- "WebRTC 全通道" --> LK_Room
+    WebClient -. "WebRTC 调试" .-> LK_Room
+    MCP <-- "RPC 桥接" --> LK_Room
+
+    Brain <--> Redis_BB
+    Brain <--> Redis_PS
+    Scheduler <--> Redis_BB
+    Scheduler <--> Redis_PS
+    DSG --> Redis_PS
+    DSG <--> Redis_BB
+    Nanobot <--> Redis_PS
+    Nanobot <--> Redis_Q
+    NanobotB <--> Redis_Q
+    MCP --> Redis_PS
+    Lobe <--> Redis_PS
+    Obsidian <--> Redis_PS
+
+    Brain <--> Graphiti
+    Nanobot --> Graphiti
+    DSG -- "语义预加载" --> Graphiti
+    Obsidian -. "知识同步" .-> Graphiti
+</div>
+
+<h2>图2：LiveKit Room 内部通信 (bus_v4.md)</h2>
+<div class="mermaid" id="chart2">
+graph TB
+    classDef rpc fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    classDef dc fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef track fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef participant fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+
+    subgraph Room ["LiveKit Room: parrot-main"]
+
+        subgraph Tracks ["媒体流 Tracks"]
+            V_Up["Video Track\nUnity to Cloud"]:::track
+            A_Up["Audio Track Up\nUnity to Gemini"]:::track
+            A_Down["Audio Track Down\nGemini TTS to Unity"]:::track
+        end
+
+        subgraph RPC_Layer ["RPC 通道 — 可靠 双向 15KB"]
+            RPC_fly["fly_to target style"]:::rpc
+            RPC_anim["animate action"]:::rpc
+            RPC_focus["focus_on uuid"]:::rpc
+            RPC_query["query_scene"]:::rpc
+            RPC_ext["external_command cmd"]:::rpc
+        end
+
+        subgraph DC_Layer ["DataChannel 通道"]
+            DC_Tele["Telemetry Lossy 10Hz\nPose Hands Sensors 1300B"]:::dc
+            DC_Scene["Scene Events Reliable\nNEW OBJECT MISSING DISPLACED"]:::dc
+            DC_State["State Sync Reliable\nScheduler to Client"]:::dc
+        end
+
+    end
+
+    Unity_P["Unity Client"]:::participant
+    Brain_P["Brain Agent"]:::participant
+    DSG_P["DSG Worker"]:::participant
+    Sched_P["Scheduler"]:::participant
+    MCP_P["MCP Sidecar"]:::participant
+
+    Unity_P -- "Publish" --> V_Up
+    Unity_P -- "Publish" --> A_Up
+    Unity_P -- "Subscribe" --> A_Down
+    Unity_P -- "Publish" --> DC_Tele
+    Unity_P -- "Provides RPC" --> RPC_fly
+    Unity_P -- "Provides RPC" --> RPC_anim
+    Unity_P -- "Provides RPC" --> RPC_focus
+
+    Brain_P -- "Subscribe" --> V_Up
+    Brain_P -- "Subscribe" --> A_Up
+    Brain_P -- "Publish" --> A_Down
+    Brain_P -- "Calls RPC" --> RPC_fly
+    Brain_P -- "Calls RPC" --> RPC_anim
+    Brain_P -- "Calls RPC" --> RPC_focus
+    Brain_P -- "Subscribe" --> DC_Scene
+
+    DSG_P -- "Subscribe" --> V_Up
+    DSG_P -- "Subscribe" --> DC_Tele
+    DSG_P -- "Publish" --> DC_Scene
+
+    Sched_P -- "Calls RPC" --> RPC_fly
+    Sched_P -- "Calls RPC" --> RPC_anim
+    Sched_P -- "Subscribe" --> DC_Scene
+    Sched_P -- "Subscribe" --> DC_Tele
+
+    MCP_P -- "Calls RPC" --> RPC_ext
+    MCP_P -- "Subscribe" --> DC_State
+</div>
+
+<h2>图3：v3 system_core.md (原有 — 对照验证)</h2>
+<div class="mermaid" id="chart3">
+graph TD
+    classDef unity fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef livekit fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef python fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef brain fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef worker fill:#eceff1,stroke:#455a64,stroke-width:2px,stroke-dasharray: 5 5
+    classDef memory fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+    classDef dsg fill:#fce4ec,stroke:#c62828,stroke-width:2px
+    classDef rpc fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+
+    subgraph Client ["Unity AR Client Android 原生"]
+        direction TB
+        ARCore["AR Foundation / ARCore"]:::unity
+        Sensors["Camera / Mic / XR Hands / IMU"]:::unity
+        Animator["Animator HSM\nIdle/Fly/Land/Perch/Dance"]:::unity
+        TTS_Speaker["TTS Speaker"]:::unity
+
+        subgraph LK_Unity ["LiveKit client-sdk-unity v1.3.3"]
+            VideoPublish["Video Track\nPublish CameraVideoSource"]:::livekit
+            AudioIO["Audio I/O"]:::livekit
+            RPC_Client["RPC Client\nRegisterRpcMethod fly_to\nRegisterRpcMethod animate\nRegisterRpcMethod focus_on"]:::rpc
+            Telemetry_Out["DataChannel Lossy\nPose/Hands/Sensors 10Hz"]:::livekit
+        end
+
+        Sensors --> VideoPublish
+        Sensors --> AudioIO
+        ARCore --> Telemetry_Out
+        RPC_Client -- "执行结果返回" --> Animator
+        RPC_Client --> TTS_Speaker
+    end
+
+    subgraph Bus ["LiveKit Transport Layer"]
+        WR_Up["WebRTC Upstream\nVideo + Audio"]:::livekit
+        WR_Down["WebRTC Downstream\nAudio TTS"]:::livekit
+        RPC_Bus["RPC Channel\nReliable 双向 15KB"]:::rpc
+        DC_Lossy["DataChannel Lossy\nTelemetry 1300B"]:::livekit
+    end
+
+    VideoPublish --> WR_Up
+    AudioIO <--> WR_Down
+    RPC_Client <--> RPC_Bus
+    Telemetry_Out --> DC_Lossy
+
+    subgraph Backend ["Python Cloud Engine 阿里云"]
+        direction TB
+
+        subgraph GeminiCore ["Gemini RealtimeModel"]
+            Agent["AgentSession\nmodel=gemini-2.5-flash\nproactivity=True\nvideo_input=True"]:::brain
+            SOUL["ParrotSoul\nSOUL.md to instructions\nBehaviorMode Flag"]:::brain
+            SOUL -- "注入 system prompt" --> Agent
+        end
+
+        WR_Up -- "Audio + Video" --> Agent
+
+        subgraph Scheduler ["py-trees Behavior Tree"]
+            BT_Root["Root Selector\nmemory=False"]:::python
+            BT_Safety["Safety Guard"]:::python
+            BT_Priority["Priority Selector"]:::python
+            BT_Parallel["Parallel\n说话+飞行 同时"]:::python
+            BB["Blackboard\nDSG状态/资源锁"]:::python
+
+            BT_Root --> BT_Safety
+            BT_Root --> BT_Priority
+            BT_Priority --> BT_Parallel
+            BB <--> BT_Root
+        end
+
+        Agent -- "dispatch_task" --> BT_Root
+    end
+
+    subgraph Persistence ["Persistence Layer"]
+        subgraph GraphitiStack ["Graphiti + Neo4j"]
+            Neo4j[("Neo4j\n:7474 / :7687")]:::memory
+            GraphitiCore["Graphiti Core\nadd_episode\nsearch\nbuild_communities"]:::memory
+            Graphiti_Write["Graphiti Write"]:::memory
+
+            GraphitiCore <--> Neo4j
+            Graphiti_Write --> GraphitiCore
+        end
+
+        Nanobot["Nanobot Workers\n后台异步任务"]:::worker
+
+        BT_Root -- "长任务" --> Nanobot
+        Nanobot -- "Commit" --> Graphiti_Write
+    end
+</div>
+
+<script>
+mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+
+async function renderAll() {
+  const status = document.getElementById('status');
+  const charts = ['chart1', 'chart2', 'chart3'];
+  const results = [];
+
+  for (const id of charts) {
+    const el = document.getElementById(id);
+    const code = el.textContent.trim();
+    try {
+      const { svg } = await mermaid.render(`svg_${id}`, code);
+      el.innerHTML = svg;
+      results.push(`✅ ${id}: 渲染成功`);
+    } catch (e) {
+      el.innerHTML = `<pre class="error">❌ 渲染错误:\n${e.message}</pre>`;
+      results.push(`❌ ${id}: ${e.message}`);
+    }
+  }
+
+  status.innerHTML = results.join('<br>');
+}
+
+renderAll();
+</script>
+</body>
+</html>

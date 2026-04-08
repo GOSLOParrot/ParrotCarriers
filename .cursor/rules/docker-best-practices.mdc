@@ -1,0 +1,24 @@
+---
+description: Docker / Compose 稳定写法护栏，优先兼容、保守、最小部署
+globs:
+  - "infra/**/*"
+  - "**/docker-compose*.yml"
+  - "**/compose*.yml"
+  - "**/Dockerfile*"
+alwaysApply: false
+---
+
+# Docker Best Practices
+
+当创建或修改 Docker / Compose 配置时，遵守以下约定：
+
+1. 使用 Docker Compose V2 风格；默认不写过时的 `version:` 字段。
+2. 优先生成最小可运行拓扑，先少服务、少网络、少 profile，再逐步扩展。
+3. 镜像使用明确 tag；默认不要使用 `latest`。
+4. 环境变量优先通过 `.env` / `env_file` 管理；不要把密钥直接写入 compose。
+5. 为容器显式设置 `restart`、`volumes`、必要的 `ports`；命名保持稳定清晰。
+6. 默认避免复杂多网络编排；只有在确有必要时才增加额外 network。
+7. 默认不要把 Redis、Neo4j、数据库或管理端口直接暴露到公网。
+8. `network_mode: host` 只在 Linux 且确有理由时使用，不能作为所有服务的默认方案。
+9. 生成配置时考虑当前机器资源约束；当前 2C8G ECS 不应承载过多重服务。
+10. 通用 Docker 规则不代替领域部署手册；涉及 LiveKit 端口、TLS、TURN、Redis 依赖时，以官方文档和项目 skill 为准。严禁在通用 rule 中发散或写死特定项目的专有端口表（应由专门的 skill 承载）。

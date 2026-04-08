@@ -1,0 +1,30 @@
+# LiveKit Server 配置 — Castle ECS Phase 1
+# 文档: https://docs.livekit.io/home/self-hosting/deployment/
+
+port: 7880
+rtc:
+  port_range_start: 50000
+  port_range_end: 50200
+  tcp_port: 7881
+  use_external_ip: true
+
+redis:
+  # Phase 1 最小部署中使用同 compose 内的 Redis 服务。
+  address: redis:6379
+
+keys:
+  # Phase 1 开发用 key，生产环境需替换
+  devkey: secret
+
+room:
+  empty_timeout: 300
+  max_participants: 10
+
+logging:
+  level: info
+
+# Phase 2: TURN server (如果需要穿越 NAT)
+# turn:
+#   enabled: true
+#   udp_port: 3478
+#   tls_port: 5349

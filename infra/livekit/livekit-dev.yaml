@@ -1,0 +1,21 @@
+# LiveKit Server 配置 — 本地开发环境
+# 与 docker-compose.dev.yml 配套使用
+
+port: 7880
+rtc:
+  tcp_port: 7881
+  # 本地开发不需要 UDP 端口范围（不穿越 NAT）
+  use_external_ip: false
+
+redis:
+  address: redis:6379
+
+keys:
+  devkey: secret
+
+room:
+  empty_timeout: 300
+  max_participants: 10
+
+logging:
+  level: debug

@@ -1,0 +1,2525 @@
+{
+  "repo_info": {
+    "name": "client-sdk-unity",
+    "full_name": "livekit/client-sdk-unity",
+    "description": "Official Unity SDK for LiveKit",
+    "url": "https://github.com/livekit/client-sdk-unity",
+    "homepage": "https://livekit.io",
+    "stars": 78,
+    "forks": 53,
+    "open_issues": 36,
+    "default_branch": "main",
+    "created_at": "2023-01-05T15:55:17+00:00",
+    "updated_at": "2026-02-19T13:13:23+00:00",
+    "language": "C#",
+    "license": "Apache License 2.0",
+    "topics": [
+      "livekit",
+      "unity",
+      "webrtc",
+      "audio",
+      "csharp",
+      "realtime",
+      "unity-sdk",
+      "video"
+    ]
+  },
+  "readme": "<!--BEGIN_BANNER_IMAGE-->\n\n<picture>\n  <source media=\"(prefers-color-scheme: dark)\" srcset=\"/.github/banner_dark.png\">\n  <source media=\"(prefers-color-scheme: light)\" srcset=\"/.github/banner_light.png\">\n  <img style=\"width:100%;\" alt=\"The LiveKit icon, the name of the repository and some sample code in the background.\" src=\"https://raw.githubusercontent.com/livekit/client-sdk-unity/main/.github/banner_light.png\">\n</picture>\n\n<!--END_BANNER_IMAGE-->\n\n# LiveKit Unity SDK\n\n⚠️ Warning\n\n> This SDK is currently in Developer Preview mode and not ready for production use. There will be bugs and APIs may change during this period.\n>\n> We welcome and appreciate any feedback or contributions. You can create issues here or chat live with us in the #sdk-native channel within the [LiveKit Community Slack](https://livekit.io/join-slack).\n\n<!--BEGIN_DESCRIPTION-->\nUse this SDK to add realtime video, audio and data features to your Unity app. By connecting to <a href=\"https://livekit.io/\">LiveKit</a> Cloud or a self-hosted server, you can quickly build applications such as multi-modal AI, live streaming, or video calls with just a few lines of code.\n<!--END_DESCRIPTION-->\n\n[SDK Reference »](https://livekit.github.io/client-sdk-unity)\n\n## Platform Support\n\n- [x] Windows\n- [x] MacOS\n- [x] Linux\n- [x] iOS\n- [x] Android\n- [ ] WebGL\n\nWe plan to support all Unity platforms with this SDK. WebGL is currently supported with [client-sdk-unity-web](https://github.com/livekit/client-sdk-unity-web).\n\n## Installation\n\nFollow this [unity tutorial](https://docs.unity3d.com/Manual/upm-ui-giturl.html),\n\nclone this repo and download the ffi binaries.\n\n```sh\ngit clone https://github.com/livekit/client-sdk-unity.git\ncd client-sdk-unity\n```\n\nYou can use the package manager to import local `client-sdk-unity` into your Unity project.\n\nOr you can import the git url `https://github.com/livekit/client-sdk-unity.git` from the package manager.\n\n\n\n### iOS\n\nAdd dependent frameworks to your Unity project\n\nselect `Unity-iPhone` -> `TARGETS` -> `UnityFramework` -> `General` -> `Frameworks and Libraries` -> `+`\n\nadd the following frameworks:\n\n`OpenGLES.framework` `MetalKit.framework` `GLKit.framework` `MetalKit.framework` `VideoToolBox.framework` `Network.framework`\n\nadd other linker flags to `UnityFramework`:\n\n`-ObjC`\n\nSince `libiPhone-lib.a` has built-in old versions of `celt` and `libvpx` (This will cause the opus and vp8/vp9 codecs to not be called correctly and cause a crash.), so you need to adjust the link order to ensure that it is linked to `liblivekit_ffi.a` first.\n\nThe fix is ​​to remove and re-add `libiPhone-lib.a` from `Frameworks and Libraries`, making sure to link after `liblivekit_ffi.a`.\n\n## Examples\n\nAnd you can also follow the example app in the [unity-example](https://github.com/livekit-examples/unity-example.git) to see how to use the SDK.\n\n\n### Connect to a room\n\n```cs\nusing LiveKit;\n\nIEnumerator Start()\n{\n    var room = new Room();\n    room.TrackSubscribed += TrackSubscribed;\n\n    var connect = room.Connect(\"ws://localhost:7880\", \"<join-token>\");\n    yield return connect;\n    if (!connect.IsError)\n    {\n        Debug.Log(\"Connected to \" + room.Name);\n    }\n}\n```\n\n### Publishing microphone\n\n```cs\nvar localSid = \"my-audio-source\";\nGameObject audObject = new GameObject(localSid);\n_audioObjects[localSid] = audObject;\nvar rtcSource = new MicrophoneSource(Microphone.devices[0], _audioObjects[localSid]);\nvar track = LocalAudioTrack.CreateAudioTrack(\"my-audio-track\", rtcSource, room);\n\nvar options = new TrackPublishOptions();\noptions.AudioEncoding = new AudioEncoding();\noptions.AudioEncoding.MaxBitrate = 64000;\noptions.Source = TrackSource.SourceMicrophone;\n\nvar publish = room.LocalParticipant.PublishTrack(track, options);\nyield return publish;\n\nif (!publish.IsError)\n{\n    Debug.Log(\"Track published!\");\n}\n\nrtcSource.Start();\n```\n\n### Publishing a texture (e.g Unity Camera)\n\n```cs\n// publish a WebCamera\n//var source = new TextureVideoSource(webCamTexture);\n\n// Publish the entire screen\n//var source = new ScreenVideoSource();\n\n// Publishing a Unity Camera\n//Camera.main.enabled = true;\n//var source = new CameraVideoSource(Camera.main);\n\nvar rt = new UnityEngine.RenderTexture(1920, 1080, 24, RenderTextureFormat.ARGB32);\nrt.Create();\nCamera.main.targetTexture = rt;\nvar source = new TextureVideoSource(rt);\nvar track = LocalVideoTrack.CreateVideoTrack(\"my-video-track\", source, room);\n\nvar options = new TrackPublishOptions();\noptions.VideoCodec = VideoCodec.Vp8;\nvar videoCoding = new VideoEncoding();\nvideoCoding.MaxBitrate = 512000;\nvideoCoding.MaxFramerate = frameRate;\noptions.VideoEncoding = videoCoding;\noptions.Simulcast = true;\noptions.Source = TrackSource.SourceCamera;\n\nvar publish = room.LocalParticipant.PublishTrack(track, options);\nyield return publish;\n\nif (!publish.IsError)\n{\n    Debug.Log(\"Track published!\");\n}\n\nsource.Start();\nStartCoroutine(source.Update());\n```\n\n### Receiving tracks\n\n```cs\nIEnumerator Start()\n{\n    var room = new Room();\n    room.TrackSubscribed += TrackSubscribed;\n\n    var connect = room.Connect(\"ws://localhost:7880\", \"<join-token>\");\n    yield return connect;\n\n    // ....\n}\n\nvoid TrackSubscribed(IRemoteTrack track, RemoteTrackPublication publication, RemoteParticipant participant)\n{\n    if (track is RemoteVideoTrack videoTrack)\n    {\n        var rawImage = GetComponent<RawImage>();\n        var stream = new VideoStream(videoTrack);\n        stream.TextureReceived += (tex) =>\n        {\n            rawImage.texture = tex;\n        };\n        StartCoroutine(stream.Update());\n        // The video data is displayed on the rawImage\n    }\n    else if (track is RemoteAudioTrack audioTrack)\n    {\n        GameObject audObject = new GameObject(audioTrack.Sid);\n        var source = audObject.AddComponent<AudioSource>();\n        var stream = new AudioStream(audioTrack, source);\n        // Audio is being played on the source ..\n    }\n}\n```\n\n### RPC\n\nPerform your own predefined method calls from one participant to another.\n\nThis feature is especially powerful when used with [Agents](https://docs.livekit.io/agents), for instance to forward LLM function calls to your client application.\n\nThe following is a brief overview but [more detail is available in the documentation](https://docs.livekit.io/home/client/data/rpc).\n\n#### Registering an RPC method\n\nThe participant who implements the method and will receive its calls must first register support. Your method handler will be an async callback that receives an `RpcInvocationData` object:\n\n```cs\n// Define your method handler\nasync Task<string> HandleGreeting(RpcInvocationData data)\n{\n    Debug.Log($\"Received greeting from {data.CallerIdentity}: {data.Payload}\");\n    return $\"Hello, {data.CallerIdentity}!\";\n}\n\n// Register the method after connection to the room\nroom.LocalParticipant.RegisterRpcMethod(\"greet\", HandleGreeting);\n```\n\nIn addition to the payload, `RpcInvocationData` also contains `responseTimeout`, which informs you the maximum time available to return a response. If you are unable to respond in time, the call will result in an error on the caller's side.\n\n#### Performing an RPC request\n\nThe caller may initiate an RPC call using coroutines:\n\n```cs\nIEnumerator PerformRpcCoroutine()\n{\n    var rpcCall = room.LocalParticipant.PerformRpc(new PerformRpcParams\n    {\n        DestinationIdentity = \"recipient-identity\",\n        Method = \"greet\",\n        Payload = \"Hello from RPC!\"\n    });\n\n    yield return rpcCall;\n\n    if (rpcCall.IsError)\n    {\n        Debug.Log($\"RPC call failed: {rpcCall.Error}\");\n    }\n    else\n    {\n        Debug.Log($\"RPC response: {rpcCall.Payload}\");\n    }\n}\n\n// Start the coroutine from another MonoBehaviour method\nStartCoroutine(PerformRpcCoroutine());\n```\n\nYou may find it useful to adjust the `ResponseTimeout` parameter, which indicates the amount of time you will wait for a response. We recommend keeping this value as low as possible while still satisfying the constraints of your application.\n\n#### Errors\n\nLiveKit is a dynamic realtime environment and RPC calls can fail for various reasons.\n\nYou may throw errors of the type `RpcError` with a string `message` in an RPC method handler and they will be received on the caller's side with the message intact. Other errors will not be transmitted and will instead arrive to the caller as `1500` (\"Application Error\"). Other built-in errors are detailed in the [docs](https://docs.livekit.io/home/client/data/rpc/#errors).\n\n### Sending text\n\nUse text streams to send any amount of text between participants.\n\n#### Sending text all at once\n\n```cs\nIEnumerator PerformSendText()\n{\n    var text = \"Lorem ipsum dolor sit amet...\";\n    var sendTextCall = room.LocalParticipant.SendText(text, \"some-topic\");\n    yield return sendTextCall;\n\n    Debug.Log($\"Sent text with stream ID {sendTextCall.Info.Id}\");\n}\n```\n\n#### Streaming text incrementally\n\n```cs\nIEnumerator PerformStreamText()\n{\n    var streamTextCall = room.LocalParticipant.StreamText(\"my-topic\");\n    yield return streamTextCall;\n\n    var writer = streamTextCall.Writer;\n    Debug.Log($\"Opened text stream with ID: {writer.Info.Id}\");\n\n    // In a real app, you would generate this text asynchronously / incrementally as well\n    var textChunks = new[] { \"Lorem \", \"ipsum \", \"dolor \", \"sit \", \"amet...\" };\n    foreach (var chunk in textChunks)\n    {\n        yield return writer.Write(chunk);\n    }\n\n    // The stream must be explicitly closed when done\n    yield return writer.Close();\n\n    Debug.Log($\"Closed text stream with ID: {writer.Info.Id}\");\n}\n```\n\n#### Handling incoming streams\n\n```cs\nIEnumerator HandleTextStream(TextStreamReader reader, string participantIdentity)\n{\n    var info = reader.Info;\n    Debug.Log($@\"\n    Text stream received from {participantIdentity}\n    Topic: {info.Topic}\n    Timestamp: {info.Timestamp}\n    ID: {info.Id}\n    Size: {info.TotalLength} (only available if the stream was sent with `SendText`)\n    \");\n\n    // Option 1: Process the stream incrementally\n    var readIncremental = reader.ReadIncremental();\n    while (true)\n    {\n        readIncremental.Reset();\n        yield return readIncremental;\n        if (readIncremental.IsEos) break;\n        Debug.Log($\"Next chunk: {readIncremental.Text}\");\n    }\n\n    // Option 2: Get the entire text after the stream completes\n    var readAllCall = reader.ReadAll();\n    yield return readAllCall;\n    Debug.Log($\"Received text: {readAllCall.Text}\")\n}\n\n// Register the topic before connecting to the room\nroom.RegisterTextStreamHandler(\"my-topic\", (reader, identity) =>\n    StartCoroutine(HandleTextStream(reader, identity))\n);\n```\n\n### Sending files & bytes\n\nUse byte streams to send files, images, or any other kind of data between participants.\n\n#### Sending files\n\n```cs\nIEnumerator PerformSendFile()\n{\n    var filePath = \"path/to/file.jpg\";\n    var sendFileCall = room.LocalParticipant.SendFile(filePath, \"some-topic\");\n    yield return sendFileCall;\n\n    Debug.Log($\"Sent file with stream ID: {sendFileCall.Info.Id}\");\n}\n```\n\n#### Streaming bytes\n\n```cs\nIEnumerator PerformStreamBytes()\n{\n    var streamBytesCall = room.LocalParticipant.StreamBytes(\"my-topic\");\n    yield return streamBytesCall;\n\n    var writer = streamBytesCall.Writer;\n    Debug.Log($\"Opened byte stream with ID: {writer.Info.Id}\");\n\n    // Example sending arbitrary binary data\n    // For sending files, use `SendFile` instead\n    var dataChunks = new[] {\n        new byte[] { 0x00, 0x01 },\n        new byte[] { 0x03, 0x04 }\n    };\n    foreach (var chunk in dataChunks)\n    {\n        yield return writer.Write(chunk);\n    }\n\n    // The stream must be explicitly closed when done\n    yield return writer.Close();\n\n    Debug.Log($\"Closed byte stream with ID: {writer.Info.Id}\");\n}\n```\n\n#### Handling incoming streams\n\n```cs\nIEnumerator HandleByteStream(ByteStreamReader reader, string participantIdentity)\n{\n    var info = reader.Info;\n\n    // Option 1: Process the stream incrementally\n    var readIncremental = reader.ReadIncremental();\n    while (true)\n    {\n        readIncremental.Reset();\n        yield return readIncremental;\n        if (readIncremental.IsEos) break;\n        Debug.Log($\"Next chunk: {readIncremental.Bytes}\");\n    }\n\n    // Option 2: Get the entire file after the stream completes\n    var readAllCall = reader.ReadAll();\n    yield return readAllCall;\n    var data = readAllCall.Bytes;\n\n    // Option 3: Write the stream to a local file on disk as it arrives\n    var writeToFileCall = reader.WriteToFile();\n    yield return writeToFileCall;\n    var path = writeToFileCall.FilePath;\n    Debug.Log($\"Wrote to file: {path}\");\n\n    Debug.Log($@\"\n    Byte stream received from {participantIdentity}\n    Topic: {info.Topic}\n    Timestamp: {info.Timestamp}\n    ID: {info.Id}\n    Size: {info.TotalLength} (only available if the stream was sent with `SendFile`)\n    \");\n}\n\n// Register the topic after connection to the room\nroom.RegisterByteStreamHandler(\"my-topic\", (reader, identity) =>\n    StartCoroutine(HandleByteStream(reader, identity))\n);\n```\n\n<!--BEGIN_REPO_NAV-->\n<br/><table>\n<thead><tr><th colspan=\"2\">LiveKit Ecosystem</th></tr></thead>\n<tbody>\n<tr><td>LiveKit SDKs</td><td><a href=\"https://github.com/livekit/client-sdk-js\">Browser</a> · <a href=\"https://github.com/livekit/client-sdk-swift\">iOS/macOS/visionOS</a> · <a href=\"https://github.com/livekit/client-sdk-android\">Android</a> · <a href=\"https://github.com/livekit/client-sdk-flutter\">Flutter</a> · <a href=\"https://github.com/livekit/client-sdk-react-native\">React Native</a> · <a href=\"https://github.com/livekit/rust-sdks\">Rust</a> · <a href=\"https://github.com/livekit/node-sdks\">Node.js</a> · <a href=\"https://github.com/livekit/python-sdks\">Python</a> · <b>Unity</b> · <a href=\"https://github.com/livekit/client-sdk-unity-web\">Unity (WebGL)</a> · <a href=\"https://github.com/livekit/client-sdk-esp32\">ESP32</a></td></tr><tr></tr>\n<tr><td>Server APIs</td><td><a href=\"https://github.com/livekit/node-sdks\">Node.js</a> · <a href=\"https://github.com/livekit/server-sdk-go\">Golang</a> · <a href=\"https://github.com/livekit/server-sdk-ruby\">Ruby</a> · <a href=\"https://github.com/livekit/server-sdk-kotlin\">Java/Kotlin</a> · <a href=\"https://github.com/livekit/python-sdks\">Python</a> · <a href=\"https://github.com/livekit/rust-sdks\">Rust</a> · <a href=\"https://github.com/agence104/livekit-server-sdk-php\">PHP (community)</a> · <a href=\"https://github.com/pabloFuente/livekit-server-sdk-dotnet\">.NET (community)</a></td></tr><tr></tr>\n<tr><td>UI Components</td><td><a href=\"https://github.com/livekit/components-js\">React</a> · <a href=\"https://github.com/livekit/components-android\">Android Compose</a> · <a href=\"https://github.com/livekit/components-swift\">SwiftUI</a> · <a href=\"https://github.com/livekit/components-flutter\">Flutter</a></td></tr><tr></tr>\n<tr><td>Agents Frameworks</td><td><a href=\"https://github.com/livekit/agents\">Python</a> · <a href=\"https://github.com/livekit/agents-js\">Node.js</a> · <a href=\"https://github.com/livekit/agent-playground\">Playground</a></td></tr><tr></tr>\n<tr><td>Services</td><td><a href=\"https://github.com/livekit/livekit\">LiveKit server</a> · <a href=\"https://github.com/livekit/egress\">Egress</a> · <a href=\"https://github.com/livekit/ingress\">Ingress</a> · <a href=\"https://github.com/livekit/sip\">SIP</a></td></tr><tr></tr>\n<tr><td>Resources</td><td><a href=\"https://docs.livekit.io\">Docs</a> · <a href=\"https://github.com/livekit-examples\">Example apps</a> · <a href=\"https://livekit.io/cloud\">Cloud</a> · <a href=\"https://docs.livekit.io/home/self-hosting/deployment\">Self-hosting</a> · <a href=\"https://github.com/livekit/livekit-cli\">CLI</a></td></tr>\n</tbody>\n</table>\n<!--END_REPO_NAV-->\n",
+  "file_tree": [
+    {
+      "path": ".gitattributes",
+      "type": "file",
+      "size": 1595
+    },
+    {
+      "path": ".github",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": ".gitignore",
+      "type": "file",
+      "size": 1527
+    },
+    {
+      "path": ".gitmodules",
+      "type": "file",
+      "size": 106
+    },
+    {
+      "path": "BuildScripts~",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Documentation~",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "LICENSE.txt",
+      "type": "file",
+      "size": 11358
+    },
+    {
+      "path": "LICENSE.txt.meta",
+      "type": "file",
+      "size": 158
+    },
+    {
+      "path": "NOTICE",
+      "type": "file",
+      "size": 553
+    },
+    {
+      "path": "NOTICE.meta",
+      "type": "file",
+      "size": 155
+    },
+    {
+      "path": "README.md",
+      "type": "file",
+      "size": 15732
+    },
+    {
+      "path": "README.md.meta",
+      "type": "file",
+      "size": 158
+    },
+    {
+      "path": "Runtime.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Samples~",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Tests.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Tests",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "client-sdk-rust~",
+      "type": "file",
+      "size": 0
+    },
+    {
+      "path": "install.py",
+      "type": "file",
+      "size": 1869
+    },
+    {
+      "path": "install.py.meta",
+      "type": "file",
+      "size": 155
+    },
+    {
+      "path": "package.json",
+      "type": "file",
+      "size": 412
+    },
+    {
+      "path": "package.json.meta",
+      "type": "file",
+      "size": 163
+    },
+    {
+      "path": "version.ini",
+      "type": "file",
+      "size": 103
+    },
+    {
+      "path": "version.ini.meta",
+      "type": "file",
+      "size": 155
+    },
+    {
+      "path": ".github/banner_dark.png",
+      "type": "file",
+      "size": 116865
+    },
+    {
+      "path": ".github/banner_light.png",
+      "type": "file",
+      "size": 43366
+    },
+    {
+      "path": ".github/workflows",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "BuildScripts~/build_docs.sh",
+      "type": "file",
+      "size": 567
+    },
+    {
+      "path": "BuildScripts~/generate_proto.sh",
+      "type": "file",
+      "size": 579
+    },
+    {
+      "path": "Documentation~/.gitignore",
+      "type": "file",
+      "size": 60
+    },
+    {
+      "path": "Documentation~/api",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Documentation~/custom",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Documentation~/docfx.json",
+      "type": "file",
+      "size": 945
+    },
+    {
+      "path": "Documentation~/toc.yml",
+      "type": "file",
+      "size": 58
+    },
+    {
+      "path": "Runtime/Plugins.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Scripts.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Scripts",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Shaders.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Shaders",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/csc.rsp",
+      "type": "file",
+      "size": 33
+    },
+    {
+      "path": "Runtime/csc.rsp.meta",
+      "type": "file",
+      "size": 155
+    },
+    {
+      "path": "Runtime/livekit.unity.Runtime.asmdef",
+      "type": "file",
+      "size": 346
+    },
+    {
+      "path": "Runtime/livekit.unity.Runtime.asmdef.meta",
+      "type": "file",
+      "size": 166
+    },
+    {
+      "path": "Samples~/Basic",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Tests/EditMode.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Tests/EditMode",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Tests/PlayMode.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Tests/PlayMode",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Tests/csc.rsp",
+      "type": "file",
+      "size": 16
+    },
+    {
+      "path": "Tests/csc.rsp.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "type": "file",
+      "size": 6381
+    },
+    {
+      "path": ".github/workflows/docs.yml",
+      "type": "file",
+      "size": 1026
+    },
+    {
+      "path": "Documentation~/api/.gitkeep",
+      "type": "file",
+      "size": 0
+    },
+    {
+      "path": "Documentation~/custom/public",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Plugins/Google.Protobuf.dll",
+      "type": "file",
+      "size": 131
+    },
+    {
+      "path": "Runtime/Plugins/Google.Protobuf.dll.meta",
+      "type": "file",
+      "size": 645
+    },
+    {
+      "path": "Runtime/Plugins/System.Runtime.CompilerServices.Unsafe.dll",
+      "type": "file",
+      "size": 130
+    },
+    {
+      "path": "Runtime/Plugins/System.Runtime.CompilerServices.Unsafe.dll.meta",
+      "type": "file",
+      "size": 1719
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-arm64.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-arm64",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-armv7.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-armv7",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-x86_64.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-x86_64",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Plugins/ffi-ios-arm64.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins/ffi-ios-arm64",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Plugins/ffi-ios-sim-arm64.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins/ffi-ios-sim-arm64",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Plugins/ffi-linux-x86_64.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins/ffi-linux-x86_64",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Plugins/ffi-macos-arm64.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins/ffi-macos-arm64",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Plugins/ffi-macos-x86_64.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins/ffi-macos-x86_64",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Plugins/ffi-windows-arm64.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins/ffi-windows-arm64",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Plugins/ffi-windows-x86_64.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Plugins/ffi-windows-x86_64",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Scripts/AudioFrame.cs",
+      "type": "file",
+      "size": 1713
+    },
+    {
+      "path": "Runtime/Scripts/AudioFrame.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/AudioStream.cs",
+      "type": "file",
+      "size": 5025
+    },
+    {
+      "path": "Runtime/Scripts/AudioStream.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/BasicAudioSource.cs",
+      "type": "file",
+      "size": 2063
+    },
+    {
+      "path": "Runtime/Scripts/BasicAudioSource.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/CameraVideoSource.cs",
+      "type": "file",
+      "size": 3786
+    },
+    {
+      "path": "Runtime/Scripts/CameraVideoSource.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/DataStream.cs",
+      "type": "file",
+      "size": 32143
+    },
+    {
+      "path": "Runtime/Scripts/DataStream.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/E2EE.cs",
+      "type": "file",
+      "size": 6055
+    },
+    {
+      "path": "Runtime/Scripts/E2EE.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Scripts/Internal",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Scripts/MicrophoneSource.cs",
+      "type": "file",
+      "size": 4772
+    },
+    {
+      "path": "Runtime/Scripts/MicrophoneSource.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Participant.cs",
+      "type": "file",
+      "size": 35101
+    },
+    {
+      "path": "Runtime/Scripts/Participant.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Scripts/Proto",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Scripts/Room.cs",
+      "type": "file",
+      "size": 28096
+    },
+    {
+      "path": "Runtime/Scripts/Room.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Rpc.cs",
+      "type": "file",
+      "size": 5143
+    },
+    {
+      "path": "Runtime/Scripts/Rpc.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/RtcAudioSource.cs",
+      "type": "file",
+      "size": 7079
+    },
+    {
+      "path": "Runtime/Scripts/RtcAudioSource.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/RtcSource.cs",
+      "type": "file",
+      "size": 167
+    },
+    {
+      "path": "Runtime/Scripts/RtcSource.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/RtcVideoSource.cs",
+      "type": "file",
+      "size": 7211
+    },
+    {
+      "path": "Runtime/Scripts/RtcVideoSource.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/ScreenVideoSource.cs",
+      "type": "file",
+      "size": 3802
+    },
+    {
+      "path": "Runtime/Scripts/ScreenVideoSource.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/TextureVideoSource.cs",
+      "type": "file",
+      "size": 2093
+    },
+    {
+      "path": "Runtime/Scripts/TextureVideoSource.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Track.cs",
+      "type": "file",
+      "size": 6576
+    },
+    {
+      "path": "Runtime/Scripts/Track.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/TrackPublication.cs",
+      "type": "file",
+      "size": 3058
+    },
+    {
+      "path": "Runtime/Scripts/TrackPublication.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Video.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Scripts/Video",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Scripts/VideoFrame.cs",
+      "type": "file",
+      "size": 7897
+    },
+    {
+      "path": "Runtime/Scripts/VideoFrame.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/VideoStream.cs",
+      "type": "file",
+      "size": 4998
+    },
+    {
+      "path": "Runtime/Scripts/VideoStream.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/WebCameraSource.cs",
+      "type": "file",
+      "size": 3456
+    },
+    {
+      "path": "Runtime/Scripts/WebCameraSource.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Shaders/YuvToRgb.shader",
+      "type": "file",
+      "size": 1918
+    },
+    {
+      "path": "Runtime/Shaders/YuvToRgb.shader.meta",
+      "type": "file",
+      "size": 204
+    },
+    {
+      "path": "Samples~/Basic/.gitignore",
+      "type": "file",
+      "size": 1317
+    },
+    {
+      "path": "Samples~/Basic/.vscode",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Samples~/Basic/Assets",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Samples~/Basic/Packages",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Tests/EditMode/LiveKit.EditModeTests.asmdef",
+      "type": "file",
+      "size": 550
+    },
+    {
+      "path": "Tests/EditMode/LiveKit.EditModeTests.asmdef.meta",
+      "type": "file",
+      "size": 166
+    },
+    {
+      "path": "Tests/EditMode/UsageStrictTests.cs",
+      "type": "file",
+      "size": 1124
+    },
+    {
+      "path": "Tests/EditMode/UsageStrictTests.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Tests/PlayMode/DataStreamTests.cs",
+      "type": "file",
+      "size": 822
+    },
+    {
+      "path": "Tests/PlayMode/DataStreamTests.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Tests/PlayMode/LiveKit.PlayModeTests.asmdef",
+      "type": "file",
+      "size": 528
+    },
+    {
+      "path": "Tests/PlayMode/LiveKit.PlayModeTests.asmdef.meta",
+      "type": "file",
+      "size": 166
+    },
+    {
+      "path": "Tests/PlayMode/LocalParticipantTests.cs",
+      "type": "file",
+      "size": 2383
+    },
+    {
+      "path": "Tests/PlayMode/LocalParticipantTests.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Tests/PlayMode/RoomTests.cs",
+      "type": "file",
+      "size": 6989
+    },
+    {
+      "path": "Tests/PlayMode/RoomTests.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Tests/PlayMode/Utils.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Tests/PlayMode/Utils",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Documentation~/custom/public/main.css",
+      "type": "file",
+      "size": 28
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-arm64/liblivekit_ffi.so",
+      "type": "file",
+      "size": 133
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-arm64/liblivekit_ffi.so.meta",
+      "type": "file",
+      "size": 1646
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-arm64/libwebrtc.jar",
+      "type": "file",
+      "size": 132
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-arm64/libwebrtc.jar.meta",
+      "type": "file",
+      "size": 608
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-armv7/liblivekit_ffi.so",
+      "type": "file",
+      "size": 133
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-armv7/liblivekit_ffi.so.meta",
+      "type": "file",
+      "size": 1568
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-armv7/libwebrtc.jar",
+      "type": "file",
+      "size": 132
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-armv7/libwebrtc.jar.meta",
+      "type": "file",
+      "size": 608
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-x86_64/liblivekit_ffi.so",
+      "type": "file",
+      "size": 133
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-x86_64/liblivekit_ffi.so.meta",
+      "type": "file",
+      "size": 1569
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-x86_64/libwebrtc.jar",
+      "type": "file",
+      "size": 132
+    },
+    {
+      "path": "Runtime/Plugins/ffi-android-x86_64/libwebrtc.jar.meta",
+      "type": "file",
+      "size": 608
+    },
+    {
+      "path": "Runtime/Plugins/ffi-ios-arm64/liblivekit_ffi.a",
+      "type": "file",
+      "size": 134
+    },
+    {
+      "path": "Runtime/Plugins/ffi-ios-arm64/liblivekit_ffi.a.meta",
+      "type": "file",
+      "size": 1612
+    },
+    {
+      "path": "Runtime/Plugins/ffi-ios-sim-arm64/liblivekit_ffi.a",
+      "type": "file",
+      "size": 134
+    },
+    {
+      "path": "Runtime/Plugins/ffi-ios-sim-arm64/liblivekit_ffi.a.meta",
+      "type": "file",
+      "size": 1568
+    },
+    {
+      "path": "Runtime/Plugins/ffi-linux-x86_64/liblivekit_ffi.so",
+      "type": "file",
+      "size": 133
+    },
+    {
+      "path": "Runtime/Plugins/ffi-linux-x86_64/liblivekit_ffi.so.meta",
+      "type": "file",
+      "size": 1576
+    },
+    {
+      "path": "Runtime/Plugins/ffi-macos-arm64/liblivekit_ffi.dylib",
+      "type": "file",
+      "size": 133
+    },
+    {
+      "path": "Runtime/Plugins/ffi-macos-arm64/liblivekit_ffi.dylib.meta",
+      "type": "file",
+      "size": 1566
+    },
+    {
+      "path": "Runtime/Plugins/ffi-macos-x86_64/liblivekit_ffi.dylib",
+      "type": "file",
+      "size": 133
+    },
+    {
+      "path": "Runtime/Plugins/ffi-macos-x86_64/liblivekit_ffi.dylib.meta",
+      "type": "file",
+      "size": 1568
+    },
+    {
+      "path": "Runtime/Plugins/ffi-windows-arm64/livekit_ffi.dll",
+      "type": "file",
+      "size": 133
+    },
+    {
+      "path": "Runtime/Plugins/ffi-windows-arm64/livekit_ffi.dll.meta",
+      "type": "file",
+      "size": 1570
+    },
+    {
+      "path": "Runtime/Plugins/ffi-windows-x86_64/livekit_ffi.dll",
+      "type": "file",
+      "size": 133
+    },
+    {
+      "path": "Runtime/Plugins/ffi-windows-x86_64/livekit_ffi.dll.meta",
+      "type": "file",
+      "size": 1578
+    },
+    {
+      "path": "Runtime/Scripts/Internal/AudioProbe.cs",
+      "type": "file",
+      "size": 1653
+    },
+    {
+      "path": "Runtime/Scripts/Internal/AudioProbe.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/AudioResampler.cs",
+      "type": "file",
+      "size": 1316
+    },
+    {
+      "path": "Runtime/Scripts/Internal/AudioResampler.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/Constants.cs",
+      "type": "file",
+      "size": 121
+    },
+    {
+      "path": "Runtime/Scripts/Internal/Constants.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClient.cs",
+      "type": "file",
+      "size": 14538
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClient.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIHandle.cs",
+      "type": "file",
+      "size": 702
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIHandle.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/MonoBehaviourContext.cs",
+      "type": "file",
+      "size": 1699
+    },
+    {
+      "path": "Runtime/Scripts/Internal/MonoBehaviourContext.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/NativeMethods.cs",
+      "type": "file",
+      "size": 1145
+    },
+    {
+      "path": "Runtime/Scripts/Internal/NativeMethods.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/RingBuffer.cs",
+      "type": "file",
+      "size": 3874
+    },
+    {
+      "path": "Runtime/Scripts/Internal/RingBuffer.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/ThreadSafeQueue.cs",
+      "type": "file",
+      "size": 892
+    },
+    {
+      "path": "Runtime/Scripts/Internal/ThreadSafeQueue.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/Utils.cs",
+      "type": "file",
+      "size": 2496
+    },
+    {
+      "path": "Runtime/Scripts/Internal/Utils.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/YieldInstruction.cs",
+      "type": "file",
+      "size": 1117
+    },
+    {
+      "path": "Runtime/Scripts/Internal/YieldInstruction.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/AudioFrame.cs",
+      "type": "file",
+      "size": 474855
+    },
+    {
+      "path": "Runtime/Scripts/Proto/AudioFrame.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/DataStream.cs",
+      "type": "file",
+      "size": 585143
+    },
+    {
+      "path": "Runtime/Scripts/Proto/DataStream.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/E2Ee.cs",
+      "type": "file",
+      "size": 269092
+    },
+    {
+      "path": "Runtime/Scripts/Proto/E2Ee.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Ffi.cs",
+      "type": "file",
+      "size": 533391
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Ffi.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Handle.cs",
+      "type": "file",
+      "size": 9317
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Handle.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Participant.cs",
+      "type": "file",
+      "size": 32858
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Participant.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Room.cs",
+      "type": "file",
+      "size": 1276068
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Room.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Rpc.cs",
+      "type": "file",
+      "size": 121147
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Rpc.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Stats.cs",
+      "type": "file",
+      "size": 759530
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Stats.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Track.cs",
+      "type": "file",
+      "size": 198594
+    },
+    {
+      "path": "Runtime/Scripts/Proto/Track.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/TrackPublication.cs",
+      "type": "file",
+      "size": 54205
+    },
+    {
+      "path": "Runtime/Scripts/Proto/TrackPublication.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Proto/VideoFrame.cs",
+      "type": "file",
+      "size": 234229
+    },
+    {
+      "path": "Runtime/Scripts/Proto/VideoFrame.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Video/YuvToRgbConverter.cs",
+      "type": "file",
+      "size": 4656
+    },
+    {
+      "path": "Runtime/Scripts/Video/YuvToRgbConverter.cs.meta",
+      "type": "file",
+      "size": 59
+    },
+    {
+      "path": "Samples~/Basic/.vscode/extensions.json",
+      "type": "file",
+      "size": 75
+    },
+    {
+      "path": "Samples~/Basic/.vscode/launch.json",
+      "type": "file",
+      "size": 178
+    },
+    {
+      "path": "Samples~/Basic/.vscode/settings.json",
+      "type": "file",
+      "size": 1537
+    },
+    {
+      "path": "Samples~/Basic/Assets/RoomManager.cs",
+      "type": "file",
+      "size": 756
+    },
+    {
+      "path": "Samples~/Basic/Assets/RoomManager.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Samples~/Basic/Assets/Scenes.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Samples~/Basic/Assets/Scenes",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Samples~/Basic/Assets/UniversalRenderPipelineGlobalSettings.asset",
+      "type": "file",
+      "size": 732
+    },
+    {
+      "path": "Samples~/Basic/Assets/UniversalRenderPipelineGlobalSettings.asset.meta",
+      "type": "file",
+      "size": 189
+    },
+    {
+      "path": "Samples~/Basic/Packages/manifest.json",
+      "type": "file",
+      "size": 1918
+    },
+    {
+      "path": "Samples~/Basic/Packages/packages-lock.json",
+      "type": "file",
+      "size": 13987
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/AudioManager.asset",
+      "type": "file",
+      "size": 413
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/ClusterInputManager.asset",
+      "type": "file",
+      "size": 114
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/DynamicsManager.asset",
+      "type": "file",
+      "size": 1254
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/EditorBuildSettings.asset",
+      "type": "file",
+      "size": 257
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/EditorSettings.asset",
+      "type": "file",
+      "size": 1278
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/GraphicsSettings.asset",
+      "type": "file",
+      "size": 2574
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/InputManager.asset",
+      "type": "file",
+      "size": 9731
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/MemorySettings.asset",
+      "type": "file",
+      "size": 1192
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/NavMeshAreas.asset",
+      "type": "file",
+      "size": 1308
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/NetworkManager.asset",
+      "type": "file",
+      "size": 151
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/PackageManagerSettings.asset",
+      "type": "file",
+      "size": 952
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/Physics2DSettings.asset",
+      "type": "file",
+      "size": 2028
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/PresetManager.asset",
+      "type": "file",
+      "size": 146
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/ProjectSettings.asset",
+      "type": "file",
+      "size": 23246
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/ProjectVersion.txt",
+      "type": "file",
+      "size": 85
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/QualitySettings.asset",
+      "type": "file",
+      "size": 6701
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/SceneTemplateSettings.json",
+      "type": "file",
+      "size": 3534
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/ShaderGraphSettings.asset",
+      "type": "file",
+      "size": 489
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/TagManager.asset",
+      "type": "file",
+      "size": 378
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/TimeManager.asset",
+      "type": "file",
+      "size": 202
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/URPProjectSettings.asset",
+      "type": "file",
+      "size": 410
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/UnityConnectSettings.asset",
+      "type": "file",
+      "size": 943
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/VFXManager.asset",
+      "type": "file",
+      "size": 308
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/VersionControlSettings.asset",
+      "type": "file",
+      "size": 188
+    },
+    {
+      "path": "Samples~/Basic/ProjectSettings/XRSettings.asset",
+      "type": "file",
+      "size": 158
+    },
+    {
+      "path": "Tests/PlayMode/Utils/AccessToken.cs",
+      "type": "file",
+      "size": 2103
+    },
+    {
+      "path": "Tests/PlayMode/Utils/AccessToken.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Tests/PlayMode/Utils/Expectation.cs",
+      "type": "file",
+      "size": 1754
+    },
+    {
+      "path": "Tests/PlayMode/Utils/Expectation.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Tests/PlayMode/Utils/JsonWebToken.cs",
+      "type": "file",
+      "size": 2551
+    },
+    {
+      "path": "Tests/PlayMode/Utils/JsonWebToken.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Tests/PlayMode/Utils/TestRoomContext.cs",
+      "type": "file",
+      "size": 4398
+    },
+    {
+      "path": "Tests/PlayMode/Utils/TestRoomContext.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/FFIEvents.cs",
+      "type": "file",
+      "size": 2715
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/FFIEvents.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/FfiRequestExtensions.cs",
+      "type": "file",
+      "size": 12279
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/FfiRequestExtensions.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/FfiResponseWrap.cs",
+      "type": "file",
+      "size": 800
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/FfiResponseWrap.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/IFFIClient.cs",
+      "type": "file",
+      "size": 338
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/IFFIClient.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Requests.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Requests",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/SmartWrap.cs",
+      "type": "file",
+      "size": 625
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/SmartWrap.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Samples~/Basic/Assets/Scenes/SampleScene.unity",
+      "type": "file",
+      "size": 10727
+    },
+    {
+      "path": "Samples~/Basic/Assets/Scenes/SampleScene.unity.meta",
+      "type": "file",
+      "size": 155
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings/Lit2DSceneTemplate.scenetemplate",
+      "type": "file",
+      "size": 3942809
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings/Lit2DSceneTemplate.scenetemplate.meta",
+      "type": "file",
+      "size": 189
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings/Renderer2D.asset",
+      "type": "file",
+      "size": 3073
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings/Renderer2D.asset.meta",
+      "type": "file",
+      "size": 189
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings/Scenes.meta",
+      "type": "file",
+      "size": 172
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings/Scenes",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings/UniversalRP.asset",
+      "type": "file",
+      "size": 2572
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings/UniversalRP.asset.meta",
+      "type": "file",
+      "size": 189
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/IMultiPool.cs",
+      "type": "file",
+      "size": 197
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/IMultiPool.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/Memory.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/Memory",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/ObjectPool.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/ObjectPool",
+      "type": "dir",
+      "size": null
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/Pools.cs",
+      "type": "file",
+      "size": 646
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/Pools.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/ThreadSafeMultiPool.cs",
+      "type": "file",
+      "size": 888
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/ThreadSafeMultiPool.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Requests/FFIBridge.cs",
+      "type": "file",
+      "size": 884
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Requests/FFIBridge.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Requests/FFIBridgeExtensions.cs",
+      "type": "file",
+      "size": 1295
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Requests/FFIBridgeExtensions.cs.meta",
+      "type": "file",
+      "size": 243
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Requests/FfiRequestWrap.cs",
+      "type": "file",
+      "size": 2219
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Requests/FfiRequestWrap.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Requests/IFFIBridge.cs",
+      "type": "file",
+      "size": 257
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Requests/IFFIBridge.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings/Scenes/URP2DSceneTemplate.unity",
+      "type": "file",
+      "size": 9881
+    },
+    {
+      "path": "Samples~/Basic/Assets/Settings/Scenes/URP2DSceneTemplate.unity.meta",
+      "type": "file",
+      "size": 155
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/Memory/ArrayMemoryPool.cs",
+      "type": "file",
+      "size": 643
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/Memory/ArrayMemoryPool.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/Memory/IMemoryPool.cs",
+      "type": "file",
+      "size": 453
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/Memory/IMemoryPool.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/Memory/MemoryWrap.cs",
+      "type": "file",
+      "size": 991
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/Memory/MemoryWrap.cs.meta",
+      "type": "file",
+      "size": 83
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/ObjectPool/ThreadSafeObjectPool.cs",
+      "type": "file",
+      "size": 1098
+    },
+    {
+      "path": "Runtime/Scripts/Internal/FFIClients/Pools/ObjectPool/ThreadSafeObjectPool.cs.meta",
+      "type": "file",
+      "size": 83
+    }
+  ],
+  "languages": {
+    "C#": {
+      "bytes": 253651,
+      "percentage": 98.08
+    },
+    "ShaderLab": {
+      "bytes": 1918,
+      "percentage": 0.74
+    },
+    "Python": {
+      "bytes": 1869,
+      "percentage": 0.72
+    },
+    "Shell": {
+      "bytes": 1146,
+      "percentage": 0.44
+    },
+    "CSS": {
+      "bytes": 28,
+      "percentage": 0.01
+    }
+  },
+  "signatures": [],
+  "test_examples": [],
+  "issues": [
+    {
+      "number": 169,
+      "title": "Silent Audio Failure When Receiving Mono Audio in Unity SDK",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-11-10T06:36:18+00:00",
+      "updated_at": "2026-02-24T19:03:44+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/169",
+      "body": "\n## Problem\nWhen a Unity client receives **mono (1 channel)** audio from remote participants, the audio **silently fails to play** with no errors or warnings. The issue is **hard to debug** because:\n\n- ✅ `AudioStream` creates successfully\n- ✅ `AudioSource.isPlaying = true`\n- ✅ All logs show \"success\"\n- ❌ But no audio is heard\n\n## Reproduction Steps\n\n1. **Remote participant** publishes audio using a mono microphone (most built-in laptop mics are mono)\n2. **Unity client** subscribes to the audio t"
+    },
+    {
+      "number": 160,
+      "title": "Google Play requirement: App must support 16 KB memory page sizes",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-10-08T11:13:26+00:00",
+      "updated_at": "2026-02-24T06:38:13+00:00",
+      "closed_at": "2026-02-24T06:38:13+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/160",
+      "body": "Google Play will require to support 16 KB memory page sizes. When building our app we get this warning from livekit sdk:\n\n`Plugin 'Packages/io.livekit.livekit-sdk/Runtime/Plugins/ffi-android-arm64/liblivekit_ffi.so' is not 16KB-aligned. This may cause issues on ARM64 devices running Android 15+. More info: https://developer.android.com/guide/practices/page-sizes.`\n"
+    },
+    {
+      "number": 166,
+      "title": "The Installation instructions appear to be broken for Mac.",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-10-30T01:03:46+00:00",
+      "updated_at": "2026-02-23T18:50:17+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/166",
+      "body": "Running the [installation steps on the main repo](https://github.com/livekit/client-sdk-unity?tab=readme-ov-file#installation) and on the [example](https://github.com/livekit-examples/unity-example/tree/main?tab=readme-ov-file#installation) both seem to be broken.\n\nI'm on Unity 2022.3 and can't get a clean project going when attempting either of those. It's hard to report the exact issue because I'm getting 999+ errors in the console, but some are of the style:\n\n- The type or namespace name 'Goo"
+    },
+    {
+      "number": 174,
+      "title": "Image gets rendered upside down on Meta Quest 3(S) and Pico G3",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-12-14T20:29:49+00:00",
+      "updated_at": "2026-02-13T18:58:46+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/174",
+      "body": "First of all, thank you for this great open-source WebRTC implementation for Unity. We were struggling to find a solid way to stream both video and audio from our web application to a VR headset, and your package enabled us to implement a reliable solution for both channels.\n\n**Description of the bug**\n\nWhile developing a suite that runs in both VR and the web, we discovered an issue where the received video stream is rendered upside down on the client side.\n\nThis issue appears to be platform-de"
+    },
+    {
+      "number": 143,
+      "title": "WebRTC lib version.",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-08-01T08:27:10+00:00",
+      "updated_at": "2026-02-02T03:50:52+00:00",
+      "closed_at": "2026-02-02T03:50:52+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/143",
+      "body": "Hi,\n\nI created an iOS application using Unity. When I open the generated module in XCode, the application runs without too many problems.\nMy goal is to integrate this module into a native XCode application with all the UI and other communication systems already implemented.\nI added the settings, frameworks, -ObjC, and corrected the order between libPhone.a and livekit.ffi, but when I try to start the video call, it crashes due to the video codec, a problem caused by webRTC.\n\nI'd like to know wha"
+    },
+    {
+      "number": 132,
+      "title": "Android microphone audio not received by other participants (LiveKit Unity SDK v1.2.4)",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-06-26T13:07:28+00:00",
+      "updated_at": "2026-01-30T03:45:34+00:00",
+      "closed_at": "2026-01-30T03:45:34+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/132",
+      "body": "I'm using the LiveKit Unity SDK to build a multi-peer voice chat application using the LiveKit SFU. I’ve tested the setup between Unity Editor and Android builds. The issue is that audio from Android clients is not heard by other participants.\n\nWhat works:\nAndroid devices connect to the room successfully.\nMicrophone permissions are requested and granted at runtime.\nThe microphone is selected from Microphone.devices and used to publish the audio track.\nThe track is successfully published on Andro"
+    },
+    {
+      "number": 184,
+      "title": "Assembly name conflicts with FBX Exporter",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2026-01-24T06:43:57+00:00",
+      "updated_at": "2026-01-24T14:15:33+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/184",
+      "body": "### How to reproduce\n\n- Install LiveKit SDK using git\n- Install FBX Exporter (`com.unity.formats.fbx`) via Package Manager, I am using ` 4.1.3`, I didn't check newer version tho\n\nYou will see errors complaining about the conflict assembly name.\n\n<img width=\"1347\" height=\"206\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/ae456333-6ed1-45b2-a8f2-b4f8ac464c6b\" />"
+    },
+    {
+      "number": 183,
+      "title": "The type or namespace name 'Google' could not be found",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2026-01-20T12:36:47+00:00",
+      "updated_at": "2026-01-22T11:24:54+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/183",
+      "body": "Project won't build under Linux on Unity 6.x.\n\n**Description of the bug**\nLivekit assembly cannot be built because of missing references.\n\n<img width=\"2570\" height=\"360\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/dbcd202d-bff1-44be-8dc6-df02603439ee\" />\n\nThe Google.Protobuf.dll is in the package, but it seems to be targeting only Windows devices.\n\n**How to reproduce**\nPull client-sdk-unity to any project using Unity's Package Manager while on Linux OS. In my case it's Ubuntu but"
+    },
+    {
+      "number": 142,
+      "title": "Feature Request: Support for visionOS",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-07-31T11:40:54+00:00",
+      "updated_at": "2026-01-21T15:53:56+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/142",
+      "body": "Hello together,\nIm basically currently trying to get it to run on visionOS\n\nAny chance there is a ffi-visionos-arm64 planned?\n\nwas trying to pass it by changing the linker-flag of the iOS version to visionOS, but xcode obviously reports:\nBuilding for 'visionOS', but linking in object file (...) built for 'iOS'\n\ni don't know how great of an effort it is to build such an visionOS.dll tough. or any other idea how to overcome this issue?\n\nmany thanks in advance!"
+    },
+    {
+      "number": 139,
+      "title": "Request for Roadmap and Plans for WebGL Deprecation",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-07-15T11:04:22+00:00",
+      "updated_at": "2026-01-16T03:37:12+00:00",
+      "closed_at": "2026-01-16T03:37:12+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/139",
+      "body": "Thank you for this excellent Unity client. We're planning to use LiveKit in our Unity products and were wondering if there’s a public roadmap available.\n\nWe saw that the WebGL library is planned to be deprecated in favor of this client, which is great news. The WebGL version is quite limiting, especially when it comes to controlling input audio and output streams.\n\nIn our case, we use a custom audio system and would ideally like to send or write raw PCM data directly."
+    },
+    {
+      "number": 138,
+      "title": "[iOS] Opus: audio codec causes crashes on iPad devices",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-07-11T12:36:29+00:00",
+      "updated_at": "2026-01-15T03:33:20+00:00",
+      "closed_at": "2026-01-15T03:33:20+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/138",
+      "body": "Hi, \nwith @SabeeenoGH and  @potitoaghilar We've encountered an issue on iPad devices.\n\nUnity: 2022.3.50f1 or 6000.0.49f\nLivekit 1.2.4.\n\nWhen a room is created and the microphone is subsequently published, after a few seconds the app freezes and then crashes.\n\nThe problem appears to be caused by Opus, which handles the audio codec, the problem seems to be both in the decoding and decoder phases.\n\nDuring testing we tried to create the room without publishing the microphone and only the video, the "
+    },
+    {
+      "number": 181,
+      "title": "Requesting UWP ARM64 (HoloLens 2) Support / Missing UWP build of livekit_ffi.dll",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2026-01-10T05:55:36+00:00",
+      "updated_at": "2026-01-10T05:55:36+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/181",
+      "body": "Hello LiveKit Team,\n\nFirst, thank you for the great work on the Unity SDK. I'm trying to integrate it into a Microsoft HoloLens 2 application, which is a UWP ARM64 platform.\n\nProblem:\nThe SDK fails to initialize on HoloLens 2 because the provided livekit_ffi.dll (from the ffi-windows-arm64 folder) is compiled for the Windows Desktop (subsystem: Windows GUI) and is not compatible with the UWP/Windows Store (subsystem: Windows CUI) runtime environment on HoloLens.\n\nThe error in Unity (IL2CPP) is:\n"
+    },
+    {
+      "number": 137,
+      "title": "Connection Issue in android",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-07-08T08:03:34+00:00",
+      "updated_at": "2026-01-10T03:30:43+00:00",
+      "closed_at": "2026-01-10T03:30:43+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/137",
+      "body": "room.Connect is working in Editor but not in Android(Livekit SDK 1.2.4, Unity 2022.3.35f1)\n private IEnumerator Connect()\n {\n     _room = new Room();\n     var options = new RoomOptions();\n     var connect = _room.Connect(_serverUrl, _token, options);\n     yield return connect;\n\n     if (connect.IsError)\n     {\n         Debug.LogError($\"Failed to connect to room \");\n         yield break;\n     }\n     Debug.Log(\"Connected to room! \"+_room.Name);\n }\nIn Editor it log Connected to room! 123 \nbut in an"
+    },
+    {
+      "number": 176,
+      "title": "Adding simulcastlayers in unity sdk.",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-12-17T05:51:03+00:00",
+      "updated_at": "2026-01-07T17:58:38+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/176",
+      "body": "Since unity sdk uses this rust sdk, I noticed there is no option of adding, simulcastlayers in TrackpublishOptions object, there is only Opton of adding Simulcast as on or off. \nIt seems the proto definitions that are used in unity sdk, are old and do not have simulcastlayers options. Please update."
+    },
+    {
+      "number": 135,
+      "title": "Recording state change notification",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-07-03T11:41:04+00:00",
+      "updated_at": "2026-01-04T03:28:51+00:00",
+      "closed_at": "2026-01-04T03:28:51+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/135",
+      "body": "### Summary\nIn the JavaScript SDK, there is a clear mechanism to notify clients when the recording state of a room changes. However, it seems that the Unity SDK lacks a similar event or notification system for this purpose.\n\n### Details\nWhen the Room model changes in the JavaScript SDK, a synthetic event is created and emitted to inform clients about the update:\n\n[Room.ts — Synthetic event creation](https://github.com/livekit/client-sdk-js/blob/e385c0a1ca3c191c21382492cfcc0f101934f729/src/room/R"
+    },
+    {
+      "number": 93,
+      "title": "Can't connect to the same room back-to-back with the same token-device",
+      "state": "closed",
+      "labels": [
+        "Unity"
+      ],
+      "milestone": null,
+      "created_at": "2025-03-28T12:09:47+00:00",
+      "updated_at": "2025-12-18T03:35:11+00:00",
+      "closed_at": "2025-12-18T03:35:11+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/93",
+      "body": "I am developing a game on MacOS using Unity 6. Here, I am trying to switch to the LiveKit Client SDK (from Agora) to reflect the user's camera view and data exchange between different users in the room.\n\nFirst of all my token have time to expire, so there is no problem there. Server on Cloud.\n\nOn my first join attempt I can successfully connect to the room and play for a while, performing scene transitions, share screen, send data before closing the game. However, when I reopen it and press the "
+    },
+    {
+      "number": 101,
+      "title": "Inconsistent Firing of Disconnect Events Across Disconnection Paths",
+      "state": "closed",
+      "labels": [
+        "bug",
+        "Unity"
+      ],
+      "milestone": null,
+      "created_at": "2025-04-11T03:30:34+00:00",
+      "updated_at": "2025-12-18T03:35:10+00:00",
+      "closed_at": "2025-12-18T03:35:10+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/101",
+      "body": "Currently, the `Disconnected` event does not consistently fire across all disconnection paths. Specifically, when disconnection occurs through the `DisconnectReceived` callback, the event is not triggered at all.\nMoreover the disconnect event should be fired with a DisconnectReason, currently it passes the room instead.\n\nProposed Solution:\n- Introduce a `DisconnectDelegate` that includes a `DisconnectReason`.\n- Update the `Disconnected` event to use this new delegate.\n- Ensure that the `Disconne"
+    },
+    {
+      "number": 173,
+      "title": "No options to set simulcast layers in TrackpublishOptions in the proto definitions",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-12-12T06:30:57+00:00",
+      "updated_at": "2025-12-12T06:30:57+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/173",
+      "body": "In the current proto definition, there is option for setting Simulcast on and off but there is not definition for setting Simulcastlayers, as mentioned in the docs. "
+    },
+    {
+      "number": 171,
+      "title": "Can you change the namespace, so client-sdk-unity can work with client-sdk-unity-web?",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-12-02T14:31:58+00:00",
+      "updated_at": "2025-12-02T14:31:58+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/171",
+      "body": "Hi, I'm working on a multi-platform unity project with livekit, so I need to communicate between client-sdk-unity (android and windows) and client-sdk-unity-web (webGL). The problem is that both sdk have the same namespace, so when you install both in a unity project, it generates conflicts. As a workaround, I made client-sdk-unity a custom library (by putting it in the Package folder) and than I changed the namespace \"Livekit\" to another. Now I can have both sdk in tha same unity project withou"
+    },
+    {
+      "number": 134,
+      "title": "LiveKit Unity SDK: Camera Renders Solid Green When Publishing from RenderTexture",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-07-02T00:25:32+00:00",
+      "updated_at": "2025-11-14T21:01:19+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/134",
+      "body": "Summary\n\n  I'm experiencing a critical issue where LiveKit Unity SDK transmits a solid green video stream when publishing from a Unity Camera that renders to a RenderTexture. The publisher's local preview shows the correct rendered      \n  scene, but all subscribers receive only a solid green color (RGB: 0.00, 0.53, 0.00).\n\n  Environment\n\n  - Unity Version: 6.000.47f1 (using URP)\n  - LiveKit Unity SDK: 1.2.4\n  - Platform: Windows (Unity Editor)\n  - Graphics API: DirectX 11\n  - Server: LiveKit Cl"
+    },
+    {
+      "number": 170,
+      "title": "Would you update participantsActive Event in unity sdk ? Thanks",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-11-12T10:13:04+00:00",
+      "updated_at": "2025-11-12T10:13:04+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/170",
+      "body": "❤"
+    },
+    {
+      "number": 152,
+      "title": "TrackMuted and TrackUnmuted does not work",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-09-04T06:50:01+00:00",
+      "updated_at": "2025-11-04T11:53:35+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/152",
+      "body": "I want other participants to know when the participant mutes the microphone.\n\nI started with the idea that I could use TrackMuted and TrackUnmuted from Room.\n\nI called the code below when the participant muted the microphone.\n\n```C#\npublic void MicrophoneMute(bool isMute)\n{\n    foreach (var track in room.LocalParticipant.Tracks.Values)\n    {\n        if (track.Track.Kind == TrackKind.KindAudio)\n            track.Track.SetMute(isMute);\n    }\n}\n```\n\nI saw that SetMute on ILocalTrack sends a request"
+    },
+    {
+      "number": 77,
+      "title": "Audio source RtcAudioSource stream does not work on some android devices",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2024-12-27T10:18:39+00:00",
+      "updated_at": "2025-10-31T07:51:47+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/77",
+      "body": "#### Problem\r\nThe app cannot stream audio from the microphone to the LiveKit server on certain Android devices, particularly older devices and some brands. This behavior is not related to microphone hardware, as i tried to set test audio on loop in the AudioSource and it works on most devices but fails on few devices i found listed below.\r\n\r\nAffected Devices:\r\nMotorola G20 API 30 (Firebase Test Lab)\r\nmoto g API 30 (Firebase Test Lab)\r\nVivo 1610 API 23 (Firebase Test Lab)\r\nHuawei P20 Pro API 29 ("
+    },
+    {
+      "number": 157,
+      "title": "LICENSE.txt has no meta file",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-09-23T17:36:08+00:00",
+      "updated_at": "2025-10-30T03:39:25+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/157",
+      "body": "When loading the package from the git link into a Unity project (v 6000.1.5f1), I continuously get the error:\n\n\"Asset Packages/io.livekit.livekit-sdk/LICENSE.txt has no meta file, but it's in an immutable folder. The asset will be ignored.\"\n\nNot a breaking issue, but the error pops up every time my console refreshes. Would love to see this fixed in a future update."
+    },
+    {
+      "number": 162,
+      "title": "Missing symbols on Android when upgrading to latest ffi",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-10-23T04:26:45+00:00",
+      "updated_at": "2025-10-27T09:34:10+00:00",
+      "closed_at": "2025-10-27T09:34:10+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/162",
+      "body": "I tried upgrading ffi to the latest version. Mac seemed to run correctly, but Android could not load the latest liblivekit_ffi.so.\n\nThis issue is probably related to upgrading libwebrtc m137,  FFI loading so prompts that `__arm_tpidr2_save` cannot be located.\n\n```logcat\n2025-10-23 12:15:40.374 11012-11123 nativeloader            io.livekit.unity.samples             D  Load /data/app/~~3rn3H06cikU1cs3waPb81Q==/io.livekit.unity.samples-Ym0UWOrFn_kmziHpAlwmCg==/lib/arm64/liblivekit_ffi.so using cla"
+    },
+    {
+      "number": 92,
+      "title": "System.DllNotFoundException: Unable to load DLL 'livekit_ffi' on HoloLens 2",
+      "state": "open",
+      "labels": [
+        "Unity"
+      ],
+      "milestone": null,
+      "created_at": "2025-03-25T12:48:35+00:00",
+      "updated_at": "2025-10-02T23:44:58+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/92",
+      "body": "We are trying to integrate LiveKit into a Unity app for Microsoft HoloLens 2.\n\nWe have first tried this package in Unity Editor Play Mode and could successfully connect to a room. The Unity scene was configured as an MRTK app ([Mixed Reality Toolkit](https://learn.microsoft.com/en-us/windows/mixed-reality/mrtk-unity/mrtk2/?view=mrtkunity-2022-05)).\n\nHowever when we build and deploy to the HoloLens, the app starts correctly, but we get an exception in C# when connecting to the room. Upon examinat"
+    },
+    {
+      "number": 158,
+      "title": "Our Video is Super Slow to Start Compared to Audio",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-10-01T09:35:36+00:00",
+      "updated_at": "2025-10-01T09:35:36+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/158",
+      "body": "### Summary\nwe've noticed a strange but consistent lag when subscribing to video tracks. The audio kicks in almost instantly (like, under a second), but the video often takes a really long time to show up—we're talking 5 to 7 seconds! This creates a temporary, awkward moment where the user just hears sound without seeing anything.\n\n### Context\nWe've seen this happen in our specific app (which uses the Unity SDK), but we also verified it in your Voice Audio Sandbox/Dashboard, so it doesn't seem t"
+    },
+    {
+      "number": 148,
+      "title": "Memory Leak in TextureVideoSource.Update()",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-08-30T00:27:22+00:00",
+      "updated_at": "2025-09-10T02:56:11+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/148",
+      "body": "## Summary\nTextureVideoSource.Update() does not get cleaned up properly by TextureVideoSource.Stop() and TextureVideoSource.Dispose() are called from Unity's OnApplicationQuit(). Basically, if video is still being streamed when you stop the app (from in the Unity editor), it causes a memory leak. This does not happen if I stop streaming or leave the room before ending the app.\n\n## Environment\nLiveKit Unity SDK Version: 1.2.5\nUnity Version: 6000.1.5f1\nPlatform: MacOS\nLiveKit Server Version: 1.9.0"
+    },
+    {
+      "number": 154,
+      "title": "iOS crash popup on relaunch after hard-close with active LiveKit session",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-09-09T07:22:56+00:00",
+      "updated_at": "2025-09-09T07:22:56+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/154",
+      "body": "<html>\n<body>\n<!--StartFragment--><h3 data-start=\"242\" data-end=\"253\">Summary</h3>\n<p data-start=\"254\" data-end=\"515\">On iOS (TestFlight builds), when the app is <strong data-start=\"298\" data-end=\"314\">force-closed</strong> while connected to a LiveKit session (with an active livestream) and relaunched within <strong data-start=\"402\" data-end=\"415\">5 seconds</strong>, iOS shows a <strong data-start=\"429\" data-end=\"506\">“App was terminated because it failed to terminate gracefully after 5.0s”</st"
+    },
+    {
+      "number": 149,
+      "title": "Silent Errors during Room Join failures",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-09-01T12:22:38+00:00",
+      "updated_at": "2025-09-02T06:00:35+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/149",
+      "body": "Hello everyone,\n\nRecently we noticed that unity clients when connecting to openvidu/livekit server it can fail to join a room without providing further details. However, on the server side in logs we found that server actually communicates the exact error. For example one of them is 401 but the only way to find it is to open the logs on grafana and look for exact message which looks like this:\n\n2025-09-01T12:07:49.701Z\tWARN\tlivekit\tservice/auth.go:89\terror handling request\t{\"status\": 401, \"metho"
+    },
+    {
+      "number": 111,
+      "title": "Unable to load liblivekit_ffi.so on android arm 64",
+      "state": "closed",
+      "labels": [
+        "Unity"
+      ],
+      "milestone": null,
+      "created_at": "2025-04-29T06:46:12+00:00",
+      "updated_at": "2025-09-01T12:01:03+00:00",
+      "closed_at": "2025-06-17T07:11:43+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/111",
+      "body": "The new liblivekit_ffi.so is not loading on an android phone with arm 64 architecture - I tried on a Samsung S22, and an S24.\n\nThis is the error reported by Unity:\n\n```\nUnity LiveKit: System.DllNotFoundException: Unable to load DLL 'livekit_ffi'. Tried the load the following dynamic libraries: Unable to load dynamic library 'livekit_ffi' because of 'Failed to open the requested dynamic library (0x06000000) dlerror() = dlopen failed: library \"livekit_ffi\" not found\nUnity   at LiveKit.Internal.Nat"
+    },
+    {
+      "number": 144,
+      "title": "Unity SDK (v1.2.4) does not reliably send JoinRequest — participant never appears in list_participants",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-08-06T22:34:08+00:00",
+      "updated_at": "2025-08-27T04:09:30+00:00",
+      "closed_at": "2025-08-27T04:09:30+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/144",
+      "body": "I'm self hosting a livekit server using Modal cloud services. I'm trying to make a Unity app that allows clients to connect to rooms via the Unity iOS app. \n\nWhen connecting to a LiveKit room using the Unity SDK (v1.2.4), the client successfully establishes a connection and publishes audio (to itself), but the server never receives a JoinRequest. As a result, the participant is never listed in list_participants() or visible to other participants, even though room.IsConnected is true and media is"
+    },
+    {
+      "number": 145,
+      "title": "I am using version 1.2.4 of UnitySDK and simulating two users with two 2022.3.0 editors. Why did the TrackSubscribed callback on the receiving end execute but not display the screen properly? I connected to the local server through a web page and received the audio in Unity editor. The audio was normal, but the video still did not display. I don't know why, but I hope to be able to answer it. ",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-08-11T09:06:54+00:00",
+      "updated_at": "2025-08-21T11:53:10+00:00",
+      "closed_at": "2025-08-21T11:53:10+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/145",
+      "body": "I am using version 1.2.4 of UnitySDK and simulating two users with two 2022.3.0 editors. Why did the TrackSubscribed callback on the receiving end execute but not display the screen properly? I connected to the local server through a web page and received the audio in Unity editor. The audio was normal, but the video still did not display. I don't know why, but I hope to be able to answer it. The code was copied from Git as follows:\n\nusing LiveKit;\nusing LiveKit.Proto;\nusing System.Collections;\n"
+    },
+    {
+      "number": 97,
+      "title": "🔈 Can't Access LiveKit AudioStream Data for Runtime Analysis in Unity",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-04-09T09:48:59+00:00",
+      "updated_at": "2025-07-21T14:39:20+00:00",
+      "closed_at": "2025-07-21T14:39:20+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/97",
+      "body": "Hi LiveKit team,\n\nI'm trying to access remote audio data from AudioStream in Unity for real-time analysis (e.g. lip-sync or visualizers). The audio plays correctly via RtcAudioSource, but the actual sample data seems inaccessible.\n\nI tried using OnAudioFilterRead on the AudioSource, but it returns only zeros — likely because LiveKit bypasses Unity’s standard audio pipeline. The internal OnAudioRead() in AudioStream does receive sample data, but it's not exposed publicly.\n\nFeature Request:\nCould "
+    },
+    {
+      "number": 136,
+      "title": "TextureReceived Listener for remoteVideoTrack doesn't trigger (LiveKit Unity SDK v1.2.4) (Unity 6000.0.50f1)",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-07-04T12:18:17+00:00",
+      "updated_at": "2025-07-18T11:24:00+00:00",
+      "closed_at": "2025-07-18T11:24:00+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/136",
+      "body": "The event listeners seem to be unreliable at times. I'm not exactly sure the root cause of the issue. The Frame Received logs seem to be printing just fine but Texture Received isn't. The remote contestants are connected via a web livekit client not sure if that matters here.\n\nUnrelated but sometimes the TrackSubscribed event doesn't trigger either.\n\n\n\n    void RemoteTrackSubscribed(IRemoteTrack track, RemoteTrackPublication publication, RemoteParticipant participant)\n    {\n        Debug.Log(\"Re"
+    },
+    {
+      "number": 124,
+      "title": "v1.2.2 has an in-package error",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-05-27T10:00:59+00:00",
+      "updated_at": "2025-06-27T08:28:11+00:00",
+      "closed_at": "2025-06-27T08:28:11+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/124",
+      "body": "the error detail : Library\\PackageCache\\io.livekit.livekit-sdk@1.2.2\\Runtime\\Scripts\\WebCameraSource.cs(86,40): error CS1061: 'NativeArray<byte>' does not contain a definition for 'AsSpan' and no accessible extension method 'AsSpan' accepting a first argument of type 'NativeArray<byte>' could be found (are you missing a using directive or an assembly reference?)"
+    },
+    {
+      "number": 60,
+      "title": "RTC EchoCancellation does not work",
+      "state": "open",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2024-10-19T09:14:52+00:00",
+      "updated_at": "2025-06-18T07:09:48+00:00",
+      "closed_at": null,
+      "url": "https://github.com/livekit/client-sdk-unity/issues/60",
+      "body": "Hello,\r\n\r\nI have an agent and a participant in the room, and the participant can talk to the agent and the agent will talk back to the participant. However, if a participant is using speaker inside of earphone, the voice of agent will be recorded by microphone and send the voice to agent back. Once the agent hear the voice, it will stop current conversation and instantly talk back to the participant. This kind of ping-pong situation makes my app totally unusable.\r\n\r\nI have checked that the newAu"
+    },
+    {
+      "number": 108,
+      "title": "Support for Maui",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-04-27T02:32:53+00:00",
+      "updated_at": "2025-06-17T09:44:49+00:00",
+      "closed_at": "2025-06-17T06:25:03+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/108",
+      "body": "I know if there is a any to be a version to support MS Maui ?   Thank you."
+    },
+    {
+      "number": 87,
+      "title": "Add setEnabled function to RemoteTrackPublication like in other SDKs",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-03-18T14:15:43+00:00",
+      "updated_at": "2025-06-17T06:40:06+00:00",
+      "closed_at": "2025-06-17T06:40:06+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/87",
+      "body": "Other SDKs allow enabling and disabling tracks: https://docs.livekit.io/home/client/tracks/subscribe/#enabling-disabling-tracks. Identical functionality is needed in client-sdk-unity. Current SDK has only RemoteTrackPublication.SetSubscribed"
+    },
+    {
+      "number": 32,
+      "title": "Track Stats",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2024-04-19T02:21:32+00:00",
+      "updated_at": "2025-06-17T06:38:18+00:00",
+      "closed_at": "2025-06-17T06:38:18+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/32",
+      "body": "Hi~\r\nHow to get Remoteparticipant Track Stats in unity sdk"
+    },
+    {
+      "number": 107,
+      "title": "How Can I Muted or Unmuted track in a code.",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-04-22T08:32:46+00:00",
+      "updated_at": "2025-06-17T06:33:38+00:00",
+      "closed_at": "2025-06-17T06:33:38+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/107",
+      "body": null
+    },
+    {
+      "number": 119,
+      "title": "The echo that has been circulating gradually becomes smaller.",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-05-17T08:39:38+00:00",
+      "updated_at": "2025-06-17T06:26:55+00:00",
+      "closed_at": "2025-06-17T06:26:55+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/119",
+      "body": "Using version 1.1.0, talking by voice will cause the problem of circular echo."
+    },
+    {
+      "number": 90,
+      "title": "Disconnected and Reconnecting Event do not got triggered?",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-03-25T03:01:56+00:00",
+      "updated_at": "2025-06-11T10:15:52+00:00",
+      "closed_at": "2025-06-11T10:15:32+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/90",
+      "body": "On my PC, if I disconnect my Internet, the Disconnected got triggered immediately.\n\nOn IOS, if I turn on airplane mode, the behavior is very unstable. From the log, I found 3 scenario:\n\n1. No event got received.\n2. Disconnected event triggered after very long time, like 30s or 1min later.\n3. After very long time, Reconnecting got triggered and Disconnected got triggered at the same time\n\n"
+    },
+    {
+      "number": 35,
+      "title": "Feature Request: Process audio played by local AudioSource through the ADM module to achieve echo cancellation",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2024-06-07T11:00:20+00:00",
+      "updated_at": "2025-06-11T10:04:37+00:00",
+      "closed_at": "2025-06-11T10:04:37+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/35",
+      "body": "Hi,team.\r\nWe have some requirements where, during livekit calls, the local system might play audio that includes voices. We need to separate this audio from the microphone input, ensuring that the microphone does not capture the audio we are playing ourselves.\r\n\r\njust like [loopback](https://api-ref.agora.io/en/video-sdk/ios/4.x/documentation/agorartckit/agorartcenginekit/startaudiomixing(_:loopback:cycle:)) loopback options\r\n\r\nWhether to only play music files on the local client: **YES : Only p"
+    },
+    {
+      "number": 79,
+      "title": "using this library in c# console app",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-01-20T12:03:49+00:00",
+      "updated_at": "2025-06-11T10:03:15+00:00",
+      "closed_at": "2025-06-11T10:03:15+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/79",
+      "body": "is it possible to somehow, from the code in this repo, create a dll (library) that can be used in c# application that doesn't use unity?"
+    },
+    {
+      "number": 15,
+      "title": "Samples folder is not installed and is zero bytes",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2023-10-02T12:23:52+00:00",
+      "updated_at": "2025-06-11T10:02:25+00:00",
+      "closed_at": "2025-06-11T10:02:25+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/15",
+      "body": "Package Manager was not able to install the Samples folder because it didn't exist:\r\n```\r\n[Package Manager Window] Cannot import sample Example: The path C:/Users/leepr/Documents/unity_workshop/Netcode/NetCode_Basics/Library/PackageCache/io.livekit.livekit-sdk@60ae9e2e41/Samples~ does not exist.\r\nUnityEngine.GUIUtility:ProcessEvent (int,intptr,bool&)\r\n```\r\nI added the folder manually but it only installed an empty folder. The Samples install from the Package Manager shows as zero bytes so there "
+    },
+    {
+      "number": 47,
+      "title": "Adaptive streaming not working",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2024-07-29T13:55:51+00:00",
+      "updated_at": "2025-06-11T09:58:08+00:00",
+      "closed_at": "2025-06-11T09:58:08+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/47",
+      "body": "Video texture is received only once at 384x216 resolution even though the adaptive streaming is set to true in RoomOptions. \r\n\r\nIt works if I don't send room options by commenting out this line https://github.com/livekit/client-sdk-unity/blob/98eb5583bdafdb6130458d82ee8730536feb1a34/Runtime/Scripts/Internal/FFIClients/Requests/FFIBridgeExtensions.cs#L14\r\n\r\n"
+    },
+    {
+      "number": 14,
+      "title": "README throws error in Unity 2022.3.9f",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2023-10-02T12:21:33+00:00",
+      "updated_at": "2025-06-11T09:51:21+00:00",
+      "closed_at": "2025-06-11T09:51:21+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/14",
+      "body": "Continuously throws the following error:\r\n`Asset Packages/io.livekit.livekit-sdk/README.md has no meta file, but it's in an immutable folder. The asset will be ignored.`"
+    },
+    {
+      "number": 13,
+      "title": "Error on the 2nd time sharing screen",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2023-07-20T22:23:59+00:00",
+      "updated_at": "2025-06-11T09:36:40+00:00",
+      "closed_at": "2025-06-11T09:36:40+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/13",
+      "body": "I can share my screen from the example site and it works as expected. Then stopping the share correctly gives me the TrackUnpublished event so I can remove the video. But then if I share my screen again, I get the following error:\r\n\r\n```\r\nKeyNotFoundException: The given key 'TR_VSDiiQDFQVbUXU' was not present in the dictionary.\r\nSystem.Collections.Generic.Dictionary`2[TKey,TValue].get_Item (TKey key) (at <6aa56e57ab504395b555cf3ed50fa53d>:0)\r\nLiveKit.Room.OnEventReceived (LiveKit.Proto.RoomEvent"
+    },
+    {
+      "number": 12,
+      "title": "Incoming video stream error and freeze",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2023-07-20T22:09:31+00:00",
+      "updated_at": "2025-06-11T09:35:14+00:00",
+      "closed_at": "2025-06-11T09:35:14+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/12",
+      "body": "After I connect to a room with an incoming video stream I receive this error. Immediately, or shortly after, the video stream freezes.\r\n\r\n```\r\nArgumentException: An item with the same key has already been added. Key: TR_AMYztorQqvg26S\r\nSystem.Collections.Generic.Dictionary`2[TKey,TValue].TryInsert (TKey key, TValue value, System.Collections.Generic.InsertionBehavior behavior) (at <6aa56e57ab504395b555cf3ed50fa53d>:0)\r\nSystem.Collections.Generic.Dictionary`2[TKey,TValue].Add (TKey key, TValue val"
+    },
+    {
+      "number": 6,
+      "title": "An error occurs when Unity links to an empty room",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2023-06-02T03:34:04+00:00",
+      "updated_at": "2025-06-11T09:32:42+00:00",
+      "closed_at": "2025-06-11T09:32:42+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/6",
+      "body": null
+    },
+    {
+      "number": 126,
+      "title": "I can't delete this post",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-05-28T07:19:37+00:00",
+      "updated_at": "2025-06-11T08:21:53+00:00",
+      "closed_at": "2025-06-11T08:21:53+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/126",
+      "body": "This was an internal issue."
+    },
+    {
+      "number": 128,
+      "title": "Unable to load DLL 'livekit_ffi' on Android build",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-06-09T15:15:12+00:00",
+      "updated_at": "2025-06-09T16:28:58+00:00",
+      "closed_at": "2025-06-09T16:28:56+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/128",
+      "body": "Hi guys, I'm trying to build the module in Android. I can't understand why I'm getting this error.\n\n`2025/06/09 17:00:55.771 21919 21952 Error Unity DllNotFoundException: Unable to load DLL 'livekit_ffi'. Tried the load the following dynamic libraries: Unable to load dynamic library 'livekit_ffi' because of 'Failed to open the requested dynamic library (0x06000000) dlerror() = dlopen failed: library \"livekit_ffi\" not found\n2025/06/09 17:00:55.771 21919 21952 Error Unity   at LiveKit.Internal.Nat"
+    },
+    {
+      "number": 91,
+      "title": "TextureVideoSource does not transceive frames (Andoid build)",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2025-03-25T11:55:05+00:00",
+      "updated_at": "2025-05-15T06:43:51+00:00",
+      "closed_at": "2025-05-15T06:43:51+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/91",
+      "body": "Using: \nUnity 2022.3.7f1 \n\nPlatform:\nAndroid (29) on Magic Leap 2  (not sure what build exactly, should not matter here)\n\n\nI'm trying to get the [LiveKit Unity example ](https://github.com/livekit-examples/unity-example) running on my MagicLeap 2. In your example, you're using a WebCamSource() as source, but I also found uncommented code (LivekitSamples.cs > line 264) that can use a RenderTexture as source. \n\nThe MagicLeap SDK provides a class that converts the image (Mixed Reality Content + Mai"
+    },
+    {
+      "number": 37,
+      "title": "Remote AudioSource has an echo",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2024-06-13T13:02:45+00:00",
+      "updated_at": "2025-05-14T00:45:28+00:00",
+      "closed_at": "2025-05-14T00:45:27+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/37",
+      "body": "The remote audio source still has an echo, even after I tried playing the audio remotely to process it through the AudioProcessing module.\r\n\r\nSpecific steps:\r\n\r\nJoin the room on device A and subscribe to the track.\r\nJoin the same room on device B, but do not subscribe to the track. Create an audio track on device B and play a WAV file through AudioSource.\r\nExpected result:\r\n\r\nThe WAV file's sound should not be heard on device B.\r\nThe sound should be heard on device A, synchronized from device B."
+    },
+    {
+      "number": 61,
+      "title": "Planned updates for SDK?",
+      "state": "closed",
+      "labels": [],
+      "milestone": null,
+      "created_at": "2024-11-13T19:18:03+00:00",
+      "updated_at": "2025-05-14T00:43:05+00:00",
+      "closed_at": "2025-05-14T00:43:05+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/issues/61",
+      "body": "Hi. Sorry for the general topic that is not releated to any particular bug. Are there any plans for updating this Unity SDK or roadmap? Noticed that this one is still marked as a Developer Preview and the last update was released two months ago. "
+    }
+  ],
+  "changelog": "",
+  "releases": [
+    {
+      "tag_name": "v1.3.3",
+      "name": "v1.3.3",
+      "body": "## What's Changed\r\n* expose num_participants attribute by @xianshijing-lk in https://github.com/livekit/client-sdk-unity/pull/177\r\n* Bump version from 1.3.2 to 1.3.3 by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/178\r\n\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.3.2...v1.3.3",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-12-23T12:31:11+00:00",
+      "published_at": "2025-12-23T12:31:34+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.3.3",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.3.3",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.3.3"
+    },
+    {
+      "tag_name": "v1.3.2",
+      "name": "v1.3.2",
+      "body": "## What's Changed\r\n* Use shader for YUV to RGB conversion on received frames by @chenosaurus in https://github.com/livekit/client-sdk-unity/pull/168\r\n* make a new 1.3.2 cut with FFI update to v0.12.43 by @xianshijing-lk in https://github.com/livekit/client-sdk-unity/pull/175\r\n\r\n## New Contributors\r\n* @chenosaurus made their first contribution in https://github.com/livekit/client-sdk-unity/pull/168\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.3.1...v1.3.2",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-12-20T01:22:49+00:00",
+      "published_at": "2025-12-20T23:07:16+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.3.2",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.3.2",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.3.2"
+    },
+    {
+      "tag_name": "v1.3.1",
+      "name": "v1.3.1",
+      "body": "## What's Changed\r\n* Expose set video quality by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/164\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.3.0...v1.3.1",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-10-30T04:48:08+00:00",
+      "published_at": "2025-10-30T23:00:12+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.3.1",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.3.1",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.3.1"
+    },
+    {
+      "tag_name": "v1.3.0",
+      "name": "v1.3.0",
+      "body": "## What's Changed\r\n* Adds missing license by @yepher in https://github.com/livekit/client-sdk-unity/pull/153\r\n* fix the comment and default value for responseTimeout by @xianshijing-lk in https://github.com/livekit/client-sdk-unity/pull/161\r\n* chore: bump ffi to v0.12.39. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/163\r\n\r\n## New Contributors\r\n* @yepher made their first contribution in https://github.com/livekit/client-sdk-unity/pull/153\r\n* @xianshijing-lk made their first contribution in https://github.com/livekit/client-sdk-unity/pull/161\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.2.6...v1.3.0",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-10-27T09:26:00+00:00",
+      "published_at": "2025-10-27T09:27:02+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.3.0",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.3.0",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.3.0"
+    },
+    {
+      "tag_name": "v1.2.6",
+      "name": "v1.2.6",
+      "body": "## What's Changed\r\n* clear previous values of PublishDataRequest FFI Request object by @s-hamdananwar in https://github.com/livekit/client-sdk-unity/pull/150\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.2.5...v1.2.6",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-09-04T00:46:56+00:00",
+      "published_at": "2025-09-04T00:48:26+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.2.6",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.2.6",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.2.6"
+    },
+    {
+      "tag_name": "v1.2.5",
+      "name": "v1.2.5",
+      "body": "## What's Changed\r\n* disposed RGBA video frames to fix indefinite linear growth of memory by @s-hamdananwar in https://github.com/livekit/client-sdk-unity/pull/146\r\n\r\n## New Contributors\r\n* @s-hamdananwar made their first contribution in https://github.com/livekit/client-sdk-unity/pull/146\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.2.4...v1.2.5",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-08-16T22:10:01+00:00",
+      "published_at": "2025-08-16T22:10:46+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.2.5",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.2.5",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.2.5"
+    },
+    {
+      "tag_name": "v1.2.4",
+      "name": "v1.2.4",
+      "body": "## What's Changed\r\n* Upgrade FFI to 0.12.26 by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/129\r\n* fix: fix broken .so for android. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/130\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.2.3...v1.2.4",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-06-17T06:58:48+00:00",
+      "published_at": "2025-06-17T07:10:40+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.2.4",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.2.4",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.2.4"
+    },
+    {
+      "tag_name": "v1.2.3",
+      "name": "v1.2.3",
+      "body": "## What's Changed\r\n* Audio capture latency reduction by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/125\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.2.2...v1.2.3",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-05-29T01:55:10+00:00",
+      "published_at": "2025-05-29T01:56:04+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.2.3",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.2.3",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.2.3"
+    },
+    {
+      "tag_name": "v1.2.2",
+      "name": "v1.2.2",
+      "body": "## What's Changed\r\n* Fix video source memory handling by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/122\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.2.1...v1.2.2",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-05-24T00:36:19+00:00",
+      "published_at": "2025-05-24T00:37:09+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.2.2",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.2.2",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.2.2"
+    },
+    {
+      "tag_name": "v1.2.1",
+      "name": "v1.2.1",
+      "body": "## What's Changed\r\n* Additional audio fixes by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/118\r\n* Add E2E testing and CI workflow by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/113\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.2.0...v1.2.1",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-05-21T03:30:43+00:00",
+      "published_at": "2025-05-21T03:31:33+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.2.1",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.2.1",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.2.1"
+    },
+    {
+      "tag_name": "v1.2.0",
+      "name": "v1.2.0",
+      "body": "## What's Changed\r\n* Audio API improvements & microphone capture fix by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/114\r\n  -  Cleaner microphone publishing API. This is a breaking change; please see [this example](https://github.com/livekit/client-sdk-unity?tab=readme-ov-file#publishing-microphone) for proper usage.\r\n  -  Addresses an issue which caused increased microphone latency when an application entered the background.\r\n* Setup doc build by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/109\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.1.1...v1.2.0\r\n",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-05-14T01:06:39+00:00",
+      "published_at": "2025-05-14T01:12:11+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.2.0",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.2.0",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.2.0"
+    },
+    {
+      "tag_name": "v1.1.1",
+      "name": "v1.1.1",
+      "body": "## What's Changed\r\n* assign proper CPU platform on mac plugins by @holofermes in https://github.com/livekit/client-sdk-unity/pull/104\r\n* Fix memory leak by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/105\r\n* Local participant metadata & attributes by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/96\r\n* Invoke RtcAudioSource's stop method by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/106\r\n* Fix Android build error by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/110\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.1.0...v1.1.1",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-04-29T03:07:51+00:00",
+      "published_at": "2025-04-29T03:09:22+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.1.1",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.1.1",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.1.1"
+    },
+    {
+      "tag_name": "v1.1.0",
+      "name": "v1.1.0",
+      "body": "## What's Changed\r\n* fix: Optimize VideoSource capture and add WebCameraSource. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/59\r\n* FFI v0.12.2 & RPC by @bcherry in https://github.com/livekit/client-sdk-unity/pull/62\r\n* chore: add missing so for android. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/63\r\n* Fixes bugs with metadata and rpc by @CalinR in https://github.com/livekit/client-sdk-unity/pull/64\r\n* Prevent errors in win editor when copying cam texture by @holofermes in https://github.com/livekit/client-sdk-unity/pull/66\r\n* Add mute request case to prevent exception by @holofermes in https://github.com/livekit/client-sdk-unity/pull/68\r\n* Expose Participant.Attributes as a public field by @holofermes in https://github.com/livekit/client-sdk-unity/pull/70\r\n* Increase video timestamping precision from milli to micro by @holofermes in https://github.com/livekit/client-sdk-unity/pull/76\r\n* Expose LocalVideoTrack.source as a public field by @holofermes in https://github.com/livekit/client-sdk-unity/pull/72\r\n* Add GetSessionStatsReceived functionality by @holofermes in https://github.com/livekit/client-sdk-unity/pull/74\r\n* Update README.md to include audio source type by @Mo-Meta in https://github.com/livekit/client-sdk-unity/pull/78\r\n* [🤖 readme-manager] Update README by @davidzhao in https://github.com/livekit/client-sdk-unity/pull/82\r\n* Enhance RtcAudioSource  by @holofermes in https://github.com/livekit/client-sdk-unity/pull/81\r\n* update FFI to 0.12.10 by @bcherry in https://github.com/livekit/client-sdk-unity/pull/83\r\n* fix rendering error for WebCameraSource. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/86\r\n* Fix `IsConnected` property by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/94\r\n* Dynamically set video rotation by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/95\r\n* Data streams by @ladvoc in https://github.com/livekit/client-sdk-unity/pull/89\r\n* Update readme slack channel name by @bcherry in https://github.com/livekit/client-sdk-unity/pull/100\r\n\r\n## New Contributors\r\n* @bcherry made their first contribution in https://github.com/livekit/client-sdk-unity/pull/62\r\n* @CalinR made their first contribution in https://github.com/livekit/client-sdk-unity/pull/64\r\n* @holofermes made their first contribution in https://github.com/livekit/client-sdk-unity/pull/66\r\n* @Mo-Meta made their first contribution in https://github.com/livekit/client-sdk-unity/pull/78\r\n* @ladvoc made their first contribution in https://github.com/livekit/client-sdk-unity/pull/94\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.0.1...v1.1.0",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2025-04-10T21:37:10+00:00",
+      "published_at": "2025-04-10T21:44:54+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.1.0",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.1.0",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.1.0"
+    },
+    {
+      "tag_name": "v1.0.1",
+      "name": "v1.0.1",
+      "body": "## What's Changed\r\n* Update README.md by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/45\r\n* feat: support rendering callback for rtc video source. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/43\r\n* Add unpublish track to local participant, fix local track published event by @Mohelm97 in https://github.com/livekit/client-sdk-unity/pull/44\r\n* fix: re-add binaries to lfs. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/48\r\n* Fix bug in RtcVideoSource by @Mohelm97 in https://github.com/livekit/client-sdk-unity/pull/49\r\n* Update README.md by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/57\r\n* Add more method for Local/Remote Track. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/46\r\n\r\n## New Contributors\r\n* @Mohelm97 made their first contribution in https://github.com/livekit/client-sdk-unity/pull/44\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/compare/v1.0.0...v1.0.1",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2024-09-06T05:54:01+00:00",
+      "published_at": "2024-09-10T05:24:00+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.0.1",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.0.1",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.0.1"
+    },
+    {
+      "tag_name": "v1.0.0",
+      "name": "v1.0.0",
+      "body": "# Client SDK Unity v1.0.0\r\n\r\nThe first version that works on all native platforms\r\n\r\n## Supported Platforms\r\n\r\n- [x] Windows\r\n- [x] MacOS\r\n- [x] Linux\r\n- [x] iOS\r\n- [x] Android\r\n- [ ] WebGL\r\n\r\n## Example app\r\n\r\nhttps://github.com/livekit-examples/unity-example\r\n\r\n## What's Changed\r\n* Updated README by @davidzhao in https://github.com/livekit/client-sdk-unity/pull/4\r\n* Add NOTICE by @dsa in https://github.com/livekit/client-sdk-unity/pull/17\r\n* protocol update by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/24\r\n* Fix Editor Running for Windows and Linux. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/27\r\n* Updates from Decentraland's fork by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/26\r\n* Fix exceptions in events by @sus-yoshikane-t in https://github.com/livekit/client-sdk-unity/pull/30\r\n* Fix bug for RtcAudioSource by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/29\r\n* update ffi protocol to v0.4.7 by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/31\r\n* Add script to download ffi binaries. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/39\r\n* Ffi/upgrade to v0.6.1 by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/40\r\n* try to fix audio delay. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/38\r\n* feat: Support for iOS. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/36\r\n* fix bug for RtcVideoSources. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/42\r\n* Add `Type` for `RtcAudioSource`. by @cloudwebrtc in https://github.com/livekit/client-sdk-unity/pull/41\r\n\r\n## New Contributors\r\n* @davidzhao made their first contribution in https://github.com/livekit/client-sdk-unity/pull/4\r\n* @dsa made their first contribution in https://github.com/livekit/client-sdk-unity/pull/17\r\n* @cloudwebrtc made their first contribution in https://github.com/livekit/client-sdk-unity/pull/24\r\n* @sus-yoshikane-t made their first contribution in https://github.com/livekit/client-sdk-unity/pull/30\r\n\r\n**Full Changelog**: https://github.com/livekit/client-sdk-unity/commits/v1.0.0",
+      "draft": false,
+      "prerelease": false,
+      "created_at": "2024-07-03T12:14:26+00:00",
+      "published_at": "2024-07-03T12:25:14+00:00",
+      "url": "https://github.com/livekit/client-sdk-unity/releases/tag/v1.0.0",
+      "tarball_url": "https://api.github.com/repos/livekit/client-sdk-unity/tarball/v1.0.0",
+      "zipball_url": "https://api.github.com/repos/livekit/client-sdk-unity/zipball/v1.0.0"
+    }
+  ]
+}

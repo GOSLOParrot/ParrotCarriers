@@ -1,0 +1,18 @@
+{
+  "name": "livekit-examples-pull",
+  "description": "拉取 livekit-examples 下的 agents-example-unity 和 python-agents-examples",
+  "targets": [
+    {
+      "repo": "livekit-examples/agents-example-unity",
+      "output": "../livekit/agents-example-unity",
+      "depth": "medium",
+      "keywords": ["Unity", "Agent", "RPC", "DataChannel", "RegisterRpcMethod"]
+    },
+    {
+      "repo": "livekit-examples/python-agents-examples",
+      "output": "../livekit/python-agents-examples",
+      "depth": "medium",
+      "keywords": ["tool_calling", "gemini", "rpc", "multimodal", "vision"]
+    }
+  ]
+}

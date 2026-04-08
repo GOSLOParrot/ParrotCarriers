@@ -1,0 +1,37 @@
+# ParrotCarriers 本地开发环境
+# 用法: docker compose -f infra/docker-compose.dev.yml up -d
+#
+# 包含: Redis + LiveKit Server（本地联调用）
+# Brain Agent 通过 `python -m parrot.brain.agent console` 可以在纯终端跑（无需 LiveKit）
+# 当需要 Unity 客户端或多参与者测试时，启动此 compose
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  livekit:
+    image: livekit/livekit-server:v1.10.1
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "7880:7880"       # HTTP/WebSocket 信令
+      - "7881:7881"       # WebRTC TCP Fallback
+    volumes:
+      - ./livekit/livekit-dev.yaml:/etc/livekit.yaml
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+
+volumes:
+  redis_data:

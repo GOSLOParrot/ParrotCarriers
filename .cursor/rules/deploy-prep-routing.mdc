@@ -1,0 +1,42 @@
+---
+description: 部署准备与主机基线检查路由
+globs:
+  - "infra/**/*"
+  - "docs/middleaudit/*.md"
+  - "docs/InfoCollections/Opus/*.md"
+alwaysApply: false
+---
+
+# Deploy Prep Routing
+
+## 目的
+
+当任务涉及 ECS、Ubuntu、Docker、Compose、LiveKit 自托管、端口、安全组、TLS、环境变量时，优先走部署准备路由，不与 Bus 协议设计混在一起。
+
+## 路由规则
+
+### 1) ECS / Ubuntu 主机检查
+- 主 skill: `bus-deploy-livekit-ecs`
+- 输出: 实例规格、系统版本、Docker 状态、端口计划、域名 / TLS 准备情况
+
+### 2) LiveKit 自托管部署
+- 主 skill: `bus-deploy-livekit-ecs`
+- 强制参考: LiveKit self-hosting 官方文档
+- `livekit-agents` 仅作为 Agents SDK / Worker 侧补充参考，不作为 self-hosting / Docker / firewall / TURN / LB 的主 skill
+- 输出: `livekit.yaml` / env 字段清单、端口需求、最小部署拓扑
+
+### 3) Docker / Compose 编排
+- 参考规则: `docker-best-practices.mdc`
+- 输出: compose 结构、volume、restart、network、env_file 规范
+
+### 4) Python Worker 服务实现
+- 主 skill: `agent-starter-python`
+- 约束: asyncio 严格模式，不混用 threading / multiprocessing；依赖通过 `pyproject.toml` 管理
+- 输出: async I/O、依赖约束、worker 启动结构
+
+## 固定约束
+
+1. Docker 规范是通用护栏，不代替 LiveKit 官方部署说明。
+2. LiveKit 相关端口、配置项、部署拓扑以官方文档为准。
+3. Python worker 默认遵守 asyncio 严格约束。
+4. 部署准备不等于协议冻结；不要在部署任务里发散设计 Bus 协议。

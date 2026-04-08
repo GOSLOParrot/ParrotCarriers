@@ -1,0 +1,46 @@
+# 环境变量（含 API Key，勿提交）
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+*.egg
+
+# IDE
+.vscode/
+!.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+redis_data/
+neo4j_data/
+
+# Unity (both ParrotDev and future ParrotAR)
+unity/*/Library/
+unity/*/Temp/
+unity/*/Obj/
+unity/*/Build/
+unity/*/Builds/
+unity/*/Logs/
+unity/*/UserSettings/
+unity/*/MemoryCaptures/
+*.csproj
+*.sln
+
+# Cursor internal (plans are Cursor-generated, not project docs)
+.cursor/plans/
+terminals/
+agent-transcripts/
+
+# Temporary transfer files
+FilePort/

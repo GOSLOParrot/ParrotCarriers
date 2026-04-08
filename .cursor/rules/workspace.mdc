@@ -1,0 +1,57 @@
+---
+description: ParrotCarriers 工作区全局路由与项目概述
+globs: []
+alwaysApply: true
+---
+
+# ParrotCarriers — 工作区路由
+
+## 项目定位
+
+ParrotCarriers 是 GOSLOParrot 的通信总线子项目（RFC 1149: IPoAC, but powered by parrots），构建 Unity AR + 三层 Bus 的传输骨架。
+
+## 当前阶段
+
+查看 `.cursor/memory/active_context.md` 获取当前进度与下一步计划。
+
+当前状态：
+
+1. **Phase 1 实施中**（Bus-first：模块化基础设施 + 核心骨架代码已创建）
+2. 需求清单 v2 已完成，模块划分已完成，目录结构已就绪，依赖已安装
+3. `nanobot` 已 fork 到 `GOSLOParrot/nanobot`，作为 Integration 模块（独立仓库）
+
+## 文件路由表
+
+| 要找什么 | 去哪里 |
+|:---------|:-------|
+| **全局索引**（唯一真相源） | `.cursor/memory/INDEX.md` |
+| **当前进度与下一步** | `.cursor/memory/active_context.md` |
+| **完整功能需求 v2**（67 功能项 + 决策） | `.cursor/memory/requirements.md` |
+| **模块划分与目录结构** | `.cursor/memory/architecture/module_division.md` |
+| **总线架构 v4.2**（三层协议 + 拓扑） | `.cursor/memory/architecture/bus_v4.md` |
+| **内部数据流 v3**（Brain/DSG/Scheduler 内部） | `.cursor/memory/architecture/system_core.md` |
+| **家族拓扑** | `.cursor/memory/architecture/scene.md` |
+| **架构与决策总览** | `docs/InfoCollections/HumanPlan/legacy.md` |
+| **服务器部署摘要（东京双节点）** | `docs/InfoCollections/HumanPlan/legacy.md` |
+| **调研遗产（22+篇）** | `docs/InfoCollections/Opus/` → 见 `Opus/INDEX.md` |
+| **领域技能** | `.cursor/skills/` — 按需发现；`nanobot` 优先显式调用 |
+| **协议污染复盘** | `.cursor/memory/BigIssue.md` |
+
+## 关键约束
+
+1. **服务器**: 东京双节点 — 常驻城堡 (2C8G ECS) + 按需机甲 (A10 抢占式)，同 VPC
+2. **Bus-first**: Phase 1 = 搭好 Bus 基础设施 + 模块化，使各模块可独立开发
+3. **代码驱动协议**: 不在纸上做协议 schema 设计，候选字段等代码验证后收敛
+4. **统一术语**: 当前标准名为 `Scheduler`；历史文档或旧稿中也可能写 `Dispatcher`。Phase 1 实现为 `SimpleRouter`
+5. **INDEX.md 为唯一真相源**: 所有路径、目录用途以 INDEX.md 为准
+
+## 源码结构速查
+
+```
+src/parrot/          Python 源码根
+├── bus/             总线框架（注册/心跳/挂载/Processor 接口）
+├── brain/           云端大脑（Gemini Agent + Tools）
+├── scheduler/       调度器（SimpleRouter + Blackboard）
+├── dsg/             DSG 感知（Phase 2 填充）
+└── shared/          跨模块共享（config/redis/constants/types）
+```

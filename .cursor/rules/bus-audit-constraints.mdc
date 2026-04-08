@@ -1,0 +1,250 @@
+---
+description: ParrotCarriers Bus 架构护栏。模块划分审计已完成（见 module_division.md），本文件保留为编码期间的设计原则护栏。
+globs:
+  - "src/parrot/**"
+  - ".cursor/memory/architecture/*.md"
+alwaysApply: false
+---
+
+# Bus 架构护栏（ParrotCarriers 定制）
+
+> **审计状态**: Phase 0 审计已完成 → 模块划分见 `module_division.md`，需求见 `requirements.md` v2。
+> 本文件保留为 Phase 1+ 编码期间的**设计原则护栏**，防止实现偏航。
+
+约束"多仓拉取 → 改造 → 缝合"这一实现方式下的架构护栏。  
+基于 2025-2026 专业工程实践提炼，针对本项目定制。
+
+---
+
+## 一、本项目实现模式与特有风险
+
+ParrotCarriers **不从零写**，而是从多个上游仓库（LiveKit、SVA/DSG、Graphiti、Nanobot、Unity SDK）拉取能力，改造后缝合为统一 Bus。
+
+这个模式有四个特有风险，审计时必须主动对抗：
+
+| 风险 | 表现 | 审计约束 |
+|:-----|:-----|:---------|
+| **结构污染** | 上游目录/类名直接变成本项目模块名 | 先抽能力，再映射候选模块；不允许上游结构反向决定本项目结构 |
+| **协议泄漏** | 上游内部 API / 运行时对象跨越缝合边界传播 | 缝合点必须是项目自定义契约（Envelope/DTO），消费方不能依赖上游实现细节 |
+| **范围蔓延** | 被上游完整功能集带偏，默认全部引入 | 每个仓库必须填"借鉴 / 排除 / 改造"三栏，不列出的默认排除 |
+| **上游偏离** | fork 改造后上游仍在演进，维护成本累积 | 标注每个上游仓库的预期偏离速度和维护策略 |
+
+---
+
+## 二、多仓能力提取约束（审计前置）
+
+**任何模块划分审计开始前**，必须先完成能力来源矩阵：
+
+```
+| 仓库           | 借鉴能力              | 排除内容                   | 改造要求                       | 上游偏离风险         |
+| livekit-agents | Worker/Room/RPC 骨架  | Plugin 内部注册机制         | 封装为项目 Scheduler 接口      | 低（接口稳定）       |
+| sva-vision     | Processor 挂载模式    | 完整 NodeState 语义体系     | 只借 Processor 契约，重写内部  | 中（视觉模型迭代快） |
+| graphiti       | episode/search API   | 完整 Neo4j 操作原语         | 封装 group_id 分区写入层       | 低（API 稳定）       |
+| nanobot        | 后台 Agent 任务模式   | 平台专属 heartbeat 机制     | 适配 Redis 松耦合接口          | 中（仍活跃开发）     |
+| client-sdk-unity | RPC + DataChannel 骨架 | SDK 内部 Room 状态管理   | 封装 RPC 执行口 + 遥测上报口   | 低                   |
+```
+
+**约束：**
+1. 每行"改造要求"为空必须说明原因，否则视为未审计。
+2. 上游偏离风险为"高"的仓库，必须在候选模块设计中标注隔离边界（Integration Module 壳）。
+3. 不允许在不填矩阵的情况下直接输出候选模块划分。
+
+---
+
+## 三、模块划分审计约束
+
+### 3.1 MFD 三类模块分类（每个候选模块必填）
+
+基于 Module-First Development（2025）：
+
+| 类型 | 定义 | 本项目举例 |
+|:-----|:-----|:----------|
+| **Core** | 业务逻辑，确定性，可隔离单测 | AgentSession 逻辑、DSG 感知处理、py-trees 行为决策 |
+| **Integration** | 封装外部依赖，薄适配层，屏蔽上游波动 | LiveKit 适配器、Graphiti 写入封装、Redis 接口封装、Unity RPC 封装 |
+| **Glue** | 组装和编排，保持简单，可通过观察验证 | 启动脚本、Compose 编排、模块装配入口 |
+
+**约束：**
+- Core 模块的 API 契约必须能在不依赖外部服务的情况下测试。
+- Integration 模块是上游改造的边界；上游偏离只影响 Integration 层，不应扩散到 Core。
+- Glue 模块复杂度升高时，必须重构为 Core。
+- "漏抽象"（Integration 模块暴露了上游内部概念给 Core）= 契约设计错误，需修正。
+
+### 3.2 变化频率分类（稳定域 / 易变域 / 适配域）
+
+按"这个模块多久会变"来分组，不是按技术层：
+
+- **稳定域（Stable）**：变化少，高度受控 → LiveKit 传输协议、Redis Blackboard 键、Graphiti group_id 分区
+- **易变域（Volatile）**：持续迭代 → 视觉管线（模型升级）、Agent 系统 prompt、行为树逻辑
+- **适配域（Adaptive）**：随上游变化 → 所有 Integration 模块
+
+**约束：** 稳定域模块不应与易变域模块直接耦合；易变域变化不应破坏稳定域的外部接口。
+
+### 3.3 A10 可降级标注（本项目强制）
+
+每个候选模块必须标注：
+- `A10-required`：A10 关闭时无法运行（满血 SAM2 视觉管线）
+- `A10-degraded`：A10 关闭时降级运行（YOLO-World 降级为 CPU 兜底）
+- `A10-independent`：A10 状态不影响（LiveKit 通信、Graphiti 写入、Nanobot 后台）
+
+**未标注 = 未完成审计。**
+
+### 3.4 模块边界反模式（禁止）
+
+- **分布式单体**：多"模块"实际必须同时部署
+- **共享状态耦合**：多模块绕过接口直接读写同一数据结构
+- **God 模块**：单模块承载 >60% 业务逻辑
+- **同步链过长**：单请求经过 ≥4 次同步调用
+- **漏抽象**：Core 模块中出现上游仓库的内部类型或概念
+
+---
+
+## 四、网络拓扑审计约束
+
+### 4.1 拓扑驱动的落位（四维决策，替代"先写好先放"）
+
+落位决策必须回答这四个维度，而不是凭感觉：
+
+| 维度 | 问题 | Castle 倾向 | Mecha 倾向 |
+|:-----|:-----|:------------|:-----------|
+| **数据引力** | 数据在哪里产生/被最频繁访问？ | 控制状态（Redis、会话）、长期知识（Neo4j） | 视频帧、GPU 推理结果 |
+| **延迟边界** | 哪些模块必须同机或同子网才能满足延迟要求？ | 实时 Agent + LiveKit Server | GPU Worker + 视觉管线 |
+| **故障隔离** | 这个模块崩溃，应该隔离影响的边界是什么？ | 控制面故障不传导到视觉处理 | GPU OOM 不影响通信层 |
+| **资源亲和** | 模块需要什么资源特性？ | CPU / 内存 / 网络 IO | GPU / 显存 / 矩阵计算 |
+
+### 4.2 流量方向区分（必须显式标注）
+
+- **North-South**（外部 ↔ 服务器）：Unity AR ↔ LiveKit、移动端 ↔ Castle
+- **East-West**（服务器内部）：Castle 内各 Worker、Castle ↔ Mecha（同 VPC 内网）
+
+**约束：**
+- East-West 流量必须走 VPC 内网，不得绕出公网。
+- 管理端口（Neo4j 7474/7687、Redis 6379、内部监控）只允许出现在 East-West 中。
+- 对外暴露端口最小化原则：只有 LiveKit（7880/7881/3478）和必要 HTTPS 端口出现在 North-South。
+
+### 4.3 必须预留的扩展拓扑口
+
+审计时显式列出"当前不实现，但必须预留"的接口，至少包含：
+- DSG 触发器 → py-trees 调度接口
+- py-trees → Nanobot 长任务分发接口（Redis Channel）
+- 多房间 / 外部系统桥接口
+- Mecha GPU Worker 的启动/停止控制信号接口
+
+**不列出预留项 = 默认不考虑扩展。**
+
+---
+
+## 五、连接关系审计约束
+
+### 5.1 消费方驱动契约（Consumer-Driven Contracts）
+
+**缝合点的接口由下游消费者定义，而不是上游提供者**：
+- 先问"消费者需要什么格式/频率/语义"，再决定提供者暴露什么。
+- Integration 模块负责把上游输出翻译成消费者需要的格式。
+- 不允许消费方直接依赖提供方的内部运行时对象。
+
+### 5.2 每条连接必须有验证信号 + 爆炸半径
+
+每条候选连接路径必须填写：
+
+```
+连接：[模块A] → [模块B]
+通道：RPC / Redis Stream / DataChannel / 直调
+验证信号：[什么输入 → 什么输出可观测]
+失败信号：[失败时的可观测表现]
+爆炸半径：[此连接失败时，哪些其他功能会连锁失败]
+是否关键路径：yes / no
+```
+
+### 5.3 通道选择约束
+
+| 场景 | 推荐通道 | 禁止 |
+|:-----|:---------|:-----|
+| 实时命令（Agent → Unity） | LiveKit RPC（Reliable） | DataChannel 传命令 |
+| 遥测上报（Unity → Python） | DataChannel Lossy（1300B） | RPC（过重） |
+| 后台长任务分发 | Redis Stream / Channel | 同步调用（阻塞主链路） |
+| 长期知识写入 | Graphiti 异步写入 | 实时帧循环内直接写 |
+| 模块间状态共享 | Redis Blackboard | 跨模块共享内存 / 直接引用对象 |
+| GPU Worker 触发 | Redis Channel + 轮询 | HTTP 同步调用（Castle → Mecha 不走 HTTP） |
+
+### 5.4 连接实验优先级（按爆炸半径排序，先验高风险）
+
+1. 音视频实时链路（Unity → LiveKit → Python Agent）— 爆炸半径：全系统
+2. RPC 指令执行链路（Agent → LiveKit RPC → Unity Animator）— 爆炸半径：所有 Unity 动作
+3. Redis Blackboard 读写（Agent / py-trees → Redis）— 爆炸半径：所有状态依赖模块
+4. 后台任务分发（py-trees → Redis → Nanobot → 回写 Graphiti）— 爆炸半径：长任务功能
+5. Processor 挂载链路（DSG → LiveKit Processor → Agent 上下文注入）— 爆炸半径：感知功能
+6. 知识层写入回读（Graphiti Write → Graphiti Search）— 爆炸半径：记忆功能
+
+---
+
+## 六、部署候选落位审计约束
+
+### 6.1 落位输出格式
+
+每个候选模块的落位表必须包含：
+
+```
+| 模块名         | MFD类型    | 稳定域    | A10依赖        | 落位候选 | 置信度    | One-Way Door | 备注 |
+| AgentSession   | Core       | Volatile  | A10-independent | Castle  | confirmed | ✓ 入口节点   | ... |
+| DSG-L1-Vision  | Core       | Volatile  | A10-required    | Mecha   | candidate | —            | ... |
+```
+
+### 6.2 置信度定义
+
+- `confirmed`：拓扑四维（数据引力/延迟/故障隔离/资源）全部分析，无竞争方案
+- `candidate`：主方向确定，但至少一个维度待验证
+- `tbd`：职责未确定或存在明显竞争方案
+
+**所有 `tbd` 必须附带"下一步需验证什么才能变为 candidate"。**
+
+### 6.3 One-Way Door 标注（不可逆决策，必须二次确认）
+
+- 数据持久化位置：Neo4j / Graphiti 存在哪台机器
+- 实时媒体入口节点：LiveKit Server 部署在哪里
+- Redis 是否跨 VPC 暴露
+- 任何需要 Unity 客户端代码变更才能修改的服务端接口
+
+---
+
+## 七、审计输出要求（本阶段强制，缺一不算完成）
+
+| # | 输出项 | 关键字段 |
+|:--|:-------|:---------|
+| 1 | **需求与阶段目标摘要** | 要满足什么 / 明确不要求什么 |
+| 2 | **能力来源矩阵** | 借鉴/排除/改造/上游偏离风险四栏 |
+| 3 | **候选模块边界表** | MFD类型 + 稳定域 + A10依赖等级 |
+| 4 | **候选网络拓扑描述** | North-South/East-West 区分 + 预留口 |
+| 5 | **候选连接实验清单** | 验证信号 + 失败信号 + 爆炸半径 |
+| 6 | **候选部署落位表** | 置信度 + One-Way Door + 拓扑四维依据 |
+| 7 | **本阶段不做清单** | 明确排除项，带延后理由 |
+
+---
+
+## 八、偏航检测（任意触发，立即停止并修正）
+
+| 偏航表现 | 修正动作 |
+|:---------|:---------|
+| 直接给出最终模块名或最终目录 | 改为"候选"口径，标不确定项 |
+| 上游仓库类名/函数名出现在候选模块名中 | 先抽能力，再重新映射到项目语言 |
+| Core 模块依赖了上游内部类型 | 加 Integration 层隔离 |
+| 连接缺少爆炸半径标注 | 补充后继续 |
+| 落位依据是"先写好先放"或"随便放" | 退回拓扑四维分析 |
+| 候选落位 confirmed 但无四维分析 | 降为 candidate |
+| 某模块未标注 MFD 类型、稳定域、A10 依赖 | 补标后继续 |
+| 审计输出七项中缺任何一项 | 必须补全再收口 |
+| 审计过程中开始讨论最终目录结构 | 拉回到"候选边界"口径 |
+
+---
+
+## 九、参考来源与关联文档
+
+| 要找什么 | 去哪里 |
+|:---------|:-------|
+| **全局索引** | `.cursor/memory/INDEX.md` |
+| **完整功能需求 v2** | `.cursor/memory/requirements.md` |
+| **模块划分（审计产出）** | `.cursor/memory/architecture/module_division.md` |
+| 部署 / Docker / ECS 操作 | `deploy-prep-routing.mdc` |
+| 协议污染复盘 | `.cursor/memory/BigIssue.md` |
+| 总线架构 v4.2 | `.cursor/memory/architecture/bus_v4.md` |
+| 内部数据流 v3 | `.cursor/memory/architecture/system_core.md` |
+| 当前进度 | `.cursor/memory/active_context.md` |
