@@ -10,22 +10,29 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from parrot.shared.config import ParrotConfig
 
-from livekit.api import AccessToken, VideoGrants
+from livekit.api import AccessToken, RoomAgentDispatch, VideoGrants
+from livekit.protocol.room import RoomConfiguration
+
+AGENT_NAME = "parrot-brain"
 
 
 def generate(
     identity: str = "unity-dev",
     room: str | None = None,
-    ttl: int = 3600,
+    ttl_seconds: int = 3600,
 ) -> str:
     cfg = ParrotConfig()
     room = room or cfg.livekit.room_name
 
+    room_config = RoomConfiguration(
+        agents=[RoomAgentDispatch(agent_name=AGENT_NAME)],
+    )
     token = (
         AccessToken(cfg.livekit.api_key, cfg.livekit.api_secret)
         .with_identity(identity)
@@ -36,7 +43,8 @@ def generate(
                 room=room,
             )
         )
-        .with_ttl(ttl)
+        .with_room_config(room_config)
+        .with_ttl(timedelta(seconds=ttl_seconds))
     )
     return token.to_jwt()
 
@@ -48,7 +56,7 @@ def main():
     parser.add_argument("--ttl", type=int, default=3600, help="Token TTL in seconds (default: 3600)")
     args = parser.parse_args()
 
-    jwt = generate(identity=args.identity, room=args.room, ttl=args.ttl)
+    jwt = generate(identity=args.identity, room=args.room, ttl_seconds=args.ttl)
 
     print(f"\n  Identity : {args.identity}")
     print(f"  Room     : {args.room or ParrotConfig().livekit.room_name}")

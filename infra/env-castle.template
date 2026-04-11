@@ -1,0 +1,19 @@
+# ParrotCarriers Castle 环境变量模板
+# 复制到 Castle 的 /opt/parrotcarriers/.env 并填入真实值
+
+# ========== Google / Gemini ==========
+GOOGLE_API_KEY=<your-google-api-key>
+
+# ========== Redis (Docker 内部通信, 绑定 127.0.0.1) ==========
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+# ========== LiveKit ==========
+# Castle 对外地址 (客户端通过此地址连接)
+LIVEKIT_URL=ws://8.216.45.45:7880
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+LIVEKIT_ROOM=parrot-main
+
+# ========== Debug ==========
+PARROT_DEBUG=false

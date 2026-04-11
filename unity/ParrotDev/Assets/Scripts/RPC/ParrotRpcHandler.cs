@@ -5,8 +5,8 @@ using LiveKit;
 
 /// <summary>
 /// Registers RPC methods that the Brain Agent calls via _rpc_bridge.py:
-///   "flyTo"   → ParrotController.FlyTo(Vector3)
-///   "animate" → ParrotController.PlayAnimation(string)
+///   "flyTo"   -> ParrotController.FlyTo(Vector3)
+///   "animate" -> ParrotController.PlayAnimation(string)
 ///
 /// Attach to the same GameObject as ParrotController.
 /// </summary>
@@ -45,7 +45,7 @@ public class ParrotRpcHandler : MonoBehaviour
 
     private async Task<string> HandleFlyTo(RpcInvocationData data)
     {
-        Debug.Log($"[ParrotRPC] flyTo ← {data.CallerIdentity}: {data.Payload}");
+        Debug.Log($"[ParrotRPC] flyTo <- {data.CallerIdentity}: {data.Payload}");
         try
         {
             var p = JsonUtility.FromJson<FlyToPayload>(data.Payload);
@@ -69,7 +69,7 @@ public class ParrotRpcHandler : MonoBehaviour
 
     private async Task<string> HandleAnimate(RpcInvocationData data)
     {
-        Debug.Log($"[ParrotRPC] animate ← {data.CallerIdentity}: {data.Payload}");
+        Debug.Log($"[ParrotRPC] animate <- {data.CallerIdentity}: {data.Payload}");
         try
         {
             var p = JsonUtility.FromJson<AnimatePayload>(data.Payload);

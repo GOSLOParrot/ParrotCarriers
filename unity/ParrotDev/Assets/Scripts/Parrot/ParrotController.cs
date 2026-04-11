@@ -2,10 +2,10 @@ using UnityEngine;
 
 /// <summary>
 /// Controls the parrot GameObject: movement and animation.
-/// Phase 1 uses a simple cube stand-in; Phase 2 swaps in the Minecraft model.
+/// Supports both real GOSLO model (with child renderers) and dev Cube.
 ///
-/// FlyTo: smooth lerp to target position.
-/// PlayAnimation: triggers Animator states (or logs in dev mode without Animator).
+/// FlyTo: smooth MoveTowards to target position.
+/// PlayAnimation: triggers Animator states, or visual pulse as dev fallback.
 /// </summary>
 public class ParrotController : MonoBehaviour
 {
@@ -13,37 +13,49 @@ public class ParrotController : MonoBehaviour
     [SerializeField] private float moveSpeed = 3f;
     [SerializeField] private float arrivalThreshold = 0.05f;
 
-    [Header("Visual Feedback (Dev)")]
-    [SerializeField] private Color idleColor = Color.green;
-    [SerializeField] private Color movingColor = Color.yellow;
-    [SerializeField] private Color animatingColor = Color.cyan;
-
     private Vector3 _targetPosition;
     private bool _isMoving;
     private Animator _animator;
-    private Renderer _renderer;
+    private Renderer[] _renderers;
     private string _currentAnimation = "idle";
+
+    private Vector3 _baseScale;
+    private float _pulseTimer;
+    private bool _isPulsing;
 
     void Awake()
     {
-        _animator = GetComponent<Animator>();
-        _renderer = GetComponent<Renderer>();
+        _animator = GetComponentInChildren<Animator>();
+        _renderers = GetComponentsInChildren<Renderer>();
         _targetPosition = transform.position;
+        _baseScale = transform.localScale;
     }
 
     void Update()
     {
-        if (!_isMoving) return;
-
-        transform.position = Vector3.MoveTowards(
-            transform.position, _targetPosition, moveSpeed * Time.deltaTime);
-
-        if (Vector3.Distance(transform.position, _targetPosition) < arrivalThreshold)
+        if (_isMoving)
         {
-            transform.position = _targetPosition;
-            _isMoving = false;
-            SetDevColor(idleColor);
-            Debug.Log($"[Parrot] Arrived at {_targetPosition}");
+            transform.position = Vector3.MoveTowards(
+                transform.position, _targetPosition, moveSpeed * Time.deltaTime);
+
+            if (Vector3.Distance(transform.position, _targetPosition) < arrivalThreshold)
+            {
+                transform.position = _targetPosition;
+                _isMoving = false;
+                Debug.Log($"[Parrot] Arrived at {_targetPosition}");
+            }
+        }
+
+        if (_isPulsing)
+        {
+            _pulseTimer += Time.deltaTime * 4f;
+            float s = 1f + Mathf.Sin(_pulseTimer) * 0.1f;
+            transform.localScale = _baseScale * s;
+            if (_pulseTimer > Mathf.PI * 4f)
+            {
+                _isPulsing = false;
+                transform.localScale = _baseScale;
+            }
         }
     }
 
@@ -52,8 +64,7 @@ public class ParrotController : MonoBehaviour
     {
         _targetPosition = target;
         _isMoving = true;
-        SetDevColor(movingColor);
-        Debug.Log($"[Parrot] FlyTo → {target}");
+        Debug.Log($"[Parrot] FlyTo -> {target}");
 
         if (_animator != null)
         {
@@ -66,7 +77,7 @@ public class ParrotController : MonoBehaviour
     public void PlayAnimation(string animationName)
     {
         _currentAnimation = animationName;
-        Debug.Log($"[Parrot] PlayAnimation → {animationName}");
+        Debug.Log($"[Parrot] PlayAnimation -> {animationName}");
 
         if (_animator != null)
         {
@@ -75,14 +86,9 @@ public class ParrotController : MonoBehaviour
         }
         else
         {
-            SetDevColor(animatingColor);
-            Debug.Log($"[Parrot] (no Animator) Would play: {animationName}");
+            _isPulsing = true;
+            _pulseTimer = 0f;
+            Debug.Log($"[Parrot] (no Animator) Pulse for: {animationName}");
         }
-    }
-
-    private void SetDevColor(Color c)
-    {
-        if (_renderer != null && _renderer.material != null)
-            _renderer.material.color = c;
     }
 }

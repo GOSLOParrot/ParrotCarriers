@@ -1,0 +1,56 @@
+---
+description: LiveKit Unity SDK 版本适配注意事项
+globs:
+  - "unity/**/*.cs"
+alwaysApply: false
+---
+
+# LiveKit Unity SDK 适配规则
+
+## 版本管理
+
+1. SDK 通过 UPM git URL 安装（`https://github.com/livekit/client-sdk-unity.git`），拉取的是最新 main 分支。
+2. SDK 的 README 示例代码可能落后于实际 API — 生成 C# 代码前必须读实际 SDK 源码确认签名。
+3. 实际源码位置: `Library/PackageCache/io.livekit.livekit-sdk@<hash>/Runtime/Scripts/`
+
+## 已知 API 差异 (v1.3.5, 2026-04)
+
+### Room.Connect 需要三个参数
+```csharp
+// SDK 实际签名 (Room.cs):
+public ConnectInstruction Connect(string url, string token, RoomOptions options)
+
+// 错误写法 (README 示例可能省略 options):
+var connect = room.Connect(url, token);          // 编译错误 CS7036
+
+// 正确写法:
+var connect = room.Connect(url, token, new RoomOptions());
+```
+
+### ConnectInstruction 没有 .Error 属性
+```csharp
+// ConnectInstruction 继承 YieldInstruction，只有:
+//   bool IsError { get; }
+//   bool IsDone { get; }
+// 没有 .Error 字符串属性
+
+// 错误写法:
+Debug.LogError($"Failed: {connect.Error}");      // 编译错误 CS1061
+
+// 正确写法:
+if (connect.IsError) Debug.LogError("Connection failed");
+```
+
+### RPC 注册在 LocalParticipant 上
+```csharp
+room.LocalParticipant.RegisterRpcMethod("methodName", handler);
+// handler 签名: async Task<string>(RpcInvocationData data)
+// data 包含: CallerIdentity, Payload, ResponseTimeout
+```
+
+## 审查流程
+
+生成或修改 Unity C# 代码时:
+1. 先检查 `Library/PackageCache/io.livekit.livekit-sdk@*/Runtime/Scripts/` 中的实际类定义
+2. 不要依赖 README 或 WebSearch 的示例代码作为唯一 API 参考
+3. 注意 SDK 的 `namespace LiveKit` — 所有类型在 `LiveKit` 命名空间下

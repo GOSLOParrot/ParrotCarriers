@@ -69,12 +69,12 @@ public class RoomManager : MonoBehaviour
         };
 
         Debug.Log($"[RoomManager] Connecting to {serverUrl} ...");
-        var connect = Room.Connect(serverUrl, joinToken);
+        var connect = Room.Connect(serverUrl, joinToken, new RoomOptions());
         yield return connect;
 
         if (connect.IsError)
         {
-            Debug.LogError($"[RoomManager] Connection failed: {connect.Error}");
+            Debug.LogError("[RoomManager] Connection failed");
             yield break;
         }
 
