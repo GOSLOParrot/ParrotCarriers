@@ -36,24 +36,28 @@ Write-Host "`n==== Castle 同步 -> $CASTLE_IP ====" -ForegroundColor Magenta
 # ──────────────────────────────────────────────────────────
 Step "1/4" "代码同步 (git pull)"
 
-$pcOut = Invoke-Expression "$SSH root@$CASTLE_IP 'cd $REMOTE_PC; git pull origin master 2>&1'"
-if ($pcOut -match "Already up to date") { OK "ParrotCarriers 已是最新" }
-else { OK "ParrotCarriers: $($pcOut -join ' ' | Select-String 'master' | ForEach-Object { $_.Line })" }
+$pcOut = & ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 root@$CASTLE_IP `
+    "cd $REMOTE_PC; git pull origin master 2>&1"
+$pcChanged = $pcOut -notmatch "Already up to date"
+if ($pcChanged) { OK "ParrotCarriers: 有更新" } else { OK "ParrotCarriers: 已是最新" }
 
-$nbOut = Invoke-Expression "$SSH root@$CASTLE_IP 'cd $REMOTE_NB; git pull origin main 2>&1'"
-if ($nbOut -match "Already up to date") { OK "nanobot 已是最新" }
-else { OK "nanobot: $($nbOut -join ' ' | Select-String 'main' | ForEach-Object { $_.Line })" }
+$nbOut = & ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 root@$CASTLE_IP `
+    "cd $REMOTE_NB; git pull origin main 2>&1"
+$nbChanged = $nbOut -notmatch "Already up to date"
+if ($nbChanged) { OK "nanobot: 有更新" } else { OK "nanobot: 已是最新" }
 
 # ──────────────────────────────────────────────────────────
 # 2. 依赖安装（有代码更新时）
 # ──────────────────────────────────────────────────────────
-$codeChanged = ($pcOut -notmatch "Already up to date") -or ($nbOut -notmatch "Already up to date")
+$codeChanged = $pcChanged -or $nbChanged
 
 Step "2/4" "Python 依赖"
 if ($codeChanged) {
     Write-Host "    检测到代码变更，重装依赖..." -ForegroundColor DarkGray
-    Invoke-Expression "$SSH root@$CASTLE_IP 'cd $REMOTE_PC; .venv/bin/pip install -q -e .[dev,memory] 2>&1 | tail -2'"
-    Invoke-Expression "$SSH root@$CASTLE_IP 'cd $REMOTE_PC; .venv/bin/pip install -q -e ${REMOTE_NB}[parrot] 2>&1 | tail -2'"
+    & ssh -o StrictHostKeyChecking=no root@$CASTLE_IP `
+        "cd $REMOTE_PC; .venv/bin/pip install -q -e '.[dev,memory]' 2>&1 | tail -2"
+    & ssh -o StrictHostKeyChecking=no root@$CASTLE_IP `
+        "cd $REMOTE_PC; .venv/bin/pip install -q -e '$REMOTE_NB[parrot]' 2>&1 | tail -2"
     OK "依赖安装完成"
 } else {
     Write-Host "    无代码变更，跳过" -ForegroundColor DarkGray
@@ -98,8 +102,8 @@ if ($Env) {
 # ──────────────────────────────────────────────────────────
 Write-Host "`n──────────────────────────────────" -ForegroundColor DarkGray
 Write-Host "Castle 当前状态：" -ForegroundColor Magenta
-$pcLog = Invoke-Expression "$SSH root@$CASTLE_IP 'cd $REMOTE_PC; git log --oneline -1'"
-$nbLog = Invoke-Expression "$SSH root@$CASTLE_IP 'cd $REMOTE_NB; git log --oneline -1'"
-Write-Host "  ParrotCarriers: $pcLog"
-Write-Host "  nanobot:        $nbLog"
+$summary = & ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 `
+    root@$CASTLE_IP `
+    "echo 'PC:' && cd $REMOTE_PC && git log --oneline -1; echo 'NB:' && cd $REMOTE_NB && git log --oneline -1"
+$summary | ForEach-Object { Write-Host "  $_" }
 Write-Host ""
