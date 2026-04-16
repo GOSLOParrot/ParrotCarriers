@@ -1,207 +1,288 @@
-# 仓库提交规范与注意事项
+# 仓库提交 & ECS 同步工作流
 
-> 基于 2026-04-16 排查经验整理。核心问题：secrets 泄露 + 大文件阻塞 + .cursor/ 职责不清。
-
----
-
-## 1. 这次出了什么问题（复盘）
-
-| 问题 | 现象 | 根因 |
-|------|------|------|
-| Push 卡死 2 分钟以上 | git push 无任何输出 | Mihomo TUN 模式对 HTTP POST 有隐性超时；加上待上传包体达 **38MB** |
-| HTTP 408 超时 | 偶尔出现后 fatal 报错 | 38MB 超过 Mihomo 代理对单次 POST 的容忍时长 |
-| GitHub 推送被拒 | `GH013: Repository rule violations` | `deploy_snapshot_p2_20260412.md` 第 68/221 行含明文 `ghp_xxx` PAT |
-| 包体 38MB | 正常代码只有 5MB | `nanobot.tar.gz`（31MB）和 `parrotcarriers.tar.gz` 意外进入 commit |
-
-**修复过程**：两次 `git filter-branch` 重写历史 + 手动替换 secrets + `git gc` 压缩 → 5MB → push 成功（55 秒）。
+> 版本：2026-04-16 | 基于实际排查经验整理
 
 ---
 
-## 2. .gitignore 规范（当前 + 补充建议）
+## 快速索引
 
-### 已有且正确的规则
+| 我要做什么 | 看哪一节 |
+|-----------|---------|
+| 日常 commit + push | § 1 |
+| 同步代码到 ECS | § 2-A |
+| 同步 nanobot persona 到 ECS | § 2-B |
+| 同步 .env 到 ECS | § 2-C |
+| push 失败排查 | § 3 |
+| 不小心提交了 secret | § 4 |
+| 什么文件该/不该进 git | § 5 |
+
+---
+
+## § 1  日常 Commit 工作流（GitHub Desktop）
+
+### 推荐工具分工
+
+| 任务 | 工具 |
+|------|------|
+| 写代码 | Cursor |
+| add / commit / push | **GitHub Desktop** |
+| ECS 同步 | `infra/sync-castle.ps1`（见 § 2） |
+| 历史重写、filter-branch | Git Bash 命令行 |
+
+### 为什么用 GitHub Desktop 而不用命令行
+
+- **彻底绕过 Mihomo 代理问题**：GitHub Desktop 有自己的 HTTPS 认证和上传通道，不受 TUN 模式 60-90 秒超时影响
+- **可视化 diff**：commit 前能看到每个文件的改动，避免意外提交大文件或 secrets
+- **友好的错误提示**：push 失败时直接告诉你原因
+
+### Commit 前的三秒检查
+
+在 GitHub Desktop 的 diff 界面确认：
+
 ```
-.env / .env.*        ← API key，绝对不提交
-.venv/               ← Python 虚拟环境
-*.tar.gz / *.zip     ← 归档文件（本次新增）
-unity/*/Library/     ← Unity 自动生成
-```
-
-### 强烈建议新增
-
-```gitignore
-# Cursor 自动生成的技能参考文档（体积大，可随时重新生成）
-.cursor/skills/*/references/
-
-# Nanobot 本地工作区（含 persona / session 数据，可能有隐私）
-.nanobot/
-
-# 本地调试 / 临时脚本
-*.local.py
-Test/
-restart*.sh
-restart*.py
-```
-
-### 关于 .cursor/memory/ —— 要不要提交？
-
-**结论：选择性提交，不是全部提交。**
-
-| 文件类型 | 建议 | 原因 |
-|---------|------|------|
-| `architecture/*.md` | ✅ 提交 | 纯架构文档，无敏感信息，ECS 上有用 |
-| `requirements.md` | ✅ 提交 | 产品需求，应版本化 |
-| `deploy_snapshot_*.md` | ⚠️ 提交前审查 | 本次就在这里泄露了 PAT |
-| `active_context.md` | ❌ 不提交 | AI session 状态，可能含临时 token/路径 |
-| `BigIssue.md` / `log.txt` | ❌ 不提交 | 调试记录，无版本价值 |
-
-**推荐的细粒度规则（加到 .gitignore）**：
-```gitignore
-# Memory: 排除动态/session 文件，保留架构文档
-.cursor/memory/active_context.md
-.cursor/memory/log.txt
-.cursor/memory/BigIssue.md
-.cursor/memory/deploy_snapshot_*.md
+□ 没有意外的大文件（单文件 > 1MB 要想想为什么）
+□ 没有 .env 文件出现在变更列表里
+□ deploy_snapshot / active_context 等 memory 文件如果出现了，看看里面有没有明文 token
 ```
 
 ---
 
-## 3. Secrets 管理原则
+## § 2  ECS 同步工作流
 
-### 黄金规则：任何真实密钥永远不出现在 .md / .py 文件里
+### 全局说明
 
-即使是"给自己看的笔记"也不例外，因为：
-- `.cursor/memory/` 被 AI 反复读写，容易把你在聊天里提到的 token 写进文档
-- GitHub Push Protection 会扫描所有文件，包括 Markdown
+ECS Castle（`8.216.45.65`）上有三个独立区域需要维护：
 
-### 正确做法
-
-```markdown
-# deploy_snapshot 中只写占位符
-GITHUB_TOKEN=<见 .env 第12行>
-GOOGLE_API_KEY=<见 .env 第6行>
-TELEGRAM_BOT_TOKEN=<见 .env 第28行>
 ```
+/opt/parrotcarriers/     ← 业务代码，走 git pull
+/opt/nanobot/            ← nanobot fork，走 git pull
+~/.nanobot/              ← persona / workspace 数据，走 rsync
+/opt/parrotcarriers/.env ← secrets，走 rsync（只在改动时同步）
+```
+
+### 一键同步脚本
+
+位置：`infra/sync-castle.ps1`
+
+```powershell
+# 在 ParrotCarriers 根目录下运行（PowerShell）
+
+# 场景 A：只同步代码（最常用）
+.\infra\sync-castle.ps1
+
+# 场景 B：代码 + nanobot persona 文件
+.\infra\sync-castle.ps1 -Workspace
+
+# 场景 C：代码 + .env（改了 secrets 时用）
+.\infra\sync-castle.ps1 -Env
+
+# 场景 D：全量同步
+.\infra\sync-castle.ps1 -All
+```
+
+---
+
+### § 2-A  代码同步（git pull）
+
+**触发时机**：每次 GitHub Desktop push 完成后
+
+脚本自动执行以下操作：
+1. `git pull origin master`（ParrotCarriers）
+2. `git pull origin main`（nanobot）
+3. 如果有代码变更，自动重跑 `pip install`
+
+手动方式（SSH 进去执行）：
+```bash
+ssh Castle
+cd /opt/parrotcarriers && git pull origin master
+cd /opt/nanobot && git pull origin main
+```
+
+---
+
+### § 2-B  Nanobot Workspace 同步（rsync）
+
+**触发时机**：修改了 persona 文件（SOUL.md、AGENTS.md、TOOLS.md、USER.md）后
+
+本地路径 → ECS 路径：
+
+```
+C:\Users\Bin\.nanobot\goslo-workspace\  →  ~/.nanobot/goslo-workspace/
+  AGENTS.md                                  AGENTS.md
+  SOUL.md                                    SOUL.md
+  TOOLS.md                                   TOOLS.md
+  USER.md                                    USER.md
+
+C:\Users\Bin\.nanobot\workspace\        →  ~/.nanobot/workspace/
+  AGENTS.md / SOUL.md / TOOLS.md / USER.md   （persona 文件）
+  HEARTBEAT.md
+  （sessions/ 和 memory/ 不同步，那是 ECS 运行时产生的本地状态）
+```
+
+运行：
+```powershell
+.\infra\sync-castle.ps1 -Workspace
+```
+
+---
+
+### § 2-C  .env 同步
+
+**触发时机**：只在新增/修改了 API key 时手动运行一次
+
+```powershell
+.\infra\sync-castle.ps1 -Env
+```
+
+> ⚠️ `.env` 绝对不进 git，只通过 rsync 点对点传输。
+
+---
+
+### § 2-D  完整首次部署（新 ECS 或重置环境）
+
+首次或重置时，用原有的完整部署脚本（需要 Git Bash / WSL，因为要用 bash）：
 
 ```bash
-# 真实值只放在 .env（已在 .gitignore 中）
-GITHUB_TOKEN=ghp_xxx...
+# 在 Git Bash 里运行
+bash infra/deploy-castle.sh 8.216.45.45
 ```
 
-### 如果不小心提交了 secret
-
-1. **立即吊销该 token**（GitHub → Settings → Developer settings → Tokens）
-2. 生成新 token
-3. 用 `git filter-branch` 或 `git filter-repo` 从历史中清除
-4. Force push（`git push --force`）
+该脚本会：
+1. rsync 全量同步代码
+2. 安装 Python 依赖 + Node.js
+3. 同步 nanobot workspace
+4. 启动 Docker 服务（LiveKit + Redis）
+5. 健康检查
 
 ---
 
-## 4. VPN / Mihomo 使用注意事项
+## § 3  Push 失败排查
 
-### 核心问题
+### 用了 GitHub Desktop 还是失败？
 
-Mihomo TUN 模式拦截所有流量，对 **长时间 HTTP POST**（git push 上传包体）有隐性超时，大约 60-90 秒。
-
-### 实测：什么能用，什么不能用
-
-| 方式 | 结果 | 说明 |
+| 现象 | 原因 | 解法 |
 |------|------|------|
-| `git push`（默认 HTTPS） | ❌ 无限卡死 | Windows Credential Manager 在非交互环境弹不出 UI |
-| `git push`（HTTPS + token 内嵌 URL） | ✅ 成功（55s） | 5MB 包体可在超时内完成 |
-| `git push`（SSH） | ❌ 卡死 | SSH 子进程无 TTY，密钥加载失败 |
-| `gh` CLI 操作 | ✅ 正常 | 使用自己的 HTTPS 通道 |
-| `git ls-remote` / `git fetch` | ✅ 正常 | 读操作不受影响 |
+| 上传进度条卡住很久 | 包体太大（> 20MB） | 检查是否有大文件/归档被误 commit |
+| `GH013: Repository rule violations` | 文件里有明文 token（`ghp_`、`AIzaSy` 等） | 见 § 4 |
+| `Authentication failed` | GitHub Desktop 未登录 | 重新在 GitHub Desktop 里登录账号 |
 
-### 推荐的推送方式（当前最可靠）
+### 命令行临时方案（GitHub Desktop 不可用时）
 
 ```powershell
-# 方式1：token 内嵌（一行命令，每次都有效）
 $token = gh auth token
 git push "https://GOSLOParrot:$token@github.com/GOSLOParrot/ParrotCarriers.git" master
-
-# 方式2：GitHub Desktop（强烈推荐，见下节）
 ```
 
-### 如果想根治 SSH push 问题
+> 包体需 < 15MB 才能在 Mihomo 代理超时内完成。
 
-需要启动 SSH agent 服务（需管理员权限）：
+### 彻底根治 SSH Push 问题（管理员 PowerShell 运行一次）
+
 ```powershell
-# 管理员 PowerShell 运行一次
 Set-Service ssh-agent -StartupType Automatic
 Start-Service ssh-agent
 ssh-add $env:USERPROFILE\.ssh\id_ed25519
-```
-之后 `git push`（SSH 协议）就不会卡死了。
-
----
-
-## 5. 推荐工作流：GitHub Desktop
-
-**推荐用 GitHub Desktop 处理日常提交，Cursor 做代码编写。**
-
-### 为什么
-
-- GitHub Desktop 有自己的 HTTPS 认证通道，完全绕过 Windows Credential Manager 的弹窗问题
-- 可以在 commit 前**可视化 diff**，避免意外提交大文件或 secrets
-- 支持 Stash、Branch、Reset 等操作
-- 遇到 push 失败有友好的错误提示
-
-### 使用原则
-
-| 操作 | 工具 |
-|------|------|
-| 日常 add / commit / push | GitHub Desktop |
-| 历史重写、filter-branch | Git Bash 命令行 |
-| 查看 remote 状态 | `gh` CLI 或 GitHub Desktop |
-| ECS 同步 | `ssh Castle "cd /opt/parrotcarriers && git pull"` |
-
----
-
-## 6. 关于"把整个工作区推到 git 让 ECS 拉取"
-
-你的需求是合理的，但需要区分两类文件：
-
-### A. 应该在 git 里的（✅）
-
-- `src/` — 业务代码
-- `infra/` — Docker / 部署脚本
-- `tests/` — 测试
-- `pyproject.toml` — 依赖声明
-- `.cursor/memory/architecture/` — 架构设计文档
-- `.cursor/skills/*/SKILL.md` — 技能入口文件（小，有价值）
-
-### B. 不应该在 git 里的（❌）
-
-- `.cursor/skills/*/references/` — **240个自动生成的 JSON/MD 文件**，完全可以重新生成，只占用仓库体积
-- `.cursor/memory/active_context.md`、`deploy_snapshot_*.md` — 可能含 secrets 的 session 文件
-- `nanobot.tar.gz`、`parrotcarriers.tar.gz` — 归档文件（deploy 脚本的产物）
-- `.nanobot/` — nanobot 工作区（persona/session 数据）
-
-### ECS 同步的更好方式
-
-目前 deploy 脚本已经有 rsync，可以两套并行：
-
-```bash
-# 代码同步：用 git（干净、可追踪）
-ssh Castle "cd /opt/parrotcarriers && git pull origin master"
-ssh Castle "cd /opt/nanobot && git pull origin main"
-
-# 工作区数据同步：用 rsync（不走 git，不污染历史）
-rsync -avz ~/.nanobot/goslo-workspace/ root@8.216.45.45:~/.nanobot/goslo-workspace/
+# 之后把 remote 改为 SSH 协议
+git remote set-url origin git@github.com:GOSLOParrot/ParrotCarriers.git
 ```
 
 ---
 
-## 7. 快速检查清单（每次 commit 前）
+## § 4  不小心提交了 Secret
+
+**立刻做这三件事：**
+
+1. **吊销 token**（先于一切）
+   - GitHub PAT：`github.com → Settings → Developer settings → Personal access tokens → 删除`
+   - Google API Key：`console.cloud.google.com → Credentials → 删除`
+   - Telegram Bot Token：向 `@BotFather` 发 `/revoke`
+
+2. **从 git 历史中清除**
+   ```bash
+   # Git Bash 里运行
+   FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch --force --tree-filter \
+     "sed -i 's/ghp_[A-Za-z0-9]*/REDACTED/g; s/AIzaSy[A-Za-z0-9_-]*/REDACTED/g' \
+      .cursor/memory/deploy_snapshot_p2_20260412.md 2>/dev/null || true" \
+     origin/master..HEAD
+   git update-ref -d refs/original/refs/heads/master
+   git reflog expire --expire=now --all
+   git gc --prune=now
+   ```
+
+3. **Force push + ECS 同步**
+   ```powershell
+   $token = gh auth token
+   git push --force "https://GOSLOParrot:$token@github.com/GOSLOParrot/ParrotCarriers.git" master
+   .\infra\sync-castle.ps1
+   ```
+
+### 事后：为什么会发生？
+
+Cursor AI 在读写 `.cursor/memory/` 时，如果对话里出现了真实 token，**可能直接把它写进 markdown 文档**。
+
+预防方法：
+- 对话里只说"用 .env 里的 GITHUB_TOKEN"，不要粘贴真实值
+- `.cursor/memory/deploy_snapshot_*.md` 已加入 `.gitignore`，不会再被误提交
+
+---
+
+## § 5  文件分类：什么进 git，什么不进
+
+### ✅ 应该在 git 里
 
 ```
-□ git diff --stat  →  有没有意外的大文件（>1MB）？
-□ grep -r "ghp_\|AIzaSy\|gho_" .cursor/  →  有没有明文 token？
-□ .env 有没有出现在 git status 里？（不应该有）
-□ 包体大小合理吗？（git count-objects -vH，size-pack < 10MB 为佳）
+src/                          业务代码
+tests/                        测试
+infra/                        Docker / 部署脚本（含本文件！）
+pyproject.toml                依赖声明
+.cursor/memory/architecture/  架构设计文档（纯文档，无 secrets）
+.cursor/memory/requirements.md
+.cursor/memory/milestone_*.md
+.cursor/memory/commit_guidelines.md   ← 本文件
+.cursor/skills/*/SKILL.md     技能入口文件（小，有价值）
+unity/ParrotDev/Assets/       Unity 场景 / 脚本
+```
+
+### ❌ 不应该在 git 里（已在 .gitignore）
+
+```
+.env / .env.*                 Secrets，用 rsync 单独传
+.cursor/skills/*/references/  240+ 自动生成的 JSON/MD，随时可再生
+.cursor/memory/active_context.md      AI session 状态
+.cursor/memory/deploy_snapshot_*.md   可能含 token
+.cursor/memory/log.txt
+.nanobot/                     nanobot persona/session，用 rsync 传
+*.tar.gz / *.zip              归档文件
+.venv/                        Python 虚拟环境
+unity/*/Library/              Unity 自动生成
 ```
 
 ---
 
-*生成时间：2026-04-16 | 基于 ParrotCarriers commit 排查*
+## § 6  常用命令速查
+
+```powershell
+# 同步代码到 ECS（最常用）
+.\infra\sync-castle.ps1
+
+# 同步代码 + persona
+.\infra\sync-castle.ps1 -Workspace
+
+# 全量
+.\infra\sync-castle.ps1 -All
+
+# SSH 进 ECS
+ssh Castle
+
+# 查看 ECS 进程（Brain / Maid / Goslo-Chat）
+ssh Castle "tmux ls"
+
+# 检查 ECS 上的最新 commit
+ssh Castle "cd /opt/parrotcarriers && git log --oneline -3"
+
+# 检查本地包体大小（push 前确认）
+git count-objects -vH
+```
+
+---
+
+*生成时间：2026-04-16 | 适用仓库：ParrotCarriers + nanobot*
