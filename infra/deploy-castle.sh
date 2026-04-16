@@ -13,15 +13,6 @@
 
 set -euo pipefail
 
-# Windows (Git Bash): install rsync first, e.g.  scoop install rsync  OR  choco install rsync
-# WSL: sudo apt install -y rsync openssh-client
-command -v rsync >/dev/null 2>&1 || {
-    echo "ERROR: rsync not found."
-    echo "  Git Bash: install rsync (scoop install rsync / Chocolatey rsync / MSYS2 pacman -S rsync) and ensure it is on PATH."
-    echo "  WSL: sudo apt update && sudo apt install -y rsync"
-    exit 1
-}
-
 CASTLE_IP="${1:?Usage: deploy-castle.sh <castle-ip> [ssh-key-path]}"
 SSH_KEY="${2:-}"
 SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10"
@@ -53,15 +44,6 @@ rsync -avz --delete \
     --exclude 'node_modules' \
     -e "ssh $SSH_OPTS" \
     . "root@$CASTLE_IP:$REMOTE_DIR/"
-
-# 1a. 单独同步 .cursor/memory（主同步排除了整个 .cursor/，但 Castle 上需要架构/验证文档）
-if [ -d ".cursor/memory" ]; then
-    echo ""
-    echo "[1a/5] Syncing .cursor/memory..."
-    rsync -avz \
-        -e "ssh $SSH_OPTS" \
-        .cursor/memory/ "root@$CASTLE_IP:$REMOTE_DIR/.cursor/memory/"
-fi
 
 # 1b. 同步 nanobot fork 代码
 echo ""
