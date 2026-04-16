@@ -1,0 +1,177 @@
+{
+  "total_files": 22,
+  "categories": {
+    "templates": [
+      ".github\\ISSUE_TEMPLATE\\bug_report.md"
+    ],
+    "other": [
+      ".github\\pull_request_template.md",
+      "mcp_server\\docker\\README-falkordb-combined.md",
+      "mcp_server\\docker\\README.md",
+      "mcp_server\\docs\\cursor_rules.md",
+      "mcp_server\\README.md",
+      "mcp_server\\tests\\README.md",
+      "server\\README.md",
+      "tests\\evals\\data\\longmemeval_data\\README.md"
+    ],
+    "overview": [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "OTEL_TRACING.md",
+      "README.md",
+      "Zep-CLA.md"
+    ],
+    "community": [
+      "CODE_OF_CONDUCT.md"
+    ],
+    "contributing": [
+      "CONTRIBUTING.md"
+    ],
+    "examples": [
+      "examples\\azure-openai\\README.md",
+      "examples\\gliner2\\README.md",
+      "examples\\opentelemetry\\README.md",
+      "examples\\quickstart\\README.md"
+    ],
+    "security": [
+      "SECURITY.md"
+    ],
+    "specifications": [
+      "spec\\driver-operations-redesign.md"
+    ]
+  },
+  "files": [
+    {
+      "path": ".github\\ISSUE_TEMPLATE\\bug_report.md",
+      "filename": "bug_report.md",
+      "category": "templates",
+      "size_bytes": 1402
+    },
+    {
+      "path": ".github\\pull_request_template.md",
+      "filename": "pull_request_template.md",
+      "category": "other",
+      "size_bytes": 816
+    },
+    {
+      "path": "AGENTS.md",
+      "filename": "AGENTS.md",
+      "category": "overview",
+      "size_bytes": 2660
+    },
+    {
+      "path": "CLAUDE.md",
+      "filename": "CLAUDE.md",
+      "category": "overview",
+      "size_bytes": 6672
+    },
+    {
+      "path": "CODE_OF_CONDUCT.md",
+      "filename": "CODE_OF_CONDUCT.md",
+      "category": "community",
+      "size_bytes": 5220
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "filename": "CONTRIBUTING.md",
+      "category": "contributing",
+      "size_bytes": 9492
+    },
+    {
+      "path": "examples\\azure-openai\\README.md",
+      "filename": "README.md",
+      "category": "examples",
+      "size_bytes": 4356
+    },
+    {
+      "path": "examples\\gliner2\\README.md",
+      "filename": "README.md",
+      "category": "examples",
+      "size_bytes": 2126
+    },
+    {
+      "path": "examples\\opentelemetry\\README.md",
+      "filename": "README.md",
+      "category": "examples",
+      "size_bytes": 801
+    },
+    {
+      "path": "examples\\quickstart\\README.md",
+      "filename": "README.md",
+      "category": "examples",
+      "size_bytes": 4621
+    },
+    {
+      "path": "mcp_server\\docker\\README-falkordb-combined.md",
+      "filename": "README-falkordb-combined.md",
+      "category": "other",
+      "size_bytes": 7266
+    },
+    {
+      "path": "mcp_server\\docker\\README.md",
+      "filename": "README.md",
+      "category": "other",
+      "size_bytes": 7141
+    },
+    {
+      "path": "mcp_server\\docs\\cursor_rules.md",
+      "filename": "cursor_rules.md",
+      "category": "other",
+      "size_bytes": 2501
+    },
+    {
+      "path": "mcp_server\\README.md",
+      "filename": "README.md",
+      "category": "other",
+      "size_bytes": 21807
+    },
+    {
+      "path": "mcp_server\\tests\\README.md",
+      "filename": "README.md",
+      "category": "other",
+      "size_bytes": 7167
+    },
+    {
+      "path": "OTEL_TRACING.md",
+      "filename": "OTEL_TRACING.md",
+      "category": "overview",
+      "size_bytes": 1180
+    },
+    {
+      "path": "README.md",
+      "filename": "README.md",
+      "category": "overview",
+      "size_bytes": 25428
+    },
+    {
+      "path": "SECURITY.md",
+      "filename": "SECURITY.md",
+      "category": "security",
+      "size_bytes": 402
+    },
+    {
+      "path": "server\\README.md",
+      "filename": "README.md",
+      "category": "other",
+      "size_bytes": 2505
+    },
+    {
+      "path": "spec\\driver-operations-redesign.md",
+      "filename": "driver-operations-redesign.md",
+      "category": "specifications",
+      "size_bytes": 37749
+    },
+    {
+      "path": "tests\\evals\\data\\longmemeval_data\\README.md",
+      "filename": "README.md",
+      "category": "other",
+      "size_bytes": 220
+    },
+    {
+      "path": "Zep-CLA.md",
+      "filename": "Zep-CLA.md",
+      "category": "overview",
+      "size_bytes": 5607
+    }
+  ]
+}

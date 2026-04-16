@@ -29,7 +29,7 @@
 | D3 | **A10 非前置条件**：Phase 1 只为 DSG 留 Processor 挂载接口，不实现视觉管线 | D1~D5 从 Phase 1 移出，Phase 1 只留接口设计 |
 | D4 | **Minecraft 鹦鹉模型**：使用 Minecraft 鹦鹉模型+动画+声音 | 用户负责收集美术资产（可与 Phase 1 并行） |
 | D5 | **Gemini 二重身 = 远期**；Phase 1 留"宅邸聊天群"架构空间 | H2 保持 Phase 3+；Nanobot channel 设计需支持群聊语义扩展 |
-| D6 | **SimpleRouter 足够**：Phase 1 只要跑通链路 + 模块化 | E1 = Phase 1；py-trees = Phase 3+ |
+| D6 | **Scheduler 已升级 py-trees BT**：P1.5 已完成 SimpleRouter → py-trees 升级 | E1 = Phase 1 done; E4 py-trees = Phase 1.5 done |
 | D7 | **仓库策略**：笔记本先 clone/fork 改造，再部署到 Castle | 开发在笔记本，部署在服务器 |
 | D8 | **2C8G 前期够用**：压力主要在 Neo4j，Phase 2 才加入 | Phase 1 无 Graphiti，内存充裕；Phase 2 加入时 Neo4j heap 硬限 |
 | D9 | **DSG Sentinel = 纯远期概念**：笔记本在泉州，物理距离不实用 | D15 标注为"远期概念"，降级策略 = 直接失去 DSG 功能 |
@@ -130,7 +130,7 @@
 | E1 | SimpleRouter | 简单优先级路由（if-else），Phase 1 的 Scheduler 实现 | scheduler/router | 1 | A2 | M1 |
 | E2 | 三级调度 | 反射/意图/任务分层 | scheduler/router | 2 | E1 | M2 |
 | E3 | Redis Blackboard 读写 | 共享状态 | scheduler/blackboard | 1 | A2 | M1 |
-| E4 | py-trees 行为树 | 完整 BT: Safety/Priority/Parallel/Idle | scheduler/bt | 3+ | E2 | M3 |
+| E4 | py-trees 行为树 | P1.5 已实现浅层 BT (Selector+3叶); 完整 BT 扩展 (Safety/Priority/Parallel/Idle) Phase 3+ | scheduler/bt | **1.5 done** / 3+ 扩展 | E2 | M1/M3 |
 | E5 | ResourceLockManager | body 通道互斥 | scheduler/locks | 2 | E1 | M2 |
 
 ### F. 后台任务处理 (Nanobot Worker)

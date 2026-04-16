@@ -4,7 +4,7 @@
 #
 # 端口策略 (来自 bus-deploy-livekit-ecs skill):
 #   对外暴露: 7880(HTTP/WS信令), 7881(WebRTC TCP), 50000-50200/udp(WebRTC媒体)
-#   仅内网:  6379(Redis), 7687(Neo4j Bolt), 7474(Neo4j Browser)
+#   仅内网:  6379(Redis), 6380(FalkorDB)
 
 services:
   livekit:
@@ -38,21 +38,27 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # Phase 2: Neo4j for Graphiti
-  # neo4j:
-  #   image: neo4j:5-community
-  #   expose:
-  #     - "7687"   # Bolt — 仅内网
-  #     - "7474"   # Browser — 仅内网
-  #   environment:
-  #     NEO4J_AUTH: neo4j/parrot_memory_2026
-  #     NEO4J_server_memory_heap_initial__size: 512m
-  #     NEO4J_server_memory_heap_max__size: 1g
-  #     NEO4J_server_memory_pagecache_size: 256m
-  #   volumes:
-  #     - neo4j_data:/data
-  #   restart: unless-stopped
+  # Phase 2: FalkorDB for Graphiti (replaces Neo4j — fits 2C8G constraint)
+  # FalkorDB uses Redis protocol on a SEPARATE port to avoid clashing with the main Redis.
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports:
+      - "127.0.0.1:6380:6379"   # Expose as 6380 on host; 6379 is taken by main Redis
+    volumes:
+      - falkordb_data:/data
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --loadmodule /FalkorDB/bin/linux-x64-release/src/falkordb.so
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
 
 volumes:
   redis_data:
-  # neo4j_data:
+  falkordb_data:

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.IO;
 using UnityEngine;
 using LiveKit;
 
@@ -38,10 +39,45 @@ public class RoomManager : MonoBehaviour
 
     void Start()
     {
-        if (!string.IsNullOrEmpty(joinToken))
+        if (string.IsNullOrWhiteSpace(joinToken))
+            TryLoadTokenFromParrotDevFile();
+
+        if (!string.IsNullOrWhiteSpace(joinToken))
+        {
+            Debug.Log($"[RoomManager] Join token length={joinToken.Length}, connecting...");
             StartCoroutine(ConnectToRoom());
+        }
         else
-            Debug.LogWarning("[RoomManager] No token. Paste one from generate_token.py into the Inspector.");
+        {
+            Debug.LogWarning(
+                "[RoomManager] No token. Run: python src/scripts/generate_token.py "
+                + "(writes unity/ParrotDev/unity_join_token.txt) or paste JWT into Inspector, then Save Scene.");
+        }
+    }
+
+    /// <summary>
+    /// Editor/本机联调：与 generate_token.py 默认输出路径一致，避免场景里忘保存空 token。
+    /// Application.dataPath = .../ParrotDev/Assets → 上一级为 ParrotDev。
+    /// </summary>
+    private void TryLoadTokenFromParrotDevFile()
+    {
+        try
+        {
+            var path = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "unity_join_token.txt"));
+            if (!File.Exists(path))
+                return;
+
+            var t = File.ReadAllText(path).Trim();
+            if (string.IsNullOrEmpty(t))
+                return;
+
+            joinToken = t;
+            Debug.Log($"[RoomManager] Loaded join token from file ({t.Length} chars): {path}");
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[RoomManager] Could not read unity_join_token.txt: {e.Message}");
+        }
     }
 
     /// <summary>Call at runtime to connect with a fresh token.</summary>
@@ -74,7 +110,9 @@ public class RoomManager : MonoBehaviour
 
         if (connect.IsError)
         {
-            Debug.LogError("[RoomManager] Connection failed");
+            Debug.LogError(
+                "[RoomManager] Connection failed (check: Docker LiveKit on :7880, token not expired, Brain worker registered). "
+                + "Regenerate: python src/scripts/generate_token.py");
             yield break;
         }
 

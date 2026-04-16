@@ -1,7 +1,8 @@
-# 家族角色拓扑与交互场景 (2026-03-18 修订)
+# 家族角色拓扑与交互场景 (2026-04-12 修订)
 
-> 基于 doc 25/26 确认的架构愿景更新
+> 基于 doc 25/26 确认的架构愿景更新 + P1.5 实现修订
 > 关键变更: Nanobot 从"只读 MCP"重塑为调度器融合的独立实体 / Gemini 二重身机制 / 非阻塞交互原则
+> 项目层级: GOSLOParrot (主项目/家族) → ParrotCarriers (Bus 基建子项目)
 
 ---
 
@@ -11,8 +12,9 @@
 |:-----|:-----|:---------|:---------|
 | **大姐: Gemini App** | 副驾驶，管理 Google 生态 | 用户手机/浏览器 (闭源) | 通过 Extension 管 Drive；**外部分身**通过 Drive 工作区文件同步设定/状态 |
 | **大姐分身: Gemini 外部 Agent** | 大姐的外部活动代理 | 云端/聊天室 | 独立参与聊天，与 Gemini App 通过 Drive 双向同步（二重身机制） |
-| **妹妹: GOSLOParrot** | AR 实体鹦鹉（行动者） | Unity Android 客户端 | LiveKit 总线 (RPC + 音视频) |
-| **猫娘女仆: Nanobot** | 后台复杂任务处理 | 同服务器独立实体 | Redis 异步通信（**非** MCP 只读），深度了解 Scene & Preference |
+| **妹妹: GOSLO (Live 身体)** | AR 实体鹦鹉大小姐 desuwa（行动者） | Unity Android 客户端 | LiveKit 总线 (RPC + 音视频)。Unity app 打开时活跃 |
+| **妹妹: GOSLO (Chat 身体)** | 鹦鹉大小姐聊天分身（常开） | nanobot 独立实例 (ParrotSoul) | Telegram / 微信。Live 在线时转发/静默，否则独立对话 |
+| **猫娘女仆: Nanobot** | 后台复杂任务处理（Agents Team） | 同服务器独立实体 | Redis 异步通信 + 微信 bot，跨 session 并发（默认 3 并发） |
 | **档案馆: Graphiti** | 持久化记忆 & 知识图谱 | Castle 常驻 ECS Docker（当前 `ecs.g9i.large`） | Brain / Nanobot / Obsidian 直接调用 |
 | **黑板: Redis** | 即时状态 / Pub/Sub / 任务队列 | Castle 常驻 ECS（当前 `ecs.g9i.large`） | 所有模块共享 |
 

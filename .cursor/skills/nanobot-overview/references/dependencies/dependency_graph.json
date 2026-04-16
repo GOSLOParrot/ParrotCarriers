@@ -1,0 +1,537 @@
+{
+  "nodes": [
+    {
+      "file": "bridge\\src\\index.ts",
+      "language": "TypeScript"
+    },
+    {
+      "file": "bridge\\src\\server.ts",
+      "language": "TypeScript"
+    },
+    {
+      "file": "bridge\\src\\types.d.ts",
+      "language": "TypeScript"
+    },
+    {
+      "file": "bridge\\src\\whatsapp.ts",
+      "language": "TypeScript"
+    },
+    {
+      "file": "nanobot\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\__main__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\context.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\hook.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\loop.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\memory.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\runner.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\skills.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\subagent.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\tools\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\tools\\base.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\tools\\cron.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\tools\\filesystem.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\tools\\mcp.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\tools\\message.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\tools\\registry.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\tools\\shell.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\tools\\spawn.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\agent\\tools\\web.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\bus\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\bus\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\bus\\queue.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\base.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\dingtalk.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\discord.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\email.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\feishu.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\manager.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\matrix.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\mochat.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\qq.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\registry.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\slack.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\telegram.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\wecom.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\weixin.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\channels\\whatsapp.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\cli\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\cli\\commands.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\cli\\models.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\cli\\onboard.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\cli\\stream.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\command\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\command\\builtin.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\command\\router.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\config\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\config\\loader.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\config\\paths.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\config\\schema.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\cron\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\cron\\service.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\cron\\types.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\heartbeat\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\heartbeat\\service.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\providers\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\providers\\anthropic_provider.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\providers\\azure_openai_provider.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\providers\\base.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\providers\\openai_codex_provider.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\providers\\openai_compat_provider.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\providers\\registry.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\providers\\transcription.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\security\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\security\\network.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\session\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\session\\manager.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\skills\\skill-creator\\scripts\\init_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\skills\\skill-creator\\scripts\\package_skill.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\skills\\skill-creator\\scripts\\quick_validate.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\templates\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\templates\\memory\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\utils\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\utils\\evaluator.py",
+      "language": "Python"
+    },
+    {
+      "file": "nanobot\\utils\\helpers.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_consolidate_offset.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_context_prompt_cache.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_evaluator.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_gemini_thought_signature.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_heartbeat_service.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_loop_consolidation_tokens.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_loop_cron_timezone.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_loop_save_turn.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_memory_consolidation_types.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_onboard_logic.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_runner.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_session_manager_history.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_skill_creator_scripts.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\agent\\test_task_cancel.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_base_channel.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_channel_manager_delta_coalescing.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_channel_plugins.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_dingtalk_channel.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_email_channel.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_feishu_markdown_rendering.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_feishu_post_content.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_feishu_reply.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_feishu_streaming.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_feishu_table_split.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_feishu_tool_hint_code_block.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_matrix_channel.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_qq_channel.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_slack_channel.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_telegram_channel.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_weixin_channel.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\channels\\test_whatsapp_channel.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\cli\\test_cli_input.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\cli\\test_commands.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\cli\\test_restart_command.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\config\\test_config_migration.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\config\\test_config_paths.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\cron\\test_cron_service.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\cron\\test_cron_tool_list.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\providers\\test_azure_openai_provider.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\providers\\test_custom_provider.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\providers\\test_litellm_kwargs.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\providers\\test_mistral_provider.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\providers\\test_provider_retry.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\providers\\test_providers_init.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\security\\test_security_network.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\tools\\test_exec_security.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\tools\\test_filesystem_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\tools\\test_mcp_tool.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\tools\\test_message_tool.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\tools\\test_message_tool_suppress.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\tools\\test_tool_validation.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\tools\\test_web_fetch_security.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\tools\\test_web_search_tool.py",
+      "language": "Python"
+    }
+  ],
+  "edges": []
+}

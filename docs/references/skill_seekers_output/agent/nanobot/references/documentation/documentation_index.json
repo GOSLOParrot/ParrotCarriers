@@ -1,0 +1,157 @@
+{
+  "total_files": 20,
+  "categories": {
+    "overview": [
+      "COMMUNICATION.md",
+      "README.md"
+    ],
+    "contributing": [
+      "CONTRIBUTING.md"
+    ],
+    "other": [
+      "docs\\CHANNEL_PLUGIN_GUIDE.md",
+      "nanobot\\skills\\clawhub\\SKILL.md",
+      "nanobot\\skills\\cron\\SKILL.md",
+      "nanobot\\skills\\github\\SKILL.md",
+      "nanobot\\skills\\memory\\SKILL.md",
+      "nanobot\\skills\\README.md",
+      "nanobot\\skills\\skill-creator\\SKILL.md",
+      "nanobot\\skills\\summarize\\SKILL.md",
+      "nanobot\\skills\\tmux\\SKILL.md",
+      "nanobot\\skills\\weather\\SKILL.md"
+    ],
+    "templates": [
+      "nanobot\\templates\\AGENTS.md",
+      "nanobot\\templates\\HEARTBEAT.md",
+      "nanobot\\templates\\memory\\MEMORY.md",
+      "nanobot\\templates\\SOUL.md",
+      "nanobot\\templates\\TOOLS.md",
+      "nanobot\\templates\\USER.md"
+    ],
+    "security": [
+      "SECURITY.md"
+    ]
+  },
+  "files": [
+    {
+      "path": "COMMUNICATION.md",
+      "filename": "COMMUNICATION.md",
+      "category": "overview",
+      "size_bytes": 240
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "filename": "CONTRIBUTING.md",
+      "category": "contributing",
+      "size_bytes": 3990
+    },
+    {
+      "path": "docs\\CHANNEL_PLUGIN_GUIDE.md",
+      "filename": "CHANNEL_PLUGIN_GUIDE.md",
+      "category": "other",
+      "size_bytes": 12131
+    },
+    {
+      "path": "nanobot\\skills\\clawhub\\SKILL.md",
+      "filename": "SKILL.md",
+      "category": "other",
+      "size_bytes": 1384
+    },
+    {
+      "path": "nanobot\\skills\\cron\\SKILL.md",
+      "filename": "SKILL.md",
+      "category": "other",
+      "size_bytes": 1505
+    },
+    {
+      "path": "nanobot\\skills\\github\\SKILL.md",
+      "filename": "SKILL.md",
+      "category": "other",
+      "size_bytes": 1374
+    },
+    {
+      "path": "nanobot\\skills\\memory\\SKILL.md",
+      "filename": "SKILL.md",
+      "category": "other",
+      "size_bytes": 1463
+    },
+    {
+      "path": "nanobot\\skills\\README.md",
+      "filename": "README.md",
+      "category": "other",
+      "size_bytes": 861
+    },
+    {
+      "path": "nanobot\\skills\\skill-creator\\SKILL.md",
+      "filename": "SKILL.md",
+      "category": "other",
+      "size_bytes": 18874
+    },
+    {
+      "path": "nanobot\\skills\\summarize\\SKILL.md",
+      "filename": "SKILL.md",
+      "category": "other",
+      "size_bytes": 2040
+    },
+    {
+      "path": "nanobot\\skills\\tmux\\SKILL.md",
+      "filename": "SKILL.md",
+      "category": "other",
+      "size_bytes": 4063
+    },
+    {
+      "path": "nanobot\\skills\\weather\\SKILL.md",
+      "filename": "SKILL.md",
+      "category": "other",
+      "size_bytes": 1168
+    },
+    {
+      "path": "nanobot\\templates\\AGENTS.md",
+      "filename": "AGENTS.md",
+      "category": "templates",
+      "size_bytes": 891
+    },
+    {
+      "path": "nanobot\\templates\\HEARTBEAT.md",
+      "filename": "HEARTBEAT.md",
+      "category": "templates",
+      "size_bytes": 370
+    },
+    {
+      "path": "nanobot\\templates\\memory\\MEMORY.md",
+      "filename": "MEMORY.md",
+      "category": "templates",
+      "size_bytes": 408
+    },
+    {
+      "path": "nanobot\\templates\\SOUL.md",
+      "filename": "SOUL.md",
+      "category": "templates",
+      "size_bytes": 353
+    },
+    {
+      "path": "nanobot\\templates\\TOOLS.md",
+      "filename": "TOOLS.md",
+      "category": "templates",
+      "size_bytes": 487
+    },
+    {
+      "path": "nanobot\\templates\\USER.md",
+      "filename": "USER.md",
+      "category": "templates",
+      "size_bytes": 842
+    },
+    {
+      "path": "README.md",
+      "filename": "README.md",
+      "category": "overview",
+      "size_bytes": 58638
+    },
+    {
+      "path": "SECURITY.md",
+      "filename": "SECURITY.md",
+      "category": "security",
+      "size_bytes": 7512
+    }
+  ]
+}

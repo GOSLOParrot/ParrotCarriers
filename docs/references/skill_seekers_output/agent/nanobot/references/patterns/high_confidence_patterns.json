@@ -1,0 +1,86 @@
+[
+  {
+    "pattern_type": "Adapter",
+    "category": "Structural",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\bridge\\src\\server.ts",
+    "class_name": "BridgeServer",
+    "method_name": null,
+    "line_number": 31,
+    "evidence": [
+      "Class name suggests Adapter: BridgeServer"
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\bridge\\src\\server.ts"
+  },
+  {
+    "pattern_type": "Builder",
+    "category": "Creational",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\context.py",
+    "class_name": "ContextBuilder",
+    "method_name": null,
+    "line_number": 16,
+    "evidence": [
+      "Class name contains \"Builder\": ContextBuilder"
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\context.py"
+  },
+  {
+    "pattern_type": "Adapter",
+    "category": "Structural",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\mcp.py",
+    "class_name": "MCPToolWrapper",
+    "method_name": null,
+    "line_number": 77,
+    "evidence": [
+      "Class name suggests Adapter: MCPToolWrapper"
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\mcp.py"
+  },
+  {
+    "pattern_type": "Builder",
+    "category": "Creational",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_post_content.py",
+    "class_name": "Builder",
+    "method_name": null,
+    "line_number": 55,
+    "evidence": [
+      "Class name contains \"Builder\": Builder"
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_post_content.py"
+  },
+  {
+    "pattern_type": "Builder",
+    "category": "Creational",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_post_content.py",
+    "class_name": "Builder",
+    "method_name": null,
+    "line_number": 66,
+    "evidence": [
+      "Class name contains \"Builder\": Builder"
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_post_content.py"
+  },
+  {
+    "pattern_type": "Builder",
+    "category": "Creational",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_telegram_channel.py",
+    "class_name": "_FakeBuilder",
+    "method_name": null,
+    "line_number": 99,
+    "evidence": [
+      "Class name contains \"Builder\": _FakeBuilder"
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_telegram_channel.py"
+  }
+]

@@ -1,0 +1,1180 @@
+[
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\CameraVideoSource.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\CameraVideoSource.cs",
+        "class_name": "CameraVideoSource",
+        "method_name": "GetWidth",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetWidth"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 9,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\DataStream.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "ChainOfResponsibility",
+        "category": "Behavioral",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\DataStream.cs",
+        "class_name": "StreamHandlerRegistry",
+        "method_name": null,
+        "line_number": 902,
+        "evidence": [
+          "Class name suggests handler chain: StreamHandlerRegistry"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 21,
+    "total_functions": 88,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "ChainOfResponsibility": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\DataTrack.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\DataTrack.cs",
+        "class_name": "SubscribeDataTrackError",
+        "method_name": "SubscribeDataTrackError",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: SubscribeDataTrackError"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\DataTrack.cs",
+        "class_name": "PublishDataTrackError",
+        "method_name": "PublishDataTrackError",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: PublishDataTrackError"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\DataTrack.cs",
+        "class_name": "LocalDataTrack",
+        "method_name": "IsPublished",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: IsPublished"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\DataTrack.cs",
+        "class_name": "RemoteDataTrack",
+        "method_name": "Subscribe",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: Subscribe"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\DataTrack.cs",
+        "class_name": "DataTrackStream",
+        "method_name": "SubscribeDataTrackError",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: SubscribeDataTrackError"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 11,
+    "total_functions": 39,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Observer": 5
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\FFIClient.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\FFIClient.cs",
+        "class_name": "FfiClient",
+        "method_name": "GetMainContext",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetMainContext"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 30,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\FFIClients\\Pools\\Pools.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\FFIClients\\Pools\\Pools.cs",
+        "class_name": "Pools",
+        "method_name": "NewFfiResponsePool",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: NewFfiResponsePool"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 2,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\FFIClients\\Requests\\FFIBridge.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Adapter",
+        "category": "Structural",
+        "confidence": 0.7,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\FFIClients\\Requests\\FFIBridge.cs",
+        "class_name": "FFIBridge",
+        "method_name": null,
+        "line_number": 6,
+        "evidence": [
+          "Class name suggests Adapter: FFIBridge"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 2,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Adapter": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\FFIClients\\Requests\\FFIBridgeExtensions.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Adapter",
+        "category": "Structural",
+        "confidence": 0.7,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\FFIClients\\Requests\\FFIBridgeExtensions.cs",
+        "class_name": "FFIBridgeExtensions",
+        "method_name": null,
+        "line_number": 4,
+        "evidence": [
+          "Class name suggests Adapter: FFIBridgeExtensions"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 2,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Adapter": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\NativeMethods.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\NativeMethods.cs",
+        "class_name": "NativeMethods",
+        "method_name": "FfiNewRequest",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: FfiNewRequest"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 3,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\PackageVersion.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\PackageVersion.cs",
+        "class_name": "PackageVersion",
+        "method_name": "Get",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: Get"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 1,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\RingBuffer.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\RingBuffer.cs",
+        "class_name": "RingBuffer",
+        "method_name": "GetBufferReadRegions",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetBufferReadRegions"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 13,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\Utils.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Internal\\Utils.cs",
+        "class_name": "Utils",
+        "method_name": "GetSupportedGraphicsFormat",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetSupportedGraphicsFormat"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 8,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Participant.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Participant.cs",
+        "class_name": "Participant",
+        "method_name": "PublishDelegate",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: PublishDelegate"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Participant.cs",
+        "class_name": "LocalParticipant",
+        "method_name": "PublishTrack",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: PublishTrack"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Participant.cs",
+        "class_name": "PublishTrackInstruction",
+        "method_name": "PublishTrackInstruction",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: PublishTrackInstruction"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Participant.cs",
+        "class_name": "UnpublishTrackInstruction",
+        "method_name": "UnpublishTrackInstruction",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: UnpublishTrackInstruction"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Participant.cs",
+        "class_name": "PublishDataTrackInstruction",
+        "method_name": "PublishDataTrackInstruction",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: PublishDataTrackInstruction"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 14,
+    "total_functions": 110,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Observer": 5
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Proto\\Handle.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "ChainOfResponsibility",
+        "category": "Behavioral",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Proto\\Handle.cs",
+        "class_name": "HandleReflection",
+        "method_name": null,
+        "line_number": 15,
+        "evidence": [
+          "Class name suggests handler chain: HandleReflection"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 19,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "ChainOfResponsibility": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Proto\\Room.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Proto\\Room.cs",
+        "class_name": "Types",
+        "method_name": "GetHashCode",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetHashCode"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Proto\\Room.cs",
+        "class_name": "Types",
+        "method_name": "GetHashCode",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetHashCode"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Proto\\Room.cs",
+        "class_name": "Types",
+        "method_name": "GetHashCode",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetHashCode"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 4,
+    "total_functions": 2107,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 3
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Proto\\Stats.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Proto\\Stats.cs",
+        "class_name": "Types",
+        "method_name": "GetHashCode",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetHashCode"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 792,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Proto\\VideoFrame.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Proto\\VideoFrame.cs",
+        "class_name": "Types",
+        "method_name": "GetHashCode",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetHashCode"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 392,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Room.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Room.cs",
+        "class_name": "Room",
+        "method_name": "CreateRemoteParticipantWithTracks",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: CreateRemoteParticipantWithTracks"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Room.cs",
+        "class_name": "Room",
+        "method_name": "LocalPublishDelegate",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: LocalPublishDelegate"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 5,
+    "total_functions": 50,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\RtcVideoSource.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\RtcVideoSource.cs",
+        "class_name": "RtcVideoSource",
+        "method_name": "GetWidth",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetWidth"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\RtcVideoSource.cs",
+        "class_name": "RtcVideoSource",
+        "method_name": "Update",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: Update"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 23,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\ScreenVideoSource.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\ScreenVideoSource.cs",
+        "class_name": "ScreenVideoSource",
+        "method_name": "GetWidth",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetWidth"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 10,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\TextureVideoSource.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\TextureVideoSource.cs",
+        "class_name": "TextureVideoSource",
+        "method_name": "GetWidth",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetWidth"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 6,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Track.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Track.cs",
+        "class_name": "Track",
+        "method_name": "UpdateInfo",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: UpdateInfo"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Track.cs",
+        "class_name": "LocalAudioTrack",
+        "method_name": "CreateAudioTrack",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: CreateAudioTrack"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Track.cs",
+        "class_name": "LocalVideoTrack",
+        "method_name": "CreateVideoTrack",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: CreateVideoTrack"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Track.cs",
+        "class_name": "GetSessionStatsInstruction",
+        "method_name": "GetSessionStatsInstruction",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetSessionStatsInstruction"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 6,
+    "total_functions": 19,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Observer": 1,
+      "Factory": 3
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\TrackPublication.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\TrackPublication.cs",
+        "class_name": "TrackPublication",
+        "method_name": "UpdateInfo",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: UpdateInfo"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\TrackPublication.cs",
+        "class_name": "RemoteTrackPublication",
+        "method_name": "SetSubscribed",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: SetSubscribed"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 3,
+    "total_functions": 8,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Observer": 2
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Video\\YuvToRgbConverter.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\Video\\YuvToRgbConverter.cs",
+        "class_name": "YuvToRgbConverter",
+        "method_name": "CpuConvertToRenderTarget",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: CpuConvertToRenderTarget"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 16,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\VideoFrame.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\VideoFrame.cs",
+        "class_name": "VideoFrameBuffer",
+        "method_name": "GetMemorySize",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetMemorySize"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\VideoFrame.cs",
+        "class_name": "NativeBuffer",
+        "method_name": "GetMemorySize",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetMemorySize"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\VideoFrame.cs",
+        "class_name": "RGBABBuffer",
+        "method_name": "GetMemorySize",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetMemorySize"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\VideoFrame.cs",
+        "class_name": "I420Buffer",
+        "method_name": "GetMemorySize",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetMemorySize"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 15,
+    "total_functions": 38,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 4
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\VideoStream.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\VideoStream.cs",
+        "class_name": "VideoStream",
+        "method_name": "Update",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: Update"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 21,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\WebCameraSource.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Runtime\\Scripts\\WebCameraSource.cs",
+        "class_name": "WebCameraSource",
+        "method_name": "GetWidth",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetWidth"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 7,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\Editor\\BuildPostProcessor.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\Editor\\BuildPostProcessor.cs",
+        "class_name": "BuildPostProcessor",
+        "method_name": "OnPostprocessBuild",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: OnPostprocessBuild"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "ChainOfResponsibility",
+        "category": "Behavioral",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\Editor\\BuildPostProcessor.cs",
+        "class_name": "BuildPostProcessor",
+        "method_name": null,
+        "line_number": 8,
+        "evidence": [
+          "Class name suggests handler chain: BuildPostProcessor"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 2,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "ChainOfResponsibility": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\MaterialIcons\\Editor\\MenuOptions.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\MaterialIcons\\Editor\\MenuOptions.cs",
+        "class_name": "MenuOptions",
+        "method_name": "CreateMaterialIcon",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: CreateMaterialIcon"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 4,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\MaterialIcons\\MaterialIcon.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\MaterialIcons\\MaterialIcon.cs",
+        "class_name": "MaterialIcon",
+        "method_name": "UpdateFontSize",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: UpdateFontSize"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 8,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\Runtime\\LivekitSamples.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\Runtime\\LivekitSamples.cs",
+        "class_name": "LivekitSamples",
+        "method_name": "CreateVideoDisplay",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: CreateVideoDisplay"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\Runtime\\LivekitSamples.cs",
+        "class_name": "LivekitSamples",
+        "method_name": "Update",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: Update"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 44,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\Runtime\\Utils\\ResizeVideo\\ResizeTextureController.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Samples~\\Meet\\Assets\\Runtime\\Utils\\ResizeVideo\\ResizeTextureController.cs",
+        "class_name": "ResizeTextureController",
+        "method_name": "GetTargetTexture",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: GetTargetTexture"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 8,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Tests\\EditMode\\MediaStreamLifetimeTests.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Tests\\EditMode\\MediaStreamLifetimeTests.cs",
+        "class_name": "MediaStreamLifetimeTests",
+        "method_name": "AudioStream_Dispose_UnsubscribesAndReleasesOwnedResources",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: AudioStream_Dispose_UnsubscribesAndReleasesOwnedResources"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 11,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Tests\\EditMode\\UsageStrictTests.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Tests\\EditMode\\UsageStrictTests.cs",
+        "class_name": "UsageStrictTests",
+        "method_name": "NoManualCreateNew",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: NoManualCreateNew"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 1,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Tests\\PlayMode\\DataTrackTests.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Tests\\PlayMode\\DataTrackTests.cs",
+        "class_name": "DataTrackTests",
+        "method_name": "PublishDataTrack_Succeeds",
+        "line_number": null,
+        "evidence": [
+          "Observer method detected: PublishDataTrack_Succeeds"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 32,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Tests\\PlayMode\\RoomTests.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Tests\\PlayMode\\RoomTests.cs",
+        "class_name": "RoomTests",
+        "method_name": "ParticipantJoin_CreatesRemoteParticipant",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: ParticipantJoin_CreatesRemoteParticipant"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 20,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Tests\\PlayMode\\Utils\\TestRoomContext.cs",
+    "language": "C#",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-client-sdk-unity-207d99a5\\Tests\\PlayMode\\Utils\\TestRoomContext.cs",
+        "class_name": "TestRoomContext",
+        "method_name": "CreateToken",
+        "line_number": null,
+        "evidence": [
+          "Factory method detected: CreateToken"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 11,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  }
+]

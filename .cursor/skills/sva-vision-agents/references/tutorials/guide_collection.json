@@ -1,0 +1,3543 @@
+{
+  "total_guides": 12,
+  "guides_by_complexity": {
+    "advanced": 7,
+    "intermediate": 5
+  },
+  "guides_by_use_case": {
+    "Mia Audio 16Khz": [
+      {
+        "guide_id": "0fd0bea2862e",
+        "title": "Mia Audio 16Khz",
+        "overview": "Workflow: mia audio 16khz",
+        "complexity_level": "advanced",
+        "prerequisites": [],
+        "required_imports": [
+          "asyncio",
+          "os",
+          "numpy",
+          "pytest",
+          "torchvision.io.video",
+          "getstream.video.rtc.track_util",
+          "aiortc"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "fb83d11e",
+            "test_name": "mia_audio_16khz",
+            "category": "workflow",
+            "code": "audio_file_path = os.path.join(os.path.dirname(__file__), 'test_assets/mia.mp3')\n'Load mia.mp3 and convert to 16kHz PCM data'\ncontainer = av.open(audio_file_path)\naudio_stream = container.streams.audio[0]\noriginal_sample_rate = audio_stream.sample_rate\ntarget_rate = 16000\nresampler = None\nif original_sample_rate != target_rate:\n    resampler = av.AudioResampler(format=AudioFormat.S16, layout='mono', rate=target_rate)\nsamples = []\nfor frame in container.decode(audio_stream):\n    if resampler:\n        frame = resampler.resample(frame)[0]\n    frame_array = frame.to_ndarray()\n    if len(frame_array.shape) > 1:\n        frame_array = np.mean(frame_array, axis=0)\n    samples.append(frame_array)\nsamples = np.concatenate(samples)\nsamples = samples.astype(np.int16)\ncontainer.close()\npcm = PcmData(samples=samples, sample_rate=target_rate, format=AudioFormat.S16)\nreturn pcm",
+            "language": "Python",
+            "description": "Workflow: mia audio 16khz",
+            "expected_behavior": "",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\tests\\base_test.py",
+            "line_start": 18,
+            "line_end": 58,
+            "complexity_score": 1.0,
+            "confidence": 0.9,
+            "setup_code": null,
+            "tags": [
+              "pytest",
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "asyncio",
+              "os",
+              "numpy",
+              "pytest",
+              "torchvision.io.video",
+              "getstream.video.rtc.track_util",
+              "aiortc"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "audio_file_path = os.path.join(os.path.dirname(__file__), 'test_assets/mia.mp3')",
+            "description": "Assign audio_file_path = os.path.join(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "'Load mia.mp3 and convert to 16kHz PCM data'",
+            "description": "'Load mia.mp3 and convert to 16kHz PCM data'",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "container = av.open(audio_file_path)",
+            "description": "Assign container = av.open(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "audio_stream = container.streams.audio[0]",
+            "description": "Assign audio_stream = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "original_sample_rate = audio_stream.sample_rate",
+            "description": "Assign original_sample_rate = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 6,
+            "code": "target_rate = 16000",
+            "description": "Assign target_rate = 16000",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 7,
+            "code": "resampler = None",
+            "description": "Assign resampler = None",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 8,
+            "code": "samples = []",
+            "description": "Assign samples = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 9,
+            "code": "samples = np.concatenate(samples)",
+            "description": "Assign samples = np.concatenate(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 10,
+            "code": "samples = samples.astype(np.int16)",
+            "description": "Assign samples = samples.astype(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 11,
+            "code": "container.close()",
+            "description": "Call container.close()",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 12,
+            "code": "pcm = PcmData(samples=samples, sample_rate=target_rate, format=AudioFormat.S16)",
+            "description": "Assign pcm = PcmData(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 13,
+            "code": "resampler = av.AudioResampler(format=AudioFormat.S16, layout='mono', rate=target_rate)",
+            "description": "Assign resampler = av.AudioResampler(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 14,
+            "code": "frame_array = frame.to_ndarray()",
+            "description": "Assign frame_array = frame.to_ndarray(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 15,
+            "code": "samples.append(frame_array)",
+            "description": "Call samples.append()",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 16,
+            "code": "frame = resampler.resample(frame)[0]",
+            "description": "Assign frame = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 17,
+            "code": "frame_array = np.mean(frame_array, axis=0)",
+            "description": "Assign frame_array = np.mean(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Mia Audio 16Khz",
+        "tags": [
+          "pytest",
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "20 minutes",
+        "source_files": [
+          "base_test.py:18"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "Create And Get": [
+      {
+        "guide_id": "9ed2e5e4c2eb",
+        "title": "Create And Get",
+        "overview": "Workflow: Test creating and retrieving calls.",
+        "complexity_level": "advanced",
+        "prerequisites": [],
+        "required_imports": [
+          "datetime",
+          "dotenv",
+          "vision_agents.plugins",
+          "vision_agents.plugins.twilio",
+          "getstream.video.rtc.track_util",
+          "numpy"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "175a029f",
+            "test_name": "test_create_and_get",
+            "category": "workflow",
+            "code": "'Test creating and retrieving calls.'\nregistry = twilio.TwilioCallRegistry()\nwebhook_data = CallWebhookInput(CallSid='CA123', AccountSid='AC123', CallStatus='ringing', Direction='inbound', From='+123', Caller='+123', To='+456', Called='+456')\ncall = registry.create('CA123', webhook_data=webhook_data)\nassert call.call_sid == 'CA123'\nassert call.from_number == '+123'\nretrieved = registry.get('CA123')\nassert retrieved is call",
+            "language": "Python",
+            "description": "Workflow: Test creating and retrieving calls.",
+            "expected_behavior": "assert retrieved is call",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_twilio.py",
+            "line_start": 55,
+            "line_end": 74,
+            "complexity_score": 0.8,
+            "confidence": 0.9,
+            "setup_code": null,
+            "tags": [
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "datetime",
+              "dotenv",
+              "vision_agents.plugins",
+              "vision_agents.plugins.twilio",
+              "getstream.video.rtc.track_util",
+              "numpy"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "'Test creating and retrieving calls.'",
+            "description": "'Test creating and retrieving calls.'",
+            "expected_result": null,
+            "verification": "assert call.call_sid == 'CA123'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "registry = twilio.TwilioCallRegistry()",
+            "description": "Assign registry = twilio.TwilioCallRegistry(...)",
+            "expected_result": null,
+            "verification": "assert call.from_number == '+123'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "webhook_data = CallWebhookInput(CallSid='CA123', AccountSid='AC123', CallStatus='ringing', Direction='inbound', From='+123', Caller='+123', To='+456', Called='+456')",
+            "description": "Assign webhook_data = CallWebhookInput(...)",
+            "expected_result": null,
+            "verification": "assert retrieved is call",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "call = registry.create('CA123', webhook_data=webhook_data)",
+            "description": "Assign call = registry.create(...)",
+            "expected_result": null,
+            "verification": "assert call.call_sid == 'CA123'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "retrieved = registry.get('CA123')",
+            "description": "Assign retrieved = registry.get(...)",
+            "expected_result": null,
+            "verification": "assert retrieved is call",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Create And Get",
+        "tags": [
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "10 minutes",
+        "source_files": [
+          "test_twilio.py:55"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "Parse File Outside Base Dir": [
+      {
+        "guide_id": "6474d760adb9",
+        "title": "Parse File Outside Base Dir",
+        "overview": "Workflow: test parse file outside base dir",
+        "complexity_level": "advanced",
+        "prerequisites": [
+          "Setup code must be executed first"
+        ],
+        "required_imports": [
+          "pytest",
+          "vision_agents.core.instructions"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "ff80558b",
+            "test_name": "test_parse_file_outside_base_dir",
+            "category": "workflow",
+            "code": "file_path1 = tmp_path / 'file1.md'\nbase_dir = tmp_path / 'another-dir'\nbase_dir.mkdir()\nfile_path2 = base_dir / 'file1.md'\ninput_text = f'read @{file_path1}'\nfile_path1.write_text('abcdef', encoding='utf-8')\nfile_path2.write_text('abcdef', encoding='utf-8')\nwith pytest.raises(InstructionsReadError, match='reason - path outside the base directory'):\n    Instructions(input_text=input_text, base_dir=base_dir)",
+            "language": "Python",
+            "description": "Workflow: test parse file outside base dir",
+            "expected_behavior": "",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\tests\\test_instructions.py",
+            "line_start": 55,
+            "line_end": 68,
+            "complexity_score": 0.8,
+            "confidence": 0.9,
+            "setup_code": "# Fixtures: tmp_path",
+            "tags": [
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "pytest",
+              "vision_agents.core.instructions"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "file_path1 = tmp_path / 'file1.md'",
+            "description": "Assign file_path1 = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "base_dir = tmp_path / 'another-dir'",
+            "description": "Assign base_dir = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "base_dir.mkdir()",
+            "description": "Call base_dir.mkdir()",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "file_path2 = base_dir / 'file1.md'",
+            "description": "Assign file_path2 = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "input_text = f'read @{file_path1}'",
+            "description": "Assign input_text = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 6,
+            "code": "file_path1.write_text('abcdef', encoding='utf-8')",
+            "description": "Call file_path1.write_text()",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 7,
+            "code": "file_path2.write_text('abcdef', encoding='utf-8')",
+            "description": "Call file_path2.write_text()",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 8,
+            "code": "Instructions(input_text=input_text, base_dir=base_dir)",
+            "description": "Call Instructions()",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Parse File Outside Base Dir",
+        "tags": [
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "15 minutes",
+        "source_files": [
+          "test_instructions.py:55"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "Encode Symmetry": [
+      {
+        "guide_id": "c3a40939c8f6",
+        "title": "Encode Symmetry",
+        "overview": "Workflow: Positive and negative values should encode symmetrically.",
+        "complexity_level": "intermediate",
+        "prerequisites": [],
+        "required_imports": [
+          "numpy",
+          "getstream.video.rtc.track_util",
+          "vision_agents.plugins.twilio.audio"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "f8c66018",
+            "test_name": "test_encode_symmetry",
+            "category": "workflow",
+            "code": "'Positive and negative values should encode symmetrically.'\ntest_values = [100, 1000, 8000, 16000, 32000]\nfor val in test_values:\n    pos_pcm = PcmData(samples=np.array([val], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\n    neg_pcm = PcmData(samples=np.array([-val], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\n    pos_mulaw = pcm_to_mulaw(pos_pcm)[0]\n    neg_mulaw = pcm_to_mulaw(neg_pcm)[0]\n    assert pos_mulaw & 127 == neg_mulaw & 127, f'Asymmetric encoding for \u00b1{val}: pos={pos_mulaw:#04x}, neg={neg_mulaw:#04x}'",
+            "language": "Python",
+            "description": "Workflow: Positive and negative values should encode symmetrically.",
+            "expected_behavior": "",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_audio.py",
+            "line_start": 359,
+            "line_end": 385,
+            "complexity_score": 0.3,
+            "confidence": 0.9,
+            "setup_code": null,
+            "tags": [
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "numpy",
+              "getstream.video.rtc.track_util",
+              "vision_agents.plugins.twilio.audio"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "'Positive and negative values should encode symmetrically.'",
+            "description": "'Positive and negative values should encode symmetrically.'",
+            "expected_result": null,
+            "verification": "assert pos_mulaw & 127 == neg_mulaw & 127, f'Asymmetric encoding for \u00b1{val}: pos={pos_mulaw:#04x}, neg={neg_mulaw:#04x}'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "test_values = [100, 1000, 8000, 16000, 32000]",
+            "description": "Assign test_values = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "pos_pcm = PcmData(samples=np.array([val], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+            "description": "Assign pos_pcm = PcmData(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "neg_pcm = PcmData(samples=np.array([-val], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+            "description": "Assign neg_pcm = PcmData(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "pos_mulaw = pcm_to_mulaw(pos_pcm)[0]",
+            "description": "Assign pos_mulaw = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 6,
+            "code": "neg_mulaw = pcm_to_mulaw(neg_pcm)[0]",
+            "description": "Assign neg_mulaw = value",
+            "expected_result": null,
+            "verification": "assert pos_mulaw & 127 == neg_mulaw & 127, f'Asymmetric encoding for \u00b1{val}: pos={pos_mulaw:#04x}, neg={neg_mulaw:#04x}'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Encode Symmetry",
+        "tags": [
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "10 minutes",
+        "source_files": [
+          "test_audio.py:359"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "Roundtrip Preserves Waveform": [
+      {
+        "guide_id": "d2484d524d45",
+        "title": "Roundtrip Preserves Waveform",
+        "overview": "Workflow: Verify PCM -> mulaw -> PCM round-trip maintains signal quality.",
+        "complexity_level": "advanced",
+        "prerequisites": [],
+        "required_imports": [
+          "numpy",
+          "getstream.video.rtc.track_util",
+          "vision_agents.plugins.twilio.audio"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "fe7b31e0",
+            "test_name": "test_roundtrip_preserves_waveform",
+            "category": "workflow",
+            "code": "'Verify PCM -> mulaw -> PCM round-trip maintains signal quality.'\nduration = 0.1\nt = np.linspace(0, duration, int(TWILIO_SAMPLE_RATE * duration), dtype=np.float32)\nsine_wave = (np.sin(2 * np.pi * 440 * t) * 16000).astype(np.int16)\noriginal_pcm = PcmData(samples=sine_wave, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\nmulaw = pcm_to_mulaw(original_pcm)\nrecovered_pcm = mulaw_to_pcm(mulaw)\nerror = np.abs(original_pcm.samples.astype(np.int32) - recovered_pcm.samples.astype(np.int32))\nmax_error = np.max(error)\nmean_error = np.mean(error)\nassert max_error < 2000, f'Max error too high: {max_error}'\nassert mean_error < 500, f'Mean error too high: {mean_error}'",
+            "language": "Python",
+            "description": "Workflow: Verify PCM -> mulaw -> PCM round-trip maintains signal quality.",
+            "expected_behavior": "assert mean_error < 500, f'Mean error too high: {mean_error}'",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_audio.py",
+            "line_start": 391,
+            "line_end": 422,
+            "complexity_score": 1.0,
+            "confidence": 0.9,
+            "setup_code": null,
+            "tags": [
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "numpy",
+              "getstream.video.rtc.track_util",
+              "vision_agents.plugins.twilio.audio"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "'Verify PCM -> mulaw -> PCM round-trip maintains signal quality.'",
+            "description": "'Verify PCM -> mulaw -> PCM round-trip maintains signal quality.'",
+            "expected_result": null,
+            "verification": "assert max_error < 2000, f'Max error too high: {max_error}'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "duration = 0.1",
+            "description": "Assign duration = 0.1",
+            "expected_result": null,
+            "verification": "assert mean_error < 500, f'Mean error too high: {mean_error}'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "t = np.linspace(0, duration, int(TWILIO_SAMPLE_RATE * duration), dtype=np.float32)",
+            "description": "Assign t = np.linspace(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "sine_wave = (np.sin(2 * np.pi * 440 * t) * 16000).astype(np.int16)",
+            "description": "Assign sine_wave = unknown.astype(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "original_pcm = PcmData(samples=sine_wave, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+            "description": "Assign original_pcm = PcmData(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 6,
+            "code": "mulaw = pcm_to_mulaw(original_pcm)",
+            "description": "Assign mulaw = pcm_to_mulaw(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 7,
+            "code": "recovered_pcm = mulaw_to_pcm(mulaw)",
+            "description": "Assign recovered_pcm = mulaw_to_pcm(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 8,
+            "code": "error = np.abs(original_pcm.samples.astype(np.int32) - recovered_pcm.samples.astype(np.int32))",
+            "description": "Assign error = np.abs(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 9,
+            "code": "max_error = np.max(error)",
+            "description": "Assign max_error = np.max(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 10,
+            "code": "mean_error = np.mean(error)",
+            "description": "Assign mean_error = np.mean(...)",
+            "expected_result": null,
+            "verification": "assert max_error < 2000, f'Max error too high: {max_error}'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Roundtrip Preserves Waveform",
+        "tags": [
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "15 minutes",
+        "source_files": [
+          "test_audio.py:391"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "Roundtrip Known Values": [
+      {
+        "guide_id": "a7d18727fd8f",
+        "title": "Roundtrip Known Values",
+        "overview": "Workflow: Verify round-trip produces expected decoded values.",
+        "complexity_level": "intermediate",
+        "prerequisites": [],
+        "required_imports": [
+          "numpy",
+          "getstream.video.rtc.track_util",
+          "vision_agents.plugins.twilio.audio"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "301a3f82",
+            "test_name": "test_roundtrip_known_values",
+            "category": "workflow",
+            "code": "'Verify round-trip produces expected decoded values.'\ntest_cases = [(0, 0), (32767, 32124), (-32768, -32124), (16000, 15996), (-16000, -15996), (1000, 988), (-1000, -988)]\nfor original, expected_recovered in test_cases:\n    pcm = PcmData(samples=np.array([original], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\n    mulaw = pcm_to_mulaw(pcm)\n    recovered = mulaw_to_pcm(mulaw).samples[0]\n    assert recovered == expected_recovered, f'Round-trip mismatch for PCM {original}: got {recovered}, expected {expected_recovered}'",
+            "language": "Python",
+            "description": "Workflow: Verify round-trip produces expected decoded values.",
+            "expected_behavior": "",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_audio.py",
+            "line_start": 424,
+            "line_end": 451,
+            "complexity_score": 0.3,
+            "confidence": 0.9,
+            "setup_code": null,
+            "tags": [
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "numpy",
+              "getstream.video.rtc.track_util",
+              "vision_agents.plugins.twilio.audio"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "'Verify round-trip produces expected decoded values.'",
+            "description": "'Verify round-trip produces expected decoded values.'",
+            "expected_result": null,
+            "verification": "assert recovered == expected_recovered, f'Round-trip mismatch for PCM {original}: got {recovered}, expected {expected_recovered}'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "test_cases = [(0, 0), (32767, 32124), (-32768, -32124), (16000, 15996), (-16000, -15996), (1000, 988), (-1000, -988)]",
+            "description": "Assign test_cases = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "pcm = PcmData(samples=np.array([original], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+            "description": "Assign pcm = PcmData(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "mulaw = pcm_to_mulaw(pcm)",
+            "description": "Assign mulaw = pcm_to_mulaw(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "recovered = mulaw_to_pcm(mulaw).samples[0]",
+            "description": "Assign recovered = value",
+            "expected_result": null,
+            "verification": "assert recovered == expected_recovered, f'Round-trip mismatch for PCM {original}: got {recovered}, expected {expected_recovered}'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Roundtrip Known Values",
+        "tags": [
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "10 minutes",
+        "source_files": [
+          "test_audio.py:424"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "Snr Acceptable": [
+      {
+        "guide_id": "301e442bb154",
+        "title": "Snr Acceptable",
+        "overview": "Workflow: Verify Signal-to-Noise Ratio is acceptable for voice.",
+        "complexity_level": "advanced",
+        "prerequisites": [],
+        "required_imports": [
+          "numpy",
+          "getstream.video.rtc.track_util",
+          "vision_agents.plugins.twilio.audio"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "0ef98bd5",
+            "test_name": "test_snr_acceptable",
+            "category": "workflow",
+            "code": "'Verify Signal-to-Noise Ratio is acceptable for voice.'\nduration = 0.5\nsamples_count = int(TWILIO_SAMPLE_RATE * duration)\nt = np.linspace(0, duration, samples_count, dtype=np.float32)\nsignal = (np.sin(2 * np.pi * 200 * t) * 8000 + np.sin(2 * np.pi * 400 * t) * 6000 + np.sin(2 * np.pi * 800 * t) * 4000).astype(np.int16)\noriginal = PcmData(samples=signal, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\nmulaw = pcm_to_mulaw(original)\nrecovered = mulaw_to_pcm(mulaw)\nsignal_power = np.mean(original.samples.astype(np.float64) ** 2)\nnoise = original.samples.astype(np.float64) - recovered.samples.astype(np.float64)\nnoise_power = np.mean(noise ** 2)\nsnr_db = 10 * np.log10(signal_power / noise_power) if noise_power > 0 else float('inf')\nassert snr_db > 35, f'SNR too low: {snr_db:.1f} dB'",
+            "language": "Python",
+            "description": "Workflow: Verify Signal-to-Noise Ratio is acceptable for voice.",
+            "expected_behavior": "assert snr_db > 35, f'SNR too low: {snr_db:.1f} dB'",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_audio.py",
+            "line_start": 457,
+            "line_end": 496,
+            "complexity_score": 1.0,
+            "confidence": 0.9,
+            "setup_code": null,
+            "tags": [
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "numpy",
+              "getstream.video.rtc.track_util",
+              "vision_agents.plugins.twilio.audio"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "'Verify Signal-to-Noise Ratio is acceptable for voice.'",
+            "description": "'Verify Signal-to-Noise Ratio is acceptable for voice.'",
+            "expected_result": null,
+            "verification": "assert snr_db > 35, f'SNR too low: {snr_db:.1f} dB'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "duration = 0.5",
+            "description": "Assign duration = 0.5",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "samples_count = int(TWILIO_SAMPLE_RATE * duration)",
+            "description": "Assign samples_count = int(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "t = np.linspace(0, duration, samples_count, dtype=np.float32)",
+            "description": "Assign t = np.linspace(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "signal = (np.sin(2 * np.pi * 200 * t) * 8000 + np.sin(2 * np.pi * 400 * t) * 6000 + np.sin(2 * np.pi * 800 * t) * 4000).astype(np.int16)",
+            "description": "Assign signal = unknown.astype(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 6,
+            "code": "original = PcmData(samples=signal, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+            "description": "Assign original = PcmData(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 7,
+            "code": "mulaw = pcm_to_mulaw(original)",
+            "description": "Assign mulaw = pcm_to_mulaw(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 8,
+            "code": "recovered = mulaw_to_pcm(mulaw)",
+            "description": "Assign recovered = mulaw_to_pcm(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 9,
+            "code": "signal_power = np.mean(original.samples.astype(np.float64) ** 2)",
+            "description": "Assign signal_power = np.mean(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 10,
+            "code": "noise = original.samples.astype(np.float64) - recovered.samples.astype(np.float64)",
+            "description": "Assign noise = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 11,
+            "code": "noise_power = np.mean(noise ** 2)",
+            "description": "Assign noise_power = np.mean(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 12,
+            "code": "snr_db = 10 * np.log10(signal_power / noise_power) if noise_power > 0 else float('inf')",
+            "description": "Assign snr_db = value",
+            "expected_result": null,
+            "verification": "assert snr_db > 35, f'SNR too low: {snr_db:.1f} dB'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Snr Acceptable",
+        "tags": [
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "20 minutes",
+        "source_files": [
+          "test_audio.py:457"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "No Clipping Distortion": [
+      {
+        "guide_id": "7abdef833577",
+        "title": "No Clipping Distortion",
+        "overview": "Workflow: Ensure we don't introduce clipping at signal boundaries.",
+        "complexity_level": "intermediate",
+        "prerequisites": [],
+        "required_imports": [
+          "numpy",
+          "getstream.video.rtc.track_util",
+          "vision_agents.plugins.twilio.audio"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "5600698f",
+            "test_name": "test_no_clipping_distortion",
+            "category": "workflow",
+            "code": "\"Ensure we don't introduce clipping at signal boundaries.\"\nedge_values = np.array([-32768, -32767, 32766, 32767], dtype=np.int16)\npcm = PcmData(samples=edge_values, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\nmulaw = pcm_to_mulaw(pcm)\nrecovered = mulaw_to_pcm(mulaw)\nassert np.all(recovered.samples >= -32768)\nassert np.all(recovered.samples <= 32767)\nassert recovered.samples[0] < 0\nassert recovered.samples[1] < 0\nassert recovered.samples[2] > 0\nassert recovered.samples[3] > 0",
+            "language": "Python",
+            "description": "Workflow: Ensure we don't introduce clipping at signal boundaries.",
+            "expected_behavior": "assert recovered.samples[3] > 0",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_audio.py",
+            "line_start": 498,
+            "line_end": 521,
+            "complexity_score": 1.0,
+            "confidence": 0.9,
+            "setup_code": null,
+            "tags": [
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "numpy",
+              "getstream.video.rtc.track_util",
+              "vision_agents.plugins.twilio.audio"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "\"Ensure we don't introduce clipping at signal boundaries.\"",
+            "description": "\"Ensure we don't introduce clipping at signal boundaries.\"",
+            "expected_result": null,
+            "verification": "assert np.all(recovered.samples >= -32768)",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "edge_values = np.array([-32768, -32767, 32766, 32767], dtype=np.int16)",
+            "description": "Assign edge_values = np.array(...)",
+            "expected_result": null,
+            "verification": "assert np.all(recovered.samples <= 32767)",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "pcm = PcmData(samples=edge_values, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+            "description": "Assign pcm = PcmData(...)",
+            "expected_result": null,
+            "verification": "assert recovered.samples[0] < 0",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "mulaw = pcm_to_mulaw(pcm)",
+            "description": "Assign mulaw = pcm_to_mulaw(...)",
+            "expected_result": null,
+            "verification": "assert recovered.samples[1] < 0",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "recovered = mulaw_to_pcm(mulaw)",
+            "description": "Assign recovered = mulaw_to_pcm(...)",
+            "expected_result": null,
+            "verification": "assert recovered.samples[2] > 0",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "No Clipping Distortion",
+        "tags": [
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "10 minutes",
+        "source_files": [
+          "test_audio.py:498"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "Pcm To Mulaw And Back": [
+      {
+        "guide_id": "3f7a3ec077e2",
+        "title": "Pcm To Mulaw And Back",
+        "overview": "Workflow: Test roundtrip conversion preserves audio structure.",
+        "complexity_level": "advanced",
+        "prerequisites": [],
+        "required_imports": [
+          "numpy",
+          "getstream.video.rtc.track_util",
+          "importlib.util",
+          "os"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "60f0358c",
+            "test_name": "test_pcm_to_mulaw_and_back",
+            "category": "workflow",
+            "code": "'Test roundtrip conversion preserves audio structure.'\nsamples = np.array([100, 1000, -1000, 16000, -16000, 32000, -32000], dtype=np.int16)\npcm = PcmData(samples=samples, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\nmulaw_bytes = pcm_to_mulaw(pcm)\nrecovered = mulaw_to_pcm(mulaw_bytes)\nassert recovered.sample_rate == TWILIO_SAMPLE_RATE\nassert recovered.channels == 1\nassert len(recovered.samples) == len(samples)\noriginal_signs = np.sign(samples)\nrecovered_signs = np.sign(recovered.samples)\nnp.testing.assert_array_equal(original_signs, recovered_signs)",
+            "language": "Python",
+            "description": "Workflow: Test roundtrip conversion preserves audio structure.",
+            "expected_behavior": "np.testing.assert_array_equal(original_signs, recovered_signs)",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\tests\\test_mulaw_conversion.py",
+            "line_start": 25,
+            "line_end": 48,
+            "complexity_score": 1.0,
+            "confidence": 0.9,
+            "setup_code": null,
+            "tags": [
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "numpy",
+              "getstream.video.rtc.track_util",
+              "importlib.util",
+              "os"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "'Test roundtrip conversion preserves audio structure.'",
+            "description": "'Test roundtrip conversion preserves audio structure.'",
+            "expected_result": null,
+            "verification": "assert recovered.sample_rate == TWILIO_SAMPLE_RATE",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "samples = np.array([100, 1000, -1000, 16000, -16000, 32000, -32000], dtype=np.int16)",
+            "description": "Assign samples = np.array(...)",
+            "expected_result": null,
+            "verification": "assert recovered.channels == 1",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "pcm = PcmData(samples=samples, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+            "description": "Assign pcm = PcmData(...)",
+            "expected_result": null,
+            "verification": "assert len(recovered.samples) == len(samples)",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "mulaw_bytes = pcm_to_mulaw(pcm)",
+            "description": "Assign mulaw_bytes = pcm_to_mulaw(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "recovered = mulaw_to_pcm(mulaw_bytes)",
+            "description": "Assign recovered = mulaw_to_pcm(...)",
+            "expected_result": null,
+            "verification": "assert recovered.sample_rate == TWILIO_SAMPLE_RATE",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 6,
+            "code": "original_signs = np.sign(samples)",
+            "description": "Assign original_signs = np.sign(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 7,
+            "code": "recovered_signs = np.sign(recovered.samples)",
+            "description": "Assign recovered_signs = np.sign(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 8,
+            "code": "np.testing.assert_array_equal(original_signs, recovered_signs)",
+            "description": "Call np.testing.assert_array_equal()",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Pcm To Mulaw And Back",
+        "tags": [
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "15 minutes",
+        "source_files": [
+          "test_mulaw_conversion.py:25"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "Pcm To Mulaw Resamples": [
+      {
+        "guide_id": "5cf8c762fc3d",
+        "title": "Pcm To Mulaw Resamples",
+        "overview": "Workflow: Test that pcm_to_mulaw resamples non-8kHz audio.",
+        "complexity_level": "intermediate",
+        "prerequisites": [],
+        "required_imports": [
+          "numpy",
+          "getstream.video.rtc.track_util",
+          "importlib.util",
+          "os"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "17dde4dc",
+            "test_name": "test_pcm_to_mulaw_resamples",
+            "category": "workflow",
+            "code": "'Test that pcm_to_mulaw resamples non-8kHz audio.'\nsamples = np.sin(np.linspace(0, 2 * np.pi, 160)) * 10000\nsamples = samples.astype(np.int16)\npcm = PcmData(samples=samples, sample_rate=16000, channels=1, format=AudioFormat.S16)\nmulaw_bytes = pcm_to_mulaw(pcm)\nassert len(mulaw_bytes) == len(samples) // 2",
+            "language": "Python",
+            "description": "Workflow: Test that pcm_to_mulaw resamples non-8kHz audio.",
+            "expected_behavior": "assert len(mulaw_bytes) == len(samples) // 2",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\tests\\test_mulaw_conversion.py",
+            "line_start": 61,
+            "line_end": 75,
+            "complexity_score": 0.6,
+            "confidence": 0.9,
+            "setup_code": null,
+            "tags": [
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "numpy",
+              "getstream.video.rtc.track_util",
+              "importlib.util",
+              "os"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "'Test that pcm_to_mulaw resamples non-8kHz audio.'",
+            "description": "'Test that pcm_to_mulaw resamples non-8kHz audio.'",
+            "expected_result": null,
+            "verification": "assert len(mulaw_bytes) == len(samples) // 2",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "samples = np.sin(np.linspace(0, 2 * np.pi, 160)) * 10000",
+            "description": "Assign samples = value",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "samples = samples.astype(np.int16)",
+            "description": "Assign samples = samples.astype(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "pcm = PcmData(samples=samples, sample_rate=16000, channels=1, format=AudioFormat.S16)",
+            "description": "Assign pcm = PcmData(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "mulaw_bytes = pcm_to_mulaw(pcm)",
+            "description": "Assign mulaw_bytes = pcm_to_mulaw(...)",
+            "expected_result": null,
+            "verification": "assert len(mulaw_bytes) == len(samples) // 2",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Pcm To Mulaw Resamples",
+        "tags": [
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "10 minutes",
+        "source_files": [
+          "test_mulaw_conversion.py:61"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "Mia Audio Preserves Speech Characteristics": [
+      {
+        "guide_id": "5e9d2565975c",
+        "title": "Mia Audio Preserves Speech Characteristics",
+        "overview": "Workflow: Test that mulaw conversion preserves speech-like characteristics.",
+        "complexity_level": "intermediate",
+        "prerequisites": [
+          "Setup code must be executed first"
+        ],
+        "required_imports": [
+          "numpy",
+          "getstream.video.rtc.track_util",
+          "importlib.util",
+          "os"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "cecd9cf6",
+            "test_name": "test_mia_audio_preserves_speech_characteristics",
+            "category": "workflow",
+            "code": "'Test that mulaw conversion preserves speech-like characteristics.'\nmulaw_bytes = pcm_to_mulaw(mia_audio_16khz)\nrecovered = mulaw_to_pcm(mulaw_bytes)\nsamples = recovered.samples\nassert samples.max() > 1000, 'Audio should have positive peaks'\nassert samples.min() < -1000, 'Audio should have negative peaks'\nunique_values = len(np.unique(samples))\nassert unique_values > 50, 'Audio should have variation'",
+            "language": "Python",
+            "description": "Workflow: Test that mulaw conversion preserves speech-like characteristics.",
+            "expected_behavior": "assert unique_values > 50, 'Audio should have variation'",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\tests\\test_mulaw_conversion.py",
+            "line_start": 89,
+            "line_end": 100,
+            "complexity_score": 0.8,
+            "confidence": 0.9,
+            "setup_code": "# Fixtures: mia_audio_16khz",
+            "tags": [
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "numpy",
+              "getstream.video.rtc.track_util",
+              "importlib.util",
+              "os"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "'Test that mulaw conversion preserves speech-like characteristics.'",
+            "description": "'Test that mulaw conversion preserves speech-like characteristics.'",
+            "expected_result": null,
+            "verification": "assert samples.max() > 1000, 'Audio should have positive peaks'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "mulaw_bytes = pcm_to_mulaw(mia_audio_16khz)",
+            "description": "Assign mulaw_bytes = pcm_to_mulaw(...)",
+            "expected_result": null,
+            "verification": "assert samples.min() < -1000, 'Audio should have negative peaks'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "recovered = mulaw_to_pcm(mulaw_bytes)",
+            "description": "Assign recovered = mulaw_to_pcm(...)",
+            "expected_result": null,
+            "verification": "assert unique_values > 50, 'Audio should have variation'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "samples = recovered.samples",
+            "description": "Assign samples = value",
+            "expected_result": null,
+            "verification": "assert samples.max() > 1000, 'Audio should have positive peaks'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 5,
+            "code": "unique_values = len(np.unique(samples))",
+            "description": "Assign unique_values = len(...)",
+            "expected_result": null,
+            "verification": "assert unique_values > 50, 'Audio should have variation'",
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Mia Audio Preserves Speech Characteristics",
+        "tags": [
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "10 minutes",
+        "source_files": [
+          "test_mulaw_conversion.py:89"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ],
+    "Moondream Processor": [
+      {
+        "guide_id": "49a5a21c1049",
+        "title": "Moondream Processor",
+        "overview": "Workflow: Create and manage MoondreamLocalProcessor lifecycle.",
+        "complexity_level": "advanced",
+        "prerequisites": [],
+        "required_imports": [
+          "asyncio",
+          "os",
+          "pathlib",
+          "typing",
+          "numpy",
+          "pytest",
+          "torch",
+          "PIL",
+          "av",
+          "vision_agents.plugins.moondream",
+          "vision_agents.plugins.moondream.moondream_utils",
+          "logging"
+        ],
+        "required_fixtures": [],
+        "workflows": [
+          {
+            "example_id": "85d2c169",
+            "test_name": "moondream_processor",
+            "category": "workflow",
+            "code": "'Create and manage MoondreamLocalProcessor lifecycle.'\nprocessor = LocalDetectionProcessor(force_cpu=True)\ntry:\n    yield processor\nfinally:\n    processor.close()",
+            "language": "Python",
+            "description": "Workflow: Create and manage MoondreamLocalProcessor lifecycle.",
+            "expected_behavior": "",
+            "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\moondream\\tests\\test_moondream_local.py",
+            "line_start": 44,
+            "line_end": 50,
+            "complexity_score": 0.3,
+            "confidence": 0.9,
+            "setup_code": null,
+            "tags": [
+              "pytest",
+              "workflow",
+              "integration"
+            ],
+            "dependencies": [
+              "asyncio",
+              "os",
+              "pathlib",
+              "typing",
+              "numpy",
+              "pytest",
+              "torch",
+              "PIL",
+              "av",
+              "vision_agents.plugins.moondream",
+              "vision_agents.plugins.moondream.moondream_utils",
+              "logging"
+            ],
+            "ai_analysis": null
+          }
+        ],
+        "steps": [
+          {
+            "step_number": 1,
+            "code": "'Create and manage MoondreamLocalProcessor lifecycle.'",
+            "description": "'Create and manage MoondreamLocalProcessor lifecycle.'",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 2,
+            "code": "processor = LocalDetectionProcessor(force_cpu=True)",
+            "description": "Assign processor = LocalDetectionProcessor(...)",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 3,
+            "code": "yield processor",
+            "description": "yield processor",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          },
+          {
+            "step_number": 4,
+            "code": "processor.close()",
+            "description": "Call processor.close()",
+            "expected_result": null,
+            "verification": null,
+            "setup_required": null,
+            "explanation": null,
+            "common_pitfall": null,
+            "common_variations": []
+          }
+        ],
+        "use_case": "Moondream Processor",
+        "tags": [
+          "pytest",
+          "workflow",
+          "integration"
+        ],
+        "estimated_time": "10 minutes",
+        "source_files": [
+          "test_moondream_local.py:44"
+        ],
+        "language": "Python",
+        "common_pitfalls": [],
+        "troubleshooting": {},
+        "variations": [],
+        "related_guides": [],
+        "prerequisites_detailed": [],
+        "troubleshooting_detailed": [],
+        "next_steps_detailed": [],
+        "use_cases": []
+      }
+    ]
+  },
+  "guides": [
+    {
+      "guide_id": "0fd0bea2862e",
+      "title": "Mia Audio 16Khz",
+      "overview": "Workflow: mia audio 16khz",
+      "complexity_level": "advanced",
+      "prerequisites": [],
+      "required_imports": [
+        "asyncio",
+        "os",
+        "numpy",
+        "pytest",
+        "torchvision.io.video",
+        "getstream.video.rtc.track_util",
+        "aiortc"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "fb83d11e",
+          "test_name": "mia_audio_16khz",
+          "category": "workflow",
+          "code": "audio_file_path = os.path.join(os.path.dirname(__file__), 'test_assets/mia.mp3')\n'Load mia.mp3 and convert to 16kHz PCM data'\ncontainer = av.open(audio_file_path)\naudio_stream = container.streams.audio[0]\noriginal_sample_rate = audio_stream.sample_rate\ntarget_rate = 16000\nresampler = None\nif original_sample_rate != target_rate:\n    resampler = av.AudioResampler(format=AudioFormat.S16, layout='mono', rate=target_rate)\nsamples = []\nfor frame in container.decode(audio_stream):\n    if resampler:\n        frame = resampler.resample(frame)[0]\n    frame_array = frame.to_ndarray()\n    if len(frame_array.shape) > 1:\n        frame_array = np.mean(frame_array, axis=0)\n    samples.append(frame_array)\nsamples = np.concatenate(samples)\nsamples = samples.astype(np.int16)\ncontainer.close()\npcm = PcmData(samples=samples, sample_rate=target_rate, format=AudioFormat.S16)\nreturn pcm",
+          "language": "Python",
+          "description": "Workflow: mia audio 16khz",
+          "expected_behavior": "",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\tests\\base_test.py",
+          "line_start": 18,
+          "line_end": 58,
+          "complexity_score": 1.0,
+          "confidence": 0.9,
+          "setup_code": null,
+          "tags": [
+            "pytest",
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "asyncio",
+            "os",
+            "numpy",
+            "pytest",
+            "torchvision.io.video",
+            "getstream.video.rtc.track_util",
+            "aiortc"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "audio_file_path = os.path.join(os.path.dirname(__file__), 'test_assets/mia.mp3')",
+          "description": "Assign audio_file_path = os.path.join(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "'Load mia.mp3 and convert to 16kHz PCM data'",
+          "description": "'Load mia.mp3 and convert to 16kHz PCM data'",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "container = av.open(audio_file_path)",
+          "description": "Assign container = av.open(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "audio_stream = container.streams.audio[0]",
+          "description": "Assign audio_stream = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "original_sample_rate = audio_stream.sample_rate",
+          "description": "Assign original_sample_rate = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 6,
+          "code": "target_rate = 16000",
+          "description": "Assign target_rate = 16000",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 7,
+          "code": "resampler = None",
+          "description": "Assign resampler = None",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 8,
+          "code": "samples = []",
+          "description": "Assign samples = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 9,
+          "code": "samples = np.concatenate(samples)",
+          "description": "Assign samples = np.concatenate(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 10,
+          "code": "samples = samples.astype(np.int16)",
+          "description": "Assign samples = samples.astype(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 11,
+          "code": "container.close()",
+          "description": "Call container.close()",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 12,
+          "code": "pcm = PcmData(samples=samples, sample_rate=target_rate, format=AudioFormat.S16)",
+          "description": "Assign pcm = PcmData(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 13,
+          "code": "resampler = av.AudioResampler(format=AudioFormat.S16, layout='mono', rate=target_rate)",
+          "description": "Assign resampler = av.AudioResampler(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 14,
+          "code": "frame_array = frame.to_ndarray()",
+          "description": "Assign frame_array = frame.to_ndarray(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 15,
+          "code": "samples.append(frame_array)",
+          "description": "Call samples.append()",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 16,
+          "code": "frame = resampler.resample(frame)[0]",
+          "description": "Assign frame = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 17,
+          "code": "frame_array = np.mean(frame_array, axis=0)",
+          "description": "Assign frame_array = np.mean(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Mia Audio 16Khz",
+      "tags": [
+        "pytest",
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "20 minutes",
+      "source_files": [
+        "base_test.py:18"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "9ed2e5e4c2eb",
+      "title": "Create And Get",
+      "overview": "Workflow: Test creating and retrieving calls.",
+      "complexity_level": "advanced",
+      "prerequisites": [],
+      "required_imports": [
+        "datetime",
+        "dotenv",
+        "vision_agents.plugins",
+        "vision_agents.plugins.twilio",
+        "getstream.video.rtc.track_util",
+        "numpy"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "175a029f",
+          "test_name": "test_create_and_get",
+          "category": "workflow",
+          "code": "'Test creating and retrieving calls.'\nregistry = twilio.TwilioCallRegistry()\nwebhook_data = CallWebhookInput(CallSid='CA123', AccountSid='AC123', CallStatus='ringing', Direction='inbound', From='+123', Caller='+123', To='+456', Called='+456')\ncall = registry.create('CA123', webhook_data=webhook_data)\nassert call.call_sid == 'CA123'\nassert call.from_number == '+123'\nretrieved = registry.get('CA123')\nassert retrieved is call",
+          "language": "Python",
+          "description": "Workflow: Test creating and retrieving calls.",
+          "expected_behavior": "assert retrieved is call",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_twilio.py",
+          "line_start": 55,
+          "line_end": 74,
+          "complexity_score": 0.8,
+          "confidence": 0.9,
+          "setup_code": null,
+          "tags": [
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "datetime",
+            "dotenv",
+            "vision_agents.plugins",
+            "vision_agents.plugins.twilio",
+            "getstream.video.rtc.track_util",
+            "numpy"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "'Test creating and retrieving calls.'",
+          "description": "'Test creating and retrieving calls.'",
+          "expected_result": null,
+          "verification": "assert call.call_sid == 'CA123'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "registry = twilio.TwilioCallRegistry()",
+          "description": "Assign registry = twilio.TwilioCallRegistry(...)",
+          "expected_result": null,
+          "verification": "assert call.from_number == '+123'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "webhook_data = CallWebhookInput(CallSid='CA123', AccountSid='AC123', CallStatus='ringing', Direction='inbound', From='+123', Caller='+123', To='+456', Called='+456')",
+          "description": "Assign webhook_data = CallWebhookInput(...)",
+          "expected_result": null,
+          "verification": "assert retrieved is call",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "call = registry.create('CA123', webhook_data=webhook_data)",
+          "description": "Assign call = registry.create(...)",
+          "expected_result": null,
+          "verification": "assert call.call_sid == 'CA123'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "retrieved = registry.get('CA123')",
+          "description": "Assign retrieved = registry.get(...)",
+          "expected_result": null,
+          "verification": "assert retrieved is call",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Create And Get",
+      "tags": [
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "10 minutes",
+      "source_files": [
+        "test_twilio.py:55"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "6474d760adb9",
+      "title": "Parse File Outside Base Dir",
+      "overview": "Workflow: test parse file outside base dir",
+      "complexity_level": "advanced",
+      "prerequisites": [
+        "Setup code must be executed first"
+      ],
+      "required_imports": [
+        "pytest",
+        "vision_agents.core.instructions"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "ff80558b",
+          "test_name": "test_parse_file_outside_base_dir",
+          "category": "workflow",
+          "code": "file_path1 = tmp_path / 'file1.md'\nbase_dir = tmp_path / 'another-dir'\nbase_dir.mkdir()\nfile_path2 = base_dir / 'file1.md'\ninput_text = f'read @{file_path1}'\nfile_path1.write_text('abcdef', encoding='utf-8')\nfile_path2.write_text('abcdef', encoding='utf-8')\nwith pytest.raises(InstructionsReadError, match='reason - path outside the base directory'):\n    Instructions(input_text=input_text, base_dir=base_dir)",
+          "language": "Python",
+          "description": "Workflow: test parse file outside base dir",
+          "expected_behavior": "",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\tests\\test_instructions.py",
+          "line_start": 55,
+          "line_end": 68,
+          "complexity_score": 0.8,
+          "confidence": 0.9,
+          "setup_code": "# Fixtures: tmp_path",
+          "tags": [
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "pytest",
+            "vision_agents.core.instructions"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "file_path1 = tmp_path / 'file1.md'",
+          "description": "Assign file_path1 = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "base_dir = tmp_path / 'another-dir'",
+          "description": "Assign base_dir = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "base_dir.mkdir()",
+          "description": "Call base_dir.mkdir()",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "file_path2 = base_dir / 'file1.md'",
+          "description": "Assign file_path2 = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "input_text = f'read @{file_path1}'",
+          "description": "Assign input_text = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 6,
+          "code": "file_path1.write_text('abcdef', encoding='utf-8')",
+          "description": "Call file_path1.write_text()",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 7,
+          "code": "file_path2.write_text('abcdef', encoding='utf-8')",
+          "description": "Call file_path2.write_text()",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 8,
+          "code": "Instructions(input_text=input_text, base_dir=base_dir)",
+          "description": "Call Instructions()",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Parse File Outside Base Dir",
+      "tags": [
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "15 minutes",
+      "source_files": [
+        "test_instructions.py:55"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "c3a40939c8f6",
+      "title": "Encode Symmetry",
+      "overview": "Workflow: Positive and negative values should encode symmetrically.",
+      "complexity_level": "intermediate",
+      "prerequisites": [],
+      "required_imports": [
+        "numpy",
+        "getstream.video.rtc.track_util",
+        "vision_agents.plugins.twilio.audio"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "f8c66018",
+          "test_name": "test_encode_symmetry",
+          "category": "workflow",
+          "code": "'Positive and negative values should encode symmetrically.'\ntest_values = [100, 1000, 8000, 16000, 32000]\nfor val in test_values:\n    pos_pcm = PcmData(samples=np.array([val], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\n    neg_pcm = PcmData(samples=np.array([-val], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\n    pos_mulaw = pcm_to_mulaw(pos_pcm)[0]\n    neg_mulaw = pcm_to_mulaw(neg_pcm)[0]\n    assert pos_mulaw & 127 == neg_mulaw & 127, f'Asymmetric encoding for \u00b1{val}: pos={pos_mulaw:#04x}, neg={neg_mulaw:#04x}'",
+          "language": "Python",
+          "description": "Workflow: Positive and negative values should encode symmetrically.",
+          "expected_behavior": "",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_audio.py",
+          "line_start": 359,
+          "line_end": 385,
+          "complexity_score": 0.3,
+          "confidence": 0.9,
+          "setup_code": null,
+          "tags": [
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "numpy",
+            "getstream.video.rtc.track_util",
+            "vision_agents.plugins.twilio.audio"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "'Positive and negative values should encode symmetrically.'",
+          "description": "'Positive and negative values should encode symmetrically.'",
+          "expected_result": null,
+          "verification": "assert pos_mulaw & 127 == neg_mulaw & 127, f'Asymmetric encoding for \u00b1{val}: pos={pos_mulaw:#04x}, neg={neg_mulaw:#04x}'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "test_values = [100, 1000, 8000, 16000, 32000]",
+          "description": "Assign test_values = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "pos_pcm = PcmData(samples=np.array([val], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+          "description": "Assign pos_pcm = PcmData(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "neg_pcm = PcmData(samples=np.array([-val], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+          "description": "Assign neg_pcm = PcmData(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "pos_mulaw = pcm_to_mulaw(pos_pcm)[0]",
+          "description": "Assign pos_mulaw = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 6,
+          "code": "neg_mulaw = pcm_to_mulaw(neg_pcm)[0]",
+          "description": "Assign neg_mulaw = value",
+          "expected_result": null,
+          "verification": "assert pos_mulaw & 127 == neg_mulaw & 127, f'Asymmetric encoding for \u00b1{val}: pos={pos_mulaw:#04x}, neg={neg_mulaw:#04x}'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Encode Symmetry",
+      "tags": [
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "10 minutes",
+      "source_files": [
+        "test_audio.py:359"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "d2484d524d45",
+      "title": "Roundtrip Preserves Waveform",
+      "overview": "Workflow: Verify PCM -> mulaw -> PCM round-trip maintains signal quality.",
+      "complexity_level": "advanced",
+      "prerequisites": [],
+      "required_imports": [
+        "numpy",
+        "getstream.video.rtc.track_util",
+        "vision_agents.plugins.twilio.audio"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "fe7b31e0",
+          "test_name": "test_roundtrip_preserves_waveform",
+          "category": "workflow",
+          "code": "'Verify PCM -> mulaw -> PCM round-trip maintains signal quality.'\nduration = 0.1\nt = np.linspace(0, duration, int(TWILIO_SAMPLE_RATE * duration), dtype=np.float32)\nsine_wave = (np.sin(2 * np.pi * 440 * t) * 16000).astype(np.int16)\noriginal_pcm = PcmData(samples=sine_wave, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\nmulaw = pcm_to_mulaw(original_pcm)\nrecovered_pcm = mulaw_to_pcm(mulaw)\nerror = np.abs(original_pcm.samples.astype(np.int32) - recovered_pcm.samples.astype(np.int32))\nmax_error = np.max(error)\nmean_error = np.mean(error)\nassert max_error < 2000, f'Max error too high: {max_error}'\nassert mean_error < 500, f'Mean error too high: {mean_error}'",
+          "language": "Python",
+          "description": "Workflow: Verify PCM -> mulaw -> PCM round-trip maintains signal quality.",
+          "expected_behavior": "assert mean_error < 500, f'Mean error too high: {mean_error}'",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_audio.py",
+          "line_start": 391,
+          "line_end": 422,
+          "complexity_score": 1.0,
+          "confidence": 0.9,
+          "setup_code": null,
+          "tags": [
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "numpy",
+            "getstream.video.rtc.track_util",
+            "vision_agents.plugins.twilio.audio"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "'Verify PCM -> mulaw -> PCM round-trip maintains signal quality.'",
+          "description": "'Verify PCM -> mulaw -> PCM round-trip maintains signal quality.'",
+          "expected_result": null,
+          "verification": "assert max_error < 2000, f'Max error too high: {max_error}'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "duration = 0.1",
+          "description": "Assign duration = 0.1",
+          "expected_result": null,
+          "verification": "assert mean_error < 500, f'Mean error too high: {mean_error}'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "t = np.linspace(0, duration, int(TWILIO_SAMPLE_RATE * duration), dtype=np.float32)",
+          "description": "Assign t = np.linspace(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "sine_wave = (np.sin(2 * np.pi * 440 * t) * 16000).astype(np.int16)",
+          "description": "Assign sine_wave = unknown.astype(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "original_pcm = PcmData(samples=sine_wave, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+          "description": "Assign original_pcm = PcmData(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 6,
+          "code": "mulaw = pcm_to_mulaw(original_pcm)",
+          "description": "Assign mulaw = pcm_to_mulaw(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 7,
+          "code": "recovered_pcm = mulaw_to_pcm(mulaw)",
+          "description": "Assign recovered_pcm = mulaw_to_pcm(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 8,
+          "code": "error = np.abs(original_pcm.samples.astype(np.int32) - recovered_pcm.samples.astype(np.int32))",
+          "description": "Assign error = np.abs(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 9,
+          "code": "max_error = np.max(error)",
+          "description": "Assign max_error = np.max(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 10,
+          "code": "mean_error = np.mean(error)",
+          "description": "Assign mean_error = np.mean(...)",
+          "expected_result": null,
+          "verification": "assert max_error < 2000, f'Max error too high: {max_error}'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Roundtrip Preserves Waveform",
+      "tags": [
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "15 minutes",
+      "source_files": [
+        "test_audio.py:391"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "a7d18727fd8f",
+      "title": "Roundtrip Known Values",
+      "overview": "Workflow: Verify round-trip produces expected decoded values.",
+      "complexity_level": "intermediate",
+      "prerequisites": [],
+      "required_imports": [
+        "numpy",
+        "getstream.video.rtc.track_util",
+        "vision_agents.plugins.twilio.audio"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "301a3f82",
+          "test_name": "test_roundtrip_known_values",
+          "category": "workflow",
+          "code": "'Verify round-trip produces expected decoded values.'\ntest_cases = [(0, 0), (32767, 32124), (-32768, -32124), (16000, 15996), (-16000, -15996), (1000, 988), (-1000, -988)]\nfor original, expected_recovered in test_cases:\n    pcm = PcmData(samples=np.array([original], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\n    mulaw = pcm_to_mulaw(pcm)\n    recovered = mulaw_to_pcm(mulaw).samples[0]\n    assert recovered == expected_recovered, f'Round-trip mismatch for PCM {original}: got {recovered}, expected {expected_recovered}'",
+          "language": "Python",
+          "description": "Workflow: Verify round-trip produces expected decoded values.",
+          "expected_behavior": "",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_audio.py",
+          "line_start": 424,
+          "line_end": 451,
+          "complexity_score": 0.3,
+          "confidence": 0.9,
+          "setup_code": null,
+          "tags": [
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "numpy",
+            "getstream.video.rtc.track_util",
+            "vision_agents.plugins.twilio.audio"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "'Verify round-trip produces expected decoded values.'",
+          "description": "'Verify round-trip produces expected decoded values.'",
+          "expected_result": null,
+          "verification": "assert recovered == expected_recovered, f'Round-trip mismatch for PCM {original}: got {recovered}, expected {expected_recovered}'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "test_cases = [(0, 0), (32767, 32124), (-32768, -32124), (16000, 15996), (-16000, -15996), (1000, 988), (-1000, -988)]",
+          "description": "Assign test_cases = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "pcm = PcmData(samples=np.array([original], dtype=np.int16), sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+          "description": "Assign pcm = PcmData(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "mulaw = pcm_to_mulaw(pcm)",
+          "description": "Assign mulaw = pcm_to_mulaw(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "recovered = mulaw_to_pcm(mulaw).samples[0]",
+          "description": "Assign recovered = value",
+          "expected_result": null,
+          "verification": "assert recovered == expected_recovered, f'Round-trip mismatch for PCM {original}: got {recovered}, expected {expected_recovered}'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Roundtrip Known Values",
+      "tags": [
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "10 minutes",
+      "source_files": [
+        "test_audio.py:424"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "301e442bb154",
+      "title": "Snr Acceptable",
+      "overview": "Workflow: Verify Signal-to-Noise Ratio is acceptable for voice.",
+      "complexity_level": "advanced",
+      "prerequisites": [],
+      "required_imports": [
+        "numpy",
+        "getstream.video.rtc.track_util",
+        "vision_agents.plugins.twilio.audio"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "0ef98bd5",
+          "test_name": "test_snr_acceptable",
+          "category": "workflow",
+          "code": "'Verify Signal-to-Noise Ratio is acceptable for voice.'\nduration = 0.5\nsamples_count = int(TWILIO_SAMPLE_RATE * duration)\nt = np.linspace(0, duration, samples_count, dtype=np.float32)\nsignal = (np.sin(2 * np.pi * 200 * t) * 8000 + np.sin(2 * np.pi * 400 * t) * 6000 + np.sin(2 * np.pi * 800 * t) * 4000).astype(np.int16)\noriginal = PcmData(samples=signal, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\nmulaw = pcm_to_mulaw(original)\nrecovered = mulaw_to_pcm(mulaw)\nsignal_power = np.mean(original.samples.astype(np.float64) ** 2)\nnoise = original.samples.astype(np.float64) - recovered.samples.astype(np.float64)\nnoise_power = np.mean(noise ** 2)\nsnr_db = 10 * np.log10(signal_power / noise_power) if noise_power > 0 else float('inf')\nassert snr_db > 35, f'SNR too low: {snr_db:.1f} dB'",
+          "language": "Python",
+          "description": "Workflow: Verify Signal-to-Noise Ratio is acceptable for voice.",
+          "expected_behavior": "assert snr_db > 35, f'SNR too low: {snr_db:.1f} dB'",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_audio.py",
+          "line_start": 457,
+          "line_end": 496,
+          "complexity_score": 1.0,
+          "confidence": 0.9,
+          "setup_code": null,
+          "tags": [
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "numpy",
+            "getstream.video.rtc.track_util",
+            "vision_agents.plugins.twilio.audio"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "'Verify Signal-to-Noise Ratio is acceptable for voice.'",
+          "description": "'Verify Signal-to-Noise Ratio is acceptable for voice.'",
+          "expected_result": null,
+          "verification": "assert snr_db > 35, f'SNR too low: {snr_db:.1f} dB'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "duration = 0.5",
+          "description": "Assign duration = 0.5",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "samples_count = int(TWILIO_SAMPLE_RATE * duration)",
+          "description": "Assign samples_count = int(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "t = np.linspace(0, duration, samples_count, dtype=np.float32)",
+          "description": "Assign t = np.linspace(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "signal = (np.sin(2 * np.pi * 200 * t) * 8000 + np.sin(2 * np.pi * 400 * t) * 6000 + np.sin(2 * np.pi * 800 * t) * 4000).astype(np.int16)",
+          "description": "Assign signal = unknown.astype(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 6,
+          "code": "original = PcmData(samples=signal, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+          "description": "Assign original = PcmData(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 7,
+          "code": "mulaw = pcm_to_mulaw(original)",
+          "description": "Assign mulaw = pcm_to_mulaw(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 8,
+          "code": "recovered = mulaw_to_pcm(mulaw)",
+          "description": "Assign recovered = mulaw_to_pcm(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 9,
+          "code": "signal_power = np.mean(original.samples.astype(np.float64) ** 2)",
+          "description": "Assign signal_power = np.mean(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 10,
+          "code": "noise = original.samples.astype(np.float64) - recovered.samples.astype(np.float64)",
+          "description": "Assign noise = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 11,
+          "code": "noise_power = np.mean(noise ** 2)",
+          "description": "Assign noise_power = np.mean(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 12,
+          "code": "snr_db = 10 * np.log10(signal_power / noise_power) if noise_power > 0 else float('inf')",
+          "description": "Assign snr_db = value",
+          "expected_result": null,
+          "verification": "assert snr_db > 35, f'SNR too low: {snr_db:.1f} dB'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Snr Acceptable",
+      "tags": [
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "20 minutes",
+      "source_files": [
+        "test_audio.py:457"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "7abdef833577",
+      "title": "No Clipping Distortion",
+      "overview": "Workflow: Ensure we don't introduce clipping at signal boundaries.",
+      "complexity_level": "intermediate",
+      "prerequisites": [],
+      "required_imports": [
+        "numpy",
+        "getstream.video.rtc.track_util",
+        "vision_agents.plugins.twilio.audio"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "5600698f",
+          "test_name": "test_no_clipping_distortion",
+          "category": "workflow",
+          "code": "\"Ensure we don't introduce clipping at signal boundaries.\"\nedge_values = np.array([-32768, -32767, 32766, 32767], dtype=np.int16)\npcm = PcmData(samples=edge_values, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\nmulaw = pcm_to_mulaw(pcm)\nrecovered = mulaw_to_pcm(mulaw)\nassert np.all(recovered.samples >= -32768)\nassert np.all(recovered.samples <= 32767)\nassert recovered.samples[0] < 0\nassert recovered.samples[1] < 0\nassert recovered.samples[2] > 0\nassert recovered.samples[3] > 0",
+          "language": "Python",
+          "description": "Workflow: Ensure we don't introduce clipping at signal boundaries.",
+          "expected_behavior": "assert recovered.samples[3] > 0",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\twilio\\tests\\test_audio.py",
+          "line_start": 498,
+          "line_end": 521,
+          "complexity_score": 1.0,
+          "confidence": 0.9,
+          "setup_code": null,
+          "tags": [
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "numpy",
+            "getstream.video.rtc.track_util",
+            "vision_agents.plugins.twilio.audio"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "\"Ensure we don't introduce clipping at signal boundaries.\"",
+          "description": "\"Ensure we don't introduce clipping at signal boundaries.\"",
+          "expected_result": null,
+          "verification": "assert np.all(recovered.samples >= -32768)",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "edge_values = np.array([-32768, -32767, 32766, 32767], dtype=np.int16)",
+          "description": "Assign edge_values = np.array(...)",
+          "expected_result": null,
+          "verification": "assert np.all(recovered.samples <= 32767)",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "pcm = PcmData(samples=edge_values, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+          "description": "Assign pcm = PcmData(...)",
+          "expected_result": null,
+          "verification": "assert recovered.samples[0] < 0",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "mulaw = pcm_to_mulaw(pcm)",
+          "description": "Assign mulaw = pcm_to_mulaw(...)",
+          "expected_result": null,
+          "verification": "assert recovered.samples[1] < 0",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "recovered = mulaw_to_pcm(mulaw)",
+          "description": "Assign recovered = mulaw_to_pcm(...)",
+          "expected_result": null,
+          "verification": "assert recovered.samples[2] > 0",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "No Clipping Distortion",
+      "tags": [
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "10 minutes",
+      "source_files": [
+        "test_audio.py:498"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "3f7a3ec077e2",
+      "title": "Pcm To Mulaw And Back",
+      "overview": "Workflow: Test roundtrip conversion preserves audio structure.",
+      "complexity_level": "advanced",
+      "prerequisites": [],
+      "required_imports": [
+        "numpy",
+        "getstream.video.rtc.track_util",
+        "importlib.util",
+        "os"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "60f0358c",
+          "test_name": "test_pcm_to_mulaw_and_back",
+          "category": "workflow",
+          "code": "'Test roundtrip conversion preserves audio structure.'\nsamples = np.array([100, 1000, -1000, 16000, -16000, 32000, -32000], dtype=np.int16)\npcm = PcmData(samples=samples, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)\nmulaw_bytes = pcm_to_mulaw(pcm)\nrecovered = mulaw_to_pcm(mulaw_bytes)\nassert recovered.sample_rate == TWILIO_SAMPLE_RATE\nassert recovered.channels == 1\nassert len(recovered.samples) == len(samples)\noriginal_signs = np.sign(samples)\nrecovered_signs = np.sign(recovered.samples)\nnp.testing.assert_array_equal(original_signs, recovered_signs)",
+          "language": "Python",
+          "description": "Workflow: Test roundtrip conversion preserves audio structure.",
+          "expected_behavior": "np.testing.assert_array_equal(original_signs, recovered_signs)",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\tests\\test_mulaw_conversion.py",
+          "line_start": 25,
+          "line_end": 48,
+          "complexity_score": 1.0,
+          "confidence": 0.9,
+          "setup_code": null,
+          "tags": [
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "numpy",
+            "getstream.video.rtc.track_util",
+            "importlib.util",
+            "os"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "'Test roundtrip conversion preserves audio structure.'",
+          "description": "'Test roundtrip conversion preserves audio structure.'",
+          "expected_result": null,
+          "verification": "assert recovered.sample_rate == TWILIO_SAMPLE_RATE",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "samples = np.array([100, 1000, -1000, 16000, -16000, 32000, -32000], dtype=np.int16)",
+          "description": "Assign samples = np.array(...)",
+          "expected_result": null,
+          "verification": "assert recovered.channels == 1",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "pcm = PcmData(samples=samples, sample_rate=TWILIO_SAMPLE_RATE, channels=1, format=AudioFormat.S16)",
+          "description": "Assign pcm = PcmData(...)",
+          "expected_result": null,
+          "verification": "assert len(recovered.samples) == len(samples)",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "mulaw_bytes = pcm_to_mulaw(pcm)",
+          "description": "Assign mulaw_bytes = pcm_to_mulaw(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "recovered = mulaw_to_pcm(mulaw_bytes)",
+          "description": "Assign recovered = mulaw_to_pcm(...)",
+          "expected_result": null,
+          "verification": "assert recovered.sample_rate == TWILIO_SAMPLE_RATE",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 6,
+          "code": "original_signs = np.sign(samples)",
+          "description": "Assign original_signs = np.sign(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 7,
+          "code": "recovered_signs = np.sign(recovered.samples)",
+          "description": "Assign recovered_signs = np.sign(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 8,
+          "code": "np.testing.assert_array_equal(original_signs, recovered_signs)",
+          "description": "Call np.testing.assert_array_equal()",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Pcm To Mulaw And Back",
+      "tags": [
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "15 minutes",
+      "source_files": [
+        "test_mulaw_conversion.py:25"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "5cf8c762fc3d",
+      "title": "Pcm To Mulaw Resamples",
+      "overview": "Workflow: Test that pcm_to_mulaw resamples non-8kHz audio.",
+      "complexity_level": "intermediate",
+      "prerequisites": [],
+      "required_imports": [
+        "numpy",
+        "getstream.video.rtc.track_util",
+        "importlib.util",
+        "os"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "17dde4dc",
+          "test_name": "test_pcm_to_mulaw_resamples",
+          "category": "workflow",
+          "code": "'Test that pcm_to_mulaw resamples non-8kHz audio.'\nsamples = np.sin(np.linspace(0, 2 * np.pi, 160)) * 10000\nsamples = samples.astype(np.int16)\npcm = PcmData(samples=samples, sample_rate=16000, channels=1, format=AudioFormat.S16)\nmulaw_bytes = pcm_to_mulaw(pcm)\nassert len(mulaw_bytes) == len(samples) // 2",
+          "language": "Python",
+          "description": "Workflow: Test that pcm_to_mulaw resamples non-8kHz audio.",
+          "expected_behavior": "assert len(mulaw_bytes) == len(samples) // 2",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\tests\\test_mulaw_conversion.py",
+          "line_start": 61,
+          "line_end": 75,
+          "complexity_score": 0.6,
+          "confidence": 0.9,
+          "setup_code": null,
+          "tags": [
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "numpy",
+            "getstream.video.rtc.track_util",
+            "importlib.util",
+            "os"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "'Test that pcm_to_mulaw resamples non-8kHz audio.'",
+          "description": "'Test that pcm_to_mulaw resamples non-8kHz audio.'",
+          "expected_result": null,
+          "verification": "assert len(mulaw_bytes) == len(samples) // 2",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "samples = np.sin(np.linspace(0, 2 * np.pi, 160)) * 10000",
+          "description": "Assign samples = value",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "samples = samples.astype(np.int16)",
+          "description": "Assign samples = samples.astype(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "pcm = PcmData(samples=samples, sample_rate=16000, channels=1, format=AudioFormat.S16)",
+          "description": "Assign pcm = PcmData(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "mulaw_bytes = pcm_to_mulaw(pcm)",
+          "description": "Assign mulaw_bytes = pcm_to_mulaw(...)",
+          "expected_result": null,
+          "verification": "assert len(mulaw_bytes) == len(samples) // 2",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Pcm To Mulaw Resamples",
+      "tags": [
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "10 minutes",
+      "source_files": [
+        "test_mulaw_conversion.py:61"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "5e9d2565975c",
+      "title": "Mia Audio Preserves Speech Characteristics",
+      "overview": "Workflow: Test that mulaw conversion preserves speech-like characteristics.",
+      "complexity_level": "intermediate",
+      "prerequisites": [
+        "Setup code must be executed first"
+      ],
+      "required_imports": [
+        "numpy",
+        "getstream.video.rtc.track_util",
+        "importlib.util",
+        "os"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "cecd9cf6",
+          "test_name": "test_mia_audio_preserves_speech_characteristics",
+          "category": "workflow",
+          "code": "'Test that mulaw conversion preserves speech-like characteristics.'\nmulaw_bytes = pcm_to_mulaw(mia_audio_16khz)\nrecovered = mulaw_to_pcm(mulaw_bytes)\nsamples = recovered.samples\nassert samples.max() > 1000, 'Audio should have positive peaks'\nassert samples.min() < -1000, 'Audio should have negative peaks'\nunique_values = len(np.unique(samples))\nassert unique_values > 50, 'Audio should have variation'",
+          "language": "Python",
+          "description": "Workflow: Test that mulaw conversion preserves speech-like characteristics.",
+          "expected_behavior": "assert unique_values > 50, 'Audio should have variation'",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\tests\\test_mulaw_conversion.py",
+          "line_start": 89,
+          "line_end": 100,
+          "complexity_score": 0.8,
+          "confidence": 0.9,
+          "setup_code": "# Fixtures: mia_audio_16khz",
+          "tags": [
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "numpy",
+            "getstream.video.rtc.track_util",
+            "importlib.util",
+            "os"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "'Test that mulaw conversion preserves speech-like characteristics.'",
+          "description": "'Test that mulaw conversion preserves speech-like characteristics.'",
+          "expected_result": null,
+          "verification": "assert samples.max() > 1000, 'Audio should have positive peaks'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "mulaw_bytes = pcm_to_mulaw(mia_audio_16khz)",
+          "description": "Assign mulaw_bytes = pcm_to_mulaw(...)",
+          "expected_result": null,
+          "verification": "assert samples.min() < -1000, 'Audio should have negative peaks'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "recovered = mulaw_to_pcm(mulaw_bytes)",
+          "description": "Assign recovered = mulaw_to_pcm(...)",
+          "expected_result": null,
+          "verification": "assert unique_values > 50, 'Audio should have variation'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "samples = recovered.samples",
+          "description": "Assign samples = value",
+          "expected_result": null,
+          "verification": "assert samples.max() > 1000, 'Audio should have positive peaks'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 5,
+          "code": "unique_values = len(np.unique(samples))",
+          "description": "Assign unique_values = len(...)",
+          "expected_result": null,
+          "verification": "assert unique_values > 50, 'Audio should have variation'",
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Mia Audio Preserves Speech Characteristics",
+      "tags": [
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "10 minutes",
+      "source_files": [
+        "test_mulaw_conversion.py:89"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    },
+    {
+      "guide_id": "49a5a21c1049",
+      "title": "Moondream Processor",
+      "overview": "Workflow: Create and manage MoondreamLocalProcessor lifecycle.",
+      "complexity_level": "advanced",
+      "prerequisites": [],
+      "required_imports": [
+        "asyncio",
+        "os",
+        "pathlib",
+        "typing",
+        "numpy",
+        "pytest",
+        "torch",
+        "PIL",
+        "av",
+        "vision_agents.plugins.moondream",
+        "vision_agents.plugins.moondream.moondream_utils",
+        "logging"
+      ],
+      "required_fixtures": [],
+      "workflows": [
+        {
+          "example_id": "85d2c169",
+          "test_name": "moondream_processor",
+          "category": "workflow",
+          "code": "'Create and manage MoondreamLocalProcessor lifecycle.'\nprocessor = LocalDetectionProcessor(force_cpu=True)\ntry:\n    yield processor\nfinally:\n    processor.close()",
+          "language": "Python",
+          "description": "Workflow: Create and manage MoondreamLocalProcessor lifecycle.",
+          "expected_behavior": "",
+          "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-Vision-Agents-3fea6ac4\\plugins\\moondream\\tests\\test_moondream_local.py",
+          "line_start": 44,
+          "line_end": 50,
+          "complexity_score": 0.3,
+          "confidence": 0.9,
+          "setup_code": null,
+          "tags": [
+            "pytest",
+            "workflow",
+            "integration"
+          ],
+          "dependencies": [
+            "asyncio",
+            "os",
+            "pathlib",
+            "typing",
+            "numpy",
+            "pytest",
+            "torch",
+            "PIL",
+            "av",
+            "vision_agents.plugins.moondream",
+            "vision_agents.plugins.moondream.moondream_utils",
+            "logging"
+          ],
+          "ai_analysis": null
+        }
+      ],
+      "steps": [
+        {
+          "step_number": 1,
+          "code": "'Create and manage MoondreamLocalProcessor lifecycle.'",
+          "description": "'Create and manage MoondreamLocalProcessor lifecycle.'",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 2,
+          "code": "processor = LocalDetectionProcessor(force_cpu=True)",
+          "description": "Assign processor = LocalDetectionProcessor(...)",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 3,
+          "code": "yield processor",
+          "description": "yield processor",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        },
+        {
+          "step_number": 4,
+          "code": "processor.close()",
+          "description": "Call processor.close()",
+          "expected_result": null,
+          "verification": null,
+          "setup_required": null,
+          "explanation": null,
+          "common_pitfall": null,
+          "common_variations": []
+        }
+      ],
+      "use_case": "Moondream Processor",
+      "tags": [
+        "pytest",
+        "workflow",
+        "integration"
+      ],
+      "estimated_time": "10 minutes",
+      "source_files": [
+        "test_moondream_local.py:44"
+      ],
+      "language": "Python",
+      "common_pitfalls": [],
+      "troubleshooting": {},
+      "variations": [],
+      "related_guides": [],
+      "prerequisites_detailed": [],
+      "troubleshooting_detailed": [],
+      "next_steps_detailed": [],
+      "use_cases": []
+    }
+  ]
+}

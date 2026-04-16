@@ -54,14 +54,30 @@ def main():
     parser.add_argument("--identity", default="unity-dev", help="Participant identity (default: unity-dev)")
     parser.add_argument("--room", default=None, help="Room name (default: from .env)")
     parser.add_argument("--ttl", type=int, default=3600, help="Token TTL in seconds (default: 3600)")
+    parser.add_argument("-o", "--output", default=None, help="Save token to file (default: unity/ParrotDev/unity_join_token.txt)")
     args = parser.parse_args()
 
-    jwt = generate(identity=args.identity, room=args.room, ttl_seconds=args.ttl)
+    jwt_token = generate(identity=args.identity, room=args.room, ttl_seconds=args.ttl)
+    room_name = args.room or ParrotConfig().livekit.room_name
 
     print(f"\n  Identity : {args.identity}")
-    print(f"  Room     : {args.room or ParrotConfig().livekit.room_name}")
+    print(f"  Room     : {room_name}")
     print(f"  TTL      : {args.ttl}s")
-    print(f"\n  Token:\n  {jwt}\n")
+    print(f"\n  Token:\n  {jwt_token}\n")
+
+    out_path = args.output or str(Path(__file__).resolve().parents[2] / "unity" / "ParrotDev" / "unity_join_token.txt")
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_path).write_text(jwt_token)
+    print(f"  Saved to: {out_path}")
+
+    try:
+        import subprocess
+        subprocess.run(["clip"], input=jwt_token.encode(), check=True)
+        print("  Copied to clipboard!")
+    except Exception:
+        pass
+
+    print()
 
 
 if __name__ == "__main__":

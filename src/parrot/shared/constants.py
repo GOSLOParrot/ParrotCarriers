@@ -14,7 +14,12 @@ CH_DSG_SENTINEL = "parrot.dsg.sentinel.evidence"
 CH_SCHEDULER_COMMANDS = "parrot.scheduler.commands"
 CH_SCHEDULER_RESULTS = "parrot.scheduler.results"
 CH_NANOBOT_RESULTS = "parrot.nanobot.results"
+CH_SCHEDULER_TO_BRAIN = "parrot.scheduler.to_brain"
 CH_EXTERNAL_COMMANDS = "parrot.external.commands"
+CH_BEHAVIOR_MODE = "parrot.brain.behavior_mode"
+
+# Trigger-specific Pub/Sub channel for routed results
+CH_TRIGGER_RESULTS = "parrot.trigger.results"
 
 # Redis Streams
 STREAM_NANOBOT_DISPATCH = "parrot.nanobot.dispatch"
@@ -22,6 +27,7 @@ STREAM_NANOBOT_DISPATCH = "parrot.nanobot.dispatch"
 # Redis Hash keys
 HASH_MODULES = "parrot.modules"
 HASH_HEARTBEAT = "parrot.heartbeat"
+HASH_GOSLO_MODE = "parrot.goslo.mode"
 
 # Blackboard keys (Redis Hash namespace)
 BB_PARROT_STATE = "parrot_state"

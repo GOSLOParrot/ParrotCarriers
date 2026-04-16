@@ -1,0 +1,848 @@
+{
+  "total_files": 6,
+  "total_settings": 89,
+  "detected_patterns": {},
+  "config_files": [
+    {
+      "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\docker-compose.yml",
+      "relative_path": "docker-compose.yml",
+      "type": "yaml",
+      "purpose": "docker_configuration",
+      "patterns": [],
+      "settings_count": 21,
+      "settings": [
+        {
+          "key": "x-common-config.build.context",
+          "value": ".",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "x-common-config.build.dockerfile",
+          "value": "Dockerfile",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "x-common-config.volumes",
+          "value": [
+            "~/.nanobot:/root/.nanobot"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.build.context",
+          "value": ".",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.build.dockerfile",
+          "value": "Dockerfile",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.volumes",
+          "value": [
+            "~/.nanobot:/root/.nanobot"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.container_name",
+          "value": "nanobot-gateway",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.command",
+          "value": [
+            "gateway"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.restart",
+          "value": "unless-stopped",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.ports",
+          "value": [
+            "18790:18790"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.deploy.resources.limits.cpus",
+          "value": "1",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.deploy.resources.limits.memory",
+          "value": "1G",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.deploy.resources.reservations.cpus",
+          "value": "0.25",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-gateway.deploy.resources.reservations.memory",
+          "value": "256M",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-cli.build.context",
+          "value": ".",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-cli.build.dockerfile",
+          "value": "Dockerfile",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-cli.volumes",
+          "value": [
+            "~/.nanobot:/root/.nanobot"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-cli.profiles",
+          "value": [
+            "cli"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-cli.command",
+          "value": [
+            "status"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-cli.stdin_open",
+          "value": true,
+          "type": "boolean",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "services.nanobot-cli.tty",
+          "value": true,
+          "type": "boolean",
+          "env_var": null,
+          "description": ""
+        }
+      ],
+      "parse_errors": []
+    },
+    {
+      "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\Dockerfile",
+      "relative_path": "Dockerfile",
+      "type": "dockerfile",
+      "purpose": "docker_configuration",
+      "patterns": [],
+      "settings_count": 0,
+      "settings": [],
+      "parse_errors": []
+    },
+    {
+      "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\pyproject.toml",
+      "relative_path": "pyproject.toml",
+      "type": "toml",
+      "purpose": "package_configuration",
+      "patterns": [],
+      "settings_count": 34,
+      "settings": [
+        {
+          "key": "project.name",
+          "value": "nanobot-ai",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.version",
+          "value": "0.1.4.post6",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.description",
+          "value": "A lightweight personal AI assistant framework",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.readme.file",
+          "value": "README.md",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.readme.content-type",
+          "value": "text/markdown",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.requires-python",
+          "value": ">=3.11",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.license.text",
+          "value": "MIT",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.authors",
+          "value": [
+            {
+              "name": "nanobot contributors"
+            }
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.keywords",
+          "value": [
+            "ai",
+            "agent",
+            "chatbot"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.classifiers",
+          "value": [
+            "Development Status :: 3 - Alpha",
+            "Intended Audience :: Developers",
+            "License :: OSI Approved :: MIT License",
+            "Programming Language :: Python :: 3.11",
+            "Programming Language :: Python :: 3.12"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.dependencies",
+          "value": [
+            "typer>=0.20.0,<1.0.0",
+            "anthropic>=0.45.0,<1.0.0",
+            "pydantic>=2.12.0,<3.0.0",
+            "pydantic-settings>=2.12.0,<3.0.0",
+            "websockets>=16.0,<17.0",
+            "websocket-client>=1.9.0,<2.0.0",
+            "httpx>=0.28.0,<1.0.0",
+            "ddgs>=9.5.5,<10.0.0",
+            "oauth-cli-kit>=0.1.3,<1.0.0",
+            "loguru>=0.7.3,<1.0.0",
+            "readability-lxml>=0.8.4,<1.0.0",
+            "rich>=14.0.0,<15.0.0",
+            "croniter>=6.0.0,<7.0.0",
+            "dingtalk-stream>=0.24.0,<1.0.0",
+            "python-telegram-bot[socks]>=22.6,<23.0",
+            "lark-oapi>=1.5.0,<2.0.0",
+            "socksio>=1.0.0,<2.0.0",
+            "python-socketio>=5.16.0,<6.0.0",
+            "msgpack>=1.1.0,<2.0.0",
+            "slack-sdk>=3.39.0,<4.0.0",
+            "slackify-markdown>=0.2.0,<1.0.0",
+            "qq-botpy>=1.2.0,<2.0.0",
+            "python-socks[asyncio]>=2.8.0,<3.0.0",
+            "prompt-toolkit>=3.0.50,<4.0.0",
+            "questionary>=2.0.0,<3.0.0",
+            "mcp>=1.26.0,<2.0.0",
+            "json-repair>=0.57.0,<1.0.0",
+            "chardet>=3.0.2,<6.0.0",
+            "openai>=2.8.0",
+            "tiktoken>=0.12.0,<1.0.0"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.optional-dependencies.wecom",
+          "value": [
+            "wecom-aibot-sdk-python>=0.1.5"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.optional-dependencies.weixin",
+          "value": [
+            "qrcode[pil]>=8.0",
+            "pycryptodome>=3.20.0"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.optional-dependencies.matrix",
+          "value": [
+            "matrix-nio[e2e]>=0.25.2",
+            "mistune>=3.0.0,<4.0.0",
+            "nh3>=0.2.17,<1.0.0"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.optional-dependencies.langsmith",
+          "value": [
+            "langsmith>=0.1.0"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.optional-dependencies.dev",
+          "value": [
+            "pytest>=9.0.0,<10.0.0",
+            "pytest-asyncio>=1.3.0,<2.0.0",
+            "pytest-cov>=6.0.0,<7.0.0",
+            "ruff>=0.1.0"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "project.scripts.nanobot",
+          "value": "nanobot.cli.commands:app",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "build-system.requires",
+          "value": [
+            "hatchling"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "build-system.build-backend",
+          "value": "hatchling.build",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.hatch.metadata.allow-direct-references",
+          "value": true,
+          "type": "boolean",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.hatch.build.include",
+          "value": [
+            "nanobot/**/*.py",
+            "nanobot/templates/**/*.md",
+            "nanobot/skills/**/*.md",
+            "nanobot/skills/**/*.sh"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.hatch.build.targets.wheel.packages",
+          "value": [
+            "nanobot"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.hatch.build.targets.wheel.sources.nanobot",
+          "value": "nanobot",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.hatch.build.targets.wheel.force-include.bridge",
+          "value": "nanobot/bridge",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.hatch.build.targets.sdist.include",
+          "value": [
+            "nanobot/",
+            "bridge/",
+            "README.md",
+            "LICENSE"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.ruff.line-length",
+          "value": 100,
+          "type": "integer",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.ruff.target-version",
+          "value": "py311",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.ruff.lint.select",
+          "value": [
+            "E",
+            "F",
+            "I",
+            "N",
+            "W"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.ruff.lint.ignore",
+          "value": [
+            "E501"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.pytest.ini_options.asyncio_mode",
+          "value": "auto",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.pytest.ini_options.testpaths",
+          "value": [
+            "tests"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.coverage.run.source",
+          "value": [
+            "nanobot"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.coverage.run.omit",
+          "value": [
+            "tests/*",
+            "**/tests/*"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "tool.coverage.report.exclude_lines",
+          "value": [
+            "pragma: no cover",
+            "def __repr__",
+            "raise NotImplementedError",
+            "if __name__ == .__main__.:",
+            "if TYPE_CHECKING:"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        }
+      ],
+      "parse_errors": []
+    },
+    {
+      "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\.github\\workflows\\ci.yml",
+      "relative_path": ".github\\workflows\\ci.yml",
+      "type": "yaml",
+      "purpose": "ci_cd_configuration",
+      "patterns": [],
+      "settings_count": 6,
+      "settings": [
+        {
+          "key": "name",
+          "value": "Test Suite",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "True.push.branches",
+          "value": [
+            "main",
+            "nightly"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "True.pull_request.branches",
+          "value": [
+            "main",
+            "nightly"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "jobs.test.runs-on",
+          "value": "ubuntu-latest",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "jobs.test.strategy.matrix.python-version",
+          "value": [
+            "3.11",
+            "3.12",
+            "3.13"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "jobs.test.steps",
+          "value": [
+            {
+              "uses": "actions/checkout@v4"
+            },
+            {
+              "name": "Set up Python ${{ matrix.python-version }}",
+              "uses": "actions/setup-python@v5",
+              "with": {
+                "python-version": "${{ matrix.python-version }}"
+              }
+            },
+            {
+              "name": "Install uv",
+              "uses": "astral-sh/setup-uv@v4"
+            },
+            {
+              "name": "Install system dependencies",
+              "run": "sudo apt-get update && sudo apt-get install -y libolm-dev build-essential"
+            },
+            {
+              "name": "Install all dependencies",
+              "run": "uv sync --all-extras"
+            },
+            {
+              "name": "Run tests",
+              "run": "uv run pytest tests/"
+            }
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        }
+      ],
+      "parse_errors": []
+    },
+    {
+      "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\bridge\\package.json",
+      "relative_path": "bridge\\package.json",
+      "type": "json",
+      "purpose": "package_configuration",
+      "patterns": [],
+      "settings_count": 16,
+      "settings": [
+        {
+          "key": "name",
+          "value": "nanobot-whatsapp-bridge",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "version",
+          "value": "0.1.0",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "description",
+          "value": "WhatsApp bridge for nanobot using Baileys",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "type",
+          "value": "module",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "main",
+          "value": "dist/index.js",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "scripts.build",
+          "value": "tsc",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "scripts.start",
+          "value": "node dist/index.js",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "scripts.dev",
+          "value": "tsc && node dist/index.js",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "dependencies.@whiskeysockets/baileys",
+          "value": "7.0.0-rc.9",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "dependencies.ws",
+          "value": "^8.17.1",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "dependencies.qrcode-terminal",
+          "value": "^0.12.0",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "dependencies.pino",
+          "value": "^9.0.0",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "devDependencies.@types/node",
+          "value": "^20.14.0",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "devDependencies.@types/ws",
+          "value": "^8.5.10",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "devDependencies.typescript",
+          "value": "^5.4.0",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "engines.node",
+          "value": ">=20.0.0",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        }
+      ],
+      "parse_errors": []
+    },
+    {
+      "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\bridge\\tsconfig.json",
+      "relative_path": "bridge\\tsconfig.json",
+      "type": "json",
+      "purpose": "typescript_configuration",
+      "patterns": [],
+      "settings_count": 12,
+      "settings": [
+        {
+          "key": "compilerOptions.target",
+          "value": "ES2022",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "compilerOptions.module",
+          "value": "ESNext",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "compilerOptions.moduleResolution",
+          "value": "node",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "compilerOptions.esModuleInterop",
+          "value": true,
+          "type": "boolean",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "compilerOptions.strict",
+          "value": true,
+          "type": "boolean",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "compilerOptions.skipLibCheck",
+          "value": true,
+          "type": "boolean",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "compilerOptions.outDir",
+          "value": "./dist",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "compilerOptions.rootDir",
+          "value": "./src",
+          "type": "string",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "compilerOptions.declaration",
+          "value": true,
+          "type": "boolean",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "compilerOptions.resolveJsonModule",
+          "value": true,
+          "type": "boolean",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "include",
+          "value": [
+            "src/**/*"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        },
+        {
+          "key": "exclude",
+          "value": [
+            "node_modules",
+            "dist"
+          ],
+          "type": "array",
+          "env_var": null,
+          "description": ""
+        }
+      ],
+      "parse_errors": []
+    }
+  ],
+  "errors": []
+}

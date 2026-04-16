@@ -32,13 +32,24 @@ class RedisConfig:
 class LiveKitConfig:
     url: str = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
     api_key: str = os.getenv("LIVEKIT_API_KEY", "devkey")
-    api_secret: str = os.getenv("LIVEKIT_API_SECRET", "secret")
+    api_secret: str = os.getenv(
+        "LIVEKIT_API_SECRET",
+        "parrot_carriers_local_dev_livekit_secret_key_v1",
+    )
     room_name: str = os.getenv("LIVEKIT_ROOM", "parrot-main")
+
+
+@dataclass(frozen=True)
+class FalkorDBConfig:
+    host: str = os.getenv("FALKORDB_HOST", "localhost")
+    port: int = int(os.getenv("FALKORDB_PORT", "6380"))
+    database: str = os.getenv("FALKORDB_DATABASE", "parrot")
 
 
 @dataclass(frozen=True)
 class ParrotConfig:
     redis: RedisConfig = field(default_factory=RedisConfig)
     livekit: LiveKitConfig = field(default_factory=LiveKitConfig)
+    falkordb: FalkorDBConfig = field(default_factory=FalkorDBConfig)
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
     debug: bool = os.getenv("PARROT_DEBUG", "false").lower() == "true"

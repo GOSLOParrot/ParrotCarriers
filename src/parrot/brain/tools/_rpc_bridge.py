@@ -17,7 +17,15 @@ UNITY_IDENTITY_PREFIX = "unity"
 
 
 def _find_unity_participant(room) -> str | None:
-    """Find the first Unity client participant in the room."""
+    """Find the first Unity client participant in the room.
+    
+    ARCHITECTURAL RISK (P2+): 
+    Currently returns the FIRST participant with the 'unity' prefix. 
+    If multiple Unity clients (e.g., sim_client + Unity Editor) are in the room,
+    RPC commands (flyTo, animate) will only be sent to one arbitrary client.
+    In P2+ (Multi-user/Multi-device), this needs to be refactored to either
+    broadcast to all, or target a specific user's AR view via Context.
+    """
     for identity in room.remote_participants:
         if identity.startswith(UNITY_IDENTITY_PREFIX):
             return identity

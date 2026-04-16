@@ -33,5 +33,24 @@ services:
     command: --config /etc/livekit.yaml
     restart: unless-stopped
 
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports:
+      - "6380:6379"
+    volumes:
+      - falkordb_data:/data
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --loadmodule /FalkorDB/bin/linux-x64-release/src/falkordb.so
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
 volumes:
   redis_data:
+  falkordb_data:

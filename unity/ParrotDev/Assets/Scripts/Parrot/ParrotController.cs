@@ -13,6 +13,12 @@ public class ParrotController : MonoBehaviour
     [SerializeField] private float moveSpeed = 3f;
     [SerializeField] private float arrivalThreshold = 0.05f;
 
+    [Header("Dev fallback (no Animator)")]
+    [Tooltip("Scale pulse amplitude when no Animator — was 0.1, too subtle on small Cube.")]
+    [SerializeField] private float devPulseScaleAmplitude = 0.35f;
+    [SerializeField] private float devPulseYawDegrees = 22f;
+    [SerializeField] private float devPulseDurationCycles = 3f;
+
     private Vector3 _targetPosition;
     private bool _isMoving;
     private Animator _animator;
@@ -22,6 +28,7 @@ public class ParrotController : MonoBehaviour
     private Vector3 _baseScale;
     private float _pulseTimer;
     private bool _isPulsing;
+    private Quaternion _pulseStartRotation;
 
     void Awake()
     {
@@ -48,13 +55,19 @@ public class ParrotController : MonoBehaviour
 
         if (_isPulsing)
         {
-            _pulseTimer += Time.deltaTime * 4f;
-            float s = 1f + Mathf.Sin(_pulseTimer) * 0.1f;
+            _pulseTimer += Time.deltaTime * 5f;
+            float s = 1f + Mathf.Sin(_pulseTimer) * devPulseScaleAmplitude;
             transform.localScale = _baseScale * s;
-            if (_pulseTimer > Mathf.PI * 4f)
+            float yaw = Mathf.Sin(_pulseTimer * 2.1f) * devPulseYawDegrees;
+            transform.rotation = _pulseStartRotation * Quaternion.Euler(0f, yaw, 0f);
+
+            float endPhase = Mathf.PI * 2f * devPulseDurationCycles;
+            if (_pulseTimer > endPhase)
             {
                 _isPulsing = false;
                 transform.localScale = _baseScale;
+                transform.rotation = _pulseStartRotation;
+                Debug.Log("[Parrot] Dev pulse finished.");
             }
         }
     }
@@ -86,9 +99,12 @@ public class ParrotController : MonoBehaviour
         }
         else
         {
+            _pulseStartRotation = transform.rotation;
             _isPulsing = true;
             _pulseTimer = 0f;
-            Debug.Log($"[Parrot] (no Animator) Pulse for: {animationName}");
+            Debug.Log(
+                $"[Parrot] (no Animator) Pulse for: {animationName} "
+                + $"(scale ±{devPulseScaleAmplitude:P0}, yaw ±{devPulseYawDegrees}° — watch Game view)");
         }
     }
 }

@@ -1,47 +1,111 @@
-"""E1: SimpleRouter — Phase 1 scheduler implementation.
+"""E1: BT Router — py-trees Selector replaces SimpleRouter if-else.
 
-Simple priority-based if-else routing. Routes incoming events/tasks
-to the appropriate handler (Brain direct execution, or Nanobot dispatch).
+Tree structure (P1.5 — shallow, one-level Selector):
+
+    Selector("Router", memory=False)
+    ├── HandleReflex        — priority=="reflex"  → reflex_direct
+    ├── DispatchToNanobot   — research/memory/vocab → nanobot
+    └── HandleBrainDirect   — everything else       → brain_direct
+
+Event-driven: caller writes Blackboard → tree.tick() → reads route_result.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
-from parrot.shared.constants import STREAM_NANOBOT_DISPATCH
-from parrot.shared.redis_client import get_redis
+import py_trees
+
+from parrot.scheduler.nodes import (
+    BB_NS,
+    DispatchToNanobot,
+    HandleBrainDirect,
+    HandleReflex,
+)
+from parrot.shared.parrot_actions import BehaviorMode
 
 logger = logging.getLogger(__name__)
 
 
-class SimpleRouter:
-    """Phase 1 scheduler: routes tasks by priority."""
+def build_scheduler_tree() -> py_trees.trees.BehaviourTree:
+    """Construct the P1.5 shallow behaviour tree."""
+    root = py_trees.composites.Selector(
+        name="Router",
+        memory=False,
+        children=[
+            HandleReflex(),
+            DispatchToNanobot(),
+            HandleBrainDirect(),
+        ],
+    )
+    tree = py_trees.trees.BehaviourTree(root=root)
+    return tree
 
-    async def route(self, task: dict[str, Any]) -> str:
-        """Route a task to the appropriate destination.
 
-        Returns the destination identifier.
+class BTRouter:
+    """py-trees based router with Blackboard V2 integration.
+
+    Usage (from async context):
+        router = BTRouter()
+        result = router.route(event_dict)
+        # result = {"destination": "nanobot"|"brain_direct"|"reflex_direct", "task_id": ...}
+    """
+
+    def __init__(self) -> None:
+        py_trees.blackboard.Blackboard.enable_activity_stream()
+        self._tree = build_scheduler_tree()
+        self._bb = py_trees.blackboard.Client(name="BTRouter", namespace=BB_NS)
+        self._bb.register_key(
+            key="current_event", access=py_trees.common.Access.WRITE
+        )
+        self._bb.register_key(
+            key="route_result", access=py_trees.common.Access.WRITE
+        )
+        self._bb.register_key(
+            key="active_tasks", access=py_trees.common.Access.WRITE
+        )
+        self._bb.register_key(
+            key="behavior_mode", access=py_trees.common.Access.WRITE
+        )
+
+        self._bb.active_tasks = {}
+        self._bb.route_result = {}
+        self._bb.current_event = {}
+        self._bb.behavior_mode = BehaviorMode.BASE | BehaviorMode.COMPANION
+
+        self._tree.setup()
+
+    def route(self, event: dict[str, Any]) -> dict[str, Any]:
+        """Write event to Blackboard → tick → return route decision.
+
+        This is a synchronous call. The async SchedulerService calls it
+        from the event loop after receiving a Redis message.
         """
-        task_type = task.get("type", "unknown")
-        priority = task.get("priority", "normal")
+        self._bb.current_event = event
+        self._bb.route_result = {}
 
-        if priority == "reflex":
-            return await self._handle_reflex(task)
-        elif task_type in ("research", "memory_consolidation", "vocabulary_learn"):
-            return await self._dispatch_to_nanobot(task)
-        else:
-            return "brain_direct"
+        self._tree.tick()
 
-    async def _handle_reflex(self, task: dict) -> str:
-        """Reflex tasks bypass LLM — direct to Unity via RPC."""
-        logger.info("Reflex task: %s", task.get("action"))
-        return "reflex_direct"
+        result = self._bb.route_result
+        destination = result.get("destination", "brain_direct")
+        logger.info(
+            "BTRouter: event type=%s → %s", event.get("type", "?"), destination
+        )
+        return result
 
-    async def _dispatch_to_nanobot(self, task: dict) -> str:
-        """Dispatch async task to Nanobot via Redis Stream."""
-        r = await get_redis()
-        await r.xadd(STREAM_NANOBOT_DISPATCH, {"payload": json.dumps(task)})
-        logger.info("Task dispatched to Nanobot: %s", task.get("type"))
-        return "nanobot"
+    @property
+    def active_tasks(self) -> dict:
+        return self._bb.active_tasks
+
+    @active_tasks.setter
+    def active_tasks(self, value: dict) -> None:
+        self._bb.active_tasks = value
+
+    @property
+    def blackboard_client(self) -> py_trees.blackboard.Client:
+        return self._bb
+
+    def tree_ascii(self) -> str:
+        """Return ASCII representation of the tree for debugging."""
+        return py_trees.display.unicode_tree(self._tree.root, show_status=True)

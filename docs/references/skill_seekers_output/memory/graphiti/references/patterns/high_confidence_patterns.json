@@ -1,0 +1,86 @@
+[
+  {
+    "pattern_type": "Adapter",
+    "category": "Structural",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\graphiti_core\\prompts\\lib.py",
+    "class_name": "VersionWrapper",
+    "method_name": null,
+    "line_number": 59,
+    "evidence": [
+      "Class name suggests Adapter: VersionWrapper"
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\graphiti_core\\prompts\\lib.py"
+  },
+  {
+    "pattern_type": "Adapter",
+    "category": "Structural",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\graphiti_core\\prompts\\lib.py",
+    "class_name": "PromptTypeWrapper",
+    "method_name": null,
+    "line_number": 70,
+    "evidence": [
+      "Class name suggests Adapter: PromptTypeWrapper"
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\graphiti_core\\prompts\\lib.py"
+  },
+  {
+    "pattern_type": "Adapter",
+    "category": "Structural",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\graphiti_core\\prompts\\lib.py",
+    "class_name": "PromptLibraryWrapper",
+    "method_name": null,
+    "line_number": 76,
+    "evidence": [
+      "Class name suggests Adapter: PromptLibraryWrapper"
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\graphiti_core\\prompts\\lib.py"
+  },
+  {
+    "pattern_type": "Factory",
+    "category": "Creational",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\mcp_server\\src\\services\\factories.py",
+    "class_name": "LLMClientFactory",
+    "method_name": null,
+    "line_number": 97,
+    "evidence": [
+      "Class name contains \"Factory\""
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\mcp_server\\src\\services\\factories.py"
+  },
+  {
+    "pattern_type": "Factory",
+    "category": "Creational",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\mcp_server\\src\\services\\factories.py",
+    "class_name": "EmbedderFactory",
+    "method_name": null,
+    "line_number": 249,
+    "evidence": [
+      "Class name contains \"Factory\""
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\mcp_server\\src\\services\\factories.py"
+  },
+  {
+    "pattern_type": "Factory",
+    "category": "Creational",
+    "confidence": 0.7,
+    "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\mcp_server\\src\\services\\factories.py",
+    "class_name": "DatabaseDriverFactory",
+    "method_name": null,
+    "line_number": 361,
+    "evidence": [
+      "Class name contains \"Factory\""
+    ],
+    "related_classes": [],
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-graphiti-435f4bb2\\mcp_server\\src\\services\\factories.py"
+  }
+]

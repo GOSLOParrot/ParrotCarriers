@@ -22,6 +22,9 @@
 | Opus 调研索引 | `docs/InfoCollections/Opus/INDEX.md` | 26 篇调研文档入口 |
 | Skill 操作索引 | `docs/InfoCollections/SkillSeekers/INDEX.md` | Skill 状态、拉取命令、待办 |
 | nanobot 路由说明 | `docs/InfoCollections/SkillSeekers/NANOBOT_LOCATION_AND_ROUTING_REPORT.md` | `nanobot` 参考层与项目级路由层说明 |
+| **P2 里程碑** | `.cursor/memory/milestone_p2.md` | **记忆共享 + Scheduler 增强 + DSG 耦合层** |
+| 协议快照 v1 | `.cursor/memory/architecture/protocol_snapshot_p1.md` | RPC/Redis/DataChannel/Blackboard 全量 |
+| 部署快照 | `.cursor/memory/deploy_snapshot_p2_20260412.md` | Castle 部署配置与密钥 |
 | 协议污染复盘 | `.cursor/memory/BigIssue.md` | 历史教训与修正措施 |
 
 ---

@@ -1,48 +1,84 @@
-"""E3: Redis Blackboard — shared state read/write.
+"""py-trees Blackboard V2 integration + optional Redis persistence adapter.
 
-Wraps Redis Hash operations for the Scheduler's state management.
+Namespace layout:
+    /scheduler/active_tasks     — dict[task_id, TaskInfo]     WRITE: Scheduler nodes
+    /scheduler/behavior_mode    — BehaviorMode Flag           WRITE: Brain (via Redis)
+    /scheduler/current_event    — dict                        WRITE: event listener
+    /scheduler/route_result     — dict                        WRITE: BT nodes
+    /scheduler/resource_locks   — dict                        WRITE: lock nodes (P2)
+
+py-trees Blackboard is in-process memory. The RedisBlackboardSync adapter
+optionally mirrors selected keys to/from Redis Hash for cross-process sharing.
+P1.5: in-process only; Redis sync added as needed.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
-from parrot.shared.constants import BB_PARROT_STATE
-from parrot.shared.redis_client import get_redis
+import py_trees
+
+from parrot.shared.parrot_actions import BehaviorMode
+
+logger = logging.getLogger(__name__)
+
+BB_NS = "scheduler"
 
 
-class Blackboard:
-    """Redis-backed shared state store."""
+def init_scheduler_blackboard() -> py_trees.blackboard.Client:
+    """Create and initialize the scheduler's Blackboard client with defaults."""
+    bb = py_trees.blackboard.Client(name="SchedulerInit", namespace=BB_NS)
+    bb.register_key(key="active_tasks", access=py_trees.common.Access.WRITE)
+    bb.register_key(key="behavior_mode", access=py_trees.common.Access.WRITE)
+    bb.register_key(key="current_event", access=py_trees.common.Access.WRITE)
+    bb.register_key(key="route_result", access=py_trees.common.Access.WRITE)
 
-    def __init__(self, namespace: str = BB_PARROT_STATE):
-        self._ns = namespace
+    bb.active_tasks = {}
+    bb.behavior_mode = BehaviorMode.BASE | BehaviorMode.COMPANION
+    bb.current_event = {}
+    bb.route_result = {}
 
-    async def get(self, key: str) -> Any | None:
-        r = await get_redis()
-        val = await r.hget(self._ns, key)
-        if val is None:
+    return bb
+
+
+class RedisBlackboardSync:
+    """Optional adapter: sync py-trees Blackboard keys ↔ Redis Hash.
+
+    Usage (P2+):
+        sync = RedisBlackboardSync(redis, namespace="scheduler")
+        await sync.push("active_tasks")   # BB → Redis
+        await sync.pull("behavior_mode")  # Redis → BB
+    """
+
+    def __init__(self, redis_client: Any, namespace: str = BB_NS):
+        self._redis = redis_client
+        self._hash_key = f"parrot.bb.{namespace}"
+        self._bb = py_trees.blackboard.Client(
+            name="RedisSync", namespace=namespace
+        )
+
+    async def push(self, key: str) -> None:
+        """Push a Blackboard key to Redis Hash."""
+        self._bb.register_key(key=key, access=py_trees.common.Access.READ)
+        try:
+            value = getattr(self._bb, key)
+            await self._redis.hset(self._hash_key, key, json.dumps(value, default=str))
+            logger.debug("BB→Redis: %s/%s", self._hash_key, key)
+        except KeyError:
+            logger.warning("BB push: key '%s' not found in Blackboard", key)
+
+    async def pull(self, key: str) -> Any | None:
+        """Pull a value from Redis Hash into Blackboard."""
+        self._bb.register_key(key=key, access=py_trees.common.Access.WRITE)
+        raw = await self._redis.hget(self._hash_key, key)
+        if raw is None:
             return None
         try:
-            return json.loads(val)
+            value = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            return val
-
-    async def set(self, key: str, value: Any) -> None:
-        r = await get_redis()
-        await r.hset(self._ns, key, json.dumps(value))
-
-    async def delete(self, key: str) -> None:
-        r = await get_redis()
-        await r.hdel(self._ns, key)
-
-    async def get_all(self) -> dict[str, Any]:
-        r = await get_redis()
-        raw = await r.hgetall(self._ns)
-        result = {}
-        for k, v in raw.items():
-            try:
-                result[k] = json.loads(v)
-            except (json.JSONDecodeError, TypeError):
-                result[k] = v
-        return result
+            value = raw
+        setattr(self._bb, key, value)
+        logger.debug("Redis→BB: %s/%s = %s", self._hash_key, key, value)
+        return value

@@ -1,4 +1,7 @@
-"""DSG (Dynamic Scene Graph) — Phase 2: filled when A10 is ready.
+"""DSG (Dynamic Scene Graph) — perception ↔ Graphiti ↔ Brain coupling layer.
 
-Phase 1: only processor_hook.py in bus/ provides the mounting interface.
+Provides:
+  - Data types for L1 events and DSG triggers
+  - Interfaces for Graphiti preload/update
+  - ExpectationChecker for detecting scene changes
 """

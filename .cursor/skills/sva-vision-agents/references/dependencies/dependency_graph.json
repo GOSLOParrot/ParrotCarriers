@@ -1,0 +1,1570 @@
+{
+  "nodes": [
+    {
+      "file": "agents-core\\vision_agents\\core\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\agents\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\agents\\agent_launcher.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\agents\\agent_types.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\agents\\agents.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\agents\\conversation.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\agents\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\agents\\exceptions.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\agents\\transcript_buffer.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\edge\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\edge\\call.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\edge\\edge_transport.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\edge\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\edge\\types.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\events\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\events\\base.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\events\\manager.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\instructions.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\llm\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\llm\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\llm\\function_registry.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\llm\\llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\llm\\llm_test.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\llm\\llm_types.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\llm\\realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\llm\\wrap_function.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\llm\\wrap_method.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\mcp\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\mcp\\mcp_base.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\mcp\\mcp_manager.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\mcp\\mcp_server_local.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\mcp\\mcp_server_remote.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\mcp\\tool_converter.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\observability\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\observability\\agent.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\observability\\collector.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\observability\\metrics.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\processors\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\processors\\base_processor.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\profiling\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\profiling\\base.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\rag\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\rag\\rag.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\runner\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\runner\\http\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\runner\\http\\api.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\runner\\http\\dependencies.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\runner\\http\\models.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\runner\\http\\options.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\runner\\runner.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\stt\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\stt\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\stt\\stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\tts\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\tts\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\tts\\manual_test.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\tts\\testing.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\tts\\tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\turn_detection\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\turn_detection\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\turn_detection\\turn_detection.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\audio_filter.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\audio_forwarder.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\audio_queue.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\examples.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\logging.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\video_forwarder.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\video_queue.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\video_track.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\utils\\video_utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\vad\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\vad\\silero.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\core\\warmup.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\testing\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\testing\\_events.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\testing\\_judge.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\testing\\_mock_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\testing\\_run_result.py",
+      "language": "Python"
+    },
+    {
+      "file": "agents-core\\vision_agents\\testing\\_session.py",
+      "language": "Python"
+    },
+    {
+      "file": "conftest.py",
+      "language": "Python"
+    },
+    {
+      "file": "dev.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\01_simple_agent_example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\01_simple_agent_example\\simple_agent_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\01_simple_agent_example\\test_simple_agent.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\02_golf_coach_example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\02_golf_coach_example\\golf_coach_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\02_golf_coach_example\\golf_coach_with_metrics.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\03_phone_and_rag_example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\03_phone_and_rag_example\\conftest.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\03_phone_and_rag_example\\inbound_phone_and_rag_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\03_phone_and_rag_example\\outbound_phone_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\03_phone_and_rag_example\\utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\04_football_commentator_example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\04_football_commentator_example\\football_commentator_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\04_football_commentator_example\\utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\05_security_camera_example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\05_security_camera_example\\poster_generator.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\05_security_camera_example\\security_camera_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\05_security_camera_example\\security_camera_processor.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\06_prometheus_metrics_example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\06_prometheus_metrics_example\\prometheus_metrics_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\07_deploy_example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\07_deploy_example\\deploy_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\08_agent_server_example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\08_agent_server_example\\agent_server_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "examples\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\anthropic\\tests\\test_anthropic.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\anthropic\\tests\\test_anthropic_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\anthropic\\version.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\anthropic\\vision_agents\\plugins\\anthropic\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\anthropic\\vision_agents\\plugins\\anthropic\\anthropic_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\anthropic\\vision_agents\\plugins\\anthropic\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\example\\aws_realtime_function_calling_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\example\\aws_realtime_nova_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\tests\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\tests\\test_aws.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\tests\\test_aws_realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\tests\\test_tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\vision_agents\\plugins\\aws\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\vision_agents\\plugins\\aws\\aws_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\vision_agents\\plugins\\aws\\aws_realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\vision_agents\\plugins\\aws\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\aws\\vision_agents\\plugins\\aws\\tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\cartesia\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\cartesia\\example\\main.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\cartesia\\example\\narrator-example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\cartesia\\tests\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\cartesia\\tests\\test_tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\cartesia\\vision_agents\\plugins\\cartesia\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\cartesia\\vision_agents\\plugins\\cartesia\\tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\decart\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\decart\\example\\decart_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\decart\\tests\\test_decart_restyling.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\decart\\tests\\test_decart_video_track.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\decart\\vision_agents\\plugins\\decart\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\decart\\vision_agents\\plugins\\decart\\decart_restyling_processor.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\decart\\vision_agents\\plugins\\decart\\decart_video_track.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\deepgram\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\deepgram\\example\\deepgram_tts_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\deepgram\\tests\\test_deepgram_stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\deepgram\\tests\\test_deepgram_tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\deepgram\\vision_agents\\plugins\\deepgram\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\deepgram\\vision_agents\\plugins\\deepgram\\deepgram_stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\deepgram\\vision_agents\\plugins\\deepgram\\tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\elevenlabs\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\elevenlabs\\example\\elevenlabs_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\elevenlabs\\tests\\test_elevenlabs_stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\elevenlabs\\tests\\test_tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\elevenlabs\\vision_agents\\plugins\\elevenlabs\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\elevenlabs\\vision_agents\\plugins\\elevenlabs\\stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\elevenlabs\\vision_agents\\plugins\\elevenlabs\\tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fast_whisper\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fast_whisper\\example\\fast_whisper_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fast_whisper\\tests\\test_fast_whisper_stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fast_whisper\\vision_agents\\plugins\\fast_whisper\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fast_whisper\\vision_agents\\plugins\\fast_whisper\\stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fish\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fish\\example\\fish_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fish\\tests\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fish\\tests\\test_fish_stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fish\\tests\\test_fish_tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fish\\vision_agents\\plugins\\fish\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fish\\vision_agents\\plugins\\fish\\stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\fish\\vision_agents\\plugins\\fish\\tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\example\\gemini_vlm_agent_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\tests\\test_gemini_file_search.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\tests\\test_gemini_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\tests\\test_gemini_realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\tests\\test_gemini_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\tests\\test_gemini_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\tests\\test_realtime_function_calling.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\vision_agents\\plugins\\gemini\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\vision_agents\\plugins\\gemini\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\vision_agents\\plugins\\gemini\\file_search.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\vision_agents\\plugins\\gemini\\gemini_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\vision_agents\\plugins\\gemini\\gemini_realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\vision_agents\\plugins\\gemini\\gemini_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\gemini\\vision_agents\\plugins\\gemini\\tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\getstream\\_generate_sfu_events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\getstream\\tests\\test_getstream_plugin.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\getstream\\tests\\test_message_chunking.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\getstream\\tests\\test_sfu_events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\getstream\\tests\\test_stream_conversation.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\getstream\\tests\\test_stream_edge_transport.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\getstream\\vision_agents\\plugins\\getstream\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\getstream\\vision_agents\\plugins\\getstream\\sfu_events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\getstream\\vision_agents\\plugins\\getstream\\stream_conversation.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\getstream\\vision_agents\\plugins\\getstream\\stream_edge_transport.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\example\\avatar_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\example\\avatar_realtime_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\tests\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\tests\\test_heygen_plugin.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\vision_agents\\plugins\\heygen\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\vision_agents\\plugins\\heygen\\heygen_avatar_publisher.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\vision_agents\\plugins\\heygen\\heygen_rtc_manager.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\vision_agents\\plugins\\heygen\\heygen_session.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\vision_agents\\plugins\\heygen\\heygen_types.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\heygen\\vision_agents\\plugins\\heygen\\heygen_video_track.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\examples\\inference_api\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\examples\\inference_api\\inference_api_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\examples\\transformers\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\examples\\transformers\\transformers_llm_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\examples\\transformers\\transformers_vlm_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\tests\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\tests\\test_huggingface.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\tests\\test_transformers_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\tests\\test_transformers_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\vision_agents\\plugins\\huggingface\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\vision_agents\\plugins\\huggingface\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\vision_agents\\plugins\\huggingface\\huggingface_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\vision_agents\\plugins\\huggingface\\huggingface_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\vision_agents\\plugins\\huggingface\\transformers_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\huggingface\\vision_agents\\plugins\\huggingface\\transformers_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\inworld\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\inworld\\example\\inworld_tts_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\inworld\\tests\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\inworld\\tests\\test_tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\inworld\\vision_agents\\plugins\\inworld\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\inworld\\vision_agents\\plugins\\inworld\\tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\kokoro\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\kokoro\\example\\kokoro_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\kokoro\\tests\\test_tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\kokoro\\vision_agents\\plugins\\kokoro\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\kokoro\\vision_agents\\plugins\\kokoro\\tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\lemonslice\\example\\lemonslice_avatar_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\lemonslice\\tests\\test_lemonslice_plugin.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\lemonslice\\vision_agents\\plugins\\lemonslice\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\lemonslice\\vision_agents\\plugins\\lemonslice\\exceptions.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\lemonslice\\vision_agents\\plugins\\lemonslice\\lemonslice_avatar_publisher.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\lemonslice\\vision_agents\\plugins\\lemonslice\\lemonslice_client.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\lemonslice\\vision_agents\\plugins\\lemonslice\\lemonslice_rtc_manager.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\mistral\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\mistral\\example\\mistral_stt_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\mistral\\tests\\test_mistral_stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\mistral\\vision_agents\\plugins\\mistral\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\mistral\\vision_agents\\plugins\\mistral\\stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\example\\moondream_vlm_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\tests\\test_moondream.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\tests\\test_moondream_local.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\tests\\test_moondream_local_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\tests\\test_moondream_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\vision_agents\\plugins\\moondream\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\vision_agents\\plugins\\moondream\\detection\\moondream_cloud_processor.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\vision_agents\\plugins\\moondream\\detection\\moondream_local_processor.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\vision_agents\\plugins\\moondream\\detection\\moondream_video_track.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\vision_agents\\plugins\\moondream\\moondream_utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\vision_agents\\plugins\\moondream\\vlm\\moondream_cloud_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\moondream\\vision_agents\\plugins\\moondream\\vlm\\moondream_local_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\nvidia\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\nvidia\\example\\main.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\nvidia\\tests\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\nvidia\\tests\\test_nvidia_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\nvidia\\vision_agents\\plugins\\nvidia\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\nvidia\\vision_agents\\plugins\\nvidia\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\nvidia\\vision_agents\\plugins\\nvidia\\nvidia_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\examples\\qwen_vl_example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\examples\\qwen_vl_example\\qwen_vl_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\tests\\test_chat_completions.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\tests\\test_openai_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\tests\\test_openai_realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\tests\\test_tts_openai.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\vision_agents\\plugins\\openai\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\vision_agents\\plugins\\openai\\chat_completions\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\vision_agents\\plugins\\openai\\chat_completions\\chat_completions_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\vision_agents\\plugins\\openai\\chat_completions\\chat_completions_vlm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\vision_agents\\plugins\\openai\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\vision_agents\\plugins\\openai\\openai_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\vision_agents\\plugins\\openai\\openai_realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\vision_agents\\plugins\\openai\\rtc_manager.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\vision_agents\\plugins\\openai\\tool_utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openai\\vision_agents\\plugins\\openai\\tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openrouter\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openrouter\\example\\openrouter_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openrouter\\example\\openrouter_vlm_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openrouter\\tests\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openrouter\\tests\\test_openrouter_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openrouter\\vision_agents\\plugins\\openrouter\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\openrouter\\vision_agents\\plugins\\openrouter\\openrouter_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\plugin_test_utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\pocket\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\pocket\\example\\pocket_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\pocket\\tests\\test_tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\pocket\\vision_agents\\plugins\\pocket\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\pocket\\vision_agents\\plugins\\pocket\\tts.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\qwen\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\qwen\\example\\qwen_realtime_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\qwen\\tests\\test_qwen_realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\qwen\\vision_agents\\plugins\\qwen\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\qwen\\vision_agents\\plugins\\qwen\\client.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\qwen\\vision_agents\\plugins\\qwen\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\qwen\\vision_agents\\plugins\\qwen\\qwen_realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\roboflow\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\roboflow\\example\\roboflow_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\roboflow\\tests\\test_roboflow.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\roboflow\\vision_agents\\plugins\\roboflow\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\roboflow\\vision_agents\\plugins\\roboflow\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\roboflow\\vision_agents\\plugins\\roboflow\\roboflow_cloud_processor.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\roboflow\\vision_agents\\plugins\\roboflow\\roboflow_local_processor.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\roboflow\\vision_agents\\plugins\\roboflow\\utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\sample_plugin\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\sample_plugin\\example\\my_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\sample_plugin\\tests\\test_example_plugin.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\sample_plugin\\vision_agents\\plugins\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\smart_turn\\example\\smart_turn_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\smart_turn\\tests\\test_smart_turn.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\smart_turn\\vision_agents\\plugins\\smart_turn\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\smart_turn\\vision_agents\\plugins\\smart_turn\\smart_turn_detection.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\turbopuffer\\tests\\test_turbopuffer_rag.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\turbopuffer\\vision_agents\\plugins\\turbopuffer\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\turbopuffer\\vision_agents\\plugins\\turbopuffer\\turbopuffer_rag.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\twilio\\tests\\test_audio.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\twilio\\tests\\test_twilio.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\twilio\\vision_agents\\plugins\\twilio\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\twilio\\vision_agents\\plugins\\twilio\\audio.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\twilio\\vision_agents\\plugins\\twilio\\call_registry.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\twilio\\vision_agents\\plugins\\twilio\\media_stream.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\twilio\\vision_agents\\plugins\\twilio\\models.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\twilio\\vision_agents\\plugins\\twilio\\utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\ultralytics\\tests\\test_ultralytics.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\ultralytics\\vision_agents\\plugins\\ultralytics\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\ultralytics\\vision_agents\\plugins\\ultralytics\\yolo_pose_processor.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\vogent\\example\\vogent_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\vogent\\tests\\test_vogent.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\vogent\\vision_agents\\plugins\\vogent\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\vogent\\vision_agents\\plugins\\vogent\\vogent_turn_detection.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\wizper\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\wizper\\example\\wizper_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\wizper\\tests\\test_wizper_stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\wizper\\vision_agents\\plugins\\wizper\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\wizper\\vision_agents\\plugins\\wizper\\stt.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\xai\\example\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\xai\\example\\xai_realtime_example.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\xai\\tests\\test_xai_llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\xai\\tests\\test_xai_realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\xai\\tests\\test_xai_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\xai\\vision_agents\\plugins\\xai\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\xai\\vision_agents\\plugins\\xai\\events.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\xai\\vision_agents\\plugins\\xai\\llm.py",
+      "language": "Python"
+    },
+    {
+      "file": "plugins\\xai\\vision_agents\\plugins\\xai\\xai_realtime.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\base_test.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_agent_tracks.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_agents\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_agents\\test_agent_launcher.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_agents\\test_agents.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_agents\\test_audio_filter.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_agents\\test_runner.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_async.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_audio_forwarder.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_audio_queue.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_conversation.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_events.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_function_calling.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_instructions.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_mcp_integration.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_mulaw_conversion.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_observability.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_openai_function_calling_integration.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_pyproject_sources.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_queue_and_video_forwarder.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_queued_video_track.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_silero_vad.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_sts_base.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_testing\\__init__.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_testing\\test_eval.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_testing\\test_mock_tools.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_transcript_buffer.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_tts_base.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_video_utils.py",
+      "language": "Python"
+    },
+    {
+      "file": "tests\\test_warmup.py",
+      "language": "Python"
+    }
+  ],
+  "edges": [
+    {
+      "source": "plugins\\aws\\tests\\test_aws_realtime.py",
+      "target": "conftest.py",
+      "import_type": "from",
+      "line_number": 5
+    },
+    {
+      "source": "plugins\\deepgram\\tests\\test_deepgram_stt.py",
+      "target": "conftest.py",
+      "import_type": "from",
+      "line_number": 5
+    },
+    {
+      "source": "plugins\\elevenlabs\\tests\\test_elevenlabs_stt.py",
+      "target": "conftest.py",
+      "import_type": "from",
+      "line_number": 7
+    },
+    {
+      "source": "plugins\\fast_whisper\\tests\\test_fast_whisper_stt.py",
+      "target": "conftest.py",
+      "import_type": "from",
+      "line_number": 5
+    },
+    {
+      "source": "plugins\\fish\\tests\\test_fish_stt.py",
+      "target": "conftest.py",
+      "import_type": "from",
+      "line_number": 5
+    },
+    {
+      "source": "plugins\\huggingface\\tests\\test_huggingface.py",
+      "target": "conftest.py",
+      "import_type": "from",
+      "line_number": 11
+    },
+    {
+      "source": "plugins\\huggingface\\tests\\test_transformers_llm.py",
+      "target": "conftest.py",
+      "import_type": "from",
+      "line_number": 8
+    },
+    {
+      "source": "plugins\\huggingface\\tests\\test_transformers_vlm.py",
+      "target": "conftest.py",
+      "import_type": "from",
+      "line_number": 11
+    },
+    {
+      "source": "plugins\\mistral\\tests\\test_mistral_stt.py",
+      "target": "conftest.py",
+      "import_type": "from",
+      "line_number": 7
+    },
+    {
+      "source": "plugins\\wizper\\tests\\test_wizper_stt.py",
+      "target": "conftest.py",
+      "import_type": "from",
+      "line_number": 5
+    }
+  ]
+}

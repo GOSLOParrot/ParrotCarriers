@@ -1,6 +1,6 @@
 """B11: dispatch_task — Brain asks Scheduler to route a background task.
 
-Brain → Pub/Sub(scheduler.commands) → Scheduler → SimpleRouter
+Brain → Pub/Sub(scheduler.commands) → Scheduler → BT Router
   → Redis Stream(nanobot.dispatch) → Nanobot consumes
 
 Two entry points:
@@ -54,12 +54,18 @@ async def dispatch_task(
     """Dispatch a background task to Nanobot via the Scheduler.
 
     Use this for anything that takes time: web searches, reminders,
-    summarization, or other background work.
+    summarization, vocabulary learning, or other background work.
 
     Args:
-        task_type: Type of task (e.g. 'search_web', 'summarize', 'remind').
+        task_type: Type of task. Nanobot-routed types:
+            'research' — web search, fact lookup, information gathering.
+            'summarize' — summarize text or conversation.
+            'remind' — create a reminder or timed notification.
+            'memory_consolidation' — summarize and archive conversation history.
+            'vocabulary_learn' — learn new words or concepts.
+            Other types are handled directly by Brain (not dispatched to Nanobot).
         params: JSON-encoded parameters for the task.
-        priority: Task priority — 'high', 'normal', or 'low'.
+        priority: Task priority — 'reflex', 'high', 'normal', or 'low'.
     """
     try:
         parsed_params = json.loads(params) if isinstance(params, str) else params

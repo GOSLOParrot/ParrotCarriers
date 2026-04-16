@@ -3,10 +3,18 @@
 
 # ========== Google / Gemini ==========
 GOOGLE_API_KEY=<your-google-api-key>
+GEMINI_API_KEY=<same-as-above-or-separate-key>
+
+# ========== Telegram (GOSLO Chat bot) ==========
+TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
+
+# ========== GitHub (MCP tool for nanobot file/repo management) ==========
+GITHUB_TOKEN=<your-github-personal-access-token>
 
 # ========== Redis (Docker 内部通信, 绑定 127.0.0.1) ==========
 REDIS_HOST=localhost
 REDIS_PORT=6379
+REDIS_URL=redis://localhost:6379/0
 
 # ========== LiveKit ==========
 # Castle 对外地址 (客户端通过此地址连接)
@@ -14,6 +22,10 @@ LIVEKIT_URL=ws://8.216.45.45:7880
 LIVEKIT_API_KEY=devkey
 LIVEKIT_API_SECRET=secret
 LIVEKIT_ROOM=parrot-main
+
+# ========== FalkorDB (Graphiti graph backend, Docker 内部通信) ==========
+FALKORDB_HOST=localhost
+FALKORDB_PORT=6380
 
 # ========== Debug ==========
 PARROT_DEBUG=false

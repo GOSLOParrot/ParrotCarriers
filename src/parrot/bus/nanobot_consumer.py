@@ -103,21 +103,31 @@ class NanobotConsumer:
         task = json.loads(raw)
         task_id = task.get("task_id", "unknown")
         task_type = task.get("type", "unknown")
+        params = task.get("params", {})
 
         logger.info("Nanobot processing task: %s (id=%s)", task_type, task_id)
 
-        # Phase 1: stub execution — just echo back success
-        # Phase 2: forward to actual nanobot agent loop
         result = {
             "task_id": task_id,
             "type": task_type,
             "status": "completed",
+            "result": f"[stub] Task '{task_type}' acknowledged (no real processing)",
             "completed_at": time.time(),
         }
 
+        result_channel = params.get("result_channel")
+        if result_channel:
+            result["type"] = result_channel
+
         await r.xack(STREAM_NANOBOT_DISPATCH, CONSUMER_GROUP, msg_id)
         await r.publish(CH_NANOBOT_RESULTS, json.dumps(result))
-        logger.info("Nanobot task completed: %s (id=%s)", task_type, task_id)
+
+        if result_channel:
+            from parrot.shared.constants import CH_TRIGGER_RESULTS
+            await r.publish(CH_TRIGGER_RESULTS, json.dumps(result))
+
+        logger.info("Nanobot task completed: %s (id=%s) result_channel=%s",
+                     task_type, task_id, result_channel or "(default)")
 
 
 async def run_nanobot_consumer() -> None:

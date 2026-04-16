@@ -8,8 +8,9 @@ from __future__ import annotations
 from livekit.agents import RunContext, function_tool
 
 from parrot.brain.tools._rpc_bridge import call_unity_rpc
+from parrot.shared.parrot_actions import ParrotAnimation
 
-KNOWN_ANIMATIONS = {"dance", "head_bob", "wing_flap", "idle", "sleep", "perch"}
+VALID_ANIMATIONS = {a.value for a in ParrotAnimation}
 
 
 @function_tool()
@@ -21,8 +22,13 @@ async def animate(
 
     Args:
         animation_name: Name of the animation to play.
-            Supported: dance, head_bob, wing_flap, idle, sleep, perch.
+            Supported: idle, fly, dance, wing_flap, perch, sit, head_bob, sleep.
     """
+    if animation_name not in VALID_ANIMATIONS:
+        return (
+            f"Unknown animation '{animation_name}'. "
+            f"Available: {', '.join(sorted(VALID_ANIMATIONS))}."
+        )
     result = await call_unity_rpc(
         method="animate",
         payload={"animation": animation_name},

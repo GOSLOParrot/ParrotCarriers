@@ -1,0 +1,193 @@
+# Repository File Structure
+
+Total items: 187
+
+```
+📁 .devcontainer
+📁 .github
+📄 .gitignore
+📄 .readthedocs.yaml
+📁 .vscode
+📄 CHANGELOG.rst
+📄 CONTRIBUTING.md
+📄 DEVELOPING.md
+📄 LICENSE
+📄 Makefile
+📄 README.md
+📁 docs
+📄 package.xml
+📄 poetry.lock
+📁 py_trees
+📄 pyproject.toml
+📄 setup.py
+📁 tests
+📄 tox.ini
+  📄 Dockerfile
+  📄 README.md
+  📄 devcontainer.json
+  📁 py312
+  📁 workflows
+  📄 extensions.json
+  📄 settings.json
+  📄 .gitignore
+  📄 Makefile
+  📄 behaviours.rst
+  📄 blackboards.rst
+  📄 changelog.rst
+  📄 composites.rst
+  📄 conf.py
+  📄 decorators.rst
+  📄 demos.rst
+  📁 dot
+  📁 examples
+  📄 faq.rst
+  📄 idioms.rst
+  📁 images
+  📄 index.rst
+  📄 introduction.rst
+  📄 modules.rst
+  📄 programs.rst
+  📄 requirements.txt
+  📄 terminology.rst
+  📄 the_crazy_hospital.rst
+  📄 trees.rst
+  📄 visualisation.rst
+  📄 weblinks.rst
+  📄 __init__.py
+  📄 behaviour.py
+  📄 behaviours.py
+  📄 blackboard.py
+  📄 common.py
+  📄 composites.py
+  📄 console.py
+  📄 decorators.py
+  📁 demos
+  📄 display.py
+  📄 idioms.py
+  📄 logging.py
+  📄 meta.py
+  📁 programs
+  📄 py.typed
+  📄 syntax_highlighting.py
+  📄 tests.py
+  📄 timers.py
+  📄 trees.py
+  📄 utilities.py
+  📄 version.py
+  📄 visitors.py
+  📄 README.md
+  📄 __init__.py
+  📄 benchmark_blackboard.py
+  📄 profile_blackboard
+  📄 test_blackboard.py
+  📄 test_blackboard_behaviours.py
+  📄 test_composites.py
+  📄 test_console.py
+  📄 test_decorators.py
+  📄 test_display.py
+  📄 test_either_or.py
+  📄 test_eternal_guard.py
+  📄 test_meta.py
+  📄 test_oneshot.py
+  📄 test_parallels.py
+  📄 test_pickup.py
+  📄 test_probabilistic_behaviour.py
+  📄 test_selectors.py
+  📄 test_sequences.py
+  📄 test_timer.py
+  📄 test_tip.py
+  📄 test_tree.py
+  📄 test_utilities.py
+  📄 test_visitors.py
+    📁 .devcontainer
+    📄 pre-merge.yaml
+    📄 push_poetry_container.yaml
+    📄 update-poetry-cache.yaml
+    📄 blackboard-with-variables.dot
+    📄 composites.dot
+    📄 decorators.dot
+    📄 demo-blackboard.dot
+    📄 demo-context_switching.dot
+    📄 demo-dot-graphs.dot
+    📄 demo-either-or.dot
+    📄 demo-eternal-guard.dot
+    📄 demo-logging.dot
+    📄 demo-selector.dot
+    📄 demo-sequence.dot
+    📄 demo-tree-stewardship.dot
+    📄 demo_tree.dot
+    📄 idiom-either-or.dot
+    📄 naive_context_switching.dot
+    📄 oneshot.dot
+    📄 parallel.dot
+    📄 pick_up_where_you_left_off.dot
+    📄 selector.dot
+    📄 selector_with_memory.dot
+    📄 sequence.dot
+    📄 sequence_with_memory.dot
+    📄 blackboard_activity_stream.py
+    📄 blackboard_behaviour.py
+    📄 blackboard_disconnected.py
+    📄 blackboard_display.py
+    📄 blackboard_namespaces.py
+    📄 blackboard_nested.py
+    📄 blackboard_read_write.py
+    📄 decorators.py
+    📄 oneshot.py
+    📄 parallel.py
+    📄 pickup_where_you_left_off.py
+    📄 selector.py
+    📄 selector_with_memory.py
+    📄 sequence.py
+    📄 sequence_with_memory.py
+    📄 skeleton_behaviour.py
+    📄 skeleton_tree.py
+    📄 action.gif
+    📄 ascii_tree.png
+    📄 ascii_tree_simple.png
+    📄 blackboard.jpg
+    📄 blackboard_activity_stream.png
+    📄 blackboard_client_instantiation.png
+    📄 blackboard_demo.png
+    📄 blackboard_display.png
+    📄 blackboard_namespaces.png
+    📄 blackboard_nested.png
+    📄 blackboard_read_write.png
+    📄 blackboard_remappings.png
+    📄 blackboard_trees.png
+    📄 context_switching.gif
+    📄 crazy_hospital.jpg
+    📄 display_modes.png
+    📄 either_or.gif
+    📄 eternal_guard.gif
+    📄 lifecycle.gif
+    📄 logging.gif
+    📄 many-hats.png
+    📄 pick_up_where_you_left_off.gif
+    📄 render.gif
+    📄 selector.gif
+    📄 sequence.gif
+    📄 ticking_tree.jpg
+    📄 tree_stewardship.gif
+    📄 yggdrasil.jpg
+    📄 README.md
+    📄 __init__.py
+    📄 action.py
+    📄 blackboard.py
+    📄 blackboard_namespaces.py
+    📄 blackboard_remappings.py
+    📄 context_switching.py
+    📄 display_modes.py
+    📄 dot_graphs.py
+    📄 either_or.py
+    📄 eternal_guard.py
+    📄 lifecycle.py
+    📄 logging.py
+    📄 pick_up_where_you_left_off.py
+    📄 selector.py
+    📄 sequence.py
+    📄 stewardship.py
+    📄 __init__.py
+    📄 render.py
+      📄 devcontainer.json
+```

@@ -1,0 +1,2393 @@
+[
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\bridge\\src\\server.ts",
+    "language": "TypeScript",
+    "patterns": [
+      {
+        "pattern_type": "Adapter",
+        "category": "Structural",
+        "confidence": 0.7,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\bridge\\src\\server.ts",
+        "class_name": "BridgeServer",
+        "method_name": null,
+        "line_number": 31,
+        "evidence": [
+          "Class name suggests Adapter: BridgeServer"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Adapter": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\context.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\context.py",
+        "class_name": "ContextBuilder",
+        "method_name": "build_system_prompt",
+        "line_number": 28,
+        "evidence": [
+          "Factory method detected: build_system_prompt"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Builder",
+        "category": "Creational",
+        "confidence": 0.7,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\context.py",
+        "class_name": "ContextBuilder",
+        "method_name": null,
+        "line_number": 16,
+        "evidence": [
+          "Class name contains \"Builder\": ContextBuilder"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\context.py",
+        "class_name": "ContextBuilder",
+        "method_name": "_build_runtime_context",
+        "line_number": 104,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Builder": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\loop.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\loop.py",
+        "class_name": "AgentLoop",
+        "method_name": "_strip_think",
+        "line_number": 184,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 5,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\memory.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\memory.py",
+        "class_name": "MemoryStore",
+        "method_name": "get_memory_context",
+        "line_number": 98,
+        "evidence": [
+          "Factory method detected: get_memory_context"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\memory.py",
+        "class_name": "MemoryStore",
+        "method_name": "_format_messages",
+        "line_number": 103,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\memory.py",
+        "class_name": "MemoryConsolidator",
+        "method_name": "get_lock",
+        "line_number": 250,
+        "evidence": [
+          "Factory method detected: get_lock"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 3,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 2,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\skills.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\skills.py",
+        "class_name": "SkillsLoader",
+        "method_name": "build_skills_summary",
+        "line_number": 101,
+        "evidence": [
+          "Factory method detected: build_skills_summary"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 1,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\subagent.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\subagent.py",
+        "class_name": "SubagentManager",
+        "method_name": "_build_subagent_prompt",
+        "line_number": 217,
+        "evidence": [
+          "Factory method detected: _build_subagent_prompt"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\subagent.py",
+        "class_name": "SubagentManager",
+        "method_name": "_format_partial_progress",
+        "line_number": 197,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 1,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\base.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\base.py",
+        "class_name": "Tool",
+        "method_name": "_resolve_type",
+        "line_number": 25,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\cron.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\cron.py",
+        "class_name": "CronTool",
+        "method_name": "_validate_timezone",
+        "line_number": 36,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\filesystem.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\filesystem.py",
+        "class_name": "ReadFileTool",
+        "method_name": "name",
+        "line_number": 66,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\filesystem.py",
+        "class_name": "WriteFileTool",
+        "method_name": "name",
+        "line_number": 161,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\filesystem.py",
+        "class_name": "EditFileTool",
+        "method_name": "name",
+        "line_number": 229,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\filesystem.py",
+        "class_name": "ListDirTool",
+        "method_name": "name",
+        "line_number": 336,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 5,
+    "total_functions": 3,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 4
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\mcp.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\mcp.py",
+        "class_name": "MCPToolWrapper",
+        "method_name": null,
+        "line_number": 77,
+        "evidence": [
+          "Class name suggests Decorator: MCPToolWrapper"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Adapter",
+        "category": "Structural",
+        "confidence": 0.7,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\mcp.py",
+        "class_name": "MCPToolWrapper",
+        "method_name": null,
+        "line_number": 77,
+        "evidence": [
+          "Class name suggests Adapter: MCPToolWrapper"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 4,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1,
+      "Adapter": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\message.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\message.py",
+        "class_name": "MessageTool",
+        "method_name": "name",
+        "line_number": 40,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\registry.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\registry.py",
+        "class_name": "ToolRegistry",
+        "method_name": "get",
+        "line_number": 26,
+        "evidence": [
+          "Factory method detected: get"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\registry.py",
+        "class_name": "ToolRegistry",
+        "method_name": "tool_names",
+        "line_number": 62,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\shell.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\shell.py",
+        "class_name": "ExecTool",
+        "method_name": "name",
+        "line_number": 45,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\spawn.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\agent\\tools\\spawn.py",
+        "class_name": "SpawnTool",
+        "method_name": "name",
+        "line_number": 27,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\bus\\events.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\bus\\events.py",
+        "class_name": "InboundMessage",
+        "method_name": "session_key",
+        "line_number": 22,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\bus\\queue.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\bus\\queue.py",
+        "class_name": "MessageBus",
+        "method_name": "inbound_size",
+        "line_number": 37,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\bus\\queue.py",
+        "class_name": "MessageBus",
+        "method_name": "publish_inbound",
+        "line_number": 20,
+        "evidence": [
+          "Observer method detected: publish_inbound"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\base.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\base.py",
+        "class_name": "BaseChannel",
+        "method_name": "start",
+        "line_number": 65,
+        "evidence": [
+          "Method uses decorators: ['abstractmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\dingtalk.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "ChainOfResponsibility",
+        "category": "Behavioral",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\dingtalk.py",
+        "class_name": "NanobotDingTalkHandler",
+        "method_name": null,
+        "line_number": 41,
+        "evidence": [
+          "Class name suggests handler chain: NanobotDingTalkHandler"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\dingtalk.py",
+        "class_name": "DingTalkChannel",
+        "method_name": "_get_access_token",
+        "line_number": 248,
+        "evidence": [
+          "Factory method detected: _get_access_token"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\dingtalk.py",
+        "class_name": "DingTalkChannel",
+        "method_name": "default_config",
+        "line_number": 176,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 3,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "ChainOfResponsibility": 1,
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\discord.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\discord.py",
+        "class_name": "DiscordChannel",
+        "method_name": "_handle_message_create",
+        "line_number": 288,
+        "evidence": [
+          "Factory method detected: _handle_message_create"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\discord.py",
+        "class_name": "DiscordChannel",
+        "method_name": "default_config",
+        "line_number": 43,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 2,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\email.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\email.py",
+        "class_name": "EmailChannel",
+        "method_name": "_fetch_new_messages",
+        "line_number": 253,
+        "evidence": [
+          "Factory method detected: _fetch_new_messages"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\email.py",
+        "class_name": "EmailChannel",
+        "method_name": "default_config",
+        "line_number": 104,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\feishu.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\feishu.py",
+        "class_name": "FeishuChannel",
+        "method_name": "_build_card_elements",
+        "line_number": 505,
+        "evidence": [
+          "Factory method detected: _build_card_elements"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\feishu.py",
+        "class_name": "FeishuChannel",
+        "method_name": "default_config",
+        "line_number": 287,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\feishu.py",
+        "class_name": "FeishuChannel",
+        "method_name": "_stream_update_text_sync",
+        "line_number": 988,
+        "evidence": [
+          "Observer method detected: _stream_update_text_sync"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 3,
+    "total_functions": 9,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\manager.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\manager.py",
+        "class_name": "ChannelManager",
+        "method_name": "get_channel",
+        "line_number": 247,
+        "evidence": [
+          "Factory method detected: get_channel"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\manager.py",
+        "class_name": "ChannelManager",
+        "method_name": "_send_once",
+        "line_number": 160,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\matrix.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\matrix.py",
+        "class_name": "_NioLoguruHandler",
+        "method_name": "emit",
+        "line_number": 129,
+        "evidence": [
+          "Observer method detected: emit"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "ChainOfResponsibility",
+        "category": "Behavioral",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\matrix.py",
+        "class_name": "_NioLoguruHandler",
+        "method_name": null,
+        "line_number": 126,
+        "evidence": [
+          "Class name suggests handler chain: _NioLoguruHandler"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\matrix.py",
+        "class_name": "MatrixChannel",
+        "method_name": "_build_outbound_attachment_content",
+        "line_number": 277,
+        "evidence": [
+          "Factory method detected: _build_outbound_attachment_content"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\matrix.py",
+        "class_name": "MatrixChannel",
+        "method_name": "default_config",
+        "line_number": 172,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\matrix.py",
+        "class_name": "MatrixChannel",
+        "method_name": "_build_outbound_attachment_content",
+        "line_number": 277,
+        "evidence": [
+          "Observer method detected: _build_outbound_attachment_content"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 3,
+    "total_functions": 5,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Observer": 2,
+      "ChainOfResponsibility": 1,
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\mochat.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\mochat.py",
+        "class_name": "MochatChannel",
+        "method_name": "_seed_targets_from_config",
+        "line_number": 381,
+        "evidence": [
+          "Factory method detected: _seed_targets_from_config"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\mochat.py",
+        "class_name": "MochatChannel",
+        "method_name": "default_config",
+        "line_number": 266,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\mochat.py",
+        "class_name": "MochatChannel",
+        "method_name": "_build_notify_handler",
+        "line_number": 470,
+        "evidence": [
+          "Observer method detected: _build_notify_handler"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 7,
+    "total_functions": 16,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\qq.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\qq.py",
+        "class_name": "QQChannel",
+        "method_name": "default_config",
+        "line_number": 153,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\qq.py",
+        "class_name": "QQChannel",
+        "method_name": "_handle_attachments",
+        "line_number": 498,
+        "evidence": [
+          "Observer method detected: _handle_attachments"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\qq.py",
+        "class_name": "_Bot",
+        "method_name": "on_c2c_message_create",
+        "line_number": 117,
+        "evidence": [
+          "Factory method detected: on_c2c_message_create"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 3,
+    "total_functions": 5,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1,
+      "Observer": 1,
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\slack.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\slack.py",
+        "class_name": "SlackChannel",
+        "method_name": "default_config",
+        "line_number": 55,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\slack.py",
+        "class_name": "SlackChannel",
+        "method_name": "_update_react_emoji",
+        "line_number": 244,
+        "evidence": [
+          "Observer method detected: _update_react_emoji"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 3,
+    "total_functions": 1,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\telegram.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\telegram.py",
+        "class_name": "TelegramChannel",
+        "method_name": "_get_media_type",
+        "line_number": 344,
+        "evidence": [
+          "Factory method detected: _get_media_type"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\telegram.py",
+        "class_name": "TelegramChannel",
+        "method_name": "default_config",
+        "line_number": 205,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 3,
+    "total_functions": 7,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\wecom.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\wecom.py",
+        "class_name": "WecomChannel",
+        "method_name": "default_config",
+        "line_number": 53,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\weixin.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\weixin.py",
+        "class_name": "WeixinChannel",
+        "method_name": "_get_state_dir",
+        "line_number": 132,
+        "evidence": [
+          "Factory method detected: _get_state_dir"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\weixin.py",
+        "class_name": "WeixinChannel",
+        "method_name": "default_config",
+        "line_number": 108,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 4,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\whatsapp.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\channels\\whatsapp.py",
+        "class_name": "WhatsAppChannel",
+        "method_name": "default_config",
+        "line_number": 44,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 1,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\command\\router.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Command",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\command\\router.py",
+        "class_name": "CommandContext",
+        "method_name": null,
+        "line_number": 16,
+        "evidence": [
+          "Class name suggests Command: CommandContext"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Command",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\command\\router.py",
+        "class_name": "CommandRouter",
+        "method_name": null,
+        "line_number": 27,
+        "evidence": [
+          "Class name suggests Command: CommandRouter"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Command": 2
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\config\\schema.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "TemplateMethod",
+        "category": "Behavioral",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\config\\schema.py",
+        "class_name": "Base",
+        "method_name": null,
+        "line_number": 11,
+        "evidence": [
+          "Abstract base with subclasses: ChannelsConfig, AgentDefaults"
+        ],
+        "related_classes": [
+          "ChannelsConfig",
+          "AgentDefaults",
+          "AgentsConfig",
+          "ProviderConfig",
+          "ProvidersConfig",
+          "HeartbeatConfig",
+          "GatewayConfig",
+          "WebSearchConfig",
+          "WebToolsConfig",
+          "ExecToolConfig",
+          "MCPServerConfig",
+          "ToolsConfig"
+        ]
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\config\\schema.py",
+        "class_name": "Config",
+        "method_name": "get_provider",
+        "line_number": 232,
+        "evidence": [
+          "Factory method detected: get_provider"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\config\\schema.py",
+        "class_name": "Config",
+        "method_name": "workspace_path",
+        "line_number": 163,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 14,
+    "total_functions": 1,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "TemplateMethod": 1,
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\cron\\service.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\cron\\service.py",
+        "class_name": "CronService",
+        "method_name": "_get_next_wake_ms",
+        "line_number": 220,
+        "evidence": [
+          "Factory method detected: _get_next_wake_ms"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 4,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\heartbeat\\service.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\heartbeat\\service.py",
+        "class_name": "HeartbeatService",
+        "method_name": "heartbeat_file",
+        "line_number": 76,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\anthropic_provider.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\anthropic_provider.py",
+        "class_name": "AnthropicProvider",
+        "method_name": "_build_kwargs",
+        "line_number": 290,
+        "evidence": [
+          "Factory method detected: _build_kwargs"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\anthropic_provider.py",
+        "class_name": "AnthropicProvider",
+        "method_name": "_strip_prefix",
+        "line_number": 53,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 1,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\azure_openai_provider.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\azure_openai_provider.py",
+        "class_name": "AzureOpenAIProvider",
+        "method_name": "_build_chat_url",
+        "line_number": 52,
+        "evidence": [
+          "Factory method detected: _build_chat_url"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\azure_openai_provider.py",
+        "class_name": "AzureOpenAIProvider",
+        "method_name": "_supports_temperature",
+        "line_number": 75,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\base.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\base.py",
+        "class_name": "LLMResponse",
+        "method_name": "has_tool_calls",
+        "line_number": 53,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\base.py",
+        "class_name": "LLMProvider",
+        "method_name": "get_default_model",
+        "line_number": 366,
+        "evidence": [
+          "Factory method detected: get_default_model"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\base.py",
+        "class_name": "LLMProvider",
+        "method_name": "_sanitize_empty_content",
+        "line_number": 105,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 4,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 2,
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\openai_codex_provider.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\openai_codex_provider.py",
+        "class_name": "OpenAICodexProvider",
+        "method_name": "get_default_model",
+        "line_number": 96,
+        "evidence": [
+          "Factory method detected: get_default_model"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 12,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\openai_compat_provider.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\openai_compat_provider.py",
+        "class_name": "OpenAICompatProvider",
+        "method_name": "_build_kwargs",
+        "line_number": 224,
+        "evidence": [
+          "Factory method detected: _build_kwargs"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\openai_compat_provider.py",
+        "class_name": "OpenAICompatProvider",
+        "method_name": "_apply_cache_control",
+        "line_number": 155,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 8,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\registry.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\providers\\registry.py",
+        "class_name": "ProviderSpec",
+        "method_name": "label",
+        "line_number": 67,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 1,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\session\\manager.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\session\\manager.py",
+        "class_name": "Session",
+        "method_name": "get_history",
+        "line_number": 69,
+        "evidence": [
+          "Factory method detected: get_history"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\session\\manager.py",
+        "class_name": "Session",
+        "method_name": "_find_legal_start",
+        "line_number": 47,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\nanobot\\session\\manager.py",
+        "class_name": "SessionManager",
+        "method_name": "_get_session_path",
+        "line_number": 141,
+        "evidence": [
+          "Factory method detected: _get_session_path"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 2,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_consolidate_offset.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_consolidate_offset.py",
+        "class_name": "TestSessionImmutableHistory",
+        "method_name": "test_get_history_returns_most_recent",
+        "line_number": 105,
+        "evidence": [
+          "Factory method detected: test_get_history_returns_most_recent"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_consolidate_offset.py",
+        "class_name": "TestSessionPersistence",
+        "method_name": "temp_manager",
+        "line_number": 148,
+        "evidence": [
+          "Method uses decorators: ['pytest.fixture']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_consolidate_offset.py",
+        "class_name": "TestCacheImmutability",
+        "method_name": "test_consolidation_only_updates_last_consolidated",
+        "line_number": 348,
+        "evidence": [
+          "Observer method detected: test_consolidation_only_updates_last_consolidated"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_consolidate_offset.py",
+        "class_name": "TestNewCommandArchival",
+        "method_name": "test_new_clears_session_immediately_even_if_archive_fails",
+        "line_number": 508,
+        "evidence": [
+          "Factory method detected: test_new_clears_session_immediately_even_if_archive_fails"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_consolidate_offset.py",
+        "class_name": "TestNewCommandArchival",
+        "method_name": "_make_loop",
+        "line_number": 487,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Command",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_consolidate_offset.py",
+        "class_name": "TestNewCommandArchival",
+        "method_name": null,
+        "line_number": 483,
+        "evidence": [
+          "Class name suggests Command: TestNewCommandArchival"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 10,
+    "total_functions": 7,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 2,
+      "Decorator": 2,
+      "Observer": 1,
+      "Command": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_context_prompt_cache.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_context_prompt_cache.py",
+        "class_name": "_FakeDatetime",
+        "method_name": "now",
+        "line_number": 17,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 4,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_evaluator.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_evaluator.py",
+        "class_name": "DummyProvider",
+        "method_name": "get_default_model",
+        "line_number": 17,
+        "evidence": [
+          "Factory method detected: get_default_model"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 5,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_heartbeat_service.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_heartbeat_service.py",
+        "class_name": "DummyProvider",
+        "method_name": "get_default_model",
+        "line_number": 21,
+        "evidence": [
+          "Factory method detected: get_default_model"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_heartbeat_service.py",
+        "class_name": "CapturingProvider",
+        "method_name": "get_default_model",
+        "line_number": 275,
+        "evidence": [
+          "Factory method detected: get_default_model"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 17,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 2
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_memory_consolidation_types.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_memory_consolidation_types.py",
+        "class_name": "ScriptedProvider",
+        "method_name": "get_default_model",
+        "line_number": 55,
+        "evidence": [
+          "Factory method detected: get_default_model"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_memory_consolidation_types.py",
+        "class_name": "TestMemoryConsolidationTypeHandling",
+        "method_name": "test_string_arguments_work",
+        "line_number": 63,
+        "evidence": [
+          "Method uses decorators: ['pytest.mark.asyncio']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_memory_consolidation_types.py",
+        "class_name": "TestMemoryConsolidationTypeHandling",
+        "method_name": "test_missing_memory_update_returns_false_without_writing",
+        "line_number": 269,
+        "evidence": [
+          "Observer method detected: test_missing_memory_update_returns_false_without_writing"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 4,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_onboard_logic.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_onboard_logic.py",
+        "class_name": "TestSyncWorkspaceTemplates",
+        "method_name": "test_creates_missing_files",
+        "line_number": 309,
+        "evidence": [
+          "Factory method detected: test_creates_missing_files"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_onboard_logic.py",
+        "class_name": "TestConfigurePydanticModelDrafts",
+        "method_name": "_patch_prompt_helpers",
+        "line_number": 398,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_onboard_logic.py",
+        "class_name": "TestConfigurePydanticModelDrafts",
+        "method_name": "test_completing_section_returns_updated_draft",
+        "line_number": 426,
+        "evidence": [
+          "Observer method detected: test_completing_section_returns_updated_draft"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 24,
+    "total_functions": 3,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_task_cancel.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_task_cancel.py",
+        "class_name": "TestHandleStop",
+        "method_name": "test_stop_no_active_task",
+        "line_number": 32,
+        "evidence": [
+          "Method uses decorators: ['pytest.mark.asyncio']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_task_cancel.py",
+        "class_name": "TestDispatch",
+        "method_name": "test_dispatch_processes_and_publishes",
+        "line_number": 107,
+        "evidence": [
+          "Method uses decorators: ['pytest.mark.asyncio']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_task_cancel.py",
+        "class_name": "TestDispatch",
+        "method_name": "test_dispatch_processes_and_publishes",
+        "line_number": 107,
+        "evidence": [
+          "Observer method detected: test_dispatch_processes_and_publishes"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\agent\\test_task_cancel.py",
+        "class_name": "TestSubagentCancellation",
+        "method_name": "test_cancel_by_session",
+        "line_number": 144,
+        "evidence": [
+          "Method uses decorators: ['pytest.mark.asyncio']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 3,
+    "total_functions": 9,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 3,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_channel_manager_delta_coalescing.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_channel_manager_delta_coalescing.py",
+        "class_name": "TestDeltaCoalescing",
+        "method_name": "test_single_delta_not_coalesced",
+        "line_number": 64,
+        "evidence": [
+          "Method uses decorators: ['pytest.mark.asyncio']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_channel_manager_delta_coalescing.py",
+        "class_name": "TestDispatchOutboundWithCoalescing",
+        "method_name": "test_dispatch_coalesces_and_processes_pending",
+        "line_number": 253,
+        "evidence": [
+          "Method uses decorators: ['pytest.mark.asyncio']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 3,
+    "total_functions": 4,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 2
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_dingtalk_channel.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_dingtalk_channel.py",
+        "class_name": "_FakeChatbotMessage",
+        "method_name": "from_dict",
+        "line_number": 111,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_dingtalk_channel.py",
+        "class_name": "_FakeFileChatbotMessage",
+        "method_name": "from_dict",
+        "line_number": 157,
+        "evidence": [
+          "Method uses decorators: ['staticmethod']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 4,
+    "total_functions": 7,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 2
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_post_content.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Builder",
+        "category": "Creational",
+        "confidence": 0.7,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_post_content.py",
+        "class_name": "Builder",
+        "method_name": null,
+        "line_number": 55,
+        "evidence": [
+          "Class name contains \"Builder\": Builder"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Builder",
+        "category": "Creational",
+        "confidence": 0.7,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_post_content.py",
+        "class_name": "Builder",
+        "method_name": null,
+        "line_number": 66,
+        "evidence": [
+          "Class name contains \"Builder\": Builder"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 4,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Builder": 2
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_streaming.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_streaming.py",
+        "class_name": "TestSendDelta",
+        "method_name": "test_first_delta_creates_card_and_sends",
+        "line_number": 133,
+        "evidence": [
+          "Factory method detected: test_first_delta_creates_card_and_sends"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_streaming.py",
+        "class_name": "TestSendDelta",
+        "method_name": "test_first_delta_creates_card_and_sends",
+        "line_number": 133,
+        "evidence": [
+          "Method uses decorators: ['pytest.mark.asyncio']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_feishu_streaming.py",
+        "class_name": "TestSendDelta",
+        "method_name": "test_second_delta_within_interval_skips_update",
+        "line_number": 151,
+        "evidence": [
+          "Observer method detected: test_second_delta_within_interval_skips_update"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 6,
+    "total_functions": 4,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1,
+      "Decorator": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_matrix_channel.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Command",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_matrix_channel.py",
+        "class_name": "_DummyTask",
+        "method_name": null,
+        "line_number": 26,
+        "evidence": [
+          "Class name suggests Command: _DummyTask"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 70,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Command": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_telegram_channel.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_telegram_channel.py",
+        "class_name": "_FakeHTTPXRequest",
+        "method_name": "clear",
+        "line_number": 28,
+        "evidence": [
+          "Method uses decorators: ['classmethod']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Builder",
+        "category": "Creational",
+        "confidence": 0.7,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_telegram_channel.py",
+        "class_name": "_FakeBuilder",
+        "method_name": null,
+        "line_number": 99,
+        "evidence": [
+          "Class name contains \"Builder\": _FakeBuilder"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Observer",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\channels\\test_telegram_channel.py",
+        "class_name": "_FakeBuilder",
+        "method_name": "get_updates_request",
+        "line_number": 114,
+        "evidence": [
+          "Observer method detected: get_updates_request"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 5,
+    "total_functions": 52,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1,
+      "Builder": 1,
+      "Observer": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\cli\\test_restart_command.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\cli\\test_restart_command.py",
+        "class_name": "TestRestartCommand",
+        "method_name": "test_restart_sends_message_and_calls_execv",
+        "line_number": 36,
+        "evidence": [
+          "Method uses decorators: ['pytest.mark.asyncio']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Command",
+        "category": "Behavioral",
+        "confidence": 0.65,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\cli\\test_restart_command.py",
+        "class_name": "TestRestartCommand",
+        "method_name": null,
+        "line_number": 33,
+        "evidence": [
+          "Class name suggests Command: TestRestartCommand"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 1,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 1,
+      "Command": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\providers\\test_provider_retry.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\providers\\test_provider_retry.py",
+        "class_name": "ScriptedProvider",
+        "method_name": "get_default_model",
+        "line_number": 23,
+        "evidence": [
+          "Factory method detected: get_default_model"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 1,
+    "total_functions": 13,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_filesystem_tools.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_filesystem_tools.py",
+        "class_name": "TestReadFileTool",
+        "method_name": "tool",
+        "line_number": 20,
+        "evidence": [
+          "Method uses decorators: ['pytest.fixture()']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_filesystem_tools.py",
+        "class_name": "TestEditFileTool",
+        "method_name": "tool",
+        "line_number": 149,
+        "evidence": [
+          "Method uses decorators: ['pytest.fixture()']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_filesystem_tools.py",
+        "class_name": "TestListDirTool",
+        "method_name": "tool",
+        "line_number": 223,
+        "evidence": [
+          "Method uses decorators: ['pytest.fixture()']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_filesystem_tools.py",
+        "class_name": "TestWorkspaceRestriction",
+        "method_name": "test_read_blocked_outside_workspace",
+        "line_number": 293,
+        "evidence": [
+          "Method uses decorators: ['pytest.mark.asyncio']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 5,
+    "total_functions": 0,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 4
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_message_tool_suppress.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_message_tool_suppress.py",
+        "class_name": "TestMessageToolSuppressLogic",
+        "method_name": "test_suppress_when_sent_to_same_target",
+        "line_number": 26,
+        "evidence": [
+          "Factory method detected: test_suppress_when_sent_to_same_target"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_message_tool_suppress.py",
+        "class_name": "TestMessageToolSuppressLogic",
+        "method_name": "test_suppress_when_sent_to_same_target",
+        "line_number": 26,
+        "evidence": [
+          "Method uses decorators: ['pytest.mark.asyncio']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Factory",
+        "category": "Creational",
+        "confidence": 0.6,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_message_tool_suppress.py",
+        "class_name": "TestMessageToolTurnTracking",
+        "method_name": "test_sent_in_turn_tracks_same_target",
+        "line_number": 121,
+        "evidence": [
+          "Factory method detected: test_sent_in_turn_tracks_same_target"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 2,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Factory": 2,
+      "Decorator": 1
+    }
+  },
+  {
+    "file_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_tool_validation.py",
+    "language": "Python",
+    "patterns": [
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_tool_validation.py",
+        "class_name": "SampleTool",
+        "method_name": "name",
+        "line_number": 10,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      },
+      {
+        "pattern_type": "Decorator",
+        "category": "Structural",
+        "confidence": 0.3,
+        "location": "C:\\Users\\Bin\\AppData\\Local\\Temp\\skill-seekers-pin-nanobot-c9d7c228\\tests\\tools\\test_tool_validation.py",
+        "class_name": "CastTestTool",
+        "method_name": "name",
+        "line_number": 147,
+        "evidence": [
+          "Method uses decorators: ['property']"
+        ],
+        "related_classes": []
+      }
+    ],
+    "total_classes": 2,
+    "total_functions": 39,
+    "analysis_depth": "surface",
+    "pattern_summary": {
+      "Decorator": 2
+    }
+  }
+]
