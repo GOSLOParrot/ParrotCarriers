@@ -42,8 +42,21 @@ unity/*/MemoryCaptures/
 terminals/
 agent-transcripts/
 
-# Temporary transfer files
+# Cursor skills: auto-generated reference docs (large, regeneratable)
+.cursor/skills/*/references/
+
+# Cursor memory: AI session files that may contain secrets or temp state
+.cursor/memory/active_context.md
+.cursor/memory/log.txt
+.cursor/memory/BigIssue.md
+.cursor/memory/deploy_snapshot_*.md
+
+# Nanobot local workspace (persona/session data)
+.nanobot/
+
+# Temporary transfer files / build artifacts
 FilePort/
 *.tar.gz
 *.tar.bz2
 *.zip
+Test/
