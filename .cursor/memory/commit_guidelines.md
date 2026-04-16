@@ -258,6 +258,51 @@ unity/*/Library/              Unity 自动生成
 
 ---
 
+## § 7  Nanobot 配置变更流程
+
+### 配置文件分类
+
+| 文件 | 仓库 | 同步方式 |
+|------|------|---------|
+| `nanobot/config/parrot_config.json` | **nanobot** git | commit → push → ECS `git pull` |
+| `~/.nanobot-parrot/config.json` | ❌ 不进 git | 由 `start_nanobot_worker.py` 从模板自动生成 |
+| `~/.nanobot/goslo-workspace/*.md` | ❌ 不进 git | `sync-castle.ps1 -Workspace` |
+
+> `parrot_config.json` 是**模板**，在 nanobot 仓库里。运行时脚本读它生成实际的 `~/.nanobot-parrot/config.json`，注入环境变量（GEMINI_API_KEY、GITHUB_TOKEN 等）。
+
+### 修改 parrot_config.json（模板）
+
+```powershell
+# 1. 本地修改 D:\GOSLOParrot\nanobot\config\parrot_config.json
+# 2. 在 GitHub Desktop 里 commit（选 nanobot 仓库）
+# 3. Push 到 origin/main
+# 4. ECS 同步（sync-castle.ps1 会同时 git pull nanobot）
+.\infra\sync-castle.ps1
+
+# 5. ECS 上重启 nanobot worker（如果正在运行）
+ssh Castle "tmux send-keys -t nanobot 'C-c' Enter 'python /opt/parrotcarriers/src/scripts/start_nanobot_worker.py --force-config' Enter"
+```
+
+> ⚠️ 重启后运行时配置会从最新模板重新生成，覆盖任何 ECS 上的手动改动。
+
+### 修改 Workspace 文件（SOUL / TOOLS / AGENTS / USER.md）
+
+```powershell
+# 本地编辑完后直接 rsync（不需要 git）
+.\infra\sync-castle.ps1 -Workspace
+# nanobot worker 下次收到新任务时自动读取新 workspace，无需重启
+```
+
+### 本地 vs ECS 直接修改
+
+| 场景 | 推荐 |
+|------|------|
+| 改代码/模板配置 | 本地改 → git → sync |
+| 临时测试配置 | 可以 SSH 进 ECS 改 `~/.nanobot-parrot/config.json`，但 `--force-config` 重启会被覆盖 |
+| 紧急热修复 | SSH 改 + 记录下来同步回本地 |
+
+---
+
 ## § 6  常用命令速查
 
 ```powershell
