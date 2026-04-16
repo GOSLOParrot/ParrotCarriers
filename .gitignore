@@ -44,3 +44,6 @@ agent-transcripts/
 
 # Temporary transfer files
 FilePort/
+*.tar.gz
+*.tar.bz2
+*.zip
