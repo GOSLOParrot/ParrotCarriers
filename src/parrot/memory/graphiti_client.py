@@ -67,21 +67,21 @@ async def get_graphiti(config: ParrotConfig | None = None):
     llm_client = GeminiClient(
         config=LLMConfig(
             api_key=cfg.google_api_key,
-            model="gemini-2.5-flash",
+            model=cfg.gemini.reranker_model,
         )
     )
 
     embedder = GeminiEmbedder(
         config=GeminiEmbedderConfig(
             api_key=cfg.google_api_key,
-            embedding_model="gemini-embedding-001",
+            embedding_model=cfg.gemini.embedding_model,
         )
     )
 
     cross_encoder = GeminiRerankerClient(
         config=LLMConfig(
             api_key=cfg.google_api_key,
-            model="gemini-2.5-flash",
+            model=cfg.gemini.reranker_model,
         )
     )
 
