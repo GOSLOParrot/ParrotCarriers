@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime
 import logging
 import re
 from pathlib import Path
@@ -72,7 +73,7 @@ async def sync_to_graphiti(objects: list[dict], dry_run: bool = False) -> int:
             )
         return len(objects)
 
-    from graphiti_core.graphiti_types import EpisodeType
+    from graphiti_core.nodes import EpisodeType
 
     from parrot.memory.graphiti_client import PARTITIONS, get_graphiti
 
@@ -95,10 +96,12 @@ async def sync_to_graphiti(objects: list[dict], dry_run: bool = False) -> int:
 
         try:
             await g.add_episode(
-                text=text,
-                episode_type=EpisodeType.text,
+                name=f"obsidian_{uuid}",
+                episode_body=text,
+                source=EpisodeType.text,
+                source_description=f"obsidian:{uuid}",
+                reference_time=datetime.datetime.now(datetime.timezone.utc),
                 group_id=PARTITIONS.SCENE,
-                source=f"obsidian:{uuid}",
             )
             logger.info("Synced: %s (uuid=%s)", name, uuid)
             count += 1

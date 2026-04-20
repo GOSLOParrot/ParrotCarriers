@@ -6,6 +6,7 @@ future real DSG will use to interact with Graphiti.
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import re
@@ -58,7 +59,7 @@ async def update_last_seen(
     This is a direct write for tracking purposes.
     """
     try:
-        from graphiti_core.graphiti_types import EpisodeType
+        from graphiti_core.nodes import EpisodeType
 
         from parrot.memory.graphiti_client import PARTITIONS, get_graphiti
 
@@ -73,10 +74,12 @@ async def update_last_seen(
             text += f" on surface '{surface}'"
 
         await g.add_episode(
-            text=text,
-            episode_type=EpisodeType.text,
+            name=f"dsg_seen_{object_id}",
+            episode_body=text,
+            source=EpisodeType.text,
+            source_description="dsg_tracking",
+            reference_time=datetime.datetime.now(datetime.timezone.utc),
             group_id=PARTITIONS.SCENE,
-            source="dsg_tracking",
         )
         logger.debug("update_last_seen: %s at %s", label, position)
     except Exception:

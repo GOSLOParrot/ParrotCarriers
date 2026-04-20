@@ -5,6 +5,7 @@ Brain → Graphiti add_episode → FalkorDB graph.
 
 from __future__ import annotations
 
+import datetime
 import logging
 
 from livekit.agents import RunContext, function_tool
@@ -29,16 +30,18 @@ async def remember(
         importance: How important this is — 'low', 'normal', or 'high'.
     """
     try:
-        from graphiti_core.graphiti_types import EpisodeType
+        from graphiti_core.nodes import EpisodeType
 
         from parrot.memory.graphiti_client import PARTITIONS, get_graphiti
 
         g = await get_graphiti()
         await g.add_episode(
-            text=information,
-            episode_type=EpisodeType.text,
+            name=f"brain_remember_{importance}",
+            episode_body=information,
+            source=EpisodeType.text,
+            source_description=f"brain_remember:{importance}",
+            reference_time=datetime.datetime.now(datetime.timezone.utc),
             group_id=PARTITIONS.GOSLO,
-            source="brain_remember",
         )
         logger.info("remember: stored '%s' (importance=%s)", information[:80], importance)
         return f"Got it! I'll remember that."

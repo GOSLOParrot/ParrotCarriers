@@ -20,6 +20,7 @@ Design:
 
 from __future__ import annotations
 
+import datetime
 import logging
 import re
 import time
@@ -310,7 +311,7 @@ class L2BGraph:
             return True
 
         try:
-            from graphiti_core.graphiti_types import EpisodeType
+            from graphiti_core.nodes import EpisodeType
 
             from parrot.memory.graphiti_client import PARTITIONS, get_graphiti
 
@@ -330,10 +331,14 @@ class L2BGraph:
             text = "\n".join(parts)
 
             await g.add_episode(
-                text=text,
-                episode_type=EpisodeType.text,
+                name=f"dsg_episode_{episode_id}",
+                episode_body=text,
+                source=EpisodeType.text,
+                source_description=f"dsg_episode:{episode_id}",
+                reference_time=datetime.datetime.fromtimestamp(
+                    ep.ended_at, tz=datetime.timezone.utc,
+                ),
                 group_id=PARTITIONS.GOSLO,
-                source=f"dsg_episode:{episode_id}",
             )
 
             ep.archived_to_graphiti = True
