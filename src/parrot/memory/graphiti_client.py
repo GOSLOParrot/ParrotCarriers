@@ -45,6 +45,7 @@ async def get_graphiti(config: ParrotConfig | None = None):
 
     try:
         from graphiti_core import Graphiti
+        from graphiti_core.cross_encoder.gemini_reranker_client import GeminiRerankerClient
         from graphiti_core.driver.falkordb_driver import FalkorDriver
         from graphiti_core.embedder.gemini import GeminiEmbedder, GeminiEmbedderConfig
         from graphiti_core.llm_client.gemini_client import GeminiClient, LLMConfig
@@ -73,7 +74,14 @@ async def get_graphiti(config: ParrotConfig | None = None):
     embedder = GeminiEmbedder(
         config=GeminiEmbedderConfig(
             api_key=cfg.google_api_key,
-            embedding_model="text-embedding-004",
+            embedding_model="gemini-embedding-001",
+        )
+    )
+
+    cross_encoder = GeminiRerankerClient(
+        config=LLMConfig(
+            api_key=cfg.google_api_key,
+            model="gemini-2.5-flash",
         )
     )
 
@@ -81,6 +89,7 @@ async def get_graphiti(config: ParrotConfig | None = None):
         graph_driver=driver,
         llm_client=llm_client,
         embedder=embedder,
+        cross_encoder=cross_encoder,
     )
 
     await _instance.build_indices_and_constraints()

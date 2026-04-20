@@ -39,16 +39,20 @@ async def graphiti():
 @pytest.mark.asyncio
 async def test_remember_and_query(graphiti):
     """Test: write an episode → search returns it."""
-    from graphiti_core.graphiti_types import EpisodeType
+    import datetime
+
+    from graphiti_core.nodes import EpisodeType
 
     from parrot.memory.graphiti_client import PARTITIONS
 
     test_fact = "The user's favorite color is emerald green (test)"
     await graphiti.add_episode(
-        text=test_fact,
-        episode_type=EpisodeType.text,
+        name="test_remember",
+        episode_body=test_fact,
+        source=EpisodeType.text,
+        source_description="integration test",
+        reference_time=datetime.datetime.now(datetime.timezone.utc),
         group_id=PARTITIONS.GOSLO,
-        source="test",
     )
 
     results = await graphiti.search(
@@ -59,7 +63,7 @@ async def test_remember_and_query(graphiti):
 
     assert len(results) > 0, "Expected at least one search result"
     found_texts = [
-        getattr(r, "fact", "") or getattr(r, "text", str(r))
+        getattr(r, "fact", "") or getattr(r, "name", str(r))
         for r in results
     ]
     assert any("emerald" in t.lower() or "green" in t.lower() for t in found_texts), (
@@ -70,15 +74,19 @@ async def test_remember_and_query(graphiti):
 @pytest.mark.asyncio
 async def test_scene_partition_isolated(graphiti):
     """Test: scene partition is isolated from goslo partition."""
-    from graphiti_core.graphiti_types import EpisodeType
+    import datetime
+
+    from graphiti_core.nodes import EpisodeType
 
     from parrot.memory.graphiti_client import PARTITIONS
 
     await graphiti.add_episode(
-        text="Object: blue mug on desk (test scene object)",
-        episode_type=EpisodeType.text,
+        name="test_scene_mug",
+        episode_body="Object: blue mug on desk (test scene object)",
+        source=EpisodeType.text,
+        source_description="integration test",
+        reference_time=datetime.datetime.now(datetime.timezone.utc),
         group_id=PARTITIONS.SCENE,
-        source="test",
     )
 
     scene_results = await graphiti.search(
@@ -98,16 +106,20 @@ async def test_scene_partition_isolated(graphiti):
 @pytest.mark.asyncio
 async def test_dsg_preload_interface(graphiti):
     """Test: DSG preload interface queries Graphiti."""
-    from graphiti_core.graphiti_types import EpisodeType
+    import datetime
+
+    from graphiti_core.nodes import EpisodeType
 
     from parrot.dsg.interfaces import preload_object_semantics
     from parrot.memory.graphiti_client import PARTITIONS
 
     await graphiti.add_episode(
-        text="Object: red laptop (uuid=test-laptop-001) on work desk, category=electronics",
-        episode_type=EpisodeType.text,
+        name="test_dsg_laptop",
+        episode_body="Object: red laptop (uuid=test-laptop-001) on work desk, category=electronics",
+        source=EpisodeType.text,
+        source_description="integration test",
+        reference_time=datetime.datetime.now(datetime.timezone.utc),
         group_id=PARTITIONS.SCENE,
-        source="test",
     )
 
     result = await preload_object_semantics("test-laptop-001", "red laptop")
@@ -139,14 +151,18 @@ if __name__ == "__main__":
         g = await get_graphiti()
         print("✓ Graphiti connected")
 
-        from graphiti_core.graphiti_types import EpisodeType
+        import datetime
+
+        from graphiti_core.nodes import EpisodeType
         from parrot.memory.graphiti_client import PARTITIONS
 
         await g.add_episode(
-            text="Integration test: the user likes matcha lattes",
-            episode_type=EpisodeType.text,
+            name="main_test_matcha",
+            episode_body="Integration test: the user likes matcha lattes",
+            source=EpisodeType.text,
+            source_description="integration_test",
+            reference_time=datetime.datetime.now(datetime.timezone.utc),
             group_id=PARTITIONS.GOSLO,
-            source="integration_test",
         )
         print("✓ Episode written to goslo partition")
 
