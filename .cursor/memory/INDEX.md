@@ -1,7 +1,7 @@
 # ParrotCarriers 全局索引
 
 > 用途: 项目唯一真相源，供 Cursor 与用户快速定位关键信息
-> 更新: 2026-04-13 (P2.5 审计修复完成)
+> 更新: 2026-04-20 (AR App 工程计划 + 视频流采样 skill + AR Foundation 规则)
 > 路由: 由 `.cursor/rules/workspace.mdc` (alwaysApply) 指向本文件
 
 ---
@@ -24,13 +24,15 @@
 | 协议污染复盘 | `.cursor/memory/BigIssue.md` | 历史教训与修正措施 |
 | Google 生态桥接 | `.cursor/memory/architecture/gemini_drive_bridge.md` | 副驾驶姐姐 Drive 工作区协议 (未来计划) |
 | Google 联调计划 | `.cursor/memory/architecture/verification_plan_google.md` | Mock → 真实 OAuth 验证分阶段 (未来计划) |
+| **AR App 工程计划** | `.cursor/memory/architecture/ar_app_plan.md` | **硬事实 + 调研索引 + 用户问卷** |
+| **视频流采样审计 (identify_object)** | `.cursor/memory/architecture/audit_identify_object_no_screenshot_20260420.md` | **缺截图+体感断裂 + 三段递进升级路径** |
 | 调研遗产 | `docs/InfoCollections/Opus/` → 见 `Opus/INDEX.md` | 26 篇调研文档 |
 | **灵感 & 展望** (人类手写) | `.cursor/memory/lore/ideas.md` | **AI 只读** — 用户的阶段性灵感、设计直觉、展望 |
-| 领域技能 | `.cursor/skills/` | 按需发现；`nanobot` 优先显式调用 |
+| 领域技能 | `.cursor/skills/` | 按需发现；含 `livekit-unity-video-publish` 视频流采样 skill |
 
 ---
 
-## 二、目录结构速查 (2026-04-13)
+## 二、目录结构速查 (2026-04-20)
 
 > 详见 `.cursor/memory/architecture/module_map_p2.md` (模块职责 + 成熟度)
 
@@ -98,7 +100,7 @@ GOSLOParrot/nanobot                   # 独立仓库 (fork from HKUDS/nanobot)
 ```
 .cursor/
 ├── memory/                           # 持久记忆
-│   ├── architecture/                 # 8 份架构文档 (bus/system/scene/protocol/module_map 等)
+│   ├── architecture/                 # 10 份架构文档 (bus/system/scene/protocol/module_map/ar_app_plan/audit 等)
 │   ├── INDEX.md                      # 本文件（唯一真相源）
 │   ├── active_context.md             # 当前进度 + 下一步
 │   ├── requirements.md               # 完整功能需求清单 v2
@@ -112,10 +114,12 @@ GOSLOParrot/nanobot                   # 独立仓库 (fork from HKUDS/nanobot)
 │   ├── bus-audit-constraints.mdc     # 审计护栏
 │   ├── deploy-prep-routing.mdc       # infra/** 触发
 │   ├── docker-best-practices.mdc     # Docker 触发
-│   └── livekit-unity-sdk.mdc         # Unity SDK 规则
+│   ├── livekit-unity-sdk.mdc         # Unity SDK 规则
+│   └── ar-foundation.mdc            # AR Foundation 版本约束+已知坑
 └── skills/                           # 领域技能 (按需发现)
     ├── livekit-agents/               # LiveKit Agents SDK
     ├── client-sdk-unity/             # LiveKit Unity SDK
+    ├── livekit-unity-video-publish/  # 视频流采集与多处采样 (One Stream Multiple Sampling)
     ├── graphiti/                     # Graphiti API
     ├── nanobot-overview/             # Nanobot 上游架构
     ├── nanobot/                      # ParrotCarriers 中的 Nanobot 审计

@@ -44,7 +44,7 @@
 - [ ] **[P0] Castle 拉取 + FalkorDB 首次拉起** → `sync-castle.ps1` 拉代码 + SSH 上 `docker compose up -d`
 - [ ] **[P1] Graphiti 线上链路验证** → FalkorDB ping + `remember/query_memory/query_scene` 真实调用
 - [ ] **[P1] 创建 Unity AR 项目 (ParrotAR)** 并把 `ARVideoPublisher` 端到端跑通到 Gemini Live
-- [ ] **[P1] identify_object 按需发现链路首测** (match/save_new/deep_search 三档)
+- [ ] **[P1] identify_object 按需发现链路首测** ⚠ 设计未落地 (缺截图+错派Nanobot), 见 `audit_identify_object_no_screenshot_20260420.md`; 需 B1-B2 视频采样基建先就绪
 - [ ] **[P2] Google OAuth 真实联调** (CalendarTrigger/MessageTrigger)
 - [ ] **[P2] 用户制作 fly/dance/idle 动画 (Minecraft 风格)**
 - [ ] **[P2] 像素画小纸条** (lore/ideas.md P3 条目，可能提前到 P2 做 MVP)
@@ -167,8 +167,10 @@
 1. GitHub Desktop push 4 个未推 commit → `sync-castle.ps1` → SSH `docker compose up -d`
 2. SSH 上跑 FalkorDB 健康检查 + Graphiti 集成测试 (`pytest tests/integration/test_graphiti_chain.py`)
 3. Brain Agent dev 模式在 Castle 起起来 + 本地 sim_unity_client 打 remember/query_memory
-4. 进入 AR 项目搭建 (ParrotAR Unity 子项目 + AR Foundation + ARVideoPublisher 接线)
-5. 按需发现链路首测 (identify_object 三档)
+4. 进入 AR 项目搭建 — **先填写 `ar_app_plan.md` §三问卷确认功能边界**
+5. 视频流采样基建 (B1-B4) — captureSnapshot RPC + SemanticNode 图片字段
+6. 按需发现链路首测 (identify_object 三段递进) ⚠ 需 B1-B2 就绪
+7. 视频流↔DSG 时间轴对齐验证 — 见 `livekit-unity-video-publish` skill
 
 **P2 剩余 (随顺序推进):**
 - [ ] Brain 优雅退出: AgentSession cleanup + 心跳停止 + Bus deregister
@@ -177,8 +179,11 @@
 - [ ] 像素画小纸条 (lore/ideas.md) MVP: Unity UI Canvas + 2D 像素风 Sprite + RPC 触发
 
 **P2.5 准备:**
+- [x] AR App 工程计划: `.cursor/memory/architecture/ar_app_plan.md` (硬事实+调研索引+问卷)
+- [x] 视频流采样 skill: `.cursor/skills/livekit-unity-video-publish/SKILL.md` (5段接缝: Unity推流端+Gemini消费端+DSG预留接口+identify_object截帧路径)
+- [x] AR Foundation 规则: `.cursor/rules/ar-foundation.mdc` (版本约束+5条已知坑)
 - [ ] Cursor 工作区规则: .cursor/rules/ 模块隔离策略（按官方推荐）
-- [ ] 新 skill 收集: AR Foundation, XR Interaction Toolkit, Unity Sentis (本地推理)
+- [ ] 新 skill 收集: XR Interaction Toolkit, Unity Sentis (本地推理)
 - [ ] 猫娘 cron 任务: Obsidian vault 变更 → Gemini Flash 三元组补充
 - [x] Google 生态 MCP 配置就位
   - 架构设计: `.cursor/memory/architecture/gemini_drive_bridge.md`

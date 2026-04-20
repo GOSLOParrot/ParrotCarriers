@@ -235,7 +235,7 @@ public class XRHandTracker : MonoBehaviour
 
         room.LocalParticipant.PublishData(
             payload,
-            DataPacketKind.LOSSY,
+            reliable: false,
             topic: "parrot.event"
         );
     }

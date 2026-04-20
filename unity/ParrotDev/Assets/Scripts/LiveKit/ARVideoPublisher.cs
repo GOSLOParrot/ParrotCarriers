@@ -3,6 +3,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.Rendering;
 using LiveKit;
+using LiveKit.Proto;
 
 #if UNITY_AR_FOUNDATION
 using UnityEngine.XR.ARFoundation;
@@ -94,7 +95,7 @@ public class ARVideoPublisher : MonoBehaviour
             VideoEncoding = new VideoEncoding
             {
                 MaxBitrate = 1_500_000,
-                MaxFramerate = (uint)targetFps,
+                MaxFramerate = targetFps,
             },
             Source = TrackSource.SourceCamera,
         };
@@ -104,16 +105,15 @@ public class ARVideoPublisher : MonoBehaviour
 
         if (publish.IsError)
         {
-            Debug.LogError($"[ARVideoPublisher] Failed to publish video: {publish.Error}");
+            Debug.LogError("[ARVideoPublisher] Failed to publish video (H264), falling back to VP8");
 
-            // Fallback to VP8 if H264 fails
             options.VideoCodec = VideoCodec.Vp8;
             publish = room.LocalParticipant.PublishTrack(_videoTrack, options);
             yield return publish;
 
             if (publish.IsError)
             {
-                Debug.LogError($"[ARVideoPublisher] VP8 fallback also failed: {publish.Error}");
+                Debug.LogError("[ARVideoPublisher] VP8 fallback also failed, aborting");
                 yield break;
             }
         }

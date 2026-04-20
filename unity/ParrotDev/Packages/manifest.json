@@ -7,7 +7,7 @@
     "com.unity.timeline": "1.7.7",
     "com.unity.ugui": "1.0.0",
     "com.unity.visualscripting": "1.9.4",
-    "io.livekit.livekit-sdk": "https://github.com/livekit/client-sdk-unity.git",
+    "io.livekit.livekit-sdk": "https://github.com/livekit/client-sdk-unity.git#2a7c57d7bcad2305a75bc75218e8064ccd5d10bf",
     "com.unity.modules.ai": "1.0.0",
     "com.unity.modules.androidjni": "1.0.0",
     "com.unity.modules.animation": "1.0.0",

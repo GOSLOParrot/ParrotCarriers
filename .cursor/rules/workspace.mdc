@@ -19,7 +19,7 @@ ParrotCarriers 是 GOSLOParrot 的通信总线子项目（RFC 1149: IPoAC, but p
 1. **P2.5 审计修复完成** — Bus V1 全链路验证通过 → P2 记忆/调度增强 → P2.5 AR 视频流 + L2-B 语义工作记忆 + 触发器系统
 2. Bus 骨架 + 6 个 Python 包 + 10 个 Gemini tools + 4 个 DSG 触发器 + L2-B RustworkX 语义图
 3. 双仓库: `GOSLOParrot/ParrotCarriers` (主, Bus 基建) + `GOSLOParrot/nanobot` (fork, Agent 框架)
-4. 待 AR 项目创建验证 + Castle 部署 FalkorDB
+4. 待 AR 项目创建验证 + Castle 部署 FalkorDB + 视频流采样升级
 
 ## 文件路由表
 
@@ -30,6 +30,8 @@ ParrotCarriers 是 GOSLOParrot 的通信总线子项目（RFC 1149: IPoAC, but p
 | **模块职责/数据流/成熟度** | `.cursor/memory/architecture/module_map_p2.md` |
 | **P2 里程碑**（实现清单 + 架构决策） | `.cursor/memory/milestone_p2.md` |
 | **完整功能需求 v2**（67 功能项 + 决策） | `.cursor/memory/requirements.md` |
+| **AR App 工程计划** | `.cursor/memory/architecture/ar_app_plan.md` |
+| **视频流采样审计** | `.cursor/memory/architecture/audit_identify_object_no_screenshot_20260420.md` |
 | **模块划分与目录结构** | `.cursor/memory/architecture/module_division.md` |
 | **总线架构 v4.2**（三层协议 + 拓扑） | `.cursor/memory/architecture/bus_v4.md` |
 | **内部数据流 v3**（Brain/DSG/Scheduler 愿景） | `.cursor/memory/architecture/system_core.md` |

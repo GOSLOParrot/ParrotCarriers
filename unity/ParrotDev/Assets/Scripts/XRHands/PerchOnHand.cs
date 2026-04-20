@@ -192,7 +192,6 @@ public class PerchOnHand : MonoBehaviour
 
         room.LocalParticipant.PublishData(
             Encoding.UTF8.GetBytes(json),
-            DataPacketKind.RELIABLE,
             topic: "parrot.event"
         );
     }
