@@ -1,7 +1,8 @@
 # P2 里程碑: 记忆共享 + Scheduler 增强 + DSG 耦合层
 
-> 最后更新: 2026-04-13
-> 状态: **P2.5 审计修复完成** — 全链路可验证 — 待 AR 项目创建 + Castle 部署验证
+> 最后更新: 2026-04-20
+> 状态: **代码就绪** — 待一次 Castle 线上 P2 拉起（FalkorDB 容器 + Graphiti 端到端） + AR 项目搭建
+> 下一步：见 `active_context.md` §下一步 本周关键路径
 > 计划文件: `c:\Users\Bin\.cursor\plans\p2_development_roadmap_70d9e51c.plan.md`
 
 ---

@@ -16,9 +16,10 @@ ParrotCarriers 是 GOSLOParrot 的通信总线子项目（RFC 1149: IPoAC, but p
 
 当前状态：
 
-1. **Phase 1 实施中**（Bus-first：模块化基础设施 + 核心骨架代码已创建）
-2. 需求清单 v2 已完成，模块划分已完成，目录结构已就绪，依赖已安装
-3. `nanobot` 已 fork 到 `GOSLOParrot/nanobot`，作为 Integration 模块（独立仓库）
+1. **P2.5 审计修复完成** — Bus V1 全链路验证通过 → P2 记忆/调度增强 → P2.5 AR 视频流 + L2-B 语义工作记忆 + 触发器系统
+2. Bus 骨架 + 6 个 Python 包 + 10 个 Gemini tools + 4 个 DSG 触发器 + L2-B RustworkX 语义图
+3. 双仓库: `GOSLOParrot/ParrotCarriers` (主, Bus 基建) + `GOSLOParrot/nanobot` (fork, Agent 框架)
+4. 待 AR 项目创建验证 + Castle 部署 FalkorDB
 
 ## 文件路由表
 
@@ -26,23 +27,26 @@ ParrotCarriers 是 GOSLOParrot 的通信总线子项目（RFC 1149: IPoAC, but p
 |:---------|:-------|
 | **全局索引**（唯一真相源） | `.cursor/memory/INDEX.md` |
 | **当前进度与下一步** | `.cursor/memory/active_context.md` |
+| **模块职责/数据流/成熟度** | `.cursor/memory/architecture/module_map_p2.md` |
+| **P2 里程碑**（实现清单 + 架构决策） | `.cursor/memory/milestone_p2.md` |
 | **完整功能需求 v2**（67 功能项 + 决策） | `.cursor/memory/requirements.md` |
 | **模块划分与目录结构** | `.cursor/memory/architecture/module_division.md` |
 | **总线架构 v4.2**（三层协议 + 拓扑） | `.cursor/memory/architecture/bus_v4.md` |
-| **内部数据流 v3**（Brain/DSG/Scheduler 内部） | `.cursor/memory/architecture/system_core.md` |
+| **内部数据流 v3**（Brain/DSG/Scheduler 愿景） | `.cursor/memory/architecture/system_core.md` |
 | **家族拓扑** | `.cursor/memory/architecture/scene.md` |
-| **架构与决策总览** | `docs/InfoCollections/HumanPlan/legacy.md` |
-| **服务器部署摘要（东京双节点）** | `docs/InfoCollections/HumanPlan/legacy.md` |
-| **调研遗产（22+篇）** | `docs/InfoCollections/Opus/` → 见 `Opus/INDEX.md` |
-| **领域技能** | `.cursor/skills/` — 按需发现；`nanobot` 优先显式调用 |
+| **协议快照 V1**（RPC/Redis/DataChannel） | `.cursor/memory/architecture/protocol_snapshot_p1.md` |
+| **部署快照** | `.cursor/memory/deploy_snapshot_p2_20260412.md` |
+| **鹦鹉行为状态规则** | `.cursor/memory/parrot_behavior_rules.md` |
 | **协议污染复盘** | `.cursor/memory/BigIssue.md` |
+| **灵感 & 展望** (人类手写, AI 只读) | `.cursor/memory/lore/ideas.md` |
+| **领域技能** | `.cursor/skills/` — 按需发现；`nanobot` 优先显式调用 |
 
 ## 关键约束
 
 1. **服务器**: 东京双节点 — 常驻城堡 (2C8G ECS) + 按需机甲 (A10 抢占式)，同 VPC
-2. **Bus-first**: Phase 1 = 搭好 Bus 基础设施 + 模块化，使各模块可独立开发
-3. **代码驱动协议**: 不在纸上做协议 schema 设计，候选字段等代码验证后收敛
-4. **统一术语**: 当前标准名为 `Scheduler`；历史文档或旧稿中也可能写 `Dispatcher`。Phase 1 实现为 `SimpleRouter`
+2. **FalkorDB 替代 Neo4j**: Castle 2C8G 内存限制，FalkorDB ~100-500MB vs Neo4j ~2.7GB
+3. **DSG 是耦合子系统**: 通过触发器/预加载/直写和 Graphiti/Brain 紧密耦合，非独立模块
+4. **代码驱动协议**: 不在纸上做协议 schema 设计，候选字段等代码验证后收敛
 5. **INDEX.md 为唯一真相源**: 所有路径、目录用途以 INDEX.md 为准
 
 ## 源码结构速查
@@ -50,8 +54,15 @@ ParrotCarriers 是 GOSLOParrot 的通信总线子项目（RFC 1149: IPoAC, but p
 ```
 src/parrot/          Python 源码根
 ├── bus/             总线框架（注册/心跳/挂载/Processor 接口）
-├── brain/           云端大脑（Gemini Agent + Tools）
-├── scheduler/       调度器（SimpleRouter + Blackboard）
-├── dsg/             DSG 感知（Phase 2 填充）
-└── shared/          跨模块共享（config/redis/constants/types）
+├── brain/           云端大脑（Gemini Agent + 10 个 function tools）
+│   └── tools/       fly_to, animate, dispatch_task, remember, query_memory,
+│                    query_scene, set_mode, identify_object, manage_episode
+├── scheduler/       调度器（py-trees BT 路由 + Blackboard V2）
+├── dsg/             DSG 感知耦合层（L2-B 语义图 + 触发器 + Graphiti 接口）
+│   └── triggers/    日程/消息/SSOT充实/场景上下文 4 个触发器
+├── memory/          记忆子系统（Graphiti 客户端 + 对话归档）
+└── shared/          跨模块共享（config/redis/constants/types/telemetry）
+
+src/scripts/         运维/工具脚本（sim_unity_client, sim_dsg_desktop, sync_obsidian 等）
+unity/ParrotDev/     Unity AR 客户端（LiveKit + XR Hands + AR Video）
 ```

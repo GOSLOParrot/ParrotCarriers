@@ -1,0 +1,27 @@
+{
+	"folders": [
+		{
+			"path": "../../.."
+		},
+		{
+			"path": "../../../../nanobot"
+		}
+	],
+	"settings": {
+		"terminal.integrated.profiles.windows": {
+			"PowerShell (Bypass)": {
+				"source": "PowerShell",
+				"args": [
+					"-ExecutionPolicy",
+					"Bypass"
+				]
+			}
+		},
+		"terminal.integrated.defaultProfile.windows": "PowerShell (Bypass)",
+		"terminal.integrated.env.windows": {
+			"VIRTUAL_ENV": "${workspaceFolder}\\.venv",
+			"PATH": "${workspaceFolder}\\.venv\\Scripts;${env:PATH}",
+			"PYTHONIOENCODING": "utf-8"
+		}
+	}
+}

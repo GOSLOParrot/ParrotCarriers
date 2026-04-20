@@ -15,7 +15,7 @@
 | **妹妹: GOSLO (Live 身体)** | AR 实体鹦鹉大小姐 desuwa（行动者） | Unity Android 客户端 | LiveKit 总线 (RPC + 音视频)。Unity app 打开时活跃 |
 | **妹妹: GOSLO (Chat 身体)** | 鹦鹉大小姐聊天分身（常开） | nanobot 独立实例 (ParrotSoul) | Telegram / 微信。Live 在线时转发/静默，否则独立对话 |
 | **猫娘女仆: Nanobot** | 后台复杂任务处理（Agents Team） | 同服务器独立实体 | Redis 异步通信 + 微信 bot，跨 session 并发（默认 3 并发） |
-| **档案馆: Graphiti** | 持久化记忆 & 知识图谱 | Castle 常驻 ECS Docker（当前 `ecs.g9i.large`） | Brain / Nanobot / Obsidian 直接调用 |
+| **档案馆: Graphiti** | 持久化记忆 & 知识图谱 (FalkorDB) | Castle 常驻 ECS Docker（当前 `ecs.g9i.large`） | Brain / Nanobot / Obsidian 直接调用 |
 | **黑板: Redis** | 即时状态 / Pub/Sub / 任务队列 | Castle 常驻 ECS（当前 `ecs.g9i.large`） | 所有模块共享 |
 
 ---
@@ -76,7 +76,7 @@ graph TD
     %% ==========================================
     subgraph The_Mansion ["云端宅邸 (Castle 常驻 ECS · 当前 ecs.g9i.large)"]
         Brain["Brain Agent\n(Gemini RealtimeModel)"]:::core
-        Scheduler["调度器\n(MVP:SimpleRouter → py-trees)"]:::core
+        Scheduler["调度器\n(py-trees BT)"]:::core
         Blackboard[("Redis\n黑板 / Pub-Sub / 任务队列")]:::core
 
         Brain <--> Blackboard
@@ -90,7 +90,7 @@ graph TD
         end
 
         subgraph Archive ["记忆层"]
-            Graphiti[("Graphiti + Neo4j\n(SSOT 主存储)")]:::house
+            Graphiti[("Graphiti + FalkorDB\n(SSOT 主存储)")]:::house
             Obsidian[("Obsidian\n(SSOT 稳定锚点)")]:::house
             Brain --> Graphiti
             Maid_Cat -- "直接调用\n(非MCP)" --> Graphiti

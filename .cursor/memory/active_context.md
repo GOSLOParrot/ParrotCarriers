@@ -1,12 +1,20 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-13 (P2.5 审计修复完成，全链路可验证)
+> 最后更新: 2026-04-20 (代码待推送 + Castle FalkorDB 待拉起 + AR 项目待开工)
 > 部署快照: `.cursor/memory/deploy_snapshot_p2_20260412.md`
 > **P2 里程碑**: `.cursor/memory/milestone_p2.md` — 记忆共享 + Scheduler 增强 + DSG 耦合层 + L2-B + 触发器
+> 同步工具: `.cursor/memory/commit_guidelines.md` + `infra/sync-castle.ps1`
 
 ---
 
-## 当前阶段: P2.5 审计修复完成 → 待 AR 项目创建 + Castle 部署验证
+## 当前阶段: 代码就绪，等一次 Castle 线上 P2 拉起
+
+### 阻塞链（按顺序解决）
+
+1. **本地 4 个 commit 未推**: `776eaff 88b172d 0c90413 489512b`（infra/docs 类，GitHub Desktop 推）
+2. **Castle 未拉取最新**: 拉取后 `docker compose up -d` 会带起 FalkorDB 容器（当前线上只有 LiveKit + Redis）
+3. **Graphiti 链路线上零验证**: 要在 Castle 跑 `remember / query_memory / identify_object` 才能确认 4 分区 + Gemini embedder 在线通
+4. **AR 项目空白**: ARVideoPublisher.cs 已就绪，但没有 Unity AR 项目容器、没有视频流实际入 Gemini Live 的端到端验证
 
 ### P2 实现状态 (2026-04-13)
 **已完成 — Graphiti 记忆共享 (P2-Alpha):**
@@ -31,11 +39,15 @@
 - episode_id 防冲突 + 自动归档 + Salience.ALERT + ConfirmationStatus.TENTATIVE
 - Agent disconnect 时 TriggerRunner 清理
 
-**待完成:**
-- [ ] 创建 AR 项目并验证完整链路
-- [ ] Castle 部署 FalkorDB + 线上全链路验证
-- [ ] 用户制作 fly/dance/idle 动画 (Minecraft 风格)
-- [ ] git push 双仓库
+**待完成 (2026-04-20 核对):**
+- [ ] **[P0] git push 4 个未推 commit** → 通过 GitHub Desktop (commit_guidelines §1)
+- [ ] **[P0] Castle 拉取 + FalkorDB 首次拉起** → `sync-castle.ps1` 拉代码 + SSH 上 `docker compose up -d`
+- [ ] **[P1] Graphiti 线上链路验证** → FalkorDB ping + `remember/query_memory/query_scene` 真实调用
+- [ ] **[P1] 创建 Unity AR 项目 (ParrotAR)** 并把 `ARVideoPublisher` 端到端跑通到 Gemini Live
+- [ ] **[P1] identify_object 按需发现链路首测** (match/save_new/deep_search 三档)
+- [ ] **[P2] Google OAuth 真实联调** (CalendarTrigger/MessageTrigger)
+- [ ] **[P2] 用户制作 fly/dance/idle 动画 (Minecraft 风格)**
+- [ ] **[P2] 像素画小纸条** (lore/ideas.md P3 条目，可能提前到 P2 做 MVP)
 
 > 详见: `.cursor/memory/milestone_p2.md`
 
@@ -151,21 +163,32 @@
 
 ### 下一步
 
-**P2 剩余:**
-- [ ] Castle 部署 FalkorDB + 线上全链路验证
-- [ ] git push 双仓库 (ParrotCarriers + nanobot)
-- [ ] 用户完成 fly/dance/idle 动画 (Minecraft 风格) → Unity 替换 Cube
+**本周关键路径 (按顺序):**
+1. GitHub Desktop push 4 个未推 commit → `sync-castle.ps1` → SSH `docker compose up -d`
+2. SSH 上跑 FalkorDB 健康检查 + Graphiti 集成测试 (`pytest tests/integration/test_graphiti_chain.py`)
+3. Brain Agent dev 模式在 Castle 起起来 + 本地 sim_unity_client 打 remember/query_memory
+4. 进入 AR 项目搭建 (ParrotAR Unity 子项目 + AR Foundation + ARVideoPublisher 接线)
+5. 按需发现链路首测 (identify_object 三档)
+
+**P2 剩余 (随顺序推进):**
 - [ ] Brain 优雅退出: AgentSession cleanup + 心跳停止 + Bus deregister
+- [ ] `Scheduler._connect_livekit` 补完 (P1 遗留 stub，Castle 调试时做)
+- [ ] 用户完成 fly/dance/idle/thinking 动画 (Minecraft 风格) → Unity 替换 Cube
+- [ ] 像素画小纸条 (lore/ideas.md) MVP: Unity UI Canvas + 2D 像素风 Sprite + RPC 触发
 
 **P2.5 准备:**
 - [ ] Cursor 工作区规则: .cursor/rules/ 模块隔离策略（按官方推荐）
-- [ ] 新 skill 收集: AR Foundation, XR Interaction Toolkit
+- [ ] 新 skill 收集: AR Foundation, XR Interaction Toolkit, Unity Sentis (本地推理)
 - [ ] 猫娘 cron 任务: Obsidian vault 变更 → Gemini Flash 三元组补充
-- [x] Google 生态真实接入 (nanobot 执行) 与 Drive 工作区桥接 (Gemini App 协作)
+- [x] Google 生态 MCP 配置就位
   - 架构设计: `.cursor/memory/architecture/gemini_drive_bridge.md`
   - 验证计划: `.cursor/memory/architecture/verification_plan_google.md`
+  - ⚠️ **真实 OAuth 联调未做** (Calendar/Gmail Trigger 需要用户账号授权)
 - [ ] 三级调度 Priority 子树 (reflex > intent > task)
 - [ ] ResourceLockManager 骨架 (body 通道互斥)
+
+**lore/ideas.md 待回流到 requirements:**
+- [ ] "发现 vs 未发现的不对称性" → 影响 `ExpectationChecker` 的 MISSING 判定和 `ConfirmationStatus` 状态机
 
 **P3 前瞻:**
 - [ ] MemoryValidity (信息有效期 + Ebbinghaus 衰减)
@@ -311,9 +334,16 @@ python src/scripts/generate_token.py --identity unity-phone  # 手机用
 # 测试
 pytest tests/test_bus/ -v                               # 单元测试
 pytest tests/integration/ -v                            # 集成测试（需 Redis）
+pytest tests/integration/test_graphiti_chain.py -v      # Graphiti 链路（需 FalkorDB）
 
-# Castle 部署
-bash infra/deploy-castle.sh <castle-ip> [ssh-key]
+# Castle 同步（日常）—— 详见 commit_guidelines.md §2
+.\infra\sync-castle.ps1               # 只拉代码
+.\infra\sync-castle.ps1 -Workspace    # 代码 + nanobot persona
+.\infra\sync-castle.ps1 -Env          # 代码 + .env
+.\infra\sync-castle.ps1 -All          # 全量
+
+# Castle 首次部署或重置（用 Git Bash 跑）
+bash infra/deploy-castle.sh 8.216.45.45
 
 # ===== P2 新增 =====
 
