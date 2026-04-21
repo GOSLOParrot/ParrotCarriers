@@ -20,6 +20,7 @@ References:
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 import time
@@ -187,7 +188,7 @@ async def _match_known(description: str, category: str) -> str:
 async def _save_new_object(description: str, category: str) -> str:
     """Save a newly discovered object to Graphiti + L2-B + emit trigger event."""
     try:
-        from graphiti_core.graphiti_types import EpisodeType
+        from graphiti_core.nodes import EpisodeType
 
         from parrot.memory.graphiti_client import PARTITIONS, get_graphiti
 
@@ -205,10 +206,12 @@ async def _save_new_object(description: str, category: str) -> str:
         text = "\n".join(text_parts)
 
         await g.add_episode(
-            text=text,
-            episode_type=EpisodeType.text,
+            name=f"gemini_discovery_{obj_uuid}",
+            episode_body=text,
+            source=EpisodeType.text,
+            source_description=f"gemini_discovery:{obj_uuid}",
+            reference_time=datetime.datetime.now(datetime.timezone.utc),
             group_id=PARTITIONS.SCENE,
-            source=f"gemini_discovery:{obj_uuid}",
         )
 
         await _upsert_to_l2b(obj_uuid, description, category)

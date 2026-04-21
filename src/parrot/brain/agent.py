@@ -111,10 +111,14 @@ async def brain_entrypoint(ctx: agents.JobContext):
     config = ParrotConfig()
 
     assistant = ParrotAssistant()
+    logger.info(
+        "Brain Gemini Live: model=%s voice=%s",
+        config.gemini.live_model, config.gemini.live_voice,
+    )
     session = AgentSession(
         llm=google.realtime.RealtimeModel(
-            voice="Puck",
-            model="gemini-2.5-flash-native-audio-preview-12-2025",
+            voice=config.gemini.live_voice,
+            model=config.gemini.live_model,
             api_key=config.google_api_key or None,
         ),
     )

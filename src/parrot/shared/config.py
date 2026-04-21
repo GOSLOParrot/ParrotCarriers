@@ -47,9 +47,30 @@ class FalkorDBConfig:
 
 
 @dataclass(frozen=True)
+class GeminiConfig:
+    """Gemini Live (Brain voice) + reranker + embedding model selection.
+
+    Preview 模型（*-native-audio-preview-MM-YYYY）生命周期短，通过 env 切换避免
+    每次换模型都要改代码。默认值保持当前可用的 preview，若遇到 WS 1008
+    policy violation 请优先把 live_model 切回稳定的 `gemini-2.0-flash-live-001`。
+    """
+
+    live_model: str = os.getenv(
+        "GEMINI_LIVE_MODEL",
+        "gemini-2.5-flash-native-audio-preview-12-2025",
+    )
+    live_voice: str = os.getenv("GEMINI_LIVE_VOICE", "Puck")
+    reranker_model: str = os.getenv("GEMINI_RERANKER_MODEL", "gemini-2.5-flash")
+    embedding_model: str = os.getenv(
+        "GEMINI_EMBEDDING_MODEL", "gemini-embedding-001",
+    )
+
+
+@dataclass(frozen=True)
 class ParrotConfig:
     redis: RedisConfig = field(default_factory=RedisConfig)
     livekit: LiveKitConfig = field(default_factory=LiveKitConfig)
     falkordb: FalkorDBConfig = field(default_factory=FalkorDBConfig)
+    gemini: GeminiConfig = field(default_factory=GeminiConfig)
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
     debug: bool = os.getenv("PARROT_DEBUG", "false").lower() == "true"

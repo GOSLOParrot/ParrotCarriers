@@ -9,6 +9,7 @@ Two integration points:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 from collections import deque
 
@@ -46,16 +47,18 @@ class ConversationWriter:
 
         text = "\n".join(batch)
         try:
-            from graphiti_core.graphiti_types import EpisodeType
+            from graphiti_core.nodes import EpisodeType
 
             from parrot.memory.graphiti_client import get_graphiti
 
             g = await get_graphiti()
             await g.add_episode(
-                text=text,
-                episode_type=EpisodeType.text,
+                name=f"{self._source}_conv",
+                episode_body=text,
+                source=EpisodeType.text,
+                source_description=self._source,
+                reference_time=datetime.datetime.now(datetime.timezone.utc),
                 group_id=self._group_id,
-                source=self._source,
             )
             logger.info(
                 "conversation_writer: archived %d turns to %s",
@@ -143,16 +146,18 @@ async def write_nanobot_turn(
     if not text or not text.strip():
         return
     try:
-        from graphiti_core.graphiti_types import EpisodeType
+        from graphiti_core.nodes import EpisodeType
 
         from parrot.memory.graphiti_client import get_graphiti
 
         g = await get_graphiti()
         await g.add_episode(
-            text=f"{role}: {text}",
-            episode_type=EpisodeType.text,
+            name=f"{source}_turn",
+            episode_body=f"{role}: {text}",
+            source=EpisodeType.text,
+            source_description=source,
+            reference_time=datetime.datetime.now(datetime.timezone.utc),
             group_id=group_id,
-            source=source,
         )
     except Exception:
         logger.exception("write_nanobot_turn: failed for %s/%s", group_id, source)
