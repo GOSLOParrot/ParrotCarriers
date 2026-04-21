@@ -58,6 +58,9 @@ if ($codeChanged) {
         "cd $REMOTE_PC; .venv/bin/pip install -q -e '.[dev,memory]' 2>&1 | tail -2"
     & ssh -o StrictHostKeyChecking=no root@$CASTLE_IP `
         "cd $REMOTE_PC; .venv/bin/pip install -q -e '$REMOTE_NB[parrot]' 2>&1 | tail -2"
+    # 阿里云镜像缺少 redis>=7.1，从 PyPI 补装（falkordb 1.6.0 依赖）
+    & ssh -o StrictHostKeyChecking=no root@$CASTLE_IP `
+        "cd $REMOTE_PC; .venv/bin/pip install -q 'redis>=7.1,<9.0' --index-url https://pypi.org/simple/ 2>&1 | tail -1"
     OK "依赖安装完成"
 } else {
     Write-Host "    无代码变更，跳过" -ForegroundColor DarkGray
