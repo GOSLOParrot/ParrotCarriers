@@ -9,7 +9,7 @@ description = "Cloud-native AR parrot companion — communication bus framework"
 requires-python = ">=3.11"
 dependencies = [
     "livekit-agents[google]>=1.5,<2.0",
-    "redis>=5.0,<8.0",
+    "redis>=7.1,<9.0",
     "python-dotenv>=1.0,<2.0",
     "py-trees>=2.4,<3.0",
 ]
