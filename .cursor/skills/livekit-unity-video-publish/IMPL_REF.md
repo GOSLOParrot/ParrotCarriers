@@ -8,6 +8,8 @@ description: Use when working with the AR video pipeline — Unity publish to Li
 ParrotCarriers 的视频管线: Unity 推一条高质量视频轨到 LiveKit Server，多个消费者按各自节奏独立采样。本 skill 描述各接缝的真实代码实现和当前状态。
 
 > **原则**: 只写有代码/验证支撑的事实。StabilityGate 联动 / 帧率自适应 / Tier 0 停推流 是 Opus 调研设计，无代码，不写在这里。
+>
+> **最后验证**: 2026-04-21 P2 连通性测试 (`Test/p2/connectivity_report_p2.md`) — Editor Webcam 路径 E2E 通，Gemini 能说对画面里的物体类别与颜色。AR 真机路径仍未验证。
 
 ---
 
@@ -39,14 +41,40 @@ Graphics.Blit(null, _rt, _arCameraBackground.material);
 // _rt 是 RenderTexture(1280, 720, 0, RenderTextureFormat.ARGB32)
 ```
 
-**Editor 回退** (`useWebcamFallback = true`):
+**Editor 回退** (`useWebcamFallback = true`, 已在 P2 测试 E2E 通):
 ```csharp
+// 1. 列出并选择设备（新：避开虚拟摄像头）
+string deviceName = SelectWebcamDevice(WebCamTexture.devices);
+// preferredDeviceName 命中 > 首个非虚拟 > devices[0] 兜底
+// 虚拟关键字: obs / virtual / xsplit / manycam / snap camera / droidcam / mmhmm / splitcam
+
 _webcam = new WebCamTexture(deviceName, width, height, targetFps);
-// BlitWebcamLoop 协程持续 Graphics.Blit(_webcam, _rt)
+_webcam.Play();
+
+// 2. 等到 didUpdateThisFrame (首帧有效信号)
+while (!_webcam.didUpdateThisFrame && timeout > 0f) { ... yield return null; }
+
+// 3. 【P2 关键修复】首帧预热 Blit — 防止 LiveKit 推黑帧
+//    原 bug: SetupWebcamFallback 返回后立即 PublishTrack，
+//    但 BlitWebcamLoop 协程还没跑，_rt 是黑的 ARGB32，
+//    Gemini 低采样率下只看到黑 → 幻觉 "画面是黑的"。
+int blitted = 0;
+while (blitted < webcamWarmupFrames && warmupTimeout > 0f) {
+    if (_webcam.didUpdateThisFrame) {
+        Graphics.Blit(_webcam, _rt);
+        blitted++;
+    }
+    yield return null;
+}
+// 4. 启动持续 Blit 循环
+_webcamBlit = StartCoroutine(BlitWebcamLoop());
 ```
 
 **推流配置** (两路径共用同一 `_rt`):
 ```csharp
+// PublishTrack 前必做 IsConnected guard — 防止 Stop 后回调 NRE
+if (!RoomManager.Instance.IsConnected) yield break;
+
 _videoSource = new TextureVideoSource(_rt);
 _videoTrack = LocalVideoTrack.CreateVideoTrack("ar-camera", _videoSource, room);
 
@@ -56,11 +84,19 @@ var options = new TrackPublishOptions {
         MaxBitrate = 1_500_000,
         MaxFramerate = 30,
     },
-    Source = TrackSource.SourceCamera,
+    Source = TrackSource.SourceCamera,     // ← 必填，否则 Brain 按 SOURCE_UNKNOWN detach
 };
 ```
 
-**当前状态**: 代码就绪，AR 真机端到端未验证（Editor + WebCam 回退可在 P1 条件下测）。
+**音频推流对偶**（`MicrophonePublisher.cs`，同样必填 Source）:
+```csharp
+var options = new TrackPublishOptions {
+    Source = TrackSource.SourceMicrophone,    // ← P2 修复前漏这行
+    AudioEncoding = new AudioEncoding { MaxBitrate = 64_000 },    // Opus 64kbps 语音基线
+};
+```
+
+**当前状态**: 代码就绪，Editor + WebCam 路径 **2026-04-21 P2 测试 E2E 通**（Gemini 说对白色鼠标）。AR 真机路径代码就绪但未 E2E 验证。
 
 ---
 
@@ -69,6 +105,12 @@ var options = new TrackPublishOptions {
 文件: `src/parrot/brain/agent.py`
 
 `AgentSession` 用 `video_input=True` 启动 → LiveKit Agents 框架自动将房间内的 VideoTrack 路由给 Gemini RealtimeModel。
+
+**硬依赖**（P2 踩坑）: `livekit-agents[images]` extra **必装**，否则 `_forward_video_task` 每帧抛 `ImportError` → Gemini 一帧都看不到，症状是"鹦鹉说画面是黑的"或幻觉编造。
+```bash
+pip install 'livekit-agents[images]'    # 拉 Pillow
+```
+需同步写进 `requirements.txt` / `pyproject.toml`。
 
 **Gemini 内部采样行为**（来自 Gemini API 文档，非代码控制）:
 - 说话时约 1 fps，静默时约 0.3 fps
@@ -153,12 +195,42 @@ class DSGProcessor(BaseProcessor):  # Phase 3+, 需要 A10 GPU
 
 ---
 
+## 6. 状态监控与门控（P2.6 候选，未实现）
+
+设计路线（见 `Test/p2/connectivity_report_p2.md` §6.3-6.4）：
+
+- **产地门控（Unity 侧）**: 亮度方差低于阈值 N 秒 / ARKit 回调停 → 发 RPC `onVideoDegraded(reason=...)` 到 Brain
+- **消费端门控（Python 侧）**: identify_object 截帧、DSG Worker 连续帧自查糊帧/黑帧 → 跳过
+- **Gemini 状态感知**: Brain 收到 degraded 信号 → Context Injector 注入 `[system] 视频流状态: paused/blocked` → Gemini 说"我看不见"而非幻觉编造
+- **可直接订阅的 LiveKit 事件**（无需 Unity 自实现）: `TrackMuted` / `TrackUnmuted` / `ParticipantDisconnected` / simulcast 切层
+
+**当前状态**: 全部未实现，是 P2.6 / P3 起始任务。
+
+---
+
+## 7. 平台后台采集行为（进 AR 工作区排查）
+
+| 平台 | 麦克风 | 摄像头 | 要点 |
+|:---|:---|:---|:---|
+| iOS | ✓ (需 `UIBackgroundModes = audio`) | ✗ 被系统冻结 | 后台时 `ARCameraManager.frameReceived` 停 → _rt 不再更新 → LiveKit 持续推最后一帧 |
+| Android | ✓ | ✓ | 需 Foreground Service（`CAMERA` 类型）+ 持久通知 |
+| Unity Editor | ✓ | ✓ | Editor 失焦默认暂停，需 `Run In Background = true` |
+
+**iOS 后果尤其坑**：Gemini 会以为画面一直没变，出现"鹦鹉在描述半小时前的东西"。修正路径见 §6。
+
+---
+
 ## 陷阱
 
 1. **RPC payload 上限 15KB** — 全尺寸 JPEG 超出，需降分辨率或用 ByteStream API
 2. **AsyncGPUReadback 而非 ReadPixels** — ReadPixels 阻塞 Unity 主线程 50-200ms
 3. **不走 DataChannel 传图** — Lossy DataChannel 上限约 1200B，Reliable 也不适合大 payload
 4. **Gemini 黑盒** — `video_input=True` 后 Python 代码取不到 Gemini 看到的帧，必须走 B1-B2
+5. **`TrackPublishOptions.Source` 必填**（P2 踩坑）— 漏填 → `SOURCE_UNKNOWN` → Brain 白名单 detach → 该轨完全看不到/听不到。音视频两路都有这个坑
+6. **Webcam fallback 首帧黑**（P2 踩坑）— 推流前必须 warmup Blit 有效帧到 `_rt`；纯等 `didUpdateThisFrame` 不够
+7. **Windows `WebCamTexture.devices[0]` 常是虚拟摄像头**（P2 踩坑）— 用启发式过滤 `obs/virtual/droidcam/...`，并打印完整设备列表方便诊断
+8. **`livekit-agents[images]` extra 必装** — 缺 Pillow 则 Gemini 一帧都看不到，栈底 ImportError（P2 踩坑）
+9. **反复 Play/Stop 会触发 identity 抢占 + NRE**（P2 踩坑）— LiveKit grace period 约 20-30s；调试时 Stop 后等够时间再复测；PublishTrack 前加 `IsConnected` guard
 
 ---
 
@@ -167,8 +239,10 @@ class DSGProcessor(BaseProcessor):  # Phase 3+, 需要 A10 GPU
 | 想了解… | 去哪里 |
 |:--------|:------|
 | 视频发布 Unity 代码 | `unity/ParrotDev/Assets/Scripts/LiveKit/ARVideoPublisher.cs` |
+| 麦克风发布 Unity 代码 | `unity/ParrotDev/Assets/Scripts/LiveKit/MicrophonePublisher.cs` |
 | Brain Agent 视频输入配置 | `src/parrot/brain/agent.py` |
 | DSG Processor 接口 | `src/parrot/bus/processor_hook.py` |
 | identify_object 视觉升级审计 | `.cursor/memory/architecture/audit_identify_object_no_screenshot_20260420.md` |
+| P2 连通性测试完整踩坑记录 | `Test/p2/connectivity_report_p2.md` |
 | 总架构图 (mermaid, "一流多采样"出处) | `docs/InfoCollections/Opus/10_architecture_diagram.md` |
 | SemanticNode 类型 | `src/parrot/dsg/l2b_types.py` |
