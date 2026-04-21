@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using LiveKit;
+using LiveKit.Proto;
 
 /// <summary>
 /// Publishes local microphone audio to LiveKit so Brain Agent / Gemini Live can hear the user.
@@ -63,7 +64,16 @@ public class MicrophonePublisher : MonoBehaviour
         _micSource = new MicrophoneSource(device, gameObject);
         _audioTrack = LocalAudioTrack.CreateAudioTrack("microphone", _micSource, room);
 
-        var publish = room.LocalParticipant.PublishTrack(_audioTrack, new LiveKit.Proto.TrackPublishOptions());
+        var options = new TrackPublishOptions
+        {
+            Source = TrackSource.SourceMicrophone,
+            AudioEncoding = new AudioEncoding
+            {
+                MaxBitrate = 64_000,
+            },
+        };
+
+        var publish = room.LocalParticipant.PublishTrack(_audioTrack, options);
         yield return publish;
 
         if (publish.IsError)
