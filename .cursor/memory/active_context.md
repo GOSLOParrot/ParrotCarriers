@@ -1,20 +1,47 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-20 (代码待推送 + Castle FalkorDB 待拉起 + AR 项目待开工)
+> 最后更新: 2026-04-20 (Unity 连通验证中 + Brain Agent 运行中 + 麦克风调试)
 > 部署快照: `.cursor/memory/deploy_snapshot_p2_20260412.md`
 > **P2 里程碑**: `.cursor/memory/milestone_p2.md` — 记忆共享 + Scheduler 增强 + DSG 耦合层 + L2-B + 触发器
 > 同步工具: `.cursor/memory/commit_guidelines.md` + `infra/sync-castle.ps1`
 
 ---
 
-## 当前阶段: 代码就绪，等一次 Castle 线上 P2 拉起
+## 版本锁定表 (2026-04-20 已验证)
 
-### 阻塞链（按顺序解决）
+| 依赖 | pyproject.toml 约束 | Castle 已安装 | 说明 |
+|:-----|:--------------------|:-------------|:-----|
+| `livekit-agents[google]` | `>=1.5,<2.0` | 1.5.2 | 1.x 主版本内兼容 |
+| `graphiti-core[falkordb,google-genai]` | `>=0.28,<0.29` | 0.28.2 | 紧锁 0.28.x，API 已验证 |
+| `redis` | `>=7.1,<9.0` | **7.4.0** | **⚠️ 从 5.3.1 升级**，falkordb 1.6.0 要求 >=7.1 |
+| `python-dotenv` | `>=1.0,<2.0` | 1.2.2 | — |
+| `py-trees` | `>=2.4,<3.0` | 2.4.0 | — |
+| `rustworkx` | `>=0.15,<1.0` | 0.17.1 | — |
+| LiveKit Unity SDK | `#2a7c57d7bcad2305a75bc75218e8064ccd5d10bf` | 同上 | manifest.json 已锁 commit hash |
 
-1. **本地 4 个 commit 未推**: `776eaff 88b172d 0c90413 489512b`（infra/docs 类，GitHub Desktop 推）
-2. **Castle 未拉取最新**: 拉取后 `docker compose up -d` 会带起 FalkorDB 容器（当前线上只有 LiveKit + Redis）
-3. **Graphiti 链路线上零验证**: 要在 Castle 跑 `remember / query_memory / identify_object` 才能确认 4 分区 + Gemini embedder 在线通
-4. **AR 项目空白**: ARVideoPublisher.cs 已就绪，但没有 Unity AR 项目容器、没有视频流实际入 Gemini Live 的端到端验证
+**Gemini 模型（.env 可覆盖，无需改代码）：**
+```
+GEMINI_LIVE_MODEL=gemini-2.5-flash-native-audio-preview-12-2025
+GEMINI_LIVE_VOICE=Puck
+GEMINI_RERANKER_MODEL=gemini-2.5-flash
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+```
+
+---
+
+## 当前阶段: Castle 运行中，Unity 音视频连通验证
+
+### 当前状态 (2026-04-20 晚)
+- Castle Brain Agent: **运行中** (tmux session `brain`, worker id `AW_Y3QgXUuvtFKD`)
+- FalkorDB + Redis + LiveKit: **运行中**
+- GitHub master: `0d0a2ea` (fix redis deps)
+- Unity 编译: **通过** (LiveKit SDK API 适配完成)
+- 麦克风推流: **Unity 侧已验证**，Brain Agent 侧待确认 Gemini 收音
+
+### 待确认
+1. **[今] Gemini 能否听到声音** → SSH `tail -f /tmp/brain.log`，说话看是否出现 `[Gemini·用户]`
+2. **[今] 重新生成 token** → `python src/scripts/generate_token.py`，Unity Play 测试
+3. **[P1] identify_object 按需发现链路** ⚠ 见 `audit_identify_object_no_screenshot_20260420.md`
 
 ### P2 实现状态 (2026-04-13)
 **已完成 — Graphiti 记忆共享 (P2-Alpha):**
