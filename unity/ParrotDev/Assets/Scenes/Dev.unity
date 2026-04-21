@@ -455,6 +455,8 @@ GameObject:
   m_Component:
   - component: {fileID: 746769422}
   - component: {fileID: 746769421}
+  - component: {fileID: 746769423}
+  - component: {fileID: 746769424}
   m_Layer: 0
   m_Name: LiveKitManager
   m_TagString: Untagged
@@ -475,7 +477,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   serverUrl: ws://8.216.45.45:7880
-  joinToken: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoidW5pdHktZGV2IiwidmlkZW8iOnsicm9vbUpvaW4iOnRydWUsInJvb20iOiJwYXJyb3QtbWFpbiIsImNhblB1Ymxpc2giOnRydWUsImNhblN1YnNjcmliZSI6dHJ1ZSwiY2FuUHVibGlzaERhdGEiOnRydWV9LCJyb29tQ29uZmlnIjp7ImFnZW50cyI6W3siYWdlbnROYW1lIjoicGFycm90LWJyYWluIn1dfSwic3ViIjoidW5pdHktZGV2IiwiaXNzIjoiZGV2a2V5IiwibmJmIjoxNzc2Njg2MDU2LCJleHAiOjE3NzY2ODk2NTZ9.kbpRVRMaYjlXsSnhrtbo9GDRkmE2cVTchQSmTW3EUQQ
+  joinToken: 
 --- !u!4 &746769422
 Transform:
   m_ObjectHideFlags: 0
@@ -491,6 +493,38 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &746769423
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 746769420}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 10deb55c07cad044bae0da981db15333, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  preferredDevice: 
+--- !u!114 &746769424
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 746769420}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8aff056aa237b86458eea83b009dae2b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  width: 1280
+  height: 720
+  targetFps: 30
+  arCamera: {fileID: 0}
+  useWebcamFallback: 1
+  preferredDeviceName: 
+  webcamWarmupFrames: 3
 --- !u!21 &1192366798
 Material:
   serializedVersion: 8
