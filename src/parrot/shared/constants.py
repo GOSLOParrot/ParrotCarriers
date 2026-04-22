@@ -29,6 +29,15 @@ STREAM_NANOBOT_DISPATCH = "parrot.nanobot.dispatch"
 # schema only; Sprint 1 dispatcher will produce events into this stream.
 STREAM_EVENT_LOG = "parrot.events.log"
 
+# Observation Log — parallel audit trail for every consciousness-dispatch
+# decision (Sprint 1 T9, ar_feature_vision.md §3.5). Written by
+# `brain/obs_log.py::log_obs_event()` from Context Injector et al.; consumed
+# later by offline reflection / debugging tools. Unlike STREAM_EVENT_LOG this
+# stream captures Layer-1 (subconscious, no Gemini touch) events too, so
+# we can tell "BB changed and nobody reacted" from "BB changed but Gemini
+# chose to stay silent".
+STREAM_OBS_LOG = "parrot.obs_log"
+
 # Redis Hash keys
 HASH_MODULES = "parrot.modules"
 HASH_HEARTBEAT = "parrot.heartbeat"

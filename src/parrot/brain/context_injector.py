@@ -46,6 +46,7 @@ from typing import Any
 
 from livekit.agents import AgentSession
 
+from parrot.brain.obs_log import log_obs_event
 from parrot.brain.soul import get_instructions, render_visual_constraints
 from parrot.scheduler.blackboard import open_bb_client
 from parrot.shared.parrot_actions import BehaviorMode
@@ -249,12 +250,29 @@ class ContextInjector:
 
     async def _dispatch(self, key: str, old: Any, new: Any) -> None:
         layer, body, heavy = self._decide_layer(key, old, new)
+
+        # Always audit-log the decision (Layer 1 included) so offline
+        # reflection can tell "we saw it but stayed silent on purpose"
+        # from "we never saw it" (Sprint 1 T9, ar_feature_vision §3.5).
+        audit_payload: dict[str, Any] = {
+            "key": key,
+            "old": old,
+            "new": new,
+            "heavy": heavy,
+        }
+
         if layer != 3 or not body:
+            log_obs_event("bb_change", layer, {**audit_payload, "sent": False})
             return
 
         now = time.time()
-        if now - self._last_sent_at.get(key, 0.0) < _PER_KEY_MIN_GAP_S:
-            logger.debug("injector: rate-limited %s (%.1fs ago)", key, now - self._last_sent_at.get(key, 0.0))
+        gap = now - self._last_sent_at.get(key, 0.0)
+        if gap < _PER_KEY_MIN_GAP_S:
+            logger.debug("injector: rate-limited %s (%.1fs ago)", key, gap)
+            log_obs_event(
+                "dispatch_skip_ratelimit", layer,
+                {**audit_payload, "gap_s": round(gap, 3), "body": body},
+            )
             return
 
         if heavy:
@@ -262,6 +280,10 @@ class ContextInjector:
         else:
             await self._push_status_user(body)
         self._last_sent_at[key] = now
+        log_obs_event(
+            "bb_change", layer,
+            {**audit_payload, "sent": True, "channel": "C4" if heavy else "C3", "body": body},
+        )
 
     async def _bb_poll_loop(self) -> None:
         """1 Hz: refuse-then-diff BB keys and dispatch layer-③ changes."""
