@@ -31,6 +31,7 @@ from livekit.plugins import google
 
 from parrot.brain.soul import get_instructions
 from parrot.brain.telemetry_receiver import attach_telemetry_receiver
+from parrot.brain.vision.state import attach_video_state_rpc
 from parrot.brain.tools import ALL_TOOLS
 from parrot.bus.manifest import ModuleManifest
 from parrot.bus.mounting import ModuleMount
@@ -142,6 +143,7 @@ async def brain_entrypoint(ctx: agents.JobContext):
     logger.info("GOSLO mode → live (room=%s)", ctx.room.name)
 
     attach_telemetry_receiver(ctx.room)
+    attach_video_state_rpc(ctx.room)
 
     try:
         from parrot.memory.conversation_writer import attach_conversation_writer
