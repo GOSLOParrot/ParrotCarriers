@@ -24,6 +24,11 @@ CH_TRIGGER_RESULTS = "parrot.trigger.results"
 # Redis Streams
 STREAM_NANOBOT_DISPATCH = "parrot.nanobot.dispatch"
 
+# L0 Raw Event Stream — single source of truth for all state changes.
+# See sprint0_preflight.md §1.3 and shared/event_log.py. Sprint 0 locks the
+# schema only; Sprint 1 dispatcher will produce events into this stream.
+STREAM_EVENT_LOG = "parrot.events.log"
+
 # Redis Hash keys
 HASH_MODULES = "parrot.modules"
 HASH_HEARTBEAT = "parrot.heartbeat"
