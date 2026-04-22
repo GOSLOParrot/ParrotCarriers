@@ -1,4 +1,11 @@
-O# Mount Protocol V1
+---
+status: ratified
+category: reference
+status_note: "V1 协议定版 (2026-04-12), 代码已验通。新协议变更走 ADR + bump 版本号。"
+last_reviewed: 2026-04-22
+---
+
+# Mount Protocol V1
 
 > 定版日期: 2026-04-12
 > 状态: V1 正式版（可迭代，发现问题随时修订）

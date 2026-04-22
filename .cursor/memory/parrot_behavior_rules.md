@@ -1,3 +1,10 @@
+---
+status: ratified
+category: reference
+status_note: "GOSLO 行为状态机 + 兼容矩阵 + 冲突规则, 当前代码已遵循。Sprint 1 可能扩展 body/head/cognitive 子状态, 扩展时追加而不翻案。"
+last_reviewed: 2026-04-22
+---
+
 # GOSLO 鹦鹉行为状态规则
 
 > 维护者: 用户 + AI

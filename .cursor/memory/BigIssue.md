@@ -1,3 +1,10 @@
+---
+status: ratified
+category: lesson_learned
+status_note: "从真实协议污染事故提炼的护栏原则, 永久有效。新事故 append 追加, 不覆写旧教训。"
+last_reviewed: 2026-04-22
+---
+
 # BigIssue: 设计护栏
 
 > 日期: 2026-04-06 初稿 → 2026-04-08 重构

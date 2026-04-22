@@ -1,4 +1,11 @@
-# Google 生态接入与回流联调计划
+---
+status: archived
+category: future_plan_P3
+status_note: "副驾驶姐姐 Google Workspace 接入计划, 属 P3/P4 范畴, 当前 (Sprint 0-4) 完全不相关。Sprint 3+ 再评估是否启用。"
+last_reviewed: 2026-04-22
+---
+
+# Google 生态接入与回流联调计划 — [已归档, P3 再评估]
 
 本计划规定了如何从零开始，安全、稳定地验证 `Nanobot` 到 `Google Workspace` (Gmail, Calendar) 的接入，并确保任务结果能正确回流给 `ParrotCarriers` 的 `Brain Agent` 与 `Scheduler`。
 

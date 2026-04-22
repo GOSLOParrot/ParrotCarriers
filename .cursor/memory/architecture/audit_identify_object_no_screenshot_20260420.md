@@ -1,3 +1,9 @@
+---
+status: ratified
+status_note: "审计结论基于 2026-04-20 code review, 问题 (缺截图 + 异步破坏同步体感) 已被真实代码验证。修复方案 (三段 L0/L1/L2) 是设计 ratified, 实现在 Sprint 4 (S4.A-B) 完成后整体再做一次代码对齐。"
+last_reviewed: 2026-04-22
+---
+
 # 审计报告: `identify_object` 按需发现路径 — 缺视觉 + 体感闭环断裂
 
 > 日期: 2026-04-20

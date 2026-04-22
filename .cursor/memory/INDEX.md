@@ -1,34 +1,88 @@
 # ParrotCarriers 全局索引
 
 > 用途: 项目唯一真相源，供 Cursor 与用户快速定位关键信息
-> 更新: 2026-04-20 (AR App 工程计划 + 视频流采样 skill + AR Foundation 规则)
+> 更新: 2026-04-22 (按 category + status 重排, Sprint 0 前置)
 > 路由: 由 `.cursor/rules/workspace.mdc` (alwaysApply) 指向本文件
+
+**全局约定**:
+- **事实源**: 只有 `.cursor/memory/**`。`docs/InfoCollections/**` 是**文档库/考古资料**, 按需 `@` 引用, 不作事实源。
+- **两个维度**: 每份架构文档 frontmatter 含 `status` (tentative/ratified/archived/superseded) + `category` (active/reference/archived/historical)。读之前先看 frontmatter。
+- **不读 archived**: 除非在追溯历史决策。
 
 ---
 
-## 一、项目入口
+## 〇、当前阶段必读 (按序, 不读后续)
 
-| 条目 | 路径 | 说明 |
-|:-----|:-----|:-----|
-| 当前进度与下一步 | `.cursor/memory/active_context.md` | 阶段性进度、行动项 |
-| **模块职责/数据流/成熟度** | `.cursor/memory/architecture/module_map_p2.md` | **P2.5 全模块清单 + mermaid 数据流 + 成熟度矩阵** |
-| **P2 里程碑** | `.cursor/memory/milestone_p2.md` | **实现清单 + 架构决策 (D-P2-1 ~ D-P2.5)** |
-| **完整功能需求 v2** | `.cursor/memory/requirements.md` | **67 功能项 + 决策 + 准备清单** |
-| 鹦鹉行为状态规则 | `.cursor/memory/parrot_behavior_rules.md` | 状态机 + 兼容矩阵 + 冲突规则 |
-| 模块划分与目录结构 | `.cursor/memory/architecture/module_division.md` | MFD 框架 + 服务器落位 (P1 时代基线) |
-| 总线架构 v4.2 | `.cursor/memory/architecture/bus_v4.md` | 三层协议 + 拓扑 + 降级策略 |
-| 架构图 v3 (内部数据流) | `.cursor/memory/architecture/system_core.md` | Brain/DSG/调度器愿景设计 (2026-03, 细节已演进) |
-| 家族拓扑 | `.cursor/memory/architecture/scene.md` | 大姐/妹妹/猫/调度器/Graphiti |
-| 协议快照 V1 | `.cursor/memory/architecture/protocol_snapshot_p1.md` | RPC/Redis/DataChannel/Blackboard 全量 (定版 2026-04-12) |
-| 部署快照 | `.cursor/memory/deploy_snapshot_p2_20260412.md` | Castle 部署配置与密钥 |
-| 协议污染复盘 | `.cursor/memory/BigIssue.md` | 历史教训与修正措施 |
-| Google 生态桥接 | `.cursor/memory/architecture/gemini_drive_bridge.md` | 副驾驶姐姐 Drive 工作区协议 (未来计划) |
-| Google 联调计划 | `.cursor/memory/architecture/verification_plan_google.md` | Mock → 真实 OAuth 验证分阶段 (未来计划) |
-| **AR App 工程计划** | `.cursor/memory/architecture/ar_app_plan.md` | **硬事实 + 调研索引 + 用户问卷** |
-| **视频流采样审计 (identify_object)** | `.cursor/memory/architecture/audit_identify_object_no_screenshot_20260420.md` | **缺截图+体感断裂 + 三段递进升级路径** |
-| 调研遗产 | `docs/InfoCollections/Opus/` → 见 `Opus/INDEX.md` | 26 篇调研文档 |
-| **灵感 & 展望** (人类手写) | `.cursor/memory/lore/ideas.md` | **AI 只读** — 用户的阶段性灵感、设计直觉、展望 |
-| 领域技能 | `.cursor/skills/` | 按需发现；含 `livekit-unity-video-publish` 视频流采样 skill |
+> **原则**: 进入任何 Sprint 前, **只读这 4 份**, 不翻历史。
+> **当前**: Sprint 0 前置 (2026-04-22)
+
+| # | 文件 | 读什么 |
+|:--|:-----|:-------|
+| 1 | `.cursor/memory/architecture/module_map_p2.md` | **全景架构入口** — §〇 项目边界 / §一 模块清单 / §二 数据流 / §九 外挂生态 / §十 DSG 分层 / §十一 时间轴 |
+| 2 | `.cursor/memory/active_context.md` | 头部 + 本周关键路径 (先确认自己在哪一步) |
+| 3 | `.cursor/memory/architecture/sprint0_preflight.md` | §7 最终任务单 + §8 回答 6 件担心 |
+| 4 | `.cursor/memory/architecture/ar_feature_implementation_plan.md` + `ar_feature_vision.md §3.5/§六` | 当前 Sprint 任务 + 决策默认值 |
+
+---
+
+## 一、按类别索引
+
+### 1.1 active — 本周活跃, 边读边写 (status: tentative)
+
+> 这 5 份在跟代码同步演进, 读时注意 frontmatter 的 `status_note`。
+
+| 文件 | 说明 |
+|:-----|:-----|
+| `active_context.md` | 当前进度 + 本周关键路径 + 版本锁表 |
+| `architecture/sprint0_preflight.md` | Sprint 0 前置 14 项 (S0.A-N) |
+| `architecture/ar_feature_vision.md` | 门控 + 自知 + 两轴 + §3.5 三合一 + §六 决策 (tentative 直到 Sprint 1/2 代码落地) |
+| `architecture/ar_feature_implementation_plan.md` | Sprint 0-4 任务清单 + 依赖图 (逐 Sprint ratified) |
+| `architecture/ar_app_plan.md` | AR 工程硬事实 + 问卷回填 (tentative 部分) |
+
+### 1.2 reference — 当前稳定事实源 (status: ratified)
+
+> 新决策不翻这些旧决策, 只能追加或 bump 版本号。
+
+| 文件 | 说明 |
+|:-----|:-----|
+| `architecture/module_map_p2.md` | **模块 P2.5 成熟度矩阵** (优先看这份, 不看 module_division.md) |
+| `requirements.md` | **67 功能项 + 11 个已确认决策** (需求事实源) |
+| `architecture/bus_v4.md` | **Bus v4.2 三层协议 + 拓扑** |
+| `architecture/protocol_snapshot_p1.md` | **V1 协议定版** (RPC/Redis/DataChannel/Blackboard) |
+| `architecture/scene.md` | 家族角色拓扑 (GOSLO / Maid / Parrot / Gemini 二重身) |
+| `parrot_behavior_rules.md` | 鹦鹉行为状态机 + 兼容矩阵 |
+| `architecture/ar_camera_interaction_survey.md` | AR 摄影互动问卷 (已回填, 不再改) |
+| `architecture/audit_identify_object_no_screenshot_20260420.md` | identify_object 审计 (Sprint 4 执行) |
+| `architecture/ar_skill_seekers_distillation_report.md` | AR Foundation 5.1 蒸馏报告 |
+| `BigIssue.md` | 协议污染复盘 + 设计护栏 (永久护栏) |
+| `deploy_snapshot_p2_20260412.md` | Castle 部署快照 |
+| `commit_guidelines.md` | 提交规范 + 漂移说明子句 |
+| `milestone_p2.md` | P2/P2.5 里程碑 (已完成, 历史归档) |
+
+### 1.3 archived — 已归档, 仅作历史追溯 (status: archived / superseded)
+
+> **不读**, 除非明确要追溯早期决策。读时会看到文件顶部的归档提示。
+
+| 文件 | 归档原因 |
+|:-----|:---------|
+| `architecture/system_core.md` | v3 愿景 (2026-03-18), 被 `module_map_p2.md` + `protocol_snapshot_p1.md` 覆盖 |
+| `architecture/module_division.md` | Phase 1 基线 (2026-04-08), 被 `module_map_p2.md` 覆盖 |
+| `architecture/gemini_drive_bridge.md` | P3 愿景, Sprint 0-4 不相关 |
+| `architecture/verification_plan_google.md` | P3 愿景, Sprint 0-4 不相关 |
+
+### 1.4 lore — 人类手写, AI 只读
+
+| 文件 | 说明 |
+|:-----|:-----|
+| `lore/ideas.md` | 用户的阶段性灵感、设计直觉、展望。**AI 不可改**, 不可基于此做设计 |
+
+### 1.5 外部文档库 (非事实源)
+
+| 路径 | 用途 |
+|:-----|:-----|
+| `docs/InfoCollections/Opus/` | 2026-02 ~ 03 的 26 篇调研文档 (架构起源, 大多已被 `.cursor/memory` 吸收). **按需 @ 引用, 不作依赖源**. 见 `docs/InfoCollections/Opus/INDEX.md` |
+| `docs/InfoCollections/HumanPlan/` | 用户早期手写计划 (legacy). **只读追溯**, 不作依赖 |
+| `docs/references/skill_seekers_output/` | SDK / 库的源文档蒸馏结果 (LiveKit / Graphiti / SVA / Nanobot). 供 skill 文件引用 |
 
 ---
 
@@ -100,7 +154,7 @@ GOSLOParrot/nanobot                   # 独立仓库 (fork from HKUDS/nanobot)
 ```
 .cursor/
 ├── memory/                           # 持久记忆
-│   ├── architecture/                 # 10 份架构文档 (bus/system/scene/protocol/module_map/ar_app_plan/audit 等)
+│   ├── architecture/                 # 架构文档 (按 §1.1 active / §1.2 reference / §1.3 archived 分类)
 │   ├── INDEX.md                      # 本文件（唯一真相源）
 │   ├── active_context.md             # 当前进度 + 下一步
 │   ├── requirements.md               # 完整功能需求清单 v2
@@ -133,11 +187,12 @@ GOSLOParrot/nanobot                   # 独立仓库 (fork from HKUDS/nanobot)
 
 | 资料类型 | 放置路径 | Cursor 消费方式 |
 |:---------|:---------|:----------------|
-| 持久记忆（架构、索引、进度） | `.cursor/memory/` | workspace.mdc 路由指向 |
-| 已确认决策（防翻案） | `.cursor/memory/requirements.md` §二, `milestone_p2.md` §九 | 需求清单 + 里程碑中的 D-P2.x |
-| 规则指令（编码约定、路由） | `.cursor/rules/*.mdc` | 自动/智能/globs 加载 |
-| 领域技能 | `.cursor/skills/<name>/SKILL.md` | 动态发现；`nanobot` 优先显式调用 |
-| 调研文档 | `docs/InfoCollections/Opus/` | @doc 引用 |
+| 持久记忆 (事实源) | `.cursor/memory/` | workspace.mdc 路由指向, **唯一真相源** |
+| 已确认决策 (防翻案) | `.cursor/memory/requirements.md` §二, `milestone_p2.md` §九 | 需求清单 + 里程碑中的 D-P2.x |
+| 规则指令 (编码约定、路由) | `.cursor/rules/*.mdc` | 自动/智能/globs 加载 |
+| 领域技能 (能力) | `.cursor/skills/<name>/SKILL.md` | 动态发现; `nanobot` 优先显式调用 |
+| 调研文档 (文档库, 非事实源) | `docs/InfoCollections/Opus/` | `@` 引用, 按需追溯 |
+| SDK 蒸馏 (文档库) | `docs/references/skill_seekers_output/` | skill 文件内部引用 |
 
 ---
 

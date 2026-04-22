@@ -1,8 +1,39 @@
+---
+status: ratified
+category: reference
+status_note: "当前代码模块状态表, 是事实源。随代码演进增量更新。"
+last_reviewed: 2026-04-22
+---
+
 # 模块职责总览 (P2.5)
 
-> 最后更新: 2026-04-13
-> 状态: P2.5 审计修复完成 — 待 AR 项目验证
-> 关联: `milestone_p2.md` (实现清单) / `active_context.md` (进度) / `protocol_snapshot_p1.md` (V1 协议)
+> 最后更新: 2026-04-22 (补项目边界 / 外挂生态 / DSG 分层 / 时间轴链路)
+> 状态: P2.5 审计修复完成 — 进入 AR 特性 Sprint 0-4
+> 关联: `milestone_p2.md` (实现清单) / `active_context.md` (进度) / `protocol_snapshot_p1.md` (V1 协议) / `ar_feature_vision.md` (AR 特性愿景)
+
+---
+
+## 〇、项目边界 — GOSLO ⊃ ParrotCarriers
+
+**GOSLO** 是**最终产品** — 一只"AR 鹦鹉大小姐"陪伴 AI Agent, 由多个独立仓库拼起:
+
+| 层级 | 仓库 | 角色 | 状态 |
+|:-----|:-----|:-----|:-----|
+| **主项目/家族** | `GOSLOParrot/*` (组织) | 产品总称 (GOSLO / Maid / Parrot / Scene / User) | — |
+| **🔵 Bus 基建 (当前工作区)** | `GOSLOParrot/ParrotCarriers` | **bus infra 子项目** — 提供所有共享骨架: LiveKit Room / Redis / Graphiti / Brain / Scheduler / DSG / 模块挂载协议 | ✅ VERIFIED |
+| **Agent 框架** | `GOSLOParrot/nanobot` (fork HKUDS) | 后台 Agent 框架, 通过 Bus 挂载进来 | ✅ VERIFIED |
+| **AR 前端 (未建)** | 待定 (`GOSLOParrot/ParrotApp`?) | Unity AR 客户端, 当前 `unity/ParrotDev/` 是 ParrotCarriers 内的开发子目录 | DESIGNED |
+
+**为什么不把所有东西都写进 ParrotCarriers**:
+- ParrotCarriers 是**通用基建**, 不包含角色的具体人格 (SOUL.md 属于每个角色自己)
+- Nanobot 是独立的 Agent 框架, 不该锁在 bus 里
+- AR 前端是**平台绑定** (Android/iOS), Bus 是**平台无关**
+
+**但当前现实**: 项目演进中, 很多特性代码**直接加在 ParrotCarriers 里**, 因为:
+1. 联系紧, 上下文都在这
+2. 三层 Bus 协议还没稳定到"对外暴露 SDK"的程度, 拆仓库会同步成本爆炸
+
+**何时拆仓**: 当 Bus 协议 ratified 到 V2+, AR 前端代码量 > Python 端 30% 时。不急。
 
 ---
 
@@ -413,3 +444,143 @@ Brain dispatch_task(params.result_channel="calendar_result")
   → 结果同时发到 CH_NANOBOT_RESULTS + CH_TRIGGER_RESULTS
   → TriggerRunner._event_loop 路由到对应 Trigger
 ```
+
+---
+
+## 九、外挂工作区生态 — 为什么用 Obsidian / 副工作区
+
+### 9.1 核心原则
+
+**一个 AI 助理需要和人共享工作区**, 但**不该重新发明一个**。已有成熟的:
+- **Obsidian** — 本地 Markdown 笔记, 已有插件生态和用户习惯
+- **Google Drive / Workspace** — 云端文档, 副驾驶姐姐用 (P3+)
+- **LobeChat / Telegram** — 对话端 (P3+)
+- **Cursor/IDE** — 代码端 (人类开发者用)
+
+ParrotCarriers **不做这些工具**, 只定义**如何挂载它们**:
+
+### 9.2 外挂工作区清单
+
+| 外挂 | 宿主 | 协议 | 用途 | 现状 |
+|:-----|:-----|:-----|:-----|:-----|
+| **Obsidian** | 用户本地笔记本 | `sync_obsidian_to_graphiti.py` 脚本 | SSOT (物体定义, "这是我的水杯") → Graphiti scene 分区 | IMPLEMENTED |
+| **Gemini Drive** (副驾驶姐姐) | Google Drive 工作区 | `gemini_drive_bridge.md` (archived, P3) | 文档/日历协作 | PLANNED P3 |
+| **Telegram/LobeChat** | 用户手机/浏览器 | GOSLO Chat bot | 无 AR 时的对话入口 | IMPLEMENTED |
+| **副工作区 (用户笔记本)** | 用户本地 PC | LiveKit Room as client OR SSH | 当 Castle 资源不够, 本地跑 DSG 残血版 (Sentinel) | PLANNED P4 |
+
+### 9.3 外挂连通的两种模式
+
+**A. 同步模式 (Sync)** — Obsidian 属于这类
+- 用户在本地编辑 → 脚本定时 pull → 写入 Graphiti
+- **单向或双向**, 但**不实时**
+- 优点: 不需要外挂理解总线协议
+- 缺点: 有延迟, 不能当命令通道
+
+**B. 挂载模式 (Mount)** — Nanobot / 副工作区属于这类
+- 外挂实体**加入 LiveKit Room**, 按 Bus 协议挂载
+- **实时**, 能接收命令、发事件
+- 需要外挂实现 `ModuleManifest`
+- 参考: `bus_v4.md` §挂载协议
+
+**判别规则**: 如果外挂的数据**进入对话回合**(比如 Obsidian 笔记要被 GOSLO 引用), 走 Sync; 如果外挂要**主动发命令或事件**(比如 Nanobot 派发任务), 走 Mount。
+
+### 9.4 Obsidian 配合机制 (当前已实现)
+
+```
+用户 Obsidian Vault (本地笔记本)
+    ↓ (手动/定时触发)
+sync_obsidian_to_graphiti.py
+    ↓ (group_id=scene)
+Graphiti FalkorDB (Castle)
+    ↑ (query_scene tool)
+Brain Agent (Gemini Live)
+```
+
+**职责边界**:
+- Obsidian: **SSOT 定义源** (用户明确的事实, 如"这个水杯是我昨天买的")
+- Graphiti scene 分区: **Obsidian 的只读镜像** (通过脚本同步, Brain 不直接写回 Obsidian)
+- Brain: **只查询, 不修改** — 要添加新事实走 `remember` tool 写 Graphiti 其他分区, 不碰 scene
+
+---
+
+## 十、DSG 四层语义架构 — 现状 + 占位
+
+### 10.1 四层定位 (脑区类比来自 `system_core.md` archived, 保留概念)
+
+| 层 | 类比 | 职责 | 数据结构 | 当前现状 |
+|:---|:-----|:-----|:---------|:---------|
+| **L1** | 视网膜 (Retina) | 原始感知 → Detection/Pose/Hand | 帧级数据流 | **PLANNED** (A10 上跑 SAM2+DINOv2, 未启动) |
+| **L1.5** | 视觉皮层 | A10 / Sentinel 残血版输出, 过滤到 L2 之前 | Detection 列表 | **PLANNED** (Sprint 2 起) |
+| **L2-A** | 背侧通路 (Where) | 空间拓扑: Object→Surface→Zone | RustworkX 空间图 | **PLANNED** (P3) |
+| **L2-B** | 腹侧通路 (What) | 语义注意力 + 关联 + 新旧判定 | RustworkX 语义图 (`l2b_graph.py`) | ✅ **IMPLEMENTED** (P2.5) |
+| **L3** | 前额叶 (Narrative) | 观察者聚合 + 事件叙事 + Graphiti 归档 | ObservationLog (Redis Stream) + Graphiti | **PLANNED** (Sprint 1 S1.E 铺日志, P3 做观察者) |
+
+### 10.2 现在能做什么 / 不能做什么
+
+**能做 (P2.5 已实现)**:
+- L2-B 语义记忆: 物体标签/关联/新物体发现
+- L2-B 触发器: 4 个 (Calendar / Message / SSOTEnrichment / SceneContext)
+- 对话归档: `conversation_writer` → Graphiti
+
+**不能做 (Sprint 0-4 内不做)**:
+- ❌ L1 真实视觉识别 (需 A10, 属 Sprint 2+)
+- ❌ L2-A 空间拓扑 (需 AR 真机数据, P3)
+- ❌ L3 四观察者 (P3, Sprint 1 只铺 ObservationLog 日志)
+
+### 10.3 DSG 工作模式 (两轴正交, 详见 `ar_feature_vision.md §3.6`)
+
+- **VideoTier** (视频档位): VIDEO_OFF / VIDEO_GEMINI_ONLY / VIDEO_FULL / VIDEO_BURST
+- **DsgMode** (DSG 工作模式): DSG_TEXT_ONLY / DSG_GEMINI_VISION / DSG_FULL / DSG_SENTINEL_AUX
+
+两轴独立切换, A10 关闭时 DSG 仍能部分工作。Sprint 2 实现。
+
+---
+
+## 十一、数据时间轴与有效期链路
+
+### 11.1 四层时间轴 (主源: `sprint0_preflight.md §1`)
+
+```
+L0 Raw Event Stream        — Redis Stream, 所有事件唯一真相源 (Sprint 0 S0.A 定 schema)
+    ↓ (订阅 + 过滤)
+L1 Blackboard              — py-trees Blackboard V2, 当前状态缓存 (已实现)
+    ↓ (事件完成)
+L2 Graphiti Episode        — 对话回合级, 按 group_id 分区 (已实现, conversation_writer)
+    ↓ (物体/事件触发)
+L3 DSG L2-B Event Node     — 结构化事件, 带 provenance_stream_id 追回 L0 (Sprint 0 S0.B 定字段)
+```
+
+### 11.2 有效期 / 过滤器的位置
+
+**用户提出**: "graphiti 之前需要有一个有效期侦测模块"。**对的, 但不急**。
+
+当前状态 (2026-04-22):
+- `MemoryValidity 过滤器` — 在 `module_map_p2.md §六 远期` 的 PLANNED 里
+- 位置: **在 L2 Graphiti 写入之前**, 拦截低置信度/过期信息
+- 设计来源: Ebbinghaus 衰减 + 置信度阈值
+
+**Sprint 0-4 内不实现**, 原因:
+1. 当前 Graphiti 数据量小, 没有污染压力
+2. 过滤策略需要**真实数据分布**才能设计, 现在拍脑袋会过拟合
+
+**临时方案** (Sprint 1-4): 在 `conversation_writer.py` 和 `identify_object.py` 写入时**简单硬规则** (如 `importance < 0.3` 不写), 留 TODO 标记, 后期替换成 `MemoryValidity` 模块。
+
+### 11.3 时间轴模块 (用户提"还没设计")
+
+**已经变成 Sprint 0 的 S0.A/B/C**:
+- S0.A — 锁 L0 Stream schema (`src/parrot/shared/event_log.py` 新文件)
+- S0.B — 在 DSG L2-B Event Node 加 `provenance_stream_id` 字段
+- S0.C — 文档化时间轴 API 约定
+
+**不单独起一个"时间轴模块"**, 因为它是**跨模块的数据约定**, 不是独立服务。
+
+### 11.4 观察者 L3 模块 (用户提"还没设计")
+
+**Sprint 1 S1.E 铺基础**, 不实现完整观察者:
+- 铺一个 `parrot:obs_log` Redis Stream (VIGIL 风格外挂反思层)
+- 所有事件**并行**写一份到 obs_log (不阻塞主对话)
+- Sprint 4 后, 积累真实数据再设计观察者算法
+
+**完整观察者** (Perception / Conversation / Atmosphere / Archive 四拆分) 是 **P3 任务**, 有真实语料后才做。
+
+---

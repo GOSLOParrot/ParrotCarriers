@@ -1,7 +1,14 @@
+---
+status: ratified
+category: historical_milestone
+status_note: "P2 + P2.5 已完成, 连通已验通 (见 Test/p2/connectivity_report_p2.md). 历史里程碑归档, 不再添加。下一个里程碑到 Sprint 4 完成后再写 milestone_p3.md。"
+last_reviewed: 2026-04-22
+---
+
 # P2 里程碑: 记忆共享 + Scheduler 增强 + DSG 耦合层
 
 > 最后更新: 2026-04-20
-> 状态: **代码就绪** — 待一次 Castle 线上 P2 拉起（FalkorDB 容器 + Graphiti 端到端） + AR 项目搭建
+> 状态: **已完成并验证** — 见 `Test/p2/connectivity_report_p2.md`
 > 下一步：见 `active_context.md` §下一步 本周关键路径
 > 计划文件: `c:\Users\Bin\.cursor\plans\p2_development_roadmap_70d9e51c.plan.md`
 

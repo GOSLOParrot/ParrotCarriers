@@ -1,5 +1,14 @@
-# ParrotCarriers 模块划分与目录结构 (2026-04-08)
+---
+status: superseded
+category: historical_baseline
+status_note: "Phase 1 时代模块划分基线 (2026-04-08), 已被 module_map_p2.md (P2.5) 覆盖。仅作历史基线追溯。当前事实源: module_map_p2.md。"
+superseded_by: "architecture/module_map_p2.md"
+last_reviewed: 2026-04-22
+---
 
+# ParrotCarriers 模块划分与目录结构 (2026-04-08) — [已被 module_map_p2.md 取代]
+
+> **⚠ 归档提示**: 本文是 Phase 1 基线, 当前模块状态以 `module_map_p2.md` 为准。
 > 关联: `requirements.md` v2 + `bus_v4.md` v4.2
 > 原则: Module-First Development (MFD) — 先模块边界，后协议细节
 

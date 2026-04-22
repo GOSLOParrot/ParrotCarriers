@@ -1,5 +1,13 @@
-# 总架构图 v3.1 (2026-03-18)
+---
+status: archived
+category: historical_vision
+status_note: "2026-03-18 v3 愿景版, 早于 P2/P2.5 代码实现。多处描述 (如 Observer 四拆分 / Neo4j / SOUL 具体实现) 已被代码演进超过。仅作架构意图追溯, 不作事实源。当前事实源见 module_map_p2.md / bus_v4.md / protocol_snapshot_p1.md。"
+last_reviewed: 2026-04-22
+---
 
+# 总架构图 v3.1 (2026-03-18) — [已归档, 仅作追溯]
+
+> **⚠ 归档提示**: 本文是 2026-03 的愿景版, 当前代码细节以 `module_map_p2.md` 为准。
 > 基于全部调研结论 (ADR-001 ~ ADR-032) 和核心结论 (1~56) 重新绘制
 > 关键变更: RPC 替代 DataChannel 命令 / Observer 四拆分 / py-trees 行为树 / Neo4j 显式化 / SOUL 人格
 > v3.1: L1 主发现路径修正(SAM2为主) / YOLO-World 双模插件 / Nanobot Redis 松耦合 / DINOv2 独立

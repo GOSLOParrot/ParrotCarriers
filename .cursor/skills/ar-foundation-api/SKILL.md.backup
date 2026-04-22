@@ -1,0 +1,109 @@
+---
+name: ar-foundation-api
+description: Use when working with ar-foundation-api
+doc_version: 
+---
+
+# Ar-Foundation-Api Skill
+
+Use when working with ar-foundation-api, generated from official documentation.
+
+## When to Use This Skill
+
+This skill should be triggered when:
+- Working with ar-foundation-api
+- Asking about ar-foundation-api features or APIs
+- Implementing ar-foundation-api solutions
+- Debugging ar-foundation-api code
+- Learning ar-foundation-api best practices
+
+## Quick Reference
+
+### Common Patterns
+
+**Pattern 1:** Camera platform support The AR Foundation XRCameraSubsystem is supported on the ARCore, ARKit, Meta OpenXR and XR Simulation platforms, as shown in...
+
+```
+void Start()
+{
+    if (LoaderUtility
+            .GetActiveLoader()?
+            .GetLoadedSubsystem<XRCameraSubsystem>() != null)
+    {
+        // XRCameraSubsystem was loaded. The platform supports the camera subsystem.
+    }
+}
+```
+
+**Pattern 2:** Face tracking platform support The AR Foundation XRFaceSubsystem is supported on the ARCore and ARKit platforms, as shown in the following table: P...
+
+```
+void Start()
+{
+    if (LoaderUtility
+            .GetActiveLoader()?
+            .GetLoadedSubsystem<XRFaceSubsystem>() != null)
+    {
+        // XRFaceSubsystem was loaded. The platform supports face detection.
+    }
+}
+```
+
+**Pattern 3:** Managers In AR Foundation, a manager is a component that provides a scripting interface for an AR feature in a scene
+
+```
+SubsystemLifecycleManager
+```
+
+**Pattern 4:** Trackables can be enumerated via their manager's trackables property
+
+```
+trackables
+```
+
+## Reference Files
+
+This skill includes comprehensive documentation in `references/`:
+
+- **Packages.md** - Packages documentation
+
+Use `view` to read specific reference files when detailed information is needed.
+
+## Working with This Skill
+
+### For Beginners
+Start with the getting_started or tutorials reference files for foundational concepts.
+
+### For Specific Features
+Use the appropriate category reference file (api, guides, etc.) for detailed information.
+
+### For Code Examples
+The quick reference section above contains common patterns extracted from the official docs.
+
+## Resources
+
+### references/
+Organized documentation extracted from official sources. These files contain:
+- Detailed explanations
+- Code examples with language annotations
+- Links to original documentation
+- Table of contents for quick navigation
+
+### scripts/
+Add helper scripts here for common automation tasks.
+
+### assets/
+Add templates, boilerplate, or example projects here.
+
+## Notes
+
+- This skill was automatically generated from official documentation
+- Reference files preserve the structure and examples from source docs
+- Code examples include language detection for better syntax highlighting
+- Quick reference patterns are extracted from common usage examples in the docs
+
+## Updating
+
+To refresh this skill with updated documentation:
+1. Re-run the scraper with the same configuration
+2. The skill will be rebuilt with the latest information

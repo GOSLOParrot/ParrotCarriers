@@ -1,3 +1,10 @@
+---
+status: ratified
+category: reference
+status_note: "家族角色拓扑 (GOSLO / Maid / Parrot / Gemini 二重身 / Nanobot) 已收口, 代码已对齐。"
+last_reviewed: 2026-04-22
+---
+
 # 家族角色拓扑与交互场景 (2026-04-12 修订)
 
 > 基于 doc 25/26 确认的架构愿景更新 + P1.5 实现修订

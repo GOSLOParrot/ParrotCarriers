@@ -81,4 +81,3 @@ unity/ParrotDev/     Unity AR 客户端（LiveKit + XR Hands + AR Video）
 
 ## CRITICAL REASONING OVERRIDE
 1. **LANGUAGE OF THOUGHT:** You MUST ALWAYS perform your internal reasoning and step-by-step logic inside `<thinking>` tags strictly in **ENGLISH**. This is non-negotiable for maximum coding accuracy.
-2. Keep the thinking phase extremely concise to save tokens. Do not translate technical terms.

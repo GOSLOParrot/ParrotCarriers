@@ -1,3 +1,10 @@
+---
+status: ratified
+category: reference
+status_note: "Bus 三层协议 + 拓扑基线, 代码已验通。新变更走 ADR + bump 版本号。"
+last_reviewed: 2026-04-22
+---
+
 # ParrotCarriers 总线架构 v4.2 (2026-04-08)
 
 > LiveKit Room = 服务总线骨架 · 三层协议 · N 个可插拔模块

@@ -1,3 +1,10 @@
+---
+status: ratified
+category: reference
+status_note: "67 个功能项 + 11 个已确认决策, 是需求事实源。新需求追加, 旧决策不翻案。"
+last_reviewed: 2026-04-22
+---
+
 # ParrotCarriers 完整功能需求清单 v2 (2026-04-08)
 
 > 综合来源: Opus 01/06/16/20/25/26 + system_core v3.1 + bus_v4.2 + scene.md + legacy.md

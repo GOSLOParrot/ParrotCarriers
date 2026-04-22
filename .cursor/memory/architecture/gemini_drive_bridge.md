@@ -1,6 +1,13 @@
-# Gemini Drive Bridge 协议 (副驾驶姐姐协作层)
+---
+status: archived
+category: future_plan_P3
+status_note: "副驾驶姐姐 Drive 协作协议, P3/P4 愿景。当前 Sprint 0-4 不接入。Sprint 3+ 再激活。"
+last_reviewed: 2026-04-22
+---
 
-> 本协议定义“副驾驶姐姐”这一角色（内部端 `Gemini App` + 外部代理 `Gemini 外部分身`）如何通过 Google Drive 工作区，与 `ParrotCarriers` 基础设施（Brain Agent、Nanobot、Graphiti）以及 `GOSLO` 妹妹实现状态同步与协作，而不产生直接的运行时强耦合。
+# Gemini Drive Bridge 协议 (副驾驶姐姐协作层) — [已归档, P3 再评估]
+
+> 本协议定义"副驾驶姐姐"这一角色（内部端 `Gemini App` + 外部代理 `Gemini 外部分身`）如何通过 Google Drive 工作区，与 `ParrotCarriers` 基础设施（Brain Agent、Nanobot、Graphiti）以及 `GOSLO` 妹妹实现状态同步与协作，而不产生直接的运行时强耦合。
 
 ---
 
