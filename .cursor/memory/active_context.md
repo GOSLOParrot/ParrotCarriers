@@ -1,10 +1,11 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-22 (Sprint 1 T1-T10 全部收口)
-> **当前阶段**: **Sprint 1 ✅ 完成** — 视频流骨骼 + 自知四路信号 + Gemini 四通道体感 全部落地
-> **下一步**: 跑一次端到端 smoke (真机 AR → OnApplicationPause → GOSLO 换口吻), 然后进 Sprint 2 S2-Intent (自主行动层) + LiveKit 路上层门控
-> **开工收口**: `.cursor/memory/architecture/sprint1_plan_20260422.md` (Sprint 1 唯一 checklist, §5.4 有 10 个 commit 台账)
-> Round 2 T1-T10 全部 ✅, 详见 sprint1_plan §5.4
+> 最后更新: 2026-04-22 (Sprint 1 完成报告落地, 等待用户启动 Sprint 2)
+> **当前阶段**: **Sprint 1 ✅ 完成, Sprint 2 待启动** — 自知底座装完, 下一步是条件反射 + 自主神经
+> **Sprint 1 完成报告**: `.cursor/memory/architecture/sprint1_completion_report_20260422.md` (事实记录 + 遗留隐患 §6 + 交给 Sprint 2 的硬约束 §7)
+> **Sprint 2 启动说明**: `.cursor/memory/architecture/sprint2_kickoff_prompt.md` (下一轮对话的 Round 1 / 1.5 prompt, 用户复制直接用)
+> **Sprint 1 回顾**: `.cursor/memory/architecture/sprint1_plan_20260422.md` (§5.4 10 个 commit 台账)
+> Round 2 T1-T10 全部 ✅, 真机端到端 smoke 留用户自管
 > 部署快照: `.cursor/memory/deploy_snapshot_p2_20260412.md`
 > **P2 里程碑**: `.cursor/memory/milestone_p2.md` (P2 已完成, 历史归档) — 记忆共享 + Scheduler 增强 + DSG 耦合层 + L2-B + 触发器
 > 同步工具: `.cursor/memory/commit_guidelines.md` + `infra/sync-castle.ps1`
