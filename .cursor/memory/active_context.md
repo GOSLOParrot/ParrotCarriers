@@ -1,9 +1,10 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-22 (Sprint 0 收口, 进入 Sprint 1 执行)
-> **当前阶段**: **Sprint 1 执行中** — 视频流骨骼 + 自知四路信号 + Gemini 四通道体感
-> **开工收口**: `.cursor/memory/architecture/sprint1_plan_20260422.md` (Sprint 1 的**唯一 checklist**, 上下文固化件)
-> Round 2 按 T1-T10 执行, 每个 T 独立 commit, 做完本文件打 ✅
+> 最后更新: 2026-04-22 (Sprint 1 T1-T10 全部收口)
+> **当前阶段**: **Sprint 1 ✅ 完成** — 视频流骨骼 + 自知四路信号 + Gemini 四通道体感 全部落地
+> **下一步**: 跑一次端到端 smoke (真机 AR → OnApplicationPause → GOSLO 换口吻), 然后进 Sprint 2 S2-Intent (自主行动层) + LiveKit 路上层门控
+> **开工收口**: `.cursor/memory/architecture/sprint1_plan_20260422.md` (Sprint 1 唯一 checklist, §5.4 有 10 个 commit 台账)
+> Round 2 T1-T10 全部 ✅, 详见 sprint1_plan §5.4
 > 部署快照: `.cursor/memory/deploy_snapshot_p2_20260412.md`
 > **P2 里程碑**: `.cursor/memory/milestone_p2.md` (P2 已完成, 历史归档) — 记忆共享 + Scheduler 增强 + DSG 耦合层 + L2-B + 触发器
 > 同步工具: `.cursor/memory/commit_guidelines.md` + `infra/sync-castle.ps1`

@@ -2,7 +2,7 @@
 status: ratified
 status_note: "Sprint 1 开工前的设计固化。Round 1 重读 4 份必读 + ar_feature_vision + audit_identify_object + 5 个 skill 后, 对着 Gemini Live 实际 API 行为 (2026-01 LiveKit issue #4875 官方确认) 做的方案收口。用户在 2026-04-22 Round 1.5 确认 '按你顺的做', 现落文防止上下文坍缩。"
 last_reviewed: 2026-04-22
-progress: "T1/T2/T3/T4 ✅ done at HEAD 2026-04-22. Continuing from T5."
+progress: "T1-T10 ✅ all done at HEAD 2026-04-22. Sprint 1 closed; next is Sprint 2 S2-Intent (autonomous action layer) + LiveKit path-layer gating (§9.1 G1.1 P3)."
 ---
 
 # Sprint 1 设计收口 — 视频流骨骼 + 自知四路信号 + Gemini 四通道体感
@@ -119,17 +119,32 @@ Sprint 1 的通道映射表就是这条红线在"状态通知"侧的对应。**�
 | **T2** | ✅ | `brain/vision/__init__.py` + 收进 Sprint 0 `snapshot.py`/`visual_match.py` 两个草稿 | `brain/vision/*` | `670a01b chore(sprint0)` |
 | **T3** | ✅ | `telemetry_receiver` 收到 behavior_state / hand_gesture / ar_tracking_state → 写 `tick/body_state` / `transient/hand_gesture` / `tick/ar_tracking_state`; 注 `head_state` 声明但 Sprint 1 没 emitter, 留空 | `telemetry_receiver.py` | `f2a8ecf [S1.A2-3]` |
 | **T4** | ✅ | `_rpc_bridge.call_unity_rpc` 每次出结果 (成功 / 超时 / transport error / Unity 应用层 reject) 都写 `tick/last_rpc_ack = {ok, rpc, reason, detail, ts}`; 另加 `set_scene(scene)` 写 `session/scene` | `_rpc_bridge.py` | `ea4d412 [S1.A4]` |
-| **T5** | 🟡 | Unity `VideoStateReporter.cs` 新建: `OnApplicationPause` + `ARTrackingState` 两路 (亮度方差 P3) 变化时 RPC `onVideoDegraded(reason, ts)`; Brain `_rpc_bridge` 注册 RPC 入境 handler → 写 `session/visual_reason` (枚举 VisualStateReason); `tick/ar_tracking_state` T3 已接, 这里只补 `OnApplicationPause` → `APP_BACKGROUNDED` 这一路 | 新 C# + `_rpc_bridge.py` 扩 | `[S1.T5]` |
-| **T6** | ⬜ | `brain/vision/state.py` 薄壳 (Sprint 0 已有草稿): 订阅 `session/visual_reason` + `tick/ar_tracking_state` + `tick/last_rpc_ack` 三路 BB 变化, 融合决策 → 写 `session/visual_state` (枚举: active/degraded/paused/blocked) | 新文件 (或把 Sprint 0 草稿收口) | `[S1.T6]` |
-| **T7** | ⬜ | `context_injector.py` 扩: 订阅 BB 变化, `_decide_layer(key, old, new)` 返回层①/②/③, 层③走 **C3 `update_chat_ctx(role=user, 前缀[状态])`** (轻) 或 **C4 `generate_reply(instructions=...)`** (重, blocked/paused 跳变); turn 开头附 3 字段状态摘要 | `context_injector.py` 扩 | `[S1.T7]` |
-| **T8** | ⬜ | `brain/soul.py` 加模块级 `SOUL_CONSTRAINTS` dict (4 VisualState × {allow/deny}, 只填 visual 层); Injector 按当前 VisualState 查表, 把 `allow/deny` 拼进 C3 状态段. **不做**热更新, **不做** C2 update_instructions 重写 Soul (留 Sprint 2) | `soul.py` 扩 + `context_injector.py` 读 | `[S1.T8]` |
-| **T9** | ⬜ | `shared/constants.py` 加 `STREAM_OBS_LOG = "parrot.obs_log"`; `brain/obs_log.py` 新: `log_event(kind, layer, payload)` helper, 用 `xadd` 写 Redis Stream; Injector `_decide_layer` 每次调用同时写一份 (所有层都记) | `constants.py` 扩 + 新文件 | `[S1.T9]` |
+| **T5** | ✅ | Unity `VideoStateReporter.cs` 新建: `OnApplicationPause` + `ARTrackingState` 两路 (亮度方差 P3) 变化时 RPC `onVideoDegraded(reason, ts)`; Brain `_rpc_bridge` 注册 RPC 入境 handler → 写 `session/visual_reason` (枚举 VisualStateReason); `tick/ar_tracking_state` T3 已接, 这里只补 `OnApplicationPause` → `APP_BACKGROUNDED` 这一路 | 新 C# + `_rpc_bridge.py` 扩 | `[S1.T5]` |
+| **T6** | ✅ | `brain/vision/state.py` 薄壳 (Sprint 0 已有草稿): 订阅 `session/visual_reason` + `tick/ar_tracking_state` + `tick/last_rpc_ack` 三路 BB 变化, 融合决策 → 写 `session/visual_state` (枚举: active/degraded/paused/blocked) | 新文件 (或把 Sprint 0 草稿收口) | `[S1.T6]` |
+| **T7** | ✅ | `context_injector.py` 扩: 订阅 BB 变化, `_decide_layer(key, old, new)` 返回层①/②/③, 层③走 **C3 `update_chat_ctx(role=user, 前缀[状态])`** (轻) 或 **C4 `generate_reply(instructions=...)`** (重, blocked/paused 跳变); turn 开头附 3 字段状态摘要 | `context_injector.py` 扩 | `[S1.T7]` |
+| **T8** | ✅ | `brain/soul.py` 加模块级 `SOUL_CONSTRAINTS` dict (4 VisualState × {allow/deny}, 只填 visual 层); Injector 按当前 VisualState 查表, 把 `allow/deny` 拼进 C3 状态段. **不做**热更新, **不做** C2 update_instructions 重写 Soul (留 Sprint 2) | `soul.py` 扩 + `context_injector.py` 读 | `[S1.T8]` |
+| **T9** | ✅ | `shared/constants.py` 加 `STREAM_OBS_LOG = "parrot.obs_log"`; `brain/obs_log.py` 新: `log_event(kind, layer, payload)` helper, 用 `xadd` 写 Redis Stream; Injector `_decide_layer` 每次调用同时写一份 (所有层都记) | `constants.py` 扩 + 新文件 | `[S1.T9]` |
 
 ### 5.2 Sprint 2 预留 (Sprint 1 只加 assert + docstring)
 
-| # | 动作 | 文件 |
-|:--|:-----|:-----|
-| **T10** | `shared/event_log.py::EventLayer` docstring 加 "Sprint 1 只路由 REFLEX/TASK, INTENT 预留 Sprint 2"; `scheduler/router.py` 的 `BTRouter.route` 开头加 `if event.get("layer") == "intent": raise NotImplementedError("Intent 层由 Sprint 2 S2 Intent 任务补全")` | `event_log.py` docstring + `router.py` 扩 |
+| # | 状态 | 动作 | 文件 |
+|:--|:----:|:-----|:-----|
+| **T10** | ✅ | `shared/event_log.py::EventLayer` docstring 加 "Sprint 1 只路由 REFLEX/TASK, INTENT 预留 Sprint 2"; `scheduler/router.py` 的 `BTRouter.route` 开头加 `if event.get("layer") == "intent": raise NotImplementedError("Intent 层由 Sprint 2 S2 Intent 任务补全")` | `event_log.py` docstring + `router.py` 扩 |
+
+### 5.4 Sprint 1 commit 台账 (按顺序)
+
+| T | commit | 说明 |
+|:-:|:-------|:-----|
+| T1 | `d9f8c32 [S1.A1]` | `open_bb_client(name, writer)` |
+| T2 | `670a01b chore(sprint0)` | `brain/vision/` 包 + snapshot/visual_match 草稿 |
+| T3 | `f2a8ecf [S1.A2-3]` | telemetry 写 body_state / ar_tracking_state / hand_gesture |
+| T4 | `ea4d412 [S1.A4]` | `_rpc_bridge` 写 `tick/last_rpc_ack` + `session/scene` |
+| T5 | `a24ef89 [S1.T5]` | Unity `VideoStateReporter` + `onVideoDegraded` RPC → `session/visual_reason` |
+| T6 | `6cdc462 [S1.T6]` | `brain/vision/state.py` VisualState fusion → `session/visual_state` |
+| T7 | `357c525 [S1.T7]` | Injector BB 订阅 + C3/C4 分发 |
+| T8 | `66180fe [S1.T8]` | `soul.SOUL_CONSTRAINTS` + Injector 拼 constraint body |
+| T9 | `47a968f [S1.T9]` | `STREAM_OBS_LOG` + `brain/obs_log.log_obs_event` + Injector audit |
+| T10 | `18fedd6 [S1.T10]` | Router 拒绝 `EventLayer.INTENT` + event_log Sprint 2 标记 |
 
 ### 5.3 Sprint 1 明确砍掉 (和上一轮 Q3 判断的修正)
 
