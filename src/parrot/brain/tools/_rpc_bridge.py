@@ -173,6 +173,71 @@ async def call_unity_rpc(
     return response
 
 
-# Safety: confirm stable re-exports. Internal helpers (_write_ack,
-# _classify_response) stay private.
-__all__: list[str] = ["UNITY_IDENTITY_PREFIX", "call_unity_rpc", "set_scene"]
+async def push_video_tier(video_tier: str, *, reason: str = "") -> bool:
+    """Intent-layer RPC: PerceptionSupervisor → Unity `setVideoTier`.
+
+    Sprint 2 T10. Called from `brain.perception_supervisor` when the Two-
+    axis decision loop commits a new VideoTier. Unity's
+    `VideoTierReceiver.cs` receives the method and (in Sprint 2) logs +
+    acknowledges; actual bitrate/fps re-encoding lands in Sprint 3 when the
+    AR rebuild is in flight.
+
+    Returns True on ok, False on any failure (including no-Unity). Non-
+    raising by design: a tier push failing must not crash the supervisor
+    loop; the failure is already mirrored to tick/last_rpc_ack and the
+    next decision tick will retry if BB state still demands the move.
+
+    Args:
+        video_tier: One of VideoTier enum string values
+            (VIDEO_OFF / VIDEO_GEMINI_ONLY / VIDEO_FULL / VIDEO_BURST).
+        reason: Optional human-readable cause string, forwarded to Unity
+            for log context only.
+    """
+    room = get_job_context().room
+    unity_id = _find_unity_participant(room)
+
+    if not unity_id:
+        _write_ack(
+            ok=False,
+            rpc="setVideoTier",
+            reason="no_unity",
+            detail=f"tier={video_tier}",
+        )
+        logger.info(
+            "push_video_tier: no Unity client — tier=%s dropped", video_tier
+        )
+        return False
+
+    payload = {"video_tier": video_tier, "reason": reason}
+    logger.info(
+        "RPC → Unity [%s] setVideoTier=%s reason=%s",
+        unity_id, video_tier, reason or "-",
+    )
+    try:
+        response = await room.local_participant.perform_rpc(
+            destination_identity=unity_id,
+            method="setVideoTier",
+            payload=json.dumps(payload),
+            response_timeout=5.0,
+        )
+    except Exception as e:
+        _write_ack(
+            ok=False,
+            rpc="setVideoTier",
+            reason="transport",
+            detail=f"{type(e).__name__}: {e}",
+        )
+        logger.warning("setVideoTier transport error: %s", e)
+        return False
+
+    ok, reason_out, detail = _classify_response(response)
+    _write_ack(ok=ok, rpc="setVideoTier", reason=reason_out, detail=detail)
+    return ok
+
+
+__all__: list[str] = [
+    "UNITY_IDENTITY_PREFIX",
+    "call_unity_rpc",
+    "push_video_tier",
+    "set_scene",
+]

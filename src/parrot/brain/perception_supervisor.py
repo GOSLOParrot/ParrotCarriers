@@ -444,6 +444,20 @@ class PerceptionSupervisor:
             actor=_WRITER,
         )
 
+        if new_tier != prev_tier:
+            try:
+                from parrot.brain.tools._rpc_bridge import push_video_tier
+
+                ok = await push_video_tier(new_tier.value, reason=cause)
+                if not ok:
+                    logger.info(
+                        "Supervisor: setVideoTier push declined (tier=%s cause=%s) "
+                        "— BB already updated, will retry on next transition",
+                        new_tier.value, cause,
+                    )
+            except Exception:
+                logger.exception("Supervisor: push_video_tier crashed")
+
     async def _xadd_event(self, envelope: EventEnvelope) -> None:
         """Push one EventEnvelope to `parrot.events.log`.
 

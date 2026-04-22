@@ -31,8 +31,13 @@ public class VideoStateReporter : MonoBehaviour
     [Tooltip("Delay (seconds) between pause-entry and the 'app_backgrounded' RPC. Keeps brief focus blips from noising Gemini.")]
     [SerializeField] private float pauseReportDelay = 0.5f;
 
+    [Header("Publisher (optional, Sprint 2 T11)")]
+    [Tooltip("If assigned, VideoStateReporter listens to ARVideoPublisher.OnPublishMutedChanged and forwards TRACK_MUTED / OK reasons to the Brain. Matches VisualStateReason.TRACK_MUTED.")]
+    [SerializeField] private ARVideoPublisher videoPublisher;
+
     private const string REASON_OK = "ok";
     private const string REASON_APP_BACKGROUNDED = "app_backgrounded";
+    private const string REASON_TRACK_MUTED = "track_muted";
     private const string RPC_METHOD = "onVideoDegraded";
 
     private string _lastReportedReason = REASON_OK;
@@ -49,6 +54,20 @@ public class VideoStateReporter : MonoBehaviour
 
         rm.OnConnected += OnRoomConnected;
         rm.OnDisconnected += OnRoomDisconnected;
+
+        if (videoPublisher != null)
+        {
+            videoPublisher.OnPublishMutedChanged += OnPublisherMutedChanged;
+        }
+    }
+
+    private void OnPublisherMutedChanged(bool muted)
+    {
+        // Publisher-driven mute (e.g. VideoTierReceiver applying VIDEO_OFF)
+        // counts as a TRACK_MUTED degradation for the Brain's VisualState
+        // fusion. Unmute restores REASON_OK so the Brain can lift any
+        // state-driven hold.
+        TryReport(muted ? REASON_TRACK_MUTED : REASON_OK);
     }
 
     private void OnRoomConnected()
@@ -173,6 +192,10 @@ public class VideoStateReporter : MonoBehaviour
         {
             rm.OnConnected -= OnRoomConnected;
             rm.OnDisconnected -= OnRoomDisconnected;
+        }
+        if (videoPublisher != null)
+        {
+            videoPublisher.OnPublishMutedChanged -= OnPublisherMutedChanged;
         }
     }
 }

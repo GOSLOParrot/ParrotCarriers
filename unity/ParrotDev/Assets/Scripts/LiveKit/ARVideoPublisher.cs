@@ -42,6 +42,17 @@ public class ARVideoPublisher : MonoBehaviour
     private TextureVideoSource _videoSource;
     private LocalVideoTrack _videoTrack;
     private bool _isPublishing;
+    private bool _publishMuted;
+
+    /// <summary>
+    /// Fires whenever SetPublishMuted flips the track's muted state.
+    /// Consumed by VideoStateReporter to forward the change to the Brain
+    /// as a TRACK_MUTED / OK degrade reason (Sprint 2 T11).
+    /// </summary>
+    public event Action<bool> OnPublishMutedChanged;
+
+    public bool IsPublishing => _isPublishing;
+    public bool IsPublishMuted => _publishMuted;
 
     // Dev fallback
     private WebCamTexture _webcam;
@@ -264,6 +275,37 @@ public class ARVideoPublisher : MonoBehaviour
                 Graphics.Blit(_webcam, _rt);
             yield return null;
         }
+    }
+
+    // ── Runtime mute control (Sprint 2 T10) ─────────────────────────
+
+    /// <summary>
+    /// Mute or unmute the published video track at runtime. Safe to call
+    /// before the track is published (caches the desired state and applies
+    /// on publish). LiveKit Unity SDK supports SetMuted on the live track
+    /// without re-publishing, which is the one transition we need for
+    /// VIDEO_OFF (privacy / obstruction) in Sprint 2. True bitrate/fps
+    /// changes require a full PublishTrack redo and land in Sprint 3.
+    /// </summary>
+    public void SetPublishMuted(bool muted)
+    {
+        if (_publishMuted == muted) return;
+        _publishMuted = muted;
+
+        if (_videoTrack != null)
+        {
+            try
+            {
+                ((ILocalTrack)_videoTrack).SetMute(muted);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ARVideoPublisher] SetPublishMuted({muted}) failed: {e.Message}");
+            }
+        }
+
+        Debug.Log($"[ARVideoPublisher] publish muted → {muted}");
+        OnPublishMutedChanged?.Invoke(muted);
     }
 
     // ── Cleanup ─────────────────────────────────────────────────────
