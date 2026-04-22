@@ -81,7 +81,19 @@ class BTRouter:
 
         This is a synchronous call. The async SchedulerService calls it
         from the event loop after receiving a Redis message.
+
+        Sprint 1 only routes REFLEX and TASK layers. INTENT (autonomous BB
+        state changes without Gemini touch) is reserved for Sprint 2's
+        S2-Intent task; early callers get a crisp failure here rather than
+        silent misroutes. See `sprint1_plan_20260422.md` §5.2 and
+        `shared/event_log.EventLayer` docstring.
         """
+        if event.get("layer") == "intent":
+            raise NotImplementedError(
+                "EventLayer.INTENT not implemented in Sprint 1. "
+                "Autonomous-action routing lands in Sprint 2 S2-Intent."
+            )
+
         self._bb.current_event = event
         self._bb.route_result = {}
 

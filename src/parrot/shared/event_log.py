@@ -51,8 +51,8 @@ class EventLayer(str, Enum):
     """Scheduling-layer tag for a raw event.
 
     Distinct from `shared.types.Layer` (L1/L2/L3 architectural tier).
-    Aligned with the Sprint 1 three-tier scheduler (S1.F) and the CTHA /
-    GR00T N1.6 System-1/2 split referenced in `ar_feature_vision.md §3.5`:
+    Aligned with the three-tier scheduler and the CTHA / GR00T N1.6
+    System-1/2 split referenced in `ar_feature_vision.md §3.5`:
 
         REFLEX  — ms-scale body reactions (finger perch, fly-to cursor)
         INTENT  — s-to-min scale mode/behavior adjustments (switch video_tier,
@@ -60,6 +60,13 @@ class EventLayer(str, Enum):
                   never dispatches Nanobot, never notifies Gemini
         TASK    — min+ scale externally dispatched work (Nanobot tasks,
                   tool calls, user-facing results)
+
+    **Sprint 1 scope note**: Only REFLEX and TASK are routed end-to-end.
+    INTENT is declared here so producers can tag events correctly, but the
+    routing side (`scheduler.router.BTRouter.route`) explicitly raises
+    `NotImplementedError` on INTENT events. Full Intent-layer dispatch
+    (S2-Intent: autonomous visual-tier downgrades, constraint flips, etc.)
+    is the main Sprint 2 deliverable; see `sprint1_plan_20260422.md` §5.2.
     """
 
     REFLEX = "reflex"
