@@ -33,8 +33,12 @@ import datetime
 import json
 import logging
 import time
+from typing import TYPE_CHECKING
 
 from livekit.agents import RunContext, function_tool
+
+if TYPE_CHECKING:
+    from parrot.dsg.l2b_types import SemanticNode
 
 logger = logging.getLogger(__name__)
 
@@ -165,8 +169,74 @@ async def _upsert_to_l2b(
         logger.debug("L2-B upsert skipped (graph unavailable)")
 
 
+async def _l2b_quick_match(description: str, category: str) -> "SemanticNode | None":
+    """Sprint 3 Path 2: search L2-B working memory first.
+
+    Uses substring label matching. Applies confidence >= 0.5 filter to reduce
+    false positives from partial matches (e.g., "cat" hitting "black cat").
+    Returns the best SemanticNode on hit, None on miss or graph unavailable.
+    """
+    try:
+        from parrot.dsg.l2b_graph import get_l2b_graph
+        from parrot.dsg.l2b_types import ConfirmationStatus, SemanticNode
+
+        graph = get_l2b_graph()
+        if graph is None or graph.node_count() == 0:
+            return None
+
+        node = graph.get_node_by_label(description)
+        if node is None:
+            return None
+
+        # Confidence gate: N1 guard against over-eager substring recall.
+        if node.evidence_score < 0.5:
+            logger.debug(
+                "L2-B hit for '%s' → node '%s' but evidence_score=%.2f < 0.5, skip",
+                description, node.label, node.evidence_score,
+            )
+            return None
+
+        # Only surface TENTATIVE and above (not GHOST nodes)
+        if node.confirmation == ConfirmationStatus.GHOST:
+            return None
+
+        return node
+    except Exception:
+        logger.debug("L2-B quick match unavailable", exc_info=True)
+        return None
+
+
 async def _match_known(description: str, category: str) -> str:
-    """Quick match against known objects in Graphiti scene + user partitions."""
+    """Sprint 3 Path 2 + legacy Path 0: L2-B first, then Graphiti.
+
+    Search order:
+      1. L2-B working memory (fast, in-process) — sprint3_kickoff_prompt §T-P3
+         On hit: update attention only, no Graphiti write, return "快速命中".
+      2. Graphiti scene+user partitions (persistent) — original Sprint 2 path.
+         On hit: upsert result into L2-B for future fast hits.
+    """
+    # Path 2: L2-B priority search
+    l2b_node = await _l2b_quick_match(description, category)
+    if l2b_node is not None:
+        # Update attention without creating a Graphiti round-trip
+        await _upsert_to_l2b(
+            l2b_node.uuid, description, category,
+            from_graphiti=False, graphiti_uuid=l2b_node.graphiti_uuid,
+        )
+        logger.info(
+            "identify_object: L2-B fast hit → '%s' (uuid=%s, score=%.2f)",
+            l2b_node.label, l2b_node.uuid, l2b_node.evidence_score,
+        )
+        return (
+            f"L2-B 快速命中: '{l2b_node.label}' (可信度={l2b_node.evidence_score:.0%}, "
+            f"状态={l2b_node.confirmation.value})。\n"
+            f"这是我记忆中已见过的物体。描述: {l2b_node.description or '—'}。\n"
+            "Confirm to the user naturally — this is YOUR recognition, "
+            "like recognizing a familiar face. "
+            "(Note: L2-B快速命中可能是部分匹配，请结合视觉确认。)"
+        )
+
+    # Path 0 (legacy): Graphiti full search
     try:
         import re
 

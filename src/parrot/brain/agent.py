@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import TYPE_CHECKING, Any
 
 from livekit import agents
 from livekit.agents import Agent, AgentServer, AgentSession, room_io
@@ -135,6 +136,51 @@ def _attach_gemini_transcript_to_terminal(session: AgentSession) -> None:
                 logger.exception("extractor.feed_transcript(assistant) failed")
 
 
+def _attach_scene_ready_rpc(room: "Any", session: AgentSession) -> None:
+    """Sprint 3 S3.D4: handle Unity 'onSceneReady' RPC → time-of-day greeting.
+
+    Unity sends this 500ms after LiveKit connect. Brain generates a brief
+    greeting appropriate to the time of day.  The existing `generate_reply`
+    at session start fires immediately (before Unity connects); this handler
+    fires again when the AR scene is ready — typically they don't overlap
+    because the AR scene takes a moment to load after LiveKit connects.
+    """
+    import json as _json
+
+    @room.local_participant.register_rpc_method("onSceneReady")
+    async def _on_scene_ready(data: "Any") -> str:
+        try:
+            payload = _json.loads(data.payload) if data.payload else {}
+        except Exception:
+            payload = {}
+        time_of_day = payload.get("time_of_day", "morning")
+        greeting_map = {
+            "morning":   "早上好！我现在在你桌面上了，有什么可以帮你的吗？",
+            "afternoon": "下午好！我在这里陪你，有什么想聊的吗？",
+            "evening":   "晚上好！今天过得怎么样？",
+        }
+        instructions = (
+            f"AR 场景已就绪，用户的 AR 鹦鹉刚刚出现在桌面上。"
+            f"时段: {time_of_day}。请用以下语气打招呼（参考但不照搬）: "
+            f"'{greeting_map.get(time_of_day, greeting_map['morning'])}' "
+            f"保持角色，简短活泼，体现你是 GOSLO 鹦鹉这个身份。"
+        )
+        try:
+            await session.generate_reply(instructions=instructions)
+            logger.info("onSceneReady: greeting generated (time_of_day=%s)", time_of_day)
+        except Exception:
+            logger.exception("onSceneReady: generate_reply failed")
+        return _json.dumps({"status": "ok"})
+
+    @room.local_participant.register_rpc_method("onGosloPlaced")
+    async def _on_goslo_placed(data: "Any") -> str:
+        """Unity sends this when user taps to place GOSLO on the desk."""
+        logger.info("onGosloPlaced: GOSLO placed on desk — no action needed in Brain")
+        return _json.dumps({"status": "ok"})
+
+    logger.info("onSceneReady + onGosloPlaced RPC handlers registered")
+
+
 @server.rtc_session(agent_name="parrot-brain")
 async def brain_entrypoint(ctx: agents.JobContext):
     """Called by LiveKit when a participant joins. Boots Bus + Gemini session."""
@@ -173,6 +219,7 @@ async def brain_entrypoint(ctx: agents.JobContext):
 
     attach_telemetry_receiver(ctx.room)
     attach_video_state_rpc(ctx.room)
+    _attach_scene_ready_rpc(ctx.room, session)
 
     try:
         from parrot.memory.conversation_writer import attach_conversation_writer

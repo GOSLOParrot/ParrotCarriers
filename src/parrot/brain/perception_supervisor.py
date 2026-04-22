@@ -49,7 +49,8 @@ _WRITER = "brain.perception_supervisor"
 VISUAL_DEGRADE_GRACE_S = 15.0
 A10_DOWN_GRACE_S = 30.0
 A10_UP_STABLE_S = 60.0
-MANUAL_OVERRIDE_HOLD_S = 300.0
+# Sprint 3 D1: configurable via env so ops/UI can tune without code changes.
+MANUAL_OVERRIDE_HOLD_S: float = float(os.getenv("PARROT_OVERRIDE_HOLD_SECONDS", "300"))
 
 # A10 health probe cadence (seconds). Fast enough to notice a down within
 # one hysteresis window, slow enough to not flood the network.
@@ -188,54 +189,75 @@ class PerceptionSupervisor:
     # ─────────────────────── A10 health probe ────────────────────────
 
     async def _check_a10_health(self) -> bool:
-        """Sprint 2 stub: env `PARROT_A10_HEALTH_URL` decides behaviour.
+        """Sprint 3: real A10 health via Redis heartbeat key.
 
-        - If unset → returns True (treat as healthy so Supervisor stays on
-          VIDEO_FULL+DSG_FULL when operators have not opted in to hysteresis).
-          This is the "dev convenience" default; prod should always set the
-          env.
-        - If set to `stub:healthy` / `stub:unhealthy` → return that literal
-          for offline tests.
-        - Otherwise → HTTP GET the URL with a 2s timeout, return True on any
-          2xx. We use `aiohttp` if available, else urlopen in a thread to
-          avoid another import dep during Sprint 2.
+        Primary path (Sprint 3+):
+          A10 Bus writes `SETEX parrot:a10_heartbeat 60 "alive"` on mount and
+          every 30s. Castle Supervisor checks TTL; if the key exists the A10 is
+          alive. If the key is missing (TTL == -2) the A10 has been reclaimed.
+
+        Fallback hierarchy (in order):
+          1. _a10_stub_force_healthy set → use that (unit tests)
+          2. env PARROT_A10_HEALTH_URL set to `stub:healthy` / `stub:unhealthy`
+             → return literal (offline integration tests)
+          3. Redis key `parrot:a10_heartbeat` present with TTL > 0 → True
+          4. Redis unavailable + no env → return True (dev-convenience default)
+             so Supervisor stays on FULL when no A10 infra is configured.
+          5. env PARROT_A10_HEALTH_URL set to an HTTP URL → legacy HTTP probe
+             (keeps backward compat with Sprint 2 stub env var)
         """
-        # Test/force hook takes precedence (used by unit tests and the manual
-        # `set_manual_override` path doesn't reach here at all).
         if self._a10_stub_force_healthy is not None:
             return self._a10_stub_force_healthy
 
         url = os.getenv("PARROT_A10_HEALTH_URL", "").strip()
-        if not url:
-            return True
         if url.startswith("stub:"):
             return url == "stub:healthy"
 
+        # Primary: Redis heartbeat key (no extra port, works behind NAT/VPC)
+        heartbeat_key = os.getenv("PARROT_A10_HEARTBEAT_KEY", "parrot:a10_heartbeat")
         try:
-            import aiohttp  # type: ignore
-        except ImportError:
-            aiohttp = None
-
-        try:
-            if aiohttp is not None:
-                timeout = aiohttp.ClientTimeout(total=2.0)
-                async with aiohttp.ClientSession(timeout=timeout) as s:
-                    async with s.get(url) as resp:
-                        return 200 <= resp.status < 300
-            else:
-                import urllib.request
-
-                def _probe() -> bool:
-                    try:
-                        with urllib.request.urlopen(url, timeout=2.0) as r:
-                            return 200 <= r.status < 300
-                    except Exception:
-                        return False
-
-                return await asyncio.to_thread(_probe)
+            from parrot.shared.redis_client import get_redis
+            r = await get_redis()
+            ttl = await r.ttl(heartbeat_key)
+            # ttl == -2: key does not exist; ttl == -1: exists but no expiry (unexpected)
+            # ttl > 0: alive
+            if ttl == -2:
+                logger.debug("A10 heartbeat key %s missing (A10 down)", heartbeat_key)
+                return False
+            logger.debug("A10 heartbeat key %s TTL=%ds (alive)", heartbeat_key, ttl)
+            return True
         except Exception:
-            logger.debug("A10 health probe failed at %s", url, exc_info=True)
-            return False
+            logger.debug("A10 heartbeat Redis check failed", exc_info=True)
+
+        # Fallback: HTTP probe (Sprint 2 compat)
+        if url:
+            try:
+                import aiohttp  # type: ignore
+            except ImportError:
+                aiohttp = None
+            try:
+                if aiohttp is not None:
+                    timeout = aiohttp.ClientTimeout(total=2.0)
+                    async with aiohttp.ClientSession(timeout=timeout) as s:
+                        async with s.get(url) as resp:
+                            return 200 <= resp.status < 300
+                else:
+                    import urllib.request
+
+                    def _probe() -> bool:
+                        try:
+                            with urllib.request.urlopen(url, timeout=2.0) as r:
+                                return 200 <= r.status < 300
+                        except Exception:
+                            return False
+
+                    return await asyncio.to_thread(_probe)
+            except Exception:
+                logger.debug("A10 HTTP probe failed at %s", url, exc_info=True)
+                return False
+
+        # Dev convenience: no heartbeat key, no URL → assume healthy
+        return True
 
     # ─────────────────────── Pure decision function ──────────────────────
 

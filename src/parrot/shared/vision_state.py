@@ -65,6 +65,7 @@ class VisualStateReason(str, Enum):
     AR_LIMITED = "ar_limited"
     AR_LOST = "ar_lost"
     TRACK_MUTED = "track_muted"
+    TRACK_REBUILDING = "track_rebuilding"
     LOW_BITRATE = "low_bitrate"
     APP_BACKGROUNDED = "app_backgrounded"
     USER_MUTED = "user_muted"

@@ -1,23 +1,39 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-23 (Sprint 2 全链路模拟推演 + 4 bugfix + 4 cleanup 全部落地)
-> **当前阶段**: **Sprint 2 完成 (含模拟清理), 等待 Sprint 3 开工** — 自主闭环 + 两轴模式 + Ingest 入口 + ToolResultFilter 配线 全部就绪
+> 最后更新: 2026-04-23 (Sprint 3 全部 T 任务代码落地)
+> **当前阶段**: **Sprint 3 进行中** — 所有 9 个 T 任务 (T-P1~P4 + T-U1~U5) 代码完成，待真机验收
 >
-> **Sprint 3 开工提示词 (必读入场包)**: `.cursor/memory/architecture/sprint3_kickoff_prompt.md`
-> **Sprint 2 完成报告 (ratified + 模拟推演附录)**: `.cursor/memory/architecture/sprint2_completion_report_20260423.md`
-> **Sprint 2 计划 (ratified)**: `.cursor/memory/architecture/sprint2_plan_20260423.md` (§6 T1-T12 全部 ✅)
-> **Sprint 1 完成报告**: `.cursor/memory/architecture/sprint1_completion_report_20260422.md`
+> **Sprint 3 开工提示词**: `.cursor/memory/architecture/sprint3_kickoff_prompt.md`
+> **Sprint 2 完成报告 (ratified)**: `.cursor/memory/architecture/sprint2_completion_report_20260423.md`
+> **Sprint 3 完成报告 (待写)**: `.cursor/memory/architecture/sprint3_completion_report_*.md` — Sprint 3 验收后写
 >
 > **Sprint 3 核心目标**: AR 桌面 MVP (平面检测/放置/动画/Launcher) + identify_object Path 2 (L2-B 优先) + Token Mint + A10 heartbeat + PublishTrack 动态重建
 > **Sprint 4 核心目标**: captureSnapshot + 相机模式补充通道 + identify_object Path 1 (A10 CV) + 便签 UI + 食指 perching
 >
-> **最新 commit**: `[S2.cleanup]` (df7fecb) — unused field import / VIDEO_BURST 升档保护 / ToolResultFilter 配线 / docstring 清理
+> **最新 commit**: `[S2.cleanup]` (df7fecb) — 待 Sprint 3 commit 后更新
+> **Sprint 3 决策收口 (D1-D6)**:
+>   D1: set_video_tier hold_seconds=300 (PARROT_OVERRIDE_HOLD_SECONDS 可配置)
+>   D2: A10 heartbeat via Redis SETEX parrot:a10_heartbeat + asyncio task (src/parrot/a10/heartbeat.py)
+>   D3: Token Mint Bearer secret, Unity 存 Resources/parrot_config.json
+>   D4: 新增 TRACK_REBUILDING reason, 映射 PAUSED 跳过 Supervisor 降档计时
+>   D5: Gemini 继续看纯摄像头画面, Sprint 4 再接合成帧
+>   D6: GOSLO.glb 换上真模型, AnimationDriver 用 Transform.Find() 查节点
+>
 > 部署快照: `.cursor/memory/deploy_snapshot_p2_20260412.md`
 > **P2 里程碑**: `.cursor/memory/milestone_p2.md` (P2 已完成, 历史归档)
 > 同步工具: `.cursor/memory/commit_guidelines.md` + `infra/sync-castle.ps1`
 >
-> **Sprint 3 开工必读 (按序)**: `sprint3_kickoff_prompt.md` → `ar_feature_implementation_plan.md` Sprint 3 段 → `ar_feature_vision.md` §3.4/§3.7 → AR Foundation skill
-> **开工前先对齐**: `sprint3_kickoff_prompt.md` §4 的 6 个决策点 (D1-D6)，不对齐不动手
+> **Sprint 3 验收 (待跑)**:
+>   1. IQOO NEO9 运行 → Launcher 授权摄像头/麦 → 连接 → AR 场景
+>   2. 对桌面 2s → 半透明平面网格出现
+>   3. 点击平面 → GOSLO 从上方飞入落在手指处
+>   4. GOSLO 说早上好/下午好/晚上好
+>   5. 语音"过来一点" → flyTo 手指附近
+>   6. 切后台 10s 再回 → GOSLO 仍在原位
+>   7. 说"视频全开" → set_video_tier → track 重建 → BB=VIDEO_FULL
+>   8. A10 heartbeat key 在 Redis → 60s 后 Supervisor 升档
+>   9. Token Mint POST /mint → 收到 token → Unity 连接
+>   10. identify_object("蓝色杯子") → L2-B 先搜 → 命中返回快速命中
 
 ---
 

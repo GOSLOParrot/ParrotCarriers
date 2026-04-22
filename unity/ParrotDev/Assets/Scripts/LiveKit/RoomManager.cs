@@ -119,7 +119,47 @@ public class RoomManager : MonoBehaviour
         Debug.Log($"[RoomManager] Connected — room='{Room.Name}' identity='{Room.LocalParticipant.Identity}'");
         IsConnected = true;
         OnConnected?.Invoke();
+
+        // Sprint 3 S3.D4: trigger GOSLO greeting after 500ms (gives Brain time to start session)
+        StartCoroutine(TriggerGreetingAfterDelay(0.5f));
     }
+
+    private IEnumerator TriggerGreetingAfterDelay(float delaySeconds)
+    {
+        yield return new WaitForSeconds(delaySeconds);
+
+        string brainId = null;
+        foreach (var id in Room.RemoteParticipants.Keys)
+        {
+            if (!id.StartsWith("unity", StringComparison.OrdinalIgnoreCase))
+            { brainId = id; break; }
+        }
+        if (brainId == null)
+        {
+            Debug.Log("[RoomManager] Greeting skipped — Brain not yet in room");
+            yield break;
+        }
+
+        // Determine time-of-day greeting hint
+        int hour = DateTime.Now.Hour;
+        string timeHint = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
+        string payload = $"{{\"event\":\"scene_ready\",\"time_of_day\":\"{timeHint}\"}}";
+
+        try
+        {
+            var rpc = Room.LocalParticipant.PerformRpc(
+                destinationIdentity: brainId,
+                method: "onSceneReady",
+                payload: payload,
+                responseTimeout: 5.0f
+            );
+            yield return new WaitUntil(() => rpc.IsCompleted);
+            Debug.Log($"[RoomManager] onSceneReady sent (time_of_day={timeHint})");
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[RoomManager] onSceneReady RPC failed: {e.Message}");
+        }
 
     private void OnTrackSubscribed(
         IRemoteTrack track,

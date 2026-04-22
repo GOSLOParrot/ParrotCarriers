@@ -59,6 +59,25 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  # Sprint 3 T-P4: Token Mint service (LiveKit room token generation for Unity)
+  # Port 7888 — internal only (behind Castle firewall, not exposed to public internet).
+  # Unity POSTs to http://<castle-ip>:7888/mint with Bearer PARROT_MINT_SECRET.
+  token-mint:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.brain
+    command: python -m parrot.castle.token_mint
+    env_file:
+      - ../.env
+    environment:
+      - PARROT_MINT_PORT=7888
+    ports:
+      - "127.0.0.1:7888:7888"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   redis_data:
   falkordb_data:

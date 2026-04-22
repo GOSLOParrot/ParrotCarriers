@@ -117,9 +117,9 @@ public class VideoTierReceiver : MonoBehaviour
     }
 
     /// <summary>
-    /// Sprint 2: mute/unmute the track for Off↔non-Off transitions and
-    /// raise the <see cref="OnTierChanged"/> event. Real bitrate/fps changes
-    /// are deferred to Sprint 3's republish flow.
+    /// Sprint 3: apply tier by delegating to ARVideoPublisher.ApplyVideoTier
+    /// which handles both mute (VIDEO_OFF) and full track rebuilds
+    /// (VIDEO_GEMINI_ONLY ↔ VIDEO_FULL) via UnpublishTrack → PublishTrack.
     /// </summary>
     private void ApplyTier(VideoTier tier, string reason)
     {
@@ -128,12 +128,18 @@ public class VideoTierReceiver : MonoBehaviour
 
         if (videoPublisher != null)
         {
-            bool mutedBefore = previous == VideoTier.Off;
-            bool mutedAfter = tier == VideoTier.Off;
-            if (mutedAfter != mutedBefore)
+            // Map VideoTierReceiver.VideoTier → ARVideoPublisher.VideoTierLocal
+            var localTier = tier switch
             {
-                videoPublisher.SetPublishMuted(mutedAfter);
-            }
+                VideoTier.Off        => ARVideoPublisher.VideoTierLocal.Off,
+                VideoTier.GeminiOnly => ARVideoPublisher.VideoTierLocal.GeminiOnly,
+                VideoTier.Full       => ARVideoPublisher.VideoTierLocal.Full,
+                VideoTier.Burst      => ARVideoPublisher.VideoTierLocal.Burst,
+                _                    => ARVideoPublisher.VideoTierLocal.Unknown,
+            };
+
+            if (localTier != ARVideoPublisher.VideoTierLocal.Unknown)
+                videoPublisher.ApplyVideoTier(localTier);
         }
 
         Debug.Log($"[VideoTierReceiver] tier {previous} → {tier} (reason={reason ?? "-"})");

@@ -2,10 +2,14 @@ using UnityEngine;
 
 /// <summary>
 /// Controls the parrot GameObject: movement and animation.
-/// Supports both real GOSLO model (with child renderers) and dev Cube.
+/// Supports both GOSLO.glb (Sprint 3+) and dev Cube placeholder.
 ///
-/// FlyTo: smooth MoveTowards to target position.
-/// PlayAnimation: triggers Animator states, or visual pulse as dev fallback.
+/// Sprint 3: delegates to AnimationDriver for programmatic motion (idle /
+/// head_bob / fly / perch). Legacy Animator path kept for Sprint 4 when a
+/// rigged model with an Animator Controller might replace AnimationDriver.
+///
+/// FlyTo / PlayAnimation are the public API consumed by ParrotRpcHandler.
+/// TapToPlace also calls FlyTo directly on AnimationDriver for placement.
 /// </summary>
 public class ParrotController : MonoBehaviour
 {
@@ -13,7 +17,7 @@ public class ParrotController : MonoBehaviour
     [SerializeField] private float moveSpeed = 3f;
     [SerializeField] private float arrivalThreshold = 0.05f;
 
-    [Header("Dev fallback (no Animator)")]
+    [Header("Dev fallback (no Animator, no AnimationDriver)")]
     [Tooltip("Scale pulse amplitude when no Animator — was 0.1, too subtle on small Cube.")]
     [SerializeField] private float devPulseScaleAmplitude = 0.35f;
     [SerializeField] private float devPulseYawDegrees = 22f;
@@ -22,6 +26,7 @@ public class ParrotController : MonoBehaviour
     private Vector3 _targetPosition;
     private bool _isMoving;
     private Animator _animator;
+    private AnimationDriver _animDriver;
     private Renderer[] _renderers;
     private string _currentAnimation = "idle";
 
@@ -33,14 +38,23 @@ public class ParrotController : MonoBehaviour
     void Awake()
     {
         _animator = GetComponentInChildren<Animator>();
+        _animDriver = GetComponentInChildren<AnimationDriver>();
         _renderers = GetComponentsInChildren<Renderer>();
         _targetPosition = transform.position;
         _baseScale = transform.localScale;
+
+        if (_animDriver != null)
+            Debug.Log("[Parrot] AnimationDriver found — Sprint 3 procedural animation active");
+        else if (_animator != null)
+            Debug.Log("[Parrot] Animator found — legacy Animator path");
+        else
+            Debug.Log("[Parrot] No Animator/AnimationDriver — dev pulse fallback");
     }
 
     void Update()
     {
-        if (_isMoving)
+        // Legacy MoveTowards path (used when AnimationDriver is absent)
+        if (_animDriver == null && _isMoving)
         {
             transform.position = Vector3.MoveTowards(
                 transform.position, _targetPosition, moveSpeed * Time.deltaTime);
@@ -75,9 +89,16 @@ public class ParrotController : MonoBehaviour
     /// <summary>Command the parrot to fly to a world-space position.</summary>
     public void FlyTo(Vector3 target)
     {
+        Debug.Log($"[Parrot] FlyTo -> {target}");
+
+        if (_animDriver != null)
+        {
+            _animDriver.FlyTo(target);
+            return;
+        }
+
         _targetPosition = target;
         _isMoving = true;
-        Debug.Log($"[Parrot] FlyTo -> {target}");
 
         if (_animator != null)
         {
@@ -91,6 +112,12 @@ public class ParrotController : MonoBehaviour
     {
         _currentAnimation = animationName;
         Debug.Log($"[Parrot] PlayAnimation -> {animationName}");
+
+        if (_animDriver != null)
+        {
+            _animDriver.ApplyBodyStateString(animationName);
+            return;
+        }
 
         if (_animator != null)
         {

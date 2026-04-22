@@ -9,16 +9,17 @@ from parrot.brain.tools.query_memory import query_memory
 from parrot.brain.tools.query_scene import query_scene
 from parrot.brain.tools.remember import remember
 from parrot.brain.tools.set_mode import set_mode
+from parrot.brain.tools.set_video_tier import set_video_tier
 
 ALL_TOOLS = [
     fly_to, animate, dispatch_task,
     remember, query_memory, query_scene, identify_object, set_mode,
-    manage_episode,
+    manage_episode, set_video_tier,
 ]
 
 __all__ = [
     "fly_to", "animate", "dispatch_task",
     "remember", "query_memory", "query_scene", "identify_object", "set_mode",
-    "manage_episode",
+    "manage_episode", "set_video_tier",
     "ALL_TOOLS",
 ]

@@ -120,6 +120,9 @@ _REASON_TO_STATE: dict[VisualStateReason, VisualState | None] = {
     VisualStateReason.USER_MUTED: VisualState.PAUSED,
     VisualStateReason.TIER_OFF: VisualState.PAUSED,
     VisualStateReason.TRACK_MUTED: VisualState.PAUSED,
+    # Sprint 3: TRACK_REBUILDING maps to PAUSED (same as MUTED) so Supervisor's
+    # degraded timer does NOT fire during the UnpublishTrack→PublishTrack window.
+    VisualStateReason.TRACK_REBUILDING: VisualState.PAUSED,
     VisualStateReason.AR_LOST: VisualState.PAUSED,
     VisualStateReason.OBSTRUCTED: VisualState.BLOCKED,
     VisualStateReason.DARK_FRAME: VisualState.DEGRADED,
