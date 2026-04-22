@@ -46,7 +46,7 @@ from typing import Any
 
 from livekit.agents import AgentSession
 
-from parrot.brain.soul import get_instructions
+from parrot.brain.soul import get_instructions, render_visual_constraints
 from parrot.scheduler.blackboard import open_bb_client
 from parrot.shared.parrot_actions import BehaviorMode
 from parrot.shared.vision_state import VisualState, VisualStateReason
@@ -176,24 +176,36 @@ class ContextInjector:
     def _classify_visual_state(
         self, old: Any, new: Any
     ) -> tuple[int, str | None, bool]:
-        """Return (layer, message, heavy_flag)."""
+        """Return (layer, message, heavy_flag).
+
+        Message body is built from soul.render_visual_constraints() so the
+        behavioural rules that Gemini must honour travel on the same channel
+        as the signal itself — avoids the drift failure from audit §1.2.
+        """
         if not isinstance(new, VisualState):
             return 1, None, False
 
+        constraint = render_visual_constraints(new)
+        reason = self._read_bb("session/visual_reason")
+        reason_text = reason.value if isinstance(reason, VisualStateReason) else None
+
         if new == VisualState.BLOCKED:
-            return 3, "我现在看不到了, 前面好像被什么挡住了", True
+            body = constraint or "视觉被遮挡"
+            return 3, body, True
         if new == VisualState.PAUSED:
             heavy = not isinstance(old, VisualState) or old != VisualState.PAUSED
-            reason = self._read_bb("session/visual_reason")
-            reason_text = reason.value if isinstance(reason, VisualStateReason) else "?"
-            return 3, f"视觉暂停了 (原因: {reason_text}), 先听你说", heavy
+            body = constraint or "视觉暂停"
+            if reason_text:
+                body = f"{body} | 原因={reason_text}"
+            return 3, body, heavy
         if new == VisualState.DEGRADED:
-            return 3, "画面变糊了, 我不太敢说细节", False
+            body = constraint or "视觉降级"
+            return 3, body, False
         if new == VisualState.ACTIVE:
             if isinstance(old, VisualState) and old in (
                 VisualState.BLOCKED, VisualState.PAUSED
             ):
-                return 3, "我又能看清了", True
+                return 3, "视觉恢复, 我又能看清了", True
             return 1, None, False
         return 1, None, False
 

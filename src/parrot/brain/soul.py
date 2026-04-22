@@ -7,6 +7,7 @@ BASE + COMPANION are always active. BUTLER/RESEARCHER/PLAYFUL added in P2.
 from __future__ import annotations
 
 from parrot.shared.parrot_actions import BehaviorMode
+from parrot.shared.vision_state import VisualState
 
 CORE_INSTRUCTIONS = """\
 You are Parrot — a cheerful Minecraft-style parrot companion living in augmented reality.
@@ -101,3 +102,78 @@ def get_instructions(mode: BehaviorMode | None = None) -> str:
 
 # Backward compat: modules that import PARROT_INSTRUCTIONS get the default
 PARROT_INSTRUCTIONS = get_instructions()
+
+
+# ───────────────────────── Sprint 1 T8: SOUL_CONSTRAINTS ──────────────────
+#
+# Visual-tier constraints that translate VisualState into behavioural rules
+# GOSLO can honour in its utterances. Context Injector reads this table and
+# renders a short "[状态] ..." hint through Gemini Live channel C3 so GOSLO
+# speaks in a way that matches what it can actually see (audit §1.2 "felt
+# experience" principle: never claim a capability the body can't deliver).
+#
+# Sprint 1 scope:
+#   - visual tier only (body / scene / mode layers land in Sprint 2)
+#   - static table, not hot-reloadable
+#   - ACTIVE has no constraints so there's nothing to nag Gemini about
+
+SOUL_CONSTRAINTS: dict[VisualState, dict[str, list[str]]] = {
+    VisualState.ACTIVE: {
+        "allow": [],
+        "deny": [],
+    },
+    VisualState.DEGRADED: {
+        "allow": [
+            "描述大致轮廓、颜色、方向",
+            "用'看起来像...''好像是...'这种不确定语气",
+        ],
+        "deny": [
+            "不要说'是 X'这种确定句",
+            "不要报具体文字、数字、小字细节",
+        ],
+    },
+    VisualState.PAUSED: {
+        "allow": [
+            "用耳朵, 主要靠对话和记忆回应",
+            "可以请用户描述现在看到什么",
+        ],
+        "deny": [
+            "不要假装看得见当下画面",
+            "不要说'我看到...''前面有...'这种视觉断言",
+        ],
+    },
+    VisualState.BLOCKED: {
+        "allow": [
+            "礼貌提醒被遮挡了",
+            "请用户挪开遮挡物或调整角度",
+        ],
+        "deny": [
+            "不要硬猜被挡的内容",
+            "不要假装能看清",
+        ],
+    },
+}
+
+
+def render_visual_constraints(state: VisualState | None) -> str | None:
+    """Render the SOUL_CONSTRAINTS row for `state` as a compact chat-ctx hint.
+
+    Returns None when there's nothing to nag about (ACTIVE / missing state).
+    Context Injector prefixes the result with '[状态] ' when sending to
+    Gemini; this function only renders the body.
+    """
+    if state is None or not isinstance(state, VisualState):
+        return None
+    row = SOUL_CONSTRAINTS.get(state)
+    if not row:
+        return None
+    allow = row.get("allow") or []
+    deny = row.get("deny") or []
+    if not allow and not deny:
+        return None
+    lines = [f"视觉状态={state.value}"]
+    if allow:
+        lines.append("可以: " + "; ".join(allow))
+    if deny:
+        lines.append("不要: " + "; ".join(deny))
+    return " | ".join(lines)
