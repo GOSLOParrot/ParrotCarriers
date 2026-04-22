@@ -1,9 +1,15 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-20 (Unity 连通验证中 + Brain Agent 运行中 + 麦克风调试)
+> 最后更新: 2026-04-22 (Sprint 0 收口, 进入 Sprint 1 执行)
+> **当前阶段**: **Sprint 1 执行中** — 视频流骨骼 + 自知四路信号 + Gemini 四通道体感
+> **开工收口**: `.cursor/memory/architecture/sprint1_plan_20260422.md` (Sprint 1 的**唯一 checklist**, 上下文固化件)
+> Round 2 按 T1-T10 执行, 每个 T 独立 commit, 做完本文件打 ✅
 > 部署快照: `.cursor/memory/deploy_snapshot_p2_20260412.md`
-> **P2 里程碑**: `.cursor/memory/milestone_p2.md` — 记忆共享 + Scheduler 增强 + DSG 耦合层 + L2-B + 触发器
+> **P2 里程碑**: `.cursor/memory/milestone_p2.md` (P2 已完成, 历史归档) — 记忆共享 + Scheduler 增强 + DSG 耦合层 + L2-B + 触发器
 > 同步工具: `.cursor/memory/commit_guidelines.md` + `infra/sync-castle.ps1`
+>
+> **开工必读 (按序)**: `sprint0_preflight.md` → `ar_feature_implementation_plan.md` (Sprint X 段) → `ar_feature_vision.md` 对应小节
+> **开工之前的 3 件事**: (a) 用户点头 `ar_feature_vision.md` §六+§八+§3.5 (b) 打 status frontmatter 完成 (c) 修这里的时间戳
 
 ---
 
@@ -29,19 +35,19 @@ GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 
 ---
 
-## 当前阶段: Castle 运行中，Unity 音视频连通验证
+## 当前阶段: Sprint 0 前置规划 (进 Sprint 0 代码前的流程约束)
 
-### 当前状态 (2026-04-20 晚)
-- Castle Brain Agent: **运行中** (tmux session `brain`, worker id `AW_Y3QgXUuvtFKD`)
-- FalkorDB + Redis + LiveKit: **运行中**
-- GitHub master: `0d0a2ea` (fix redis deps)
-- Unity 编译: **通过** (LiveKit SDK API 适配完成)
-- 麦克风推流: **Unity 侧已验证**，Brain Agent 侧待确认 Gemini 收音
+### 基础设施状态 (已验证, 无待办)
+- Castle Brain Agent: 运行中 (tmux `brain`, worker `AW_Y3QgXUuvtFKD`)
+- FalkorDB + Redis + LiveKit: 运行中
+- GitHub master: `0d0a2ea`
+- Unity 编译: 通过
+- 麦克风 / 视频推流: **Unity + Brain + Gemini 三端已验通** (详见 `Test/p2/connectivity_report_p2.md`)
 
-### 待确认
-1. **[今] Gemini 能否听到声音** → SSH `tail -f /tmp/brain.log`，说话看是否出现 `[Gemini·用户]`
-2. **[今] 重新生成 token** → `python src/scripts/generate_token.py`，Unity Play 测试
-3. **[P1] identify_object 按需发现链路** ⚠ 见 `audit_identify_object_no_screenshot_20260420.md`
+### 历史待办 (Sprint 4 统一处理, 不单独跑)
+- ~~Gemini 听到声音~~ → 已验通
+- ~~重新生成 token~~ → 已跑过, Token Mint 方案在 Sprint 3
+- **[Sprint 4] identify_object 按需发现链路** → `audit_identify_object_no_screenshot_20260420.md` (S4.A-B 统一做)
 
 ### P2 实现状态 (2026-04-13)
 **已完成 — Graphiti 记忆共享 (P2-Alpha):**
@@ -190,14 +196,24 @@ GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 
 ### 下一步
 
-**本周关键路径 (按顺序):**
-1. GitHub Desktop push 4 个未推 commit → `sync-castle.ps1` → SSH `docker compose up -d`
-2. SSH 上跑 FalkorDB 健康检查 + Graphiti 集成测试 (`pytest tests/integration/test_graphiti_chain.py`)
-3. Brain Agent dev 模式在 Castle 起起来 + 本地 sim_unity_client 打 remember/query_memory
-4. 进入 AR 项目搭建 — **先填写 `ar_app_plan.md` §三问卷确认功能边界**
-5. 视频流采样基建 (B1-B4) — captureSnapshot RPC + SemanticNode 图片字段
-6. 按需发现链路首测 (identify_object 三段递进) ⚠ 需 B1-B2 就绪
-7. 视频流↔DSG 时间轴对齐验证 — 见 `livekit-unity-video-publish` skill
+**本周关键路径 (按顺序, 每步完成再进下一步):**
+
+1. **用户确认** `ar_feature_vision.md` §六 + §八 + §3.5 三合一 (不反对即通过)
+2. **执行** `sprint0_preflight.md` 的 14 项 S0.A-S0.N 任务 (四层时间轴 + Cursor 合约 + ADR + 三闸门 + 版本锁 + tentative/ratified 两态机)
+3. **执行** `ar_feature_implementation_plan.md` Sprint 0 的 S0.1-S0.7 (基建修缮) → 打 tag `v-s0`
+4. **执行** Sprint 1 自知底座 (Blackboard 扩域 + 三层调度收口 S1.A-G) → 打 tag `v-s1`
+5. **顺序执行** Sprint 2 两轴 → Sprint 3 AR 桌面 MVP → Sprint 4 玩法糖衣 + identify_object 升级
+6. 每 Sprint 严格按**三闸门验收** (`sprint0_preflight.md` §4), 不追求完美, 不做 P3 的事
+
+**Sprint 过程中按需补 skill/rule** (不提前):
+- Sprint 2 末: `rules/scheduler-three-layer.mdc` — E2/E5 与三层意识收口约束
+- Sprint 4 中 (S4.A3 后): `skills/unity-snapshot-service/SKILL.md` — AsyncGPUReadback 坑
+- Sprint 4 中 (S4.B2 后): `skills/gemini-visual-match/SKILL.md` — Flash 多图比对约束
+- Sprint 4 末: `rules/soul-constraints.mdc` + `rules/consciousness-dispatch.mdc` — 实测后固化
+
+**P2 收尾延期项** (Sprint 之外, 不阻塞):
+- GitHub Desktop push 4 个未推 commit → `sync-castle.ps1` → SSH `docker compose up -d`
+- SSH 上跑 FalkorDB 健康检查 + Graphiti 集成测试
 
 **P2 剩余 (随顺序推进):**
 - [ ] Brain 优雅退出: AgentSession cleanup + 心跳停止 + Bus deregister
