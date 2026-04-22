@@ -57,19 +57,11 @@ Sprint 4 ─ 玩法糖衣  ──→  依赖: Sprint 1 + 3       (4-5 天)
 - 不新建模块
 
 ### S0 验收用例
-
-> Gate 标签 (见 `test_gate_rules.md`): [Gate 1] agent 自测 / [Gate 2] 用户手验 / [Gate 3] 回归基线 (Sprint 收尾)
-
 ```
-1. [Gate 1] rm -rf .venv && pip install -e . → 无 ImportError (S0.1)
-2. [Gate 2] python -m parrot.brain.agent dev → 启动日志出现 "scene=DESKTOP_WEBCAM" (S0.2)
-3. [Gate 2] docker-compose down && docker-compose up → Castle snapshots/ photos/ 仍然存在 (S0.4)
-4. [Gate 1] python -c "from parrot.shared.event_log import EventEnvelope; ..." → EventEnvelope 可实例化 (S0.A)
-5. [Gate 1] python -c "from parrot.dsg.l1_5_protocol import L15DetectionFrame; ..." → schema 可实例化 (S0.7)
-6. [Gate 1] .\infra\audit_deps.ps1 -Local → 不报 FAIL (S0.K)
+1. rm -rf .venv && pip install -e . → 无 ImportError (S0.1)
+2. python -m parrot.brain.agent dev → 启动日志出现 "scene=DESKTOP_WEBCAM" (S0.2)
+3. docker-compose down && docker-compose up → Castle snapshots/ photos/ 仍然存在 (S0.4)
 ```
-
-Sprint 0 是基线, **没有 Gate 3 回归要求**。
 
 ---
 
@@ -164,34 +156,29 @@ Sprint 0 是基线, **没有 Gate 3 回归要求**。
 - ❌ 不做 EmoBank / 情感反思 (S1.E 只铺日志, 反思 P3)
 
 ### S1 验收用例
-
-> Gate 标签 (见 `test_gate_rules.md`): [Gate 1] / [Gate 2] / [Gate 3]
-
 ```
-1. [Gate 2] Editor Play → 遮住摄像头 → Brain 终端日志出现
+1. Editor Play → 遮住摄像头 → Brain 终端日志出现
    "[video] state=degraded reason=low_brightness"
    Gemini 不再说"你桌上有个..."
-
-2. [Gate 2] Editor Play → Play/Stop/Play → 30s 内第二次 Play:
+   
+2. Editor Play → Play/Stop/Play → 30s 内第二次 Play:
    system message [video] state=active, reason=resumed
    Gemini 自然接话 ("又见面啦")
 
-3. [Gate 2] Brain 发 fly_to(远点) → Unity 拒绝 (超出场景边界) → Blackboard
+3. Brain 发 fly_to(远点) → Unity 拒绝 (超出场景边界) → Blackboard
    session/last_rpc_ack = {method: "fly_to", status: "rejected", reason: "out_of_bounds"}
    Gemini 收到 [action] fly_to rejected: out_of_bounds
 
-4. [Gate 1 + Gate 2] 🆕 三级调度路由验证 (S1.F):
-   - [Gate 1] pytest: event {priority: "reflex", layer: "reflex"}  → reflex_direct
-   - [Gate 1] pytest: event {layer: "intent", action: "switch_video_tier"} → intent_direct (只改 BB, 不走 Nanobot, 不通报 Gemini)
-   - [Gate 1] pytest: event {type: "research"} → nanobot (layer=task 默认)
-   - [Gate 2] 真实跑: context_injector 日志显示 intent 层事件 **不推 system message**, task 层才推
+4. 🆕 三级调度路由验证 (S1.F):
+   - event {priority: "reflex", layer: "reflex"}  → reflex_direct
+   - event {layer: "intent", action: "switch_video_tier"} → intent_direct (只改 BB, 不走 Nanobot, 不通报 Gemini)
+   - event {type: "research"} → nanobot (layer=task 默认)
+   - context_injector 日志显示: intent 层事件 **不推 system message**, task 层才推
 
-5. [Gate 2] 🆕 Arbiter 仲裁验证 (S1.G):
+5. 🆕 Arbiter 仲裁验证 (S1.G):
    - 同时触发 reflex fly_to (张手) 和 task fly_to (Gemini 主动飞) → reflex 优先
    - task 被拒时写 obs_log {arbiter_conflict, winner:reflex, loser:task}
 ```
-
-**[Gate 3] 回归基线**: 无 (Sprint 1 是首个功能 Sprint, 之后每个 Sprint 抽本 Sprint 的 1-2 条作为下个 Sprint 的 Gate 3)
 
 ### S1 任务依赖图 (执行顺序参考)
 
@@ -260,23 +247,18 @@ graph LR
 - ❌ VIDEO_BURST 模式 (P3, 等摄影玩法需要时)
 
 ### S2 验收用例
-
-> Gate 标签: [Gate 1] / [Gate 2] / [Gate 3]
-
 ```
-1. [Gate 2] A10 未开 (默认): 启动后 session/video_tier=VIDEO_GEMINI_ONLY, session/dsg_mode=DSG_GEMINI_VISION
+1. A10 未开 (默认): 启动后 session/video_tier=VIDEO_GEMINI_ONLY, session/dsg_mode=DSG_GEMINI_VISION
    Unity 推 500kbps 低码率, Python CV 管线不启动
 
-2. [Gate 2] Gemini 说 "你桌上的紫色杯子真好看" → 30s 后再说一次
+2. Gemini 说 "你桌上的紫色杯子真好看" → 30s 后再说一次
    L2-B 节点 label="紫色杯子" confirmation=CONFIRMED source=gemini_oral
 
-3. [Gate 2] identify_object tool 命中 Mug → 直接 CONFIRMED, 覆盖 gemini_oral
+3. identify_object tool 命中 Mug → 直接 CONFIRMED, 覆盖 gemini_oral
 
-4. [Gate 2] 手动 set_video_tier(VIDEO_OFF) → Unity 停推 → Gemini 收到 [video] state=paused
+4. 手动 set_video_tier(VIDEO_OFF) → Unity 停推 → Gemini 收到 [video] state=paused
    Gemini 不再提画面
 ```
-
-**[Gate 3] 回归基线** (收 Sprint 2 前抽): Sprint 1 用例 1 (遮挡摄像头 → degraded) + Sprint 1 用例 3 (fly_to 拒绝回灌)
 
 ---
 
@@ -332,19 +314,14 @@ graph LR
 - ❌ dance / thinking 动画 (P3)
 
 ### S3 验收用例
-
-> Gate 标签: 全部 [Gate 2] (真机 Play, 无法 unit test)
-
 ```
-1. [Gate 2] IQOO NEO9 上运行 → 启动界面 → 授权摄像头/麦 → 点连接 → 进 AR
-2. [Gate 2] 摄像头对桌面 2 秒 → 看到半透明平面网格
-3. [Gate 2] 点击平面 → GOSLO 从上方飞入, 落在手指处
-4. [Gate 2] GOSLO 说 "早上好 (根据当前时间)"
-5. [Gate 2] 语音"过来一点" → GOSLO flyTo 手指附近
-6. [Gate 2] 切后台 10s 再回来 → GOSLO 仍在原位, Gemini 继续对话
+1. IQOO NEO9 上运行 → 启动界面 → 授权摄像头/麦 → 点连接 → 进 AR
+2. 摄像头对桌面 2 秒 → 看到半透明平面网格
+3. 点击平面 → GOSLO 从上方飞入, 落在手指处
+4. GOSLO 说 "早上好 (根据当前时间)"
+5. 语音"过来一点" → GOSLO flyTo 手指附近
+6. 切后台 10s 再回来 → GOSLO 仍在原位, Gemini 继续对话
 ```
-
-**[Gate 3] 回归基线** (收 Sprint 3 前抽): Sprint 1 用例 1 (vision state 机) + Sprint 2 用例 4 (VideoTier 切换)
 
 ---
 
@@ -376,14 +353,20 @@ graph LR
 | S4.B4 | Soul prompt 加 "unknown 时自主决策"指引 (audit L2-α3 选项 α 默认) | `soul.py` |
 | S4.B5 | 新 tool `web_search` (Gemini grounding / SerpAPI), 给选项 α 做后备 (audit L2-α1) | `brain/tools/web_search.py` 新 |
 
-#### S4.C — 相机模式 (对齐 survey A1 / B3 / C4)
+#### S4.C — 相机模式 / 补充通道 (对齐 survey A1 / B3 / C4)
+
+> **通道语义** (务必和 identify_object 主通道区分):
+> - **主通道** (已跑, Sprint 1-3 都用这个): `ARCameraBackground._rt → "ar-camera" track` — 纯摄像头画面, Gemini Live 看的就是这路, **identify_object L0/L1/L2 不抓二次帧**, 直接向 Gemini 提问即可。
+> - **补充通道** (本段新建): `Unity 渲染后的完整帧 (相机 + 鹦鹉 + UI) → captureSnapshot RPC → base64 → Python` — 只在**用户触发相机模式 / 主动拍照**时按需拉一帧。
+> - 不要混用 — 识物走主通道够了, 相册/回忆杀才走补充通道。
 
 | # | 任务 | 位置 |
 |:--|:-----|:-----|
 | S4.C1 | Unity `CameraModeUI.cs` — 手动触发纯净版拍照 | 新 C# |
 | S4.C2 | 语音指令通道: Gemini 说"拍张照"触发 (P3 从 Obsidian 加载自定义指令) | `set_mode` tool 扩 |
-| S4.C3 | 分流: 用户层 (相册+ECS+Obsidian 链接) / 认知层 (DSG PhotoEvent 节点) | `SnapshotService.cs` + `dsg/ingest/photo_filter.py` 新 |
+| S4.C3 | 分流: 用户层 (相册+ECS+Obsidian 链接, 走美化合成后的渲染帧) / 认知层 (DSG PhotoEvent 节点, 可选原图) | `SnapshotService.cs` + `dsg/ingest/photo_filter.py` 新 |
 | S4.C4 | `PhotoEvent` 节点类型 (情绪为主 + 时间/坐标/物品关联) | `dsg/l2b_types.py` 扩 |
+| S4.C5 | 登记"补充通道"在 `ar_feature_vision §3.4` (相机模式) 正式落地 — 写一段说明 identify_object 为何仍走主通道 | `ar_feature_vision.md` §3.4 补注 |
 
 #### S4.D — 便签 UI + 食指 perching
 
@@ -399,18 +382,13 @@ graph LR
 - ❌ iOS / 墙面 AR (P3+)
 
 ### S4 验收用例
-
-> Gate 标签: 全部 [Gate 2]
-
 ```
-1. [Gate 2] 对桌上杯子说"这是啥" → GOSLO "让我看看..." (1-2s) → "是上次展会的蓝色马克杯" (L0 命中)
-2. [Gate 2] 新物体 "那这个" → "我没见过" → captureSnapshot → save_new → 下次命中
-3. [Gate 2] 相机模式 UI 按钮 → 咔嚓 → 相册有图, ECS data/photos/ 有图, Graphiti 有 PhotoEvent 节点
-4. [Gate 2] 猫娘女仆发消息 → Unity 右上角弹便签 "主人,该喝水了"
-5. [Gate 2] 伸食指 → GOSLO 飞过来落在指节中段
+1. 对桌上杯子说"这是啥" → GOSLO "让我看看..." (1-2s) → "是上次展会的蓝色马克杯" (L0 命中)
+2. 新物体 "那这个" → "我没见过" → captureSnapshot → save_new → 下次命中
+3. 相机模式 UI 按钮 → 咔嚓 → 相册有图, ECS data/photos/ 有图, Graphiti 有 PhotoEvent 节点
+4. 猫娘女仆发消息 → Unity 右上角弹便签 "主人,该喝水了"
+5. 伸食指 → GOSLO 飞过来落在指节中段
 ```
-
-**[Gate 3] 回归基线** (收 Sprint 4 前抽): Sprint 3 AR 桌面 MVP 用例 3/5 (GOSLO 飞到手指) + Sprint 2 用例 3 (identify_object CONFIRMED)
 
 ---
 
