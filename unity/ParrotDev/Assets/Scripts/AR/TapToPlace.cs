@@ -194,32 +194,40 @@ public class TapToPlace : MonoBehaviour
         NotifyBrainPlacement(targetPos);
     }
 
-    private async void NotifyBrainPlacement(Vector3 worldPos)
+    private void NotifyBrainPlacement(Vector3 worldPos)
+    {
+        StartCoroutine(NotifyBrainPlacementCoroutine(worldPos));
+    }
+
+    private IEnumerator NotifyBrainPlacementCoroutine(Vector3 worldPos)
     {
         var room = RoomManager.Instance?.Room;
-        if (room == null) return;
+        if (room == null) yield break;
 
-        string brainId = null;
-        foreach (var id in room.RemoteParticipants.Keys)
-        {
-            if (!id.StartsWith("unity", System.StringComparison.OrdinalIgnoreCase))
-            { brainId = id; break; }
-        }
-        if (brainId == null) return;
+        string brainId = FindBrainIdentity(room);
+        if (string.IsNullOrEmpty(brainId)) yield break;
 
         string payload = $"{{\"x\":{worldPos.x:F3},\"y\":{worldPos.y:F3},\"z\":{worldPos.z:F3}}}";
-        try
+        var rpcCall = room.LocalParticipant.PerformRpc(new PerformRpcParams
         {
-            await room.LocalParticipant.PerformRpc(
-                destinationIdentity: brainId,
-                method: "onGosloPlaced",
-                payload: payload,
-                responseTimeout: 3.0f
-            );
-        }
-        catch (System.Exception e)
+            DestinationIdentity = brainId,
+            Method = "onGosloPlaced",
+            Payload = payload,
+            ResponseTimeout = 3000,
+        });
+        yield return rpcCall;
+
+        if (rpcCall.IsError)
+            Debug.LogWarning($"[TapToPlace] onGosloPlaced error: {rpcCall.Error?.Message}");
+    }
+
+    private static string FindBrainIdentity(Room room)
+    {
+        foreach (var p in room.RemoteParticipants.Values)
         {
-            Debug.LogWarning($"[TapToPlace] onGosloPlaced RPC failed: {e.Message}");
+            if (!string.IsNullOrEmpty(p.Identity) && p.Identity.StartsWith("agent-"))
+                return p.Identity;
         }
+        return null;
     }
 }

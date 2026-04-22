@@ -472,32 +472,33 @@ public class ARVideoPublisher : MonoBehaviour
         var room = RoomManager.Instance?.Room;
         if (room == null) yield break;
 
+        // Match VideoStateReporter pattern: agent-* prefix
         string brainId = null;
-        foreach (var id in room.RemoteParticipants.Keys)
+        foreach (var p in room.RemoteParticipants.Values)
         {
-            if (!id.StartsWith("unity", StringComparison.OrdinalIgnoreCase))
-            { brainId = id; break; }
+            if (!string.IsNullOrEmpty(p.Identity) && p.Identity.StartsWith("agent-"))
+            { brainId = p.Identity; break; }
         }
-        if (brainId == null) yield break;
+        if (string.IsNullOrEmpty(brainId)) yield break;
 
         string reason = rebuilding ? "track_rebuilding" : "ok";
-        string payload = $"{{\"reason\":\"{reason}\",\"ts\":{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}}}";
+        double ts = (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
+        string payload = $"{{\"reason\":\"{reason}\",\"ts\":{ts:F3}}}";
 
-        // Fire-and-forget: rebuild RPC failing must not block the rebuild itself
-        var rpcTask = room.LocalParticipant.PerformRpc(
-            destinationIdentity: brainId,
-            method: "onVideoDegraded",
-            payload: payload,
-            responseTimeout: 3.0f
-        );
+        // Mirror VideoStateReporter coroutine pattern — ResponseTimeout in ms
+        var rpcCall = room.LocalParticipant.PerformRpc(new PerformRpcParams
+        {
+            DestinationIdentity = brainId,
+            Method = "onVideoDegraded",
+            Payload = payload,
+            ResponseTimeout = 3000,
+        });
+        yield return rpcCall;
 
-        // Non-blocking: yield only 1 frame to dispatch the task
-        yield return null;
-
-        if (!rpcTask.IsCompleted)
-            yield return new WaitUntil(() => rpcTask.IsCompleted);
-
-        Debug.Log($"[ARVideoPublisher] onVideoDegraded(reason={reason}) sent to Brain");
+        if (rpcCall.IsError)
+            Debug.LogWarning($"[ARVideoPublisher] onVideoDegraded({reason}) error: {rpcCall.Error?.Message}");
+        else
+            Debug.Log($"[ARVideoPublisher] onVideoDegraded(reason={reason}) sent → Brain");
     }
 
     // ── Cleanup ─────────────────────────────────────────────────────

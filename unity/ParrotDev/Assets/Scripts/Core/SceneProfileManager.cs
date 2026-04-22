@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.IO;
 using UnityEngine;
 
@@ -121,45 +122,50 @@ public class SceneProfileManager : MonoBehaviour
 #endif
     }
 
-    private async void SendSetSceneRpc(SceneProfile profile)
+    private void SendSetSceneRpc(SceneProfile profile)
+    {
+        StartCoroutine(SendSetSceneRpcCoroutine(profile));
+    }
+
+    private IEnumerator SendSetSceneRpcCoroutine(SceneProfile profile)
     {
         var room = RoomManager.Instance?.Room;
-        if (room == null) return;
+        if (room == null) yield break;
 
-        // Find Brain participant (identity starts with "brain" or doesn't start with "unity")
-        string brainIdentity = null;
-        foreach (var identity in room.RemoteParticipants.Keys)
+        // Brain identity prefix matches agentIdentityPrefix in VideoStateReporter
+        string brainIdentity = FindBrainIdentity(room);
+        if (string.IsNullOrEmpty(brainIdentity))
         {
-            if (!identity.StartsWith("unity", StringComparison.OrdinalIgnoreCase))
-            {
-                brainIdentity = identity;
-                break;
-            }
-        }
-
-        if (brainIdentity == null)
-        {
-            Debug.LogWarning("[SceneProfileManager] Brain participant not found yet — retrying setScene via OnConnected event");
-            return;
+            Debug.LogWarning("[SceneProfileManager] Brain participant not found — setScene deferred");
+            yield break;
         }
 
         string sceneName = profile == SceneProfile.AR_HANDHELD ? "ar_handheld" : "desktop_webcam";
         string payload = $"{{\"scene\":\"{sceneName}\"}}";
 
-        try
+        var rpcCall = room.LocalParticipant.PerformRpc(new PerformRpcParams
         {
-            var result = await room.LocalParticipant.PerformRpc(
-                destinationIdentity: brainIdentity,
-                method: "setScene",
-                payload: payload,
-                responseTimeout: 5.0f
-            );
-            Debug.Log($"[SceneProfileManager] setScene RPC → {sceneName}: {result}");
-        }
-        catch (Exception e)
+            DestinationIdentity = brainIdentity,
+            Method = "setScene",
+            Payload = payload,
+            ResponseTimeout = 5000, // milliseconds
+        });
+        yield return rpcCall;
+
+        if (rpcCall.IsError)
+            Debug.LogWarning($"[SceneProfileManager] setScene RPC error: {rpcCall.Error?.Message}");
+        else
+            Debug.Log($"[SceneProfileManager] setScene → {sceneName}: ok");
+    }
+
+    private static string FindBrainIdentity(Room room)
+    {
+        foreach (var p in room.RemoteParticipants.Values)
         {
-            Debug.LogWarning($"[SceneProfileManager] setScene RPC failed: {e.Message}");
+            if (!string.IsNullOrEmpty(p.Identity) && p.Identity.StartsWith("agent-"))
+                return p.Identity;
         }
+        return null;
     }
 
     void OnDestroy()

@@ -178,7 +178,35 @@ def _attach_scene_ready_rpc(room: "Any", session: AgentSession) -> None:
         logger.info("onGosloPlaced: GOSLO placed on desk — no action needed in Brain")
         return _json.dumps({"status": "ok"})
 
-    logger.info("onSceneReady + onGosloPlaced RPC handlers registered")
+    @room.local_participant.register_rpc_method("setScene")
+    async def _on_set_scene(data: "Any") -> str:
+        """Unity SceneProfileManager tells Brain which scene is active.
+
+        Writes session/scene to BB so context_injector + soul know whether
+        we are in AR_HANDHELD or DESKTOP_WEBCAM mode. This mirrors the
+        startup write in brain.agent (which uses DESKTOP_WEBCAM by default)
+        but lets Unity override it at runtime when running on a real device.
+        """
+        try:
+            payload = _json.loads(data.payload) if data.payload else {}
+        except Exception:
+            payload = {}
+        scene_str = str(payload.get("scene", "")).lower()
+
+        from parrot.shared.vision_state import Scene
+        from parrot.brain.tools._rpc_bridge import set_scene
+
+        try:
+            scene = Scene(scene_str)
+        except ValueError:
+            logger.warning("setScene: unknown scene '%s', ignoring", scene_str)
+            return _json.dumps({"status": "error", "message": f"unknown scene: {scene_str}"})
+
+        set_scene(scene)
+        logger.info("setScene RPC: session/scene → %s", scene.value)
+        return _json.dumps({"status": "ok", "scene": scene.value})
+
+    logger.info("onSceneReady + onGosloPlaced + setScene RPC handlers registered")
 
 
 @server.rtc_session(agent_name="parrot-brain")

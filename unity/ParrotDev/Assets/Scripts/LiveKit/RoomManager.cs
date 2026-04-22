@@ -128,38 +128,36 @@ public class RoomManager : MonoBehaviour
     {
         yield return new WaitForSeconds(delaySeconds);
 
+        // Match VideoStateReporter pattern: agent-* identity prefix
         string brainId = null;
-        foreach (var id in Room.RemoteParticipants.Keys)
+        foreach (var p in Room.RemoteParticipants.Values)
         {
-            if (!id.StartsWith("unity", StringComparison.OrdinalIgnoreCase))
-            { brainId = id; break; }
+            if (!string.IsNullOrEmpty(p.Identity) && p.Identity.StartsWith("agent-"))
+            { brainId = p.Identity; break; }
         }
-        if (brainId == null)
+        if (string.IsNullOrEmpty(brainId))
         {
-            Debug.Log("[RoomManager] Greeting skipped — Brain not yet in room");
+            Debug.Log("[RoomManager] onSceneReady skipped — Brain not yet in room");
             yield break;
         }
 
-        // Determine time-of-day greeting hint
         int hour = DateTime.Now.Hour;
         string timeHint = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
         string payload = $"{{\"event\":\"scene_ready\",\"time_of_day\":\"{timeHint}\"}}";
 
-        try
+        var rpcCall = Room.LocalParticipant.PerformRpc(new PerformRpcParams
         {
-            var rpc = Room.LocalParticipant.PerformRpc(
-                destinationIdentity: brainId,
-                method: "onSceneReady",
-                payload: payload,
-                responseTimeout: 5.0f
-            );
-            yield return new WaitUntil(() => rpc.IsCompleted);
+            DestinationIdentity = brainId,
+            Method = "onSceneReady",
+            Payload = payload,
+            ResponseTimeout = 5000,
+        });
+        yield return rpcCall;
+
+        if (rpcCall.IsError)
+            Debug.LogWarning($"[RoomManager] onSceneReady error: {rpcCall.Error?.Message}");
+        else
             Debug.Log($"[RoomManager] onSceneReady sent (time_of_day={timeHint})");
-        }
-        catch (Exception e)
-        {
-            Debug.LogWarning($"[RoomManager] onSceneReady RPC failed: {e.Message}");
-        }
 
     private void OnTrackSubscribed(
         IRemoteTrack track,
