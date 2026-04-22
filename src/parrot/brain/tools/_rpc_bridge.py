@@ -1,26 +1,93 @@
 """Shared RPC forwarding logic — Tool → LiveKit RPC → Unity client.
 
-All Unity-bound tools (fly_to, animate, etc.) go through this bridge.
+All Unity-bound tools (fly_to, animate, captureSnapshot, etc.) go through
+this bridge. Sprint 1 S1.A4 adds two BB writer responsibilities on this
+module (writer="brain._rpc_bridge"):
+
+    tick/last_rpc_ack   — {ok, rpc, reason, detail, ts}
+        Every call_unity_rpc outcome (success / timeout / transport error /
+        application-level reject) mirrors here so context_injector can
+        surface failures to Gemini via layer ③ Conscious Report. This is
+        the backbone the audit_identify_object §7 "felt experience"
+        redesign leans on: the LLM sees failure reasons inline with the
+        tool return value, never from a stale async side-channel.
+
+    session/scene        — Scene enum, set on session start by whoever
+        owns the pairing decision (typically brain.agent). We expose
+        `set_scene()` here because the _rpc_bridge already sits on the
+        Unity-paired path; keeping the scene writer here avoids another
+        ownership dance in Sprint 1.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import time
+from typing import TYPE_CHECKING, Any
 
 from livekit.agents import get_job_context
 from livekit.agents.llm import ToolError
 
+from parrot.scheduler.blackboard import open_bb_client
+from parrot.shared.vision_state import Scene
+
+if TYPE_CHECKING:
+    import py_trees
+
 logger = logging.getLogger(__name__)
 
 UNITY_IDENTITY_PREFIX = "unity"
+_WRITER = "brain._rpc_bridge"
+
+_bb: "py_trees.blackboard.Client | None" = None
+
+
+def _ensure_bb() -> "py_trees.blackboard.Client":
+    global _bb
+    if _bb is None:
+        _bb = open_bb_client(name="_rpc_bridge", writer=_WRITER)
+    return _bb
+
+
+def _write_ack(
+    *,
+    ok: bool,
+    rpc: str,
+    reason: str = "",
+    detail: str = "",
+) -> None:
+    """Mirror RPC outcome to tick/last_rpc_ack (event-driven)."""
+    bb = _ensure_bb()
+    bb.set(
+        "tick/last_rpc_ack",
+        {
+            "ok": ok,
+            "rpc": rpc,
+            "reason": reason,
+            "detail": detail,
+            "ts": time.time(),
+        },
+    )
+
+
+def set_scene(scene: Scene) -> None:
+    """Set session/scene. Called once on session-start by brain.agent."""
+    bb = _ensure_bb()
+    try:
+        current = bb.get("session/scene")
+    except KeyError:
+        current = None
+    if current != scene:
+        bb.set("session/scene", scene)
+        logger.info("BB session/scene: %s → %s", current, scene)
 
 
 def _find_unity_participant(room) -> str | None:
     """Find the first Unity client participant in the room.
-    
-    ARCHITECTURAL RISK (P2+): 
-    Currently returns the FIRST participant with the 'unity' prefix. 
+
+    ARCHITECTURAL RISK (P2+):
+    Currently returns the FIRST participant with the 'unity' prefix.
     If multiple Unity clients (e.g., sim_client + Unity Editor) are in the room,
     RPC commands (flyTo, animate) will only be sent to one arbitrary client.
     In P2+ (Multi-user/Multi-device), this needs to be refactored to either
@@ -32,6 +99,27 @@ def _find_unity_participant(room) -> str | None:
     return None
 
 
+def _classify_response(response: str) -> tuple[bool, str, str]:
+    """Parse Unity's JSON response into (ok, reason, detail).
+
+    Unity ParrotRpcHandler returns either:
+        {"status": "ok", ...}                         → (True, "", "")
+        {"status": "error", "message": "..."}         → (False, "rejected", message)
+    Any non-JSON or missing-status response is treated as malformed.
+    """
+    try:
+        data = json.loads(response) if response else {}
+    except (ValueError, TypeError):
+        return (False, "malformed", response[:200] if response else "")
+
+    status = data.get("status")
+    if status == "ok":
+        return (True, "", "")
+    if status == "error":
+        return (False, "rejected", str(data.get("message", "")))
+    return (False, "malformed", str(data)[:200])
+
+
 async def call_unity_rpc(
     method: str,
     payload: dict,
@@ -39,12 +127,21 @@ async def call_unity_rpc(
 ) -> str:
     """Forward an RPC call to the Unity client via LiveKit.
 
-    Raises ToolError if Unity is not connected (LLM gets a friendly error).
+    Outcome mirrors to `tick/last_rpc_ack` regardless of success/failure so
+    downstream (context_injector / soul constraints) can react. Raises
+    `ToolError` on transport failure so the LLM surface gets a synchronous,
+    user-facing error message (audit_identify_object §7 "felt experience").
     """
     room = get_job_context().room
     unity_id = _find_unity_participant(room)
 
     if not unity_id:
+        _write_ack(
+            ok=False,
+            rpc=method,
+            reason="no_unity",
+            detail="No participant with 'unity' prefix in room",
+        )
         logger.warning("RPC %s failed: no Unity client in room", method)
         raise ToolError(
             "The AR display isn't connected right now. "
@@ -52,10 +149,30 @@ async def call_unity_rpc(
         )
 
     logger.info("RPC → Unity [%s] method=%s", unity_id, method)
-    response = await room.local_participant.perform_rpc(
-        destination_identity=unity_id,
-        method=method,
-        payload=json.dumps(payload),
-        response_timeout=timeout,
-    )
+    try:
+        response = await room.local_participant.perform_rpc(
+            destination_identity=unity_id,
+            method=method,
+            payload=json.dumps(payload),
+            response_timeout=timeout,
+        )
+    except Exception as e:
+        _write_ack(
+            ok=False,
+            rpc=method,
+            reason="transport",
+            detail=f"{type(e).__name__}: {e}",
+        )
+        logger.warning("RPC %s transport error: %s", method, e)
+        raise
+
+    ok, reason, detail = _classify_response(response)
+    _write_ack(ok=ok, rpc=method, reason=reason, detail=detail)
+    if not ok:
+        logger.info("RPC %s rejected: reason=%s detail=%s", method, reason, detail)
     return response
+
+
+# Safety: confirm stable re-exports. Internal helpers (_write_ack,
+# _classify_response) stay private.
+__all__: list[str] = ["UNITY_IDENTITY_PREFIX", "call_unity_rpc", "set_scene"]
