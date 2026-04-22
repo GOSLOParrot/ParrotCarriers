@@ -198,7 +198,10 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         BbScope.TRANSIENT,
         "transient/hand_gesture",
         "dict[str, Any]",
-        "brain.gesture_source",
+        # Writer reassigned in Sprint 1 S1.A2 (see sprint0_completion §10.4):
+        # `brain.gesture_source` was a speculative standalone module; the actual
+        # data source is XRHandTracker → DataChannel → telemetry_receiver.
+        "brain.telemetry_receiver",
         "{kind, hand_pose, since} — expires 2s after last sighting.",
         event_driven=True,
     ),
