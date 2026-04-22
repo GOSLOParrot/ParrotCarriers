@@ -73,9 +73,36 @@ class IngestRunner:
     async def commit_outcome(self, outcome: IngestOutcome) -> int:
         """Commit every Observation carried by an IngestOutcome. Returns count.
 
-        Async signature so future Graphiti writes can land without touching
-        call sites. Sprint 2 keeps it in-memory only.
+        Before any commit we consult `mode_controller.is_enabled(filter_name)`
+        so the active DsgMode gets a veto. Disabled filters still produce
+        Observations (filters are pure — they don't know about modes), but
+        the runner drops them here and logs a single obs entry explaining
+        why. This keeps the enabled-set authoritative without coupling
+        filter code to BB reads.
         """
+        try:
+            from parrot.dsg.mode_controller import get_mode_controller
+            controller = get_mode_controller()
+        except Exception:
+            controller = None
+
+        if controller is not None and not controller.is_enabled(outcome.filter_name):
+            if outcome.observations:
+                log_obs_event(
+                    "ingest_mode_dropped",
+                    layer=1,
+                    payload={
+                        "filter": outcome.filter_name,
+                        "dropped": len(outcome.observations),
+                        "current_mode": (
+                            controller.current_mode().value
+                            if controller.current_mode() else "unknown"
+                        ),
+                    },
+                    actor=f"dsg.ingest.{outcome.filter_name}",
+                )
+            return 0
+
         committed = 0
         for obs in outcome.observations:
             if await self.commit_observation(obs):
