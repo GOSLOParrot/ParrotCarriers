@@ -116,7 +116,12 @@ def _write_hand_gesture() -> None:
 
 
 def _write_ar_tracking_state(state: str) -> None:
-    """Mirror Unity AR session state → tick/ar_tracking_state."""
+    """Mirror Unity AR session state → tick/ar_tracking_state.
+
+    Also triggers a VisualState re-fuse (Sprint 1 T6) so
+    session/visual_state reflects tracking drops without waiting for the
+    Injector's next pull.
+    """
     bb = _ensure_bb()
     try:
         current = bb.get("tick/ar_tracking_state")
@@ -125,6 +130,11 @@ def _write_ar_tracking_state(state: str) -> None:
     if current != state:
         bb.set("tick/ar_tracking_state", state)
         logger.info("BB tick/ar_tracking_state: %s → %s", current, state)
+        try:
+            from parrot.brain.vision.state import recompute_visual_state
+            recompute_visual_state()
+        except Exception:
+            logger.exception("Visual-state re-fuse failed after ar_tracking update")
 
 
 def _parse_hand_event(payload: dict[str, Any]) -> None:
