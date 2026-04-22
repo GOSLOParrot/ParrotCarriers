@@ -104,7 +104,7 @@ def get_instructions(mode: BehaviorMode | None = None) -> str:
 PARROT_INSTRUCTIONS = get_instructions()
 
 
-# ───────────────────────── Sprint 1 T8: SOUL_CONSTRAINTS ──────────────────
+# ───────────────────────── Sprint 1 T8 / Sprint 2 T12: SOUL_CONSTRAINTS ───
 #
 # Visual-tier constraints that translate VisualState into behavioural rules
 # GOSLO can honour in its utterances. Context Injector reads this table and
@@ -112,8 +112,16 @@ PARROT_INSTRUCTIONS = get_instructions()
 # speaks in a way that matches what it can actually see (audit §1.2 "felt
 # experience" principle: never claim a capability the body can't deliver).
 #
-# Sprint 1 scope:
-#   - visual tier only (body / scene / mode layers land in Sprint 2)
+# SINGLE SOURCE OF TRUTH (Sprint 2 T12, closes Sprint 1 §6.1):
+#   This module-level dict is THE authoritative SOUL_CONSTRAINTS store.
+#   It is NOT mirrored into the Blackboard; the dangling BB key
+#   `global/soul_constraints` has been removed from `shared.bb_schema` to
+#   prevent KeyError surprises when future modules try to `client.get(
+#   "global/soul_constraints")`. Consumers (Injector, Soul render_* helpers,
+#   future Scheduler nodes) import SOUL_CONSTRAINTS from here directly.
+#
+# Sprint 1 scope (unchanged):
+#   - visual tier only (body / scene / mode layers land in Sprint 2+)
 #   - static table, not hot-reloadable
 #   - ACTIVE has no constraints so there's nothing to nag Gemini about
 

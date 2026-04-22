@@ -186,6 +186,26 @@ async def brain_entrypoint(ctx: agents.JobContext):
     from parrot.brain.context_injector import attach_context_injector
     attach_context_injector(session)
 
+    # Sprint 2 T1+T10: PerceptionSupervisor (Intent-layer autonomous controller)
+    # and ModeController (DsgMode → filter enablement cache). Supervisor must
+    # attach AFTER Injector so the default combo write triggers Injector's
+    # baseline C3 announcement on the first poll cycle. ModeController reads
+    # the same BB key Supervisor just wrote, so order matters.
+    try:
+        from parrot.brain.perception_supervisor import (
+            attach_perception_supervisor,
+        )
+        attach_perception_supervisor(session)
+    except Exception:
+        logger.exception("Sprint 2: PerceptionSupervisor attach failed")
+
+    try:
+        from parrot.dsg.mode_controller import attach_mode_controller
+
+        attach_mode_controller()
+    except Exception:
+        logger.exception("Sprint 2: ModeController attach failed")
+
     from parrot.dsg.trigger_listener import start_trigger_listener
     asyncio.create_task(start_trigger_listener())
 

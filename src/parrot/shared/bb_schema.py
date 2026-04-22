@@ -76,13 +76,15 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "BASE / COMPANION (see shared.parrot_actions).",
         event_driven=True,
     ),
-    BlackboardKey(
-        BbScope.GLOBAL,
-        "global/soul_constraints",
-        "dict[str, Any]",
-        "brain.soul.constraints_loader",
-        "Per-VisualState action/assertion allow-lists consumed by Soul.",
-    ),
+    # NOTE (Sprint 2 T12, closes Sprint 1 §6.1):
+    # `global/soul_constraints` was declared here in Sprint 1 planning but the
+    # SOUL_CONSTRAINTS table ended up as a module-level dict inside
+    # `brain.soul` and is never written to the Blackboard. To avoid a
+    # dual-identity trap (BB declared but absent → KeyError surprises) we
+    # remove the key from the manifest entirely and keep `brain.soul.
+    # SOUL_CONSTRAINTS` as the single source of truth. Injector / vision
+    # layers import it directly. Re-introduce a BB key ONLY when we actually
+    # need per-scene or runtime hot-swappable constraints (Sprint 4+).
 
     # ───── Session scope (alive while LiveKit room is connected) ─────
     BlackboardKey(
