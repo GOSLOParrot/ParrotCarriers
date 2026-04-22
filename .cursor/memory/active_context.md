@@ -1,18 +1,23 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-23 (Sprint 2 全部 12 个 T 落地 + 完成报告固化)
-> **当前阶段**: **Sprint 2 完成, Sprint 3 前置中** — 自主闭环 + 两轴模式 + Ingest 语义入口已通
-> **Sprint 2 完成报告 (ratified)**: `.cursor/memory/architecture/sprint2_completion_report_20260423.md`
+> 最后更新: 2026-04-23 (Sprint 2 全链路模拟推演 + 4 bugfix + 4 cleanup 全部落地)
+> **当前阶段**: **Sprint 2 完成 (含模拟清理), 等待 Sprint 3 开工** — 自主闭环 + 两轴模式 + Ingest 入口 + ToolResultFilter 配线 全部就绪
+>
+> **Sprint 3 开工提示词 (必读入场包)**: `.cursor/memory/architecture/sprint3_kickoff_prompt.md`
+> **Sprint 2 完成报告 (ratified + 模拟推演附录)**: `.cursor/memory/architecture/sprint2_completion_report_20260423.md`
 > **Sprint 2 计划 (ratified)**: `.cursor/memory/architecture/sprint2_plan_20260423.md` (§6 T1-T12 全部 ✅)
 > **Sprint 1 完成报告**: `.cursor/memory/architecture/sprint1_completion_report_20260422.md`
-> **Sprint 3 入场**: A10 真拉起 + Unity AR 重建 + 动态 bitrate/fps (详见 sprint2 completion §8)
-> Round 3 T1-T12 全部 ✅ (commit `8feec5f → 37cdd37`), 真机端到端 smoke 留用户自管
+>
+> **Sprint 3 核心目标**: AR 桌面 MVP (平面检测/放置/动画/Launcher) + identify_object Path 2 (L2-B 优先) + Token Mint + A10 heartbeat + PublishTrack 动态重建
+> **Sprint 4 核心目标**: captureSnapshot + 相机模式补充通道 + identify_object Path 1 (A10 CV) + 便签 UI + 食指 perching
+>
+> **最新 commit**: `[S2.cleanup]` (df7fecb) — unused field import / VIDEO_BURST 升档保护 / ToolResultFilter 配线 / docstring 清理
 > 部署快照: `.cursor/memory/deploy_snapshot_p2_20260412.md`
-> **P2 里程碑**: `.cursor/memory/milestone_p2.md` (P2 已完成, 历史归档) — 记忆共享 + Scheduler 增强 + DSG 耦合层 + L2-B + 触发器
+> **P2 里程碑**: `.cursor/memory/milestone_p2.md` (P2 已完成, 历史归档)
 > 同步工具: `.cursor/memory/commit_guidelines.md` + `infra/sync-castle.ps1`
 >
-> **开工必读 (按序)**: `sprint0_preflight.md` → `ar_feature_implementation_plan.md` (Sprint X 段) → `ar_feature_vision.md` 对应小节
-> **开工之前的 3 件事**: (a) 用户点头 `ar_feature_vision.md` §六+§八+§3.5 (b) 打 status frontmatter 完成 (c) 修这里的时间戳
+> **Sprint 3 开工必读 (按序)**: `sprint3_kickoff_prompt.md` → `ar_feature_implementation_plan.md` Sprint 3 段 → `ar_feature_vision.md` §3.4/§3.7 → AR Foundation skill
+> **开工前先对齐**: `sprint3_kickoff_prompt.md` §4 的 6 个决策点 (D1-D6)，不对齐不动手
 
 ---
 

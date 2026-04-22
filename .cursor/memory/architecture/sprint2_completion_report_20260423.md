@@ -262,7 +262,7 @@ Sprint 3 目标 (预判, 不保证):
 
 ---
 
-## 附录: 12 commit 台账
+## 附录 A: 12 commit 台账
 
 ```
 8feec5f [S2.T1] perception_supervisor skeleton + DEFAULT_COMBO startup write
@@ -277,3 +277,36 @@ ad83c65 [S2.T5] Injector: classify video_tier + dsg_mode (C3 cues, C4 on upgrade
 dbe496b [S2.T10+T11] setVideoTier RPC round-trip + TRACK_MUTED reporter + ARVideoPublisher.SetPublishMuted
 37cdd37 [S2.T12] soul_constraints dual-identity close + attach supervisor & mode_controller in agent.py
 ```
+
+---
+
+## 附录 B: 模拟推演阶段 — 4 个 Bugfix commit 台账
+
+> 2026-04-23 Sprint 2 代码落地后，对全链路做端到端推演（Supervisor 自主降档 / VIDEO_OFF 闭环 / Transcript 吸收 / identify_object 保存），发现 4 个问题并当场修复。
+
+| # | 级别 | 问题描述 | 修复方式 |
+|:--|:-----|:---------|:---------|
+| B1 | 高 | `PerceptionSupervisor._on_decision_committed` 在 `previous` 和 `new` 相同时不能区分旧/新状态（`_write_combo` 已更新 `self._current`，导致 `previous=new`）| `_control_loop` 在调 `_write_combo` 前把 `self._current` capture 到 `previous_combo` 局部变量 |
+| B2 | 高 | `push_video_tier` 传 `VideoTier.value`（小写 `"video_off"`），但 Unity `ParseTier()` 期待大写 `"VIDEO_OFF"`，所有 RPC 被拒 | 改为传 `VideoTier.name` |
+| B3 | 高 | `ARVideoPublisher.SetPublishMuted(true)` 在 track 未 publish 时只缓存 flag，`SetupAndPublish` 协程没有在 track 就绪后应用缓存 mute | `SetupAndPublish` 末尾加一次缓存 check |
+| B4 | 中 | `ContextInjector` 不对 `VIDEO_OFF ↔ 其他` 跳变做 C2 `update_instructions` rebuild，Gemini 的 `SOUL_CONSTRAINTS` 不同步视觉状态 | `_dispatch` 里检测 OFF 边界，触发 `update_instructions()` |
+
+模拟清理阶段 commit（第二批）:
+
+```
+[S2.bugfix] 4-issue audit fix: previous-capture race / VideoTier.name wire-protocol / pre-publish mute / VIDEO_OFF C2 rebuild
+```
+
+模拟清理阶段 commit（第三批，推演代码干净度后）:
+
+```
+[S2.cleanup] Fix 4 post-simulation issues: unused field import, VIDEO_BURST upgrade guard,
+             wire ToolResultFilter into identify_object save path, clean stale docstring
+```
+
+| # | 级别 | 问题描述 | 修复方式 |
+|:--|:-----|:---------|:---------|
+| C1 | 低 | `perception_supervisor.py` 导入 `field`（dataclasses）但从未使用 | 移除 |
+| C2 | 中 | `decide()` 升档路径不排除 `VIDEO_BURST`，A10 稳定 60s 后会把 BURST 错误"升档"为 FULL（实为降码） | 加入 `_ALREADY_OPTIMAL` 集合，显式排除 `VIDEO_BURST+DSG_FULL` |
+| C3 | **高** | **`ToolResultFilter.process_result()` 从未被调用** — `identify_object` 保存新物体时绕过了整个 Sprint 2 Ingest 流水线，过滤器是孤儿代码 | `_save_new_object` 末尾补调 `_ingest_via_runner()` 侧道（legacy 路径保留，runner 做幂等合并） |
+| C4 | 低 | `_on_decision_committed` docstring 保留 "Sprint 2 T10 extends this hook" 冲刺任务用语 | 改写为功能性描述 |
