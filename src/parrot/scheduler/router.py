@@ -1,13 +1,20 @@
 """E1: BT Router — py-trees Selector replaces SimpleRouter if-else.
 
-Tree structure (P1.5 — shallow, one-level Selector):
+Tree structure (Sprint 2 — 4-leaf shallow Selector):
 
     Selector("Router", memory=False)
-    ├── HandleReflex        — priority=="reflex"  → reflex_direct
+    ├── HandleReflex        — priority=="reflex"   → reflex_direct
+    ├── HandleIntent        — layer=="intent"      → intent_committed
     ├── DispatchToNanobot   — research/memory/vocab → nanobot
     └── HandleBrainDirect   — everything else       → brain_direct
 
 Event-driven: caller writes Blackboard → tree.tick() → reads route_result.
+
+Sprint 2 change (S2.T3): HandleIntent landed between Reflex and Nanobot so
+that `layer=="intent"` events (produced by brain.perception_supervisor after
+a BB tier/mode commit) get a crisp `intent_committed` destination instead of
+the Sprint 1 `NotImplementedError` tombstone. The Intent leaf never mutates
+BB — the producer has already committed; this is pure routing symmetry.
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ from parrot.scheduler.nodes import (
     BB_NS,
     DispatchToNanobot,
     HandleBrainDirect,
+    HandleIntent,
     HandleReflex,
 )
 from parrot.shared.parrot_actions import BehaviorMode
@@ -29,12 +37,13 @@ logger = logging.getLogger(__name__)
 
 
 def build_scheduler_tree() -> py_trees.trees.BehaviourTree:
-    """Construct the P1.5 shallow behaviour tree."""
+    """Construct the Sprint 2 four-leaf behaviour tree."""
     root = py_trees.composites.Selector(
         name="Router",
         memory=False,
         children=[
             HandleReflex(),
+            HandleIntent(),
             DispatchToNanobot(),
             HandleBrainDirect(),
         ],
@@ -82,18 +91,11 @@ class BTRouter:
         This is a synchronous call. The async SchedulerService calls it
         from the event loop after receiving a Redis message.
 
-        Sprint 1 only routes REFLEX and TASK layers. INTENT (autonomous BB
-        state changes without Gemini touch) is reserved for Sprint 2's
-        S2-Intent task; early callers get a crisp failure here rather than
-        silent misroutes. See `sprint1_plan_20260422.md` §5.2 and
-        `shared/event_log.EventLayer` docstring.
+        Sprint 2 routes all three EventLayer kinds (REFLEX / INTENT / TASK).
+        INTENT events are expected to be self-committing — their producer
+        (typically `brain.perception_supervisor`) has already written BB by
+        the time the Router sees them; `HandleIntent` just acknowledges.
         """
-        if event.get("layer") == "intent":
-            raise NotImplementedError(
-                "EventLayer.INTENT not implemented in Sprint 1. "
-                "Autonomous-action routing lands in Sprint 2 S2-Intent."
-            )
-
         self._bb.current_event = event
         self._bb.route_result = {}
 

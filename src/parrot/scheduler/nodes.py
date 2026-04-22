@@ -94,6 +94,49 @@ class HandleBrainDirect(py_trees.behaviour.Behaviour):
         return py_trees.common.Status.SUCCESS
 
 
+class HandleIntent(py_trees.behaviour.Behaviour):
+    """Route EventLayer.INTENT events to the `intent_committed` destination.
+
+    Sprint 2 policy (`sprint2_plan_20260423.md §3.5`):
+        Intent events are **self-committing** — their producer (typically
+        `brain.perception_supervisor`) has already written BB by the time the
+        event arrives at the Scheduler. This node exists to complete the 4-leaf
+        Selector symmetry (Reflex / Intent / Nanobot / BrainDirect) and to give
+        future cross-process Intent producers a routable landing pad. It does
+        NOT perform any BB writes; that would double-commit.
+    """
+
+    def __init__(self, name: str = "HandleIntent"):
+        super().__init__(name)
+        self.blackboard = self.attach_blackboard_client(
+            name="HandleIntent", namespace=BB_NS
+        )
+        self.blackboard.register_key(
+            key="current_event", access=py_trees.common.Access.READ
+        )
+        self.blackboard.register_key(
+            key="route_result", access=py_trees.common.Access.WRITE
+        )
+
+    def update(self) -> py_trees.common.Status:
+        event = self.blackboard.current_event
+        if not event:
+            return py_trees.common.Status.FAILURE
+
+        if event.get("layer") != "intent":
+            return py_trees.common.Status.FAILURE
+
+        task_id = event.get("task_id", "unknown")
+        kind = event.get("kind", "intent")
+        self.blackboard.route_result = {
+            "destination": "intent_committed",
+            "task_id": task_id,
+        }
+        self.feedback_message = f"intent {kind} (id={task_id})"
+        logger.info("BT HandleIntent: kind=%s → intent_committed", kind)
+        return py_trees.common.Status.SUCCESS
+
+
 class HandleReflex(py_trees.behaviour.Behaviour):
     """Reflex tasks bypass LLM — highest priority.
 
