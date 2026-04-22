@@ -331,3 +331,63 @@ git count-objects -vH
 ---
 
 *生成时间：2026-04-16 | 适用仓库：ParrotCarriers + nanobot*
+
+---
+
+## § 8  Drift 说明条款 (S0.N, 2026-04-22)
+
+### 8.1 什么是 Drift
+
+**Drift** = 代码或协议的实现**偏离**对应架构文档 (tentative / ratified) 的情况。
+
+- **合法 drift** (tentative → 需升级): tentative 文档被代码跑通后, 代码的真实行为和文档对不齐。这是**正常的**, 反映"设计落地时发现漏洞"。
+- **违规 drift** (ratified → 需 ADR): ratified 文档被改了而没 ADR 记录, 或代码偷偷偏离了 ratified 文档。**禁止**。
+
+### 8.2 Drift 记录的最低规范
+
+**每个 commit message 都可能需要一句 drift 说明**, 格式:
+
+```
+drift: <文档路径> <tentative|ratified> — <一句话说明>
+```
+
+**触发情形**:
+- 改了 tentative 文档里的约定 (字段语义 / 状态名 / 协议字段) → `drift: <doc> tentative — renamed key foo → bar`
+- 发现 ratified 文档和代码不一致 → 先打开一个 ADR (`ADR-XXX-drift-*`), commit 里带 `drift: <doc> ratified — see ADR-XXX`
+
+### 8.3 Drift 审计点
+
+- Sprint 收尾时 Gate 3 跑完, **扫一遍本 Sprint 所有 commit**, drift 说明汇总到 `sprint{N}_kickoff.md` 问题池底部
+- 累积 drift 过多 (≥5 条/Sprint) = 信号: 当前设计 tentative 状态没管好, 需要回炉而不是硬上
+
+---
+
+## § 9  三闸门回归基线 (S0.6, 2026-04-22)
+
+### 9.1 为什么要基线
+
+每个 Sprint 收尾时必须跑 Gate 3 (回归), 但用例太多全跑不现实。**基线** = 每个 Sprint 必抽的 1-2 条关键回归用例, 越后面 Sprint 基线越厚。
+
+### 9.2 当前基线 (随 Sprint 滚动追加)
+
+| 完成 Sprint | 必抽回归用例 | 通过标准 |
+|:-----------|:------------|:---------|
+| Sprint 0 收 | (基线, 无) | N/A |
+| Sprint 1 收 | Brain + sim_unity_client 语音往返 (P2 基线) + Gemini tool `remember` / `query_memory` | 日志看到 RPC 成功 + Graphiti 查得到 |
+| Sprint 2 收 | Sprint 1 全部 + vision/state 状态机切换 + Blackboard 订阅日志 | BB set/get 一致 |
+| Sprint 3 收 | Sprint 1 + Sprint 2 的 VideoTier 降档 | video_tier 变化时无崩溃, 有日志 |
+| Sprint 4 收 | Sprint 3 AR 桌面 MVP + Gemini 能看到视频 | Gemini 调用 identify_object 得到真实结果 |
+
+### 9.3 基线维护规则
+
+- 每个 Sprint 收尾 commit **必须**:
+  1. 跑 §9.2 对应那行的用例
+  2. commit message 里附 `regression: ok` 或 `regression: <用例名> fail → fix in next`
+  3. 如果加了新的**关键**回归用例, 在本节表格追加一行 (Sprint N+1 起生效)
+- 基线不允许"临时关闭"某条用例, 只能"找到原因修掉"或"写 ADR 显式放弃"
+- 相关依据文档: `test_gate_rules.md §3.2` (源表, 本节与之保持一致)
+
+### 9.4 特例: 只改文档的 commit
+
+只动文档的 commit 也要过 Gate 1 (Markdown 渲染 + 链接 alive), 但**不需要**跑 §9.2 用例, commit message 用 `regression: n/a (docs only)`。
+

@@ -1,6 +1,9 @@
 ---
 name: livekit-unity-video-publish
 description: 一流多采样接缝 — Unity 推流 + LiveKit 分发 + Brain/DSG/identify_object 三路消费端的真实接缝位置
+status: ratified
+status_note: "基于 ARVideoPublisher.cs 真实代码写, P2.5 identify_object 三路消费通路已验证"
+last_reviewed: 2026-04-22
 ---
 
 # 视频流接缝：一流多采样 (One Stream, Multiple Sampling)

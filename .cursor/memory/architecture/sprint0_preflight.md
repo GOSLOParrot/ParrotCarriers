@@ -365,35 +365,36 @@ review_trigger: "代码 X 跑通 + 验收用例 Y 通过"
 
 ### 7.1 原计划的 S0 任务 (来自 `ar_feature_implementation_plan.md`)
 
-| # | 任务 | 位置 |
-|:--|:-----|:-----|
-| S0.1 | requirements.md / config / Docker volumes 整理 | 已大部分就位 |
-| S0.2 | commit_guidelines 强化 | 已就位 |
-| S0.3 | ARVideoPublisher attach 确认 | 已就位 |
-| S0.4 | Castle 4 commit push + docker up | **用户手动**, 不走 agent |
-| S0.5 | FalkorDB 健康检查 + Graphiti 集成测试 | 脚本已有 |
-| S0.6 | commit_guidelines 加一条回归基线 | 待加 |
-| S0.7 | **🆕 L1.5 协议锁定** `src/parrot/dsg/l1_5_protocol.py` | 新文件 |
+| # | 任务 | 位置 | 状态 |
+|:--|:-----|:-----|:-----|
+| S0.1 | requirements.md / config / Docker volumes 整理 | 已大部分就位 | ✅ done |
+| S0.2 | commit_guidelines 强化 | 已就位 | ✅ done |
+| S0.3 | ARVideoPublisher attach 确认 | 已就位 | ✅ done |
+| S0.4 | Castle 4 commit push + docker up | **用户手动**, 不走 agent | ⬜ 用户 |
+| S0.5 | FalkorDB 健康检查 + Graphiti 集成测试 | 脚本已有 | ⬜ 用户 |
+| S0.6 | commit_guidelines 加一条回归基线 | §9 新增 | ✅ done (2026-04-22) |
+| S0.7 | **🆕 L1.5 协议锁定** `src/parrot/dsg/l1_5_protocol.py` | 新文件 | ✅ done (2026-04-22) |
 
 ### 7.2 本文档追加的 S0 任务
 
-| # | 任务 | 归属 |
-|:--|:-----|:----|
-| S0.A | 锁 L0 Stream schema `shared/event_log.py` | §1.4 |
-| S0.B | 锁 L3 节点 provenance 字段 | §1.4 |
-| S0.C | 时间轴 API 约定文档化 | §1.4 |
-| S0.D | `workspace.mdc` 加 Cursor 工作合约 | §2.3 |
-| S0.E | Sprint 开工模板 | §2.3 |
-| S0.F | ADR 目录和模板 | §3.3 |
-| S0.G | 补 3 个追溯 ADR | §3.3 |
-| S0.H | 三闸门验收规则 `test_gate_rules.md` | §4.4 |
-| S0.I | plan 里每条用例标 Gate | §4.4 |
-| S0.J | pyproject.toml 补 `[images]` `pydantic` | §5.3 |
-| S0.K | Castle 依赖审计脚本 | §5.3 |
-| S0.L | 7 个现有文件打 status tag | §6.5 |
-| S0.M | workspace.mdc 加两态机 | §6.5 |
-| S0.N | commit_guidelines 补 drift 说明条款 | §6.5 |
-| S0.O | 引入 AR Foundation 5.1 蒸馏配置与修复 | §5.2 |
+| # | 任务 | 归属 | 状态 |
+|:--|:-----|:----|:-----|
+| S0.A | 锁 L0 Stream schema `shared/event_log.py` | §1.4 | ✅ done (b8bb0a9) |
+| S0.B | 锁 L3 节点 provenance 字段 | §1.4 | ✅ done (2026-04-22) |
+| S0.C | 时间轴 API 约定文档化 `timeline_api.md` | §1.4 | ✅ done (2026-04-22) |
+| S0.D | `workspace.mdc` 加 Cursor 工作合约 | §2.3 | ✅ done (2026-04-22) |
+| S0.E | Sprint 开工模板 `sprint_kickoff_template.md` | §2.3 | ✅ done (2026-04-22) |
+| S0.F | ADR 目录和模板 `architecture/adr/` | §3.3 | ✅ done (2026-04-22) |
+| S0.G | 补 3 个追溯 ADR (001/002/003) | §3.3 | ✅ done (2026-04-22) |
+| S0.H | 三闸门验收规则 `test_gate_rules.md` | §4.4 | ✅ done (2026-04-22) |
+| S0.I | plan 里每条用例标 Gate | §4.4 | ✅ done (2026-04-22) |
+| S0.J | pyproject.toml 补 `pydantic` | §5.3 | ✅ done (b8bb0a9) |
+| S0.K | Castle 依赖审计脚本 `infra/audit_deps.ps1` | §5.3 | ✅ done (2026-04-22) |
+| S0.L | 7 个现有文件打 status tag | §6.5 | ✅ done (2026-04-22) |
+| S0.M | workspace.mdc 加两态机 | §6.5 | ✅ done (2026-04-22) |
+| S0.N | commit_guidelines 补 drift 说明条款 | §6.5 | ✅ done (2026-04-22) |
+| S0.O | AR Foundation 5.1 蒸馏配置 | §5.2 | ✅ done (manifest.json 已锁 5.1.5, 技能 ratified) |
+| S0.P | L2-B SemanticNode Pydantic 迁移 | §10.1 | ⏸ deferred → Sprint 4 |
 
 ### 7.3 总估时
 

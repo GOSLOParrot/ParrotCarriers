@@ -3,6 +3,9 @@ description: LiveKit Unity SDK 版本适配注意事项
 globs:
   - "unity/**/*.cs"
 alwaysApply: false
+status: ratified
+status_note: "基于 v1.3.5 (2026-04) 实际源码和编译错误反推, P2 Unity 客户端已按此过 Gate 2"
+last_reviewed: 2026-04-22
 ---
 
 # LiveKit Unity SDK 适配规则

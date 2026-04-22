@@ -3,18 +3,26 @@ description: AR Foundation / ARCore 版本约束与已知坑 (Unity AR 客户端
 globs:
   - "unity/**/*.cs"
 alwaysApply: false
+status: ratified
+status_note: "全部 6 条坑均来自 ARVideoPublisher.cs / XRHandTracker.cs 真实踩坑, 经 P2/P2.5 验证"
+last_reviewed: 2026-04-22
 ---
 
 # AR Foundation — 已知坑（代码级）
 
+> **配套 Skills（深度参考）**
+> - `.cursor/skills/ar-foundation-api/SKILL.md` — AR Foundation 5.1.x 完整 API 参考（Packages.md）
+> - `.cursor/skills/ar-foundation-samples/SKILL.md` — 官方 Samples 实现模式（帧抓取、平面、面部、Anchor 等）
+
 以下 5 条均来自 ARVideoPublisher.cs / XRHandTracker.cs 实际代码或文档已知问题，不含设计建议。
 
-## 1. AR Foundation 版本必须与 ARCore XR Plugin 对齐
+## 1. AR Foundation 版本必须与 Unity 2022.3 及 ARCore XR Plugin 对齐
 
-AR Foundation 4.x 和 5.x 的 API 不兼容，且版本不对齐时**静默失败**（无报错，ARSession 不启动，`frameReceived` 永远不触发）。
+当前项目环境为 Unity 2022.3 LTS，**最高仅能稳定支持 AR Foundation 5.1.x**。千万不要升级到 6.x（会导致 URP 模式报错与 API 不兼容）。
+且版本不对齐时**静默失败**（无报错，ARSession 不启动，`frameReceived` 永远不触发）。
 
-- 使用 AR Foundation 5.x → 必须同时安装 ARCore XR Plugin 5.x
-- 不要混用跨大版本组合
+- 使用 AR Foundation 5.1.x → 必须同时安装 ARCore XR Plugin 5.1.x 和 ARKit XR Plugin 5.1.x
+- 不要混用跨大版本组合，绝不尝试引入 AR Foundation 6.x
 
 ## 2. `ARCameraManager.frameReceived` 在渲染线程回调，`Graphics.Blit` 必须在其中执行
 
@@ -60,3 +68,9 @@ Permission.RequestUserPermission(Permission.Microphone);
 ```
 
 在 Room 连接之前确认权限已授予；否则 `ARVideoPublisher.OnRoomConnected` 会发布一个无视频源的空轨。
+
+## 6. 必须开启并使用 XR Simulation 进行 Editor Play 测试
+
+由于频繁真机打包太慢，我们必须使用 AR Foundation 5.1.x 自带的 XR Simulation 进行初步测试。
+- **环境要求**：在 `XR Plug-in Management` 里，对于 PC/Mac Standalone 平台，**勾选 XR Simulation**。
+- **限制与坑**：Editor 下 `XR Simulation` 会模拟注入虚拟环境，WASD 控制相机，代码层应该把 XR Simulation 和真机视为同一逻辑流。如果发现模拟环境中 Plane 扫描正常但没法触发某些真机独有事件，请人工通过 Android 真机兜底测试。绝大部分情况，Gate 1 测试必须依赖 XR Simulation。

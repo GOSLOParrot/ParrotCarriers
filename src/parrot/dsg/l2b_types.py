@@ -6,11 +6,15 @@ Design decisions:
   - Attention / novelty / habituation are runtime-only (not persisted)
   - Episode membership tracks which conversational segment a node belongs to
   - Edge types are minimal for now; add more as association patterns emerge
+  - Sprint 0 S0.B: every node carries `provenance_stream_id` pointing back to
+    the L0 Redis Stream event that created it (SEEM-style reverse provenance
+    expansion). See `shared/event_log.py` and `sprint0_preflight.md §1.3`.
 
 References:
   - Opus 17 §2: L2-B node hierarchy (adapted, not copied)
   - Opus 17 §3: Graphiti custom entity types
   - Graphiti SKILL: Entity/Fact/Episode model
+  - sprint0_preflight.md §1 — 四层时间轴, §10.1 — L2-B Pydantic 迁移 deferred
 """
 
 from __future__ import annotations
@@ -107,6 +111,15 @@ class SemanticNode:
     last_seen_this_session: float = field(default_factory=time.time)
     interaction_count: int = 0
 
+    # ── Provenance (S0.B, points back to L0 Redis Stream) ──
+    # Empty string = node predates the L0 stream or was created out-of-band
+    # (e.g. legacy preload). Sprint 1 writers must populate this.
+    provenance_stream_id: str = ""
+    # Effective time span of the node as a semantic entity (NOT wall-clock
+    # attention). first = earliest known sighting, second = latest known
+    # sighting or None if still "currently in play". Unit: Unix epoch seconds.
+    time_span: tuple[float, float | None] = (0.0, None)
+
     # ── Extensible metadata ──
     meta: dict[str, Any] = field(default_factory=dict)
 
@@ -136,6 +149,8 @@ class SemanticEdge:
     strength: float = 0.5
     source: str = "observation"
     created_at: float = field(default_factory=time.time)
+    # S0.B: provenance back to the L0 event that created the edge.
+    provenance_stream_id: str = ""
     meta: dict[str, Any] = field(default_factory=dict)
 
 
@@ -161,6 +176,8 @@ class EpisodeMarker:
     trigger_source: str = ""
     participating_node_uuids: list[str] = field(default_factory=list)
     archived_to_graphiti: bool = False
+    # S0.B: L0 event id of the `episode_start` event.
+    provenance_stream_id: str = ""
 
     @property
     def is_open(self) -> bool:
