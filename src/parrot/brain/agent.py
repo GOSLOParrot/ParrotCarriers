@@ -81,7 +81,26 @@ async def _set_goslo_mode(mode: str, session_id: str = "") -> None:
 
 
 def _attach_gemini_transcript_to_terminal(session: AgentSession) -> None:
-    """把 Gemini 侧用户转写与助手文本打到 Brain 进程终端（与房间 lk.transcription 互补）。"""
+    """Gemini 侧用户转写与助手文本: 打终端 + 喂 DSG Ingest (Sprint 2 T7).
+
+    Two sinks per event (order matters — terminal log runs even if the
+    Ingest path is missing a Graphiti/L2-B dep, because the logs are what
+    ops actually watches):
+
+        1. terminal print + logger.info            (Sprint 1 behaviour)
+        2. GeminiTranscriptExtractor.feed_transcript (Sprint 2 T7)
+
+    The extractor drops status/context echoes itself (see sprint2_plan
+    §9.N3), so we just forward everything we see here.
+    """
+    try:
+        from parrot.dsg.ingest.gemini_transcript_extractor import (
+            get_gemini_transcript_extractor,
+        )
+        extractor = get_gemini_transcript_extractor()
+    except Exception:
+        extractor = None
+        logger.warning("Gemini transcript extractor unavailable — DSG ingest disabled")
 
     @session.on("user_input_transcribed")
     def _on_user_transcribed(ev: UserInputTranscribedEvent) -> None:
@@ -90,6 +109,11 @@ def _attach_gemini_transcript_to_terminal(session: AgentSession) -> None:
         line = f"[Gemini·用户] {ev.transcript}"
         logger.info("%s", line)
         print(f"\n{line}\n", flush=True)
+        if extractor is not None:
+            try:
+                extractor.feed_transcript(ev.transcript, "user")
+            except Exception:
+                logger.exception("extractor.feed_transcript(user) failed")
 
     @session.on("conversation_item_added")
     def _on_conversation_item(ev: ConversationItemAddedEvent) -> None:
@@ -104,6 +128,11 @@ def _attach_gemini_transcript_to_terminal(session: AgentSession) -> None:
         line = f"[Gemini·鹦鹉] {text}"
         logger.info("%s", line)
         print(f"\n{line}\n", flush=True)
+        if extractor is not None:
+            try:
+                extractor.feed_transcript(text, "assistant")
+            except Exception:
+                logger.exception("extractor.feed_transcript(assistant) failed")
 
 
 @server.rtc_session(agent_name="parrot-brain")
