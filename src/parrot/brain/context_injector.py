@@ -50,6 +50,7 @@ from parrot.brain.obs_log import log_obs_event
 from parrot.brain.soul import get_instructions, render_visual_constraints
 from parrot.scheduler.blackboard import open_bb_client
 from parrot.shared.parrot_actions import BehaviorMode
+from parrot.shared.tiers import DsgMode, VideoTier
 from parrot.shared.vision_state import VisualState, VisualStateReason
 
 logger = logging.getLogger(__name__)
@@ -60,11 +61,31 @@ _PER_KEY_MIN_GAP_S = 3.0
 _STATUS_PREFIX = "[状态]"
 
 # BB keys the Injector watches for change-driven context push.
+# Sprint 2 T5 adds `session/video_tier` + `session/dsg_mode` so Supervisor
+# decisions surface to Gemini via C3 (and C2 for VIDEO_OFF crosses).
 _WATCHED_BB_KEYS: tuple[str, ...] = (
     "session/visual_state",
     "session/visual_reason",
+    "session/video_tier",
+    "session/dsg_mode",
     "tick/last_rpc_ack",
 )
+
+# Per-tier / per-mode cue fragments. Kept compact — Gemini only needs the
+# "my vision changed, adjust what you say" nudge, not a full explanation.
+_TIER_C3_CUES: dict[VideoTier, str] = {
+    VideoTier.VIDEO_OFF: "视频暂时关了, 我只能靠声音和记忆陪你",
+    VideoTier.VIDEO_GEMINI_ONLY: "现在走省流量模式, 我能看你但不做深度识别",
+    VideoTier.VIDEO_FULL: "视觉全开了, 看得更仔细",
+    VideoTier.VIDEO_BURST: "进入相机爆发模式, 抓几帧高清画面",
+}
+
+_MODE_C3_CUES: dict[DsgMode, str] = {
+    DsgMode.DSG_TEXT_ONLY: "我的视觉辅助全休了, 你说什么我记什么",
+    DsgMode.DSG_GEMINI_VISION: "视觉辅助只剩我自己看, 不确定时说'像是'",
+    DsgMode.DSG_FULL: "视觉辅助全开, 我可以认物体",
+    DsgMode.DSG_SENTINEL_AUX: "备用视觉开着, 精度一般, 别做最终判断",
+}
 
 
 class ContextInjector:
@@ -230,6 +251,45 @@ class ContextInjector:
         # Reserved for future fine-grained UX; Sprint 1 keeps it at layer 1.
         return 1, None, False
 
+    def _classify_video_tier(
+        self, old: Any, new: Any
+    ) -> tuple[int, str | None, bool]:
+        """VideoTier change → C3 cue (downgrades) or C4 speak (upgrade to FULL).
+
+        Sprint 2 policy (plan §2):
+            - Downgrade / side-grade → layer 3 C3 (quiet body-awareness nudge)
+            - Upgrade to VIDEO_FULL after real outage → layer 3 C4 heavy so
+              GOSLO actually announces "we're back" on the next turn
+            - Cross into VIDEO_OFF requires a C2 soul_constraints rebuild, but
+              that belongs to the injector's `_rebuild_instructions` path and
+              is plumbed separately via `inject_scene` / `inject_memory`. Here
+              we just surface the change on C3 so the chat history shows it.
+        """
+        if not isinstance(new, VideoTier):
+            return 1, None, False
+        cue = _TIER_C3_CUES.get(new)
+        if cue is None:
+            return 1, None, False
+
+        if (
+            isinstance(old, VideoTier)
+            and new == VideoTier.VIDEO_FULL
+            and old != VideoTier.VIDEO_FULL
+        ):
+            return 3, cue, True
+        return 3, cue, False
+
+    def _classify_dsg_mode(
+        self, old: Any, new: Any
+    ) -> tuple[int, str | None, bool]:
+        """DsgMode change → C3 cue. Never heavy — DSG mode is behind-the-scenes."""
+        if not isinstance(new, DsgMode):
+            return 1, None, False
+        cue = _MODE_C3_CUES.get(new)
+        if cue is None:
+            return 1, None, False
+        return 3, cue, False
+
     def _decide_layer(
         self, key: str, old: Any, new: Any
     ) -> tuple[int, str | None, bool]:
@@ -246,6 +306,10 @@ class ContextInjector:
             return self._classify_rpc_ack(new)
         if key == "session/visual_reason":
             return self._classify_visual_reason(old, new)
+        if key == "session/video_tier":
+            return self._classify_video_tier(old, new)
+        if key == "session/dsg_mode":
+            return self._classify_dsg_mode(old, new)
         return 1, None, False
 
     async def _dispatch(self, key: str, old: Any, new: Any) -> None:
