@@ -1,15 +1,31 @@
 """py-trees Blackboard V2 integration + optional Redis persistence adapter.
 
-Namespace layout:
-    /scheduler/active_tasks     — dict[task_id, TaskInfo]     WRITE: Scheduler nodes
-    /scheduler/behavior_mode    — BehaviorMode Flag           WRITE: Brain (via Redis)
-    /scheduler/current_event    — dict                        WRITE: event listener
-    /scheduler/route_result     — dict                        WRITE: BT nodes
-    /scheduler/resource_locks   — dict                        WRITE: lock nodes (P2)
+Two layers coexist here (Sprint 1 S1.A):
+
+1. **Scheduler-internal namespace** (`scheduler/*`) — kept for BT Router
+   backward-compat: `active_tasks`, `behavior_mode`, `current_event`,
+   `route_result`. These are scheduler implementation details and are NOT
+   declared in `shared/bb_schema.py`.
+
+2. **Cross-module BB (bb_schema.BB_KEYS)** — 19 keys across 4 scopes
+   (global / session / tick / transient), each with a declared single
+   writer. Modules open a Client via `open_bb_client(name, writer=...)`
+   which registers WRITE on the keys they own and READ on everything
+   else. This enforces the "single-writer per key" contract from
+   `ar_feature_vision.md §3.5` without a custom runtime checker.
+
+Usage (cross-module):
+
+    from parrot.scheduler.blackboard import open_bb_client
+
+    bb = open_bb_client(name="telemetry_receiver",
+                        writer="brain.telemetry_receiver")
+    bb.set("tick/body_state", "flying")      # WRITE allowed
+    bb.get("session/visual_state")           # READ allowed
+    # bb.set("session/visual_state", ...)    # raises AttributeError
 
 py-trees Blackboard is in-process memory. The RedisBlackboardSync adapter
 optionally mirrors selected keys to/from Redis Hash for cross-process sharing.
-P1.5: in-process only; Redis sync added as needed.
 """
 
 from __future__ import annotations
@@ -20,6 +36,7 @@ from typing import Any
 
 import py_trees
 
+from parrot.shared.bb_schema import BB_KEYS, BbScope, BlackboardKey
 from parrot.shared.parrot_actions import BehaviorMode
 
 logger = logging.getLogger(__name__)
@@ -41,6 +58,53 @@ def init_scheduler_blackboard() -> py_trees.blackboard.Client:
     bb.route_result = {}
 
     return bb
+
+
+# ──────────────────────────────────────────────────────────────
+# Cross-module BB (bb_schema.BB_KEYS) — writer-based access
+# ──────────────────────────────────────────────────────────────
+
+def open_bb_client(
+    name: str,
+    writer: str | None = None,
+) -> py_trees.blackboard.Client:
+    """Open a py-trees Blackboard Client with writer-based access on BB_KEYS.
+
+    Every declared key in `BB_KEYS` is registered on the returned Client:
+        - WRITE access if `key.writer == writer`
+        - READ  access otherwise
+
+    This means any attempt by a module to write to a key it does not own
+    raises py-trees' `AttributeError` at runtime, turning the single-writer
+    contract into a hard assertion.
+
+    Use `client.set("<scope>/<name>", value)` / `client.get("<scope>/<name>")`
+    to read/write — attribute access (`client.global.user_profile`) breaks
+    because '/' is not a valid attribute character; the explicit `set/get`
+    methods use py-trees' full-key addressing.
+
+    Pass `writer=None` to get a read-only observer client (useful for
+    dispatchers / injectors that aggregate across scopes).
+    """
+    client = py_trees.blackboard.Client(name=name)
+    for k in BB_KEYS:
+        access = (
+            py_trees.common.Access.WRITE
+            if writer is not None and k.writer == writer
+            else py_trees.common.Access.READ
+        )
+        client.register_key(key=k.name, access=access)
+    return client
+
+
+def iter_keys_for_writer(writer: str) -> tuple[BlackboardKey, ...]:
+    """All BB_KEYS whose writer equals `writer`."""
+    return tuple(k for k in BB_KEYS if k.writer == writer)
+
+
+def iter_keys_by_scope(scope: BbScope) -> tuple[BlackboardKey, ...]:
+    """All BB_KEYS within a scope (thin re-export of bb_schema helper)."""
+    return tuple(k for k in BB_KEYS if k.scope == scope)
 
 
 class RedisBlackboardSync:
@@ -82,3 +146,13 @@ class RedisBlackboardSync:
         setattr(self._bb, key, value)
         logger.debug("Redis→BB: %s/%s = %s", self._hash_key, key, value)
         return value
+
+
+__all__ = [
+    "BB_NS",
+    "RedisBlackboardSync",
+    "init_scheduler_blackboard",
+    "iter_keys_by_scope",
+    "iter_keys_for_writer",
+    "open_bb_client",
+]
