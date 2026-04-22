@@ -376,13 +376,21 @@ class PerceptionSupervisor:
                 )
 
                 if new_combo is not None and new_combo != self._current:
+                    # Capture the OLD state BEFORE _write_combo mutates
+                    # self._current. This is the critical ordering fix:
+                    # _write_combo sets self._current = combo on success,
+                    # so if we pass self._current after the call we get
+                    # previous == new, breaking the audit log and the
+                    # push_video_tier guard (`if new_tier != prev_tier`).
+                    previous_combo = self._current
                     if self._write_combo(new_combo, cause=cause):
+                        # self._current is now updated by _write_combo; don't
+                        # set it again below.
                         await self._on_decision_committed(
-                            previous=self._current,
+                            previous=previous_combo,
                             new=new_combo,
                             cause=cause,
                         )
-                        self._current = new_combo
 
             except Exception:
                 logger.exception("Supervisor loop hiccup — continuing")
@@ -448,7 +456,11 @@ class PerceptionSupervisor:
             try:
                 from parrot.brain.tools._rpc_bridge import push_video_tier
 
-                ok = await push_video_tier(new_tier.value, reason=cause)
+                # Use .name (uppercase "VIDEO_OFF" / "VIDEO_FULL" etc.) not
+                # .value (lowercase). Unity ParseTier() does a switch on the
+                # uppercase form — using .value causes every tier push to be
+                # silently rejected as "Unknown" on the Unity side.
+                ok = await push_video_tier(new_tier.name, reason=cause)
                 if not ok:
                     logger.info(
                         "Supervisor: setVideoTier push declined (tier=%s cause=%s) "

@@ -349,6 +349,37 @@ class ContextInjector:
             {**audit_payload, "sent": True, "channel": "C4" if heavy else "C3", "body": body},
         )
 
+        # C2 rebuild on VIDEO_OFF boundary (sprint2_plan §2, §4.3).
+        #
+        # When the tier crosses into or out of VIDEO_OFF Gemini needs its
+        # System Instructions refreshed — not just a chat-ctx nudge — because
+        # the SOUL_CONSTRAINTS constraint language for PAUSED state changes the
+        # grammar of what GOSLO is allowed to say (e.g. "only use your ears").
+        # We call update_instructions() here, after the C3/C4 notification has
+        # been dispatched, so the instruction rebuild doesn't race the body push.
+        #
+        # Rate-limiting: use the same per-key gap already enforced above, so we
+        # never call update_instructions() more than once per 3 s for this key.
+        if key == "session/video_tier" and isinstance(new, VideoTier):
+            old_is_off = (old == VideoTier.VIDEO_OFF)
+            new_is_off = (new == VideoTier.VIDEO_OFF)
+            if old_is_off or new_is_off:
+                try:
+                    rebuilt = self._rebuild_instructions()
+                    self._session.update_instructions(rebuilt)
+                    logger.info(
+                        "injector C2: update_instructions on VIDEO_OFF boundary "
+                        "(%s → %s)",
+                        old, new,
+                    )
+                    log_obs_event(
+                        "bb_change", 2,
+                        {**audit_payload, "sent": True, "channel": "C2",
+                         "body": "update_instructions (VIDEO_OFF boundary)"},
+                    )
+                except Exception:
+                    logger.exception("injector C2: update_instructions failed on VIDEO_OFF boundary")
+
     async def _bb_poll_loop(self) -> None:
         """1 Hz: refuse-then-diff BB keys and dispatch layer-③ changes."""
         await asyncio.sleep(2.0)  # let session settle before first push

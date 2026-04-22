@@ -144,7 +144,26 @@ public class ARVideoPublisher : MonoBehaviour
         _videoSource.Start();
         StartCoroutine(_videoSource.Update());
         _isPublishing = true;
-        Debug.Log($"[ARVideoPublisher] Publishing {width}x{height}@{targetFps}fps");
+
+        // Apply any mute state that was set before the track was published.
+        // SetPublishMuted() may be called by VideoTierReceiver during boot
+        // (e.g. VIDEO_OFF arrives while SetupAndPublish is still running).
+        // The call-site caches _publishMuted but can only call SetMute on a
+        // live track; so we replay the request here now that the track exists.
+        if (_publishMuted)
+        {
+            try
+            {
+                ((ILocalTrack)_videoTrack).SetMute(true);
+                Debug.Log("[ARVideoPublisher] Applied pre-publish mute (VIDEO_OFF was set during setup)");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ARVideoPublisher] Pre-publish mute apply failed: {e.Message}");
+            }
+        }
+
+        Debug.Log($"[ARVideoPublisher] Publishing {width}x{height}@{targetFps}fps (muted={_publishMuted})");
     }
 
     // ── AR Foundation path ──────────────────────────────────────────
