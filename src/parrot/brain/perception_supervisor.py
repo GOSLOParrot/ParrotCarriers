@@ -28,7 +28,10 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from parrot.brain.obs_log import log_obs_event
 from parrot.scheduler.blackboard import open_bb_client
+from parrot.shared.constants import STREAM_EVENT_LOG
+from parrot.shared.event_log import EventEnvelope, EventLayer
 from parrot.shared.tiers import DEFAULT_COMBO, DsgMode, VideoTier, is_allowed_combo
 from parrot.shared.vision_state import VisualState
 
@@ -394,12 +397,71 @@ class PerceptionSupervisor:
     ) -> None:
         """Side-effect hook fired after a successful BB commit.
 
-        Sprint 2 T4 extends this to XADD an EventEnvelope to STREAM_EVENT_LOG
-        and fire `log_obs_event`; Sprint 2 T10 adds the Unity RPC forward.
-        Keeping the hook here lets T1+T2 ship a working loop that other T
-        tasks can layer onto without touching the decision path again.
+        Writes the decision to TWO audit surfaces (sprint2_plan §3.3):
+
+          STREAM_EVENT_LOG (L0)  — EventEnvelope layer=INTENT for cross-process
+                                   audit + future Reverse Provenance Expansion.
+                                   Fire-and-forget; Redis outage does NOT
+                                   block the decision loop.
+          parrot.obs_log         — `log_obs_event("intent_decision", 2, ...)` for
+                                   offline reflection tooling. Layer 2 =
+                                   "autonomous action" per ar_feature_vision §3.5.
+
+        Sprint 2 T10 extends this hook to forward a `setVideoTier` RPC to
+        Unity; Sprint 3 wires re-publishing track options for real bitrate
+        changes.
         """
-        del previous, new, cause
+        prev_tier, prev_mode = previous
+        new_tier, new_mode = new
+
+        payload: dict[str, Any] = {
+            "from": {"video_tier": prev_tier.value, "dsg_mode": prev_mode.value},
+            "to": {"video_tier": new_tier.value, "dsg_mode": new_mode.value},
+            "cause": cause,
+            "hysteresis": {
+                "degraded_since": self._hysteresis.degraded_since,
+                "a10_down_since": self._hysteresis.a10_down_since,
+                "a10_up_since": self._hysteresis.a10_up_since,
+                "manual_override_until": self._hysteresis.manual_override_until,
+            },
+        }
+
+        try:
+            envelope = EventEnvelope(
+                kind="intent.tier_change",
+                layer=EventLayer.INTENT,
+                actor=_WRITER,
+                payload=payload,
+            )
+            await self._xadd_event(envelope)
+        except Exception:
+            logger.exception("Supervisor: failed to emit L0 EventEnvelope")
+
+        log_obs_event(
+            "intent_decision",
+            layer=2,
+            payload=payload,
+            actor=_WRITER,
+        )
+
+    async def _xadd_event(self, envelope: EventEnvelope) -> None:
+        """Push one EventEnvelope to `parrot.events.log`.
+
+        Kept as a thin method so tests can monkeypatch it, and so Sprint 3
+        can swap in a batched producer without touching the decision path.
+        """
+        try:
+            from parrot.shared.redis_client import get_redis
+
+            r = await get_redis()
+            await r.xadd(
+                STREAM_EVENT_LOG,
+                envelope.to_xadd_fields(),
+                maxlen=10_000,
+                approximate=True,
+            )
+        except Exception:
+            logger.debug("Supervisor: xadd to STREAM_EVENT_LOG failed", exc_info=True)
 
     async def stop(self) -> None:
         if self._loop_task and not self._loop_task.done():
