@@ -20,10 +20,18 @@ from parrot.dsg.ingest.base import (
     Observation,
     ObservationSource,
 )
+from parrot.dsg.ingest.cv_track_filter import CvTrackFilter
+from parrot.dsg.ingest.text_source_filter import TextSourceFilter
+from parrot.dsg.ingest.tool_result_filter import ToolResultFilter
+from parrot.dsg.ingest.user_tag_filter import UserTagFilter
 
 __all__ = [
+    "CvTrackFilter",
     "IngestFilter",
     "IngestOutcome",
     "Observation",
     "ObservationSource",
+    "TextSourceFilter",
+    "ToolResultFilter",
+    "UserTagFilter",
 ]
