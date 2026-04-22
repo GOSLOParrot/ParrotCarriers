@@ -4,7 +4,7 @@ globs:
   - "unity/**/*.cs"
 alwaysApply: false
 status: ratified
-status_note: "全部 6 条坑均来自 ARVideoPublisher.cs / XRHandTracker.cs 真实踩坑, 经 P2/P2.5 验证"
+status_note: "条目均来自真实踩坑 (Unity 2022.3 LTS + AR Foundation 5.1), 非纸上设计。按 sprint0_preflight.md §6.4 标 ratified。"
 last_reviewed: 2026-04-22
 ---
 

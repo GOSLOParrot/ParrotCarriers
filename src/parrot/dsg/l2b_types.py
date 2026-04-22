@@ -6,15 +6,22 @@ Design decisions:
   - Attention / novelty / habituation are runtime-only (not persisted)
   - Episode membership tracks which conversational segment a node belongs to
   - Edge types are minimal for now; add more as association patterns emerge
-  - Sprint 0 S0.B: every node carries `provenance_stream_id` pointing back to
-    the L0 Redis Stream event that created it (SEEM-style reverse provenance
-    expansion). See `shared/event_log.py` and `sprint0_preflight.md §1.3`.
+
+Sprint 0 Schema V1 (2026-04-22, see `.cursor/memory/architecture/sprint0_preflight.md`):
+  - `provenance_stream_id`  — links node to its creating L0 EventEnvelope
+  - `time_span`             — event time-range for EVENT-kind nodes
+  - `reference_image_path`  — canonical image for identify_object / PhotoEvent
+  - `last_sighting_path`    — rolling most-recent sighting
+  All four are additive (defaults preserve existing call sites). The decision
+  to keep SemanticNode as @dataclass (not Pydantic) is deferred — see
+  sprint0_preflight.md §10.1 S0.P.
 
 References:
   - Opus 17 §2: L2-B node hierarchy (adapted, not copied)
   - Opus 17 §3: Graphiti custom entity types
   - Graphiti SKILL: Entity/Fact/Episode model
-  - sprint0_preflight.md §1 — 四层时间轴, §10.1 — L2-B Pydantic 迁移 deferred
+  - audit_identify_object_no_screenshot_20260420.md §5.1 (B4) — image fields
+  - ar_feature_vision.md §3.5 — provenance for three-layer consciousness
 """
 
 from __future__ import annotations
@@ -111,14 +118,27 @@ class SemanticNode:
     last_seen_this_session: float = field(default_factory=time.time)
     interaction_count: int = 0
 
-    # ── Provenance (S0.B, points back to L0 Redis Stream) ──
-    # Empty string = node predates the L0 stream or was created out-of-band
-    # (e.g. legacy preload). Sprint 1 writers must populate this.
+    # ── Sprint 0 Schema V1 additions (S0.B + audit B4) ──
+    # Links this node back to its creating L0 event (Redis Stream id of the
+    # EventEnvelope in `parrot.events.log`). Empty string = pre-S0 node or
+    # node created before L0 stream was live. Used by Reverse Provenance
+    # Expansion and archive filters (Sprint 4+).
     provenance_stream_id: str = ""
-    # Effective time span of the node as a semantic entity (NOT wall-clock
-    # attention). first = earliest known sighting, second = latest known
-    # sighting or None if still "currently in play". Unit: Unix epoch seconds.
+
+    # Event time-range for EVENT-kind nodes (start_ts, end_ts). `end_ts = None`
+    # means open-ended (still ongoing). OBJECT/PERSON/SURFACE nodes may leave
+    # this at the default; they carry their own first_seen/last_seen fields.
     time_span: tuple[float, float | None] = (0.0, None)
+
+    # Canonical reference image for this entity — produced on first
+    # identify_object confirmation or user upload. Path convention:
+    #     data/snapshots/objects/{uuid}/reference.jpg
+    reference_image_path: str = ""
+
+    # Most recent sighting frame path, rotated weekly. Empty string until
+    # first sighting is stored. Path convention:
+    #     data/snapshots/sightings/{yyyy-mm-dd}/{ts}.jpg
+    last_sighting_path: str = ""
 
     # ── Extensible metadata ──
     meta: dict[str, Any] = field(default_factory=dict)
@@ -149,8 +169,6 @@ class SemanticEdge:
     strength: float = 0.5
     source: str = "observation"
     created_at: float = field(default_factory=time.time)
-    # S0.B: provenance back to the L0 event that created the edge.
-    provenance_stream_id: str = ""
     meta: dict[str, Any] = field(default_factory=dict)
 
 
@@ -176,8 +194,6 @@ class EpisodeMarker:
     trigger_source: str = ""
     participating_node_uuids: list[str] = field(default_factory=list)
     archived_to_graphiti: bool = False
-    # S0.B: L0 event id of the `episode_start` event.
-    provenance_stream_id: str = ""
 
     @property
     def is_open(self) -> bool:

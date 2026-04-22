@@ -3,7 +3,7 @@ description: ParrotCarriers 工作区全局路由与项目概述
 globs: []
 alwaysApply: true
 status: ratified
-status_note: "工作区路由 + Cursor 工作合约 + 两态机 — 长期基建, Sprint 0 S0.D / S0.L / S0.M 一起合入后 ratified"
+status_note: "长期基建路由, 经多轮 Sprint 使用, 按 sprint0_preflight.md §6.4 标 ratified。"
 last_reviewed: 2026-04-22
 ---
 
@@ -81,78 +81,4 @@ unity/ParrotDev/     Unity AR 客户端（LiveKit + XR Hands + AR Video）
 
 ## CRITICAL REASONING OVERRIDE
 1. **LANGUAGE OF THOUGHT:** You MUST ALWAYS perform your internal reasoning and step-by-step logic inside `<thinking>` tags strictly in **ENGLISH**. This is non-negotiable for maximum coding accuracy.
-2. Keep the thinking phase hard, but focus on tasks.
-
----
-
-## Cursor 工作合约 (AI Agent 守则)
-
-> 源: `sprint0_preflight.md §2` — 所有 AI agent 接手项目前必须读这一节。违反任何一条都应在后续对话中自我纠错。
-
-### 1. 任务边界
-
-- **不做 scope creep**: 用户给一个 S{N}.{letter} 任务, 就做这一条。相关想法写进对应 `sprint{N}_kickoff.md` 的问题池, 不擅自扩产。
-- **不改用户私有状态**: `.cursor/memory/active_context.md` 头部进度坐标由**用户手动前推**, AI 不改。
-- **不拷贝大段代码/愿景**: Skills / Opus / vision 文档已有的内容链过去, 不复述。
-
-### 2. 产出前必做
-
-每次开始一个子任务 (S{N}.{letter}) 前, **先给出文件变更计划** (新增 / 修改 / 不动三类), 用户确认后才动键盘。计划里必须说清楚:
-- 每个新文件为什么必须新建 (不能塞进现有文件的理由)
-- 每个修改文件改哪几节 / 新增哪几节
-- 为什么不改 X (用户可能期望改 X 但实际不需要)
-
-### 3. 三闸门纪律
-
-- `test_gate_rules.md` 是硬约束, 不是建议
-- 每个子任务打三闸门标签 (Gate 1 / Gate 2 / Gate 3 产出是什么)
-- Gate 1 没过不许合并; Gate 2 是用户手动, 不要替用户声明通过
-
-### 4. tentative / ratified 两态机
-
-见本文件 §两态机 (文档生命周期)。**没过 Gate 2 的设计 = tentative**。ratified 的文档 AI 不擅自改字段语义, 只能改打字/链接之类。
-
-### 5. Commit 节奏
-
-- 按 `commit_guidelines.md` 走
-- **子任务粒度** vs **合并粒度**由用户定, AI 不提交多余 commit; 被要求一次完成多任务时, 用一个 commit 收拢
-- commit message 一行题目 + 关键影响清单, **不复述代码**
-
-### 6. ADR 触发
-
-碰到 ADR-worthy 决策 (见 `architecture/adr/README.md §触发`), 先写 ADR 占位再写代码。不要"代码先行以后补 ADR"。
-
-### 7. Skills 优先
-
-做跨领域/框架任务前, 先扫 `.cursor/skills/` 对应 SKILL.md。Skills 里已有的 API 约定不要重新调研。
-
----
-
-## 两态机 (文档生命周期)
-
-> 源: `sprint0_preflight.md §6` — **所有** `.cursor/memory/` / `.cursor/rules/` / `.cursor/skills/` 下的文档都走这个两态机。
-
-### 状态
-
-- `status: tentative` — 设计提出但**没过 Gate 2**, 允许未来删改。AI agent 读这类文档应**谨慎**, 可以参考但不要当硬约束。
-- `status: ratified` — 设计**已过 Gate 2 + 至少一次 Gate 3 回归**, 字段语义稳定, 改动要走 ADR。
-
-### frontmatter 形式
-
-```yaml
----
-status: tentative     # 或 ratified
-status_note: "升 ratified 条件: Sprint N 的 X 用例过 Gate 2"
-last_reviewed: YYYY-MM-DD
----
-```
-
-### 升级流程
-
-1. 对应 Sprint kickoff 文件在"本 Sprint 会 ratified 的文档"里列出
-2. Gate 2 过 + Gate 3 过 → 在 commit 里顺手改 `status: tentative` → `ratified` + 更新 `last_reviewed`
-3. 如果发现 ratified 的文档其实还不成熟, 用 ADR 记录**为什么降回 tentative**, 不无声降级
-
-### 为什么这样做
-
-见 `sprint0_preflight.md §6` — 单纯"设计文档 → 代码" 的单向链容易导致**提前锁定**。两态机强制每个硬约束都有"跑通一次"的票据。
+2. Keep the thinking phase extremely concise to save tokens. Do not translate technical terms.

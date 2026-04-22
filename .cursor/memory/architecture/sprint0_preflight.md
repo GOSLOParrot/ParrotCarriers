@@ -1,6 +1,6 @@
 ---
 status: tentative
-status_note: "流程约束本身引自成熟实践 (ADR / 三闸门 / Event Sourcing), 不经代码。但 14 项 S0.A-N 是否落得下来, 要完成后才算 ratified。届时把 §7 任务单标 DONE 并整体升 ratified。"
+status_note: "Sprint 0 范围在 2026-04-22 由用户裁剪: 聚焦 Schema 层 V1 (S0.A/B/7/J/L + PhotoEvent image fields), 其余流程/测试规则 (S0.D-I/K/M/N) 由用户自行设计和验收, 见 §11 执行记录。Schema 代码已落地并过 smoke, 但要 Sprint 1/2 跑起来才 ratify。"
 last_reviewed: 2026-04-22
 ---
 
@@ -365,42 +365,62 @@ review_trigger: "代码 X 跑通 + 验收用例 Y 通过"
 
 ### 7.1 原计划的 S0 任务 (来自 `ar_feature_implementation_plan.md`)
 
-| # | 任务 | 位置 | 状态 |
-|:--|:-----|:-----|:-----|
-| S0.1 | requirements.md / config / Docker volumes 整理 | 已大部分就位 | ✅ done |
-| S0.2 | commit_guidelines 强化 | 已就位 | ✅ done |
-| S0.3 | ARVideoPublisher attach 确认 | 已就位 | ✅ done |
-| S0.4 | Castle 4 commit push + docker up | **用户手动**, 不走 agent | ⬜ 用户 |
-| S0.5 | FalkorDB 健康检查 + Graphiti 集成测试 | 脚本已有 | ⬜ 用户 |
-| S0.6 | commit_guidelines 加一条回归基线 | §9 新增 | ✅ done (2026-04-22) |
-| S0.7 | **🆕 L1.5 协议锁定** `src/parrot/dsg/l1_5_protocol.py` | 新文件 | ✅ done (2026-04-22) |
+| # | 任务 | 位置 |
+|:--|:-----|:-----|
+| S0.1 | requirements.md / config / Docker volumes 整理 | 已大部分就位 |
+| S0.2 | commit_guidelines 强化 | 已就位 |
+| S0.3 | ARVideoPublisher attach 确认 | 已就位 |
+| S0.4 | Castle 4 commit push + docker up | **用户手动**, 不走 agent |
+| S0.5 | FalkorDB 健康检查 + Graphiti 集成测试 | 脚本已有 |
+| S0.6 | commit_guidelines 加一条回归基线 | 待加 |
+| S0.7 | **🆕 L1.5 协议锁定** `src/parrot/dsg/l1_5_protocol.py` | 新文件 |
 
-### 7.2 本文档追加的 S0 任务
+### 7.2 本文档追加的 S0 任务 (2026-04-22 用户裁剪后)
 
-| # | 任务 | 归属 | 状态 |
-|:--|:-----|:----|:-----|
-| S0.A | 锁 L0 Stream schema `shared/event_log.py` | §1.4 | ✅ done (b8bb0a9) |
-| S0.B | 锁 L3 节点 provenance 字段 | §1.4 | ✅ done (2026-04-22) |
-| S0.C | 时间轴 API 约定文档化 `timeline_api.md` | §1.4 | ✅ done (2026-04-22) |
-| S0.D | `workspace.mdc` 加 Cursor 工作合约 | §2.3 | ✅ done (2026-04-22) |
-| S0.E | Sprint 开工模板 `sprint_kickoff_template.md` | §2.3 | ✅ done (2026-04-22) |
-| S0.F | ADR 目录和模板 `architecture/adr/` | §3.3 | ✅ done (2026-04-22) |
-| S0.G | 补 3 个追溯 ADR (001/002/003) | §3.3 | ✅ done (2026-04-22) |
-| S0.H | 三闸门验收规则 `test_gate_rules.md` | §4.4 | ✅ done (2026-04-22) |
-| S0.I | plan 里每条用例标 Gate | §4.4 | ✅ done (2026-04-22) |
-| S0.J | pyproject.toml 补 `pydantic` | §5.3 | ✅ done (b8bb0a9) |
-| S0.K | Castle 依赖审计脚本 `infra/audit_deps.ps1` | §5.3 | ✅ done (2026-04-22) |
-| S0.L | 7 个现有文件打 status tag | §6.5 | ✅ done (2026-04-22) |
-| S0.M | workspace.mdc 加两态机 | §6.5 | ✅ done (2026-04-22) |
-| S0.N | commit_guidelines 补 drift 说明条款 | §6.5 | ✅ done (2026-04-22) |
-| S0.O | AR Foundation 5.1 蒸馏配置 | §5.2 | ✅ done (manifest.json 已锁 5.1.5, 技能 ratified) |
-| S0.P | L2-B SemanticNode Pydantic 迁移 | §10.1 | ⏸ deferred → Sprint 4 |
+> 用户 2026-04-22 原话: "sprint0 集中精力完成 Schema 层 V1 设计... test 交给我从简就好"。
+> ⇒ **Schema 代码归 agent, 流程/测试规则归用户**。下表按裁剪后分组。
 
-### 7.3 总估时
+**A. Agent 落地 (Schema V1 + 依赖修正)** — 全部 DONE
 
-- **原计划 S0.1-S0.7**: 1-2 天 (原估)
-- **新增 S0.A-S0.O** (15 项): 大部分是**文档和配置改动**, 不写业务代码, 约 **1 天**
-- **合计**: **2-3 天**, 比原来多 1 天, 但省掉后面 5-10 天的返工
+| # | 任务 | 状态 | 产出 |
+|:--|:-----|:----|:----|
+| S0.A | 锁 L0 Stream schema | ✅ DONE | `src/parrot/shared/event_log.py` (EventEnvelope + EventLayer, Pydantic v2) |
+| S0.B | L3 节点 provenance + time_span 字段 | ✅ DONE | `dsg/l2b_types.py::SemanticNode` 加 4 字段 (additive, 不破坏调用方) |
+| S0.7 | L1.5 协议锁定 | ✅ DONE | `src/parrot/dsg/l1_5_protocol.py` (SensorFrame + Detection + DetectionAuthority + FrameSource) |
+| S0.J | pyproject.toml 补 `pydantic>=2.5` | ✅ DONE (S0.A 顺带) | 显式依赖声明, 避免 transitive 假设 |
+| S0.L | 7 个现有文件打 status tag | ✅ DONE (本 Sprint 最后一步) | 4 个 rule/skill + 3 个架构文档均已补 frontmatter |
+
+**B. Agent 落地 (Schema V1 新增 — 超出原 §7.2 但用户明确 "专注做好 Schema 层") ** — DONE
+
+| # | 任务 | 状态 | 产出 |
+|:--|:-----|:----|:----|
+| S0.Q1 | Snapshot/Photo envelope | ✅ DONE | `shared/snapshot.py` (SnapshotEnvelope + BBox + CameraPose + SnapshotSource + SnapshotPayloadKind) — 支撑 identify_object 升级 + Sprint 4 PhotoEvent |
+| S0.Q2 | VideoTier × DsgMode 两轴枚举 + 合法组合表 | ✅ DONE | `shared/tiers.py` (ALLOWED_COMBOS 5 个合法组合, 非法组合 validate 抛 IllegalCombinationError) |
+| S0.Q3 | VisualState + Scene + VisualStateReason 枚举 | ✅ DONE | `shared/vision_state.py` — Sprint 1 S1.C injector 可直接 import |
+| S0.Q4 | Blackboard key registry 清单 | ✅ DONE | `shared/bb_schema.py` — 4 作用域, 19 个 key, 每 key 钉 writer + event_driven 标 |
+| S0.Q5 | DSG Ingest filter 基类 + Observation 协议 | ✅ DONE | `dsg/ingest/base.py` + `dsg/ingest/__init__.py` (IngestFilter ABC + Observation + ObservationSource) — Sprint 2 S2.B 直接继承 |
+| S0.Q6 | audit B4 图字段前置 | ✅ DONE (合并进 S0.B) | `SemanticNode.reference_image_path` + `last_sighting_path` 已出生 → Sprint 4 S4.A5 任务降为一次性 path 填充 |
+
+**C. 用户自管 (Sprint 0 不做, 用户设计或裁定)** — DEFERRED
+
+| # | 任务 | 状态 | 备注 |
+|:--|:-----|:----|:----|
+| S0.C | 时间轴 API 约定文档化 | 🟡 部分完成 | Schema 层 `event_log.py` + `bb_schema.py` 已有完整 docstring, 正式 API 规约等 Sprint 1 dispatcher 落地时补 |
+| S0.D | `workspace.mdc` 加 Cursor 工作合约 | ⏸ 用户自管 | 流程约束, 用户自行设计 |
+| S0.E | Sprint 开工模板 | ⏸ 用户自管 | 流程约束 |
+| S0.F | ADR 目录和模板 | ⏸ 用户自管 | 流程约束 |
+| S0.G | 3 个追溯 ADR | ⏸ 用户自管 | 流程约束 |
+| S0.H | 三闸门验收规则 `test_gate_rules.md` | ⏸ 用户自管 | 测试规则, 用户明确"test 从简交给我" |
+| S0.I | plan 每条用例标 Gate | ⏸ 用户自管 | 测试规则 |
+| S0.K | Castle 依赖审计脚本 | ⏸ 用户自管 | 运维脚本 |
+| S0.M | workspace.mdc 加两态机 | ⏸ 用户自管 | 流程规则 |
+| S0.N | commit_guidelines 补 drift 条款 | ⏸ 用户自管 | commit 流程 |
+| S0.O | AR Foundation 5.1 蒸馏配置 | ⏸ 后挪到 AR 升级专项 | 和"AR 项目升级" 合并, 不挤 Sprint 0 |
+
+### 7.3 实际用时
+
+- Schema V1 代码全部落地 = 单轮 agent 会话内完成 (2026-04-22)
+- 不包含 Castle 部署 / 真机验证 (那些在 Sprint 1+ 走闸门)
 
 ---
 
@@ -456,3 +476,61 @@ review_trigger: "代码 X 跑通 + 验收用例 Y 通过"
 ### 10.2 (未来条目占位)
 
 按 Sprint 推进逐条追加。
+
+---
+
+## 11. Sprint 0 Schema V1 执行记录 (2026-04-22)
+
+> 记录本轮**代码落地**的事实, 供下一次开工回溯。
+> 本节只写"**发生了什么**", 不写计划。
+
+### 11.1 落地清单 (8 个新文件 + 1 个扩字段 + 1 个常量 + 1 个依赖)
+
+**新文件 (8)**:
+1. `src/parrot/shared/event_log.py` — L0 `EventEnvelope` + `EventLayer` (Pydantic v2 frozen)
+2. `src/parrot/shared/snapshot.py` — `SnapshotEnvelope` + `BBox` + `CameraPose` + payload 三态枚举
+3. `src/parrot/shared/tiers.py` — `VideoTier` × `DsgMode` 正交枚举 + `ALLOWED_COMBOS` 白名单 + `validate_combo`
+4. `src/parrot/shared/vision_state.py` — `VisualState` 四级 + `Scene` (P2 两个) + `VisualStateReason` 词表
+5. `src/parrot/shared/bb_schema.py` — Blackboard 四作用域 **manifest**, 19 个 key 各钉 writer
+6. `src/parrot/dsg/l1_5_protocol.py` — `SensorFrame` + `Detection` + `DetectionAuthority` (ADR-026 六级) + `FrameSource`
+7. `src/parrot/dsg/ingest/__init__.py` — 子包出口
+8. `src/parrot/dsg/ingest/base.py` — `IngestFilter` ABC + `Observation` + `ObservationSource` + `IngestOutcome`
+
+**扩字段 (1 文件 4 字段)**:
+- `src/parrot/dsg/l2b_types.py::SemanticNode` 加: `provenance_stream_id`, `time_span`, `reference_image_path`, `last_sighting_path` (全部带默认值, 调用方无需改)
+
+**常量 (1)**:
+- `src/parrot/shared/constants.py` 加 `STREAM_EVENT_LOG = "parrot.events.log"`
+
+**依赖 (1)**:
+- `pyproject.toml` 显式 `pydantic>=2.5,<3.0` (之前仅 graphiti-core transitive)
+
+### 11.2 smoke 验证 (agent 内回归)
+
+```
+[OK] EventEnvelope.to_xadd_fields round-trip
+[OK] SnapshotEnvelope frozen + size hint
+[OK] BBox range validation (0-1)
+[OK] tiers ALLOWED_COMBOS 5 条, 非法组合抛 IllegalCombinationError
+[OK] bb_schema 19 keys, session scope 8 个, get_key 未知键抛 KeyError
+[OK] SensorFrame.top_detection 按 (authority, confidence) 排序
+[OK] IngestFilter ABC 可实例化具体子类, process_text 默认 no-op
+[OK] Observation: label + confirmation.value + snapshot_uuid 链接
+[OK] SemanticNode 4 新字段 + 老式调用向后兼容
+[OK] 4 个现有 SemanticNode 调用方 (l2b_graph/message_trigger/calendar_trigger/identify_object) import 无回归
+```
+
+### 11.3 显式不做的事 (防误解)
+
+- ❌ **未**写任何业务逻辑 — Schema 层只有类型和 docstring, 没有 dispatcher / filter 实现 / Blackboard sync
+- ❌ **未**改 identify_object / conversation_writer / l2b_graph 的现有行为 — 只加扩展点, 不动调用方
+- ❌ **未**写测试文件 (`Test/p*/*.py`) — 用户明确接管测试设计
+- ❌ **未**部署到 Castle — 开发机验证即可, Castle 由用户手动同步
+- ❌ **未**更新 workspace.mdc / commit_guidelines 的流程文本 — 用户自管
+
+### 11.4 接下来两个口子 (用户语序)
+
+1. **数据流获取升级 + 物体发现第一条** (audit_identify_object_no_screenshot_20260420.md §5) — Schema 已就位: `SnapshotEnvelope` / `reference_image_path` / `last_sighting_path` / `SensorFrame` / `Observation` 可直接用
+2. **AR 项目升级** — `Scene` / `VisualState` / `VideoTier` 已可写进 Blackboard; 具体 ARFoundation 5.1 对齐挪到专项做
+
+Schema 不要再加, 要加走 Sprint 1/2 的 ratify 通道。

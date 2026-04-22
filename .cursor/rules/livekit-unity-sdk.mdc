@@ -4,7 +4,7 @@ globs:
   - "unity/**/*.cs"
 alwaysApply: false
 status: ratified
-status_note: "基于 v1.3.5 (2026-04) 实际源码和编译错误反推, P2 Unity 客户端已按此过 Gate 2"
+status_note: "条目均来自已踩坑总结 (Play/Stop identity 抢占 / ICE 残留 / PublishTrack NRE)。按 sprint0_preflight.md §6.4 标 ratified。"
 last_reviewed: 2026-04-22
 ---
 
