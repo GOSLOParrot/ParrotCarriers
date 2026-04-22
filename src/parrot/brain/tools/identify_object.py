@@ -12,6 +12,15 @@ ARCHITECTURAL DECISION (D-P2.5-DISCOVER):
 Pipeline: discover → match known → (if new) save + dispatch background research
   → (later, on idle/session end) filter + annotate → persist to Graphiti
 
+Sprint 2 Ingest wiring:
+  `_save_new_object` calls `_ingest_via_runner` AFTER the legacy Graphiti write
+  so that:
+    a) the existing Graphiti episode add is preserved (long-term memory)
+    b) the new IngestRunner authority pipeline also fires (audit log +
+       IDENTIFY_OBJECT source priority for Sprint 4 Graphiti write-back)
+  The two L2-B writes are idempotent — runner's upsert finds the node that
+  `_upsert_to_l2b` just inserted and merges authority metadata onto it.
+
 References:
   - Opus 17 §3: PhysicalObject Graphiti entity type, preload_object_semantics
   - Opus 19 §2: EXPECTED state, EvidenceAccumulator
@@ -57,6 +66,41 @@ async def identify_object(
         return await _deep_search(description, category)
     else:
         return await _match_known(description, category)
+
+
+async def _ingest_via_runner(
+    label: str,
+    description: str,
+    category: str,
+    graphiti_uuid: str = "",
+    confidence: float = 0.9,
+) -> None:
+    """Fire ToolResultFilter → IngestRunner as an audit side-channel.
+
+    Called after the legacy Graphiti write in _save_new_object so that
+    the Sprint 2 Ingest pipeline records an authoritative IDENTIFY_OBJECT
+    Observation without replacing the existing L2-B upsert path.
+    """
+    try:
+        from parrot.dsg.ingest.runner import get_ingest_runner
+        from parrot.dsg.ingest.tool_result_filter import ToolResultFilter
+
+        flt = ToolResultFilter()
+        outcome = flt.process_result(
+            {
+                "label": label,
+                "graphiti_uuid": graphiti_uuid,
+                "description": description,
+                "category": category,
+                "confidence": confidence,
+            }
+        )
+        if outcome.observations:
+            runner = get_ingest_runner()
+            if runner is not None:
+                await runner.commit_outcome(outcome)
+    except Exception:
+        logger.debug("identify_object: ingest runner side-channel skipped (runner unavailable)")
 
 
 async def _emit_trigger_event(event_type: str, data: dict) -> None:
@@ -215,6 +259,13 @@ async def _save_new_object(description: str, category: str) -> str:
         )
 
         await _upsert_to_l2b(obj_uuid, description, category)
+        await _ingest_via_runner(
+            label=description[:60],
+            description=description,
+            category=category,
+            graphiti_uuid=obj_uuid,
+            confidence=0.9,
+        )
 
         await _emit_trigger_event("new_object", {
             "uuid": obj_uuid,

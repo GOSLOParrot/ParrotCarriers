@@ -25,7 +25,7 @@ import asyncio
 import logging
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from parrot.brain.obs_log import log_obs_event
@@ -300,12 +300,18 @@ class PerceptionSupervisor:
             and (now - hysteresis.a10_up_since) >= A10_UP_STABLE_S
         )
         visual_acceptable = visual_state in (None, VisualState.ACTIVE)
-        if (
-            a10_up_long_enough
-            and visual_acceptable
-            and current != (VideoTier.VIDEO_FULL, DsgMode.DSG_FULL)
-            and current != (VideoTier.VIDEO_OFF, DsgMode.DSG_TEXT_ONLY)
-        ):
+        # Upgrade only when we're on a genuinely degraded combo. Exclude:
+        #   VIDEO_FULL+DSG_FULL  — already at target; nothing to upgrade
+        #   VIDEO_OFF+DSG_TEXT_ONLY — user/manual intent; Supervisor must not
+        #                             auto-exit; use set_manual_override to lift
+        #   VIDEO_BURST+DSG_FULL — already above FULL quality; upgrading
+        #                          would silently downgrade bitrate
+        _ALREADY_OPTIMAL = frozenset({
+            (VideoTier.VIDEO_FULL, DsgMode.DSG_FULL),
+            (VideoTier.VIDEO_OFF, DsgMode.DSG_TEXT_ONLY),
+            (VideoTier.VIDEO_BURST, DsgMode.DSG_FULL),
+        })
+        if a10_up_long_enough and visual_acceptable and current not in _ALREADY_OPTIMAL:
             return (
                 (VideoTier.VIDEO_FULL, DsgMode.DSG_FULL),
                 "a10_up_60s",
@@ -415,9 +421,9 @@ class PerceptionSupervisor:
                                    offline reflection tooling. Layer 2 =
                                    "autonomous action" per ar_feature_vision §3.5.
 
-        Sprint 2 T10 extends this hook to forward a `setVideoTier` RPC to
-        Unity; Sprint 3 wires re-publishing track options for real bitrate
-        changes.
+        Also forwards a `setVideoTier` RPC to Unity so it can apply muting
+        (VIDEO_OFF) or acknowledge the tier change. Actual track re-publishing
+        for dynamic bitrate adjustment is deferred to Sprint 3.
         """
         prev_tier, prev_mode = previous
         new_tier, new_mode = new
