@@ -1,12 +1,12 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-23 (Sprint 2 计划固化 + Round 2 执行中)
-> **当前阶段**: **Sprint 2 执行中** — Intent 层 + 两轴模式 + Ingest 过滤器
-> **Sprint 2 计划 (ratified)**: `.cursor/memory/architecture/sprint2_plan_20260423.md` (§6 T1-T13 任务清单, §9 9 项已知隐患)
-> **Sprint 1 完成报告**: `.cursor/memory/architecture/sprint1_completion_report_20260422.md` (事实记录 + 遗留隐患 §6 + 交给 Sprint 2 的硬约束 §7)
-> **Sprint 2 启动说明**: `.cursor/memory/architecture/sprint2_kickoff_prompt.md` (Round 0 prompt, 计划固化后进入 Round 2 执行)
-> **Sprint 1 回顾**: `.cursor/memory/architecture/sprint1_plan_20260422.md` (§5.4 10 个 commit 台账)
-> Round 2 T1-T10 全部 ✅, 真机端到端 smoke 留用户自管
+> 最后更新: 2026-04-23 (Sprint 2 全部 12 个 T 落地 + 完成报告固化)
+> **当前阶段**: **Sprint 2 完成, Sprint 3 前置中** — 自主闭环 + 两轴模式 + Ingest 语义入口已通
+> **Sprint 2 完成报告 (ratified)**: `.cursor/memory/architecture/sprint2_completion_report_20260423.md`
+> **Sprint 2 计划 (ratified)**: `.cursor/memory/architecture/sprint2_plan_20260423.md` (§6 T1-T12 全部 ✅)
+> **Sprint 1 完成报告**: `.cursor/memory/architecture/sprint1_completion_report_20260422.md`
+> **Sprint 3 入场**: A10 真拉起 + Unity AR 重建 + 动态 bitrate/fps (详见 sprint2 completion §8)
+> Round 3 T1-T12 全部 ✅ (commit `8feec5f → 37cdd37`), 真机端到端 smoke 留用户自管
 > 部署快照: `.cursor/memory/deploy_snapshot_p2_20260412.md`
 > **P2 里程碑**: `.cursor/memory/milestone_p2.md` (P2 已完成, 历史归档) — 记忆共享 + Scheduler 增强 + DSG 耦合层 + L2-B + 触发器
 > 同步工具: `.cursor/memory/commit_guidelines.md` + `infra/sync-castle.ps1`
