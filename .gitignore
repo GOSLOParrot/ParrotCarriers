@@ -12,8 +12,8 @@ build/
 .venv/
 *.egg
 
-# IDE
-.vscode/
+# IDE（仅跟踪工作区终端 UTF-8 等共享设置）
+.vscode/*
 !.vscode/settings.json
 .idea/
 

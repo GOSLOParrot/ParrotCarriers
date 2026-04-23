@@ -1,0 +1,13 @@
+{
+  "terminal.integrated.defaultProfile.windows": "PowerShell (UTF-8)",
+  "terminal.integrated.profiles.windows": {
+    "PowerShell (UTF-8)": {
+      "source": "PowerShell",
+      "args": [
+        "-NoExit",
+        "-Command",
+        "chcp 65001 | Out-Null; try { [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }; $OutputEncoding = [System.Text.UTF8Encoding]::new($false)"
+      ]
+    }
+  }
+}
