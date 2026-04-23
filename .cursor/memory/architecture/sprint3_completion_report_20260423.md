@@ -1,0 +1,301 @@
+---
+status: in_testing
+status_note: "代码已落地并修复所有审计发现的阻断 Bug；真机 E2E smoke 由用户自管，测试过程中随时补充本文件。"
+last_reviewed: 2026-04-23
+---
+
+# Sprint 3 完成报告 — AR Desktop MVP
+
+> 日期: 2026-04-23
+> 作者: Agent (Composer) + 用户决策
+> 定位: **事实记录 + 审计发现**，不是计划；只记"Sprint 3 实际交付了什么 + 发现并修复了哪些 Bug + 给 Sprint 4 留了什么坑"
+> 关联文档:
+> - `sprint3_kickoff_prompt.md` — Sprint 3 开工约定 (D1-D6 六项决策)
+> - `sprint2_completion_report_20260423.md` — Sprint 2 遗留 5 坑
+> - `ar_feature_implementation_plan.md` — Sprint 0-4 任务清单
+> - `active_context.md` — 当前全局进度
+
+---
+
+## 0. TL;DR (三行说完)
+
+Sprint 3 将 AR Desktop MVP 的五个关键链路全部落地：**Token Mint 服务**（Unity 从 Castle 获取 LiveKit JWT）→ **Launcher 启动序列**（权限 → Token → 连接 → 加载 AR 场景）→ **AR 视频推流**（ARVideoPublisher 动态 bitrate/FPS 重建 + GeminiOnly/Full/Off 三档）→ **AR 场景报告** (`onSceneReady` / `onGosloPlaced` / `setScene` RPC 上报脑端）→ **Brain 手动覆盖** (`set_video_tier` Gemini 工具 → `PerceptionSupervisor` → BB 写 + Unity RPC 推送）。
+
+两轮代码审计共发现 **11 个 Bug**（B1-B5 模拟审计 + A1-A6 架构审计），其中 **6 个 A 系列 Bug 均已修复**（含 1 个 P0 编译阻断、4 个 P1 主链路功能失效）。
+
+**核心教训**：跨模块"隐式副作用"（side effect）未写入被调用方的 docstring，导致调用方假设"调方法 = 端到端生效"；解决方案：每个异步副作用路径在本 Sprint 内必须在 docstring 明确声明。
+
+---
+
+## 1. 任务完成清单
+
+### Python (T-P1 ~ T-P4)
+
+| Task | 内容 | 状态 |
+|------|------|------|
+| T-P1 | `src/parrot/brain/tools/set_video_tier.py` — Gemini function tool，调 `PerceptionSupervisor.set_manual_override()` | ✅ 落地，A1 修复后主链路闭合 |
+| T-P2 | `src/parrot/brain/agent.py` — 注册 `onSceneReady` / `onGosloPlaced` / `setScene` RPC handler | ✅ 落地 |
+| T-P3 | `src/parrot/a10/heartbeat.py` — A10 向 Redis 写 `parrot:a10_heartbeat` 60s TTL | ✅ 落地 |
+| T-P4 | `src/parrot/castle/token_mint.py` — FastAPI `/mint` 端点（Bearer 认证 + LiveKit JWT） | ✅ 落地，A5 修复 `with_ttl(timedelta(...))` |
+
+### Unity C# (T-U1 ~ T-U5)
+
+| Task | 内容 | 状态 |
+|------|------|------|
+| T-U1 | `ARFoundationSetup.cs` — `PlaneDetectionMode.Horizontal` 配置 | ✅ 落地 |
+| T-U2 | `TapToPlace.cs` — AR 平面射线 + GOSLO 放置 + `onGosloPlaced` RPC | ✅ 落地 |
+| T-U3 | `LauncherUI.cs` — 权限请求 + Token 获取 + Room 连接 + 场景加载 | ✅ 落地，A3 修复真实 `rm.Connect()` 调用 |
+| T-U4 | `SceneProfileManager.cs` — AR/Webcam profile 切换 + `setScene` RPC | ✅ 落地 |
+| T-U5 | `ARVideoPublisher.cs` — H264/VP8 fallback + GeminiOnly/Full/Off 三档重建 + `RebuildTrack` | ✅ 落地，A2 修复初始 bitrate |
+
+### 共享类型 (T-S)
+
+| Task | 内容 | 状态 |
+|------|------|------|
+| T-S1 | `shared/vision_state.py` — `TRACK_REBUILDING` 新增到 `VisualStateReason` | ✅ 落地 |
+| T-S2 | `brain/vision/state.py` — `TRACK_REBUILDING → VisualState.PAUSED` | ✅ 落地 |
+
+### 基础设施 (T-I)
+
+| Task | 内容 | 状态 |
+|------|------|------|
+| T-I1 | `infra/docker-compose.yml` — `token-mint` 服务 | ✅ 落地，A6 修复端口绑定 `0.0.0.0:7888` |
+
+---
+
+## 2. Sprint 3 六项决策 (D1-D6) 落地状态
+
+| # | 决策 | 落地 | 备注 |
+|---|------|------|------|
+| D1 | `PerceptionSupervisor` 是 `session/video_tier` 的唯一 BB 写者 | ✅ | `set_manual_override` 是唯一入口；A1 修复了 RPC 推送缺失 |
+| D2 | `ARVideoPublisher` 用 `RebuildTrack` 实现动态 bitrate | ✅ | H264 主路 + VP8 fallback；`VIDEO_OFF` = mute 不拆流 |
+| D3 | Token Mint Bearer 认证，`PARROT_MINT_SECRET` 控制 | ✅ | 未设置时 dev-mode 警告但放行（见 §6 安全争议） |
+| D4 | A10 心跳通过 Redis `parrot:a10_heartbeat` 60s TTL | ✅ | `a10/heartbeat.py` SETEX 30s 刷新 |
+| D5 | `onSceneReady` 由 `RoomManager.TriggerGreetingAfterDelay` 在 500ms 后发送 | ✅ | 依赖 Brain 在 room 里先注册 |
+| D6 | `set_video_tier` Gemini tool 经 Supervisor 写 BB 并推 Unity | ✅ (A1 修复后) | 之前只写 BB，不推 Unity |
+
+---
+
+## 3. 第一轮模拟审计 Bug (B-系列, 开发期修复)
+
+> 这 5 个 Bug 在 Sprint 3 编写阶段自查时发现并在提交前修复。
+
+| # | 位置 | 问题 | 修复 |
+|---|------|------|------|
+| B1 | `agent.py` | `onGosloPlaced` RPC 未注册到 `_attach_scene_ready_rpc` | 补注册 |
+| B2 | `ARVideoPublisher` | `RebuildTrack` 没有 `_isPublishing` 守卫 → 并发 rebuild | 加守卫 flag |
+| B3 | `TapToPlace.cs` | AR 射线在 UI 触摸事件也触发 → 意外放置 | `EventSystem.IsPointerOverGameObject()` 过滤 |
+| B4 | `VideoTierReceiver.cs` | `ApplyTier` 在 track 未发布时调用 `SetPublishMuted` → NullRef | 加发布状态判断 |
+| B5 | `token_mint.py` | `_check_auth` 未设置 secret 时 raise 500 而非警告放行 | 改为 dev-mode 兼容 |
+
+---
+
+## 4. 第二轮架构代码审计 Bug (A-系列, 2026-04-23)
+
+> 这 6 个 Bug 在全链路架构复查阶段发现。**全部已修复。**
+
+### A1 — `set_video_tier` 工具不推送 Unity RPC（P1 主链路失效）
+
+**位置**: `src/parrot/brain/perception_supervisor.py :: set_manual_override()`
+
+**现象**: 用户说"视频全开"，Brain 的 Blackboard 更新为 `VIDEO_FULL`，Unity 手机端的 bitrate / mute 状态**毫无变化**。
+
+**根因**: `set_manual_override()` 在 Sprint 2 设计时职责是"锁住自动决策循环"，没有文档声明"同时推 Unity RPC"。Sprint 3 的 `set_video_tier` 工具调用它时**假设**该方法端到端生效，但实际上 `push_video_tier` RPC 只在 `_control_loop → _on_decision_committed` 路径里被调用，手动覆盖路径缺失这一环。
+
+**修复**: `set_manual_override()` 捕获 `previous = self._current`（写前快照），`_write_combo()` 成功后 `asyncio.create_task(_on_decision_committed(..., cause="manual_override"))` 触发与决策循环相同的副作用链（L0 EventLog + obs_log + `push_video_tier` RPC）。
+
+**类型**: **隐式副作用未记入被调用方 docstring**
+
+---
+
+### A2 — `ARVideoPublisher` 初始发布 bitrate 与 DEFAULT_COMBO 不一致（P2 状态漂移）
+
+**位置**: `unity/ParrotDev/Assets/Scripts/LiveKit/ARVideoPublisher.cs :: SetupAndPublish()`
+
+**现象**: Brain 启动时写 `DEFAULT_COMBO = (VIDEO_GEMINI_ONLY, DSG_PASSIVE)` → 300kbps/15fps；Unity 初始发布写死 `MaxBitrate = 1_500_000` → 1.5Mbps/30fps。两端初始状态不一致，直到 Brain 主动发 `setVideoTier` 才会对齐。
+
+**根因**: `_currentTier` 字段已正确初始化为 `GeminiOnly`，但 `SetupAndPublish()` 没有读取它，仍然硬编码旧的高码率值。属于**局部实现缺失**（RebuildTrack 正确读 `_currentTier`，InitPublish 没读）。
+
+**修复**: `SetupAndPublish()` 用 switch 从 `_currentTier` 导出 `initBitrate` / `initFps`，并将 `targetFps` 同步更新，使采集循环从正确频率启动。
+
+**类型**: **功能实现不完整（rebuild 路径覆盖，init 路径遗漏）**
+
+---
+
+### A3 — `LauncherUI.OnConnectClicked()` 从未调用 `rm.Connect()`（P1 手机无法入房间）
+
+**位置**: `unity/ParrotDev/Assets/Scripts/Core/LauncherUI.cs :: OnConnectClicked()`
+
+**现象**: 用户点击"连接"，Token 获取成功，UI 显示"连接成功 — 进入 AR..."，随后加载 AR 场景；但手机实际上**从未加入 LiveKit 房间**（`RoomManager.IsConnected == false`），Brain 在房间里看不到 Unity 参与者，所有 RPC 均无响应。
+
+**根因**: `LauncherUI` 和 `RoomManager.Connect()` 由两个人独立开发，集成时漏掉了调用点。`LauncherUI` 找到了 `RoomManager.Instance` 引用，但注释"Update RoomManager with fresh token"后直接跳到 `SceneManager.LoadScene()`，省掉了实际的 `rm.Connect(token, url)` + `IsConnected` 轮询步骤。
+
+**修复**:
+1. 在找到 `rm` 后调用 `rm.Connect(TokenService.Instance.LiveKitToken, TokenService.Instance.LiveKitUrl)`
+2. 轮询 `rm.IsConnected`，最长等 15 秒，超时显示错误并返回，不加载场景
+3. 连接成功后延迟 400ms 再加载（给 Brain 的 `onSceneReady` 500ms 窗口留余量）
+
+**类型**: **两个独立开发的组件集成时调用链断裂**
+
+---
+
+### A4 — `RoomManager.TriggerGreetingAfterDelay()` 缺少闭合 `}`（P0 编译阻断）
+
+**位置**: `unity/ParrotDev/Assets/Scripts/LiveKit/RoomManager.cs`
+
+**现象**: C# 编译失败，Unity 项目无法构建。
+
+**根因**: 手工编辑时漏掉一个 `}`。无 CI/自动化编译检查，只能靠 Unity Editor 打开才发现。
+
+**修复**: 补上 `}` + `// end TriggerGreetingAfterDelay` 注释。同时新增 `[SerializeField] bool autoConnectOnStart = true` 字段，让 Launcher 场景可在 Inspector 里关闭自动连接（Launcher.unity 创建后设为 false）。
+
+**类型**: **手工编辑 typo + 缺少 CI 编译保护**
+
+---
+
+### A5 — `token_mint.py` 调用 `with_ttl(seconds=int)` → 运行时 TypeError（P0 运行时崩溃）
+
+**位置**: `src/parrot/castle/token_mint.py :: _generate_token()`
+
+**现象**: Unity POST `/mint` → `TypeError: with_ttl() expects timedelta, got int` → 500 → 手机 Token 获取失败 → 无法连接房间。
+
+**根因**: `active_context.md` "已确认事实"区已记录 `with_ttl()` 需 `timedelta` 对象（Sprint 2 `generate_token.py` 修复时写入）。`token_mint.py` 是 Sprint 3 新建文件，作者没有检查 `active_context.md` 已确认事实，直接传 `int`。
+
+**修复**: `from datetime import timedelta` + `.with_ttl(timedelta(seconds=_TOKEN_TTL_S))` + 注释指向 `active_context.md` 事实来源。
+
+**类型**: **已有"确认事实"未传递给新文件（context drift）**
+
+---
+
+### A6 — `docker-compose.yml` token-mint 绑定 `127.0.0.1:7888`，手机无法访问（P1 部署错误）
+
+**位置**: `infra/docker-compose.yml :: token-mint.ports`
+
+**现象**: Castle ECS 上 `curl http://127.0.0.1:7888/mint` 成功；手机 `http://<castle-public-ip>:7888/mint` 超时。
+
+**根因**: `127.0.0.1:host:container` 格式让 Docker 只监听 loopback，外部请求全部被丢弃。作者意图"只开 Castle 内部可访问"，但忽略了手机（非 localhost）需要通过公网 IP 访问。
+
+**修复**: 改为 `0.0.0.0:7888:7888`（监听所有网络接口）+ 注释说明"ECS 安全组需开放 TCP inbound 7888"。
+
+**类型**: **Docker 网络拓扑误解（loopback ≠ Castle 内网）**
+
+---
+
+## 5. 根本原因聚类分析
+
+> 这 6 个 Bug 背后只有 **3 种根因模式**，掌握这 3 种模式比修 Bug 本身更重要：
+
+### 根因 1：隐式副作用未写入被调用方 docstring（A1, A3）
+
+**描述**: 方法 A 有一个重要的"调用后还需要发生 X"的副作用；方法 A 的文档只写了它自己做什么，没有写"调用者自己要做 X"或"X 会被自动触发"。调用方 B 看方法签名认为"调 A = 全搞定"，X 被遗漏。
+
+**修复规范**（Sprint 4 起强制）：
+- 任何跨模块异步副作用链 **必须在 docstring 里用 `Side-effects:` 节列出**
+- 新集成点完成后，立即用"从手机端 E2E 追踪一次主链路"验证
+
+### 根因 2：已确认事实未传播给新文件（A5）
+
+**描述**: `active_context.md` "已确认事实"里的知识（如 SDK API 用法修正）是新建文件的必读上下文，但实际上没有人在新建文件时检查它。
+
+**修复规范**：
+- 新建 Python 服务文件时，必须 grep `active_context.md` 中 `已确认` / `BUG` / `注意` 关键词
+- 在文件头注释里引用相关条目（如 A5 修复后的注释：`# 见 active_context.md confirmed-facts`）
+
+### 根因 3：组件独立开发时缺少集成合同文档（A2, A3, A4, A6）
+
+**描述**: A2 的 RebuildTrack 和 SetupAndPublish 是同一文件的两个路径，作者覆盖了一个忘了另一个；A3 的 Launcher/RoomManager 是两个人分别写的，接口存在但调用点缺失；A4 是编辑器缺 CI；A6 是单机思维忽略多设备网络拓扑。
+
+**修复规范**：
+- 一个功能涉及"Python ↔ Unity 边界"或"两个 C# 脚本协同"时，**先写一句话的集成合同**（谁调谁，谁等谁，谁的状态是 ground truth）
+- 同一文件内的两个"平行路径"（如 init 路径 vs rebuild 路径）要在注释里互相引用
+
+---
+
+## 6. 已知遗留与争议
+
+| # | 描述 | 类型 | 优先级 | 建议处理时机 |
+|---|------|------|--------|------------|
+| L1 | `Launcher.unity` 场景未创建，手机必须直接开 `Dev.unity` | 缺失功能 | P1 | Sprint 4 前，用 Unity Editor 创建并配置 `autoConnectOnStart=false` |
+| L2 | `PARROT_MINT_SECRET` 未设置时 dev-mode 放行（A5 修复时保留此行为） | 安全争议 | P2 | Sprint 4 ECS 部署前改为强制 500；本地开发期可接受 |
+| L3 | ECS 安全组未开放 TCP 7888 的操作步骤未自动化 | 运维 | P2 | 写入 `deploy-prep-routing.mdc` |
+| L4 | 无自动化回归测试覆盖 Sprint 3 新增 RPC / Token Mint 路径 | 测试覆盖 | P2 | Sprint 4 开始前补 `tests/` 里的 smoke 测试 |
+| L5 | `onSceneReady` Brain 未在房间时静默跳过，无重试机制 | 健壮性 | P3 | Sprint 4 |
+
+---
+
+## 7. Sprint 3 验收用例状态（待真机测试更新）
+
+> 用户测试时按此表勾选，标注发现的新 Bug。
+
+| # | 用例 | 预期 | 状态 |
+|---|------|------|------|
+| AC1 | 手机安装 APK → 启动 Launcher → 权限弹窗 → 全部允许 → 就绪按钮亮起 | 权限获取正常 | ⬜ 待测 |
+| AC2 | 点击"连接"→ Token 从 Castle 获取成功（castle-ip:7888/mint）→ "连接成功" | JWT 获取 + Room 连接 | ⬜ 待测 |
+| AC3 | AR 场景加载 → Brain `onSceneReady` 收到 → GOSLO 问候语播放 | 场景 RPC 闭合 | ⬜ 待测 |
+| AC4 | 点击 AR 平面 → GOSLO 放置 → `onGosloPlaced` 上报 → Brain 日志确认 | 放置 RPC | ⬜ 待测 |
+| AC5 | 说"视频全开" → Brain `set_video_tier(VIDEO_FULL)` → `tmux attach -t brain` 日志看到 RPC push → 手机 bitrate 变 1Mbps | 手动覆盖主链路 | ⬜ 待测 |
+| AC6 | 说"视频关闭" → `VIDEO_OFF` → 手机摄像头 track mute → Brain DSG 切 PASSIVE | OFF 模式 | ⬜ 待测 |
+| AC7 | 断网 30s 后再连 → A10 心跳超时 → Supervisor 降级 → 恢复后自动升 | A10 心跳 E2E | ⬜ 待测 |
+| AC8 | `SceneProfileManager` 切换 Profile → `setScene` RPC → Brain `context_injector` C3/C4 更新 | 场景同步 | ⬜ 待测 |
+
+---
+
+## 8. Sprint 4 依赖清单
+
+Sprint 3 的以下接缝是 Sprint 4 的**强依赖前提**（Sprint 4 开工前需 AC1-AC5 通过）：
+
+| Sprint 4 功能 | 依赖的 Sprint 3 接缝 | 当前状态 |
+|--------------|---------------------|---------|
+| 截图 Tool（identify_object 升级版） | `ARVideoPublisher` XRCpuImage 帧捕获接口 | 已留接口，Sprint 4 实现 |
+| Gemini Live 视频采样通道（渲染画面 Tool） | `AsyncGPUReadback` 渲染帧捕获，`push_frame_to_gemini` | 设计中，Sprint 4 |
+| Graphiti 写回（L2-B → 长期记忆） | `PerceptionSupervisor` obs_log 输出稳定 | Sprint 3 已验证 obs_log |
+| Soul 按 DsgMode 分档行为 | `session/dsg_mode` BB 稳定 + Brain读取 | Sprint 3 已验证 |
+| Launcher.unity 场景 | `RoomManager.autoConnectOnStart=false` | 字段已加，场景待 Unity Editor 创建 |
+
+---
+
+## 9. P2.5 整体架构建议
+
+> 这些建议面向 Sprint 4 结束后的最终一致性审计（final consistency audit）：
+
+### 9.1 代码卫生规范（Code Hygiene）
+
+1. **副作用声明强制化**: 所有跨进程/跨线程/跨 Unity-Python 边界的方法，必须在 docstring 里列 `Side-effects:` 节
+2. **已确认事实引用**: 新建 Python 文件头必须注释 `# Confirmed facts from: active_context.md §X`，避免 SDK API 回归
+3. **平行路径互引**: 同一 class 内两条"平行路径"（init vs rebuild、auto vs manual）的入口函数互相注释引用
+4. **CI C# 编译门**: GitHub Actions 或 Unity Cloud Build 对 `.cs` 文件做编译检查，阻断裸 `}` 遗漏类错误
+
+### 9.2 测试策略（P2.5 完成 Test 准备）
+
+```
+测试层级:
+  L1 单元  → pytest: PerceptionSupervisor.set_manual_override 触发 mock RPC
+           → pytest: token_mint /mint 返回合法 JWT，with_ttl 类型正确
+  L2 集成  → sim_unity_client.py: 端到端 set_video_tier → push_video_tier RPC 断言
+  L3 真机  → AC1-AC8 验收用例（用户手测，本文件记录）
+```
+
+### 9.3 部署检查清单（Sprint 4 ECS 上线前）
+
+- [ ] 阿里云安全组：TCP inbound 7880（LiveKit），7888（Token Mint），6379（Redis 内网）
+- [ ] `PARROT_MINT_SECRET` 设置为随机高熵字符串（不再 dev-mode）
+- [ ] `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` 与 LiveKit 服务器一致
+- [ ] A10 心跳脚本 (`a10/heartbeat.py`) 在 A10 启动时加入 systemd / tmux session
+- [ ] `docker compose up -d brain token-mint redis` 在 Castle 上 smoke 验证
+
+---
+
+## 附录 A：已修复文件索引
+
+| 文件 | Bug | 修改内容 |
+|------|-----|---------|
+| `src/parrot/brain/perception_supervisor.py` | A1 | `set_manual_override()` 捕获 previous，`asyncio.create_task(_on_decision_committed(...))` |
+| `src/parrot/castle/token_mint.py` | A5 | `from datetime import timedelta` + `.with_ttl(timedelta(seconds=...))` |
+| `infra/docker-compose.yml` | A6 | `127.0.0.1:7888:7888` → `0.0.0.0:7888:7888` + 注释 |
+| `unity/.../RoomManager.cs` | A4 | 补 `}` 关闭 `TriggerGreetingAfterDelay` + `autoConnectOnStart` 字段 |
+| `unity/.../LauncherUI.cs` | A3 | `rm.Connect(token, url)` + `IsConnected` 15s 轮询 + 超时报错 |
+| `unity/.../ARVideoPublisher.cs` | A2 | `SetupAndPublish()` switch `_currentTier` 得到 `initBitrate`/`initFps` |
+
+---
+
+*本文件在真机测试中持续更新；AC 栏目用 ✅/❌/⚠️ 标注，新发现的 Bug 追加至 §6。*

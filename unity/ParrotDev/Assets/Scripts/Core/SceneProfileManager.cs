@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.IO;
 using UnityEngine;
+using LiveKit;
 
 /// <summary>
 /// Sprint 3 T-U2: Reads the scene profile config and initialises the correct

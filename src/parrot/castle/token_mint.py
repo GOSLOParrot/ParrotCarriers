@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +90,14 @@ def _generate_token(room: str, identity: str) -> str:
                 "livekit-server-sdk-python required: pip install livekit-api"
             ) from exc
 
+    # NOTE: with_ttl() requires a timedelta — NOT a plain int.
+    # (Active-context confirmed fact from generate_token.py fix, 2026-04-11)
     token = (
         AccessToken(api_key=_LIVEKIT_API_KEY, api_secret=_LIVEKIT_API_SECRET)
         .with_identity(identity)
         .with_name(identity)
         .with_grants(VideoGrants(room_join=True, room=room))
-        .with_ttl(seconds=_TOKEN_TTL_S)
+        .with_ttl(timedelta(seconds=_TOKEN_TTL_S))
     )
     return token.to_jwt()
 

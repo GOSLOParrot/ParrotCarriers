@@ -1,5 +1,7 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using LiveKit;
 
 #if UNITY_AR_FOUNDATION
 using UnityEngine.XR.ARFoundation;

@@ -60,8 +60,18 @@ services:
     restart: unless-stopped
 
   # Sprint 3 T-P4: Token Mint service (LiveKit room token generation for Unity)
-  # Port 7888 — internal only (behind Castle firewall, not exposed to public internet).
-  # Unity POSTs to http://<castle-ip>:7888/mint with Bearer PARROT_MINT_SECRET.
+  #
+  # Port 7888: bound to 0.0.0.0 so both the host's local process AND the phone
+  # (Unity on IQOO NEO9) can POST to http://<castle-public-ip>:7888/mint.
+  #
+  # Security model (D3):
+  #   - Bearer PARROT_MINT_SECRET header required (Unity reads from Resources/parrot_config.json)
+  #   - Alibaba Cloud security group must also allow TCP inbound on port 7888
+  #     (Castle ECS 东京节点 → 安全组规则 → 入方向 TCP 7888 放通)
+  #   - If tighter isolation is needed later, add Nginx auth_request proxy
+  #
+  # Dev-mode: if PARROT_MINT_SECRET is unset the service logs a warning and
+  # accepts unauthenticated requests — acceptable for local LAN testing.
   token-mint:
     build:
       context: ..
@@ -72,7 +82,7 @@ services:
     environment:
       - PARROT_MINT_PORT=7888
     ports:
-      - "127.0.0.1:7888:7888"
+      - "0.0.0.0:7888:7888"   # expose to phone (was 127.0.0.1 — blocked phone access)
     depends_on:
       redis:
         condition: service_healthy

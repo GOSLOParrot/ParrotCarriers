@@ -19,6 +19,12 @@ public class RoomManager : MonoBehaviour
     [Tooltip("JWT join token — generate with src/scripts/generate_token.py")]
     [SerializeField] private string joinToken = "";
 
+    [Tooltip(
+        "Auto-connect on Start() using the inspector/file token.\n" +
+        "Set to FALSE in Launcher scene — LauncherUI will call Connect() after fetching a fresh token.\n" +
+        "Leave TRUE in Dev.unity so the scene connects immediately for dev iteration.")]
+    [SerializeField] private bool autoConnectOnStart = true;
+
     public Room Room { get; private set; }
     public bool IsConnected { get; private set; }
     public static RoomManager Instance { get; private set; }
@@ -39,6 +45,12 @@ public class RoomManager : MonoBehaviour
 
     void Start()
     {
+        if (!autoConnectOnStart)
+        {
+            Debug.Log("[RoomManager] autoConnectOnStart=false — waiting for LauncherUI.Connect()");
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(joinToken))
             TryLoadTokenFromParrotDevFile();
 
@@ -158,6 +170,7 @@ public class RoomManager : MonoBehaviour
             Debug.LogWarning($"[RoomManager] onSceneReady error: {rpcCall.Error?.Message}");
         else
             Debug.Log($"[RoomManager] onSceneReady sent (time_of_day={timeHint})");
+    }   // end TriggerGreetingAfterDelay
 
     private void OnTrackSubscribed(
         IRemoteTrack track,

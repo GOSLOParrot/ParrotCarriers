@@ -132,16 +132,45 @@ public class ARVideoPublisher : MonoBehaviour
         _videoSource = new TextureVideoSource(_rt);
         _videoTrack = LocalVideoTrack.CreateVideoTrack("ar-camera", _videoSource, room);
 
+        // BUG-A2 fix (Sprint 3 audit 2026-04-23):
+        // Previous code hardcoded 1_500_000 bps which contradicts Brain's DEFAULT_COMBO
+        // (VIDEO_GEMINI_ONLY = 300 kbps / 15 fps written to Blackboard at startup).
+        // Now we read _currentTier (defaults to GeminiOnly in field initializer, line ~65)
+        // so the initial publish matches the Brain's expected state without a round-trip RPC.
+        //
+        // If the Brain has already sent a setVideoTier before publish completes (race),
+        // VideoTierReceiver.ApplyTier() will call RebuildTrack() and reconcile.
+        int initBitrate;
+        int initFps;
+        switch (_currentTier)
+        {
+            case VideoTierLocal.Full:
+                initBitrate = fullBitrate;
+                initFps     = fullFps;
+                break;
+            case VideoTierLocal.Burst:
+                initBitrate = fullBitrate * 2;
+                initFps     = fullFps;
+                break;
+            default:   // GeminiOnly (default) and Off (will be muted immediately after)
+                initBitrate = geminiOnlyBitrate;
+                initFps     = geminiOnlyFps;
+                break;
+        }
+        // Sync the live targetFps so the capture loop starts at the right rate.
+        targetFps = initFps;
+
         var options = new TrackPublishOptions
         {
             VideoCodec = VideoCodec.H264,
             VideoEncoding = new VideoEncoding
             {
-                MaxBitrate = 1_500_000,
-                MaxFramerate = targetFps,
+                MaxBitrate = (ulong)initBitrate,   // VideoEncoding.MaxBitrate is ulong
+                MaxFramerate = initFps,
             },
             Source = TrackSource.SourceCamera,
         };
+        Debug.Log($"[ARVideoPublisher] Initial publish tier={_currentTier} bitrate={initBitrate} fps={initFps}");
 
         var publish = room.LocalParticipant.PublishTrack(_videoTrack, options);
         yield return publish;
@@ -394,22 +423,18 @@ public class ARVideoPublisher : MonoBehaviour
         }
         var room = rm.Room;
 
-        // Unpublish existing track
+        // Unpublish existing track.
+        // NOTE: C# prohibits `yield return` inside a try block that has a catch clause (CS1626).
+        // UnpublishTrackInstruction does NOT expose .IsError/.Error (unlike PublishTrackInstruction),
+        // so we just yield-and-proceed; LiveKit cleans up the track internally.
         if (_videoTrack != null)
         {
-            try
-            {
-                _videoSource?.Stop();
-                var unpub = room.LocalParticipant.UnpublishTrack(_videoTrack);
-                yield return unpub;
-                _videoTrack = null;
-                _isPublishing = false;
-                Debug.Log("[ARVideoPublisher] Track unpublished for rebuild");
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[ARVideoPublisher] UnpublishTrack failed: {e.Message}");
-            }
+            _videoSource?.Stop();
+            // stopOnUnpublish: true — also stops the local track source on the server side.
+            yield return room.LocalParticipant.UnpublishTrack(_videoTrack, stopOnUnpublish: true);
+            Debug.Log("[ARVideoPublisher] Track unpublished for rebuild");
+            _videoTrack = null;
+            _isPublishing = false;
         }
 
         // Brief pause to let LiveKit process the unpublish
@@ -431,7 +456,7 @@ public class ARVideoPublisher : MonoBehaviour
             VideoCodec = VideoCodec.H264,
             VideoEncoding = new VideoEncoding
             {
-                MaxBitrate = bitrate,
+                MaxBitrate = (ulong)bitrate,   // VideoEncoding.MaxBitrate is ulong
                 MaxFramerate = fps,
             },
             Source = TrackSource.SourceCamera,

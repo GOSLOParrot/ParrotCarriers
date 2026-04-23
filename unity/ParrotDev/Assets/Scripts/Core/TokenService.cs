@@ -146,14 +146,21 @@ public class TokenService : MonoBehaviour
             yield break;
         }
 
-        MintResponse resp;
+        // C# prohibits `yield return` inside a catch clause (CS1631).
+        // Parse in a local scope; record failure, then yield outside the catch.
+        MintResponse resp = default;
+        string parseError = null;
         try
         {
             resp = JsonUtility.FromJson<MintResponse>(req.downloadHandler.text);
         }
         catch (Exception e)
         {
-            Debug.LogWarning($"[TokenService] Failed to parse mint response: {e.Message} — falling back");
+            parseError = e.Message;
+        }
+        if (parseError != null)
+        {
+            Debug.LogWarning($"[TokenService] Failed to parse mint response: {parseError} — falling back");
             yield return LoadFallback(onDone);
             yield break;
         }

@@ -1,4 +1,3 @@
-using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -181,7 +180,11 @@ public class LauncherUI : MonoBehaviour
 
         SetStatus("连接中...");
 
-        // Update RoomManager with fresh token
+        // ── BUG-A3 fix (Sprint 3 audit 2026-04-23) ──────────────────────
+        // Previous code found RoomManager but never called rm.Connect(),
+        // so the phone was never actually joined to the LiveKit room before
+        // SceneManager.LoadScene() fired.  We now call Connect() explicitly
+        // and poll IsConnected with a 15-second timeout before loading.
         var rm = RoomManager.Instance;
         if (rm == null)
         {
@@ -191,19 +194,32 @@ public class LauncherUI : MonoBehaviour
             return;
         }
 
-        // Connect and load scene
-        try
+        // Initiate LiveKit room connection with the just-fetched token.
+        // RoomManager.Connect() stores the token and starts ConnectToRoom coroutine.
+        rm.Connect(TokenService.Instance.LiveKitToken, TokenService.Instance.LiveKitUrl);
+
+        // Poll until connected or timeout (ConnectToRoom is a coroutine; we
+        // need async polling here because we're in an async void context).
+        float connElapsed = 0f;
+        const float connTimeout = 15f;
+        while (!rm.IsConnected && connElapsed < connTimeout)
         {
-            SetStatus("连接成功 — 进入 AR...");
-            await System.Threading.Tasks.Task.Delay(500);
-            SceneManager.LoadScene(mainSceneName);
+            await System.Threading.Tasks.Task.Delay(200);
+            connElapsed += 0.2f;
         }
-        catch (Exception e)
+
+        if (!rm.IsConnected)
         {
-            SetStatus($"连接失败: {e.Message}");
+            SetStatus("连接超时 — 请检查服务器及网络");
             EnableConnect(true);
             _connecting = false;
+            return;
         }
+
+        // Connected — proceed to AR scene.
+        SetStatus("连接成功 — 进入 AR...");
+        await System.Threading.Tasks.Task.Delay(400);
+        SceneManager.LoadScene(mainSceneName);
     }
 
     private void SetStatus(string msg)

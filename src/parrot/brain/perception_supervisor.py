@@ -169,7 +169,21 @@ class PerceptionSupervisor:
 
         Blocks Supervisor auto-decisions for `hold_s` seconds so the user's
         intent doesn't get overridden by a 30-second hysteresis window.
+
+        Side-effects (mirrors _control_loop → _on_decision_committed path):
+          - Writes combo to Blackboard (single-writer, _write_combo)
+          - Sets manual_override_until timer
+          - Fire-and-forgets _on_decision_committed, which:
+              • appends to STREAM_EVENT_LOG (L0 audit)
+              • calls log_obs_event (obs_log layer 2)
+              • sends `setVideoTier` RPC to Unity if tier changed
+                (critical: without this, Unity keeps old bitrate/mute state)
+
+        BUG-A1 (Sprint 3 audit 2026-04-23): previous version only updated
+        the Blackboard and the hold timer — the Unity RPC was never sent,
+        so `set_video_tier` tool commands had no effect on the phone.
         """
+        previous = self._current          # capture BEFORE _write_combo updates it
         if not self._write_combo(combo, cause="manual_override"):
             return False
         self._hysteresis.manual_override_until = time.time() + hold_s
@@ -177,6 +191,21 @@ class PerceptionSupervisor:
             "Supervisor manual override: combo=%s hold=%.0fs",
             combo, hold_s,
         )
+        # Fire-and-forget: run async side effects (L0 log + Unity RPC push).
+        # asyncio.create_task requires a running event loop, which is always
+        # present when called from a LiveKit AgentSession function_tool.
+        try:
+            asyncio.create_task(
+                self._on_decision_committed(
+                    previous=previous,
+                    new=combo,
+                    cause="manual_override",
+                )
+            )
+        except RuntimeError:
+            # No running event loop (e.g. unit-test synchronous context) —
+            # skip async side effects; Blackboard is already updated.
+            logger.debug("set_manual_override: no event loop, skipping async push")
         return True
 
     def start_background(self) -> None:
