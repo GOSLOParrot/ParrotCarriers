@@ -358,8 +358,17 @@ async def brain_entrypoint(ctx: agents.JobContext):
         asyncio.ensure_future(_set_goslo_mode("chat"))
         try:
             from parrot.dsg.triggers.runner import get_trigger_runner
-            runner = get_trigger_runner()
-            asyncio.ensure_future(runner.stop())
+            asyncio.ensure_future(get_trigger_runner().stop())
+        except Exception:
+            pass
+        # Cancel the Supervisor control loop so that ghost 1Hz tasks do not
+        # outlive the room and compete with a future session's Supervisor over
+        # BB writes to session/video_tier and session/dsg_mode.
+        try:
+            from parrot.brain.perception_supervisor import get_perception_supervisor
+            sv = get_perception_supervisor()
+            if sv is not None:
+                asyncio.ensure_future(sv.stop())
         except Exception:
             pass
         logger.info("GOSLO mode → chat (room disconnected)")
