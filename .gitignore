@@ -63,4 +63,5 @@ FilePort/
 *.tar.gz
 *.tar.bz2
 *.zip
-Test/
+# Root-only: legacy local harness (was `Test/` — on Windows that also ignored `docs/test/`)
+/Test/
