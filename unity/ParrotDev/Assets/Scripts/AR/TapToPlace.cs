@@ -40,6 +40,8 @@ public class TapToPlace : MonoBehaviour
     private ARPlaneManager _planeManager;
     private ARAnchorManager _anchorManager;
     private readonly List<ARRaycastHit> _hits = new List<ARRaycastHit>();
+    /// <summary>Set only for the duration of <see cref="HandleARTap"/> → <see cref="PlaceGoslo"/> (AR plane attach).</summary>
+    private ARPlane _pendingAttachPlane;
 #endif
 
     private GameObject _gosloInstance;
@@ -125,7 +127,15 @@ public class TapToPlace : MonoBehaviour
         }
 
         var pose = bestHit.pose;
-        PlaceGoslo(pose.position, pose.rotation, anchorPose: pose, createAnchor: true);
+        _pendingAttachPlane = plane;
+        try
+        {
+            PlaceGoslo(pose.position, pose.rotation, anchorPose: pose, createAnchor: true);
+        }
+        finally
+        {
+            _pendingAttachPlane = null;
+        }
     }
 #endif
 
@@ -179,12 +189,18 @@ public class TapToPlace : MonoBehaviour
 #if UNITY_AR_FOUNDATION
         if (createAnchor && _anchorManager != null)
         {
-            var anchor = _anchorManager.AttachAnchor(null, anchorPose);
-            if (anchor != null)
+            if (_pendingAttachPlane == null)
             {
-                // Parent GOSLO to anchor so it tracks the surface
-                _gosloInstance.transform.SetParent(anchor.transform, worldPositionStays: true);
-                Debug.Log($"[TapToPlace] ARAnchor created at {targetPos}");
+                Debug.LogWarning("[TapToPlace] AttachAnchor skipped — no ARPlane (use AR tap path)");
+            }
+            else
+            {
+                var anchor = _anchorManager.AttachAnchor(_pendingAttachPlane, anchorPose);
+                if (anchor != null)
+                {
+                    _gosloInstance.transform.SetParent(anchor.transform, worldPositionStays: true);
+                    Debug.Log($"[TapToPlace] ARAnchor attached to plane at {targetPos}");
+                }
             }
         }
 #endif
@@ -206,7 +222,7 @@ public class TapToPlace : MonoBehaviour
         var room = RoomManager.Instance?.Room;
         if (room == null) yield break;
 
-        string brainId = FindBrainIdentity(room);
+        string brainId = BrainParticipantResolver.FindBrainParticipantId(room);
         if (string.IsNullOrEmpty(brainId)) yield break;
 
         string payload = $"{{\"x\":{worldPos.x:F3},\"y\":{worldPos.y:F3},\"z\":{worldPos.z:F3}}}";
@@ -223,13 +239,4 @@ public class TapToPlace : MonoBehaviour
             Debug.LogWarning($"[TapToPlace] onGosloPlaced error: {rpcCall.Error?.Message}");
     }
 
-    private static string FindBrainIdentity(Room room)
-    {
-        foreach (var p in room.RemoteParticipants.Values)
-        {
-            if (!string.IsNullOrEmpty(p.Identity) && p.Identity.StartsWith("agent-"))
-                return p.Identity;
-        }
-        return null;
-    }
 }

@@ -39,9 +39,12 @@ public class LauncherUI : MonoBehaviour
     private bool _audioPermitted;
     private bool _connecting;
 
+    // Must match `using UnityEngine.Android` guard: with Android build target,
+    // UNITY_ANDROID is defined in the Editor too, but Permission only exists
+    // when compiling for the actual Android player (!UNITY_EDITOR).
     private static readonly string[] _requiredPermissions =
     {
-#if UNITY_ANDROID
+#if UNITY_ANDROID && !UNITY_EDITOR
         Permission.Camera,
         Permission.Microphone,
 #endif

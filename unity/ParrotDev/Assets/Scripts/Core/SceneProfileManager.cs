@@ -134,7 +134,7 @@ public class SceneProfileManager : MonoBehaviour
         if (room == null) yield break;
 
         // Brain identity prefix matches agentIdentityPrefix in VideoStateReporter
-        string brainIdentity = FindBrainIdentity(room);
+        string brainIdentity = BrainParticipantResolver.FindBrainParticipantId(room);
         if (string.IsNullOrEmpty(brainIdentity))
         {
             Debug.LogWarning("[SceneProfileManager] Brain participant not found — setScene deferred");
@@ -157,16 +157,6 @@ public class SceneProfileManager : MonoBehaviour
             Debug.LogWarning($"[SceneProfileManager] setScene RPC error: {rpcCall.Error?.Message}");
         else
             Debug.Log($"[SceneProfileManager] setScene → {sceneName}: ok");
-    }
-
-    private static string FindBrainIdentity(Room room)
-    {
-        foreach (var p in room.RemoteParticipants.Values)
-        {
-            if (!string.IsNullOrEmpty(p.Identity) && p.Identity.StartsWith("agent-"))
-                return p.Identity;
-        }
-        return null;
     }
 
     void OnDestroy()

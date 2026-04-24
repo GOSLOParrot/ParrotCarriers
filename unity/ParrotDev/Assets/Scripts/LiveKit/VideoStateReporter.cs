@@ -168,13 +168,14 @@ public class VideoStateReporter : MonoBehaviour
 
     private string FindAgentIdentity(Room room)
     {
+        var id = BrainParticipantResolver.FindBrainParticipantId(room);
+        if (!string.IsNullOrEmpty(id))
+            return id;
         foreach (var p in room.RemoteParticipants.Values)
         {
             if (!string.IsNullOrEmpty(p.Identity)
                 && p.Identity.StartsWith(agentIdentityPrefix))
-            {
                 return p.Identity;
-            }
         }
         return null;
     }

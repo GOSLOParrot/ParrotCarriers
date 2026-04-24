@@ -133,6 +133,9 @@ ParrotCarriers/                       # 主仓库 (GOSLOParrot/ParrotCarriers)
 │   ├── test_scheduler/               # 调度器测试
 │   └── integration/                  # 集成测试 (dispatch chain, graphiti chain)
 │
+├── Test/                             # 人手验收 / 真机矩阵 (非 pytest)
+│   └── p2_5/                         # pipeline_test_matrix_sprint3.md — §A–F 实习生操作顺序 + §3 矩阵
+│
 ├── docs/                             # 文档
 ├── .cursor/                          # Cursor 配置
 │   ├── memory/                       # 持久记忆 (架构/进度/需求/里程碑)

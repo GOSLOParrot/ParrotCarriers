@@ -497,13 +497,7 @@ public class ARVideoPublisher : MonoBehaviour
         var room = RoomManager.Instance?.Room;
         if (room == null) yield break;
 
-        // Match VideoStateReporter pattern: agent-* prefix
-        string brainId = null;
-        foreach (var p in room.RemoteParticipants.Values)
-        {
-            if (!string.IsNullOrEmpty(p.Identity) && p.Identity.StartsWith("agent-"))
-            { brainId = p.Identity; break; }
-        }
+        string brainId = BrainParticipantResolver.FindBrainParticipantId(room);
         if (string.IsNullOrEmpty(brainId)) yield break;
 
         string reason = rebuilding ? "track_rebuilding" : "ok";

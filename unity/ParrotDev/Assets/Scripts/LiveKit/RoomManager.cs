@@ -9,6 +9,12 @@ using LiveKit;
 /// Singleton — persists across scenes via DontDestroyOnLoad.
 ///
 /// Brain Agent finds Unity via identity prefix "unity" (_rpc_bridge.py).
+///
+/// <b>Scope note (product vs test):</b> this class proves <b>room connectivity</b> and carries
+/// <see cref="LastConnectDurationSeconds"/> / test-only disconnect helpers — it is <b>not</b> the
+/// specification for the full AR App <b>cold-start → token → UX → AR scene</b> flow (that flow is
+/// still split across Launcher/Dev and not yet designed as one product story). Do not treat
+/// connectivity smoke tests as the architectural baseline for final launch behaviour.
 /// </summary>
 public class RoomManager : MonoBehaviour
 {
@@ -28,6 +34,9 @@ public class RoomManager : MonoBehaviour
     public Room Room { get; private set; }
     public bool IsConnected { get; private set; }
     public static RoomManager Instance { get; private set; }
+
+    /// <summary>Seconds for the last successful <see cref="ConnectToRoom"/> (for Testing/HUD).</summary>
+    public float? LastConnectDurationSeconds { get; private set; }
 
     public event Action OnConnected;
     public event Action OnDisconnected;
@@ -100,8 +109,76 @@ public class RoomManager : MonoBehaviour
         StartCoroutine(ConnectToRoom());
     }
 
+    /// <summary>Test harness: leave room without destroying this component. Uses cached token on reconnect.</summary>
+    public void DisconnectForTesting()
+    {
+        if (Room == null)
+        {
+            Debug.Log("[RoomManager] DisconnectForTesting: no active Room");
+            return;
+        }
+
+        try
+        {
+            Debug.Log("[RoomManager] DisconnectForTesting");
+            Room.Disconnect();
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[RoomManager] DisconnectForTesting: {e.Message}");
+        }
+    }
+
+    /// <summary>Reconnect using the current <c>joinToken</c> (Inspector or last <see cref="Connect"/>).</summary>
+    public void ReconnectUsingCachedCredentials()
+    {
+        if (string.IsNullOrWhiteSpace(joinToken))
+        {
+            Debug.LogWarning(
+                "[RoomManager] Reconnect skipped — no joinToken. Paste in Inspector or place unity_join_token.txt.");
+            return;
+        }
+
+        StartCoroutine(ConnectToRoom());
+    }
+
+#if UNITY_EDITOR
+    /// <summary>Editor menu: disconnect then reconnect after delay (data-flow / resilience smoke test).</summary>
+    public void StartEditorReconnectTest(float delaySeconds = 1f)
+    {
+        StartCoroutine(EditorReconnectAfterDelay(delaySeconds));
+    }
+
+    private IEnumerator EditorReconnectAfterDelay(float delaySeconds)
+    {
+        DisconnectForTesting();
+        yield return new WaitForSecondsRealtime(delaySeconds);
+        ReconnectUsingCachedCredentials();
+    }
+#endif
+
     private IEnumerator ConnectToRoom()
     {
+        var t0 = Time.realtimeSinceStartup;
+        LastConnectDurationSeconds = null;
+
+        if (Room != null)
+        {
+            Debug.Log("[RoomManager] Replacing existing Room (disconnect previous)");
+            try
+            {
+                Room.Disconnect();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[RoomManager] Disconnect previous room: {e.Message}");
+            }
+
+            Room = null;
+            IsConnected = false;
+            yield return null;
+        }
+
         Room = new Room();
 
         Room.TrackSubscribed += OnTrackSubscribed;
@@ -125,10 +202,14 @@ public class RoomManager : MonoBehaviour
             Debug.LogError(
                 "[RoomManager] Connection failed (check: Docker LiveKit on :7880, token not expired, Brain worker registered). "
                 + "Regenerate: python src/scripts/generate_token.py");
+            LastConnectDurationSeconds = null;
             yield break;
         }
 
-        Debug.Log($"[RoomManager] Connected — room='{Room.Name}' identity='{Room.LocalParticipant.Identity}'");
+        LastConnectDurationSeconds = Time.realtimeSinceStartup - t0;
+        Debug.Log(
+            $"[RoomManager] Connected — room='{Room.Name}' identity='{Room.LocalParticipant.Identity}' "
+            + $"(connect {LastConnectDurationSeconds:F2}s)");
         IsConnected = true;
         OnConnected?.Invoke();
 
@@ -140,13 +221,7 @@ public class RoomManager : MonoBehaviour
     {
         yield return new WaitForSeconds(delaySeconds);
 
-        // Match VideoStateReporter pattern: agent-* identity prefix
-        string brainId = null;
-        foreach (var p in Room.RemoteParticipants.Values)
-        {
-            if (!string.IsNullOrEmpty(p.Identity) && p.Identity.StartsWith("agent-"))
-            { brainId = p.Identity; break; }
-        }
+        string brainId = BrainParticipantResolver.FindBrainParticipantId(Room);
         if (string.IsNullOrEmpty(brainId))
         {
             Debug.Log("[RoomManager] onSceneReady skipped — Brain not yet in room");
