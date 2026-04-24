@@ -1,0 +1,4 @@
+{
+  "token": "PASTE_LIVEKIT_JWT_HERE",
+  "url": "ws://YOUR_CASTLE_IP:7880"
+}

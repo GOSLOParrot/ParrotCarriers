@@ -10,7 +10,9 @@ using UnityEngine.Networking;
 /// Flow:
 ///   1. POST /mint with Bearer PARROT_MINT_SECRET → receive JWT token + LiveKit URL
 ///   2. Cache token in PlayerPrefs for 24h (TTL from server expires_at field)
-///   3. On failure / expired → fall back to StreamingAssets/parrotdev.json
+///   3. On failure / expired → fall back to Resources/parrotdev.json
+///      (UnityWebRequest to StreamingAssets is not used here — keep fallback
+///      as a Resources TextAsset named "parrotdev" so Editor + device behave the same.)
 ///
 /// Config source (D3 decision): Resources/parrot_config.json (compiled into APK,
 /// gitignored). Contains { "mintUrl": "...", "mintSecret": "...", "liveKitUrl": "..." }.
@@ -196,7 +198,7 @@ public class TokenService : MonoBehaviour
                 LiveKitToken = fb.token;
                 LiveKitUrl = fb.url;
                 IsReady = true;
-                Debug.Log("[TokenService] Using fallback token from Resources/parrotdev.json");
+                Debug.Log("[TokenService] Using fallback token from Resources (parrotdev)");
                 onDone?.Invoke(true);
                 yield break;
             }

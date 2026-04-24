@@ -25,6 +25,10 @@ Thumbs.db
 redis_data/
 neo4j_data/
 
+# Unity local secrets (copy from *.example.json — never commit real values)
+unity/*/Assets/Resources/parrot_config.json
+unity/*/Assets/Resources/parrotdev.json
+
 # Unity (both ParrotDev and future ParrotAR)
 unity/*/Library/
 unity/*/Temp/

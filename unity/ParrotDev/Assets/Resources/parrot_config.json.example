@@ -1,0 +1,6 @@
+{
+  "mintUrl": "http://YOUR_CASTLE_IP:7888/mint",
+  "mintSecret": "same-as-PARROT_MINT_SECRET-on-castle",
+  "liveKitUrl": "ws://YOUR_CASTLE_IP:7880",
+  "room": "parrot-main"
+}
