@@ -1,39 +1,70 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-23 (Sprint 3 全部 T 任务代码落地)
-> **当前阶段**: **Sprint 3 进行中** — 所有 9 个 T 任务 (T-P1~P4 + T-U1~U5) 代码完成，待真机验收
+> 最后更新: 2026-04-24 (Sprint 3 代码全落地，进入真机测试阶段)
+> **当前阶段**: **Sprint 3 真机测试中** — Dev.unity 是集成测试舞台（非最终 AR App 场景），AC1-AC8 验收用例待用户跑完反馈
 >
+> **Dev.unity 定位说明**: Dev.unity = Editor + 真机 **集成测试场景**，用来验证 Bus/Brain/LiveKit/AR Foundation 各层接缝。不是最终要上线的 AR App 场景；AR App 前端（Launcher.unity + AR 主场景）在 P2.5 测试完成后独立搭建。
+>
+> **Sprint 3 完成报告 (in_testing)**: `.cursor/memory/architecture/sprint3_completion_report_20260423.md` — 测试中持续更新 AC 验收栏
 > **Sprint 3 开工提示词**: `.cursor/memory/architecture/sprint3_kickoff_prompt.md`
 > **Sprint 2 完成报告 (ratified)**: `.cursor/memory/architecture/sprint2_completion_report_20260423.md`
-> **Sprint 3 完成报告 (待写)**: `.cursor/memory/architecture/sprint3_completion_report_*.md` — Sprint 3 验收后写
 >
-> **Sprint 3 核心目标**: AR 桌面 MVP (平面检测/放置/动画/Launcher) + identify_object Path 2 (L2-B 优先) + Token Mint + A10 heartbeat + PublishTrack 动态重建
+> **最新 commit**: `3254d2b` — gitignore mint secrets + Resources config examples + TokenService fallback path fix
+>
+> ---
+>
+> ## 整体计划路径（一张图）
+>
+> ```
+> 现在
+>  │
+>  ├─ [Sprint 3 测试] Dev.unity 真机验收 AC1-AC8
+>  │    目标: 确认 Token Mint / AR 平面 / GOSLO 放置 / 两轴模式 / Brain RPC 全通
+>  │    工具: adb logcat + python src/scripts/tail_obs_log.py --stream both
+>  │    反馈: 用户测试 → 补 Bug → 更新 sprint3_completion_report AC 栏 → ratified
+>  │
+>  ├─ [Sprint 4] captureSnapshot + 相机模式补充通道 + identify_object Path1 + 便签 UI + 食指 perching
+>  │    前提: Sprint 3 AC1-AC5 通过
+>  │    完成标志: P2.5 全部功能验收通过
+>  │
+>  ├─ [P2.5 收口] 全量功能测试完成 → 写 P2.5 completion report
+>  │    标志: Sprint 0-4 全部 ratified，identify_object 三路全通，相机模式完整
+>  │
+>  ├─ [AR 工作区搭建] 基于已验证的各层接缝，独立构建 AR App 前端
+>  │    内容: Launcher.unity 正式场景 + AR 主场景 + UI 完善 + GOSLO.glb 真模型
+>  │    参考: ar_app_plan.md + ar_camera_interaction_survey.md
+>  │    注意: 不重建后端！只是前端工程，所有 Brain/Bus/DSG 接口复用 Sprint 3-4 已验证的版本
+>  │
+>  └─ [各模块独立开发] AR 工作区稳定后，按模块边界拆分独立迭代
+>       Brain Tools 扩展 → DSG 语义层深化 → Nanobot 任务调度 → Obsidian 双链 → 记忆蒸馏 …
+>       （每个模块有独立的 skill/rule 文件，不再需要全局上下文对齐）
+> ```
+>
+> ---
+>
 > **Sprint 4 核心目标**: captureSnapshot + 相机模式补充通道 + identify_object Path 1 (A10 CV) + 便签 UI + 食指 perching
 >
-> **最新 commit**: `[S2.cleanup]` (df7fecb) — 待 Sprint 3 commit 后更新
 > **Sprint 3 决策收口 (D1-D6)**:
 >   D1: set_video_tier hold_seconds=300 (PARROT_OVERRIDE_HOLD_SECONDS 可配置)
 >   D2: A10 heartbeat via Redis SETEX parrot:a10_heartbeat + asyncio task (src/parrot/a10/heartbeat.py)
->   D3: Token Mint Bearer secret, Unity 存 Resources/parrot_config.json
+>   D3: Token Mint Bearer secret, Unity 存 Resources/parrot_config.json（gitignored，见 parrot_config.json.example）
 >   D4: 新增 TRACK_REBUILDING reason, 映射 PAUSED 跳过 Supervisor 降档计时
 >   D5: Gemini 继续看纯摄像头画面, Sprint 4 再接合成帧
->   D6: GOSLO.glb 换上真模型, AnimationDriver 用 Transform.Find() 查节点
+>   D6: GOSLO.glb 换上真模型 (Assets/Models/GOSLO.glb 29KB), AnimationDriver 用 Transform.Find() 查节点
 >
 > 部署快照: `.cursor/memory/deploy_snapshot_p2_20260412.md`
 > **P2 里程碑**: `.cursor/memory/milestone_p2.md` (P2 已完成, 历史归档)
 > 同步工具: `.cursor/memory/commit_guidelines.md` + `infra/sync-castle.ps1`
 >
-> **Sprint 3 验收 (待跑)**:
->   1. IQOO NEO9 运行 → Launcher 授权摄像头/麦 → 连接 → AR 场景
->   2. 对桌面 2s → 半透明平面网格出现
->   3. 点击平面 → GOSLO 从上方飞入落在手指处
->   4. GOSLO 说早上好/下午好/晚上好
->   5. 语音"过来一点" → flyTo 手指附近
->   6. 切后台 10s 再回 → GOSLO 仍在原位
->   7. 说"视频全开" → set_video_tier → track 重建 → BB=VIDEO_FULL
->   8. A10 heartbeat key 在 Redis → 60s 后 Supervisor 升档
->   9. Token Mint POST /mint → 收到 token → Unity 连接
->   10. identify_object("蓝色杯子") → L2-B 先搜 → 命中返回快速命中
+> **Sprint 3 验收用例 (用户测试中，反馈后更新下方栏)**:
+>   AC1 ⬜ IQOO NEO9 → Launcher 权限弹窗 → 全部允许 → 就绪
+>   AC2 ⬜ 点连接 → Token Mint 成功 → 房间连接 → "连接成功"
+>   AC3 ⬜ AR 场景加载 → Brain onSceneReady → GOSLO 问候语播放
+>   AC4 ⬜ 点 AR 平面 → GOSLO 放置 → onGosloPlaced RPC 上报
+>   AC5 ⬜ 说"视频全开" → set_video_tier → BB=VIDEO_FULL → Unity track 重建
+>   AC6 ⬜ 说"视频关闭" → VIDEO_OFF → track mute → DSG 切 PASSIVE
+>   AC7 ⬜ 断网 30s → Supervisor 降级 → 恢复自动升档
+>   AC8 ⬜ SceneProfileManager 切换 → setScene RPC → Injector C3/C4 更新
 
 ---
 

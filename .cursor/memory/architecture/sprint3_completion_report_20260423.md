@@ -298,4 +298,130 @@ Sprint 3 的以下接缝是 Sprint 4 的**强依赖前提**（Sprint 4 开工前
 
 ---
 
-*本文件在真机测试中持续更新；AC 栏目用 ✅/❌/⚠️ 标注，新发现的 Bug 追加至 §6。*
+---
+
+## 10. 测试阶段说明（测试中持续更新）
+
+### 10.1 Dev.unity 的定位
+
+`Dev.unity` 是**集成测试舞台**，不是最终要上线的 AR App 场景。
+
+它的目的：
+- 验证 Bus/Brain/LiveKit/AR Foundation **各层接缝**在真机上是否正确工作
+- 提供一个"可以反复打包、反复出 Bug、反复修"的受控环境
+- 不追求 UI 美观，不追求用户体验；只追求**链路跑通 + 数据流准确**
+
+这意味着：
+- 在 Dev.unity 里看到 AR 平面、GOSLO 方块、音视频连通 = Sprint 3 验收通过
+- "GOSLO 长什么样"、"Launcher 界面好不好看" 是 AR 工作区搭建阶段的事，不是 Sprint 3-4 的事
+
+### 10.2 测试工具
+
+| 工具 | 用途 |
+|:-----|:-----|
+| `adb logcat -v time Unity:* Parrot:* LiveKit:* *:E` | 手机端 C# 层日志，所有 Debug.Log/Warning/Error |
+| `python src/scripts/tail_obs_log.py --stream both` | Castle 侧实时追尾 obs_log + events.log 因果链 |
+| `tmux attach -t brain` | Brain Agent stdout（Gemini 对话 + RPC 日志） |
+| Redis `xrange parrot.obs_log - + count 20` | 事后手查最新 20 条内部决策记录 |
+
+### 10.3 Bug 反馈登记格式
+
+测试时发现问题，按以下格式在 §7 AC 栏或 §6 遗留表里追加：
+
+```
+AC? ❌ 现象: <一句话>
+     根因: <在哪个模块/文件/方法>
+     复现: <操作步骤>
+     日志: <adb logcat 或 tail_obs_log 截片>
+```
+
+---
+
+## 11. 完整计划路径（从现在到模块独立开发）
+
+### 阶段 1：Sprint 3 真机测试（现在）
+
+**目标**: AC1-AC8 全部 ✅  
+**交付物**: 本文件 §7 全部打勾 → status 改为 `ratified`  
+**时机**: 用户测试反馈 → Agent 修 Bug → 重打包 → 再测，直到全绿
+
+**关键约束**:
+- AC1-AC5 是 Sprint 4 的强依赖，必须通过才能开 Sprint 4
+- AC6-AC8 是 P2.5 完整验收，可以与 Sprint 4 并行测
+
+---
+
+### 阶段 2：Sprint 4（AC1-AC5 通过后开始）
+
+**目标**: P2.5 全部功能变现  
+**核心功能**:
+- `captureSnapshot` RPC + `AsyncGPUReadback` Unity 侧
+- 相机模式补充通道（渲染帧 → Brain）
+- `identify_object` Path 1（A10 CV track 真接入，`CvTrackFilter` 骨架已在 Sprint 2 建好）
+- 便签 UI（右上角抽屉，Nanobot 结果推 Unity）
+- 食指 perching（XR Hands index tip → GOSLO 落指节）
+- Graphiti 写回 TODO(S4.B)：CONFIRMED 节点批量 flush
+
+**Sprint 4 入场注意事项**（提前记录，开工时勿忘）:
+1. `CvTrackFilter` 骨架在 `dsg/ingest/cv_track_filter.py` 已存在，只需接真实 A10 数据源
+2. `SemanticNode` 扩字段 `reference_image_path` + `last_sighting_path` 在 S4.A5，Sprint 4 才加，Sprint 3 勿提前动
+3. `ARVideoPublisher` 的 camera ref 不要封死，Sprint 4 的 captureSnapshot 需要复用
+4. Soul 按 DsgMode 分档：Sprint 4 基于真实 trace 决定要不要分，不提前表格化
+5. **补充通道和主通道不能混用**: 主通道（`ar-camera` track）= Gemini Live 实时视频；补充通道（captureSnapshot RPC）= 用户主动触发按需抓帧，两个语义不同，不要合并
+
+---
+
+### 阶段 3：P2.5 收口（Sprint 4 完成后）
+
+**目标**: 所有 Sprint 0-4 ratified，写 P2.5 completion report  
+**P2.5 最终状态**:
+- identify_object 三路全通（Path 1 A10 + Path 2 L2-B + Path 3 Nanobot deep search）
+- 相机模式完整（主通道 + 补充通道）
+- DSG 语义入口全开（4 个 filter + runner + Graphiti 写回）
+- 两轴模式自主闭环已验证（Supervisor 升降档 + Unity 真实 track 重建）
+
+---
+
+### 阶段 4：AR 工作区搭建（P2.5 收口后）
+
+**定位**: 基于 Sprint 3-4 已验证的后端接缝，独立构建面向用户的 AR App 前端  
+**不重建后端**: 所有 Brain/Bus/DSG/LiveKit 接口继续复用已验证版本
+
+**AR 工作区核心工作**:
+1. `Launcher.unity` 正式场景（真实 UI 设计，非 Sprint 3 的 Debug 版）
+2. AR 主场景（平面检测 + 放置 + 锚点持久化）
+3. GOSLO 真模型接入（`GOSLO.glb` 在 `Assets/Models/`，AnimationDriver 已对接接口）
+4. UI/UX 完善（便签弹出动画 + 相机模式 UI + 启动动效）
+5. iOS 支持评估（ARKit 包已在 manifest.json，视设备情况）
+
+**AR 工作区注意事项**:
+- `autoConnectOnStart` 字段已在 `RoomManager` 里，Launcher 场景设为 `false`，Dev 场景保持 `true`
+- GOSLO 模型骨骼/挂点设计必须和 `AnimationDriver.cs` 的 `Transform.Find()` 路径对齐，改模型前先读 AnimationDriver 的节点名规范
+- 权限申请（CAMERA/RECORD_AUDIO/INTERNET）在 LauncherUI 运行时已请求，合并 AndroidManifest 时检查是否重复声明
+- `ARCameraBackground._rt` 推流路径（主通道）和 `AsyncGPUReadback` 渲染帧（补充通道）在 AR 工作区不能合并，两路独立保留
+
+---
+
+### 阶段 5：各模块独立开发（AR 工作区稳定后）
+
+**条件**: AR 工作区能稳定跑完"用户进入 → GOSLO 出现在桌面 → 语音交互 → 识物 → 拍照"完整流程
+
+**各模块独立开发清单**（参考 requirements.md 67 功能项）:
+
+| 模块 | 独立化条件 | 预计技能/规则 |
+|:-----|:-----------|:-------------|
+| Brain Tools 扩展 | AR 工作区验证通过 | 按需新增 skill |
+| DSG 语义层深化 | Graphiti 写回稳定 | graphiti skill 已有 |
+| Nanobot 任务调度 | P2.5 收口后 | nanobot skill 已有 |
+| Obsidian 双链同步 | user_tag_filter 已在运行 | sync_obsidian 脚本已有 |
+| 记忆蒸馏 / 技能提炼 | obs_log 积累足够数据 | P3 长期项 |
+| Google Calendar/Gmail | OAuth 已配置 | CalendarTrigger 已有骨架 |
+
+**每个模块**独立迭代时不需要重新理解全局架构，只需：
+1. 读对应的 skill/rule 文件
+2. 读 `module_map_p2.md` 确认该模块的输入/输出边界
+3. 用 `tail_obs_log.py` 验证数据流
+
+---
+
+*本文件在真机测试中持续更新；AC 栏目用 ✅/❌/⚠️ 标注，新发现的 Bug 追加至 §6，测试通过后 status 改为 `ratified`。*
