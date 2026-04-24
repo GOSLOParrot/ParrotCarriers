@@ -10,18 +10,35 @@ using UnityEngine.XR.ARFoundation;
 #endif
 
 /// <summary>
-/// Publishes AR camera background frames to LiveKit as a video track.
-/// Brain Agent subscribes via video_input=True → Gemini Live sees the camera feed.
+/// Publishes camera pixels to LiveKit as one <b>video track</b> (Brain / Gemini Live may subscribe).
 ///
-/// AR mode (device): ARCameraBackground → CommandBuffer.Blit → RenderTexture → TextureVideoSource
-/// Dev fallback (editor): WebCamTexture → RenderTexture → TextureVideoSource
+/// <b>Test harness vs shipped AR app (read before Sprint 4 / AR workspace)</b><br/>
+/// • This class is used in <b>P2.5 / Sprint 3 bus + perf + data-flow testing</b> — not the final
+///   AR app launch UX or quality gate.<br/>
+/// • <b>Editor XR Simulation</b> and <b>physical device ARCore</b> differ (camera, IMU, latency).
+///   Neither is “wrong”; Editor is convenience only. <b>Do not</b> treat Editor sim pixels as the
+///   product definition of “high quality video”.<br/>
+/// • <b>Supplemental / on-demand (harness)</b>: XR Simulation (or Editor forced WebCam) images are
+///   acceptable for <b>connectivity, tier/mute lifecycle, short clips, screenshots, rough perf</b>.
+///   Treat them as a <b>probe track</b>, not as the AR app’s committed “main perception stream”.<br/>
+/// • <b>Primary / product-quality capture (future app)</b>: reserved for the real-device pipeline
+///   (e.g. ARCore camera + agreed tier/bitrate + app start policy). Sprint 4 may add explicit
+///   switching (e.g. test menus) — prefer <b>not</b> using full-screen rendered GameView as the
+///   long-term high-rate source (costly); separate identify / burst capture design belongs in
+///   Sprint 4 docs, not inferred from this harness alone.<br/>
+/// • <b>Other “supplemental channels”</b> in the stack: LiveKit <b>RPC + DataChannel</b> carry control
+///   and state (e.g. scene, video tier, RPC tools). They are <b>not</b> this video track; do not
+///   conflate DataChannel/RPC results with camera quality conclusions.
 ///
-/// Sprint 3 T-U5: supports dynamic track republishing (UnpublishTrack →
-/// PublishTrack with new options) for VIDEO_FULL ↔ VIDEO_GEMINI_ONLY tier
-/// transitions. During rebuild, sends "track_rebuilding" RPC to Brain so
-/// PerceptionSupervisor does NOT count the gap as a degraded timer tick.
+/// <b>Sources (this component)</b><br/>
+/// • <b>AR path</b> (device or XR Simulation when AR Foundation is active): ARCameraBackground blits
+///   AR camera output → RenderTexture → TextureVideoSource.<br/>
+/// • <b>WebCam fallback</b>: WebCamTexture when AR path is unavailable or explicitly enabled.
 ///
-/// Attach to a GameObject in the scene. Requires RoomManager to be connected.
+/// Sprint 3 T-U5: dynamic track republish (UnpublishTrack → PublishTrack) for tier changes;
+/// sends <c>track_rebuilding</c> RPC so PerceptionSupervisor skips degraded-window ticks.
+///
+/// Requires RoomManager connected.
 /// </summary>
 public class ARVideoPublisher : MonoBehaviour
 {
@@ -44,7 +61,9 @@ public class ARVideoPublisher : MonoBehaviour
     [SerializeField] private Camera arCamera;
 
     [Header("Dev Fallback")]
-    [Tooltip("Use webcam in Editor when AR is unavailable")]
+    [Tooltip(
+        "When AR path (ARCameraManager+Background) is missing or inactive, use WebCamTexture. "
+        + "Harness-only: not the product AR stream. Editor may force this on if AR is off — see class doc.")]
     [SerializeField] private bool useWebcamFallback = true;
 
     [Tooltip("Substring match (case-insensitive). Leave empty for auto (prefers first non-virtual device).")]
@@ -108,8 +127,22 @@ public class ARVideoPublisher : MonoBehaviour
         _rt.Create();
 
         bool arAvailable = TrySetupAR();
+        bool useWebcam = useWebcamFallback;
 
-        if (!arAvailable && useWebcamFallback)
+#if UNITY_EDITOR
+        // Harness: avoid zero-video in Editor when Augment set useWebcamFallback=false but AR
+        // path is inactive (XR Sim off, missing components, or AR scripting stripped). This is
+        // NOT a product decision — Sprint 4 / AR app may require explicit loader + start policy.
+        if (!arAvailable && !useWebcam)
+        {
+            Debug.LogWarning(
+                "[ARVideoPublisher] Editor harness: AR camera path unavailable — forcing webcam fallback "
+                + "(for XR Sim AR pixels: enable XR Simulation + AR camera; then turn useWebcamFallback off).");
+            useWebcam = true;
+        }
+#endif
+
+        if (!arAvailable && useWebcam)
         {
             Debug.Log("[ARVideoPublisher] AR not available, using webcam fallback");
             yield return SetupWebcamFallback();

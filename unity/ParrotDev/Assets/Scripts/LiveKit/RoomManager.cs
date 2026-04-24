@@ -15,6 +15,12 @@ using LiveKit;
 /// specification for the full AR App <b>cold-start → token → UX → AR scene</b> flow (that flow is
 /// still split across Launcher/Dev and not yet designed as one product story). Do not treat
 /// connectivity smoke tests as the architectural baseline for final launch behaviour.
+///
+/// <b>Channels (do not conflate):</b> LiveKit <b>room + RPC + DataChannel</b> here are the
+/// <b>control / supplemental signalling plane</b> for Sprint 3 bus tests. The <b>camera pixel
+/// track</b> to Gemini is owned by <see cref="ARVideoPublisher"/> (device / XR Sim / WebCam
+/// harness — see that class for “supplemental probe vs product-quality capture”). Sprint 4
+/// reports must keep those conclusions separate.
 /// </summary>
 public class RoomManager : MonoBehaviour
 {
@@ -45,7 +51,10 @@ public class RoomManager : MonoBehaviour
     {
         if (Instance != null && Instance != this)
         {
-            Destroy(gameObject);
+            // Launcher keeps the connected RoomManager across scene load. In Dev.unity the
+            // LiveKitManager object also hosts publishers/reporters; destroy only this
+            // duplicate component so those scene-local components can bind to Instance.
+            Destroy(this);
             return;
         }
         Instance = this;

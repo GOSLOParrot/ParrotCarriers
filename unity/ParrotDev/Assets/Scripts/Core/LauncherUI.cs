@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
@@ -17,7 +18,8 @@ using UnityEngine.Android;
 ///   3. Permission denied: show warning + retry button; do NOT enter AR scene
 ///
 /// Attach to a Canvas GameObject in the Launcher scene.
-/// Wire up the serialized fields in Inspector.
+/// Wire up the serialized fields in Inspector, or leave them empty: this
+/// script creates a minimal runtime UI for test APKs.
 /// </summary>
 public class LauncherUI : MonoBehaviour
 {
@@ -53,6 +55,8 @@ public class LauncherUI : MonoBehaviour
 
     void Start()
     {
+        EnsureFallbackUi();
+
         if (connectButton != null) connectButton.onClick.AddListener(OnConnectClicked);
         if (retryPermissionButton != null) retryPermissionButton.onClick.AddListener(RequestPermissions);
 
@@ -245,5 +249,146 @@ public class LauncherUI : MonoBehaviour
     private void HidePermissionWarning()
     {
         if (permissionWarningPanel != null) permissionWarningPanel.SetActive(false);
+    }
+
+    private void EnsureFallbackUi()
+    {
+        if (connectButton != null && statusText != null)
+            return;
+
+        Debug.Log("[LauncherUI] Creating fallback launcher UI");
+
+        var canvasGo = new GameObject("LauncherCanvas");
+        var canvas = canvasGo.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvasGo.AddComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        canvasGo.AddComponent<GraphicRaycaster>();
+
+        EnsureEventSystem();
+
+        var panel = CreateRect("Panel", canvasGo.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, 0), new Vector2(720, 900));
+        var panelImage = panel.gameObject.AddComponent<Image>();
+        panelImage.color = new Color(0.05f, 0.06f, 0.08f, 0.92f);
+
+        CreateText(
+            "Title",
+            panel,
+            "ParrotDev 真机测试",
+            42,
+            TextAnchor.MiddleCenter,
+            new Vector2(0, 310),
+            new Vector2(640, 90)
+        );
+
+        statusText = CreateText(
+            "StatusText",
+            panel,
+            "初始化...",
+            28,
+            TextAnchor.MiddleCenter,
+            new Vector2(0, 190),
+            new Vector2(640, 130)
+        );
+
+        connectButton = CreateButton(
+            "ConnectButton",
+            panel,
+            "连接 LiveKit / 进入 AR",
+            new Vector2(0, 40),
+            new Vector2(560, 110)
+        );
+
+        permissionWarningPanel = CreateRect("PermissionWarning", panel, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0, -165), new Vector2(640, 190)).gameObject;
+        var warningImage = permissionWarningPanel.AddComponent<Image>();
+        warningImage.color = new Color(0.32f, 0.12f, 0.12f, 0.92f);
+
+        permissionWarningText = CreateText(
+            "PermissionWarningText",
+            permissionWarningPanel.transform,
+            "",
+            24,
+            TextAnchor.MiddleCenter,
+            new Vector2(0, 38),
+            new Vector2(600, 90)
+        );
+
+        retryPermissionButton = CreateButton(
+            "RetryPermissionButton",
+            permissionWarningPanel.transform,
+            "重新请求权限",
+            new Vector2(0, -55),
+            new Vector2(420, 72)
+        );
+    }
+
+    private static void EnsureEventSystem()
+    {
+        if (FindObjectOfType<EventSystem>() != null)
+            return;
+
+        var eventSystemGo = new GameObject("EventSystem");
+        eventSystemGo.AddComponent<EventSystem>();
+        eventSystemGo.AddComponent<StandaloneInputModule>();
+    }
+
+    private static RectTransform CreateRect(
+        string name,
+        Transform parent,
+        Vector2 anchorMin,
+        Vector2 anchorMax,
+        Vector2 anchoredPosition,
+        Vector2 sizeDelta
+    )
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        var rect = go.AddComponent<RectTransform>();
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = anchoredPosition;
+        rect.sizeDelta = sizeDelta;
+        return rect;
+    }
+
+    private static Text CreateText(
+        string name,
+        Transform parent,
+        string text,
+        int fontSize,
+        TextAnchor alignment,
+        Vector2 anchoredPosition,
+        Vector2 sizeDelta
+    )
+    {
+        var rect = CreateRect(name, parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), anchoredPosition, sizeDelta);
+        var label = rect.gameObject.AddComponent<Text>();
+        label.text = text;
+        label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        label.fontSize = fontSize;
+        label.alignment = alignment;
+        label.color = Color.white;
+        label.horizontalOverflow = HorizontalWrapMode.Wrap;
+        label.verticalOverflow = VerticalWrapMode.Overflow;
+        return label;
+    }
+
+    private static Button CreateButton(
+        string name,
+        Transform parent,
+        string label,
+        Vector2 anchoredPosition,
+        Vector2 sizeDelta
+    )
+    {
+        var rect = CreateRect(name, parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), anchoredPosition, sizeDelta);
+        var image = rect.gameObject.AddComponent<Image>();
+        image.color = new Color(0.16f, 0.38f, 0.84f, 1f);
+
+        var button = rect.gameObject.AddComponent<Button>();
+        button.targetGraphic = image;
+
+        CreateText("Label", rect, label, 26, TextAnchor.MiddleCenter, Vector2.zero, sizeDelta);
+        return button;
     }
 }

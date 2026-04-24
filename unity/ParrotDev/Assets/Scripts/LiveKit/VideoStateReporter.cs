@@ -7,6 +7,11 @@ using LiveKit;
 /// Reports producer-side video stream state changes to the Brain via the
 /// "onVideoDegraded" RPC (Sprint 1 T5).
 ///
+/// <b>Supplemental control (not “main video”):</b> this path carries <b>health / lifecycle</b>
+/// signals (pause, track muted, etc.) over RPC — it does <b>not</b> define which pixels are
+/// “high quality product capture”; that remains <see cref="ARVideoPublisher"/> + Sprint 4
+/// app policy. Editor XR Simulation vs device: testing only; see <c>docs/test/p2_5/pipeline_test_matrix_sprint3.md</c> §4.1.
+///
 /// Sprint 1 scope (minimum viable): OnApplicationPause only. AR tracking
 /// state is already piped through DataChannel "ar_tracking_state" events
 /// (see XRHandTracker / future AR session reporter), so this script does
