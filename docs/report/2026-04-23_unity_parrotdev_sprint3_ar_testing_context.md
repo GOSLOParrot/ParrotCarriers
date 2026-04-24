@@ -16,7 +16,7 @@
 
 **与仓库事实源的关系**：全局仍以 **`.cursor/memory/INDEX.md`** 为准；进度条与 AC 栏以 **`.cursor/memory/active_context.md`** 与 **`architecture/sprint3_completion_report_20260423.md`**（若存在）为准。本文是 **`docs/report`** 侧对 **Unity 前端这一轮** 的补片，不替代 INDEX。
 
-**手测操作顺序（实习生）**：以 **`Test/p2_5/pipeline_test_matrix_sprint3.md` §0（P0→P1→P2）→ §A～§F** 为 **唯一推荐步骤**；`sprint3_completion_report` **§7** 只填 **AC1–AC8** 状态；本文 §3 仅说明脚本从哪来 — **若与操作表冲突，以 `Test/p2_5/…` 为准**。
+**手测操作顺序（实习生）**：以 **`docs/test/p2_5/pipeline_test_matrix_sprint3.md` §0（P0→P1→P2）→ §A～§F** 为 **唯一推荐步骤**；`sprint3_completion_report` **§7** 只填 **AC1–AC8** 状态；本文 §3 仅说明脚本从哪来 — **若与操作表冲突，以 `docs/test/p2_5/…` 为准**。真 `active_context.md` 不进 Git 时交接见 **`docs/test/p2_5/HANDOFF_ACTIVE_CONTEXT_FOR_ECS.md`**；远端独立报告见 **`docs/test/p2_5/ECS_RUN_REPORTS/`**。
 
 ---
 
@@ -73,7 +73,7 @@ ParrotDev 处于 **「端侧采集 + LiveKit 传输」** 一层：经 **`RoomMan
 | **ParrotDiagnosticsLog** | `unity/ParrotDev/Assets/Scripts/Testing/Runtime/ParrotDiagnosticsLog.cs` | 订阅 `logMessageReceivedThreaded`，环形缓冲 + 可选 **`persistentDataPath/parrot_diagnostics.log`**；`CopyRecentToClipboard`。 |
 | **ParrotRuntimeHud** | `…/Testing/Runtime/ParrotRuntimeHud.cs` | 左上角状态条；**F3** 展开日志尾 + Run self-test + Copy；订阅 `RoomManager` 连断。 |
 | **ParrotSelfTestCoordinator** | `…/Testing/Runtime/ParrotSelfTestCoordinator.cs` | 周期 **Snapshot**（LiveKit、Brain agent、`unity_join_token.txt`、`ARVideoPublisher`、`VideoTierReceiver`、AR Session、`LastConnectDurationSeconds`、Editor 下 **`LoaderUtility`+`XRCameraSubsystem`** 提示）；进 Play 可自动跑 **OneShotSelfTest**；首尾写 **`[SEQ]`** 锚点。 |
-| **ParrotRpcRttProbe** | `…/Testing/Runtime/ParrotRpcRttProbe.cs` | **`onGosloPlaced`** 轻载 RTT ×N；日志前缀 **`[RpcRtt]`**（步骤见 `Test/p2_5/…` §C 步 6）。 |
+| **ParrotRpcRttProbe** | `…/Testing/Runtime/ParrotRpcRttProbe.cs` | **`onGosloPlaced`** 轻载 RTT ×N；日志前缀 **`[RpcRtt]`**（步骤见 `docs/test/p2_5/…` §C 步 6）。 |
 
 **已删除旧路径**：`Assets/Scripts/Diagnostics/*.cs`（三文件）— 勿再引用。
 
@@ -84,7 +84,7 @@ ParrotDev 处于 **「端侧采集 + LiveKit 传输」** 一层：经 **`RoomMan
 | **ParrotDiagnosticsMenu** | `…/Testing/Editor/ParrotDiagnosticsMenu.cs` | **`Parrot/Test/Editor/Add Runtime Diagnostics (HUD + Log + SelfTest)`** |
 | **ParrotEditorNetworkTests** | `…/Testing/Editor/ParrotEditorNetworkTests.cs` | Play 下：**断开**、**1s 重连**、**断→等→连**（打 `[EditorTest]` 到诊断日志） |
 | **ParrotEditorRpcTests** | `…/Testing/Editor/ParrotEditorRpcTests.cs` | Play 下：**`Parrot/Test/Editor/RPC — Brain RTT…`**（与 F3 面板 **Brain RPC RTT x3** 一致） |
-| **ParrotEditorSequenceMarkers** | `…/Testing/Editor/ParrotEditorSequenceMarkers.cs` | **不 Play**：**`Parrot/Test/Editor/Sequence — Log P0 static checklist done`** → 打 `[SEQ] P0-done…`（见 `Test/p2_5/…` §0） |
+| **ParrotEditorSequenceMarkers** | `…/Testing/Editor/ParrotEditorSequenceMarkers.cs` | **不 Play**：**`Parrot/Test/Editor/Sequence — Log P0 static checklist done`** → 打 `[SEQ] P0-done…`（见 `docs/test/p2_5/…` §0） |
 | **ParrotArEditorChecklist** | `…/Testing/Editor/ParrotArEditorChecklist.cs` | **XR Simulation 清单**打到 Console/诊断日志（不自动改 Project Settings） |
 
 ### 3.4 LiveKit 运行时增强
@@ -231,14 +231,14 @@ docs/report/2026-04-23_unity_parrotdev_sprint3_ar_testing_context.md  ← 本文
 
 - **未改** Python Bus / Brain / DSG 业务逻辑；**未改** LiveKit 服务端拓扑。  
 - **未新增** 正式协议 schema 文档；仅 **Unity 场景与测试 harness**。  
-- **RPC RTT（前端）**：使用 **既有** `onGosloPlaced` 作为 **轻载往返** 探针（`ParrotRpcRttProbe` + HUD / Editor 菜单），**不新增** Brain RPC 方法名；与「专用 echo 合同」无关。详见 `Test/p2_5/pipeline_test_matrix_sprint3.md` §3 `T-RPC-01`。  
+- **RPC RTT（前端）**：使用 **既有** `onGosloPlaced` 作为 **轻载往返** 探针（`ParrotRpcRttProbe` + HUD / Editor 菜单），**不新增** Brain RPC 方法名；与「专用 echo 合同」无关。详见 `docs/test/p2_5/pipeline_test_matrix_sprint3.md` §3 `T-RPC-01`。  
 - **未自动** 修改 `ProjectSettings` 里 XR / Input 的勾选（除用户本机已在 Editor 里点的 Unity 自带弹窗外）。
 
 ---
 
 ## 12. 压缩后下一轮建议打开顺序
 
-1. **`Test/p2_5/pipeline_test_matrix_sprint3.md`**（**§A～F** 操作顺序 + **§3** 矩阵 — 实习生主入口）  
+1. **`docs/test/p2_5/pipeline_test_matrix_sprint3.md`**（**§A～F** 操作顺序 + **§3** 矩阵 — 实习生主入口）  
 2. **`architecture/sprint3_completion_report_20260423.md` §7**（AC1–AC8 状态栏）  
 3. **本文**（`docs/report/2026-04-23_…` — 工具说明与边界）  
 4. **`active_context.md`** 头部 + AC 栏  

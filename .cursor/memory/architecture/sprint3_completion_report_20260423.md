@@ -14,7 +14,7 @@ last_reviewed: 2026-04-23
 > - `sprint2_completion_report_20260423.md` — Sprint 2 遗留 5 坑
 > - `ar_feature_implementation_plan.md` — Sprint 0-4 任务清单
 > - `active_context.md` — 当前全局进度
-> - `Test/p2_5/pipeline_test_matrix_sprint3.md` — P2.5 / Sprint 3 数据流 **可填测试矩阵**（含 RPC RTT、日志对表）
+> - `docs/test/p2_5/pipeline_test_matrix_sprint3.md` — P2.5 / Sprint 3 数据流 **可填测试矩阵**（含 RPC RTT、日志对表）
 
 ---
 
@@ -226,8 +226,8 @@ Sprint 3 将 AR Desktop MVP 的五个关键链路全部落地：**Token Mint 服
 
 ## 7. Sprint 3 验收用例状态（待真机测试更新）
 
-> **操作顺序（实习生）**：`Test/p2_5/pipeline_test_matrix_sprint3.md` **§0**（P0→P1→P2）→ **§C**（P1 Editor）→ **§D**（P2 真机 AC1→AC8）；**易错点 §B**。  
-> **本表**只维护 **AC1–AC8 一句话验收 + 状态**；矩阵行 **T-*** 在 `Test/p2_5/pipeline_test_matrix_sprint3.md` **§3** 填写。  
+> **操作顺序（实习生）**：`docs/test/p2_5/pipeline_test_matrix_sprint3.md` **§0**（P0→P1→P2）→ **§C**（P1 Editor）→ **§D**（P2 真机 AC1→AC8）；**易错点 §B**。  
+> **本表**只维护 **AC1–AC8 一句话验收 + 状态**；矩阵行 **T-*** 在 `docs/test/p2_5/pipeline_test_matrix_sprint3.md` **§3** 填写。  
 > 用户测试时按此表勾选，标注发现的新 Bug。
 
 | # | 用例 | 预期 | 状态 |
@@ -241,7 +241,7 @@ Sprint 3 将 AR Desktop MVP 的五个关键链路全部落地：**Token Mint 服
 | AC7 | 断网 30s 后再连 → A10 心跳超时 → Supervisor 降级 → 恢复后自动升 | A10 心跳 E2E | ⬜ 待测 |
 | AC8 | `SceneProfileManager` 切换 Profile → `setScene` RPC → Brain `context_injector` C3/C4 更新 | 场景同步 | ⬜ 待测 |
 
-**Unity 前端 RTT（补充，不计入原 8 条合同）**：`onGosloPlaced` 轻载 **PerformRpc 往返**（F3 →「Brain RPC RTT x3」或 Editor 菜单 `Parrot/Test/Editor/RPC — …`），用于 **信令/应用层** 对表 — 步骤与通过标准见 `Test/p2_5/pipeline_test_matrix_sprint3.md` 的 **T-RPC-01**。
+**Unity 前端 RTT（补充，不计入原 8 条合同）**：`onGosloPlaced` 轻载 **PerformRpc 往返**（F3 →「Brain RPC RTT x3」或 Editor 菜单 `Parrot/Test/Editor/RPC — …`），用于 **信令/应用层** 对表 — 步骤与通过标准见 `docs/test/p2_5/pipeline_test_matrix_sprint3.md` 的 **T-RPC-01**。
 
 ---
 
@@ -277,7 +277,7 @@ Sprint 3 的以下接缝是 Sprint 4 的**强依赖前提**（Sprint 4 开工前
   L1 单元  → pytest: PerceptionSupervisor.set_manual_override 触发 mock RPC
            → pytest: token_mint /mint 返回合法 JWT，with_ttl 类型正确
   L2 集成  → sim_unity_client.py: 端到端 set_video_tier → push_video_tier RPC 断言
-  L3 真机  → AC1-AC8：操作顺序 Test/p2_5/pipeline_test_matrix_sprint3.md §D；Editor 联调 §C；状态本文件 §7
+  L3 真机  → AC1-AC8：操作顺序 docs/test/p2_5/pipeline_test_matrix_sprint3.md §D；Editor 联调 §C；状态本文件 §7
 ```
 
 ### 9.3 部署检查清单（Sprint 4 ECS 上线前）

@@ -133,8 +133,9 @@ ParrotCarriers/                       # 主仓库 (GOSLOParrot/ParrotCarriers)
 │   ├── test_scheduler/               # 调度器测试
 │   └── integration/                  # 集成测试 (dispatch chain, graphiti chain)
 │
-├── Test/                             # 人手验收 / 真机矩阵 (非 pytest)
-│   └── p2_5/                         # pipeline_test_matrix_sprint3.md — §A–F 实习生操作顺序 + §3 矩阵
+├── docs/test/p2_5/                   # 人手验收矩阵 + Remote Cursor 提示词（Git 跟踪；根目录 Test/ 仍 gitignore）
+│   └── ECS_RUN_REPORTS/             # 远端单次跑报告 report-*.md（防与主矩阵冲突）
+├── FilePort2/                        # 未 ignore 的投递说明（见 README）；大文件仍用 FilePort/（ignore）
 │
 ├── docs/                             # 文档
 ├── .cursor/                          # Cursor 配置

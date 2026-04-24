@@ -231,7 +231,8 @@ Cursor AI 在读写 `.cursor/memory/` 时，如果对话里出现了真实 token
 
 ```
 src/                          业务代码
-tests/                        测试
+tests/                        pytest 等自动化测试
+docs/test/p2_5/               人手测试矩阵、ECS 交接、远端陪跑提示词（可 push；根目录 Test/ 仍 .gitignore）
 infra/                        Docker / 部署脚本（含本文件！）
 pyproject.toml                依赖声明
 .cursor/memory/architecture/  架构设计文档（纯文档，无 secrets）

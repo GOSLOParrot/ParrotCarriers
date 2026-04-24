@@ -2,7 +2,7 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// <b>Testing/Editor</b> — writes <c>[SEQ]</c> markers for phase alignment (see Test/p2_5/pipeline_test_matrix_sprint3.md §0).
+/// <b>Testing/Editor</b> — writes <c>[SEQ]</c> markers for phase alignment (see docs/test/p2_5/pipeline_test_matrix_sprint3.md §0).
 /// </summary>
 public static class ParrotEditorSequenceMarkers
 {
