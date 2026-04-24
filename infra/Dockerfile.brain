@@ -1,0 +1,56 @@
+# infra/Dockerfile.brain
+# Minimal image for Castle Python services (token-mint, and future brain-agent container).
+#
+# Build context: repo root (docker-compose sets context: ..)
+# Usage:
+#   docker compose -f infra/docker-compose.yml build token-mint
+#   docker compose -f infra/docker-compose.yml up -d token-mint
+#
+# Layers ordered largest → smallest to maximise layer cache hits:
+#   1. System deps (changes rarely)
+#   2. Python deps from pyproject.toml (changes on version bumps)
+#   3. Extra deps for this service (fastapi / uvicorn / livekit-api)
+#   4. Source code (changes every commit)
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# System packages needed by cryptography (used by livekit-api JWT signing)
+# and by some Pydantic C extensions.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Dependency layer (changes rarely) ---
+# Copy only the project definition first so Docker can cache this layer
+# independently of source changes.
+COPY pyproject.toml ./
+
+# Create a stub src/parrot/__init__.py so pip install -e . succeeds
+# without copying the full source yet (source copied below).
+RUN mkdir -p src/parrot && touch src/parrot/__init__.py
+
+# Install the package in editable mode (main deps only — no [memory] extras
+# because token-mint does not need graphiti/falkordb/rustworkx).
+# Then install service-specific extras:
+#   fastapi        — HTTP framework for /mint endpoint
+#   uvicorn        — ASGI server
+#   livekit-api    — server-side AccessToken / VideoGrants JWT generation
+#                    NOTE: this is distinct from livekit-agents (client SDK)
+RUN pip install --no-cache-dir \
+        -e "." \
+        "fastapi>=0.110,<1.0" \
+        "uvicorn[standard]>=0.29,<1.0" \
+        "livekit-api>=0.7,<2.0"
+
+# --- Source layer (changes every commit) ---
+# Copy full source after deps so code changes don't invalidate the dep cache.
+COPY src/ ./src/
+
+# Non-root user for security (Castle ECS policy: run as uid 1000)
+RUN useradd -m -u 1000 parrot && chown -R parrot:parrot /app
+USER parrot
+
+# Default entry point — overridden by docker-compose `command:`
+CMD ["python", "-m", "parrot.castle.token_mint"]
