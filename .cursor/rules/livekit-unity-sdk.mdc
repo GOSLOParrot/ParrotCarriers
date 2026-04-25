@@ -51,6 +51,25 @@ room.LocalParticipant.RegisterRpcMethod("methodName", handler);
 // data 包含: CallerIdentity, Payload, ResponseTimeout
 ```
 
+### Android 麦克风采样率必须和 Unity 实际回调一致
+LiveKit Unity `MicrophoneSource` 在构造时用 `RtcAudioSource.DefaultMicrophoneSampleRate`
+创建 native audio source，随后每个 Unity audio callback 都会校验 `sampleRate/channels`。
+
+已踩坑：部分 Android 设备实际回调为 24 kHz，但 SDK 默认期望 48 kHz，日志表现为：
+
+```text
+actualRate=24000 expectedRate=48000
+InvalidState: sample_rate and num_channels don't match
+audio capture failed / capture callback failed
+```
+
+当前项目规则：
+
+1. 在创建 `MicrophoneSource` 前，把 `RtcAudioSource.DefaultMicrophoneSampleRate` 对齐到
+   `AudioSettings.outputSampleRate`（见 `MicrophonePublisher.ConfigureLiveKitMicrophoneSampleRate`）。
+2. HUD / 自检必须显示麦克风 configured rate，避免把“音频帧被拒”误判为 Gemini 没反应或视觉问题。
+3. 如果未来改成自定义音频源或升级 SDK，必须复测 Android 真机 24k/48k 行为。
+
 ## 审查流程
 
 生成或修改 Unity C# 代码时:

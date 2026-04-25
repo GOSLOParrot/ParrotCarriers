@@ -48,6 +48,8 @@ public class ParrotSelfTestCoordinator : MonoBehaviour
         public bool MicPublishAttempted;
         public string MicDevice;
         public string MicLastError;
+        public int MicConfiguredSampleRate;
+        public int MicUnityOutputSampleRate;
         public bool ParrotRpcHandlerPresent;
         public bool XrHandTrackerPresent;
         public bool SceneProfileManagerPresent;
@@ -147,6 +149,8 @@ public class ParrotSelfTestCoordinator : MonoBehaviour
                 s.MicPublishAttempted = mic.PublishAttempted;
                 s.MicDevice = mic.SelectedDevice ?? "";
                 s.MicLastError = mic.LastError ?? "";
+                s.MicConfiguredSampleRate = mic.ConfiguredSampleRate;
+                s.MicUnityOutputSampleRate = mic.UnityOutputSampleRate;
             }
 
             s.ParrotRpcHandlerPresent = UnityEngine.Object.FindObjectOfType<ParrotRpcHandler>() != null;
@@ -243,9 +247,9 @@ public class ParrotSelfTestCoordinator : MonoBehaviour
             L("WARN: No VideoTierReceiver (Brain setVideoTier will not apply).");
 
         if (snap.MicPublisherPresent && snap.MicPublishing)
-            L($"OK: MicrophonePublisher is publishing (voice track to room, device='{snap.MicDevice}').");
+            L($"OK: MicrophonePublisher is publishing (voice track to room, device='{snap.MicDevice}', livekitRate={snap.MicConfiguredSampleRate}Hz, unityOutput={snap.MicUnityOutputSampleRate}Hz).");
         else if (snap.MicPublisherPresent)
-            L($"WARN: MicrophonePublisher present but not publishing (attempted={snap.MicPublishAttempted}, device='{snap.MicDevice}', error='{snap.MicLastError}').");
+            L($"WARN: MicrophonePublisher present but not publishing (attempted={snap.MicPublishAttempted}, device='{snap.MicDevice}', livekitRate={snap.MicConfiguredSampleRate}Hz, unityOutput={snap.MicUnityOutputSampleRate}Hz, error='{snap.MicLastError}').");
         else
             L("WARN: No MicrophonePublisher — no local voice track (Gemini Live / Brain cannot hear you).");
 

@@ -17,6 +17,9 @@ public class MicrophonePublisher : MonoBehaviour
     [Tooltip("Leave empty to use the system default microphone")]
     [SerializeField] private string preferredDevice = "";
 
+    [Tooltip("Android devices can run Unity's audio callback at 24 kHz. Keep LiveKit's expected microphone rate aligned with Unity to avoid capture callback failures.")]
+    [SerializeField] private bool alignLiveKitRateToUnityOutput = true;
+
     private MicrophoneSource _micSource;
     private LocalAudioTrack _audioTrack;
     private bool _isPublishing;
@@ -24,12 +27,16 @@ public class MicrophonePublisher : MonoBehaviour
     private bool _publishAttempted;
     private string _selectedDevice = "";
     private string _lastError = "";
+    private int _configuredSampleRate;
+    private int _unityOutputSampleRate;
 
     /// <summary>麦克风轨已成功 <c>PublishTrack</c> 后为 true（供 HUD / 自检）。</summary>
     public bool IsPublishing => _isPublishing;
     public bool PublishAttempted => _publishAttempted;
     public string SelectedDevice => _selectedDevice;
     public string LastError => _lastError;
+    public int ConfiguredSampleRate => _configuredSampleRate;
+    public int UnityOutputSampleRate => _unityOutputSampleRate;
 
     void Start()
     {
@@ -89,6 +96,8 @@ public class MicrophonePublisher : MonoBehaviour
             yield break;
         }
 
+        ConfigureLiveKitMicrophoneSampleRate(device);
+
         _micSource = new MicrophoneSource(device, gameObject);
         _audioTrack = LocalAudioTrack.CreateAudioTrack("microphone", _micSource, room);
 
@@ -115,7 +124,38 @@ public class MicrophonePublisher : MonoBehaviour
         _micSource.Start();
         _isPublishing = true;
         _publishInProgress = false;
-        Debug.Log($"[MicrophonePublisher] Microphone publishing started: {device}");
+        Debug.Log($"[MicrophonePublisher] Microphone publishing started: {device} (configuredSampleRate={_configuredSampleRate}, unityOutputSampleRate={_unityOutputSampleRate})");
+    }
+
+    private void ConfigureLiveKitMicrophoneSampleRate(string device)
+    {
+        _unityOutputSampleRate = AudioSettings.outputSampleRate;
+        var targetRate = alignLiveKitRateToUnityOutput && _unityOutputSampleRate > 0
+            ? _unityOutputSampleRate
+            : (int)RtcAudioSource.DefaultMicrophoneSampleRate;
+
+        Microphone.GetDeviceCaps(device, out var minFreq, out var maxFreq);
+        if (maxFreq > 0)
+        {
+            var clamped = Mathf.Clamp(targetRate, minFreq, maxFreq);
+            if (clamped != targetRate)
+            {
+                Debug.LogWarning(
+                    $"[MicrophonePublisher] Clamped microphone sample rate {targetRate}Hz to device range {minFreq}-{maxFreq}Hz for '{device}'");
+                targetRate = clamped;
+            }
+        }
+
+        // LiveKit Unity's MicrophoneSource creates the native audio source with
+        // RtcAudioSource.DefaultMicrophoneSampleRate, then validates every Unity
+        // audio callback against that value. Some Android devices deliver 24 kHz
+        // callbacks even when the SDK default is 48 kHz, causing native capture
+        // failures. Set the static before constructing MicrophoneSource so the
+        // expected metadata matches Unity's real callback rate for this build.
+        RtcAudioSource.DefaultMicrophoneSampleRate = (uint)targetRate;
+        _configuredSampleRate = targetRate;
+        Debug.Log(
+            $"[MicrophonePublisher] LiveKit microphone sample rate configured: {targetRate}Hz (Unity output={_unityOutputSampleRate}Hz, device='{device}')");
     }
 
     private string SelectDevice()

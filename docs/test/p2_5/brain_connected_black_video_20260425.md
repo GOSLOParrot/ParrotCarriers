@@ -47,6 +47,10 @@ P2.5 ECS test showed the Brain agent joined `parrot-main` and voice/RPC paths wo
    - Active Input Handling set to `Both` can hurt Android input/perf; choose one path when the app input policy is finalized.
    - `GUI Error: Invalid GUILayout state in BuildPlayerWindow` is usually an Editor window/layout state issue during build UI repaint, not an AR pipeline code error. If scripts compile, reset the Unity layout or restart Unity before treating it as runtime failure.
 
+7. 2026-04-25 23:31Z phone logs showed a separate audio-track failure.
+
+   Unity/LiveKit emitted `actualRate=24000 expectedRate=48000` followed by `InvalidState — sample_rate and num_channels don't match` and `audio capture failed`. This is not caused by asking about the screen; it means the microphone PCM frames sent into LiveKit did not match the native audio source metadata. On such a device Brain/Gemini may hear clipped, missing, or no user speech, which can look like "GOSLO froze after I asked a visual question".
+
 ## Fixes applied
 
 - Added `unity/ParrotDev/Assets/csc.rsp` with `-define:UNITY_AR_FOUNDATION` so AR Foundation code is compiled into the Unity project.
@@ -58,6 +62,7 @@ P2.5 ECS test showed the Brain agent joined `parrot-main` and voice/RPC paths wo
 - Upgraded `set_video_tier` into a synchronous GOSLO Intent behavior: the tool now waits for Unity `setVideoTier` applied/rejected before writing the active tier and returning a same-turn result.
 - Updated AR Foundation rule docs to record that `UNITY_AR_FOUNDATION` is project-defined, not Unity-defined.
 - Fixed AR Foundation compile drift after enabling the macro: `ARPlane.extents` Vector2 area math, Android `ARSession` import, and an XR Hands conditional-field warning.
+- Fixed Android microphone sample-rate metadata drift: `MicrophonePublisher` now configures `RtcAudioSource.DefaultMicrophoneSampleRate` from `AudioSettings.outputSampleRate` before constructing `MicrophoneSource`, and HUD/self-test report the configured rate.
 
 ## Retest checklist
 
@@ -68,6 +73,7 @@ P2.5 ECS test showed the Brain agent joined `parrot-main` and voice/RPC paths wo
 - If the camera freezes, HUD should show `Video pub: stale(...)` and Brain should receive `onVideoDegraded(reason=static_frame)`.
 - When asking GOSLO to switch quality, Brain should not verbally overclaim success before Unity confirms through the RPC/log path.
 - Unity Android build should compile past AR scripts. If BuildPlayerWindow reports a GUILayout state error after scripts compile, restart Unity or reset layout and retry before debugging runtime AR.
+- Phone logs should no longer show repeated `actualRate=24000 expectedRate=48000` or `audio capture failed` after reconnect. HUD/self-test should show the microphone configured rate, e.g. `Audio pub: yes(24k)`.
 
 ## Sprint4 implications
 
@@ -76,3 +82,4 @@ P2.5 ECS test showed the Brain agent joined `parrot-main` and voice/RPC paths wo
 - Add an explicit app startup gate: do not announce visual readiness until AR permissions, AR session state, first camera frame, and LiveKit publish are all ready.
 - Consider replacing the project-wide `csc.rsp` macro with asmdef `versionDefines` if the Unity scripts are later moved into assemblies.
 - Keep a build-stage checklist separate from behavior/runtime tests: Android ARM64, XR Plug-in Management provider enabled, Input Handling policy, and Unity editor layout health can block tests before app logic runs.
+- Treat "visual question caused blocking" as two possible overlapping paths during triage: Gemini multimodal generation can timeout, but if phone audio capture is failing at the same time, the agent may simply not receive clean speech.

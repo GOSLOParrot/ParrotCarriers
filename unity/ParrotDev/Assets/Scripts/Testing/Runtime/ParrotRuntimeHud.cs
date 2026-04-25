@@ -106,6 +106,8 @@ public class ParrotRuntimeHud : MonoBehaviour
         sb.Append("  |  Tier: ").Append(snap.VideoTierReceiverPresent ? snap.VideoTier : "—");
         sb.AppendLine();
         sb.Append("Audio pub: ").Append(snap.MicPublishing ? "yes" : "no");
+        if (snap.MicPublisherPresent && snap.MicConfiguredSampleRate > 0)
+            sb.Append($"({snap.MicConfiguredSampleRate / 1000f:F0}k)");
         sb.Append("  |  RPC in(fly/anim): ").Append(snap.ParrotRpcHandlerPresent ? "yes" : "—");
         sb.Append("  |  Hand DC: ").Append(snap.XrHandTrackerPresent ? "yes" : "—");
         sb.Append("  |  VisRPC: ").Append(snap.VideoStateReporterPresent ? "yes" : "—");
