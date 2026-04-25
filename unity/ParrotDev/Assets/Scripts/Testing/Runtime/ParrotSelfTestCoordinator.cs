@@ -4,9 +4,12 @@ using System.IO;
 using UnityEngine;
 using LiveKit;
 
+#if UNITY_AR_FOUNDATION
+using UnityEngine.XR.ARFoundation;
+#endif
+
 #if UNITY_AR_FOUNDATION && UNITY_EDITOR
 using Unity.XR.Management;
-using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 #endif
 
