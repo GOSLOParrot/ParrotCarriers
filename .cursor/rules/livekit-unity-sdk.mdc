@@ -51,24 +51,37 @@ room.LocalParticipant.RegisterRpcMethod("methodName", handler);
 // data 包含: CallerIdentity, Payload, ResponseTimeout
 ```
 
-### Android 麦克风采样率必须和 Unity 实际回调一致
+### Android 麦克风采样率不要跟随不稳定路由漂移
 LiveKit Unity `MicrophoneSource` 在构造时用 `RtcAudioSource.DefaultMicrophoneSampleRate`
 创建 native audio source，随后每个 Unity audio callback 都会校验 `sampleRate/channels`。
 
-已踩坑：部分 Android 设备实际回调为 24 kHz，但 SDK 默认期望 48 kHz，日志表现为：
+已踩坑：Android 音频路由会受蓝牙、系统音频模式、Unity AudioSettings 影响。错误地把
+LiveKit 期望值跟随 `AudioSettings.outputSampleRate` 或设备 caps 后，出现过两种失败：
 
 ```text
-actualRate=24000 expectedRate=48000
+actualRate=24000 expectedRate=44100   # 蓝牙输入路径
+actualRate=48000 expectedRate=16000   # 关蓝牙后的错误声明路径
 InvalidState: sample_rate and num_channels don't match
 audio capture failed / capture callback failed
 ```
 
 当前项目规则：
 
-1. 在创建 `MicrophoneSource` 前，把 `RtcAudioSource.DefaultMicrophoneSampleRate` 对齐到
-   `AudioSettings.outputSampleRate`（见 `MicrophonePublisher.ConfigureLiveKitMicrophoneSampleRate`）。
-2. HUD / 自检必须显示麦克风 configured rate，避免把“音频帧被拒”误判为 Gemini 没反应或视觉问题。
-3. 如果未来改成自定义音频源或升级 SDK，必须复测 Android 真机 24k/48k 行为。
+1. Sprint3/4 前置真机测试的稳定基线是**关闭蓝牙输入，固定 LiveKit 麦克风源 48 kHz**（见 `MicrophonePublisher.ConfigureLiveKitMicrophoneSampleRate`）。
+2. 不要把 `AudioSettings.outputSampleRate` 当作可靠的 LiveKit 声明值；它在路由切换后可能不代表实际回调。
+3. HUD / 自检必须显示麦克风 configured rate 和 Unity output rate，避免把“音频帧被拒”误判为 Gemini 没反应或视觉问题。
+4. 蓝牙耳机、系统麦克风切换、SCO/A2DP 输入策略属于后续 App 启动/输入路由设计项；如果未来要支持，需要单独做 native route policy 或自定义音频源复测 24k/48k 行为。
+
+### RemoteAudioTrack 的 AudioStream 必须持有强引用
+LiveKit Unity `AudioStream` 包装 native stream handle，并注册 `AudioProbe.AudioRead`。
+不要在 `OnTrackSubscribed` 里只写局部变量：
+
+```csharp
+var stream = new AudioStream(audioTrack, source); // 错：方法返回后可能被 GC/finalizer Dispose
+```
+
+当前项目规则：`RoomManager` 必须把每条远端音频流放入字典，房间断开或替换 Room 时显式
+`Dispose()`。否则 GOSLO 的下行语音可能表现为随机断续、静音、或“以前能说现在很卡”。
 
 ## 审查流程
 

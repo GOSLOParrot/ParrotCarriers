@@ -78,6 +78,17 @@ def attach_mode_watcher(session: AgentSession) -> asyncio.Task:
     """
     current_mode = BehaviorMode.BASE | BehaviorMode.COMPANION
 
+    def _try_update_instructions(new_instructions: str, reason: str) -> None:
+        updater = getattr(session, "update_instructions", None)
+        if callable(updater):
+            updater(new_instructions)
+            return
+        logger.warning(
+            "mode_watcher: AgentSession.update_instructions unavailable; "
+            "mode context updated locally only (%s)",
+            reason,
+        )
+
     async def _watch() -> None:
         nonlocal current_mode
         try:
@@ -88,7 +99,7 @@ def attach_mode_watcher(session: AgentSession) -> asyncio.Task:
                 current_mode = _parse_mode(stored)
                 _sync_injector_mode(current_mode)
                 new_instructions = get_instructions(current_mode)
-                session.update_instructions(new_instructions)
+                _try_update_instructions(new_instructions, "init")
                 logger.info("mode_watcher: initialized with %s", current_mode)
 
             pubsub = r.pubsub()
@@ -105,7 +116,7 @@ def attach_mode_watcher(session: AgentSession) -> asyncio.Task:
                 current_mode = new_mode
                 _sync_injector_mode(current_mode)
                 new_instructions = get_instructions(current_mode)
-                session.update_instructions(new_instructions)
+                _try_update_instructions(new_instructions, "switch")
                 logger.info("mode_watcher: switched to %s", current_mode)
 
         except asyncio.CancelledError:

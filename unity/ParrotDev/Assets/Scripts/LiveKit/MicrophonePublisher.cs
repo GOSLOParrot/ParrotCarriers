@@ -17,8 +17,8 @@ public class MicrophonePublisher : MonoBehaviour
     [Tooltip("Leave empty to use the system default microphone")]
     [SerializeField] private string preferredDevice = "";
 
-    [Tooltip("Android devices can run Unity's audio callback at 24 kHz. Keep LiveKit's expected microphone rate aligned with Unity to avoid capture callback failures.")]
-    [SerializeField] private bool alignLiveKitRateToUnityOutput = true;
+    [Tooltip("LiveKit native audio source expected rate. Keep 48 kHz for the current Android phone-mic test path; Bluetooth routes can renegotiate and need a later native route policy.")]
+    [SerializeField] private int liveKitMicrophoneSampleRate = 48000;
 
     private MicrophoneSource _micSource;
     private LocalAudioTrack _audioTrack;
@@ -130,28 +130,16 @@ public class MicrophonePublisher : MonoBehaviour
     private void ConfigureLiveKitMicrophoneSampleRate(string device)
     {
         _unityOutputSampleRate = AudioSettings.outputSampleRate;
-        var targetRate = alignLiveKitRateToUnityOutput && _unityOutputSampleRate > 0
-            ? _unityOutputSampleRate
-            : (int)RtcAudioSource.DefaultMicrophoneSampleRate;
-
-        Microphone.GetDeviceCaps(device, out var minFreq, out var maxFreq);
-        if (maxFreq > 0)
-        {
-            var clamped = Mathf.Clamp(targetRate, minFreq, maxFreq);
-            if (clamped != targetRate)
-            {
-                Debug.LogWarning(
-                    $"[MicrophonePublisher] Clamped microphone sample rate {targetRate}Hz to device range {minFreq}-{maxFreq}Hz for '{device}'");
-                targetRate = clamped;
-            }
-        }
+        var targetRate = liveKitMicrophoneSampleRate > 0 ? liveKitMicrophoneSampleRate : 48000;
 
         // LiveKit Unity's MicrophoneSource creates the native audio source with
         // RtcAudioSource.DefaultMicrophoneSampleRate, then validates every Unity
-        // audio callback against that value. Some Android devices deliver 24 kHz
-        // callbacks even when the SDK default is 48 kHz, causing native capture
-        // failures. Set the static before constructing MicrophoneSource so the
-        // expected metadata matches Unity's real callback rate for this build.
+        // audio callback against that value. Route-dependent Android values such
+        // as 44.1 kHz/16 kHz from AudioSettings or Microphone caps can be stale
+        // after Bluetooth changes; for the current phone-mic test path, fixed
+        // 48 kHz matches the observed non-Bluetooth callback and avoids declaring
+        // a false 16 kHz source. Bluetooth input is a separate app route-policy
+        // problem and should not silently poison this baseline.
         RtcAudioSource.DefaultMicrophoneSampleRate = (uint)targetRate;
         _configuredSampleRate = targetRate;
         Debug.Log(

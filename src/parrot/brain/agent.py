@@ -164,7 +164,30 @@ def _attach_gemini_transcript_to_terminal(session: AgentSession) -> None:
                 logger.exception("extractor.feed_transcript(assistant) failed")
 
 
-def _attach_scene_ready_rpc(room: "Any", session: AgentSession) -> None:
+async def _generate_reply_after_current_speech(
+    session: AgentSession,
+    instructions: str,
+    reason: str,
+) -> None:
+    """Call Gemini programmatic speech without overlapping the active turn.
+
+    Gemini Live + LiveKit Agents can time out or cancel tool calls if multiple
+    server-initiated generate_reply calls race with current speech/user audio.
+    Keep explicit Brain prompts serialized so startup greetings and status
+    notices do not steal the user's first turn.
+    """
+    current_speech = getattr(session, "current_speech", None)
+    if current_speech is not None:
+        logger.debug("%s: waiting for current_speech before generate_reply", reason)
+        await current_speech
+    await session.generate_reply(instructions=instructions)
+
+
+def _attach_scene_ready_rpc(
+    room: "Any",
+    session: AgentSession,
+    greeting_state: dict[str, bool],
+) -> None:
     """Sprint 3 S3.D4: handle Unity 'onSceneReady' RPC → time-of-day greeting.
 
     Unity sends this 500ms after LiveKit connect. Brain generates a brief
@@ -194,7 +217,15 @@ def _attach_scene_ready_rpc(room: "Any", session: AgentSession) -> None:
             f"保持角色，简短活泼，体现你是 GOSLO 鹦鹉这个身份。"
         )
         try:
-            await session.generate_reply(instructions=instructions)
+            if greeting_state.get("sent"):
+                logger.info("onSceneReady: greeting already sent; skipping duplicate")
+                return _json.dumps({"status": "ok", "skipped": "duplicate_greeting"})
+            greeting_state["sent"] = True
+            await _generate_reply_after_current_speech(
+                session,
+                instructions,
+                "onSceneReady",
+            )
             logger.info("onSceneReady: greeting generated (time_of_day=%s)", time_of_day)
         except Exception:
             logger.exception("onSceneReady: generate_reply failed")
@@ -325,7 +356,8 @@ async def brain_entrypoint(ctx: agents.JobContext):
 
     attach_telemetry_receiver(ctx.room)
     attach_video_state_rpc(ctx.room)
-    _attach_scene_ready_rpc(ctx.room, session)
+    greeting_state = {"sent": False}
+    _attach_scene_ready_rpc(ctx.room, session, greeting_state)
 
     try:
         from parrot.memory.conversation_writer import attach_conversation_writer
@@ -419,7 +451,11 @@ async def brain_entrypoint(ctx: agents.JobContext):
                         f"Summary: {summary}. "
                         f"Briefly tell the user about it."
                     )
-                await session.generate_reply(instructions=instructions)
+                await _generate_reply_after_current_speech(
+                    session,
+                    instructions,
+                    "scheduler_result",
+                )
         except asyncio.CancelledError:
             pass
         except Exception:
@@ -427,9 +463,25 @@ async def brain_entrypoint(ctx: agents.JobContext):
 
     asyncio.create_task(_listen_scheduler_results())
 
-    await session.generate_reply(
-        instructions="Greet the user briefly as Parrot. Be cheerful and short."
-    )
+    async def _fallback_startup_greeting() -> None:
+        # Unity usually sends onSceneReady after connection. Use this fallback
+        # only when that RPC never arrives, so Gemini does not speak two opening
+        # greetings and confuse turn detection/transcription.
+        await asyncio.sleep(3.0)
+        if greeting_state.get("sent"):
+            return
+        greeting_state["sent"] = True
+        try:
+            await _generate_reply_after_current_speech(
+                session,
+                "Greet the user briefly as Parrot. Be cheerful and short.",
+                "startup_fallback",
+            )
+            logger.info("startup fallback greeting generated")
+        except Exception:
+            logger.exception("startup fallback greeting failed")
+
+    asyncio.create_task(_fallback_startup_greeting())
 
     @ctx.room.on("disconnected")
     def _on_room_disconnected(*_args) -> None:

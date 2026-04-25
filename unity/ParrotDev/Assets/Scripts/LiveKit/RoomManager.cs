@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using LiveKit;
@@ -40,6 +41,7 @@ public class RoomManager : MonoBehaviour
     public Room Room { get; private set; }
     public bool IsConnected { get; private set; }
     public static RoomManager Instance { get; private set; }
+    private readonly Dictionary<string, AudioStream> _remoteAudioStreams = new Dictionary<string, AudioStream>();
 
     /// <summary>Seconds for the last successful <see cref="ConnectToRoom"/> (for Testing/HUD).</summary>
     public float? LastConnectDurationSeconds { get; private set; }
@@ -185,6 +187,7 @@ public class RoomManager : MonoBehaviour
 
             Room = null;
             IsConnected = false;
+            ClearRemoteAudioStreams("replace_room");
             yield return null;
         }
 
@@ -199,6 +202,7 @@ public class RoomManager : MonoBehaviour
         {
             Debug.Log("[RoomManager] Disconnected");
             IsConnected = false;
+            ClearRemoteAudioStreams("room_disconnected");
             OnDisconnected?.Invoke();
         };
 
@@ -264,16 +268,53 @@ public class RoomManager : MonoBehaviour
         if (track is RemoteAudioTrack audioTrack)
         {
             Debug.Log($"[RoomManager] Audio track from {participant.Identity}");
-            var go = new GameObject($"Audio_{participant.Identity}");
+            var key = $"{participant.Identity}:{publication.Sid}";
+            if (_remoteAudioStreams.ContainsKey(key))
+            {
+                Debug.Log($"[RoomManager] Audio stream already exists for {key}");
+                return;
+            }
+
+            var go = new GameObject($"Audio_{key}");
             go.transform.SetParent(transform);
             var source = go.AddComponent<AudioSource>();
             source.spatialBlend = 0f;
-            var stream = new AudioStream(audioTrack, source);
+            source.playOnAwake = false;
+
+            // AudioStream owns a native stream handle and hooks AudioProbe events.
+            // Keep a strong reference; otherwise Unity/Mono GC can finalize the
+            // local variable and dispose playback while the remote track is still
+            // subscribed, which sounds like random dropouts on-device.
+            _remoteAudioStreams[key] = new AudioStream(audioTrack, source);
+        }
+    }
+
+    private void ClearRemoteAudioStreams(string reason)
+    {
+        foreach (var kv in _remoteAudioStreams)
+        {
+            try
+            {
+                kv.Value.Dispose();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[RoomManager] Dispose audio stream {kv.Key} failed ({reason}): {e.Message}");
+            }
+        }
+        _remoteAudioStreams.Clear();
+
+        for (int i = transform.childCount - 1; i >= 0; i--)
+        {
+            var child = transform.GetChild(i);
+            if (child.name.StartsWith("Audio_", StringComparison.Ordinal))
+                Destroy(child.gameObject);
         }
     }
 
     void OnDestroy()
     {
+        ClearRemoteAudioStreams("destroy");
         Room?.Disconnect();
         Room = null;
         if (Instance == this) Instance = null;

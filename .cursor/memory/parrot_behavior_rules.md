@@ -196,7 +196,7 @@ Gemini 调用 tool 时 = THINKING 状态
 | `fly_to` | Intent / 自身身体行为 | 层②；失败升层③ | 是 | await Unity `flyTo` RPC | 同步 tool 结果 + `tick/last_rpc_ack` |
 | `animate` | Intent / 自身身体行为 | 层②；失败升层③ | 是 | await Unity `animate` RPC | 同步 tool 结果 + `tick/last_rpc_ack` |
 | `set_video_tier` | Intent / 自身感知配置行为 | 层②；失败升层③ | **是** | await Unity `setVideoTier` applied/rejected | 同步 tool 结果 + `tick/last_rpc_ack` |
-| `identify_object` | Intent / 按需感知行为 | 层②；不确定或多次失败升层③ | **是** | 抓帧/比对/搜索后返回 | 同步 tool 结果；若委派 Nanobot 必须明示 Task |
+| `identify_object` | Intent / 按需感知行为 | 层②；不确定或多次失败升层③ | **是** | 抓帧/比对/搜索后返回 | **当前默认不注册**；同步 tool 结果；若委派 Nanobot 必须明示 Task |
 | `dispatch_task` | Task / 异步委派 | 层①记录；结果到达再层③通报 | 否 | Scheduler/Nanobot 后续回流 | 立即返回 task id，不能说已完成 |
 
 `set_video_tier` 的特殊规则：
@@ -208,6 +208,7 @@ Gemini 调用 tool 时 = THINKING 状态
 
 `identify_object` 的特殊规则：
 
+- 2026-04-26 联调结论：当前实现还缺 `captureSnapshot` / 同步视觉证据 / THINKING 体感闭环，且在第三轮测试中被 Gemini 对白色鼠标连续 `save_new`，伴随 tool cancellation。为避免未完成能力污染连接/语音稳定性测试，默认**不注册到 `ALL_TOOLS`**；专测时用 `PARROT_ENABLE_IDENTIFY_OBJECT_TOOL=1` 开启。
 - 它是 GOSLO 的按需感知行为，默认阻塞本轮对话；GOSLO 必须拿到图像/搜索结果后再说“这是 XX”。
 - 若内部调用 Nanobot 且不等待结果，则这条路径已经降格为 `dispatch_task`，话术必须是“我派出去查了，稍后告诉你”。
 - `audit_identify_object_no_screenshot_20260420.md` 是该工具的升级设计来源；实现时必须保持“同步/异步体感一致”。

@@ -24,6 +24,8 @@ last_reviewed: 2026-04-22
 
 一句话: 正确的路径是 "GOSLO 抓帧 → 调 tool → 等到结果(不管 tool 内部用 LLM / 本地程序 / Nanobot) → 拿到结果再说话"。tool 是火即忘还是同步等, 决定了 GOSLO 该说什么话, 二者必须一致。
 
+**2026-04-26 联调补充**: 回路已证明能跑，但该 tool 未升级前不应进入默认语音/连接稳定性测试。第三轮日志中 Gemini 围绕白色鼠标连续触发 `save_new`，并伴随 `server cancelled tool calls`；这不是 Graphiti/Nanobot 常驻潜意识，而是未完成的按需识别 tool 被模型当成可用能力调用。当前代码已将 `identify_object` 从默认 `ALL_TOOLS` 移出，仅当 `PARROT_ENABLE_IDENTIFY_OBJECT_TOOL=1` 时注册，直到本报告的 captureSnapshot + 同步体感闭环落地。
+
 ---
 
 ## 1. 路径边界 (最重要的一节, 先分清三条互不干扰的通路)

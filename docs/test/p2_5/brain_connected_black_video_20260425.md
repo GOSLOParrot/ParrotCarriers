@@ -62,7 +62,7 @@ P2.5 ECS test showed the Brain agent joined `parrot-main` and voice/RPC paths wo
 - Upgraded `set_video_tier` into a synchronous GOSLO Intent behavior: the tool now waits for Unity `setVideoTier` applied/rejected before writing the active tier and returning a same-turn result.
 - Updated AR Foundation rule docs to record that `UNITY_AR_FOUNDATION` is project-defined, not Unity-defined.
 - Fixed AR Foundation compile drift after enabling the macro: `ARPlane.extents` Vector2 area math, Android `ARSession` import, and an XR Hands conditional-field warning.
-- Fixed Android microphone sample-rate metadata drift: `MicrophonePublisher` now configures `RtcAudioSource.DefaultMicrophoneSampleRate` from `AudioSettings.outputSampleRate` before constructing `MicrophoneSource`, and HUD/self-test report the configured rate.
+- Fixed the non-Bluetooth Android phone-mic baseline by configuring `RtcAudioSource.DefaultMicrophoneSampleRate` to a fixed 48 kHz before constructing `MicrophoneSource`; HUD/self-test report both configured rate and Unity output rate. Bluetooth input remains a separate app route-policy problem because it can renegotiate to 24 kHz mid-session.
 
 ## Retest checklist
 
@@ -73,7 +73,7 @@ P2.5 ECS test showed the Brain agent joined `parrot-main` and voice/RPC paths wo
 - If the camera freezes, HUD should show `Video pub: stale(...)` and Brain should receive `onVideoDegraded(reason=static_frame)`.
 - When asking GOSLO to switch quality, Brain should not verbally overclaim success before Unity confirms through the RPC/log path.
 - Unity Android build should compile past AR scripts. If BuildPlayerWindow reports a GUILayout state error after scripts compile, restart Unity or reset layout and retry before debugging runtime AR.
-- Phone logs should no longer show repeated `actualRate=24000 expectedRate=48000` or `audio capture failed` after reconnect. HUD/self-test should show the microphone configured rate, e.g. `Audio pub: yes(24k)`.
+- With Bluetooth off, phone logs should no longer show repeated `actualRate=48000 expectedRate=16000` or `audio capture failed` after reconnect. HUD/self-test should show the microphone configured rate, e.g. `Audio pub: yes(48k)`.
 
 ## Sprint4 implications
 
@@ -83,3 +83,24 @@ P2.5 ECS test showed the Brain agent joined `parrot-main` and voice/RPC paths wo
 - Consider replacing the project-wide `csc.rsp` macro with asmdef `versionDefines` if the Unity scripts are later moved into assemblies.
 - Keep a build-stage checklist separate from behavior/runtime tests: Android ARM64, XR Plug-in Management provider enabled, Input Handling policy, and Unity editor layout health can block tests before app logic runs.
 - Treat "visual question caused blocking" as two possible overlapping paths during triage: Gemini multimodal generation can timeout, but if phone audio capture is failing at the same time, the agent may simply not receive clean speech.
+
+## 2026-04-26 voice stutter follow-up
+
+Later log5 testing showed connectivity and AR were mostly present: `AR: SessionTracking`, fresh video frames, mic 48 kHz OK, Unity→Brain RPC RTT around 129 ms, and Graphiti conversation archive writing to DB. The remaining bad UX was voice continuity.
+
+Findings:
+
+- The transcript shows many assistant/user fragments interleaving like echo or barge-in, not just slow network.
+- Brain sent two startup greetings in the same session: the immediate `session.generate_reply()` and the Unity `onSceneReady` greeting. This can confuse Gemini Live turn detection and make the first user turn feel crowded.
+- Unity created remote `AudioStream` as a local variable in `RoomManager.OnTrackSubscribed`. Because `AudioStream` owns native callbacks and has a finalizer, not keeping a strong reference can allow GC to dispose remote playback while the track is still active.
+- Graphiti `add_episode` writes succeeded but took 20-46 s in this test window. Treat live Graphiti archiving as a Sprint4 background/idle pipeline concern, not as proof that the realtime voice loop is healthy.
+- `mode_watcher` / `context_injector` attempted `AgentSession.update_instructions`, which is absent in the current LiveKit Agents API. This produced noisy errors during mode/scene changes and should not be used as the realtime instruction switch path until the API contract is reworked.
+- `identify_object` was not the cause of the first two rounds of stutter, but in the third round it was invoked around the white-mouse exchange and saved two near-duplicate objects. Since the tool still lacks screenshot evidence and same-turn THINKING semantics, it should not be enabled during final audio/connectivity smoke tests.
+
+Fixes applied:
+
+- `RoomManager` now holds remote `AudioStream` instances in a dictionary and disposes them explicitly on room replacement/disconnect/destroy.
+- Brain startup greeting is now single-path: Unity `onSceneReady` wins; a 3 s fallback greeting runs only if `onSceneReady` never arrives.
+- Programmatic Brain `generate_reply` calls now wait for `session.current_speech` before sending another explicit reply.
+- `update_instructions` calls in mode/context paths now degrade to warning instead of throwing when the current AgentSession does not support that API.
+- `identify_object` is now opt-in via `PARROT_ENABLE_IDENTIFY_OBJECT_TOOL=1`; default Brain sessions keep it out of `ALL_TOOLS` until the Sprint4 visual-evidence upgrade lands.

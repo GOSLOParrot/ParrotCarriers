@@ -123,6 +123,19 @@ class ContextInjector:
             )
         return "\n".join(parts)
 
+    async def _try_update_instructions(self, rebuilt: str, reason: str) -> None:
+        updater = getattr(self._session, "update_instructions", None)
+        if callable(updater):
+            updater(rebuilt)
+            logger.debug("context_injector: update_instructions (%s)", reason)
+            return
+
+        logger.warning(
+            "context_injector: AgentSession.update_instructions unavailable; "
+            "skipping C2 rebuild (%s)",
+            reason,
+        )
+
     async def inject_memory(self, query: str = "recent important facts") -> None:
         """Pull relevant memories from Graphiti and inject into instructions."""
         try:
@@ -144,7 +157,10 @@ class ContextInjector:
             else:
                 self._memory_context = ""
 
-            self._session.update_instructions(self._rebuild_instructions())
+            await self._try_update_instructions(
+                self._rebuild_instructions(),
+                "memory",
+            )
             logger.debug(
                 "context_injector: memory context updated (%d items)", len(results)
             )
@@ -154,7 +170,7 @@ class ContextInjector:
     async def inject_scene(self, scene_summary: str) -> None:
         """Inject scene context (from DSG triggers or simulation)."""
         self._scene_context = scene_summary
-        self._session.update_instructions(self._rebuild_instructions())
+        await self._try_update_instructions(self._rebuild_instructions(), "scene")
         logger.debug("context_injector: scene context updated")
 
     async def inject_notification(self, message: str) -> None:
@@ -366,7 +382,7 @@ class ContextInjector:
             if old_is_off or new_is_off:
                 try:
                     rebuilt = self._rebuild_instructions()
-                    self._session.update_instructions(rebuilt)
+                    await self._try_update_instructions(rebuilt, "VIDEO_OFF boundary")
                     logger.info(
                         "injector C2: update_instructions on VIDEO_OFF boundary "
                         "(%s → %s)",
