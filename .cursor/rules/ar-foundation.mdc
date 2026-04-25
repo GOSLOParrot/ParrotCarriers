@@ -95,11 +95,34 @@ using UnityEngine.XR.ARFoundation;
 
 未包裹的情况下，当 AR Foundation 包不在 Package Manager 时，编译直接报错。
 
-## 5. LiveKit Unity SDK 通过 UPM git URL 安装
+## 5. AR Foundation 5.1 API 细节不要凭印象写
+
+启用 `UNITY_AR_FOUNDATION` 后，之前被条件编译隐藏的代码会真正进入 Android Player 编译。已踩过的 API 坑：
+
+- `ARPlane.extents` 是 `Vector2`，平面面积应使用 `extents.x * extents.y`。不要写 `extents.z`。
+- `ARSession`、`ARPlane`、`ARCameraManager` 等类型在 Player 构建也需要 `using UnityEngine.XR.ARFoundation;`，不能只在 `UNITY_EDITOR` 下引用。
+- 如果字段或阈值只在 `UNITY_XR_HANDS` / `UNITY_AR_FOUNDATION` 代码块里使用，字段声明也要放入同一条件块，避免非对应能力构建产生 misleading warning。
+
+## 6. Unity Build UI 报错要和 AR 运行时错误分开
+
+Sprint3/4 真机包阶段出现过：
+
+- `GUI Error: Invalid GUILayout state in BuildPlayerWindow view`
+- `Getting control 1's position in a group with only 1 controls when doing repaint`
+
+这类错误常见于 Unity Editor BuildPlayerWindow 布局/重绘状态，不等同于 AR Foundation 运行时失败。处理顺序：
+
+1. 先确认 Console 里没有 C# compile error。
+2. 若只有 BuildPlayerWindow GUI/layout 报错，重启 Unity 或 Reset Layout 后重新 Build。
+3. 不要把这类 Editor UI 状态误判成 `ARCameraManager.frameReceived`、LiveKit 推流、或 Android 权限问题。
+
+同时，Android 真机测试前必须清掉 Player Settings 级阻塞项：ARM64、XR Plug-in Management Android provider、Camera/Microphone 权限、Input Handling 策略。
+
+## 7. LiveKit Unity SDK 通过 UPM git URL 安装
 
 不要通过 Asset Store 或手动复制 DLL。只能用 git URL 安装，具体 URL 和版本见 `.cursor/rules/livekit-unity-sdk.mdc`。
 
-## 6. Android 运行时权限 CAMERA 和 RECORD_AUDIO 需要代码请求，AndroidManifest.xml 声明不够
+## 8. Android 运行时权限 CAMERA 和 RECORD_AUDIO 需要代码请求，AndroidManifest.xml 声明不够
 
 ```csharp
 // 在 ARSession 初始化之前请求权限，否则 frameReceived 永远不触发（静默失败）
@@ -109,7 +132,7 @@ Permission.RequestUserPermission(Permission.Microphone);
 
 在 Room 连接之前确认权限已授予；否则 `ARVideoPublisher.OnRoomConnected` 会发布一个无视频源的空轨。
 
-## 7. 必须开启并使用 XR Simulation 进行 Editor Play 测试
+## 9. 必须开启并使用 XR Simulation 进行 Editor Play 测试
 
 由于频繁真机打包太慢，我们必须使用 AR Foundation 5.1.x 自带的 XR Simulation 进行初步测试。
 - **环境要求**：在 `XR Plug-in Management` 里，对于 PC/Mac Standalone 平台，**勾选 XR Simulation**。

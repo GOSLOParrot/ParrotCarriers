@@ -24,7 +24,9 @@ using UnityEngine.XR;
 public class XRHandTracker : MonoBehaviour
 {
     [Header("Tracking Settings")]
+#if UNITY_XR_HANDS
     [SerializeField] private Handedness preferredHand = Handedness.Right;
+#endif
     [SerializeField] private float sendIntervalSeconds = 0.1f;
 
 #if UNITY_XR_HANDS
