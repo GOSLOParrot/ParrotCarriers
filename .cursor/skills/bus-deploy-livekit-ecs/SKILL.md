@@ -1,6 +1,6 @@
 ---
 name: bus-deploy-livekit-ecs
-description: 用于ParrotCarriers在阿里云ECS上的Bus最小部署准备与执行，聚焦 LiveKit 官方拓扑与 2C8G 主机约束。
+description: 用于ParrotCarriers在阿里云ECS上的Bus部署准备与执行，聚焦 LiveKit 官方拓扑与 2C8G 主机约束。
 ---
 
 # bus-deploy-livekit-ecs
@@ -67,8 +67,8 @@ LiveKit 的网络配置优先级高于通用 Docker 习惯，但必须区分“�
 3. **接入模式与 TLS 前提**: 明确当前是“开发直连”还是“域名 + SSL + LB/反代”的公网方案，并写清主域名、TURN 域名、证书、SSL 终止位置是否已具备。
 4. **端口 / 安全组清单**: 明确列出需要的 TCP/UDP 规则。默认可引用官方 `50000-60000/udp`，但项目实际放行范围必须与当前 `livekit.yaml` 保持一致；如果项目已收窄到 `50000-50200`，不得再强制要求放开 `50000-60000`。
 5. **Docker 网络策略说明**: 明确当前采用的是官方推荐的 `host networking`，还是 Phase 1 的 `ports:` 映射折中方案。
-6. **本阶段不做什么**: 显式声明被排除在本次部署外的高负载组件（如 DSG, Graphiti）。
-7. **Go / No-Go 验收项**: 给出可观测的成功标志，例如“容器正常启动”、“客户端可入房”、“DataChannel/RPC 可通”、“媒体端口与配置一致”、“Redis 未暴露公网”。不要默认把“Worker 可连入 Room”作为最小部署阶段的必选验收项。
+6. **本次任务边界**: 显式声明本次会做什么、不做什么；若处于最小部署验证，继续排除 DSG、Graphiti、Neo4j 等高负载组件。
+7. **Go / No-Go 验收项**: 按目标部署层级给出可观测成功标志，例如“容器正常启动”、“客户端可入房”、“DataChannel/RPC 可通”、“媒体端口与配置一致”、“Redis 未暴露公网”。不要默认把“Worker 可连入 Room”作为最小部署阶段的必选验收项。
 
 ## 5. References
 - LiveKit Self-hosting: https://docs.livekit.io/transport/self-hosting/
