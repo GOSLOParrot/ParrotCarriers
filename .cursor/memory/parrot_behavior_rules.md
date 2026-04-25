@@ -1,19 +1,69 @@
 ---
 status: ratified
 category: reference
-status_note: "GOSLO 行为状态机 + 兼容矩阵 + 冲突规则, 当前代码已遵循。Sprint 1 可能扩展 body/head/cognitive 子状态, 扩展时追加而不翻案。"
-last_reviewed: 2026-04-22
+status_note: "GOSLO 行为模式入口：状态机 + Reflex/Intent/Task + 同步 tool 体感红线 + 工具注册表。Sprint3/4 继续补充，完成后冻结为 app 行为规则。"
+last_reviewed: 2026-04-25
 ---
 
 # GOSLO 鹦鹉行为状态规则
 
 > 维护者: 用户 + AI
 > 创建: 2026-04-13
-> 用途: 定义鹦鹉的行为状态机、动作兼容矩阵、冲突解决规则
+> 用途: 定义鹦鹉的行为状态机、动作兼容矩阵、冲突解决规则、行为工具同步/异步语义
 > 对应代码: Unity 前端状态机 + Python 后端调度器
 > 参考: Opus 14 (调度器+状态机), Opus 17 (DSG触发器), 包容架构
 
 ---
+
+## 0. 行为规则索引与分层口径
+
+本文件是 GOSLO 行为模式的入口。其他文档可以展开细节，但新增行为工具或状态机规则时，必须回到这里登记其层级、是否阻塞对话、失败反馈和用户可感知语义。
+
+相关文档：
+
+| 文档 | 负责内容 | 本文件引用点 |
+|:-----|:---------|:-------------|
+| `.cursor/memory/architecture/ar_feature_vision.md` | 三层意识分发、视觉门控、Blackboard 注入原则 | §0.1 / §0.2 |
+| `.cursor/memory/architecture/sprint2_completion_report_20260423.md` | Intent 层、Router 只 ack、BB writer 归属 | §0.1 |
+| `.cursor/memory/architecture/audit_identify_object_no_screenshot_20260420.md` | tool 同步/异步体感红线、按需识别路径 | §0.3 / §4.3 |
+| `.cursor/memory/architecture/sprint3_simulation_audit_20260423.md` | `set_video_tier`、动态 rebuild、仿真路径审计 | §4.3 |
+| `.cursor/skills/livekit-unity-video-publish/SKILL.md` | Unity 主视频源、Tier、首帧/新鲜帧门 | §4.3 |
+
+### 0.1 调度层：Reflex / Intent / Task
+
+调度层回答“事件由谁处理、时间尺度多长、是否是 GOSLO 自身行为”：
+
+| 调度层 | 时间尺度 | 典型事件 | Gemini 是否直接等待 | 代码入口 |
+|:------|:---------|:---------|:---------------------|:---------|
+| `Reflex` | ms-s | open_palm、紧急避障、低层身体反应 | 否 | `scheduler.router.HandleReflex` |
+| `Intent` | s-min | 切视频档位、视觉状态调节、行为模式调整 | **用户/tool 主动触发时要等待结果；后台自动调节可静默** | `PerceptionSupervisor` / Brain tools |
+| `Task` | min+ | Nanobot research、长记忆整理、异步后台工作 | 否；必须明示“我派出去/稍后告诉你” | `dispatch_task` / Scheduler |
+
+关键区别：`Intent` 不是“都 fire-and-forget”。后台自主 Intent 可以静默写 BB；但 Gemini tool 主动触发的 Intent 是 GOSLO 自身行为，必须同步等待可感知结果或明确失败。
+
+### 0.2 意识层：潜意识 / 自主行动 / 通报
+
+意识层回答“Gemini 是否需要知道”：
+
+| 意识层 | 用途 | 默认策略 |
+|:------|:-----|:---------|
+| 层① `Subconscious` | 记录事实、审计、反思 | 总是记录，不打扰对话 |
+| 层② `Autonomous Action` | 代码/状态机自己处理 | 成功通常不说，失败或分歧再升级 |
+| 层③ `Conscious Report` | 明确送入 Gemini 上下文 | 用户可见分歧、失败、用户主动动作、影响 Gemini 话术事实时使用 |
+
+`tick/last_rpc_ack` 是层③失败反馈面。成功无需多嘴；失败必须让 GOSLO 知道，避免它说“我飞过去了/我切好了”但 Unity 实际没做到。
+
+### 0.3 Tool 体感红线
+
+**tool 的同步/异步行为必须和 GOSLO 说出口的话一致。**
+
+| tool 方式 | 允许话术 | 是否合格 |
+|:----------|:---------|:---------|
+| 同步等待结果 | “我看了/我切好了/没成功，因为...” | ✅ |
+| 异步委派任务 | “我派女仆去查了，稍后告诉你” | ✅ |
+| 异步 fire-and-forget 却说已完成 | “我切好了/这是 XX” | ❌ |
+
+因此，凡是注册为 GOSLO 自身行为的 tool，必须在同一次 tool 返回中给出 `applied / rejected / timeout / no_target / unchanged` 这类结果，不把成功/失败只留给后续 `last_rpc_ack`。
 
 ## 1. 状态定义
 
@@ -138,6 +188,29 @@ Gemini 调用 tool 时 = THINKING 状态
 - ❌ 思考(歪头) + 跳舞 — 不合逻辑
 - ✅ 思考(歪头) + 站在手上 — 可以在手上思考
 - ✅ 思考(继续飞行) + 不歪头 — 飞行中可以思考但不表现出来
+
+### 4.3 GOSLO 自身行为工具注册表
+
+| Tool | 调度层 | 意识层 | 是否阻塞本轮对话 | 结果闭环 | 失败反馈 |
+|:-----|:------|:------|:-----------------|:---------|:---------|
+| `fly_to` | Intent / 自身身体行为 | 层②；失败升层③ | 是 | await Unity `flyTo` RPC | 同步 tool 结果 + `tick/last_rpc_ack` |
+| `animate` | Intent / 自身身体行为 | 层②；失败升层③ | 是 | await Unity `animate` RPC | 同步 tool 结果 + `tick/last_rpc_ack` |
+| `set_video_tier` | Intent / 自身感知配置行为 | 层②；失败升层③ | **是** | await Unity `setVideoTier` applied/rejected | 同步 tool 结果 + `tick/last_rpc_ack` |
+| `identify_object` | Intent / 按需感知行为 | 层②；不确定或多次失败升层③ | **是** | 抓帧/比对/搜索后返回 | 同步 tool 结果；若委派 Nanobot 必须明示 Task |
+| `dispatch_task` | Task / 异步委派 | 层①记录；结果到达再层③通报 | 否 | Scheduler/Nanobot 后续回流 | 立即返回 task id，不能说已完成 |
+
+`set_video_tier` 的特殊规则：
+
+- 它切换的是同一条 `ar-camera` 主视频轨的质量 Tier，不是另开一条视频流。
+- 用户或 Gemini 主动调用时，它是 GOSLO 的自身行为，进入 THINKING 并等待 Unity 返回真实 `applied / rejected / timeout`。
+- 后台 `PerceptionSupervisor` 因视觉降级或 A10 状态自动调节时，可作为层②自主 Intent 静默处理；失败通过 `last_rpc_ack` 升层③。
+- Blackboard 的 `session/video_tier` 不应早于 Unity applied 被写成“已生效”，否则 GOSLO 世界线会和手机 HUD 分叉。
+
+`identify_object` 的特殊规则：
+
+- 它是 GOSLO 的按需感知行为，默认阻塞本轮对话；GOSLO 必须拿到图像/搜索结果后再说“这是 XX”。
+- 若内部调用 Nanobot 且不等待结果，则这条路径已经降格为 `dispatch_task`，话术必须是“我派出去查了，稍后告诉你”。
+- `audit_identify_object_no_screenshot_20260420.md` 是该工具的升级设计来源；实现时必须保持“同步/异步体感一致”。
 
 ---
 

@@ -44,6 +44,20 @@ using UnityEngine.XR.ARFoundation;
 /// </summary>
 public class ARVideoPublisher : MonoBehaviour
 {
+    public struct TierApplyResult
+    {
+        public bool Ok;
+        public string Reason;
+        public string Detail;
+
+        public TierApplyResult(bool ok, string reason, string detail = "")
+        {
+            Ok = ok;
+            Reason = reason;
+            Detail = detail;
+        }
+    }
+
     [Header("Video Settings")]
     [SerializeField] private int width = 1280;
     [SerializeField] private int height = 720;
@@ -493,8 +507,13 @@ public class ARVideoPublisher : MonoBehaviour
     /// </summary>
     public void SetPublishMuted(bool muted)
     {
-        if (_publishMuted == muted) return;
-        _publishMuted = muted;
+        TrySetPublishMuted(muted, out _);
+    }
+
+    private bool TrySetPublishMuted(bool muted, out string error)
+    {
+        error = "";
+        if (_publishMuted == muted) return true;
 
         if (_videoTrack != null)
         {
@@ -504,12 +523,16 @@ public class ARVideoPublisher : MonoBehaviour
             }
             catch (Exception e)
             {
+                error = e.Message;
                 Debug.LogWarning($"[ARVideoPublisher] SetPublishMuted({muted}) failed: {e.Message}");
+                return false;
             }
         }
 
+        _publishMuted = muted;
         Debug.Log($"[ARVideoPublisher] publish muted → {muted}");
         OnPublishMutedChanged?.Invoke(muted);
+        return true;
     }
 
     // ── Dynamic track rebuild (Sprint 3 T-U5) ────────────────────────
@@ -524,30 +547,68 @@ public class ARVideoPublisher : MonoBehaviour
     /// </summary>
     public void ApplyVideoTier(VideoTierLocal newTier)
     {
-        if (_currentTier == newTier) return;
+        ApplyVideoTier(newTier, null);
+    }
+
+    public void ApplyVideoTier(VideoTierLocal newTier, Action<TierApplyResult> onComplete)
+    {
+        if (_currentTier == newTier)
+        {
+            onComplete?.Invoke(new TierApplyResult(true, "unchanged"));
+            return;
+        }
         var prev = _currentTier;
-        _currentTier = newTier;
 
         Debug.Log($"[ARVideoPublisher] Tier change: {prev} → {newTier}");
 
         if (newTier == VideoTierLocal.Off)
         {
-            SetPublishMuted(true);
+            if (TrySetPublishMuted(true, out var muteError))
+            {
+                _currentTier = newTier;
+                onComplete?.Invoke(new TierApplyResult(true, "muted"));
+            }
+            else
+            {
+                onComplete?.Invoke(new TierApplyResult(false, "mute_failed", muteError));
+            }
             return;
         }
 
         // Unmute first if coming from Off
         if (prev == VideoTierLocal.Off)
-            SetPublishMuted(false);
+        {
+            if (!TrySetPublishMuted(false, out var unmuteError))
+            {
+                onComplete?.Invoke(new TierApplyResult(false, "unmute_failed", unmuteError));
+                return;
+            }
+        }
 
         // If not yet publishing (track not created), next SetupAndPublish will use correct preset
-        if (!_isPublishing || _isRebuilding) return;
+        if (!_isPublishing)
+        {
+            _currentTier = newTier;
+            onComplete?.Invoke(new TierApplyResult(true, "pending_publish"));
+            return;
+        }
+
+        if (_isRebuilding)
+        {
+            onComplete?.Invoke(new TierApplyResult(false, "rebuild_in_progress"));
+            return;
+        }
 
         // Rebuild track with new encoding options
-        StartCoroutine(RebuildTrack(newTier));
+        StartCoroutine(RebuildTrack(newTier, result =>
+        {
+            if (result.Ok)
+                _currentTier = newTier;
+            onComplete?.Invoke(result);
+        }));
     }
 
-    private IEnumerator RebuildTrack(VideoTierLocal tier)
+    private IEnumerator RebuildTrack(VideoTierLocal tier, Action<TierApplyResult> onComplete = null)
     {
         _isRebuilding = true;
 
@@ -558,6 +619,7 @@ public class ARVideoPublisher : MonoBehaviour
         if (rm == null || !rm.IsConnected || rm.Room == null)
         {
             _isRebuilding = false;
+            onComplete?.Invoke(new TierApplyResult(false, "room_not_connected"));
             yield break;
         }
         var room = rm.Room;
@@ -621,11 +683,13 @@ public class ARVideoPublisher : MonoBehaviour
             if (_publishMuted)
                 ((ILocalTrack)_videoTrack).SetMute(true);
             Debug.Log($"[ARVideoPublisher] Track rebuilt: {bitrate / 1000}kbps/{fps}fps (tier={tier})");
+            onComplete?.Invoke(new TierApplyResult(true, "rebuilt"));
         }
         else
         {
             _lastPublishError = "rebuild_publish_failed";
             Debug.LogError("[ARVideoPublisher] ERROR rebuild_publish_failed: Track rebuild failed completely (PublishTrackInstruction.IsError; no Error details in SDK)");
+            onComplete?.Invoke(new TierApplyResult(false, "rebuild_publish_failed"));
         }
 
         // Notify Brain: rebuilding complete (resume normal visual state tracking)

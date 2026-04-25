@@ -165,7 +165,12 @@ class PerceptionSupervisor:
         self._write_combo(DEFAULT_COMBO, cause="startup")
 
     def set_manual_override(self, combo: tuple[VideoTier, DsgMode], hold_s: float = 300.0) -> bool:
-        """Record a user-initiated tier switch. Returns True if accepted.
+        """Legacy/background path: commit then push Unity asynchronously.
+
+        User-facing Gemini tools should call `request_manual_override()` so
+        they can wait for Unity's applied/rejected result in the same turn.
+        This method remains for autonomous/background callers that only need
+        failure escalation through `tick/last_rpc_ack`.
 
         Blocks Supervisor auto-decisions for `hold_s` seconds so the user's
         intent doesn't get overridden by a 30-second hysteresis window.
@@ -207,6 +212,89 @@ class PerceptionSupervisor:
             # skip async side effects; Blackboard is already updated.
             logger.debug("set_manual_override: no event loop, skipping async push")
         return True
+
+    async def request_manual_override(
+        self,
+        combo: tuple[VideoTier, DsgMode],
+        hold_s: float = 300.0,
+    ) -> dict[str, Any]:
+        """Synchronous user-tool path for video tier changes.
+
+        `set_manual_override()` remains the background/fire-and-forget path.
+        Gemini tool calls use this method so GOSLO waits for Unity's applied
+        or rejected response before it speaks. Blackboard is committed only
+        after Unity accepts the visible tier change, preventing a split brain
+        where `session/video_tier` says FULL while the phone stayed stale.
+        """
+        if not is_allowed_combo(*combo):
+            logger.warning("Supervisor refused illegal manual combo %s", combo)
+            return {
+                "ok": False,
+                "status": "rejected",
+                "reason": "illegal_combo",
+                "detail": str(combo),
+            }
+
+        previous = self._current
+        if combo == previous:
+            self._hysteresis.manual_override_until = time.time() + hold_s
+            return {
+                "ok": True,
+                "status": "unchanged",
+                "reason": "unchanged",
+                "detail": "requested combo is already active",
+            }
+
+        prev_tier, _prev_mode = previous
+        new_tier, _new_mode = combo
+
+        if new_tier != prev_tier:
+            from parrot.brain.tools._rpc_bridge import push_video_tier_result
+
+            rpc_result = await push_video_tier_result(
+                new_tier.name,
+                reason="manual_override",
+            )
+            if not rpc_result.ok:
+                logger.info(
+                    "Supervisor manual override declined by Unity: tier=%s reason=%s detail=%s",
+                    new_tier.value,
+                    rpc_result.reason,
+                    rpc_result.detail,
+                )
+                return {
+                    "ok": False,
+                    "status": "rejected",
+                    "reason": rpc_result.reason,
+                    "detail": rpc_result.detail,
+                    "response": rpc_result.response,
+                }
+
+        if not self._write_combo(combo, cause="manual_override"):
+            return {
+                "ok": True,
+                "status": "unchanged",
+                "reason": "unchanged",
+                "detail": "Blackboard already matched requested combo",
+            }
+
+        self._hysteresis.manual_override_until = time.time() + hold_s
+        await self._on_decision_committed(
+            previous=previous,
+            new=combo,
+            cause="manual_override",
+            push_unity=False,
+        )
+        logger.info(
+            "Supervisor manual override applied: combo=%s hold=%.0fs",
+            combo, hold_s,
+        )
+        return {
+            "ok": True,
+            "status": "applied",
+            "reason": "applied",
+            "detail": "",
+        }
 
     def start_background(self) -> None:
         """Kick off the async decision loop. Safe to call multiple times
@@ -459,6 +547,7 @@ class PerceptionSupervisor:
         previous: tuple[VideoTier, DsgMode],
         new: tuple[VideoTier, DsgMode],
         cause: str,
+        push_unity: bool = True,
     ) -> None:
         """Side-effect hook fired after a successful BB commit.
 
@@ -472,9 +561,10 @@ class PerceptionSupervisor:
                                    offline reflection tooling. Layer 2 =
                                    "autonomous action" per ar_feature_vision §3.5.
 
-        Also forwards a `setVideoTier` RPC to Unity so it can apply muting
-        (VIDEO_OFF) or acknowledge the tier change. Actual track re-publishing
-        for dynamic bitrate adjustment is deferred to Sprint 3.
+        When `push_unity` is true, also forwards a `setVideoTier` RPC to Unity.
+        User-facing tools set `push_unity=False` after they already awaited the
+        applied/rejected result, so audit and BB writes do not trigger a second
+        track rebuild.
         """
         prev_tier, prev_mode = previous
         new_tier, new_mode = new
@@ -509,7 +599,7 @@ class PerceptionSupervisor:
             actor=_WRITER,
         )
 
-        if new_tier != prev_tier:
+        if push_unity and new_tier != prev_tier:
             try:
                 from parrot.brain.tools._rpc_bridge import push_video_tier
 

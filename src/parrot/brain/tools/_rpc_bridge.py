@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from livekit.agents import get_job_context
@@ -39,6 +40,16 @@ logger = logging.getLogger(__name__)
 
 UNITY_IDENTITY_PREFIX = "unity"
 _WRITER = "brain._rpc_bridge"
+
+
+@dataclass(frozen=True)
+class RpcPushResult:
+    """Structured outcome for intent RPCs that must feed a same-turn tool result."""
+
+    ok: bool
+    reason: str
+    detail: str = ""
+    response: str = ""
 
 _bb: "py_trees.blackboard.Client | None" = None
 
@@ -116,8 +127,22 @@ def _classify_response(response: str) -> tuple[bool, str, str]:
     if status == "ok":
         return (True, "", "")
     if status == "error":
-        return (False, "rejected", str(data.get("message", "")))
+        return (
+            False,
+            str(data.get("reason", "rejected") or "rejected"),
+            str(data.get("message", "")),
+        )
     return (False, "malformed", str(data)[:200])
+
+
+def _result_from_response(response: str) -> RpcPushResult:
+    ok, reason, detail = _classify_response(response)
+    return RpcPushResult(
+        ok=ok,
+        reason=reason or ("applied" if ok else "unknown"),
+        detail=detail,
+        response=response,
+    )
 
 
 async def call_unity_rpc(
@@ -193,6 +218,18 @@ async def push_video_tier(video_tier: str, *, reason: str = "") -> bool:
         reason: Optional human-readable cause string, forwarded to Unity
             for log context only.
     """
+    result = await push_video_tier_result(video_tier, reason=reason)
+    return result.ok
+
+
+async def push_video_tier_result(video_tier: str, *, reason: str = "") -> RpcPushResult:
+    """Push `setVideoTier` to Unity and return a structured same-turn result.
+
+    User-facing tools use this instead of the boolean wrapper so GOSLO can
+    wait for Unity's applied/rejected response before speaking. Background
+    Supervisor ticks can keep using `push_video_tier()` when failure-only
+    escalation through `tick/last_rpc_ack` is enough.
+    """
     room = get_job_context().room
     unity_id = _find_unity_participant(room)
 
@@ -206,7 +243,11 @@ async def push_video_tier(video_tier: str, *, reason: str = "") -> bool:
         logger.info(
             "push_video_tier: no Unity client — tier=%s dropped", video_tier
         )
-        return False
+        return RpcPushResult(
+            ok=False,
+            reason="no_unity",
+            detail=f"tier={video_tier}",
+        )
 
     payload = {"video_tier": video_tier, "reason": reason}
     logger.info(
@@ -218,7 +259,7 @@ async def push_video_tier(video_tier: str, *, reason: str = "") -> bool:
             destination_identity=unity_id,
             method="setVideoTier",
             payload=json.dumps(payload),
-            response_timeout=5.0,
+            response_timeout=12.0,
         )
     except Exception as e:
         _write_ack(
@@ -228,16 +269,27 @@ async def push_video_tier(video_tier: str, *, reason: str = "") -> bool:
             detail=f"{type(e).__name__}: {e}",
         )
         logger.warning("setVideoTier transport error: %s", e)
-        return False
+        return RpcPushResult(
+            ok=False,
+            reason="transport",
+            detail=f"{type(e).__name__}: {e}",
+        )
 
-    ok, reason_out, detail = _classify_response(response)
-    _write_ack(ok=ok, rpc="setVideoTier", reason=reason_out, detail=detail)
-    return ok
+    result = _result_from_response(response)
+    _write_ack(
+        ok=result.ok,
+        rpc="setVideoTier",
+        reason="" if result.ok else result.reason,
+        detail=result.detail,
+    )
+    return result
 
 
 __all__: list[str] = [
     "UNITY_IDENTITY_PREFIX",
     "call_unity_rpc",
     "push_video_tier",
+    "push_video_tier_result",
+    "RpcPushResult",
     "set_scene",
 ]

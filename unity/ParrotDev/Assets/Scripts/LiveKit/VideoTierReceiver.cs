@@ -18,9 +18,9 @@ using LiveKit;
 ///     reply   : { "status": "ok",    "tier": "...",         "applied": <bool> }
 ///             | { "status": "error", "message": "...",      "tier": "..." }
 ///
-/// Current behavior: acknowledges tier commands and delegates them to
-/// <see cref="ARVideoPublisher"/>. Non-OFF tiers rebuild the LiveKit video
-/// track because publish options are immutable after publish.
+/// Current behavior: delegates tier commands to <see cref="ARVideoPublisher"/>
+/// and waits for the mute/rebuild result before responding. Brain tools rely
+/// on this applied/rejected ack so GOSLO does not claim a switch that failed.
 ///
 /// Attach alongside ParrotRpcHandler / ARVideoPublisher on a persistent
 /// scene object.
@@ -101,22 +101,31 @@ public class VideoTierReceiver : MonoBehaviour
                 return $"{{\"status\":\"error\",\"message\":\"{EscapeJson(msg)}\",\"tier\":\"{EscapeJson(p.video_tier)}\"}}";
             }
 
-            var tcs = new TaskCompletionSource<bool>();
+            if (videoPublisher == null)
+            {
+                var msg = "No ARVideoPublisher in scene";
+                Debug.LogWarning($"[VideoTierReceiver] {msg}");
+                return ErrorJson(msg, p.video_tier, "no_video_publisher");
+            }
+
+            var tcs = new TaskCompletionSource<ARVideoPublisher.TierApplyResult>();
             UnityMainThread.Enqueue(() =>
             {
                 try
                 {
-                    ApplyTier(tier, p.reason);
-                    tcs.SetResult(true);
+                    ApplyTier(tier, p.reason, result => tcs.TrySetResult(result));
                 }
                 catch (Exception ex)
                 {
-                    tcs.SetException(ex);
+                    tcs.TrySetException(ex);
                 }
             });
-            await tcs.Task;
+            var apply = await tcs.Task;
 
-            return $"{{\"status\":\"ok\",\"tier\":\"{EscapeJson(p.video_tier)}\",\"applied\":true}}";
+            if (!apply.Ok)
+                return ErrorJson(apply.Detail, p.video_tier, apply.Reason);
+
+            return $"{{\"status\":\"ok\",\"tier\":\"{EscapeJson(p.video_tier)}\",\"applied\":true,\"reason\":\"{EscapeJson(apply.Reason)}\"}}";
         }
         catch (Exception e)
         {
@@ -130,29 +139,40 @@ public class VideoTierReceiver : MonoBehaviour
     /// which handles both mute (VIDEO_OFF) and full track rebuilds
     /// (VIDEO_GEMINI_ONLY ↔ VIDEO_FULL) via UnpublishTrack → PublishTrack.
     /// </summary>
-    private void ApplyTier(VideoTier tier, string reason)
+    private void ApplyTier(VideoTier tier, string reason, Action<ARVideoPublisher.TierApplyResult> onComplete)
     {
         var previous = _currentTier;
-        _currentTier = tier;
 
-        if (videoPublisher != null)
+        // Map VideoTierReceiver.VideoTier → ARVideoPublisher.VideoTierLocal
+        var localTier = tier switch
         {
-            // Map VideoTierReceiver.VideoTier → ARVideoPublisher.VideoTierLocal
-            var localTier = tier switch
-            {
-                VideoTier.Off        => ARVideoPublisher.VideoTierLocal.Off,
-                VideoTier.GeminiOnly => ARVideoPublisher.VideoTierLocal.GeminiOnly,
-                VideoTier.Full       => ARVideoPublisher.VideoTierLocal.Full,
-                VideoTier.Burst      => ARVideoPublisher.VideoTierLocal.Burst,
-                _                    => ARVideoPublisher.VideoTierLocal.Unknown,
-            };
+            VideoTier.Off        => ARVideoPublisher.VideoTierLocal.Off,
+            VideoTier.GeminiOnly => ARVideoPublisher.VideoTierLocal.GeminiOnly,
+            VideoTier.Full       => ARVideoPublisher.VideoTierLocal.Full,
+            VideoTier.Burst      => ARVideoPublisher.VideoTierLocal.Burst,
+            _                    => ARVideoPublisher.VideoTierLocal.Unknown,
+        };
 
-            if (localTier != ARVideoPublisher.VideoTierLocal.Unknown)
-                videoPublisher.ApplyVideoTier(localTier);
+        if (localTier == ARVideoPublisher.VideoTierLocal.Unknown)
+        {
+            onComplete?.Invoke(new ARVideoPublisher.TierApplyResult(false, "unknown_tier", tier.ToString()));
+            return;
         }
 
-        Debug.Log($"[VideoTierReceiver] tier {previous} → {tier} (reason={reason ?? "-"})");
-        OnTierChanged?.Invoke(tier, reason);
+        videoPublisher.ApplyVideoTier(localTier, result =>
+        {
+            if (result.Ok)
+            {
+                _currentTier = tier;
+                Debug.Log($"[VideoTierReceiver] tier {previous} → {tier} (reason={reason ?? "-"}, applied={result.Reason})");
+                OnTierChanged?.Invoke(tier, reason);
+            }
+            else
+            {
+                Debug.LogWarning($"[VideoTierReceiver] tier {previous} → {tier} failed ({result.Reason}: {result.Detail})");
+            }
+            onComplete?.Invoke(result);
+        });
     }
 
     private static VideoTier ParseTier(string raw)
@@ -170,6 +190,9 @@ public class VideoTierReceiver : MonoBehaviour
 
     private static string EscapeJson(string s) =>
         s?.Replace("\\", "\\\\").Replace("\"", "\\\"") ?? "";
+
+    private static string ErrorJson(string message, string tier = "", string reason = "rejected") =>
+        $"{{\"status\":\"error\",\"reason\":\"{EscapeJson(reason)}\",\"message\":\"{EscapeJson(message)}\",\"tier\":\"{EscapeJson(tier)}\",\"applied\":false}}";
 
     void OnDestroy()
     {

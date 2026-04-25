@@ -1,9 +1,10 @@
 """set_video_tier — Gemini tool for user-initiated video tier switching.
 
-Sprint 3 T-P1. Implements decision D1: tool calls PerceptionSupervisor
-.set_manual_override() rather than writing BB directly. This preserves the
-single-writer contract (Supervisor is the sole writer of session/video_tier
-and session/dsg_mode).
+Sprint 3 T-P1 originally used fire-and-forget Supervisor writes. Sprint 4
+behavior governance upgrades this into a synchronous GOSLO Intent behavior:
+the tool waits for Unity's `setVideoTier` applied/rejected result before it
+returns, matching fly_to / animate and the identify_object audit's felt-
+experience rule.
 
 Manual override holds for PARROT_OVERRIDE_HOLD_SECONDS (default 300s / 5 min)
 before Supervisor auto-manages again.
@@ -15,6 +16,7 @@ for Intent-layer audit. This is intentional per sprint3_kickoff_prompt.md N1:
 
 from __future__ import annotations
 
+import json
 import logging
 
 from livekit.agents import RunContext, function_tool
@@ -74,7 +76,7 @@ async def set_video_tier(
         return "我现在还没准备好切换视频档位，稍等一下再试试？"
 
     hold_s = hold_seconds if hold_seconds > 0 else MANUAL_OVERRIDE_HOLD_S
-    accepted = supervisor.set_manual_override(combo, hold_s=hold_s)
+    result = await supervisor.request_manual_override(combo, hold_s=hold_s)
 
     log_obs_event(
         "intent_manual_tier",
@@ -83,28 +85,54 @@ async def set_video_tier(
             "requested_tier": tier_upper,
             "combo": [combo[0].value, combo[1].value],
             "hold_seconds": hold_s,
-            "accepted": accepted,
+            "accepted": result.get("ok", False),
+            "status": result.get("status"),
+            "reason": result.get("reason"),
+            "detail": result.get("detail"),
         },
         actor="brain.tools.set_video_tier",
     )
 
-    if not accepted:
-        return (
-            f"我试着切换到 {_TIER_LABELS.get(tier_upper, tier_upper)}，"
-            "但这个组合不合法，保持原状。"
+    if not result.get("ok", False):
+        message = (
+            f"我没能切换到{_TIER_LABELS.get(tier_upper, tier_upper)}。"
+            f"原因: {result.get('reason', 'unknown')}。"
+            f"{'细节: ' + str(result.get('detail')) if result.get('detail') else ''}"
+        )
+        return json.dumps(
+            {
+                "status": result.get("status", "rejected"),
+                "tier": tier_upper,
+                "ok": False,
+                "reason": result.get("reason", "unknown"),
+                "detail": result.get("detail", ""),
+                "message": message,
+            },
+            ensure_ascii=False,
         )
 
     logger.info(
-        "set_video_tier: manual override → %s (hold=%.0fs)",
-        tier_upper, hold_s,
+        "set_video_tier: manual override %s → %s (hold=%.0fs)",
+        result.get("status"), tier_upper, hold_s,
     )
-    # The Supervisor writes Blackboard synchronously, then pushes Unity's
-    # `setVideoTier` RPC asynchronously. Avoid claiming "switched" before the
-    # phone has actually acknowledged the track rebuild/mute operation.
-    return (
-        f"好的，我已提交切换到{_TIER_LABELS.get(tier_upper, tier_upper)}的请求。"
-        f"如果手机端确认失败，我会收到 RPC 状态并按视觉降级处理。"
-        f"这个设置将保持约 {int(hold_s // 60)} 分钟，之后我会根据情况自动调整。"
+    status = result.get("status", "applied")
+    if status == "unchanged":
+        message = f"已经在{_TIER_LABELS.get(tier_upper, tier_upper)}，不用重复切换。"
+    else:
+        message = (
+            f"已切换到{_TIER_LABELS.get(tier_upper, tier_upper)}。"
+            f"这个设置将保持约 {int(hold_s // 60)} 分钟，之后我会根据情况自动调整。"
+        )
+    return json.dumps(
+        {
+            "status": status,
+            "tier": tier_upper,
+            "ok": True,
+            "reason": result.get("reason", "applied"),
+            "hold_seconds": hold_s,
+            "message": message,
+        },
+        ensure_ascii=False,
     )
 
 

@@ -45,7 +45,6 @@ public class TapToPlace : MonoBehaviour
 #endif
 
     private GameObject _gosloInstance;
-    private bool _placed;
     private Camera _cam;
 
     void Awake()
@@ -117,9 +116,9 @@ public class TapToPlace : MonoBehaviour
         var plane = _planeManager.GetPlane(bestHit.trackableId);
         if (plane == null) return;
 
-        // Validate plane area (extents = half-size, so area = 4 × x × z)
+        // Validate plane area (ARPlane.extents is a Vector2 half-size, so area = 4 × x × y).
         var extents = plane.extents;
-        float area = 4f * extents.x * extents.z;
+        float area = 4f * extents.x * extents.y;
         if (area < minPlaneArea)
         {
             Debug.Log($"[TapToPlace] Plane too small ({area:F3} m² < {minPlaneArea} m²), ignoring tap");
@@ -205,7 +204,6 @@ public class TapToPlace : MonoBehaviour
         }
 #endif
 
-        _placed = true;
         Debug.Log($"[TapToPlace] GOSLO placed at {targetPos} (anchor={createAnchor})");
 
         // Notify Brain via RPC about anchor position

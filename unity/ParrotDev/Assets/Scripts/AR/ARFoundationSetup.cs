@@ -30,12 +30,10 @@ public class ARFoundationSetup : MonoBehaviour
     [SerializeField] private float minVisibleArea = 0.09f;
 
     private ARPlaneManager _planeManager;
-    private ARSession _arSession;
 
     void Awake()
     {
         _planeManager = GetComponent<ARPlaneManager>();
-        _arSession = FindObjectOfType<ARSession>();
 
         if (_planeManager == null)
         {
@@ -56,7 +54,7 @@ public class ARFoundationSetup : MonoBehaviour
 
     void OnEnable()
     {
-        if (_arSession != null)
+        if (FindObjectOfType<ARSession>() != null)
             ARSession.stateChanged += OnARSessionStateChanged;
     }
 
@@ -100,7 +98,7 @@ public class ARFoundationSetup : MonoBehaviour
             return;
         }
 
-        float area = 4f * plane.extents.x * plane.extents.z;
+        float area = 4f * plane.extents.x * plane.extents.y;
         bool visible = area >= minVisibleArea;
         plane.gameObject.SetActive(visible);
 
