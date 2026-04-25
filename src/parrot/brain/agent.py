@@ -22,6 +22,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from livekit import agents
@@ -41,7 +44,32 @@ from parrot.shared.constants import CH_SCHEDULER_TO_BRAIN, HASH_GOSLO_MODE
 from parrot.shared.redis_client import get_redis
 from parrot.shared.types import Layer, ModuleType
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("parrot.brain.agent")
+
+
+# region agent log
+_AGENT_DEBUG_LOG = Path(os.getenv("PARROT_AGENT_DEBUG_LOG", "debug-5bc081.log"))
+
+
+def _agent_log(run_id: str, hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    """Temporary NDJSON evidence for the current Cursor debug session."""
+    payload = {
+        "sessionId": "5bc081",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with _AGENT_DEBUG_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+# endregion
 
 
 class ParrotAssistant(Agent):
@@ -209,10 +237,30 @@ def _attach_scene_ready_rpc(room: "Any", session: AgentSession) -> None:
     logger.info("onSceneReady + onGosloPlaced + setScene RPC handlers registered")
 
 
-@server.rtc_session(agent_name="parrot-brain")
+@server.rtc_session()
 async def brain_entrypoint(ctx: agents.JobContext):
-    """Called by LiveKit when a participant joins. Boots Bus + Gemini session."""
+    """Handle LiveKit's default room jobs and boot the Bus + Gemini session.
+
+    Unity currently creates normal room-join tokens and does not request a
+    named agent. Keep this handler unnamed so LiveKit's JT_ROOM dispatch with
+    agentName="" can reach Brain. If future clients request named agents,
+    route that explicitly at the token/room-config layer instead of changing
+    this default handler.
+    """
     config = ParrotConfig()
+    # region agent log
+    _agent_log(
+        "post-fix",
+        "H1,H2",
+        "src/parrot/brain/agent.py:brain_entrypoint",
+        "brain default rtc_session entrypoint invoked",
+        {
+            "room": getattr(ctx.room, "name", ""),
+            "job_id_present": bool(getattr(ctx, "job", None)),
+            "logger_name": logger.name,
+        },
+    )
+    # endregion
 
     assistant = ParrotAssistant()
     logger.info(
@@ -233,11 +281,41 @@ async def brain_entrypoint(ctx: agents.JobContext):
 
     async def attach_l1() -> None:
         logger.info("Brain L1: starting AgentSession in room '%s'", ctx.room.name)
-        await session.start(
-            room=ctx.room,
-            agent=assistant,
-            room_options=room_io.RoomOptions(video_input=True),
+        # region agent log
+        _agent_log(
+            "post-fix",
+            "H3",
+            "src/parrot/brain/agent.py:attach_l1",
+            "brain about to start AgentSession",
+            {"room": ctx.room.name, "video_input": True},
         )
+        # endregion
+        try:
+            await session.start(
+                room=ctx.room,
+                agent=assistant,
+                room_options=room_io.RoomOptions(video_input=True),
+            )
+        except Exception as exc:
+            # region agent log
+            _agent_log(
+                "post-fix",
+                "H3",
+                "src/parrot/brain/agent.py:attach_l1",
+                "brain AgentSession start failed",
+                {"exception_type": type(exc).__name__, "exception_message": str(exc)[:200]},
+            )
+            # endregion
+            raise
+        # region agent log
+        _agent_log(
+            "post-fix",
+            "H3",
+            "src/parrot/brain/agent.py:attach_l1",
+            "brain AgentSession start completed",
+            {"room": ctx.room.name},
+        )
+        # endregion
 
     mount.set_l1_hooks(attach=attach_l1)
 
@@ -374,6 +452,15 @@ async def brain_entrypoint(ctx: agents.JobContext):
         logger.info("GOSLO mode → chat (room disconnected)")
 
     logger.info("Brain Agent session active in room '%s'", ctx.room.name)
+    # region agent log
+    _agent_log(
+        "post-fix",
+        "H1,H2,H3",
+        "src/parrot/brain/agent.py:brain_entrypoint",
+        "brain session active",
+        {"room": ctx.room.name},
+    )
+    # endregion
 
 
 if __name__ == "__main__":
