@@ -14,6 +14,7 @@ using LiveKit;
 public class ParrotRpcHandler : MonoBehaviour
 {
     private ParrotController _parrot;
+    private Room _rpcRegisteredOnRoom;
 
     void Awake()
     {
@@ -37,7 +38,10 @@ public class ParrotRpcHandler : MonoBehaviour
     {
         var room = RoomManager.Instance?.Room;
         if (room == null) return;
+        if (_rpcRegisteredOnRoom == room)
+            return;
 
+        _rpcRegisteredOnRoom = room;
         room.LocalParticipant.RegisterRpcMethod("flyTo", HandleFlyTo);
         room.LocalParticipant.RegisterRpcMethod("animate", HandleAnimate);
         Debug.Log("[ParrotRPC] Registered: flyTo, animate");
@@ -98,6 +102,7 @@ public class ParrotRpcHandler : MonoBehaviour
     {
         var rm = RoomManager.Instance;
         if (rm != null) rm.OnConnected -= Register;
+        _rpcRegisteredOnRoom = null;
     }
 
     [Serializable] private struct FlyToPayload { public float x, y, z; }

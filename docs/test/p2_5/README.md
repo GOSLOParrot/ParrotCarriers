@@ -8,5 +8,7 @@
 | `remote_cursor_test_monitor_boot_prompt.md` | Remote SSH Cursor **启动提示词**（引用区整段粘贴） |
 | `HANDOFF_ACTIVE_CONTEXT_FOR_ECS.md` | 真 **`active_context.md`** 被 ignore 时的 **脱敏交接模板** |
 | `ECS_RUN_REPORTS/README.md` | ECS / 远端 **独立跑报告** 命名规则（防与主矩阵冲突） |
+| `mobile_runtime_harness_zh.md` | **真机** Runtime HUD / 自检 / 日志路径 / 与 F3、Mint 的关系 |
+| `unity_channels_audit_mobile_zh.md` | **多通道审计**：视频/音频/RPC/DataChannel、无视频能否对话、Launcher 布局、自检顺序 |
 
 **勿提交**：JWT、Mint secret、完整 `parrot_config.json`（真文件仍 gitignore，见仓库根 `.gitignore`）。

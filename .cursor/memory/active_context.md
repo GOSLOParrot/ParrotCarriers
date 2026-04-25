@@ -1,11 +1,14 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-24 (Sprint 3 代码全落地，进入真机测试阶段)
+> 最后更新: 2026-04-25 (Sprint 3 真机测试束暴露多通道生命周期问题；Sprint 4 开始前需先做测试束/产品设计隔离)
 > **当前阶段**: **Sprint 3 真机测试中** — Dev.unity 是集成测试舞台（非最终 AR App 场景），AC1-AC8 验收用例待用户跑完反馈
 >
 > **Dev.unity 定位说明**: Dev.unity = Editor + 真机 **集成测试场景**，用来验证 Bus/Brain/LiveKit/AR Foundation 各层接缝。不是最终要上线的 AR App 场景；AR App 前端（Launcher.unity + AR 主场景）在 P2.5 测试完成后独立搭建。
 >
+> **Sprint 4 前置警告 (2026-04-25)**: Sprint 3 的真机测试脚本、Launcher→Dev 临时流程、Runtime HUD、自检按钮、WebCam fallback、`FindObjectOfType` 自动补绑定、3 秒等待、自诊断日志等，只能作为 **P2.5 测试束 / 事故记录 / 设计输入**。它们**不得**被当作 Sprint 4 AR App 的启动流程、连接流程或产品架构原型。Sprint 4 开始前必须先完成“有效内容提炼 + 测试束隔离 + AR App 启动设计”，再允许从 Sprint 3 代码或技能中借鉴实现片段。
+>
 > **Sprint 3 完成报告 (in_testing)**: `.cursor/memory/architecture/sprint3_completion_report_20260423.md` — 测试中持续更新 AC 验收栏
+> **Sprint 4 前置入口**: `.cursor/memory/architecture/sprint4_pre_entry_prompt_and_plan.md` — 新 Chat 启动提示词 + 测试束隔离 + 有效能力提炼 + 最高效执行顺序
 > **Sprint 3 开工提示词**: `.cursor/memory/architecture/sprint3_kickoff_prompt.md`
 > **Sprint 2 完成报告 (ratified)**: `.cursor/memory/architecture/sprint2_completion_report_20260423.md`
 >
@@ -19,13 +22,20 @@
 > 现在
 >  │
 >  ├─ [Sprint 3 测试] Dev.unity 真机验收 AC1-AC8
->  │    目标: 确认 Token Mint / AR 平面 / GOSLO 放置 / 两轴模式 / Brain RPC 全通
+>  │    目标: 确认 Token Mint / AR 平面 / GOSLO 放置 / 两轴模式 / Brain RPC / 音频轨 / 视频轨 / DataChannel 生命周期全通
 >  │    工具: adb logcat + python src/scripts/tail_obs_log.py --stream both
->  │    反馈: 用户测试 → 补 Bug → 更新 sprint3_completion_report AC 栏 → ratified
+>  │    反馈: 用户测试 → 补 Bug → 更新 sprint3_completion_report AC 栏 → 形成 Sprint3 测试束事故/经验提炼 → ratified
 >  │
->  ├─ [Sprint 4] captureSnapshot + 相机模式补充通道 + identify_object Path1 + 便签 UI + 食指 perching
->  │    前提: Sprint 3 AC1-AC5 通过
->  │    完成标志: P2.5 全部功能验收通过
+>  ├─ [Sprint 4 前置隔离] 测试束审计/提炼 + AR App 启动设计
+>  │    前提: Sprint 3 真机测试完成或至少拿到足够日志证明多通道生命周期问题
+>  │    目标: 把 Sprint3 中“可保留能力/踩坑经验/错误临时设计”分类，禁止把测试脚本当产品启动方案
+>  │    输入: 架构与需求 + LiveKit 能力边界 + client-sdk-unity + AR/Foundation/游戏/机器人控制/AR app 启动流程调研
+>  │    输出: Sprint4 启动警告、测试束隔离清单、可复用设计输入清单、AR App 启动/连接独立设计草案
+>  │
+>  ├─ [Sprint 4] 数据流部分继续推进，但必须带入 App 生命周期位置设计
+>  │    内容: captureSnapshot + 相机模式补充通道 + identify_object Path1 + 便签 UI + 食指 perching
+>  │    前提: Sprint 3 AC1-AC5 通过 + Sprint4 前置隔离完成
+>  │    完成标志: P2.5 全部功能验收通过；数据流生命周期能放入未来 App 启动/连接/前后台/权限模型中解释
 >  │
 >  ├─ [P2.5 收口] 全量功能测试完成 → 写 P2.5 completion report
 >  │    标志: Sprint 0-4 全部 ratified，identify_object 三路全通，相机模式完整
@@ -43,6 +53,31 @@
 > ---
 >
 > **Sprint 4 核心目标**: captureSnapshot + 相机模式补充通道 + identify_object Path 1 (A10 CV) + 便签 UI + 食指 perching
+>
+> ### Sprint 4 开始前警告与准入条件 (2026-04-25)
+>
+> **用户原始意图**: P2.5 / Sprint 3 的真机工作只是为了测试 **数据流生命周期**（LiveKit 房间、音频轨、视频轨、RPC、DataChannel、前后台/断线/重连、Brain 是否在房），并非提前设计正式 AR App 的启动/连接方式。当前 App 启动流程尚未设计，不能因为测试束能跑就反向认定产品启动流程。
+>
+> **禁止事项**:
+> 1. 禁止把 `Dev.unity`、`Launcher.unity -> Dev.unity` 临时跳转、Runtime HUD、自检按钮、IMGUI 面板、`unity_join_token.txt` 桌面路径、WebCam fallback、3 秒自检等待、`FindObjectOfType` 自动补绑定等视为 Sprint 4 / AR App 正式启动流程。
+> 2. 禁止继续为了“测试方便”把产品生命周期逻辑塞进测试脚本，尤其禁止让 HUD / SelfTest / Diagnostics 决定连接、权限、发布器初始化顺序。
+> 3. 禁止在 `.cursor/skills/livekit-unity-video-publish/SKILL.md` 或 `IMPL_REF.md` 中把当前测试束的临时代码写成 ratified 产品实现；该技能最终只能记录 LiveKit Unity SDK 能力边界、有效接缝、踩坑经验和可复用最小模式。
+>
+> **Sprint 4 前必须先完成的提炼工作**:
+> 1. **理解前提**: 只基于架构/需求、LiveKit 能力边界、`client-sdk-unity`、AR Foundation 约束、已验证 Bus/Brain/DSG 协议来设计；不得从测试脚本反推产品流程。
+> 2. **外部启动流程调研**: 在 Sprint 4 app 启动设计前，先调研并记录若干 AR/游戏/机器人控制/游戏 AI/AR 项目启动流程经验（例如 Pokémon GO 式权限与 AR 模式进入、移动游戏主菜单/加载/权限门、机器人控制 App 的连接/安全态/重连、AR 相机会话启动/暂停/恢复）。这些调研只用于筛选 Sprint3 踩坑是否对 App 设计有效，不用于照搬 UI。
+> 3. **测试束审计**: 把 Sprint3 真机测试中暴露的问题分为四类：
+>    - **可保留能力**: LiveKit 房间连接、Token Mint、音频轨发布、视频轨首帧与发布、RPC 注册/调用、DataChannel telemetry、断线/重连状态清理、日志对表。
+>    - **有效踩坑**: 明文 HTTP 被 Unity 禁、Brain 未在房但 LiveKit ON、无视频仍可语音但必须有麦轨和订阅者、视频轨 publish 成功不等于有真实帧、发布器断线后状态污染、`setVideoTier` 未绑定 publisher、重复 RPC 注册。
+>    - **错误临时设计**: Launcher/Dev 混合临时流程、测试按钮/HUD 过度介入、自动 fallback 与自动查找掩盖真实依赖、把测试路径写成产品路径。
+>    - **应迁入测试留档**: Runtime HUD、自检按钮、DiagnosticsLog、SceneChannelAudit、测试矩阵、adb/logcat 对表、ECS 对表报告；这些只能进入 `Testing/Runtime`、`Testing/Editor` 或 `docs/test/p2_5/`。
+> 4. **Sprint3 有效内容独立留档**: 在 Sprint4 设计前新增独立文件（建议 `docs/test/p2_5/sprint3_effective_lessons_for_sprint4_zh.md` 或 `.cursor/memory/architecture/sprint3_effective_lessons_for_sprint4.md`），只记录对 Sprint4 有用的能力、坑、设计约束；不把现有测试脚本作为架构蓝图。
+> 5. **技能延后整理**: `.cursor/skills/livekit-unity-video-publish/IMPL_REF.md` 和 `SKILL.md` 的最终提炼不急于现在完成。等 Sprint4 app 启动/连接/视频生命周期设计明确后，再从 Sprint3 独立留档中筛选有效内容写回技能。
+>
+> **Sprint 4 的重新定义**:
+> - Sprint4 仍然以 **数据流部分** 为主：captureSnapshot、相机模式补充通道、identify_object Path1、便签 UI、食指 perching 等。
+> - 但 Sprint4 必须同时考虑这些数据流在未来 App 中的位置：权限门、启动门、连接门、AR 会话门、前后台、断线/重连、视频/音频轨启停、Brain 不在房时的降级 UI。
+> - Sprint4 不是完整 AR App 深入开发；但它必须输出足够清晰的 App 生命周期设计边界，避免 P2.5 测试束继续污染正式 App。
 >
 > **Sprint 3 决策收口 (D1-D6)**:
 >   D1: set_video_tier hold_seconds=300 (PARROT_OVERRIDE_HOLD_SECONDS 可配置)
@@ -65,6 +100,9 @@
 >   AC6 ⬜ 说"视频关闭" → VIDEO_OFF → track mute → DSG 切 PASSIVE
 >   AC7 ⬜ 断网 30s → Supervisor 降级 → 恢复自动升档
 >   AC8 ⬜ SceneProfileManager 切换 → setScene RPC → Injector C3/C4 更新
+>   AC9 ⬜ 真机麦克风轨 → MicrophonePublisher publishing → Brain/Gemini 侧有订阅/可对话（Brain 未开时必须标为“无人消费”，不是 Unity 失败）
+>   AC10 ⬜ 真机视频轨 → AR/WebCam/测试源至少有首帧 → LiveKit publish 成功 → Brain/Gemini/identify_object 消费侧能区分“发布成功”和“有真实帧”
+>   AC11 ⬜ RPC / DataChannel 对表 → Brain→Unity RPC、Unity→Brain RPC、Lossy DataChannel 各自日志有独立标识，不与视频/音频轨混淆
 
 ---
 
@@ -250,6 +288,14 @@ GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 - [x] ~~不做 XR Hands~~ → P2.5 已完成 Unity 端骨架 (XRHandTracker + PerchOnHand)
 
 ### 下一步
+
+**当前真实下一步 (2026-04-25，覆盖旧 Sprint0/Sprint1 历史排期口径):**
+
+1. **先完成 Sprint 3 真机测试对表**：跑 Launcher/Mint/Dev 真机包，收集 HUD 自检、adb logcat、ECS Brain/LiveKit 日志，确认 AC1-AC11。没有足够真机日志前，不进入 Sprint4 产品设计实现。
+2. **写 Sprint3 有效经验独立文件**：从测试束中提炼“可保留能力 / 有效踩坑 / 错误临时设计 / 应迁入测试留档”，作为 Sprint4 的设计输入，而不是把测试代码直接升级为产品代码。
+3. **先做 Sprint4 AR App 启动/连接调研与设计**：结合外部 AR/游戏/机器人控制 app 启动流程经验 + 本项目需求 + LiveKit/client-sdk-unity 能力边界，独立产出 App 启动/权限/连接/AR 会话/前后台/重连设计。
+4. **再进入 Sprint4 数据流实现**：captureSnapshot、相机模式补充通道、identify_object Path1、便签 UI、食指 perching 等仍是 Sprint4 内容，但必须能解释其在未来 App 生命周期中的位置。
+5. **最后再回写技能**：`.cursor/skills/livekit-unity-video-publish/IMPL_REF.md` 与 `SKILL.md` 等到 Sprint4 设计明确后再整理，不急于现在把当前测试束 ratify 为实现参考。
 
 **本周关键路径 (按顺序, 每步完成再进下一步):**
 

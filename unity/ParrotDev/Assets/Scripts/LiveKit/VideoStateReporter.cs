@@ -50,6 +50,9 @@ public class VideoStateReporter : MonoBehaviour
 
     void Start()
     {
+        if (videoPublisher == null)
+            videoPublisher = UnityEngine.Object.FindObjectOfType<ARVideoPublisher>();
+
         var rm = RoomManager.Instance;
         if (rm == null)
         {
@@ -61,9 +64,7 @@ public class VideoStateReporter : MonoBehaviour
         rm.OnDisconnected += OnRoomDisconnected;
 
         if (videoPublisher != null)
-        {
             videoPublisher.OnPublishMutedChanged += OnPublisherMutedChanged;
-        }
     }
 
     private void OnPublisherMutedChanged(bool muted)

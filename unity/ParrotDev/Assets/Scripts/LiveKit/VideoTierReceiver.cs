@@ -48,12 +48,21 @@ public class VideoTierReceiver : MonoBehaviour
 
     private const string RPC_METHOD = "setVideoTier";
 
+    /// <summary>Avoid duplicate <c>RegisterRpcMethod</c> if <see cref="RoomManager.OnConnected"/> fires again for the same <see cref="Room"/>.</summary>
+    private Room _rpcRegisteredOnRoom;
+
     private VideoTier _currentTier = VideoTier.Unknown;
 
     public VideoTier CurrentTier => _currentTier;
 
     void Start()
     {
+        if (videoPublisher == null)
+            videoPublisher = UnityEngine.Object.FindObjectOfType<ARVideoPublisher>();
+
+        if (videoPublisher == null)
+            Debug.LogWarning("[VideoTierReceiver] No ARVideoPublisher in scene — setVideoTier will log tier only (no track control).");
+
         var rm = RoomManager.Instance;
         if (rm == null)
         {
@@ -69,7 +78,10 @@ public class VideoTierReceiver : MonoBehaviour
     {
         var room = RoomManager.Instance?.Room;
         if (room == null) return;
+        if (_rpcRegisteredOnRoom == room)
+            return;
 
+        _rpcRegisteredOnRoom = room;
         room.LocalParticipant.RegisterRpcMethod(RPC_METHOD, HandleSetVideoTier);
         Debug.Log("[VideoTierReceiver] Registered: setVideoTier");
     }
@@ -166,6 +178,7 @@ public class VideoTierReceiver : MonoBehaviour
     {
         var rm = RoomManager.Instance;
         if (rm != null) rm.OnConnected -= Register;
+        _rpcRegisteredOnRoom = null;
     }
 
     [Serializable]

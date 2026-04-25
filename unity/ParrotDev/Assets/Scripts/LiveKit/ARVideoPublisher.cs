@@ -34,6 +34,8 @@ using UnityEngine.XR.ARFoundation;
 /// • <b>AR path</b> (device or XR Simulation when AR Foundation is active): ARCameraBackground blits
 ///   AR camera output → RenderTexture → TextureVideoSource.<br/>
 /// • <b>WebCam fallback</b>: WebCamTexture when AR path is unavailable or explicitly enabled.
+///   Standalone (Win/Mac/Linux) Dev builds mirror Editor: if AR is inactive and the checkbox is off,
+///   webcam is still forced so LiveKit gets a video track (camera pixels, not the game window).
 ///
 /// Sprint 3 T-U5: dynamic track republish (UnpublishTrack → PublishTrack) for tier changes;
 /// sends <c>track_rebuilding</c> RPC so PerceptionSupervisor skips degraded-window ticks.
@@ -63,7 +65,7 @@ public class ARVideoPublisher : MonoBehaviour
     [Header("Dev Fallback")]
     [Tooltip(
         "When AR path (ARCameraManager+Background) is missing or inactive, use WebCamTexture. "
-        + "Harness-only: not the product AR stream. Editor may force this on if AR is off — see class doc.")]
+        + "Harness-only: not the product AR stream. Editor/Standalone Player may still force webcam if AR is off — see class doc.")]
     [SerializeField] private bool useWebcamFallback = true;
 
     [Tooltip("Substring match (case-insensitive). Leave empty for auto (prefers first non-virtual device).")]
@@ -72,12 +74,20 @@ public class ARVideoPublisher : MonoBehaviour
     [Tooltip("How many real frames to pre-blit to RenderTexture before publishing (avoids first-frame black).")]
     [SerializeField] private int webcamWarmupFrames = 3;
 
+    [Tooltip("Harness guard: wait this long for first AR/WebCam frame before deciding the source is not producing pixels.")]
+    [SerializeField] private float firstFrameTimeoutSeconds = 8f;
+
     private RenderTexture _rt;
     private TextureVideoSource _videoSource;
     private LocalVideoTrack _videoTrack;
     private bool _isPublishing;
     private bool _publishMuted;
     private bool _isRebuilding;
+    private bool _setupInProgress;
+    private int _producedFrameCount;
+    private float _lastProducedFrameTime = -1f;
+    private string _videoSourceLabel = "none";
+    private string _lastPublishError = "";
 
     // Sprint 3: current tier for rebuild decisions
     public enum VideoTierLocal { Unknown, Off, GeminiOnly, Full, Burst }
@@ -92,10 +102,16 @@ public class ARVideoPublisher : MonoBehaviour
 
     public bool IsPublishing => _isPublishing;
     public bool IsPublishMuted => _publishMuted;
+    public int ProducedFrameCount => _producedFrameCount;
+    public string VideoSourceLabel => _videoSourceLabel;
+    public string LastPublishError => _lastPublishError;
+    public float LastFrameAgeSeconds =>
+        _lastProducedFrameTime < 0f ? -1f : Time.realtimeSinceStartup - _lastProducedFrameTime;
 
     // Dev fallback
     private WebCamTexture _webcam;
     private Coroutine _webcamBlit;
+    private bool _webcamReady;
 
 #if UNITY_AR_FOUNDATION
     private ARCameraManager _arCameraManager;
@@ -112,19 +128,26 @@ public class ARVideoPublisher : MonoBehaviour
         }
 
         rm.OnConnected += OnRoomConnected;
+        rm.OnDisconnected += OnRoomDisconnected;
         if (rm.IsConnected) OnRoomConnected();
     }
 
     private void OnRoomConnected()
     {
-        if (_isPublishing) return;
+        if (_isPublishing || _setupInProgress) return;
         StartCoroutine(SetupAndPublish());
     }
 
     private IEnumerator SetupAndPublish()
     {
+        _setupInProgress = true;
         _rt = new RenderTexture(width, height, 0, RenderTextureFormat.ARGB32);
         _rt.Create();
+        _webcamReady = false;
+        _producedFrameCount = 0;
+        _lastProducedFrameTime = -1f;
+        _videoSourceLabel = "none";
+        _lastPublishError = "";
 
         bool arAvailable = TrySetupAR();
         bool useWebcam = useWebcamFallback;
@@ -140,27 +163,65 @@ public class ARVideoPublisher : MonoBehaviour
                 + "(for XR Sim AR pixels: enable XR Simulation + AR camera; then turn useWebcamFallback off).");
             useWebcam = true;
         }
+#elif UNITY_STANDALONE
+        // Win/Mac/Linux Player: no AR session in typical Dev build — same zero-video trap as Editor.
+        // Product AR builds use device IL2CPP + AR Foundation; standalone harness uses webcam only.
+        if (!arAvailable && !useWebcam)
+        {
+            Debug.LogWarning(
+                "[ARVideoPublisher] Standalone harness: AR path unavailable — forcing webcam fallback "
+                + "(captures camera, not the game window; for XR Sim / device AR use an AR-enabled build).");
+            useWebcam = true;
+        }
 #endif
 
         if (!arAvailable && useWebcam)
         {
             Debug.Log("[ARVideoPublisher] AR not available, using webcam fallback");
             yield return SetupWebcamFallback();
+            if (!_webcamReady)
+            {
+                _lastPublishError = "webcam_fallback_no_frames";
+                Debug.LogError("[ARVideoPublisher] ERROR webcam_fallback_no_frames: WebCam fallback failed to produce frames; aborting video publish");
+                _setupInProgress = false;
+                yield break;
+            }
         }
         else if (!arAvailable)
         {
-            Debug.LogWarning("[ARVideoPublisher] No video source available");
+            _lastPublishError = "no_video_source";
+            Debug.LogWarning("[ARVideoPublisher] ERROR no_video_source: No AR camera path and webcam fallback disabled");
+            _setupInProgress = false;
             yield break;
+        }
+        else
+        {
+            yield return WaitForFirstFrame("AR", firstFrameTimeoutSeconds);
+            if (_producedFrameCount == 0)
+            {
+                _lastPublishError = "ar_path_no_frames";
+                Debug.LogError("[ARVideoPublisher] ERROR ar_path_no_frames: AR path was present but produced no camera frames; aborting video publish");
+                _setupInProgress = false;
+                yield break;
+            }
         }
 
         var rm = RoomManager.Instance;
         if (rm == null || !rm.IsConnected)
         {
-            Debug.LogWarning("[ARVideoPublisher] Room no longer connected after setup, aborting publish");
+            _lastPublishError = "room_disconnected_before_publish";
+            Debug.LogWarning("[ARVideoPublisher] ERROR room_disconnected_before_publish: Room no longer connected after setup, aborting publish");
+            _setupInProgress = false;
             yield break;
         }
         var room = rm.Room;
-        if (room == null) yield break;
+        if (room == null)
+        {
+            _lastPublishError = "room_missing_before_publish";
+            Debug.LogWarning("[ARVideoPublisher] ERROR room_missing_before_publish: Room missing before video publish");
+            _setupInProgress = false;
+            yield break;
+        }
 
         _videoSource = new TextureVideoSource(_rt);
         _videoTrack = LocalVideoTrack.CreateVideoTrack("ar-camera", _videoSource, room);
@@ -210,7 +271,7 @@ public class ARVideoPublisher : MonoBehaviour
 
         if (publish.IsError)
         {
-            Debug.LogError("[ARVideoPublisher] Failed to publish video (H264), falling back to VP8");
+            Debug.LogError($"[ARVideoPublisher] ERROR publish_h264_failed: Failed to publish video (H264), falling back to VP8 ({publish.Error?.Code} {publish.Error?.Message})");
 
             options.VideoCodec = VideoCodec.Vp8;
             publish = room.LocalParticipant.PublishTrack(_videoTrack, options);
@@ -218,7 +279,9 @@ public class ARVideoPublisher : MonoBehaviour
 
             if (publish.IsError)
             {
-                Debug.LogError("[ARVideoPublisher] VP8 fallback also failed, aborting");
+                _lastPublishError = $"publish_vp8_failed:{publish.Error?.Message}";
+                Debug.LogError($"[ARVideoPublisher] ERROR publish_vp8_failed: VP8 fallback also failed, aborting ({publish.Error?.Code} {publish.Error?.Message})");
+                _setupInProgress = false;
                 yield break;
             }
         }
@@ -245,7 +308,28 @@ public class ARVideoPublisher : MonoBehaviour
             }
         }
 
-        Debug.Log($"[ARVideoPublisher] Publishing {width}x{height}@{targetFps}fps (muted={_publishMuted})");
+        Debug.Log($"[ARVideoPublisher] Publishing {width}x{height}@{targetFps}fps source={_videoSourceLabel} frames={_producedFrameCount} (muted={_publishMuted})");
+        _setupInProgress = false;
+    }
+
+    private IEnumerator WaitForFirstFrame(string sourceLabel, float timeoutSeconds)
+    {
+        float remaining = Mathf.Max(0.1f, timeoutSeconds);
+        while (_producedFrameCount == 0 && remaining > 0f)
+        {
+            remaining -= Time.deltaTime;
+            yield return null;
+        }
+
+        if (_producedFrameCount > 0)
+            Debug.Log($"[ARVideoPublisher] First {sourceLabel} frame received (frames={_producedFrameCount})");
+    }
+
+    private void RecordProducedFrame(string sourceLabel)
+    {
+        _videoSourceLabel = sourceLabel;
+        _producedFrameCount++;
+        _lastProducedFrameTime = Time.realtimeSinceStartup;
     }
 
     // ── AR Foundation path ──────────────────────────────────────────
@@ -262,6 +346,9 @@ public class ARVideoPublisher : MonoBehaviour
         if (_arCameraManager == null || _arCameraBackground == null)
             return false;
 
+        // Reconnect tests can call SetupAndPublish more than once in the same scene.
+        // Remove first so the harness does not double-count frames after a room reconnect.
+        _arCameraManager.frameReceived -= OnARFrameReceived;
         _arCameraManager.frameReceived += OnARFrameReceived;
         Debug.Log("[ARVideoPublisher] AR Foundation camera attached");
         return true;
@@ -279,6 +366,7 @@ public class ARVideoPublisher : MonoBehaviour
         if (mat == null) return;
 
         Graphics.Blit(null, _rt, mat);
+        RecordProducedFrame("AR");
     }
 #endif
 
@@ -289,7 +377,7 @@ public class ARVideoPublisher : MonoBehaviour
         var devices = WebCamTexture.devices;
         if (devices.Length == 0)
         {
-            Debug.LogWarning("[ARVideoPublisher] No webcam found");
+            Debug.LogWarning("[ARVideoPublisher] ERROR no_webcam_devices: No webcam found");
             yield break;
         }
 
@@ -314,7 +402,7 @@ public class ARVideoPublisher : MonoBehaviour
 
         if (!_webcam.isPlaying)
         {
-            Debug.LogWarning("[ARVideoPublisher] Webcam failed to start");
+            Debug.LogWarning("[ARVideoPublisher] ERROR webcam_failed_to_start: Webcam failed to start");
             yield break;
         }
 
@@ -328,6 +416,7 @@ public class ARVideoPublisher : MonoBehaviour
             if (_webcam.didUpdateThisFrame)
             {
                 Graphics.Blit(_webcam, _rt);
+                RecordProducedFrame("WebCam");
                 blitted++;
             }
             warmupTimeout -= Time.deltaTime;
@@ -335,6 +424,13 @@ public class ARVideoPublisher : MonoBehaviour
         }
         Debug.Log($"[ARVideoPublisher] Webcam warmup complete ({blitted}/{webcamWarmupFrames} frames pre-blitted)");
 
+        if (blitted == 0)
+        {
+            Debug.LogWarning("[ARVideoPublisher] ERROR webcam_no_warmup_frames: Webcam started but produced no warmup frames");
+            yield break;
+        }
+
+        _webcamReady = true;
         _webcamBlit = StartCoroutine(BlitWebcamLoop());
     }
 
@@ -373,7 +469,10 @@ public class ARVideoPublisher : MonoBehaviour
         while (_webcam != null && _webcam.isPlaying)
         {
             if (_webcam.didUpdateThisFrame)
+            {
                 Graphics.Blit(_webcam, _rt);
+                RecordProducedFrame("WebCam");
+            }
             yield return null;
         }
     }
@@ -517,7 +616,8 @@ public class ARVideoPublisher : MonoBehaviour
         }
         else
         {
-            Debug.LogError("[ARVideoPublisher] Track rebuild failed completely");
+            _lastPublishError = $"rebuild_publish_failed:{publish.Error?.Message}";
+            Debug.LogError($"[ARVideoPublisher] ERROR rebuild_publish_failed: Track rebuild failed completely ({publish.Error?.Code} {publish.Error?.Message})");
         }
 
         // Notify Brain: rebuilding complete (resume normal visual state tracking)
@@ -557,7 +657,7 @@ public class ARVideoPublisher : MonoBehaviour
 
     void OnDestroy()
     {
-        _isPublishing = false;
+        StopPublishingLocal("destroy");
 
 #if UNITY_AR_FOUNDATION
         if (_arCameraManager != null)
@@ -571,6 +671,48 @@ public class ARVideoPublisher : MonoBehaviour
         if (_rt != null) { _rt.Release(); Destroy(_rt); }
 
         var rm = RoomManager.Instance;
-        if (rm != null) rm.OnConnected -= OnRoomConnected;
+        if (rm != null)
+        {
+            rm.OnConnected -= OnRoomConnected;
+            rm.OnDisconnected -= OnRoomDisconnected;
+        }
+    }
+
+    private void OnRoomDisconnected()
+    {
+        StopPublishingLocal("room_disconnected");
+    }
+
+    private void StopPublishingLocal(string reason)
+    {
+        if (!_isPublishing && _videoSource == null && _videoTrack == null
+            && _webcamBlit == null && _webcam == null && _rt == null)
+            return;
+
+        _isPublishing = false;
+        _setupInProgress = false;
+        _videoSource?.Stop();
+        _videoSource = null;
+        _videoTrack = null;
+
+        if (_webcamBlit != null)
+        {
+            StopCoroutine(_webcamBlit);
+            _webcamBlit = null;
+        }
+        if (_webcam != null)
+        {
+            _webcam.Stop();
+            Destroy(_webcam);
+            _webcam = null;
+        }
+        if (_rt != null)
+        {
+            _rt.Release();
+            Destroy(_rt);
+            _rt = null;
+        }
+
+        Debug.Log($"[ARVideoPublisher] Local video publish state cleared ({reason})");
     }
 }

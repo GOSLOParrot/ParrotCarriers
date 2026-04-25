@@ -5,8 +5,9 @@ using System.Text;
 using UnityEngine;
 
 /// <summary>
-/// <b>Testing/Runtime</b> — runs in <b>Editor Play Mode and on device</b>. Captures Console + manual lines;
-/// optional file under <see cref="Application.persistentDataPath"/> for device QA logs.
+/// <b>Testing/Runtime</b> — Editor 与真机均运行：镜像 Console + <c>Line()</c> 手动行；可选追加写入
+/// <see cref="Application.persistentDataPath"/> 下 <c>parrot_diagnostics.log</c> 便于 adb pull 对表。<br/>
+/// 真机操作说明见 <c>docs/test/p2_5/mobile_runtime_harness_zh.md</c>（与 <see cref="ParrotRuntimeHud"/> 触控按钮配合）。
 /// </summary>
 [DefaultExecutionOrder(-50)]
 public class ParrotDiagnosticsLog : MonoBehaviour
