@@ -76,6 +76,8 @@ public class ARVideoPublisher : MonoBehaviour
 
     [Tooltip("Harness guard: wait this long for first AR/WebCam frame before deciding the source is not producing pixels.")]
     [SerializeField] private float firstFrameTimeoutSeconds = 8f;
+    [Tooltip("Frames older than this are treated as stale even if the LiveKit track is still published.")]
+    [SerializeField] private float staleFrameThresholdSeconds = 3f;
 
     private RenderTexture _rt;
     private TextureVideoSource _videoSource;
@@ -107,6 +109,11 @@ public class ARVideoPublisher : MonoBehaviour
     public string LastPublishError => _lastPublishError;
     public float LastFrameAgeSeconds =>
         _lastProducedFrameTime < 0f ? -1f : Time.realtimeSinceStartup - _lastProducedFrameTime;
+    public float StaleFrameThresholdSeconds => staleFrameThresholdSeconds;
+    public bool HasFreshFrame =>
+        _producedFrameCount > 0 &&
+        LastFrameAgeSeconds >= 0f &&
+        LastFrameAgeSeconds <= staleFrameThresholdSeconds;
 
     // Dev fallback
     private WebCamTexture _webcam;

@@ -1,7 +1,7 @@
 # Sprint 4 前置入口：测试束隔离、能力提炼与 AR App 启动设计
 
 > 更新时间：2026-04-25  
-> 状态：Sprint 3 真机测试前置固化稿  
+> 状态：Sprint 4 前置固化稿  
 > 用途：新开 Chat / 新任务时，用于先统一架构理解、任务顺序和提示词，避免把 P2.5 测试束误当正式 AR App 设计。
 
 ## 1. 当前判断
@@ -33,17 +33,17 @@ P2.5 / Sprint 3 的真机工作，本质是验证 **数据流生命周期**：
    - 错误临时设计
    - 应迁入测试留档的内容
 
-3. **联网调研 AR / 游戏 / 机器人控制 / WebRTC App 启动流程**  
+3. **联网调研 LiveKit / WebRTC / AR App 稳定性策略**  
    重点看权限门、连接门、AR 会话门、功能入口、降级态、前后台恢复。调研用于筛选 Sprint 3 经验是否对正式 App 有用，不照搬 UI。
 
-4. **独立设计 AR App 功能入口与生命周期**  
+4. **独立设计 AR App 功能入口、生命周期与视频门控**  
    先决定每个 App 功能入口使用哪些能力，再决定代码结构。不得从测试脚本反推产品流程。
 
 5. **进入 Sprint 4 数据流实现**  
    Sprint 4 仍做数据流：`captureSnapshot`、相机模式补充通道、`identify_object Path1`、便签 UI、食指 perching 等。但必须能解释它们在未来 App 生命周期中的位置。
 
-6. **最后整理技能文档**  
-   `.cursor/skills/livekit-unity-video-publish/SKILL.md` 和 `IMPL_REF.md` 等 Sprint 4 设计明确后再更新。现在不急于把测试束 ratify 为实现参考。
+6. **同步技能文档**  
+   `.cursor/skills/livekit-unity-video-publish/SKILL.md` 和 `bus-deploy-livekit-ecs/SKILL.md` 必须反映 Sprint 4 前置判断：主视频是策略门控共享源，Castle 从最小连通进入稳定性验证。
 
 ## 3. 能力与 App 功能入口的理解方式
 
@@ -106,6 +106,7 @@ P2.5 / Sprint 3 的真机工作，本质是验证 **数据流生命周期**：
 - `.cursor/memory/architecture/ar_feature_implementation_plan.md`
 - `.cursor/memory/architecture/ar_feature_vision.md`
 - `.cursor/memory/architecture/audit_identify_object_no_screenshot_20260420.md`
+- `.cursor/memory/architecture/sprint4_livekit_stability_and_video_strategy.md`
 - `docs/test/p2_5/unity_channels_audit_mobile_zh.md`
 - `docs/test/p2_5/mobile_runtime_harness_zh.md`
 - `.cursor/skills/client-sdk-unity/SKILL.md`
@@ -115,7 +116,8 @@ P2.5 / Sprint 3 的真机工作，本质是验证 **数据流生命周期**：
 - `Dev.unity`、Runtime HUD、自检按钮、Launcher→Dev 临时流程、WebCam fallback、`FindObjectOfType` 自动补绑定等都是测试束，不是正式 AR App 设计。
 - 不要从测试脚本反推产品启动流程。
 - Sprint4 仍以数据流为主，但必须考虑这些数据流在 App 生命周期里的位置。
-- `.cursor/skills/livekit-unity-video-publish/SKILL.md` / `IMPL_REF.md` 等到 Sprint4 设计明确后再整理。
+- 主视频不再默认固定高质量；它是 Unity 端和 Bus 云端共同门控的共享源。
+- Gemini Live 默认优先低延迟与稳定，A10/SAM2/DINOv2 才触发更高质量或更密采样。
 
 请输出：
 1. 总体判断；
@@ -127,7 +129,16 @@ P2.5 / Sprint 3 的真机工作，本质是验证 **数据流生命周期**：
 7. 推荐现在应先完成测试、调研，还是开始实现，并说明理由。
 ```
 
-## 6. 当前建议
+## 6. LiveKit 稳定性与视频策略补充
+
+详见 `.cursor/memory/architecture/sprint4_livekit_stability_and_video_strategy.md`。当前固定判断：
+
+- 真机按钮、HUD、零散 logcat 只适合证明连通性，不适合直接推导视频质量策略。
+- Sprint 4 前置应优先调研 LiveKit 官方 self-hosting、TURN/TLS、host networking、simulcast/dynacast/adaptive stream、Android 后台/重连行为。
+- 主视频流应由消费者需求反推上限：Gemini Live 默认低延迟低码率，`identify_object` 走按需截图，A10 感知任务再短时升档。
+- 直连不必然最稳；必须对照 direct UDP、TCP fallback、TURN/UDP、TURN/TLS 443。
+
+## 7. 当前建议
 
 现在先去完成 **最小真机测试**。测试目标不是把 UI 跑顺，而是拿到足够事实：
 

@@ -4,8 +4,8 @@ globs:
   - "unity/**/*.cs"
 alwaysApply: false
 status: ratified
-status_note: "条目均来自真实踩坑 (Unity 2022.3 LTS + AR Foundation 5.1), 非纸上设计。按 sprint0_preflight.md §6.4 标 ratified。"
-last_reviewed: 2026-04-22
+status_note: "核心版本锁已固定：Unity 2022.3 LTS + AR Foundation/ARCore/ARKit 5.1.x。Sprint3/4 期间继续补充真实踩坑，完成后冻结为 AR 工作区/app 独立设计规则。"
+last_reviewed: 2026-04-25
 ---
 
 # AR Foundation — 已知坑（代码级）
@@ -14,15 +14,35 @@ last_reviewed: 2026-04-22
 > - `.cursor/skills/ar-foundation-api/SKILL.md` — AR Foundation 5.1.x 完整 API 参考（Packages.md）
 > - `.cursor/skills/ar-foundation-samples/SKILL.md` — 官方 Samples 实现模式（帧抓取、平面、面部、Anchor 等）
 
-以下 5 条均来自 ARVideoPublisher.cs / XRHandTracker.cs 实际代码或文档已知问题，不含设计建议。
+本规则是 AR 工作区和后续独立 app 设计的版本锁与踩坑清单。它不是追新清单；Sprint3/4 内优先稳定闭环，不随意升级 Unity/AR Foundation 主版本。
+
+## 0. 当前版本决策
+
+**继续使用 Unity 2022.3 LTS 没问题**。这是当前项目最保守、最适合稳定收口的选择：
+
+- Unity 2022.3 LTS 是本项目当前编辑器基线。
+- 这是“当前收口基线”，不是永久版本承诺。Unity LTS 的优势是稳定和非破坏性修复；若未来进入长期 app 独立开发，应在 Sprint4 后单独评估迁移到当时最新 LTS。
+- `unity/ParrotDev/Packages/manifest.json` 锁定 `com.unity.xr.arfoundation` / `com.unity.xr.arcore` / `com.unity.xr.arkit` 为 5.1.5。
+- Sprint3/4 期间允许 5.1.x patch 级修补，但不主动升到 AR Foundation 5.2.x、6.x 或 Unity 6。
+- 若未来要升级，必须单独开“AR 版本迁移”任务，同时验证 XR Simulation、Android ARCore、LiveKit 视频推流、ARCameraManager.frameReceived、TapToPlace、权限和真机启动门。
+
+联网核对依据：
+
+- Unity AR Foundation 5.1 文档：AR Foundation 本体只提供接口，目标平台必须安装并启用 provider plug-in，例如 Android 的 Google ARCore XR Plug-in。<https://docs.unity3d.com/Packages/com.unity.xr.arfoundation@5.1/manual/index.html>
+- Unity Learn 2022.3 AR 环境教程仍以 Unity 2022.3 LTS + AR Foundation + ARCore/ARKit + XR Plugin Management 为课程基线。
+- Unity LTS 文档：LTS 适合生产锁版，提供修复而非破坏性新功能；是否迁移到更新 LTS 应作为单独升级项目处理。<https://docs.unity3d.com/2022.3/Documentation/Manual/WhatsNew2022LTS.html>
+- Unity 自定义 scripting symbols 文档：`csc.rsp` 放在 `Assets` 根目录会在脚本编译前定义全局 C# 符号，适合 batch/CI 或无 asmdef 的项目。<https://docs.unity3d.com/2022.1/Documentation/Manual/CustomScriptingSymbols.html>
+- Unity asmdef 文档：长期按包版本定义符号应使用 Assembly Definition 的 `versionDefines`，但符号只在对应 assembly 内生效。<https://docs.unity3d.com/Documentation/Manual/assembly-definition-includes.html>
 
 ## 1. AR Foundation 版本必须与 Unity 2022.3 及 ARCore XR Plugin 对齐
 
-当前项目环境为 Unity 2022.3 LTS，**最高仅能稳定支持 AR Foundation 5.1.x**。千万不要升级到 6.x（会导致 URP 模式报错与 API 不兼容）。
-且版本不对齐时**静默失败**（无报错，ARSession 不启动，`frameReceived` 永远不触发）。
+当前项目环境为 Unity 2022.3 LTS，Sprint3/4 **锁定 AR Foundation 5.1.x**。不要在稳定性验证期升级到 5.2.x、6.x 或 Unity 6；升级会把 AR、XR Simulation、Android provider、LiveKit Unity SDK、视频推流问题混在一起，降低排障质量。
 
-- 使用 AR Foundation 5.1.x → 必须同时安装 ARCore XR Plugin 5.1.x 和 ARKit XR Plugin 5.1.x
-- 不要混用跨大版本组合，绝不尝试引入 AR Foundation 6.x
+版本不对齐或 provider 未启用时常表现为**静默失败**：ARSession 不启动，`frameReceived` 永远不触发，Unity 仍可能发布一条 LiveKit 视频轨但画面停住或黑屏。
+
+- 使用 AR Foundation 5.1.x → 必须同时安装对应 5.1.x provider：Android 用 ARCore XR Plugin，iOS 用 ARKit XR Plugin。
+- 仅安装 package 不够；还必须在 `XR Plug-in Management` 中为目标平台启用 provider。Android 测试必须确认 ARCore loader 在 Android Providers 中。
+- 不要混用跨大版本组合，除非单独开迁移任务并完整复测。
 
 ## 2. `ARCameraManager.frameReceived` 在渲染线程回调，`Graphics.Blit` 必须在其中执行
 
@@ -39,7 +59,27 @@ private void OnARFrameReceived(ARCameraFrameEventArgs args)
 // 不要用 Camera.Render() 或 Camera.targetTexture — ARCore GPU 纹理路径不经过标准相机管线
 ```
 
-## 3. `#if UNITY_AR_FOUNDATION` 条件编译 — AR Foundation 包不存在时代码不应报错
+## 3. `UNITY_AR_FOUNDATION` 是项目显式宏，不是 Unity 自动宏
+
+`UNITY_AR_FOUNDATION` 不会因为安装 `com.unity.xr.arfoundation` 自动出现。当前项目通过
+`unity/ParrotDev/Assets/csc.rsp` 显式定义它，否则 Android 真机包会把 ARCameraManager /
+ARCameraBackground 路径编译掉，表现为：
+
+- HUD 显示 `AR: UNITY_AR_FOUNDATION off`
+- `SceneProfileManager` 落到 `DESKTOP_WEBCAM`
+- `ARVideoPublisher` 只能走 WebCam fallback，LiveKit 轨道可能是 ON 但帧停住/黑屏
+
+当前没有 asmdef，所以 `csc.rsp` 是正确的短期修复：它在脚本编译前定义全局 C# 符号，能覆盖 `Assets/Scripts` 里的普通脚本。修改 AR 相关代码或构建配置时，必须确认这个宏仍然生效。
+
+长期治理建议：如果 Sprint4 后将 AR 工作区拆成独立 assembly，应把 `UNITY_AR_FOUNDATION` 迁移到 asmdef `versionDefines`：
+
+- Resource/package: `com.unity.xr.arfoundation`
+- Expression: `[5.1,5.2)`
+- Define: `UNITY_AR_FOUNDATION`
+
+注意 asmdef `versionDefines` 只对该 assembly 生效；迁移时要把 AR 相关脚本放入同一个或明确引用的 assembly，不要混用全局宏和局部宏造成行为漂移。
+
+## 4. `#if UNITY_AR_FOUNDATION` 条件编译 — AR Foundation 包不存在时代码不应报错
 
 所有 AR Foundation 类型引用必须包在条件编译块内（ARVideoPublisher.cs 和 XRHandTracker.cs 已正确实现）：
 
@@ -55,11 +95,11 @@ using UnityEngine.XR.ARFoundation;
 
 未包裹的情况下，当 AR Foundation 包不在 Package Manager 时，编译直接报错。
 
-## 4. LiveKit Unity SDK 通过 UPM git URL 安装
+## 5. LiveKit Unity SDK 通过 UPM git URL 安装
 
 不要通过 Asset Store 或手动复制 DLL。只能用 git URL 安装，具体 URL 和版本见 `.cursor/rules/livekit-unity-sdk.mdc`。
 
-## 5. Android 运行时权限 CAMERA 和 RECORD_AUDIO 需要代码请求，AndroidManifest.xml 声明不够
+## 6. Android 运行时权限 CAMERA 和 RECORD_AUDIO 需要代码请求，AndroidManifest.xml 声明不够
 
 ```csharp
 // 在 ARSession 初始化之前请求权限，否则 frameReceived 永远不触发（静默失败）
@@ -69,7 +109,7 @@ Permission.RequestUserPermission(Permission.Microphone);
 
 在 Room 连接之前确认权限已授予；否则 `ARVideoPublisher.OnRoomConnected` 会发布一个无视频源的空轨。
 
-## 6. 必须开启并使用 XR Simulation 进行 Editor Play 测试
+## 7. 必须开启并使用 XR Simulation 进行 Editor Play 测试
 
 由于频繁真机打包太慢，我们必须使用 AR Foundation 5.1.x 自带的 XR Simulation 进行初步测试。
 - **环境要求**：在 `XR Plug-in Management` 里，对于 PC/Mac Standalone 平台，**勾选 XR Simulation**。

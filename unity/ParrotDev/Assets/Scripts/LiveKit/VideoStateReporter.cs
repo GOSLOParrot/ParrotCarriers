@@ -39,14 +39,18 @@ public class VideoStateReporter : MonoBehaviour
     [Header("Publisher (optional, Sprint 2 T11)")]
     [Tooltip("If assigned, VideoStateReporter listens to ARVideoPublisher.OnPublishMutedChanged and forwards TRACK_MUTED / OK reasons to the Brain. Matches VisualStateReason.TRACK_MUTED.")]
     [SerializeField] private ARVideoPublisher videoPublisher;
+    [Tooltip("How often to report stale/fresh producer frames. This catches 'track published but black/static' cases.")]
+    [SerializeField] private float frameFreshnessCheckSeconds = 1f;
 
     private const string REASON_OK = "ok";
     private const string REASON_APP_BACKGROUNDED = "app_backgrounded";
     private const string REASON_TRACK_MUTED = "track_muted";
+    private const string REASON_STATIC_FRAME = "static_frame";
     private const string RPC_METHOD = "onVideoDegraded";
 
     private string _lastReportedReason = REASON_OK;
     private Coroutine _pendingPauseReport;
+    private float _nextFrameFreshnessCheck;
 
     void Start()
     {
@@ -65,6 +69,22 @@ public class VideoStateReporter : MonoBehaviour
 
         if (videoPublisher != null)
             videoPublisher.OnPublishMutedChanged += OnPublisherMutedChanged;
+    }
+
+    private void Update()
+    {
+        if (videoPublisher == null || Time.unscaledTime < _nextFrameFreshnessCheck)
+            return;
+
+        _nextFrameFreshnessCheck = Time.unscaledTime + Mathf.Max(0.25f, frameFreshnessCheckSeconds);
+        if (!videoPublisher.IsPublishing || videoPublisher.IsPublishMuted)
+            return;
+
+        // This is intentionally a producer-side freshness check, not image
+        // understanding. The LiveKit track can remain published while the
+        // RenderTexture stops receiving new camera pixels; Gemini then sees
+        // black or stale video although the HUD used to say "Video pub: yes".
+        TryReport(videoPublisher.HasFreshFrame ? REASON_OK : REASON_STATIC_FRAME);
     }
 
     private void OnPublisherMutedChanged(bool muted)

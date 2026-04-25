@@ -12,7 +12,7 @@ using UnityEngine.XR.ARSubsystems;
 
 /// <summary>
 /// <b>Testing/Runtime</b> — 周期快照（~1.5s）+ 可选启动后一次性自检协程；Editor 与真机均可。<br/>
-/// AR 子系统提示仅在 <c>UNITY_EDITOR</c> 且定义 <c>UNITY_AR_FOUNDATION</c> 时用 <c>LoaderUtility</c>（Unity 2022.3 / AR Foundation 5.1）。<br/>
+/// AR 子系统提示仅在 <c>UNITY_EDITOR</c> 且项目显式定义 <c>UNITY_AR_FOUNDATION</c> 时用 <c>LoaderUtility</c>（Unity 2022.3 / AR Foundation 5.1）。<br/>
 /// <b>仅测试束</b>：与 <see cref="ParrotRuntimeHud"/> 配合；真机勿依赖 F3，见 <c>docs/test/p2_5/mobile_runtime_harness_zh.md</c>。<br/>
 /// 多通道摘要（视频 / 音频 / RPC / DataChannel）见 <c>docs/test/p2_5/unity_channels_audit_mobile_zh.md</c>。
 /// </summary>
@@ -35,6 +35,8 @@ public class ParrotSelfTestCoordinator : MonoBehaviour
         public string VideoSource;
         public int VideoFrameCount;
         public float VideoLastFrameAgeSeconds;
+        public bool VideoFrameFresh;
+        public float VideoStaleThresholdSeconds;
         public string VideoLastError;
         public bool VideoTierReceiverPresent;
         public string VideoTier;
@@ -124,6 +126,8 @@ public class ParrotSelfTestCoordinator : MonoBehaviour
                 s.VideoSource = pub.VideoSourceLabel ?? "";
                 s.VideoFrameCount = pub.ProducedFrameCount;
                 s.VideoLastFrameAgeSeconds = pub.LastFrameAgeSeconds;
+                s.VideoFrameFresh = pub.HasFreshFrame;
+                s.VideoStaleThresholdSeconds = pub.StaleFrameThresholdSeconds;
                 s.VideoLastError = pub.LastPublishError ?? "";
             }
 
@@ -221,8 +225,10 @@ public class ParrotSelfTestCoordinator : MonoBehaviour
         else if (snap.Connected)
             L("WARN: No Brain participant yet (Brain may join later).");
 
-        if (snap.ArVideoPublisherPresent && snap.VideoPublishing)
-            L($"OK: ARVideoPublisher is publishing (source={snap.VideoSource}, frames={snap.VideoFrameCount}, lastAge={snap.VideoLastFrameAgeSeconds:F2}s).");
+        if (snap.ArVideoPublisherPresent && snap.VideoPublishing && snap.VideoFrameFresh)
+            L($"OK: ARVideoPublisher is publishing fresh frames (source={snap.VideoSource}, frames={snap.VideoFrameCount}, lastAge={snap.VideoLastFrameAgeSeconds:F2}s).");
+        else if (snap.ArVideoPublisherPresent && snap.VideoPublishing)
+            L($"WARN: ARVideoPublisher track is published but frames are stale (source={snap.VideoSource}, frames={snap.VideoFrameCount}, lastAge={snap.VideoLastFrameAgeSeconds:F2}s, stale>{snap.VideoStaleThresholdSeconds:F1}s). Gemini may see black or old frames.");
         else if (snap.ArVideoPublisherPresent)
             L($"WARN: ARVideoPublisher present but not publishing yet (source={snap.VideoSource}, frames={snap.VideoFrameCount}, error='{snap.VideoLastError}').");
         else

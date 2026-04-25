@@ -18,15 +18,9 @@ using LiveKit;
 ///     reply   : { "status": "ok",    "tier": "...",         "applied": <bool> }
 ///             | { "status": "error", "message": "...",      "tier": "..." }
 ///
-/// Sprint 2 scope (stub, intentional): this script acknowledges the tier
-/// change and raises a Unity event so other components (future
-/// ARVideoPublisher.SetEncoding) can subscribe. It does NOT re-publish the
-/// track with new bitrate/fps — LiveKit Unity SDK PublishTrack options are
-/// immutable after publish, so Sprint 3 will handle the actual republish
-/// flow together with the AR rebuild. For now a VIDEO_OFF request only
-/// mutes the track via <c>SetMuted(true)</c>, which IS supported at
-/// runtime and is the one transition that has user-visible value in
-/// Sprint 2 (privacy / obstruction states).
+/// Current behavior: acknowledges tier commands and delegates them to
+/// <see cref="ARVideoPublisher"/>. Non-OFF tiers rebuild the LiveKit video
+/// track because publish options are immutable after publish.
 ///
 /// Attach alongside ParrotRpcHandler / ARVideoPublisher on a persistent
 /// scene object.
@@ -51,7 +45,10 @@ public class VideoTierReceiver : MonoBehaviour
     /// <summary>Avoid duplicate <c>RegisterRpcMethod</c> if <see cref="RoomManager.OnConnected"/> fires again for the same <see cref="Room"/>.</summary>
     private Room _rpcRegisteredOnRoom;
 
-    private VideoTier _currentTier = VideoTier.Unknown;
+    // Brain's default Blackboard combo is VIDEO_GEMINI_ONLY. Keep the Unity
+    // diagnostic surface aligned even before the first setVideoTier RPC; an
+    // "Unknown" HUD here previously looked like a missing switch path.
+    private VideoTier _currentTier = VideoTier.GeminiOnly;
 
     public VideoTier CurrentTier => _currentTier;
 

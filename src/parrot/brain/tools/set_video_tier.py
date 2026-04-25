@@ -98,8 +98,12 @@ async def set_video_tier(
         "set_video_tier: manual override → %s (hold=%.0fs)",
         tier_upper, hold_s,
     )
+    # The Supervisor writes Blackboard synchronously, then pushes Unity's
+    # `setVideoTier` RPC asynchronously. Avoid claiming "switched" before the
+    # phone has actually acknowledged the track rebuild/mute operation.
     return (
-        f"好的，已切换到{_TIER_LABELS.get(tier_upper, tier_upper)}。"
+        f"好的，我已提交切换到{_TIER_LABELS.get(tier_upper, tier_upper)}的请求。"
+        f"如果手机端确认失败，我会收到 RPC 状态并按视觉降级处理。"
         f"这个设置将保持约 {int(hold_s // 60)} 分钟，之后我会根据情况自动调整。"
     )
 

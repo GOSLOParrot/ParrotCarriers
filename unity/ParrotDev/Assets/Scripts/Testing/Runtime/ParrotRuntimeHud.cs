@@ -100,9 +100,9 @@ public class ParrotRuntimeHud : MonoBehaviour
             sb.Append($"  room={snap.RoomName}  me={snap.LocalIdentity}");
         sb.AppendLine();
         sb.Append("Brain agent: ").Append(snap.BrainAgentPresent ? "yes" : "no");
-        sb.Append("  |  Video pub: ").Append(snap.VideoPublishing ? "yes" : "no");
+        sb.Append("  |  Video pub: ").Append(snap.VideoPublishing ? (snap.VideoFrameFresh ? "yes" : "stale") : "no");
         if (snap.ArVideoPublisherPresent)
-            sb.Append($"({snap.VideoSource}/{snap.VideoFrameCount})");
+            sb.Append($"({snap.VideoSource}/{snap.VideoFrameCount}, age={snap.VideoLastFrameAgeSeconds:F1}s)");
         sb.Append("  |  Tier: ").Append(snap.VideoTierReceiverPresent ? snap.VideoTier : "—");
         sb.AppendLine();
         sb.Append("Audio pub: ").Append(snap.MicPublishing ? "yes" : "no");
