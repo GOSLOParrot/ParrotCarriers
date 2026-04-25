@@ -5,12 +5,11 @@ Sprint 3 T-P4.
 Security model (decision D3):
     Bearer PARROT_MINT_SECRET header. Unity stores secret in
     Resources/parrot_config.json (compiled into APK, gitignored).
-    Failed auth → 401. Missing secret env → 500 with log warning (never
-    expose the absence of a secret in the HTTP response body).
+    Failed auth → 401. Missing secret env → dev-mode warning and open mint.
 
 Deployment:
-    Castle docker-compose token-mint service on port 7888 (internal only,
-    behind Castle firewall — Unity connects over LAN or VPN).
+    Castle docker-compose token-mint service on port 7888. The service is
+    bound for phone access; Castle security group controls public reachability.
 
 Usage:
     POST /mint
@@ -27,10 +26,29 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 from datetime import timedelta
 
-logger = logging.getLogger(__name__)
+_LOGGER_NAME = "parrot.castle.token_mint"
+
+
+def _configure_logging() -> None:
+    """Keep application logs visible and stable when launched via `python -m`."""
+    level_name = os.getenv("PARROT_LOG_LEVEL", os.getenv("LOG_LEVEL", "INFO")).upper()
+    level = getattr(logging, level_name, logging.INFO)
+
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+            stream=sys.stdout,
+        )
+    logging.getLogger(_LOGGER_NAME).setLevel(level)
+
+
+_configure_logging()
+logger = logging.getLogger(_LOGGER_NAME)
 
 try:
     from fastapi import FastAPI, HTTPException, Request
@@ -55,6 +73,21 @@ _DEFAULT_ROOM = os.getenv("LIVEKIT_ROOM", "parrot-main")
 _TOKEN_TTL_S = 86_400
 
 
+@app.on_event("startup")
+async def _log_startup_config() -> None:
+    logger.info(
+        "Token mint starting: port=%s livekit_url_scheme=%s livekit_url_length=%d "
+        "api_key_present=%s api_secret_length=%d mint_secret_present=%s default_room=%s",
+        os.getenv("PARROT_MINT_PORT", "7888"),
+        _LIVEKIT_URL.split(":", 1)[0] if ":" in _LIVEKIT_URL else "",
+        len(_LIVEKIT_URL),
+        bool(_LIVEKIT_API_KEY),
+        len(_LIVEKIT_API_SECRET),
+        bool(_MINT_SECRET),
+        _DEFAULT_ROOM,
+    )
+
+
 class MintRequest(BaseModel):
     room: str = Field(default=_DEFAULT_ROOM, min_length=1, max_length=80)
     identity: str = Field(..., min_length=1, max_length=80)
@@ -72,9 +105,19 @@ def _check_auth(request: Request) -> None:
         return
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
+        logger.warning(
+            "Mint auth failed: missing Bearer prefix (header_present=%s header_length=%d)",
+            bool(auth),
+            len(auth),
+        )
         raise HTTPException(status_code=401, detail="unauthorized")
     token = auth[len("Bearer "):]
     if token != _MINT_SECRET:
+        logger.warning(
+            "Mint auth failed: bearer mismatch (bearer_length=%d expected_length=%d)",
+            len(token),
+            len(_MINT_SECRET),
+        )
         raise HTTPException(status_code=401, detail="unauthorized")
 
 
@@ -108,11 +151,17 @@ async def mint_token(req: MintRequest, request: Request) -> MintResponse:
 
     Requires Authorization: Bearer <PARROT_MINT_SECRET>.
     """
+    logger.info(
+        "Mint request received: room=%s identity_length=%d authorization_header_present=%s",
+        req.room,
+        len(req.identity),
+        bool(request.headers.get("Authorization", "")),
+    )
     _check_auth(request)
     try:
         jwt = _generate_token(req.room, req.identity)
     except Exception as exc:
-        logger.exception("Token generation failed")
+        logger.exception("Token generation failed: exception_type=%s", type(exc).__name__)
         raise HTTPException(status_code=500, detail="token generation failed") from exc
 
     expires_at = int(time.time()) + _TOKEN_TTL_S
