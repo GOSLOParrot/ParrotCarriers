@@ -27,11 +27,13 @@ public class XRHandTracker : MonoBehaviour
     [SerializeField] private Handedness preferredHand = Handedness.Right;
     [SerializeField] private float sendIntervalSeconds = 0.1f;
 
+#if UNITY_XR_HANDS
     [Header("Gesture Thresholds")]
     [Tooltip("Min dot(palmNormal, Vector3.up) to count as palm-up")]
     [SerializeField] private float palmUpThreshold = 0.5f;
     [Tooltip("Max curl angle (degrees) for a finger to count as extended")]
     [SerializeField] private float fingerExtendedMaxAngle = 40f;
+#endif
 
     public enum Handedness { Left, Right }
 

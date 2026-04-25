@@ -106,8 +106,8 @@ public class MicrophonePublisher : MonoBehaviour
 
         if (publish.IsError)
         {
-            _lastError = $"publish_failed:{publish.Error?.Message}";
-            Debug.LogError($"[MicrophonePublisher] ERROR publish_failed: Failed to publish audio track ({publish.Error?.Code} {publish.Error?.Message})");
+            _lastError = "publish_failed";
+            Debug.LogError("[MicrophonePublisher] ERROR publish_failed: Failed to publish audio track (PublishTrackInstruction.IsError; SDK does not expose Error details)");
             _publishInProgress = false;
             yield break;
         }

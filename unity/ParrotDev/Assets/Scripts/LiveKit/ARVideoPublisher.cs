@@ -271,7 +271,7 @@ public class ARVideoPublisher : MonoBehaviour
 
         if (publish.IsError)
         {
-            Debug.LogError($"[ARVideoPublisher] ERROR publish_h264_failed: Failed to publish video (H264), falling back to VP8 ({publish.Error?.Code} {publish.Error?.Message})");
+            Debug.LogError("[ARVideoPublisher] ERROR publish_h264_failed: Failed to publish video (H264), falling back to VP8 (PublishTrackInstruction.IsError; no Error details in SDK)");
 
             options.VideoCodec = VideoCodec.Vp8;
             publish = room.LocalParticipant.PublishTrack(_videoTrack, options);
@@ -279,8 +279,8 @@ public class ARVideoPublisher : MonoBehaviour
 
             if (publish.IsError)
             {
-                _lastPublishError = $"publish_vp8_failed:{publish.Error?.Message}";
-                Debug.LogError($"[ARVideoPublisher] ERROR publish_vp8_failed: VP8 fallback also failed, aborting ({publish.Error?.Code} {publish.Error?.Message})");
+                _lastPublishError = "publish_vp8_failed";
+                Debug.LogError("[ARVideoPublisher] ERROR publish_vp8_failed: VP8 fallback also failed, aborting (PublishTrackInstruction.IsError; no Error details in SDK)");
                 _setupInProgress = false;
                 yield break;
             }
@@ -557,8 +557,9 @@ public class ARVideoPublisher : MonoBehaviour
 
         // Unpublish existing track.
         // NOTE: C# prohibits `yield return` inside a try block that has a catch clause (CS1626).
-        // UnpublishTrackInstruction does NOT expose .IsError/.Error (unlike PublishTrackInstruction),
-        // so we just yield-and-proceed; LiveKit cleans up the track internally.
+        // UnpublishTrackInstruction does not expose .IsError (unlike PublishTrackInstruction);
+        // PublishTrackInstruction exposes IsError but not Error details in this SDK.
+        // We just yield-and-proceed; LiveKit cleans up the track internally.
         if (_videoTrack != null)
         {
             _videoSource?.Stop();
@@ -616,8 +617,8 @@ public class ARVideoPublisher : MonoBehaviour
         }
         else
         {
-            _lastPublishError = $"rebuild_publish_failed:{publish.Error?.Message}";
-            Debug.LogError($"[ARVideoPublisher] ERROR rebuild_publish_failed: Track rebuild failed completely ({publish.Error?.Code} {publish.Error?.Message})");
+            _lastPublishError = "rebuild_publish_failed";
+            Debug.LogError("[ARVideoPublisher] ERROR rebuild_publish_failed: Track rebuild failed completely (PublishTrackInstruction.IsError; no Error details in SDK)");
         }
 
         // Notify Brain: rebuilding complete (resume normal visual state tracking)
