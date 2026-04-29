@@ -91,12 +91,16 @@ namespace ParrotApp.Config
                     "[ParrotAttentionConfig] threshold ≤ 0 makes accumulator meaningless; clamping to 0.0001");
                 threshold = 0.0001f;
             }
-            if (deltaBbox > 0f && deltaBbox > threshold * 5f)
+            // F-A33 fix (cold-read audit): entry doc §8.1 L9 的"5× ratio"指
+            // Δ_bbox = 5 × Δ_focus（默认 1.0 vs 0.2），不是 Δ_bbox vs threshold。
+            // 改用 deltaFocus 作基准；同时把警告 cutoff 调到 10×（5× 是默认值，
+            // 10× 才是"明显异常"），避免用户合理调参就触发。
+            if (deltaFocus > 0f && deltaBbox > deltaFocus * 10f)
             {
                 Debug.LogWarning(
-                    $"[ParrotAttentionConfig] deltaBbox ({deltaBbox}) >> threshold ({threshold}); " +
-                    "BBox will always cross immediately and dominate Focus accumulator. " +
-                    "Intentional? entry doc §8.1 L9 default ratio 5×.");
+                    $"[ParrotAttentionConfig] deltaBbox ({deltaBbox}) >> deltaFocus ({deltaFocus}) " +
+                    "× 10; BBox will dominate Focus accumulator far beyond default 5× ratio. " +
+                    "Intentional? entry doc §8.1 L9.");
             }
             if (targetTtlSeconds < 1f)
             {

@@ -107,13 +107,17 @@ namespace ParrotApp.EditorTools
 
             // ParrotAttentionConfig SO: 用 §8.1 L9 锁定起步值；保存到 Assets 让
             // smoke + 真机一致。如果已存在则复用，避免每次 Build 重写。
+            //
+            // F-A22 fix (cold-read audit): 必须用 AssetDatabase.CreateFolder 而不是
+            // Directory.CreateDirectory —— OS 目录创建后 AssetDatabase 不会立即识别，
+            // CreateAsset 会报 "Could not create asset"。
             const string AttentionConfigAssetPath =
                 "Assets/ParrotApp/Config/ParrotAttentionConfig.asset";
             var attentionConfig =
                 AssetDatabase.LoadAssetAtPath<ParrotAttentionConfig>(AttentionConfigAssetPath);
             if (attentionConfig == null)
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(AttentionConfigAssetPath));
+                EnsureAssetFolder("Assets/ParrotApp/Config");
                 attentionConfig = ScriptableObject.CreateInstance<ParrotAttentionConfig>();
                 AssetDatabase.CreateAsset(attentionConfig, AttentionConfigAssetPath);
                 AssetDatabase.SaveAssets();
@@ -160,6 +164,32 @@ namespace ParrotApp.EditorTools
 
         [MenuItem(MenuPath, validate = true)]
         public static bool Validate() => File.Exists(GlbAssetPath);
+
+        // ─── helpers ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// 递归确保 AssetDatabase-recognized 资源目录存在。仅在 <c>Assets/</c> 下
+        /// 工作（外部目录用 <c>Directory.CreateDirectory</c>）。
+        /// 必须用本方法而不是直接 <c>Directory.CreateDirectory</c>：OS 目录创建
+        /// 后 Unity AssetDatabase 不会立即扫描到，<c>CreateAsset</c> 会报错。
+        /// </summary>
+        private static void EnsureAssetFolder(string assetFolderPath)
+        {
+            if (string.IsNullOrEmpty(assetFolderPath)) return;
+            assetFolderPath = assetFolderPath.Replace('\\', '/');
+            if (AssetDatabase.IsValidFolder(assetFolderPath)) return;
+
+            string parent = Path.GetDirectoryName(assetFolderPath)?.Replace('\\', '/');
+            string name = Path.GetFileName(assetFolderPath);
+
+            if (string.IsNullOrEmpty(parent) || string.IsNullOrEmpty(name)) return;
+
+            if (!AssetDatabase.IsValidFolder(parent))
+            {
+                EnsureAssetFolder(parent);
+            }
+            AssetDatabase.CreateFolder(parent, name);
+        }
     }
 }
 #endif

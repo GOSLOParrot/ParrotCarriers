@@ -39,11 +39,13 @@ namespace ParrotApp.Ecp
     /// </summary>
     public class EcpEventPublisher : MonoBehaviour
     {
-        [Tooltip("Editor smoke 用：room 不可用 / 发送失败时也把 wire JSON 打到 Console。")]
+        [Tooltip("Editor smoke 用：room 不可用 / 发送失败时也把 wire JSON 打到 Console。" +
+                 "默认 true（spike 期 dropped 路径是主要 debug 价值）；真机上线前可调 false。")]
         [SerializeField] private bool logEvenWhenDropped = true;
 
-        [Tooltip("成功 publish 时也打一行简短 log（Editor smoke 验证用，真机调成 false）。")]
-        [SerializeField] private bool logOnSuccess = true;
+        [Tooltip("成功 publish 时也打一行简短 log。默认 false 避免 1Hz Echo / reconnect 重发的 BBox" +
+                 "持续刷屏掩盖真正重要的 log；Editor 调试时再调 true。")]
+        [SerializeField] private bool logOnSuccess = false;
 
         [Tooltip("RoomManager 引用；空时 Start 时 Find。")]
         [SerializeField] private RoomManager roomManager;
