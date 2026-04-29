@@ -328,10 +328,9 @@ async def _l0_text_fast_match(
             if category_lower and node.category and category_lower == node.category.lower():
                 score = min(1.0, score + 0.1)
 
-            # evidence_score floor — match audit §1.4 spirit: don't surface
-            # GHOST or near-zero-evidence candidates.
-            if node.evidence_score < 0.0:
-                continue
+            # SemanticNode.evidence_score is float ≥ 0.0 by design; no floor
+            # gate needed here. Phase 5+ scoring tune may add a positive
+            # threshold (e.g. < 0.3 → skip) — see audit §9.1 hook.
 
             candidates.append((node.uuid, node.label, score))
 

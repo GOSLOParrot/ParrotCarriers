@@ -12,22 +12,25 @@ the shared :class:`parrot.brain.event_ingest.EcpEventIngest` and runs
 
 Boundary contract (entry doc §3.7):
     Observer = "记录" (recording). It MAY:
-        * route an event into the IngestRunner (audit-grade Observation)
-        * bump L2-B attention / record a sighting timestamp
+        * route an event into the IngestRunner (audit-grade Observation),
+          which is the DSG ingest pipeline — Observer hands the event off,
+          IngestRunner owns the L2-B + Graphiti write decisions
     It MUST NOT:
         * publish further EcpEvents (sighting.matched is already on the
           wire — looping back would create dedup churn at best, infinite
           fan-out at worst)
         * compute attention thresholds (that is dsg.attention.threshold)
+        * write to L2-B node attention or fields directly (that is
+          dsg.attention.hint_writer for resolved Refs, or IngestRunner's
+          authority pipeline — never this Observer)
         * write to Graphiti directly (memory.archiver / IngestRunner own
           that path)
 
 Phase 5+ migration target: replace the in-tool ``_upsert_to_l2b`` /
 ``_ingest_via_runner`` calls inside ``identify_object`` with a thin
 "emit sighting.matched and let this observer do everything" pattern.
-For Phase 4 W4-5 we keep both paths — the observer is the new home for
-async side effects, the in-tool path keeps current behaviour for callers
-that haven't migrated.
+For Phase 4 W4-5 the observer's only L2-B-touching responsibility is
+the IngestRunner archiver fan-out; direct attention math is forbidden.
 """
 
 from __future__ import annotations
@@ -50,7 +53,6 @@ _metrics: dict[str, int] = {
     "unmatched_received": 0,
     "archiver_attempts": 0,
     "archiver_successes": 0,
-    "l2b_attention_bumps": 0,
 }
 
 
@@ -162,7 +164,15 @@ async def _async_matched_side_effects(
     Wrapped in a single try/except per fan-out target so a failure in
     one path (e.g., Graphiti unreachable) does not skip the other.
     """
-    # 1) Archiver (audit-grade Observation via IngestRunner).
+    # Archiver (audit-grade Observation via IngestRunner) is the **only**
+    # L2-B-touching side effect this observer owns. The IngestRunner
+    # internally decides whether to upsert the L2-B node, apply authority
+    # overrides, etc. — that is the DSG ingest layer's responsibility.
+    # Direct L2-B attention writes from this Observer were removed in the
+    # Brain self-audit fix F-02 (2026-04-30, audit §3.1) because they
+    # produced an undocumented compound +0.25 attention bump per match
+    # (in-tool _upsert_to_l2b's +0.2 + this observer's prior +0.05) and
+    # violated the §3.7 Observer/Attention boundary.
     _metrics["archiver_attempts"] += 1
     try:
         from parrot.dsg.ingest.runner import get_ingest_runner
@@ -187,24 +197,6 @@ async def _async_matched_side_effects(
     except Exception:
         logger.debug(
             "[observer.sighting] archiver failed for event_id=%s", event_id,
-            exc_info=True,
-        )
-
-    # 2) L2-B attention bump — small Δ here is on top of the in-tool
-    # _upsert_to_l2b's +0.2 (W4-5 keeps both; Phase 5+ collapses into one
-    # path through this observer).
-    try:
-        from parrot.dsg.l2b_graph import get_l2b_graph
-
-        graph = get_l2b_graph()
-        if graph is not None:
-            node = graph.get_node(candidate_uuid)
-            if node is not None:
-                node.attention = min(1.0, node.attention + 0.05)
-                _metrics["l2b_attention_bumps"] += 1
-    except Exception:
-        logger.debug(
-            "[observer.sighting] L2-B bump failed for uuid=%s", candidate_uuid,
             exc_info=True,
         )
 

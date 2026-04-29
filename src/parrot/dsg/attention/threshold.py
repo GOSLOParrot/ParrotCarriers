@@ -13,7 +13,12 @@ What this module actually does (Phase 4)
 ----------------------------------------
 1. Subscribes to Focus / BBox EcpEvents from
    :class:`parrot.brain.event_ingest.EcpEventIngest`.
-2. Maintains a per-correlation_id (= per-attention-target) weight tally:
+2. Maintains a per-target weight tally, keyed by ``{subject_kind}:{subject_id}``
+   where ``subject_id`` comes from the event payload's ``bbox_id`` /
+   ``focus_id`` (falling back to ``correlation_id``, then ``"_default"``).
+   Compound key prevents bbox_id and focus_id with the same Unity-side
+   number from sharing one accumulator (mirrors the cross-kind isolation
+   tested in ``parrot.brain.refs``).
 
        weight += Δ_focus  on  ``focus.anchored``
        weight += Δ_bbox   on  ``bbox.placed``
@@ -22,7 +27,17 @@ What this module actually does (Phase 4)
 
 3. When weight ≥ ``threshold``, emit ``attention.threshold.crossed``
    EcpEvent (brain source) and write ``transient/current_attention_hint``
-   on the Blackboard.
+   on the Blackboard. AttentionHint payload schema (8 fields) is defined
+   inline in :meth:`_emit_threshold_crossed` — see the BB key comment in
+   ``parrot.shared.bb_schema`` for the cross-link source of truth.
+
+4. Conditionally delegates an L2-B candidate-weight bump to
+   :func:`parrot.dsg.attention.hint_writer.bump_l2b_for_resolved_ref`.
+   This dispatch path is **wired but always a no-op in Phase 4 W6-7**
+   because nothing here resolves Refs from UNRESOLVED to L2B_NODE — the
+   resolver flow (identify_object hit promoting an attention RefBinding
+   to a known node) is Phase 5+ territory. The path is pre-wired so
+   Phase 5+ only adds the resolver, not the dispatch logic.
 
 Phase 4 starter values (locked in §8.1 L9):
 
@@ -197,17 +212,20 @@ class FocusBboxThreshold:
             or "_default"
         )
 
-        state = self._targets.get(subject_id)
+        # Cross-kind isolation: a bbox.placed with bbox_id="001" must NOT
+        # share an accumulator with a focus.anchored with focus_id="001".
+        # Compound key mirrors `parrot.brain.refs`'s separate bbox / focus
+        # indexes (see test_brain_refs.py::test_bbox_and_focus_with_same_id_stay_isolated).
+        target_key = f"{subject_kind}:{subject_id}"
+
+        state = self._targets.get(target_key)
         if state is None:
             state = _TargetState(
                 label=f"{subject_kind}:{subject_id}",
                 subject_kind=subject_kind,
                 subject_id=subject_id,
             )
-            self._targets[subject_id] = state
-        # Defensive: a bbox+focus collision on the same id keeps the kind
-        # of whatever wrote first; we don't try to merge cross-kind
-        # weights since the UI semantics differ.
+            self._targets[target_key] = state
         state.weight = max(0.0, state.weight + delta)
         state.last_update_ts = time.time()
         state.last_event_id = event.event_id

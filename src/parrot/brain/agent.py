@@ -532,6 +532,20 @@ async def brain_entrypoint(ctx: agents.JobContext):
                 asyncio.ensure_future(sv.stop())
         except Exception:
             pass
+        # Phase 4 W6-7 self-audit F-06 (2026-04-30): clear the RefBinding
+        # registry on disconnect so reload / reconnect cannot inherit stale
+        # Refs from the prior session. refs.py docstring already declared
+        # this contract; this is the wire-up.
+        try:
+            from parrot.brain.refs import reset_refs_for_session
+            dropped = reset_refs_for_session()  # active_ids=None → drop all
+            if dropped:
+                logger.info(
+                    "RefBinding registry cleared on disconnect (%d refs dropped)",
+                    dropped,
+                )
+        except Exception:
+            logger.exception("RefBinding registry cleanup failed on disconnect")
         logger.info("GOSLO mode → chat (room disconnected)")
 
     logger.info("Brain Agent session active in room '%s'", ctx.room.name)
