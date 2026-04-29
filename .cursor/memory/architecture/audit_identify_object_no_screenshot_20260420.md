@@ -1,7 +1,7 @@
 ---
 status: ratified
-status_note: "审计结论基于 2026-04-20 code review, 问题 (缺截图 + 异步破坏同步体感) 已被真实代码验证。修复方案 (三段 L0/L1/L2) 是设计 ratified, 实现在 Sprint 4 (S4.A-B) 完成后整体再做一次代码对齐。"
-last_reviewed: 2026-04-22
+status_note: "审计结论基于 2026-04-20 code review, 问题 (缺截图 + 异步破坏同步体感) 已被真实代码验证。修复方案 (三段 L0/L1/L2) 是设计 ratified, 实现在 Sprint 4 (S4.A-B) 完成后整体再做一次代码对齐。**2026-04-30 用户澄清** L0/L1/L2 实现口径 — 见 §9，§1.4 / §5 仍是完整设计参考，但 Phase 4 W4-5 实施按 §9 走。"
+last_reviewed: 2026-04-30
 ---
 
 # 审计报告: `identify_object` 按需发现路径 — 缺视觉 + 体感闭环断裂
@@ -441,6 +441,179 @@ L0 如果每次都图比对会烧配额。
 可能。
 - 策略: Soul prompt 里写明 "如果物体看起来是常见家用品 (杯子/笔/纸/书等), 即使不认识也先描述一下, 不强制上网"; 给 `web_search` tool 限频 (每 5min ≤ 3 次, 超限则只能描述)。
 - 若选项 α 下 Gemini 总是跳过或总是查, 按 §5.4 决策原则切到 β 或 γ, 由 tool 内部强制每次都做调查。
+
+---
+
+---
+
+## 9. 用户澄清 (2026-04-30): Phase 4 W4-5 实施口径
+
+> 本节是用户对 §1.4 / §5 完整设计的**实施层澄清**，不是推翻原设计。原 §1.4 三段 L0/L1/L2 + §5 升级口子作为"完整工具的最终形态"保留；本节是 **Phase 4 W4-5 阶段实际要写的代码**对齐。
+>
+> **触发**：2026-04-30 用户在 Sprint4 Phase 4 W4-5 决策锁 (entry doc §B) sign off 阶段提出，目的：一次理解整个 identify_object 完整设计，但 Phase 4 只先做一部分；其余等 L2-B 完善 / Nanobot 同步通道 / 阶段反馈等基建落地后再补。
+
+### 9.1 L0 重新定义：内存快速发现 = 文本/简介 fast match，**不**含图比对
+
+**用户原话**：
+
+> 内存快速发现阶段，这个阶段差不多 是找到内存描述，调出图片并对比的速度。
+> 你要理解什么是快速的内存发现，快速发现就是先快速匹配一下 L2-B 的所有的 Node 的简介，同时也匹配 L1.5 的不同状态的预加载 Node，比如待发现的 Node，具体的多样化 Node 状态和生命周期设计在 L2-B 的完善过程中完成。**而不是一张一张图片慢慢对比。**
+
+修订要点：
+
+| 项 | §1.4 旧设计 | 9.1 新口径 |
+|:--|:--|:--|
+| L0 输入 | capture frame + L2-B 候选 + 候选参考图 | 仅 description / category 文本 |
+| L0 算法 | visual_match.compare 多图比对 | text-based 跨 L2-B (所有 Node 简介) + L1.5 预加载 Node 池 |
+| L0 速度预算 | ≤1s（含 capture 200ms + visual 500ms） | "差不多 是找到内存描述，调出图片并对比的速度" — 实际 < 200ms（纯文本，无 GPU/VLM 调用） |
+| 图比对位置 | L0 | 推迟到 L1+ 或更晚（待 L1.5 / 参考图基建落地） |
+
+**理由**：图比对成本（VLM 配额 + 网络）远高于文本 embedding；L0 主路径是"快速命中我已经记得的东西"，文本 simplification 已足够。图比对作为**消歧手段**保留在 L1+ 或新设计 L1.5 阶段。
+
+**L1.5 预加载 Node 池（新增概念，非本文档定义）**：
+
+- 包括但不限于"待发现 Node"
+- 多样化 Node 状态（如 EXPECTED / TENTATIVE / GHOST / ARRIVING_SOON 等）+ 生命周期设计
+- 这些 Node 的状态机 + 预加载策略**不在本审计范围**，待 L2-B 完善设计文档收口
+- Phase 4 W4-5 实现 L0 时**仅匹配现有 L2-B Node**，留 hook 给未来的 L1.5 池
+
+### 9.2 L1：Nanobot 同步路由（**完整设计**） vs 直连 Graphiti（**Phase 4 W4-5 简化**）
+
+**用户原话**：
+
+> 第二阶段是用 Nanobot 根据描述同步搜索 Graphiti
+
+完整设计意图：L1 通过 Nanobot 同步等结果（对应 audit §1.4 L2 选项 γ + §5.4 决策原则的逻辑前移到 L1）。这样未来：
+
+1. Nanobot 可以挂 MCP（Graphiti search、对象索引、语义检索的多源融合）
+2. 多个 Nanobot 实例可以并行做不同分区/视角搜索
+3. 与未来工具的统一调度入口对齐（识别 / 研究 / 总结都能复用 Nanobot 同步通道）
+
+**Phase 4 W4-5 实施简化**：保留**直连 Brain → Graphiti**（同步 await）。理由：
+
+- Nanobot 同步通道（audit §5.4 L2-γ1 / γ2）尚未实现；要先在 Scheduler / dispatch_task 加同步等基建，工作量与 W4-5 主目标 (identify_object 重写本身) 同级
+- 直连 Graphiti search 在 Brain 进程内已是 sync await，felt experience 等价
+- 切到 Nanobot 路由是**透明替换**（同步语义不变），未来可在不改 LLM-facing 接口的前提下迁移
+
+**Phase 5+ 迁移条件**：dispatch_task 支持同步 wait（Redis Pub/Sub 同步桥），且 Nanobot 端 MCP 接入有真需求时再切。
+
+### 9.3 阶段化反馈："物体发现流程" vs "完整阻塞 tool"
+
+**用户原话**：
+
+> 而且记得重构时不是把他当成一个完整的阻塞 tool，而是一个物体发现的流程，**tool 的每个阶段失败可以反馈说话**（我不确定能不能实现）？。信息先等 Graphiti 拿到来告诉
+
+设计意图：identify_object 不是单次"调 → 等 → 一句话答复"，而是**多阶段流程**：
+
+- L0 失败 → GOSLO 可说一句桥接话 ("嗯让我再仔细看看...") → L1 启动
+- L1 命中 → "哦原来是 XX"
+- L1 失败 → "我没见过这个东西"
+
+**实现可行性分析**（用户表达不确定）：
+
+| 方案 | 可行性 | 现阶段评估 |
+|:--|:--|:--|
+| **A. mid-tool generate_reply 桥接话**（tool 内部主动 session.generate_reply 推一句"让我再看看"）| 技术上可，Brain 已有 `_generate_reply_after_current_speech` helper 范式 | **风险**：与 Gemini Live 的 turn detection / speech buffer 冲突。Sprint3 真机已踩过类似坑（startup greeting 撞用户首轮）。Phase 4 不做 |
+| **B. 多 tool 拆分**（`quick_identify` + `search_memory`，让 LLM 自己决定何时升级）| 技术上简单，LLM 自然选择升级路径 | **风险**：LLM 可能滥用（每次都跑全套）或惜用（首次失败就放弃）。需要 Soul prompt 严格约束 |
+| **C. 单 tool + 阶段信息在 return 文本里**（identify_object 同步跑全程，return 包含每段命中/未命中 + 时长，LLM 在下一回合自然 voice 出来）| 100% 兼容现有 livekit-agents tool 范式，零基建改动 | **保守 + 安全**。语音反馈延迟到下一 LLM turn（约 1-2s），但与音频流不冲突。Phase 4 W4-5 选这个 |
+
+**Phase 4 W4-5 决定**：方案 **C**。tool return 形如：
+
+```text
+[GOSLO state] body=... cognitive=THINKING
+[L0] L2-B 简介搜了 0/47 个候选 → 未命中
+[L1] Graphiti 扩搜 (scene+user+objects, 5 候选) → 命中 "blue ceramic mug" (id=abc, conf=0.78)
+是你上周买的那个马克杯。
+```
+
+LLM 下一回合可基于 stage info 自然组织话术（甚至复述 "嗯找了一下…哦是马克杯"）。方案 A/B 留 Phase 5+ 探索。
+
+### 9.4 L2（new object handling）确认 option α，**不在 identify_object 内**
+
+**用户原话**：
+
+> web_search 和上述流程不在一个阻塞 tool 里，而是 GOSLO 可以完成的推荐的下一步动作。
+> 比如，说我不知道，我去网上找找？ 然后选择自己阻塞来找到信息 或者 给 nanobot 派发任务都可以
+
+确认 audit §1.4 L2 的 **option α**（决策权交还 GOSLO）作为 Phase 4 + 长期路线：
+
+- `identify_object` L0+L1 都未命中 → tool return `unknown` + snapshot_id + L0/L1 各自的 top 候选信息
+- GOSLO 自主决策下一步：
+  - "我不知道，让我去网上找找？" → 调 `web_search`（**Phase 5+ 新 tool**，本审计 §5.4 L2-α1）同步搜
+  - "我去派女仆深查" → 调现有 `dispatch_task` 派 Nanobot（异步，明示"待会儿告诉你"）
+  - "可能是 XX？" → 不调 tool，直接基于常识猜测
+  - "你能告诉我这是啥吗？" → 反问用户
+
+**Phase 4 W4-5 范围**：
+- ✅ 实现 L0 + L1 + tool return 的"unknown" 输出格式（包含 snapshot_id + top 候选）
+- ❌ **不实现** `web_search` 新 tool（留 Phase 5+）
+- ✅ 保留现有 `dispatch_task` tool 不动（GOSLO 可继续用）
+- ✅ 移除 `_deep_search` action（audit §3.4 火即忘 + 承诺话术 = 已知体感破坏）
+
+### 9.5 完整工具设计 vs Phase 4 W4-5 落地范围对照表
+
+| 项 | §1.4 / §5 完整设计 | **Phase 4 W4-5 实际做** | 留给 |
+|:--|:--|:--|:--|
+| L0 算法 | text + visual 多图比对 | **text 简介 match (L2-B + 未来 L1.5)** | L1.5 池设计 + 参考图基建 → Phase 5+ |
+| L0 候选源 | L2-B + 最近物体列表 | **L2-B 全部 + L1.5 hook (空实现)** | L2-B 完善 + L1.5 状态机设计 |
+| L1 路由 | Nanobot 同步等 | **Brain 直连 Graphiti search** | dispatch_task 同步通道（L2-γ）→ Phase 5+ |
+| L1 算法 | Graphiti search + visual 多图比对 | **Graphiti search only (text)** | reference_image_path (B3+B4) → Phase 5+ |
+| L2 处理 | option α 决策 + web_search/dispatch_task | **option α 输出格式，无 web_search** | `web_search` tool (L2-α1) → Phase 5+ |
+| 阶段反馈 | mid-tool 语音桥接话 | **方案 C：阶段信息在 return 文本里** | 方案 A/B 探索 → Phase 5+ |
+| 体感闭环 | "调 tool → 等结果 → 说出口" | ✅ 全程同步 await | — |
+| `_deep_search` | 移除或拆 `delegate_research` | **直接移除**，让 LLM 用 dispatch_task | — |
+| 截图捕获 | RPC `captureSnapshot` ECP 化 | **保留 Sprint3 ack 形状** (audit DRIFT NOTE) | Unity 主战场 chat |
+| reference 图落盘 | data/snapshots/objects/{uuid}/ | ❌ 不做 | Phase 5+ B3 |
+| sighting 图落盘 | data/snapshots/sightings/{ts}/ | ❌ 不做 | Phase 5+ B3 |
+
+### 9.6 Phase 4 W4-5 budget 修订（替换 entry doc §8.1 L11 旧值）
+
+旧 budget（基于 L0 含 visual_match）：
+
+```text
+captureSnapshot ≤ 800ms / visual_match ≤ 1000ms / Graphiti search ≤ 600ms
+total ≤ 2.5s
+```
+
+新 budget（基于 9.1 L0 = 文本 fast match，无 visual）：
+
+```text
+captureSnapshot ≤ 800ms (保留 — 给 sighting evidence 用)
+L0 text fast match (L2-B + L1.5 预留) ≤ 200ms
+L1 Graphiti search ≤ 800ms (从 600ms 上调，因为 visual_match 1000ms 预算让出)
+buffer ≤ 100ms
+total ≤ 1.9s (实际更宽松)
+```
+
+入口 entry doc §8.1 L11 同步更新（在本节落盘后立即改）。
+
+### 9.7 完整工具的最终形态（前瞻，非本审计承诺）
+
+聚合 §1.4 + §5 + §9 看，identify_object 的最终形态应该是：
+
+```
+LLM 调 identify_object(description, category)
+  ├─ Brain 内部：parallel( capture_current_frame, L0 text match across L2-B + L1.5 池 )
+  │   ↓
+  ├─ L0 命中 → emit sighting.matched + 写 sighting evidence(image) + return "是 XX"
+  ├─ L0 未命中 → 进 L1
+  │   ↓
+  ├─ L1: Brain → Nanobot 同步等(MCP Graphiti + 跨分区融合 + 可选反向图搜)
+  │   ↓
+  ├─ L1 命中 → emit sighting.matched + return "好像是 XX"
+  ├─ L1 未命中 → emit sighting.unmatched + return "未见过 + snapshot_id + top 候选"
+  │   ↓
+  └─ GOSLO 自主决策: web_search / dispatch_task / 问用户 / 直接描述
+```
+
+**多模型联系点**（用户提及但 Phase 4 不阻塞）：
+
+- L1.5 预加载 Node 池 ↔ DSG L2-B 完善（节点状态 / 生命周期）
+- L1 Nanobot 同步路由 ↔ dispatch_task / Scheduler 同步等基建
+- L2 web_search ↔ 新 Brain tool 体系
+- 阶段语音反馈 ↔ Gemini Live turn detection 兼容性研究
+
+这些点列出在此**仅为追溯**，**不阻塞** Phase 4 W4-5 落地（按 §9.5 表实施）。
 
 ---
 
