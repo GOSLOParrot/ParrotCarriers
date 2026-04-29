@@ -2,6 +2,7 @@ using System;
 using ParrotApp.Config;
 using ParrotApp.Health;
 using ParrotApp.Lifecycle;
+using ParrotApp.Parrot;
 using UnityEngine;
 
 namespace ParrotApp.Ecp
@@ -16,6 +17,34 @@ namespace ParrotApp.Ecp
     /// 默认绑定 <see cref="LogHeartbeatTransport"/>，让骨架可单独跑。
     ///
     /// <b>spike S7 之前不要选 ParticipantAttributes</b>：见 IMPL_REF.md §8。
+    ///
+    /// <b>Sprint4 Phase 4 W3.A.3 — 双触发 EcpState（事件驱动 + 1Hz 全量心跳）</b>
+    /// （entry doc §8.1 L1 锁定）：
+    /// <list type="bullet">
+    /// <item>1Hz 全量心跳保留：Update tick 走 <see cref="SendHeartbeat"/>，
+    ///   即使无变化也每秒 1 次（Brain ingest 接通后用作 keep-alive）</item>
+    /// <item>事件触发：订阅 <see cref="AnimationDriver"/> 的 producer events
+    ///   <c>OnBodyStateWireChanged</c> / <c>OnHeadStateWireChanged</c>，
+    ///   外部通过 <see cref="ReportActiveCommand"/> / <see cref="ClearActiveCommand"/>
+    ///   注入 active_command_id / active_locks 变化 → 立即调 SendHeartbeat</item>
+    /// <item>去重：每次发包前比对 sig = body|head|cogn|locks|cmd；同一帧内
+    ///   多 producer fire 落入 <c>MinSendIntervalSeconds</c> = 50ms 的合并窗口</item>
+    /// <item>sequence_id 单调递增：Brain ingest 接通后 (unity_identity, sequence_id)
+    ///   做去重 key</item>
+    /// <item>chokepoint 保护、intent.disconnect 触发、health.changed 节流——
+    ///   全部 Phase 3 R1-R6+D5 audit 通过的防御性结构保留不动</item>
+    /// </list>
+    ///
+    /// <b>cognitive_state</b>：Unity 永远填 ""，由 Brain
+    /// <c>cognitive_state_tracker</c>（Gemini agent_state_changed）直接写
+    /// BB <c>tick/cognitive_state</c>。EcpState wire 字段保留只是 schema
+    /// 完整性。
+    ///
+    /// <b>GAP-1（W3.A.2 commit 已记录）</b>：当前 Brain 端没有消费
+    /// <c>parrot.ecp.state</c> topic 写入 BB tick keys 的 ingest，本类按
+    /// 规范上行的字段 Brain 端暂时不会落 BB。验收 3 的 LLM-surface 待
+    /// Brain ingest chat 接通后才能闭合；本类提供的 wire 字段 + sequence_id
+    /// 是为那时准备好的契约。
     /// </summary>
     [RequireComponent(typeof(AppLifecycleManager))]
     public class LifecycleHeartbeatPublisher : MonoBehaviour
@@ -23,9 +52,19 @@ namespace ParrotApp.Ecp
         [Tooltip("空时使用 LogHeartbeatTransport（仅打印），LiveKit transport 上线后通过代码注入。")]
         [SerializeField] private bool useLogTransportInEditor = true;
 
+        [Tooltip("body/head wire producer。空时 Awake 兜底 FindObjectOfType<AnimationDriver>。")]
+        [SerializeField] private AnimationDriver animationDriver;
+
         public IHeartbeatTransport Transport { get; set; }
         public string UnityIdentity { get; set; } = "";
         public string RoomId { get; set; } = "";
+
+        /// <summary>
+        /// 静态访问点，让 <see cref="ParrotApp.RPC.ParrotRpcHandler"/> 等外部
+        /// producer 在 RPC handler 进出时调 <see cref="ReportActiveCommand"/> /
+        /// <see cref="ClearActiveCommand"/>，不需要满天飞 GetComponent。
+        /// </summary>
+        public static LifecycleHeartbeatPublisher Instance { get; private set; }
 
         private AppLifecycleManager _lifecycle;
         private ParrotLifecycleConfig Config => _lifecycle != null ? _lifecycle.Config : null;
@@ -36,11 +75,47 @@ namespace ParrotApp.Ecp
         private ConnectionOverall _lastHealthOverall = ConnectionOverall.Unknown;
         private const float HealthEventMinIntervalSeconds = 1f;
 
+        // ─── A.3 三态 + active command 缓存 + 去重节流 ───────────────────
+
+        private string _bodyStateWire = "idle";
+        private string _headStateWire = "HEAD_FORWARD";
+        // cognitive 不在 Unity 改动；EcpState wire 字段永远 ""，由 Brain BB 管。
+        private string _activeCommandId = "";
+        private string[] _activeLocks = Array.Empty<string>();
+        private long _sequenceId = 0;
+
+        // 重入 + 同帧合并：事件回调 + 1Hz tick 都可能进 SendHeartbeat
+        private bool _sending = false;
+        private string _lastSentSignature = "";
+        private float _lastSentAtUnscaled = 0f;
+        // 同一 frame 内多 producer event 合并到一条；1Hz tick 间隔 = 1000ms 远 > 50ms 不影响
+        private const float MinSendIntervalSeconds = 0.05f;
+
         protected virtual void Awake()
         {
             _lifecycle = GetComponent<AppLifecycleManager>();
             if (Transport == null && useLogTransportInEditor)
                 Transport = new LogHeartbeatTransport();
+
+            if (animationDriver == null)
+                animationDriver = FindObjectOfType<AnimationDriver>();
+
+            // Singleton — 同场景只允许一个 publisher。Awake 早于 OnEnable 执行，
+            // OnEnable 才订阅事件，Instance 在订阅之前就位是安全顺序。
+            if (Instance != null && Instance != this)
+            {
+                Debug.LogWarning(
+                    "[LifecycleHeartbeatPublisher] Duplicate publisher detected — " +
+                    "destroying the new one to keep RPC handler ReportActiveCommand 1:1.");
+                Destroy(this);
+                return;
+            }
+            Instance = this;
+        }
+
+        protected virtual void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
         }
 
         protected virtual void OnEnable()
@@ -51,6 +126,15 @@ namespace ParrotApp.Ecp
                 if (_lifecycle.HealthAggregator != null)
                     _lifecycle.HealthAggregator.OnChanged += HandleHealthChanged;
             }
+
+            if (animationDriver != null)
+            {
+                animationDriver.OnBodyStateWireChanged += HandleBodyStateWire;
+                animationDriver.OnHeadStateWireChanged += HandleHeadStateWire;
+                // 抓一次初始值，避免 Awake 之前已被设过的 state 漏掉首次上报
+                _bodyStateWire = AnimationDriver.BodyStateToWire(animationDriver.CurrentState);
+                _headStateWire = AnimationDriver.HeadStateToWire(animationDriver.CurrentHeadState);
+            }
         }
 
         protected virtual void OnDisable()
@@ -60,6 +144,11 @@ namespace ParrotApp.Ecp
                 _lifecycle.OnStateChanged -= HandleLifecycleChanged;
                 if (_lifecycle.HealthAggregator != null)
                     _lifecycle.HealthAggregator.OnChanged -= HandleHealthChanged;
+            }
+            if (animationDriver != null)
+            {
+                animationDriver.OnBodyStateWireChanged -= HandleBodyStateWire;
+                animationDriver.OnHeadStateWireChanged -= HandleHeadStateWire;
             }
         }
 
@@ -77,30 +166,148 @@ namespace ParrotApp.Ecp
 
             if (Time.unscaledTime >= _nextSendAt)
             {
-                SendHeartbeat();
+                // 1Hz 全量心跳：绕过 sig 去重，确保 keep-alive 必发
+                SendHeartbeatTick();
                 _nextSendAt = Time.unscaledTime + Config.T_HEARTBEAT_INTERVAL;
             }
         }
 
-        // ─── senders ─────────────────────────────────────────────────────
+        // ─── public producer-injection API ──────────────────────────────
 
-        private void SendHeartbeat()
+        /// <summary>
+        /// 由 RPC handler / Intent 入口 在命令开始执行时调一次。
+        /// active_command_id 或 active_locks 任一变化触发立即上报。
+        /// </summary>
+        public void ReportActiveCommand(string commandId, string[] locks)
+        {
+            string newCmd = commandId ?? "";
+            string[] newLocks = locks ?? Array.Empty<string>();
+            if (_activeCommandId == newCmd && LocksEqual(_activeLocks, newLocks)) return;
+            _activeCommandId = newCmd;
+            _activeLocks = newLocks;
+            MaybeSendHeartbeat("active_command_set");
+        }
+
+        /// <summary>
+        /// 命令结束时调；只在 commandId 与当前正在跟踪的一致时清空，
+        /// 防止后到的命令抢断后又被前一个的 finally 清错。
+        /// </summary>
+        public void ClearActiveCommand(string commandId)
+        {
+            if (_activeCommandId != (commandId ?? "")) return;
+            _activeCommandId = "";
+            _activeLocks = Array.Empty<string>();
+            MaybeSendHeartbeat("active_command_clear");
+        }
+
+        // ─── producer event handlers ─────────────────────────────────────
+
+        private void HandleBodyStateWire(string wire)
+        {
+            if (_bodyStateWire == wire) return;
+            _bodyStateWire = wire ?? "";
+            MaybeSendHeartbeat("body_state_change");
+        }
+
+        private void HandleHeadStateWire(string wire)
+        {
+            if (_headStateWire == wire) return;
+            _headStateWire = wire ?? "";
+            MaybeSendHeartbeat("head_state_change");
+        }
+
+        // ─── send paths ─────────────────────────────────────────────────
+
+        private void MaybeSendHeartbeat(string trigger)
+        {
+            if (_sending) return; // 重入锁
+            // chokepoint 同步：事件触发期间 lifecycle 在终态 / 启动态也不发
+            if (_lifecycle == null
+                || _lifecycle.CurrentState == AppLifecycleState.Disconnected
+                || _lifecycle.CurrentState == AppLifecycleState.ShuttingDown
+                || _lifecycle.CurrentState == AppLifecycleState.ColdStart)
+            {
+                return;
+            }
+            if (Transport == null || Config == null) return;
+
+            string sig = ComputeSig();
+            float now = Time.unscaledTime;
+            if (sig == _lastSentSignature && (now - _lastSentAtUnscaled) < MinSendIntervalSeconds)
+            {
+                // 同一 sig 50ms 内重复触发：合并为一条（同 frame 多 producer fire 的情况）
+                return;
+            }
+
+            _sending = true;
+            try
+            {
+                SendHeartbeatInternal(trigger);
+                _lastSentSignature = sig;
+                _lastSentAtUnscaled = now;
+                // 事件触发已发，重置 1Hz 计时器避免立刻又发
+                _nextSendAt = now + Config.T_HEARTBEAT_INTERVAL;
+            }
+            finally { _sending = false; }
+        }
+
+        private void SendHeartbeatTick()
+        {
+            // 1Hz 全量心跳：不参与 sig 去重，但仍走 _sending 重入锁
+            if (_sending) return;
+            _sending = true;
+            try
+            {
+                SendHeartbeatInternal("tick_1hz");
+                _lastSentSignature = ComputeSig();
+                _lastSentAtUnscaled = Time.unscaledTime;
+            }
+            finally { _sending = false; }
+        }
+
+        private void SendHeartbeatInternal(string trigger)
         {
             try
             {
+                _sequenceId++;
                 var snapshot = _lifecycle.HealthAggregator.Snapshot;
                 var dto = EcpStateDto.BuildHeartbeat(
                     unityIdentity: UnityIdentity,
                     roomId: RoomId,
                     appLifecycleState: AppLifecycleStateNames.ToWireString(_lifecycle.CurrentState),
                     health: snapshot,
-                    videoTier: snapshot.VideoTier);
+                    videoTier: snapshot.VideoTier,
+                    activeCommandId: _activeCommandId,
+                    bodyStateWire: _bodyStateWire,
+                    headStateWire: _headStateWire,
+                    cognitiveStateWire: "", // Unity 不知 cognitive，由 Brain BB 管
+                    activeLocks: _activeLocks,
+                    sequenceId: _sequenceId);
                 Transport.SendHeartbeat(dto);
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[LifecycleHeartbeatPublisher] heartbeat send failed: {ex.Message}");
+                Debug.LogError($"[LifecycleHeartbeatPublisher] heartbeat send failed (trigger={trigger}): {ex.Message}");
             }
+        }
+
+        private string ComputeSig()
+        {
+            // 紧凑 sig，sig 只用于去重比较，不上 wire
+            return string.Concat(
+                _bodyStateWire, "|",
+                _headStateWire, "|",
+                _activeCommandId, "|",
+                string.Join(",", _activeLocks));
+        }
+
+        private static bool LocksEqual(string[] a, string[] b)
+        {
+            if (a == null || b == null) return a == b;
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+                if (a[i] != b[i]) return false;
+            return true;
         }
 
         private void HandleLifecycleChanged(AppLifecycleState prev, AppLifecycleState next)

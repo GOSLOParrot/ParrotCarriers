@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using LiveKit;
 using ParrotApp.Core;
+using ParrotApp.Ecp;
 using ParrotApp.Health;
 using ParrotApp.Lifecycle;
 using ParrotApp.LiveKit;
@@ -105,6 +106,8 @@ namespace ParrotApp.RPC
         {
             Debug.Log($"[ParrotRPC] flyTo <- {data.CallerIdentity}: {data.Payload}");
             FlyToPayload p = default;
+            string commandId = "";
+            bool reported = false;
             try
             {
                 p = JsonUtility.FromJson<FlyToPayload>(data.Payload);
@@ -114,6 +117,13 @@ namespace ParrotApp.RPC
                     Debug.LogWarning($"[ParrotRPC] flyTo expired (command_id={p._ecp.command_id})");
                     return EcpAckJson.Expired(p._ecp, $"expires_at={p._ecp.expires_at}");
                 }
+
+                // Sprint4 Phase 4 W3.A.3: surface active_command_id + locks=["body"]
+                // through EcpState immediately, so Brain (once ingest is wired)
+                // sees the cmd before flyTo physically completes.
+                commandId = p._ecp?.command_id ?? "";
+                LifecycleHeartbeatPublisher.Instance?.ReportActiveCommand(commandId, new[] { "body" });
+                reported = true;
 
                 var tcs = new TaskCompletionSource<bool>();
                 UnityMainThread.Enqueue(() =>
@@ -133,12 +143,19 @@ namespace ParrotApp.RPC
                 Debug.LogError($"[ParrotRPC] flyTo error: {e.Message}");
                 return EcpAckJson.Failed(p._ecp, e.Message);
             }
+            finally
+            {
+                if (reported)
+                    LifecycleHeartbeatPublisher.Instance?.ClearActiveCommand(commandId);
+            }
         }
 
         private async Task<string> HandleAnimate(RpcInvocationData data)
         {
             Debug.Log($"[ParrotRPC] animate <- {data.CallerIdentity}: {data.Payload}");
             AnimatePayload p = default;
+            string commandId = "";
+            bool reported = false;
             try
             {
                 p = JsonUtility.FromJson<AnimatePayload>(data.Payload);
@@ -148,6 +165,10 @@ namespace ParrotApp.RPC
                     Debug.LogWarning($"[ParrotRPC] animate expired (command_id={p._ecp.command_id})");
                     return EcpAckJson.Expired(p._ecp, $"expires_at={p._ecp.expires_at}");
                 }
+
+                commandId = p._ecp?.command_id ?? "";
+                LifecycleHeartbeatPublisher.Instance?.ReportActiveCommand(commandId, new[] { "body" });
+                reported = true;
 
                 var tcs = new TaskCompletionSource<bool>();
                 UnityMainThread.Enqueue(() =>
@@ -166,6 +187,11 @@ namespace ParrotApp.RPC
             {
                 Debug.LogError($"[ParrotRPC] animate error: {e.Message}");
                 return EcpAckJson.Failed(p._ecp, e.Message);
+            }
+            finally
+            {
+                if (reported)
+                    LifecycleHeartbeatPublisher.Instance?.ClearActiveCommand(commandId);
             }
         }
 
