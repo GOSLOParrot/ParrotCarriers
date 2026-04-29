@@ -48,8 +48,10 @@ namespace ParrotApp.Config
 
         // see livekit-unity-lifecycle/IMPL_REF.md §3 / §10
         [Header("Connectivity watchdog (heartbeat)")]
-        [Tooltip("EcpState heartbeat 频率（秒）。see IMPL_REF.md §3 / §10")]
-        [Min(0.5f)] public float T_HEARTBEAT_INTERVAL = 5f;
+        [Tooltip("EcpState heartbeat 频率（秒）。Sprint4 Phase 4 W3.A.3 锁定 1Hz" +
+                 "（entry doc §8.1 L1：事件驱动 + 1Hz 全量心跳）。" +
+                 "see IMPL_REF.md §3 / §10")]
+        [Min(0.5f)] public float T_HEARTBEAT_INTERVAL = 1f;
 
         // see livekit-unity-lifecycle/IMPL_REF.md §3 / §10
         [Tooltip("watchdog 软超时（秒）→ degraded。see IMPL_REF.md §3 / §10")]
