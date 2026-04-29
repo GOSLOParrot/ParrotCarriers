@@ -173,7 +173,6 @@ namespace ParrotApp.Hands
             {
                 Debug.Log($"[PerchOnHand] Body state preempted ({animDriver.CurrentState}) — abandoning perch");
                 State = PerchState.IDLE;
-                _havePosedReturn = false;
                 return;
             }
 
