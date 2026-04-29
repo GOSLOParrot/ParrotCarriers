@@ -1,15 +1,17 @@
 ---
 status: tentative
-status_note: "问卷部分已完成回收 (见 ar_feature_vision.md §六/§八). 工程计划五维问卷结论已并入 ar_feature_implementation_plan.md, 本文件保留作需求追溯。"
-last_reviewed: 2026-04-22
+category: historical
+status_note: "早期 AR App 工程计划与问卷追溯。问卷结论已并入 ar_feature_vision.md / ar_feature_implementation_plan.md；新的 App Flow / UI / 功能入口设计以 ar_app_flow_ui_design.md 为准。"
+last_reviewed: 2026-04-29
 ---
 
 # AR App 工程计划
 
 > 日期: 2026-04-20
-> 状态: 初版 — 硬事实已整理，待用户填写问卷后收敛需求
+> 状态: 历史追溯 — 早期硬事实与问卷底稿；不再作为 UI / App Flow 的当前真源
 > 前置: P1.5 Bus 已验证 / P2 Graphiti+FalkorDB 已实现 / Castle 待首次拉起
 > 关联: `milestone_p2.md` Phase 2 C1-C12 / `requirements.md` §四-C
+> 当前 App Flow / UI 基线: `ar_app_flow_ui_design.md`
 
 ---
 

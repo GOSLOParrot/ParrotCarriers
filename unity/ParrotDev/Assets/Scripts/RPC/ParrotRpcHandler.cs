@@ -50,11 +50,23 @@ public class ParrotRpcHandler : MonoBehaviour
     private async Task<string> HandleFlyTo(RpcInvocationData data)
     {
         Debug.Log($"[ParrotRPC] flyTo <- {data.CallerIdentity}: {data.Payload}");
+        FlyToPayload p = default;
         try
         {
-            var p = JsonUtility.FromJson<FlyToPayload>(data.Payload);
-            var tcs = new TaskCompletionSource<bool>();
+            p = JsonUtility.FromJson<FlyToPayload>(data.Payload);
 
+            // Sprint4 ECP-minimal: honour `expires_at` so a stale fly_to
+            // (e.g. user already moved their hand) is rejected instead of
+            // executed with old coordinates. See
+            // sprint4_protocol_ecp_background_20260429.md §5 acceptance
+            // criterion 1.
+            if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
+            {
+                Debug.LogWarning($"[ParrotRPC] flyTo expired (command_id={p._ecp.command_id})");
+                return EcpAckJson.Expired(p._ecp, $"expires_at={p._ecp.expires_at}");
+            }
+
+            var tcs = new TaskCompletionSource<bool>();
             UnityMainThread.Enqueue(() =>
             {
                 _parrot.FlyTo(new Vector3(p.x, p.y, p.z));
@@ -62,23 +74,33 @@ public class ParrotRpcHandler : MonoBehaviour
             });
 
             await tcs.Task;
-            return "{\"status\":\"ok\",\"action\":\"flyTo\"}";
+            return EcpAckJson.Completed(
+                p._ecp,
+                EcpFrontendStateDto.ForBody("flying", p._ecp?.command_id, new[] { "body" })
+            );
         }
         catch (Exception e)
         {
             Debug.LogError($"[ParrotRPC] flyTo error: {e.Message}");
-            return $"{{\"status\":\"error\",\"message\":\"{EscapeJson(e.Message)}\"}}";
+            return EcpAckJson.Failed(p._ecp, e.Message);
         }
     }
 
     private async Task<string> HandleAnimate(RpcInvocationData data)
     {
         Debug.Log($"[ParrotRPC] animate <- {data.CallerIdentity}: {data.Payload}");
+        AnimatePayload p = default;
         try
         {
-            var p = JsonUtility.FromJson<AnimatePayload>(data.Payload);
-            var tcs = new TaskCompletionSource<bool>();
+            p = JsonUtility.FromJson<AnimatePayload>(data.Payload);
 
+            if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
+            {
+                Debug.LogWarning($"[ParrotRPC] animate expired (command_id={p._ecp.command_id})");
+                return EcpAckJson.Expired(p._ecp, $"expires_at={p._ecp.expires_at}");
+            }
+
+            var tcs = new TaskCompletionSource<bool>();
             UnityMainThread.Enqueue(() =>
             {
                 _parrot.PlayAnimation(p.animation);
@@ -86,17 +108,31 @@ public class ParrotRpcHandler : MonoBehaviour
             });
 
             await tcs.Task;
-            return $"{{\"status\":\"ok\",\"action\":\"animate\",\"animation\":\"{EscapeJson(p.animation)}\"}}";
+            return EcpAckJson.Completed(
+                p._ecp,
+                EcpFrontendStateDto.ForBody(AnimationToBodyState(p.animation), p._ecp?.command_id, new[] { "body" })
+            );
         }
         catch (Exception e)
         {
             Debug.LogError($"[ParrotRPC] animate error: {e.Message}");
-            return $"{{\"status\":\"error\",\"message\":\"{EscapeJson(e.Message)}\"}}";
+            return EcpAckJson.Failed(p._ecp, e.Message);
         }
     }
 
-    private static string EscapeJson(string s) =>
-        s?.Replace("\\", "\\\\").Replace("\"", "\\\"") ?? "";
+    private static string AnimationToBodyState(string animation)
+    {
+        switch (animation)
+        {
+            case "fly": return "flying";
+            case "dance":
+            case "wing_flap": return "dancing";
+            case "perch":
+            case "sit": return "perching";
+            case "sleep": return "idle";
+            default: return "idle";
+        }
+    }
 
     void OnDestroy()
     {
@@ -105,6 +141,6 @@ public class ParrotRpcHandler : MonoBehaviour
         _rpcRegisteredOnRoom = null;
     }
 
-    [Serializable] private struct FlyToPayload { public float x, y, z; }
-    [Serializable] private struct AnimatePayload { public string animation; }
+    [Serializable] private struct FlyToPayload { public float x, y, z; public EcpCommandDto _ecp; }
+    [Serializable] private struct AnimatePayload { public string animation; public EcpCommandDto _ecp; }
 }

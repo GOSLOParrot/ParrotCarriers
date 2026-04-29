@@ -104,3 +104,18 @@ Fixes applied:
 - Programmatic Brain `generate_reply` calls now wait for `session.current_speech` before sending another explicit reply.
 - `update_instructions` calls in mode/context paths now degrade to warning instead of throwing when the current AgentSession does not support that API.
 - `identify_object` is now opt-in via `PARROT_ENABLE_IDENTIFY_OBJECT_TOOL=1`; default Brain sessions keep it out of `ALL_TOOLS` until the Sprint4 visual-evidence upgrade lands.
+
+## 2026-04-26 final audio observation
+
+The final smoke test was good enough to mark Sprint3 connectivity successful: GOSLO greeted smoothly, continued several turns, and could answer what it saw. The remaining transcript corruption is best explained by speaker echo, not by AR/LiveKit room failure.
+
+Observed pattern:
+
+- Lines spoken by GOSLO were later transcribed as `[Gemini·用户]`.
+- The model then treated its own speaker output as a user interruption, producing repeated fragments and barge-in-like turn breaks.
+- This is expected behavior for continuous-audio voice agents when acoustic echo cancellation is insufficient: Gemini Live VAD detects activity, but it does not reliably know that the activity is its own prior output.
+
+Implication:
+
+- Sprint3 is complete as a connectivity smoke.
+- Sprint4 pre-entry must design audio routing: headset/Bluetooth baseline, speakerphone risk, output device selection, push-to-talk or manual VAD, LiveKit noise/echo cancellation, and possibly a custom ASR/turn-detection path if Gemini Live native audio is not enough.

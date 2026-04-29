@@ -1,7 +1,7 @@
 ---
-status: in_testing
-status_note: "代码已落地并修复所有审计发现的阻断 Bug；真机 E2E smoke 由用户自管，测试过程中随时补充本文件。"
-last_reviewed: 2026-04-23
+status: ratified
+status_note: "代码已落地并修复阻断 Bug；2026-04-26 真机联调确认连接/AR/RPC/视频/语音骨架跑通。剩余风险转入 Sprint4 前置：外放回声/输入路由、实时 turn-taking、未完成识物工具。"
+last_reviewed: 2026-04-26
 ---
 
 # Sprint 3 完成报告 — AR Desktop MVP
@@ -15,6 +15,9 @@ last_reviewed: 2026-04-23
 > - `ar_feature_implementation_plan.md` — Sprint 0-4 任务清单
 > - `active_context.md` — 当前全局进度
 > - `docs/test/p2_5/pipeline_test_matrix_sprint3.md` — P2.5 / Sprint 3 数据流 **可填测试矩阵**（含 RPC RTT、日志对表）
+> - `FilePort2/ECS_SESSION_MASTER_TABLE_20260426.md` — 2026-04-26 三轮 ECS/设备对齐总表
+> - `FilePort2/BRAIN_LOG_TRANSCRIPT_TIMELINE_20260426.md` — 2026-04-26 Brain 对话全文时间线
+> - `docs/test/p2_5/brain_connected_black_video_20260425.md` — 黑屏/音频/语音断续复盘
 
 ---
 
@@ -216,36 +219,116 @@ Sprint 3 将 AR Desktop MVP 的五个关键链路全部落地：**Token Mint 服
 
 | # | 描述 | 类型 | 优先级 | 建议处理时机 |
 |---|------|------|--------|------------|
-| L1 | `Launcher.unity` 场景未创建，手机必须直接开 `Dev.unity` | 缺失功能 | P1 | Sprint 4 前，用 Unity Editor 创建并配置 `autoConnectOnStart=false` |
-| L2 | `PARROT_MINT_SECRET` 未设置时 dev-mode 放行（A5 修复时保留此行为） | 安全争议 | P2 | Sprint 4 ECS 部署前改为强制 500；本地开发期可接受 |
-| L3 | ECS 安全组未开放 TCP 7888 的操作步骤未自动化 | 运维 | P2 | 写入 `deploy-prep-routing.mdc` |
-| L4 | 无自动化回归测试覆盖 Sprint 3 新增 RPC / Token Mint 路径 | 测试覆盖 | P2 | Sprint 4 开始前补 `tests/` 里的 smoke 测试 |
-| L5 | `onSceneReady` Brain 未在房间时静默跳过，无重试机制 | 健壮性 | P3 | Sprint 4 |
+| L1 | 移动端外放回声会被 Gemini Live VAD 当作用户输入，导致复读、打断、角色错归因 | 产品/音频入口 | P1 | Sprint 4 前置：音频路由、耳机/蓝牙 baseline、push-to-talk、manual VAD 或自建 ASR/VAD 备选 |
+| L2 | 视频轨 `PublishTrack` 成功不等于有真实 fresh frames，黑屏复盘已证明必须拆分健康状态 | 视频生命周期 | P1 | Sprint 4：track published / first frame / fresh frame / tier ack / consumer ack 分层 |
+| L3 | `identify_object` 缺 screenshot evidence 与 THINKING 体感闭环，不能作为最后一轮连接 smoke 默认工具 | 视觉工具 | P1 | Sprint 4：`captureSnapshot`、`SnapshotEvent`、DSG/Graphiti 引用路径 |
+| L4 | Graphiti 写入 20-46s，说明长期记忆必须后台化，不能参与实时语音 turn | 后台管线 | P2 | Sprint 4：MemoryWriter / EpisodeArchiver / 降频限流 |
+| L5 | `setVideoTier` / ECP ack 时序需要正式协议，Brain 不能在 Unity ack 前口头承诺成功 | 协议 | P1 | Sprint 4：ECP Protocol V2，command id、ack/reject、expires_at、source_turn_id |
+| L6 | 正式 AR Foundation 初始场景仍未独立创建，`Dev.unity` 只能作为集成测试舞台 | 前端架构 | P2 | Sprint4/AR 工作区：先完成启动/权限/连接/AR 会话设计，再新建正式场景 |
+
+> 详见 `docs/test/p2_5/sprint3_effective_lessons_for_sprint4_zh.md`。旧的 HUD、自检按钮、WebCam fallback、`FindObjectOfType` 自动补绑定、测试菜单体验等问题已降级为测试束噪声，不再列为 Sprint4 产品遗留。
 
 ---
 
-## 7. Sprint 3 验收用例状态（待真机测试更新）
+## 7. Sprint 3 验收用例状态（2026-04-26 smoke 收口）
 
-> **操作顺序（实习生）**：`docs/test/p2_5/pipeline_test_matrix_sprint3.md` **§0**（P0→P1→P2）→ **§C**（P1 Editor）→ **§D**（P2 真机 AC1→AC8）；**易错点 §B**。  
-> **本表**只维护 **AC1–AC8 一句话验收 + 状态**；矩阵行 **T-*** 在 `docs/test/p2_5/pipeline_test_matrix_sprint3.md` **§3** 填写。  
-> 用户测试时按此表勾选，标注发现的新 Bug。
+> 结论口径：2026-04-26 最后一轮真机 smoke 已足以证明 Sprint3 的连接/AR/LiveKit/Gemini 骨架跑通。下表不再作为“待测清单”，而是记录哪些能力已通过，哪些不应继续阻塞 Sprint3、应转入 Sprint4 前置设计。
 
 | # | 用例 | 预期 | 状态 |
 |---|------|------|------|
-| AC1 | 手机安装 APK → 启动 Launcher → 权限弹窗 → 全部允许 → 就绪按钮亮起 | 权限获取正常 | ⬜ 待测 |
-| AC2 | 点击"连接"→ Token 从 Castle 获取成功（castle-ip:7888/mint）→ "连接成功" | JWT 获取 + Room 连接 | ⬜ 待测 |
-| AC3 | AR 场景加载 → Brain `onSceneReady` 收到 → GOSLO 问候语播放 | 场景 RPC 闭合 | ⬜ 待测 |
-| AC4 | 点击 AR 平面 → GOSLO 放置 → `onGosloPlaced` 上报 → Brain 日志确认 | 放置 RPC | ⬜ 待测 |
-| AC5 | 说"视频全开" → Brain `set_video_tier(VIDEO_FULL)` → `tmux attach -t brain` 日志看到 RPC push → 手机 bitrate 变 1Mbps | 手动覆盖主链路 | ⬜ 待测 |
-| AC6 | 说"视频关闭" → `VIDEO_OFF` → 手机摄像头 track mute → Brain DSG 切 PASSIVE | OFF 模式 | ⬜ 待测 |
-| AC7 | 断网 30s 后再连 → A10 心跳超时 → Supervisor 降级 → 恢复后自动升 | A10 心跳 E2E | ⬜ 待测 |
-| AC8 | `SceneProfileManager` 切换 Profile → `setScene` RPC → Brain `context_injector` C3/C4 更新 | 场景同步 | ⬜ 待测 |
+| AC1 | 手机安装 APK → 启动 Launcher → 权限弹窗 → 全部允许 → 就绪按钮亮起 | 权限获取正常 | ✅ smoke 通过 |
+| AC2 | 点击"连接"→ Token 从 Castle 获取成功（castle-ip:7888/mint）→ "连接成功" | JWT 获取 + Room 连接 | ✅ smoke 通过 |
+| AC3 | AR 场景加载 → Brain `onSceneReady` 收到 → GOSLO 问候语播放 | 场景 RPC 闭合 | ✅ smoke 通过；双问候已收敛为单路径 |
+| AC4 | 点击 AR 平面 → GOSLO 放置 → `onGosloPlaced` 上报 → Brain 日志确认 | 放置 RPC | ✅/⚠️ AR/SessionTracking 与 RPC 骨架通过；正式 AR 主场景另建 |
+| AC5 | 说"视频全开" → Brain `set_video_tier(VIDEO_FULL)` → `tmux attach -t brain` 日志看到 RPC push → 手机 bitrate 变 1Mbps | 手动覆盖主链路 | ✅ 视频 fresh frames 与视觉问答通过；tier ack 语义转协议 V2 |
+| AC6 | 说"视频关闭" → `VIDEO_OFF` → 手机摄像头 track mute → Brain DSG 切 PASSIVE | OFF 模式 | ⚠️ 保留为 Sprint4 视频生命周期用例，不再阻塞 Sprint3 |
+| AC7 | 断网 30s 后再连 → A10 心跳超时 → Supervisor 降级 → 恢复后自动升 | A10 心跳 E2E | ⚠️ 转 Sprint4 WebRTC 生命周期 / 前后台 / 重连设计 |
+| AC8 | `SceneProfileManager` 切换 Profile → `setScene` RPC → Brain `context_injector` C3/C4 更新 | 场景同步 | ✅/⚠️ 骨架通过；实时 instruction update API 漂移转 Sprint4 协议设计 |
+
+### 7.1 补充验收：ArSpike（仅 AR 基线，非 Dev 总线）
+
+| # | 用例 | 预期 | 状态 |
+|---|------|------|------|
+| AC12 | `unity/ArSpike` 使用 AR Foundation **5.1.5**，包/`xr.management` 解析与 `unity/ParrotDev` 对齐 | 与仓库 AR 版本策略一致 | ✅（以 `unity/ArSpike/README.md` 为准） |
+| AC12b | Build Settings **活动平台**为 Android → **Build And Run** → 真机跑通模板默认 **平面 / 放置** demo | AR 栈可独立打包；**不含** LiveKit/Brain | ✅ |
+
+> 说明：AC12/AC12b **不替代** AC1–AC11；总线/数据流仍以 `ParrotDev` + Dev.unity 为准。
 
 **Unity 前端 RTT（补充，不计入原 8 条合同）**：`onGosloPlaced` 轻载 **PerformRpc 往返**（F3 →「Brain RPC RTT x3」或 Editor 菜单 `Parrot/Test/Editor/RPC — …`），用于 **信令/应用层** 对表 — 步骤与通过标准见 `docs/test/p2_5/pipeline_test_matrix_sprint3.md` 的 **T-RPC-01**。
 
 ---
 
-## 8. Sprint 4 依赖清单
+## 8. 2026-04-26 真机联调补充：连接通过，外放回声转 Sprint4 前置
+
+> 数据源：`FilePort2/ECS_SESSION_MASTER_TABLE_20260426.md`、`FilePort2/BRAIN_LOG_TRANSCRIPT_TIMELINE_20260426.md`、设备 `log5.txt` 摘要、ECS `/tmp/brain.log`。  
+> 结论口径：这是 Sprint 3 测试阶段补充，不把未完成的 Sprint 4 能力（`identify_object` 截图证据、Graphiti 体验优化、正式 AR App UX）算作 Sprint 3 阻塞。
+
+### 8.1 已确认跑通的骨架
+
+- Unity 真机进入 `parrot-main`，Brain agent 进房，Gemini Live 能发起对话。
+- HUD/设备侧显示 `AR: SessionTracking`，说明 AR Foundation/ARCore 基本链路已起；AR 默认 plane detection 能看到水平面，但它不等价于“桌面语义识别”。
+- 视频主通道有 fresh frames；Gemini 能描述笔记本、屏幕、鼠标等画面内容，说明 `ARVideoPublisher → LiveKit → Gemini Live` 主路径不是黑屏状态。
+- Unity→Brain RPC RTT 三次均值约 `129ms`，不支持“纯网络慢到不可用”的解释。
+- Graphiti 对话归档有写入，说明记忆写回骨架跑通；但 `add_episode` 20-46s 级延迟应在 Sprint 4 做后台化/降频，不作为实时对话体感依据。
+
+### 8.2 语音体感异常：不是单纯网络慢
+
+2026-04-26 三轮转写中出现大量“用户/鹦鹉互相复读、句子截断、开头双问候、短语被切开”的现象。结合公开 LiveKit/Gemini issue 与本地代码，当前判断更像多个因素叠加：
+
+1. **Gemini turn-taking 被干扰**  
+   Brain 原先在 session start 立即 `generate_reply()`，Unity 又在 `onSceneReady` 后触发第二次问候。公开 issue 中也有 Gemini Realtime + 多次 `generate_reply()` / tool flow 造成 timeout、tool cancellation、turn 混乱的案例。已改为 `onSceneReady` 优先，3s fallback，且程序性 `generate_reply` 等待 `session.current_speech`。
+
+2. **Unity 下行音频播放引用不稳**  
+   `RoomManager.OnTrackSubscribed` 原先只用局部变量创建 `AudioStream(audioTrack, source)`。LiveKit Unity `AudioStream` 持有 native handle 和 audio probe 事件；不保存强引用可能被 GC/finalizer 回收，表现为远端语音断续或静音。已改为字典强引用并在断房/换房/销毁时显式 dispose。
+
+3. **未完成的 `identify_object` 工具会污染视觉问答测试**  
+   第三轮围绕白色鼠标触发了两次 `save_new`，并伴随 `server cancelled tool calls`。它不是前两轮语音断续主因，但当前实现缺 `captureSnapshot`、同步视觉证据和 THINKING 体感闭环，已默认从 `ALL_TOOLS` 移出，仅 `PARROT_ENABLE_IDENTIFY_OBJECT_TOOL=1` 专测时启用。
+
+4. **Graphiti 是慢后台，不应直接卡主语音，但需 Sprint 4 收口**  
+   `conversation_writer` 是后台批量写，理论上不应阻塞每句话；但 20-46s 写入耗时说明 ECS/DB/Graphiti 侧有性能风险。Sprint 4 应把实时语音路径和长期记忆写入进一步隔离、降频、限流。
+
+### 8.3 已应用的测试收口修复
+
+- `MicrophonePublisher`：非蓝牙真机测试固定 LiveKit 麦克风声明为 48k，避免 Android 音频路由漂移导致 `actualRate/expectedRate` 不匹配。
+- `RoomManager`：保存远端 `AudioStream` 强引用，清理生命周期。
+- `agent.py`：单开场策略 + 程序性 `generate_reply` 串行化。
+- `mode_watcher.py` / `context_injector.py`：当前 LiveKit Agents 无 `update_instructions` 时降级 warning，不再污染会话 traceback。
+- `tools/__init__.py`：`identify_object` 默认 opt-in，避免未升级按需识别工具影响最后一轮连接/语音 smoke。
+
+### 8.4 最后一轮复测标准
+
+最后一轮只测 Sprint 3 连通性与语音体感，不测 Sprint 4 识物能力：
+
+- 关蓝牙，用手机本机麦克风。
+- HUD 需看到：Brain yes、`Audio pub: yes(48k)`、`Video pub: yes(... age=0.0s)`、`AR: SessionTracking`。
+- Brain 日志应只出现一次开场问候，不再 session start + `onSceneReady` 双问候。
+- 手机日志不应再出现连续 `sample_rate and num_channels don't match` / `audio capture failed`。
+- 用户与 GOSLO 进行 3-5 轮短句对话，若仍断续，再分离排查 LiveKit Unity 远端 AudioStream underrun / Gemini Realtime turn detection，而不是继续追 AR 平面或 Graphiti。
+
+### 8.5 最后一轮结果：Sprint3 smoke 可视为通过
+
+01:56-01:59 CST 的最后一轮显示：
+
+- 第一轮问候和后续 3-5 轮短对话可正常进行，体感明显比前一轮流畅。
+- Brain/Gemini 能回答视觉问题，说明主视频通道仍有效。
+- 仍出现“用户没有说的话被记为用户输入”的现象，尤其是 GOSLO 自己说出的内容被手机麦克风拾回，随后进入 Gemini VAD/barge-in，造成复读、打断和角色错归因。
+
+判定：**Sprint3 连通性/AR/LiveKit/Gemini smoke 成功**。剩余问题不是 Sprint3 接缝是否跑通，而是移动端语音产品设计问题：
+
+1. Gemini Live 的自动 VAD/中断机制会把连续音频流里的活动当成用户输入；它不是可靠的“声纹/音色识别器”，不会自动排除自己刚外放的语音。
+2. LiveKit Unity/Android 公开 issue 中也有免提外放导致 echo / ping-pong / agent interrupt 的案例；即使 SDK 里开启 echo cancellation，Unity Android 路径也不能假定足够可靠。
+3. 蓝牙耳机、听筒/扬声器切换、push-to-talk、服务端 noise/echo cancellation、禁用/调低 interruption、或自建 ASR/VAD 管线，均应进入 Sprint4 前置调研，而不是继续作为 Sprint3 连接测试阻塞项。
+
+Sprint4 前置必须单独设计“音频入口与输出路由”：
+
+- 测试基线：耳机/蓝牙输入输出优先，避免外放回声。
+- App UX：连接页/设置页明确音频输入设备、输出设备、蓝牙状态、外放风险。
+- Agent 策略：评估 Gemini Live automatic VAD、manual activityStart/activityEnd、`NO_INTERRUPTION`/更低打断敏感度、LiveKit Agents turn detector / Silero VAD / noise cancellation。
+- 架构备选：若 Gemini Live 原生音频无法满足外放场景，评估自建 ASR + turn detection + Gemini 文本/多模态通道，代价是延迟和复杂度上升。
+
+---
+
+## 9. Sprint 4 依赖清单
 
 Sprint 3 的以下接缝是 Sprint 4 的**强依赖前提**（Sprint 4 开工前需 AC1-AC5 通过）：
 
@@ -259,18 +342,18 @@ Sprint 3 的以下接缝是 Sprint 4 的**强依赖前提**（Sprint 4 开工前
 
 ---
 
-## 9. P2.5 整体架构建议
+## 10. P2.5 整体架构建议
 
 > 这些建议面向 Sprint 4 结束后的最终一致性审计（final consistency audit）：
 
-### 9.1 代码卫生规范（Code Hygiene）
+### 10.1 代码卫生规范（Code Hygiene）
 
 1. **副作用声明强制化**: 所有跨进程/跨线程/跨 Unity-Python 边界的方法，必须在 docstring 里列 `Side-effects:` 节
 2. **已确认事实引用**: 新建 Python 文件头必须注释 `# Confirmed facts from: active_context.md §X`，避免 SDK API 回归
 3. **平行路径互引**: 同一 class 内两条"平行路径"（init vs rebuild、auto vs manual）的入口函数互相注释引用
 4. **CI C# 编译门**: GitHub Actions 或 Unity Cloud Build 对 `.cs` 文件做编译检查，阻断裸 `}` 遗漏类错误
 
-### 9.2 测试策略（P2.5 完成 Test 准备）
+### 10.2 测试策略（P2.5 完成 Test 准备）
 
 ```
 测试层级:
@@ -280,7 +363,7 @@ Sprint 3 的以下接缝是 Sprint 4 的**强依赖前提**（Sprint 4 开工前
   L3 真机  → AC1-AC8：操作顺序 docs/test/p2_5/pipeline_test_matrix_sprint3.md §D；Editor 联调 §C；状态本文件 §7
 ```
 
-### 9.3 部署检查清单（Sprint 4 ECS 上线前）
+### 10.3 部署检查清单（Sprint 4 ECS 上线前）
 
 - [ ] 阿里云安全组：TCP inbound 7880（LiveKit），7888（Token Mint），6379（Redis 内网）
 - [ ] `PARROT_MINT_SECRET` 设置为随机高熵字符串（不再 dev-mode）
@@ -305,7 +388,7 @@ Sprint 3 的以下接缝是 Sprint 4 的**强依赖前提**（Sprint 4 开工前
 
 ---
 
-## 10. 测试阶段说明（测试中持续更新）
+## 11. 测试阶段说明（测试中持续更新）
 
 ### 10.1 Dev.unity 的定位
 
@@ -342,7 +425,7 @@ AC? ❌ 现象: <一句话>
 
 ---
 
-## 11. 完整计划路径（从现在到模块独立开发）
+## 12. 完整计划路径（从现在到模块独立开发）
 
 ### 阶段 1：Sprint 3 真机测试（现在）
 

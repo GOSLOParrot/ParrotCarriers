@@ -31,6 +31,11 @@ from livekit.agents import get_job_context
 from livekit.agents.llm import ToolError
 
 from parrot.scheduler.blackboard import open_bb_client
+from parrot.shared.ecp import (
+    ECP_FAILURE_STATUSES,
+    ECP_INTERMEDIATE_STATUSES,
+    ECP_TERMINAL_SUCCESS,
+)
 from parrot.shared.vision_state import Scene
 
 if TYPE_CHECKING:
@@ -67,19 +72,36 @@ def _write_ack(
     rpc: str,
     reason: str = "",
     detail: str = "",
+    command_id: str = "",
+    ecp_status: str = "",
 ) -> None:
-    """Mirror RPC outcome to tick/last_rpc_ack (event-driven)."""
+    """Mirror RPC outcome to ``tick/last_rpc_ack`` (event-driven).
+
+    DRIFT NOTE (Sprint4 ECP-minimal, 2026-04-29):
+        ``tick/last_ecp_ack`` is currently mirrored as the same legacy
+        ``{ok, rpc, reason, detail, command_id, ecp_status, ts}`` dict that
+        ``tick/last_rpc_ack`` uses, NOT a real ``EcpAck`` Pydantic dump. The
+        Sprint4 protocol design (`sprint4_protocol_v2_ecp.md` §5.2) eventually
+        wants a full ``EcpAck`` here (frontend_state, ack_id, started_at,
+        completed_at, ...), but Unity's handlers only return a subset and we do
+        not yet propagate that subset through the bridge. ``bb_schema``'s
+        ``tick/last_ecp_ack`` type_hint is therefore intentionally
+        ``dict[str, Any]`` until Phase 2 produces the full envelope upstream.
+    """
     bb = _ensure_bb()
-    bb.set(
-        "tick/last_rpc_ack",
-        {
-            "ok": ok,
-            "rpc": rpc,
-            "reason": reason,
-            "detail": detail,
-            "ts": time.time(),
-        },
-    )
+    ts = time.time()
+    ack = {
+        "ok": ok,
+        "rpc": rpc,
+        "reason": reason,
+        "detail": detail,
+        "command_id": command_id,
+        "ecp_status": ecp_status,
+        "ts": ts,
+    }
+    bb.set("tick/last_rpc_ack", ack)
+    if command_id or ecp_status:
+        bb.set("tick/last_ecp_ack", ack)
 
 
 def set_scene(scene: Scene) -> None:
@@ -111,28 +133,56 @@ def _find_unity_participant(room) -> str | None:
 
 
 def _classify_response(response: str) -> tuple[bool, str, str]:
-    """Parse Unity's JSON response into (ok, reason, detail).
+    """Parse Unity's JSON response into ``(ok, reason, detail)``.
 
-    Unity ParrotRpcHandler returns either:
-        {"status": "ok", ...}                         → (True, "", "")
-        {"status": "error", "message": "..."}         → (False, "rejected", message)
-    Any non-JSON or missing-status response is treated as malformed.
+    Unity may return either legacy status values (``ok`` / ``error``) or
+    Sprint4 ECP ack status values (``completed`` / ``rejected`` / ``expired``
+    / ...). Any non-JSON or missing-status response is treated as malformed.
+
+    NOTE on intermediate ECP statuses (``received``/``accepted``/``queued``/
+    ``running``): we deliberately do NOT treat them as ``ok=True`` so that
+    ``tick/last_rpc_ack.ok`` keeps the felt-experience contract from
+    `parrot_behavior_rules.md` §0.3 — pending work must remain visible to
+    Gemini until the terminal completion ack arrives. Unity's current handlers
+    only emit terminal statuses, so this branch is mostly defensive for
+    Sprint4 alpha; it becomes load-bearing when Phase 2 begins streaming
+    in-progress acks.
     """
     try:
         data = json.loads(response) if response else {}
     except (ValueError, TypeError):
         return (False, "malformed", response[:200] if response else "")
 
-    status = data.get("status")
-    if status == "ok":
-        return (True, "", "")
-    if status == "error":
+    status = str(data.get("status", "") or "")
+    if status in ECP_TERMINAL_SUCCESS:
+        # Legacy "ok" replies historically had no `reason`; preserve that to
+        # avoid log churn. ECP terminal acks may or may not carry a reason.
+        return (True, str(data.get("reason", status if status != "ok" else "") or ""), "")
+    if status in ECP_INTERMEDIATE_STATUSES:
         return (
             False,
-            str(data.get("reason", "rejected") or "rejected"),
-            str(data.get("message", "")),
+            str(data.get("reason", status) or status),
+            str(data.get("message") or data.get("detail") or ""),
+        )
+    if status in ECP_FAILURE_STATUSES:
+        return (
+            False,
+            str(data.get("reason", status or "rejected") or "rejected"),
+            str(data.get("message") or data.get("detail") or ""),
         )
     return (False, "malformed", str(data)[:200])
+
+
+def _ack_metadata(response: str) -> tuple[str, str]:
+    """Best-effort extraction of ECP command/status metadata from a response."""
+    try:
+        data = json.loads(response) if response else {}
+    except (ValueError, TypeError):
+        return "", ""
+    return (
+        str(data.get("command_id", "") or ""),
+        str(data.get("status", "") or ""),
+    )
 
 
 def _result_from_response(response: str) -> RpcPushResult:
@@ -192,7 +242,15 @@ async def call_unity_rpc(
         raise
 
     ok, reason, detail = _classify_response(response)
-    _write_ack(ok=ok, rpc=method, reason=reason, detail=detail)
+    command_id, ecp_status = _ack_metadata(response)
+    _write_ack(
+        ok=ok,
+        rpc=method,
+        reason=reason,
+        detail=detail,
+        command_id=command_id,
+        ecp_status=ecp_status,
+    )
     if not ok:
         logger.info("RPC %s rejected: reason=%s detail=%s", method, reason, detail)
     return response
@@ -249,10 +307,19 @@ async def push_video_tier_result(video_tier: str, *, reason: str = "") -> RpcPus
             detail=f"tier={video_tier}",
         )
 
-    payload = {"video_tier": video_tier, "reason": reason}
+    from parrot.shared.ecp import EcpCommandKind, wrap_legacy_rpc_payload
+
+    payload, command = wrap_legacy_rpc_payload(
+        {"video_tier": video_tier, "reason": reason},
+        kind=EcpCommandKind.SET_VIDEO_TIER,
+        target={"vision_channel": "video", "video_tier": video_tier},
+        actor="brain.perception_supervisor",
+        expires_in_s=12.0,
+        expected_duration_ms=1500,
+    )
     logger.info(
-        "RPC → Unity [%s] setVideoTier=%s reason=%s",
-        unity_id, video_tier, reason or "-",
+        "RPC → Unity [%s] setVideoTier=%s reason=%s command_id=%s",
+        unity_id, video_tier, reason or "-", command.command_id,
     )
     try:
         response = await room.local_participant.perform_rpc(
@@ -276,11 +343,14 @@ async def push_video_tier_result(video_tier: str, *, reason: str = "") -> RpcPus
         )
 
     result = _result_from_response(response)
+    command_id, ecp_status = _ack_metadata(response)
     _write_ack(
         ok=result.ok,
         rpc="setVideoTier",
         reason="" if result.ok else result.reason,
         detail=result.detail,
+        command_id=command_id,
+        ecp_status=ecp_status,
     )
     return result
 

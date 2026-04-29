@@ -29,6 +29,19 @@ async def capture_current_frame(
 
     Returns:
         SnapshotEnvelope with the inline base64 JPEG payload, or None if failed.
+
+    DRIFT NOTE (Sprint4 ECP-minimal, 2026-04-29):
+        Unity's ``SnapshotService.cs`` still replies with the Sprint3-era
+        ``{"success": bool, "width": ..., "b64_data": ...}`` shape, NOT an
+        ``EcpAck``. ``_rpc_bridge._classify_response`` therefore stamps every
+        successful snapshot as ``malformed`` in ``tick/last_rpc_ack``, which is
+        cosmetically wrong but does not affect this caller (we parse the raw
+        JSON ourselves). Phase 4 (`snapshot-identify` task in
+        ``sprint4_协议升级_31652b8a.plan.md``) will rebuild the Unity reply as
+        a real ECP ack with ``detail = SnapshotEnvelope`` and route the
+        envelope to ``transient/just_captured_photo`` plus a
+        ``snapshot.captured`` L0 event. Until then, do not chain felt-
+        experience reasoning off ``last_rpc_ack`` for ``captureSnapshot``.
     """
     try:
         room = get_job_context().room

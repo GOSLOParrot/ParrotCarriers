@@ -13,6 +13,11 @@ last_reviewed: 2026-04-25
 > **配套 Skills（深度参考）**
 > - `.cursor/skills/ar-foundation-api/SKILL.md` — AR Foundation 5.1.x 完整 API 参考（Packages.md）
 > - `.cursor/skills/ar-foundation-samples/SKILL.md` — 官方 Samples 实现模式（帧抓取、平面、面部、Anchor 等）
+> - `.cursor/skills/livekit-unity-video-publish/IMPL_REF.md` — AR 帧抓取 → LiveKit 推流接缝（`ARCameraBackground` Blit / `_rt` / TrackSource / 12 条踩坑表）；与本规则 §2 双向引用
+>
+> **AR 工作区路由**：本规则只列代码级踩坑；架构 / 设计 / 工作区入口请进 `.cursor/memory/architecture/ar_workspace_index.md`。
+>
+> **仓位说明**：本规则的所有具体路径（`unity/ParrotDev/Assets/csc.rsp` 等）属于 **Sprint 1–3 测试床**。Sprint4 起新代码进 `unity/ArSpike/Assets/Scripts/ParrotApp/`；ECP/LiveKit/AR 各类脚本的搬迁顺序见 `unity/ArSpike/Assets/Scripts/ParrotApp/MIGRATION.md`。本规则的踩坑结论同样适用 ArSpike，但路径需要对应到 ArSpike 自己的 `csc.rsp` / `Packages/manifest.json`。
 
 本规则是 AR 工作区和后续独立 app 设计的版本锁与踩坑清单。它不是追新清单；Sprint3/4 内优先稳定闭环，不随意升级 Unity/AR Foundation 主版本。
 
@@ -20,11 +25,11 @@ last_reviewed: 2026-04-25
 
 **继续使用 Unity 2022.3 LTS 没问题**。这是当前项目最保守、最适合稳定收口的选择：
 
-- Unity 2022.3 LTS 是本项目当前编辑器基线。
+- Unity 2022.3 LTS 是本项目当前编辑器基线（实测 Editor 版本：**2022.3.62f3**）。
 - 这是“当前收口基线”，不是永久版本承诺。Unity LTS 的优势是稳定和非破坏性修复；若未来进入长期 app 独立开发，应在 Sprint4 后单独评估迁移到当时最新 LTS。
-- `unity/ParrotDev/Packages/manifest.json` 锁定 `com.unity.xr.arfoundation` / `com.unity.xr.arcore` / `com.unity.xr.arkit` 为 5.1.5。
-- Sprint3/4 期间允许 5.1.x patch 级修补，但不主动升到 AR Foundation 5.2.x、6.x 或 Unity 6。
-- 若未来要升级，必须单独开“AR 版本迁移”任务，同时验证 XR Simulation、Android ARCore、LiveKit 视频推流、ARCameraManager.frameReceived、TapToPlace、权限和真机启动门。
+- `unity/ParrotDev/Packages/manifest.json` 与 `unity/ArSpike/Packages/manifest.json` 都锁定 `com.unity.xr.arfoundation` / `com.unity.xr.arcore` / `com.unity.xr.arkit` 为 **5.2.2**（2026-04-29 从 5.1.5 升级，原因：5.2.2 才把 `libarcore_sdk_c.so` 改 16KB 对齐，满足 Android 15+ Play 商店要求；5.2.x 仍是 Unity 2022.3 LTS 兼容线，**不**等于 6.x / Unity 6）。`xr.management` 不在两边的 manifest 中显式钉，让 UPM 自行解析（详见 `unity/ArSpike/README.md` §"XR Plugin Management"，那里是版本锁的活文档，避免两边漂移）。
+- Sprint3/4 期间允许 5.2.x patch 级修补，但**不主动升到 6.x 或 Unity 6**（会强迫迁出 Unity 2022.3）。
+- 若未来要再升级（>= 5.3 或 6.x），必须单独开“AR 版本迁移”任务，同时验证 XR Simulation、Android ARCore、LiveKit 视频推流、ARCameraManager.frameReceived、TapToPlace、权限和真机启动门。
 
 联网核对依据：
 
@@ -36,13 +41,14 @@ last_reviewed: 2026-04-25
 
 ## 1. AR Foundation 版本必须与 Unity 2022.3 及 ARCore XR Plugin 对齐
 
-当前项目环境为 Unity 2022.3 LTS，Sprint3/4 **锁定 AR Foundation 5.1.x**。不要在稳定性验证期升级到 5.2.x、6.x 或 Unity 6；升级会把 AR、XR Simulation、Android provider、LiveKit Unity SDK、视频推流问题混在一起，降低排障质量。
+当前项目环境为 Unity 2022.3 LTS，Sprint3/4 **锁定 AR Foundation 5.2.x**（具体钉死 5.2.2，三件套同档）。不要进一步升到 6.x 或 Unity 6；升级会把 AR、XR Simulation、Android provider、LiveKit Unity SDK、视频推流问题混在一起，降低排障质量。
 
 版本不对齐或 provider 未启用时常表现为**静默失败**：ARSession 不启动，`frameReceived` 永远不触发，Unity 仍可能发布一条 LiveKit 视频轨但画面停住或黑屏。
 
-- 使用 AR Foundation 5.1.x → 必须同时安装对应 5.1.x provider：Android 用 ARCore XR Plugin，iOS 用 ARKit XR Plugin。
+- 使用 AR Foundation 5.2.x → 必须同时安装对应 5.2.x provider：Android 用 ARCore XR Plugin 5.2.x（5.2.2 起 `libarcore_sdk_c.so` 16KB 对齐），iOS 用 ARKit XR Plugin 5.2.x。
 - 仅安装 package 不够；还必须在 `XR Plug-in Management` 中为目标平台启用 provider。Android 测试必须确认 ARCore loader 在 Android Providers 中。
-- 不要混用跨大版本组合，除非单独开迁移任务并完整复测。
+- 不要混用跨大版本组合（5.x ↔ 6.x），除非单独开迁移任务并完整复测。
+- 5.1 → 5.2 行为差异：本仓库使用的 `XRCameraSubsystem` / `ARCameraManager.frameReceived` / `ARCameraBackground.material` / `ARPlane.extents` / `XRCpuImage` API **未变**；§5 的 5.1 已踩坑结论在 5.2 仍然适用。
 
 ## 2. `ARCameraManager.frameReceived` 在渲染线程回调，`Graphics.Blit` 必须在其中执行
 
@@ -74,7 +80,7 @@ ARCameraBackground 路径编译掉，表现为：
 长期治理建议：如果 Sprint4 后将 AR 工作区拆成独立 assembly，应把 `UNITY_AR_FOUNDATION` 迁移到 asmdef `versionDefines`：
 
 - Resource/package: `com.unity.xr.arfoundation`
-- Expression: `[5.1,5.2)`
+- Expression: `[5.2,5.3)`
 - Define: `UNITY_AR_FOUNDATION`
 
 注意 asmdef `versionDefines` 只对该 assembly 生效；迁移时要把 AR 相关脚本放入同一个或明确引用的 assembly，不要混用全局宏和局部宏造成行为漂移。

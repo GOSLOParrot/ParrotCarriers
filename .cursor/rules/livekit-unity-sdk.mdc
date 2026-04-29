@@ -4,11 +4,18 @@ globs:
   - "unity/**/*.cs"
 alwaysApply: false
 status: ratified
-status_note: "条目均来自已踩坑总结 (Play/Stop identity 抢占 / ICE 残留 / PublishTrack NRE)。按 sprint0_preflight.md §6.4 标 ratified。"
-last_reviewed: 2026-04-22
+status_note: "条目来自已踩坑总结：Play/Stop identity 抢占 / ICE 残留 / PublishTrack NRE / 蓝牙采样率漂移 / 免提外放污染 Gemini Live 输入。后两条来自 2026-04-26 真机 smoke，详见 `docs/test/p2_5/sprint3_effective_lessons_for_sprint4_zh.md`。"
+last_reviewed: 2026-04-29
 ---
 
 # LiveKit Unity SDK 适配规则
+
+> **配套参考**
+> - `.cursor/skills/client-sdk-unity/SKILL.md` — LiveKit Unity SDK 能力面（Room / Track / RPC / DataChannel / 生命周期）
+> - `.cursor/skills/livekit-unity-video-publish/IMPL_REF.md` — Unity 推流接缝 + 12 条踩坑表（PublishTrack NRE / TrackSource / 黑帧 / 重连污染等更详尽现场）
+> - `.cursor/memory/architecture/sprint4_livekit_stability_and_video_strategy.md` — Sprint4 前置：LiveKit Bus 稳定性与视频上限策略
+>
+> **仓位说明**：本规则的代码示例引用 `unity/ParrotDev/` 是 Sprint 1–3 测试床。Sprint4 起新代码进 `unity/ArSpike/Assets/Scripts/ParrotApp/`，迁移顺序见 `unity/ArSpike/Assets/Scripts/ParrotApp/MIGRATION.md`。
 
 ## 版本管理
 
@@ -82,6 +89,18 @@ var stream = new AudioStream(audioTrack, source); // 错：方法返回后可能
 
 当前项目规则：`RoomManager` 必须把每条远端音频流放入字典，房间断开或替换 Room 时显式
 `Dispose()`。否则 GOSLO 的下行语音可能表现为随机断续、静音、或“以前能说现在很卡”。
+
+### 免提外放会污染 Gemini Live 输入
+2026-04-26 真机 smoke 证明：不用耳机时，GOSLO 的远端语音会被手机麦克风拾回，
+并被 Gemini Live 转写成 `[Gemini·用户]`。这会触发 Gemini 的 VAD/barge-in，
+造成复读、句子截断、tool cancellation 或“用户没说的话出现在日志里”。
+
+治理规则：
+
+1. Sprint3/4 测试基线优先使用耳机/蓝牙闭环，避免扬声器声音回灌麦克风。
+2. LiveKit/Gemini 的 echo cancellation / VAD 不能被当作声纹识别；模型不会天然知道“这是自己刚说的话”。
+3. 正式 App 必须设计音频入口：蓝牙/听筒/扬声器选择、外放风险提示、push-to-talk 或手动 VAD、必要时服务端 noise/echo cancellation。
+4. 若外放场景是硬需求，Sprint4 前置应评估自建 ASR + turn detection + Gemini 文本/视觉通道，而不是默认依赖 Gemini Live native audio。
 
 ## 审查流程
 

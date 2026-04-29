@@ -1,7 +1,7 @@
 # ParrotCarriers 全局索引
 
 > 用途: 项目唯一真相源，供 Cursor 与用户快速定位关键信息
-> 更新: 2026-04-22 (按 category + status 重排, Sprint 0 前置)
+> 更新: 2026-04-30 (Sprint4 Phase 4 启动：整体协议升级 — ECP + Scheduler + DSG/Graphiti 交互，4 工具协议验证)
 > 路由: 由 `.cursor/rules/workspace.mdc` (alwaysApply) 指向本文件
 
 **全局约定**:
@@ -13,15 +13,19 @@
 
 ## 〇、当前阶段必读 (按序, 不读后续)
 
-> **原则**: 进入任何 Sprint 前, **只读这 4 份**, 不翻历史。
-> **当前**: Sprint 0 前置 (2026-04-22)
+> **原则**: 进入任何 Sprint 前, **只读这 7 份**, 不翻历史。
+> **当前**: Sprint 4 Phase 4 启动 (2026-04-30)
 
 | # | 文件 | 读什么 |
 |:--|:-----|:-------|
 | 1 | `.cursor/memory/architecture/module_map_p2.md` | **全景架构入口** — §〇 项目边界 / §一 模块清单 / §二 数据流 / §九 外挂生态 / §十 DSG 分层 / §十一 时间轴 |
 | 2 | `.cursor/memory/active_context.md` | 头部 + 本周关键路径 (先确认自己在哪一步) |
-| 3 | `.cursor/memory/architecture/sprint0_preflight.md` | §7 最终任务单 + §8 回答 6 件担心 |
-| 4 | `.cursor/memory/architecture/ar_feature_implementation_plan.md` + `ar_feature_vision.md §3.5/§六` | 当前 Sprint 任务 + 决策默认值 |
+| 3 | `.cursor/memory/architecture/sprint4_pre_entry_prompt_and_plan.md` | Sprint4 前置、测试束隔离、数据流 / 协议 V2 / 后端接口提炼 |
+| 4 | `.cursor/memory/architecture/sprint4_protocol_ecp_background_20260429.md` | Sprint4 协议 / ECP 背景锚点：用户原话、RIT/BT/BT 森林关系、DSG/Graphiti/Obsidian/Ref 边界 |
+| 5 | `.cursor/memory/architecture/sprint4_protocol_v2_ecp.md` | Sprint4 Protocol V2 / ECP 正式设计稿：最小合同、状态面、生命周期、实现顺序 |
+| 6 | `.cursor/memory/architecture/sprint4_phase4_entry_20260430.md` | ⭐ **Phase 4 入场锚点（authoritative）** — Sprint4 终极目标 + 验收 / Phase 1-3 已落地清单 / 协议整体性 7 个再理解点 / 行为矩阵填表起点 / 观察者 vs 注意力模块边界 / 启动序 / Ref 路由 |
+| 7 | `.cursor/memory/architecture/sprint4_phase3_l3_entry_20260429.md` | Phase 3 L3 收口承接（已完成）— L1+L2 + 4 组拆分 + R1-R6+D5 audit fix；Phase 4 主线**承接**而非**重读** |
+| 8 | `.cursor/memory/architecture/ar_app_flow_ui_design.md` | 当前 App Flow / UI / 功能入口设计基线 |
 
 ---
 
@@ -29,15 +33,20 @@
 
 ### 1.1 active — 本周活跃, 边读边写 (status: tentative)
 
-> 这 5 份在跟代码同步演进, 读时注意 frontmatter 的 `status_note`。
+> 这些文件在跟代码和 Sprint4 前置同步演进，读时注意 frontmatter 的 `status_note`。
 
 | 文件 | 说明 |
 |:-----|:-----|
 | `active_context.md` | 当前进度 + 本周关键路径 + 版本锁表 |
-| `architecture/sprint0_preflight.md` | Sprint 0 前置 14 项 (S0.A-N) |
 | `architecture/ar_feature_vision.md` | 门控 + 自知 + 两轴 + §3.5 三合一 + §六 决策 (tentative 直到 Sprint 1/2 代码落地) |
 | `architecture/ar_feature_implementation_plan.md` | Sprint 0-4 任务清单 + 依赖图 (逐 Sprint ratified) |
-| `architecture/ar_app_plan.md` | AR 工程硬事实 + 问卷回填 (tentative 部分) |
+| `architecture/sprint4_pre_entry_prompt_and_plan.md` | Sprint4 前置入口：测试束隔离、数据流升级、协议 V2 / ECP、DSG L2-B、后端接口提炼 |
+| `architecture/sprint4_protocol_ecp_background_20260429.md` | Sprint4 Protocol / ECP 背景锚点：保留用户关键原话、三条任务交集、RIT/BT/BT 森林与 Ref 边界 |
+| `architecture/sprint4_protocol_v2_ecp.md` | Sprint4 Protocol V2 / ECP 正式设计稿：ECP 最小合同、状态面、Snapshot/Sighting/RefBinding、Lifecycle/Audio、BT 对齐与实施顺序 |
+| `architecture/sprint4_ecp_minimal_audit_20260429.md` | ECP-minimal 第一批落地后的审计与漂移记录：A1-A5 / B1-B5 / C 段，附 Phase 2 入场清单（archived，但 Phase 2 启动前必读） |
+| `architecture/sprint4_phase3_l3_entry_20260429.md` | Phase 3 L3 入场锚点（**已收口承接**）— L1+L2 已完成内容、4 组拆分（foundations / chokepoint+transport / publishers / consumers）、ParrotApp 命名空间约定、§7.5 R1-R6+D5 audit 修复记录 |
+| `architecture/sprint4_phase4_entry_20260430.md` | ⭐ **Phase 4 入场锚点**（authoritative）— Sprint4 终极目标重申 + 验收口径 / Phase 1-3 落地清单 / 协议整体性 7 个再理解点（含 §3.3 行为矩阵 + §3.7 观察者 vs 注意力模块边界）/ 启动序 / 给新 chat 的开局 prompt |
+| `architecture/ar_app_flow_ui_design.md` | AR App Flow / UI / 功能入口当前设计基线 |
 
 ### 1.2 reference — 当前稳定事实源 (status: ratified)
 
@@ -58,6 +67,7 @@
 | `deploy_snapshot_p2_20260412.md` | Castle 部署快照 |
 | `commit_guidelines.md` | 提交规范 + 漂移说明子句 |
 | `milestone_p2.md` | P2/P2.5 里程碑 (已完成, 历史归档) |
+| `architecture/ar_app_plan.md` | 早期 AR 工程计划 + 问卷追溯；新的 App Flow / UI 以 `architecture/ar_app_flow_ui_design.md` 为准 |
 
 ### 1.3 archived — 已归档, 仅作历史追溯 (status: archived / superseded)
 

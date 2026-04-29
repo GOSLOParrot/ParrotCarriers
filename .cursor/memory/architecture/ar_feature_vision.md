@@ -9,7 +9,8 @@ last_reviewed: 2026-04-22
 > 定位: P2.5 / P3 AR 互动玩法的**设计愿景 + 深度讨论**，不是需求合同，不是需求问卷
 > 关联:
 > - `ar_camera_interaction_survey.md` (用户需要填完的问卷 — 触发方式 / 美化 / 存储)
-> - `ar_app_plan.md` (硬事实 + C1-C12 进度表 + 五维问卷)
+> - `ar_app_flow_ui_design.md` (当前 App Flow / UI / 功能入口设计基线)
+> - `ar_app_plan.md` (早期硬事实 + C1-C12 进度表 + 五维问卷追溯)
 > - `audit_identify_object_no_screenshot_20260420.md` (identify_object 升级路径，本文的 §门控 决定它怎么改)
 > - `Test/p2/connectivity_report_p2.md` (真实测试阻碍 6 条 + 已知遗留)
 >

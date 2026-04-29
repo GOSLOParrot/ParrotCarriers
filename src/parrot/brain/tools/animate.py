@@ -8,6 +8,7 @@ from __future__ import annotations
 from livekit.agents import RunContext, function_tool
 
 from parrot.brain.tools._rpc_bridge import call_unity_rpc
+from parrot.shared.ecp import EcpCommandKind, wrap_legacy_rpc_payload
 from parrot.shared.parrot_actions import ParrotAnimation
 
 VALID_ANIMATIONS = {a.value for a in ParrotAnimation}
@@ -29,8 +30,22 @@ async def animate(
             f"Unknown animation '{animation_name}'. "
             f"Available: {', '.join(sorted(VALID_ANIMATIONS))}."
         )
+    # Phase 2 TODO: see fly_to.py — `_command` is currently discarded; the
+    # `ecp.command.issued` L0 event will be emitted inside `call_unity_rpc`
+    # once the bridge becomes the single chokepoint for ECP audit logging.
+    payload, _command = wrap_legacy_rpc_payload(
+        {"animation": animation_name},
+        kind=EcpCommandKind.ANIMATE,
+        target={
+            "body_channel": "body",
+            "animation": animation_name,
+        },
+        actor="brain.tools.animate",
+        expires_in_s=5.0,
+        expected_duration_ms=1000,
+    )
     result = await call_unity_rpc(
         method="animate",
-        payload={"animation": animation_name},
+        payload=payload,
     )
     return result

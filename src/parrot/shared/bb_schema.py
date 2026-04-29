@@ -147,6 +147,40 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "Active DSG ingestion mode.",
         event_driven=True,
     ),
+    # ───── Sprint4 ECP candidate keys (DRIFT NOTE) ─────
+    # Declared by `sprint4_protocol_v2_ecp.md` §3.2 as the unified state surface
+    # the protocol upgrade promises. Producers do NOT exist yet — Phase 3
+    # (lifecycle / audio / connection health) and Phase 4 (snapshot / sighting
+    # / attention) own the writers. We list them here so any code that tries to
+    # read them fails loudly via `get_key()` instead of silently typo-ing a new
+    # name. DO NOT register WRITE access in py-trees clients until the writer
+    # module actually lands; the same anti-pattern killed
+    # `global/soul_constraints` in Sprint 1 (see comment above). When you add
+    # the producer, remove this `# CANDIDATE` marker line.
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/connection_health",  # CANDIDATE — no writer yet (Phase 3)
+        "dict[str, Any]",
+        "brain.telemetry_receiver",
+        "Unified room / Brain / audio / video / RPC readiness snapshot.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/audio_route_policy",  # CANDIDATE — no writer yet (Phase 3)
+        "dict[str, Any]",
+        "brain.telemetry_receiver",
+        "Current input/output route policy and echo-risk summary.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/ecp_state",  # CANDIDATE — no writer yet (Phase 2 EcpState upload)
+        "dict[str, Any]",
+        "brain._rpc_bridge",
+        "Latest Unity frontend state-machine snapshot.",
+        event_driven=True,
+    ),
 
     # ───── Tick scope (refreshed on each Unity telemetry / RPC ack) ─────
     BlackboardKey(
@@ -186,6 +220,21 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "{ok, rpc_name, reason} — failure-feedback surface.",
         event_driven=True,
     ),
+    BlackboardKey(
+        BbScope.TICK,
+        "tick/last_ecp_ack",
+        # DRIFT NOTE (Sprint4 ECP-minimal, 2026-04-29):
+        # Originally declared as "EcpAck" but the bridge currently mirrors the
+        # same legacy ack dict we write to `tick/last_rpc_ack` plus
+        # `command_id` / `ecp_status` fields. Promoting to a full EcpAck
+        # Pydantic shape is Phase 2 work (needs Unity-side full state upload).
+        # Keeping the type_hint as the actual stored shape so consumers don't
+        # rely on fields that aren't there yet.
+        "dict[str, Any]",
+        "brain._rpc_bridge",
+        "Mirrored RPC ack augmented with ECP command_id/status (Phase 2 will replace with full EcpAck).",
+        event_driven=True,
+    ),
 
     # ───── Transient scope (seconds, consume-then-expire) ─────
     BlackboardKey(
@@ -213,6 +262,24 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "dict[str, Any]",
         "brain.agent",
         "User mid-turn interruption event.",
+        event_driven=True,
+    ),
+    # CANDIDATE — Phase 4 (focus-tools / snapshot-identify) owns the producer.
+    # See sprint4_protocol_v2_ecp.md §7.2 / §7.3.
+    BlackboardKey(
+        BbScope.TRANSIENT,
+        "transient/current_attention_hint",  # CANDIDATE — no writer yet (Phase 4)
+        "dict[str, Any]",
+        "brain.telemetry_receiver",
+        "Current Focus / Bounding Box attention hint; expires quickly.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.TRANSIENT,
+        "transient/last_sighting_event",  # CANDIDATE — no writer yet (Phase 4)
+        "dict[str, Any]",
+        "brain.vision.snapshot",
+        "Most recent object / region sighting evidence.",
         event_driven=True,
     ),
 )

@@ -1,11 +1,13 @@
 ---
 name: ar-foundation-api
-description: Use when working with Unity AR Foundation 5.1.x API (Unity 2022.3 LTS only) — XRCameraSubsystem, ARFaceManager, ARPlaneManager, ARRaycastManager, ARAnchor, XRCpuImage, XR Simulation editor workflow. Reject any AR Foundation 6.x or Unity 6 references.
+description: Use when working with Unity AR Foundation 5.1.x / 5.2.x API (Unity 2022.3 LTS only) — XRCameraSubsystem, ARFaceManager, ARPlaneManager, ARRaycastManager, ARAnchor, XRCpuImage, XR Simulation editor workflow. Reject any AR Foundation 6.x or Unity 6 references.
 ---
 
 # Ar-Foundation-Api Skill
 
-This skill provides comprehensive documentation for **Unity AR Foundation 5.1.x**, specifically targeting **Unity 2022.3 LTS**. It covers various AR Foundation features, APIs, and best practices.
+> ⚠️ **NOTICE (2026-04-29)** — 工作区版本锁已从 AR Foundation **5.1.5 升至 5.2.2**（含 ARCore/ARKit），原因是 ARCore XR Plugin 5.2.2 才把 `libarcore_sdk_c.so` 改 16KB ELF 对齐，满足 Android 15+ Play 商店硬性要求。本 SKILL 文档主体仍以 5.1.x 蒸馏，**5.1 → 5.2 我们用到的 API 面（`XRCameraSubsystem` / `ARCameraManager.frameReceived` / `ARCameraBackground.material` / `ARPlane.extents` / `XRCpuImage` / XR Simulation）未变**，可继续作为参考。详见 `.cursor/rules/ar-foundation.mdc` §0–§1。
+
+This skill provides comprehensive documentation for **Unity AR Foundation 5.1.x / 5.2.x**, specifically targeting **Unity 2022.3 LTS** (currently 2022.3.62f3). It covers various AR Foundation features, APIs, and best practices.
 
 ## Governance Rules
 - **STRICTLY Unity 2022.3 LTS + AR Foundation 5.1.x only.**

@@ -10,5 +10,13 @@
 | `ECS_RUN_REPORTS/README.md` | ECS / 远端 **独立跑报告** 命名规则（防与主矩阵冲突） |
 | `mobile_runtime_harness_zh.md` | **真机** Runtime HUD / 自检 / 日志路径 / 与 F3、Mint 的关系 |
 | `unity_channels_audit_mobile_zh.md` | **多通道审计**：视频/音频/RPC/DataChannel、无视频能否对话、Launcher 布局、自检顺序 |
+| `brain_connected_black_video_20260425.md` | Sprint3 黑屏/视频首帧/音频断续/最终 smoke 复盘 |
+| `sprint3_effective_lessons_for_sprint4_zh.md` | Sprint3 真机测试有效经验、有效遗留问题、测试束噪声筛选与 Sprint4 输入 |
+| `unity/ArSpike/README.md` | **补充**：独立 AR 探针工程说明（AF 5.1.5、与 ParrotDev 对齐、**非** LiveKit 集成束） |
+
+### 补充验收（Sprint3 完成后、不计入 Dev 总线合同）
+
+1. **AC12**：`unity/ArSpike` 与主工程 **AR Foundation 5.1.5** / `xr.management` 解析路径一致（见该目录 `README.md`）。
+2. **AC12b**：活动平台 **Android** 下 **Build And Run** 成功，真机默认模板 **平面检测 / 放置** demo 可跑 — **仅验证 AR 栈**，不替代 `ParrotDev` + LiveKit + Brain 的 AC1–AC11。
 
 **勿提交**：JWT、Mint secret、完整 `parrot_config.json`（真文件仍 gitignore，见仓库根 `.gitignore`）。

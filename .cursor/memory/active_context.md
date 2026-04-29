@@ -1,14 +1,33 @@
 # 当前进度与下一步
 
-> 最后更新: 2026-04-25 (Sprint 3 真机测试束暴露多通道生命周期问题；Sprint 4 开始前需先做测试束/产品设计隔离)
-> **当前阶段**: **Sprint 3 真机测试中** — Dev.unity 是集成测试舞台（非最终 AR App 场景），AC1-AC8 验收用例待用户跑完反馈
+> 最后更新: 2026-04-29 晚 (Sprint 4 协议升级 Phase 1 / ECP-minimal 已落地 + 审计回路完成；ArSpike 工作区已奠基 + ECP DTO 迁移；**Phase 3 前置调研已收口**，决策索引 + skill 拆分已落地；**Android 15+ 16KB 对齐补丁已合入** — LiveKit SDK pin → main HEAD `7d868ef` (FFI v0.12.53)，ARCore/ARFoundation/ARKit 5.1.5 → 5.2.2，Editor 2022.3.62f3 不动，C# 代码 0 处需改)
+> **当前阶段**: **Sprint 4 协议升级 Phase 1 已完成 + Phase 3 前置调研已收口**
+> - Phase 1 = ECP-minimal：Pydantic schema (`src/parrot/shared/ecp.py`) + `_rpc_bridge` mirror + Unity DTO/handler + 19 项 pytest 全绿
+> - 审计回路完成（A1-A5 必修已全部修复，B1-B5 推迟 + DRIFT NOTE 已留档）
+> - ArSpike 已成为正式 AR App 接口工作区；EcpDtos.cs 已迁入 `unity/ArSpike/Assets/Scripts/ParrotApp/RPC/`
+> - **Phase 3 前置调研产物已落地**（2026-04-29 晚）：
+>   - 厚稿：`docs/sprint4_research/result/05_lifecycle_and_defensive_design.md`（Phase A/B + 三段式）
+>   - 薄索引（Phase 3 实现 chat 起步页）：`docs/sprint4_research/result/INDEX_for_phase3.md`
+>   - skill 拆分：保留 `livekit-unity-video-publish/`（数据流主题）+ 新建 `livekit-unity-lifecycle/`（lifecycle / 防御性主题）；两份 IMPL_REF 已合入对应主题的 Patch
+>   - `result/01` 末尾已合入 2026-04-29 补遗
+> - **下一步**：fork 新 chat 进 Sprint 4 Phase 3 实现（按 `INDEX_for_phase3.md` §1/§2/§3 推进）。启动提示词已写在该索引 §6。
+>
+> **必读护栏（Phase 2/3/4 启动前）**: `.cursor/memory/architecture/sprint4_ecp_minimal_audit_20260429.md` §"不允许误读" + Phase 2 入场清单
+> **AR 工作区聚合入口**: `.cursor/memory/architecture/ar_workspace_index.md`
+> **Sprint4 协议三件套**:
+> - `.cursor/memory/architecture/sprint4_pre_entry_prompt_and_plan.md` — 前置入口
+> - `.cursor/memory/architecture/sprint4_protocol_ecp_background_20260429.md` — 背景锚点（用户原话 + RIT/BT/BT 森林边界）
+> - `.cursor/memory/architecture/sprint4_protocol_v2_ecp.md` — 正式设计稿
 >
 > **Dev.unity 定位说明**: Dev.unity = Editor + 真机 **集成测试场景**，用来验证 Bus/Brain/LiveKit/AR Foundation 各层接缝。不是最终要上线的 AR App 场景；AR App 前端（Launcher.unity + AR 主场景）在 P2.5 测试完成后独立搭建。
+> **ArSpike 定位说明**: `unity/ArSpike` = **仅 AR 栈**探针（AR Mobile Template，AF 5.1.5 与 `ParrotDev` 对齐），**不含** LiveKit/Brain；用于打包与真机默认平面/放置 demo，**不替代** Dev.unity 总线验收。详见 `unity/ArSpike/README.md`。
 >
 > **Sprint 4 前置警告 (2026-04-25)**: Sprint 3 的真机测试脚本、Launcher→Dev 临时流程、Runtime HUD、自检按钮、WebCam fallback、`FindObjectOfType` 自动补绑定、3 秒等待、自诊断日志等，只能作为 **P2.5 测试束 / 事故记录 / 设计输入**。它们**不得**被当作 Sprint 4 AR App 的启动流程、连接流程或产品架构原型。Sprint 4 开始前必须先完成“有效内容提炼 + 测试束隔离 + AR App 启动设计”，再允许从 Sprint 3 代码或技能中借鉴实现片段。
 >
-> **Sprint 3 完成报告 (in_testing)**: `.cursor/memory/architecture/sprint3_completion_report_20260423.md` — 测试中持续更新 AC 验收栏
+> **Sprint 3 完成报告 (ratified)**: `.cursor/memory/architecture/sprint3_completion_report_20260423.md` — 2026-04-26 真机联调确认连接/AR/RPC/视频/语音骨架跑通；剩余转 Sprint4 前置
+> **Sprint 3 有效经验提炼**: `docs/test/p2_5/sprint3_effective_lessons_for_sprint4_zh.md` — 真正有效遗留问题、测试束噪声、Sprint4 输入
 > **Sprint 4 前置入口**: `.cursor/memory/architecture/sprint4_pre_entry_prompt_and_plan.md` — 新 Chat 启动提示词 + 测试束隔离 + 有效能力提炼 + 最高效执行顺序
+> **AR App Flow / UI 设计基线**: `.cursor/memory/architecture/ar_app_flow_ui_design.md` — 启动页、HUD/工具柜、2D 工作区、放大镜、注意力框、功能入口与开放问题
 > **Sprint 3 开工提示词**: `.cursor/memory/architecture/sprint3_kickoff_prompt.md`
 > **Sprint 2 完成报告 (ratified)**: `.cursor/memory/architecture/sprint2_completion_report_20260423.md`
 >
@@ -21,10 +40,10 @@
 > ```
 > 现在
 >  │
->  ├─ [Sprint 3 测试] Dev.unity 真机验收 AC1-AC8
+>  ├─ [Sprint 3 测试] Dev.unity 真机验收 AC1-AC11；**补充** ArSpike AC12（仅 AR 基线，见下文）
 >  │    目标: 确认 Token Mint / AR 平面 / GOSLO 放置 / 两轴模式 / Brain RPC / 音频轨 / 视频轨 / DataChannel 生命周期全通
 >  │    工具: adb logcat + python src/scripts/tail_obs_log.py --stream both
->  │    反馈: 用户测试 → 补 Bug → 更新 sprint3_completion_report AC 栏 → 形成 Sprint3 测试束事故/经验提炼 → ratified
+>  │    状态: ✅ smoke 已通过；连接/AR/LiveKit/Gemini 骨架跑通；有效遗留已转 `sprint3_effective_lessons_for_sprint4_zh.md`；ArSpike 独立探针见 AC12
 >  │
 >  ├─ [Sprint 4 前置隔离] 测试束审计/提炼 + AR App 启动设计
 >  │    前提: Sprint 3 真机测试完成或至少拿到足够日志证明多通道生命周期问题
@@ -42,7 +61,7 @@
 >  │
 >  ├─ [AR 工作区搭建] 基于已验证的各层接缝，独立构建 AR App 前端
 >  │    内容: Launcher.unity 正式场景 + AR 主场景 + UI 完善 + GOSLO.glb 真模型
->  │    参考: ar_app_plan.md + ar_camera_interaction_survey.md
+>  │    参考: ar_app_flow_ui_design.md + ar_camera_interaction_survey.md；ar_app_plan.md 仅作早期问卷追溯
 >  │    注意: 不重建后端！只是前端工程，所有 Brain/Bus/DSG 接口复用 Sprint 3-4 已验证的版本
 >  │
 >  └─ [各模块独立开发] AR 工作区稳定后，按模块边界拆分独立迭代
@@ -91,18 +110,20 @@
 > **P2 里程碑**: `.cursor/memory/milestone_p2.md` (P2 已完成, 历史归档)
 > 同步工具: `.cursor/memory/commit_guidelines.md` + `infra/sync-castle.ps1`
 >
-> **Sprint 3 验收用例 (用户测试中，反馈后更新下方栏)**:
->   AC1 ⬜ IQOO NEO9 → Launcher 权限弹窗 → 全部允许 → 就绪
->   AC2 ⬜ 点连接 → Token Mint 成功 → 房间连接 → "连接成功"
->   AC3 ⬜ AR 场景加载 → Brain onSceneReady → GOSLO 问候语播放
->   AC4 ⬜ 点 AR 平面 → GOSLO 放置 → onGosloPlaced RPC 上报
->   AC5 ⬜ 说"视频全开" → set_video_tier → BB=VIDEO_FULL → Unity track 重建
->   AC6 ⬜ 说"视频关闭" → VIDEO_OFF → track mute → DSG 切 PASSIVE
->   AC7 ⬜ 断网 30s → Supervisor 降级 → 恢复自动升档
->   AC8 ⬜ SceneProfileManager 切换 → setScene RPC → Injector C3/C4 更新
->   AC9 ⬜ 真机麦克风轨 → MicrophonePublisher publishing → Brain/Gemini 侧有订阅/可对话（Brain 未开时必须标为“无人消费”，不是 Unity 失败）
->   AC10 ⬜ 真机视频轨 → AR/WebCam/测试源至少有首帧 → LiveKit publish 成功 → Brain/Gemini/identify_object 消费侧能区分“发布成功”和“有真实帧”
->   AC11 ⬜ RPC / DataChannel 对表 → Brain→Unity RPC、Unity→Brain RPC、Lossy DataChannel 各自日志有独立标识，不与视频/音频轨混淆
+> **Sprint 3 验收用例 (2026-04-26 smoke 收口状态)**:
+>   AC1 ✅ IQOO NEO9 → Launcher 权限弹窗 → 全部允许 → 就绪（smoke）
+>   AC2 ✅ 点连接 → Token Mint 成功 → 房间连接 → "连接成功"（smoke）
+>   AC3 ✅ AR 场景加载 → Brain onSceneReady → GOSLO 问候语播放（单问候修复后 smoke）
+>   AC4 ✅/⚠️ AR Foundation/ARCore 基本链路到 `SessionTracking`；正式 AR App 场景与交互留 Sprint4/AR 工作区独立搭建
+>   AC5 ✅ 视频主通道 fresh frames；Gemini 能描述画面；tier ack/升级策略转协议 V2
+>   AC6 ⚠️ VIDEO_OFF / mute / DSG PASSIVE 不再作为 Sprint3 连接阻塞；作为 Sprint4 视频生命周期用例保留
+>   AC7 ⚠️ 断网/前后台/重连策略转 Sprint4 WebRTC 生命周期设计；Sprint3 仅确认基本连接 smoke
+>   AC8 ✅/⚠️ `setScene` / SceneProfile 骨架存在；上下文注入 API 漂移与协议 V2 转 Sprint4
+>   AC9 ✅ 真机麦克风轨 baseline 可用；外放回声/蓝牙/输入路由转 Sprint4 音频入口设计
+>   AC10 ✅ 真机视频轨具备 fresh frames；黑屏问题根因和修复见 `brain_connected_black_video_20260425.md`
+>   AC11 ✅/⚠️ RPC RTT 约 129ms；DataChannel/手势消费侧作为 Sprint4/P2.5 扩展继续对表
+>   AC12 ✅ `unity/ArSpike`：AF 5.1.5 + 包/锁与 `ParrotDev` 对齐（无 LiveKit/Brain）；`unity/ArSpike/README.md`。
+>   AC12b ✅ Build Settings 将**活动平台**切至 **Android** 后 **Build And Run** 成功，真机可跑模板默认平面/放置 demo（与总线无关的 **AR 栈基线**）。
 
 ---
 
@@ -128,7 +149,10 @@ GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 
 ---
 
-## 当前阶段: Sprint 0 前置规划 (进 Sprint 0 代码前的流程约束)
+## 历史阶段留档：Sprint 0 前置 → Sprint 1-3 真机 smoke (已收口, 仅作追溯)
+
+> 以下章节是 Sprint 0–3 的实施留档与决策记录，**不代表当前阶段**。当前阶段以本文头部为准（Sprint 4 协议升级 Phase 1 已落地 / Phase 3 调研待启）。
+> 完整 Sprint 报告归档见 `INDEX.md` §1.5 sprint_archive。
 
 ### 基础设施状态 (已验证, 无待办)
 - Castle Brain Agent: 运行中 (tmux `brain`, worker `AW_Y3QgXUuvtFKD`)
@@ -289,22 +313,24 @@ GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 
 ### 下一步
 
-**当前真实下一步 (2026-04-25，覆盖旧 Sprint0/Sprint1 历史排期口径):**
+**当前真实下一步 (2026-04-29，已覆盖 2026-04-25 口径):**
 
-1. **先完成 Sprint 3 真机测试对表**：跑 Launcher/Mint/Dev 真机包，收集 HUD 自检、adb logcat、ECS Brain/LiveKit 日志，确认 AC1-AC11。没有足够真机日志前，不进入 Sprint4 产品设计实现。
-2. **写 Sprint3 有效经验独立文件**：从测试束中提炼“可保留能力 / 有效踩坑 / 错误临时设计 / 应迁入测试留档”，作为 Sprint4 的设计输入，而不是把测试代码直接升级为产品代码。
-3. **先做 Sprint4 AR App 启动/连接调研与设计**：结合外部 AR/游戏/机器人控制 app 启动流程经验 + 本项目需求 + LiveKit/client-sdk-unity 能力边界，独立产出 App 启动/权限/连接/AR 会话/前后台/重连设计。
-4. **再进入 Sprint4 数据流实现**：captureSnapshot、相机模式补充通道、identify_object Path1、便签 UI、食指 perching 等仍是 Sprint4 内容，但必须能解释其在未来 App 生命周期中的位置。
-5. **最后再回写技能**：`.cursor/skills/livekit-unity-video-publish/IMPL_REF.md` 与 `SKILL.md` 等到 Sprint4 设计明确后再整理，不急于现在把当前测试束 ratify 为实现参考。
+1. **Sprint4 协议 Phase 1 已完成**：ECP-minimal 落地 + 审计回路修复。代码状态：`src/parrot/shared/ecp.py` + `_rpc_bridge` mirror + Unity DTO/handler + 19 项 pytest 全绿。
+2. **下一步：Phase 3 前置调研（在新 chat 启动）**：
+   - 主题：LiveKit Unity SDK + AR Foundation lifecycle / 重连 / 切屏 / 切设备（蓝牙/扬声器/麦克风）/ 视频质量切换 / 防御性机制
+   - 输入：现有 Gemini deepResearch 策略性记录 + `docs/sprint4_research/result/01_*.md` + Sprint3 有效经验 + skill 验证（`client-sdk-unity` / `livekit-unity-video-publish` / `ar-foundation-api` / `ar-foundation-samples`）
+   - 流程：先策略广度搜集 → 用户筛选 → 显式调用 skill 验证具体接口 → 产物落到 `livekit-unity-video-publish/IMPL_REF.md` 完善 + 新候选 skill (lifecycle / 防御性设计) + `ar_workspace_index.md` 登记
+3. **Phase 3 实现暂缓**：等调研产出后回到现 chat 的 fork（ECP 审计完成那一轮）继续；不在调研 chat 里直接做实现。
+4. **后端 Python 接口提炼推迟**：不从 ParrotDev 测试代码"屎里淘金"，等 Phase 3/4 部分跑通后再决定哪些接口值得提炼。
+5. **AR 工作区文档路由已修复**：`workspace.mdc` / `INDEX.md` / `active_context.md` / `ar-foundation.mdc` / `livekit-unity-sdk.mdc` 已对齐 Sprint4 现状；新增 `architecture/ar_workspace_index.md` 作为 AR 任务聚合入口。
 
-**本周关键路径 (按顺序, 每步完成再进下一步):**
+**当前关键路径 (按顺序, 每步完成再进下一步):**
 
-1. **用户确认** `ar_feature_vision.md` §六 + §八 + §3.5 三合一 (不反对即通过)
-2. **执行** `sprint0_preflight.md` 的 14 项 S0.A-S0.N 任务 (四层时间轴 + Cursor 合约 + ADR + 三闸门 + 版本锁 + tentative/ratified 两态机)
-3. **执行** `ar_feature_implementation_plan.md` Sprint 0 的 S0.1-S0.7 (基建修缮) → 打 tag `v-s0`
-4. **执行** Sprint 1 自知底座 (Blackboard 扩域 + 三层调度收口 S1.A-G) → 打 tag `v-s1`
-5. **顺序执行** Sprint 2 两轴 → Sprint 3 AR 桌面 MVP → Sprint 4 玩法糖衣 + identify_object 升级
-6. 每 Sprint 严格按**三闸门验收** (`sprint0_preflight.md` §4), 不追求完美, 不做 P3 的事
+1. **Sprint4 前置收口**：以 `sprint4_pre_entry_prompt_and_plan.md` 为任务入口，停止继续堆 Sprint3 测试束。
+2. **App Flow / UI 基线**：以 `ar_app_flow_ui_design.md` 为当前真源，继续筛选启动页菜单、HUD/工具柜、放大镜、注意力框。
+3. **数据流与协议 V2**：设计 `captureSnapshot`、`SnapshotEvent`、`SightingEvent`、`EcpCommand` / `EcpAck`、DSG L2-B 接口。
+4. **Sprint4 实现顺序**：先实现能验证协议升级的最小功能，再扩展 2D 工作区、纸条、猫爪、主题皮肤。
+5. **历史计划只作追溯**：`ar_app_plan.md`、旧 Sprint 报告、旧问卷不再定义当前 App Flow。
 
 **Sprint 过程中按需补 skill/rule** (不提前):
 - Sprint 2 末: `rules/scheduler-three-layer.mdc` — E2/E5 与三层意识收口约束
@@ -323,7 +349,8 @@ GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 - [ ] 像素画小纸条 (lore/ideas.md) MVP: Unity UI Canvas + 2D 像素风 Sprite + RPC 触发
 
 **P2.5 准备:**
-- [x] AR App 工程计划: `.cursor/memory/architecture/ar_app_plan.md` (硬事实+调研索引+问卷)
+- [x] AR App Flow / UI 设计基线: `.cursor/memory/architecture/ar_app_flow_ui_design.md` (启动页+HUD/工具柜+工具入口+开放问题)
+- [x] AR App 工程计划追溯: `.cursor/memory/architecture/ar_app_plan.md` (早期硬事实+调研索引+问卷，不再作为当前 UI 真源)
 - [x] 视频流采样 skill: `.cursor/skills/livekit-unity-video-publish/SKILL.md` (5段接缝: Unity推流端+Gemini消费端+DSG预留接口+identify_object截帧路径)
 - [x] AR Foundation 规则: `.cursor/rules/ar-foundation.mdc` (版本约束+5条已知坑)
 - [ ] Cursor 工作区规则: .cursor/rules/ 模块隔离策略（按官方推荐）

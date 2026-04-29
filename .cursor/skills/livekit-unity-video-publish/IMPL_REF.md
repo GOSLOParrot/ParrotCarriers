@@ -1,6 +1,6 @@
 ---
 name: livekit-unity-video-publish
-description: Use when working with the AR video pipeline — Unity publish to LiveKit, Gemini Live consume, Python on-demand frame capture, DSG Worker interface
+description: Use when working with the AR video pipeline — Unity publish to LiveKit, Gemini Live consume, Python on-demand frame capture, DSG Worker interface, captureSnapshot RPC vs ByteStream, AR camera blit / RenderTexture / TextureVideoSource, Simulcast / VideoTier 推流配置, 黑帧 / stale 帧 / 首帧门
 ---
 
 # 视频流接缝：一流多采样 + AR 版本锁
@@ -9,7 +9,11 @@ ParrotCarriers 的视频管线: Unity 推一条可门控的共享主视频轨到
 
 > **原则**: 区分“已实现代码”“已验证现象”“Sprint4 设计”。不要把 HUD 的 `Video pub: yes` 当成真实画面健康；必须同时看首帧、新鲜帧、AR profile、tier ack。
 >
-> **最后验证**: 2026-04-25 P2.5 ECS 测试 (`docs/test/p2_5/brain_connected_black_video_20260425.md`) — Brain 已连上并可对话，但发现 Android 包中 `UNITY_AR_FOUNDATION off` 导致 AR 路径被编译掉，视频轨存在但帧 stale/黑屏。已修编译宏和诊断面。
+> **配套 skill**：`.cursor/skills/livekit-unity-lifecycle/IMPL_REF.md` —— Room 重连 / 切后台 / graceful shutdown / connection_health / ARCore 后台 blank / setVideoTier 副作用 都搬到那边；本 skill 只负责**数据流主题**（推流 / 多采样 / 截帧 / 黑帧门）。本 skill 与 lifecycle skill 互相不重叠，遇到冲突以本 skill 为数据流真源、lifecycle skill 为 lifecycle 真源。
+>
+> **本 skill 边界**：仅描述 Unity → LiveKit Server → 多消费者的数据流接缝。**不**承载 Room 生命周期、连接健康、关闭流程；**不**承载 AppLifecycleState FSM；**不**承载 audio route policy。
+>
+> **最后验证**: 2026-04-29 — Sprint4 Phase 3 前置调研产物（`docs/sprint4_research/result/05_lifecycle_and_defensive_design.md`）+ Patch 1/2/5/6/8/10 合入。在此之前最近一次真机验证 2026-04-25 P2.5 ECS 测试（`docs/test/p2_5/brain_connected_black_video_20260425.md`），AR 路径未进入 Android 构建已修复，待真机回归。
 
 ---
 
@@ -97,10 +101,13 @@ var options = new TrackPublishOptions {
         MaxFramerate = initFps,            // GeminiOnly 默认 15fps
     },
     Source = TrackSource.SourceCamera,     // ← 必填，否则 Brain 按 SOURCE_UNKNOWN detach
+    Simulcast = false,                     // ← Sprint4 默认 false（单消费者拓扑）；见陷阱 #15
 };
 ```
 
 `VIDEO_FULL` / `VIDEO_BURST` 不是常态默认。Sprint4 默认应优先 Gemini Live 低延迟体验，只有 A10/识别任务需要时短时升档。
+
+**setVideoTier 切换路径**：FFI bridge **不暴露** `RTCRtpSender.SetParameters`，运行时调码率/帧率**无 API**。VideoTier 切换只能：`UnpublishTrack` → cool-down `T_TIER_COOLDOWN` → `PublishTrack(new options)` → 等 First frame → 回 ECP `applied`。完整流程 + 黑帧时长验收（spike S5）见 `livekit-unity-lifecycle/IMPL_REF.md` §6 + §10 可调参数表。
 
 **音频推流对偶**（`MicrophonePublisher.cs`，同样必填 Source）:
 ```csharp
@@ -152,17 +159,32 @@ room.LocalParticipant.RegisterRpcMethod("captureSnapshot", HandleCaptureSnapshot
 
 private async Task<string> HandleCaptureSnapshot(RpcInvocationData data)
 {
-    // AsyncGPUReadback.Request(_rt) — 不阻塞主线程
-    // 回调中 EncodeToJPG(quality: 75)
-    // 返回 JSON: { "snapshot_id": "<uuid>", "timestamp": <unix_ms>, "data": "<base64>" }
+    // 见下方两条候选路径；不要在主线程 ReadPixels（陷阱 #2）
+    // 返回 JSON: { "snapshot_id": "<uuid>", "timestamp": <unix_ms>, "data": "<base64>" } 或 ByteStream descriptor
 }
 ```
 
-**传输方式选择**:
-- RPC payload 上限 15KB — JPEG 75% at 1280x720 约 80-100KB，**超出上限**
-- 方案 A: 压缩到 480x270 约 8-12KB — 可走 RPC response
-- 方案 B: 使用 `LocalParticipant.SendFile()` / ByteStream API (LiveKit SDK v1.3.5+)
-- 方案 C: 先发 RPC 触发，再用 DataStream 传图
+**两条候选采集路径**（spike S4 选定主路径）：
+
+| 路径 | 来源 | 何时用 | 何时不可用 |
+|:--|:--|:--|:--|
+| **A. `XRCpuImage.ConvertAsync`** | `ARCameraManager.TryAcquireLatestCpuImage` | AR 路径，需要相机原始 YUV / 高质量 JPEG，且非阻塞主线程 | WebCam fallback / XR Simulation 不可用 |
+| **B. `AsyncGPUReadback.Request(_rt)`** | 共享 `_rt` RenderTexture | 任何路径都通用（AR / WebCam / Simulation），与现有推流管线复用 `_rt` | GPU readback 1–2 帧延迟 |
+
+**Sprint4 实现建议**：
+- AR 路径优先 A（`ARCameraManager.TryAcquireLatestCpuImage` + `ConvertAsync`，arfoundation-samples `CpuImageSample.cs` 实现模式可直抄）；
+- WebCam fallback / XR Simulation 路径用 B；
+- 在 `ARVideoPublisher` 上加薄抽象 `IFrameCapturer`，两路径都实现，运行时按 `SceneProfile` 选择；
+- **绝不**在 RPC handler 里同步 `Texture2D.ReadPixels`（主线程 50–200ms 阻塞 → 心跳超时 → watchdog 误判 → 雪崩）。
+
+**传输方式选择**（基于 RPC ~15KB 上限）：
+
+| 大小 | 路径 | 备注 |
+|:--|:--|:--|
+| ≤ 15KB（480x270 JPEG q75 约 8-12KB） | RPC response | Sprint3 已用此路径，单次 RTT |
+| > 15KB（≥ 50KB 高质量 JPEG / 多张） | `LocalParticipant.SendFile()` / Room.RegisterByteStreamHandler / SendStreamReader | LiveKit Unity SDK 已支持；Phase 3 spike S3 测 RTT P95，验收 P50<500ms / P95<2s / 失败<1% |
+
+阈值参数（`BYTESTREAM_RPC_THRESHOLD_BYTES` 默认 15360）见 `livekit-unity-lifecycle/IMPL_REF.md` §10 可调参数表。
 
 **当前状态**: 未实现，是 `identify_object` 视觉升级的前置件。
 
@@ -233,27 +255,35 @@ class DSGProcessor(BaseProcessor):  # Phase 3+, 需要 A10 GPU
 | 平台 | 麦克风 | 摄像头 | 要点 |
 |:---|:---|:---|:---|
 | iOS | ✓ (需 `UIBackgroundModes = audio`) | ✗ 被系统冻结 | 后台时 `ARCameraManager.frameReceived` 停 → _rt 不再更新 → LiveKit 持续推最后一帧 |
-| Android | ✓ | ✓ | 需 Foreground Service（`CAMERA` 类型）+ 持久通知 |
+| Android | ✓ | ✓（受 ARCore 主动 blank 影响，见下方） | 需 Foreground Service（`CAMERA` 类型）+ 持久通知 |
 | Unity Editor | ✓ | ✓ | Editor 失焦默认暂停，需 `Run In Background = true` |
 
-**iOS 后果尤其坑**：Gemini 会以为画面一直没变，出现"鹦鹉在描述半小时前的东西"。修正路径见 §6。
+**iOS 后果尤其坑**：Gemini 会以为画面一直没变，出现"鹦鹉在描述半小时前的东西"。后台/前台过渡的处置策略见 `livekit-unity-lifecycle/IMPL_REF.md` §5（不在本 skill 重复）。
+
+**Android ARCore 黑屏额外坑**（Patch 5 调研 2026-04-29）：
+- ARCore 在 pause 时**主动**把外部 OES texture blank 掉（Unity issuetracker `arcore-black-screen-on-session-pause` 已 wontfix；arfoundation-samples #592 same）。`_arCameraBackground.material` 在 pause / `ARSession.state != SessionTracking` 时**不可信**，Blit 出黑帧。
+- 数据流侧的处置：`OnApplicationPause(true)` 暂停 Blit（但不 unpublish track）；`OnApplicationPause(false)` 后等 `ARSession.state == SessionTracking` + 一次新 `frameReceived` 实际触发再恢复 Blit。完整 lifecycle 联动见 lifecycle skill §5。
+- 高频 ARSession pause/resume 会触发 ARCore 内部 crash（google-ar/arcore-android-sdk #1736 / #1309）；前后摄切换 / 重启 AR 限频 ≥ 2s（参数 `T_AR_SESSION_TOGGLE_MIN`）。
 
 ---
 
 ## 陷阱
 
-1. **RPC payload 上限 15KB** — 全尺寸 JPEG 超出，需降分辨率或用 ByteStream API
+1. **RPC payload 上限 15KB** — 全尺寸 JPEG 超出，需降分辨率或用 ByteStream / SendFile API
 2. **AsyncGPUReadback 而非 ReadPixels** — ReadPixels 阻塞 Unity 主线程 50-200ms
-3. **不走 DataChannel 传图** — Lossy DataChannel 上限约 1200B，Reliable 也不适合大 payload
+3. **大于 15KB 的图片必须走 ByteStream** — `LocalParticipant.SendFile()` / `Room.RegisterByteStreamHandler` / `SendStreamReader` 在 LiveKit Unity SDK 已暴露；不要尝试 RPC 分片或 DataChannel 拼包（Lossy DataChannel 上限约 1200B，Reliable 也不适合大 payload）。阈值参数 `BYTESTREAM_RPC_THRESHOLD_BYTES` 见 lifecycle skill §10
 4. **Gemini 黑盒** — `video_input=True` 后 Python 代码取不到 Gemini 看到的帧，必须走 B1-B2
 5. **`TrackPublishOptions.Source` 必填**（P2 踩坑）— 漏填 → `SOURCE_UNKNOWN` → Brain 白名单 detach → 该轨完全看不到/听不到。音视频两路都有这个坑
 6. **Webcam fallback 首帧黑**（P2 踩坑）— 推流前必须 warmup Blit 有效帧到 `_rt`；纯等 `didUpdateThisFrame` 不够
 7. **Windows `WebCamTexture.devices[0]` 常是虚拟摄像头**（P2 踩坑）— 用启发式过滤 `obs/virtual/droidcam/...`，并打印完整设备列表方便诊断
 8. **`livekit-agents[images]` extra 必装** — 缺 Pillow 则 Gemini 一帧都看不到，栈底 ImportError（P2 踩坑）
-9. **反复 Play/Stop 会触发 identity 抢占 + NRE**（P2 踩坑）— LiveKit grace period 约 20-30s；调试时 Stop 后等够时间再复测；PublishTrack 前加 `IsConnected` guard
-10. **`UNITY_AR_FOUNDATION` 不会自动出现**（P2.5 踩坑）— 包已安装但宏未定义时，真机 AR 路径会被编译掉，HUD 显示 `AR: UNITY_AR_FOUNDATION off`。
-11. **Video pub yes 不是画面健康**（P2.5 踩坑）— LiveKit track 可存在但 `_rt` 长时间不更新；必须看 `HasFreshFrame` / `lastAge`。
-12. **只安装 provider 不等于启用 provider** — AR Foundation 官方说明目标平台必须有 provider plug-in；Unity 还需要在 XR Plug-in Management 为 Android/iOS 启用对应 loader。
+9. **反复 Play/Stop 会触发 identity 抢占 + NRE**（P2 踩坑）— LiveKit grace period 约 20-30s；调试时 Stop 后等够时间再复测；PublishTrack 前加 `IsConnected` guard。**完整 graceful shutdown 流程**（unpublish→Disconnect→等事件→Dispose→cool-down）搬到 `livekit-unity-lifecycle/IMPL_REF.md` §2，本 skill 不再展开
+10. **`UNITY_AR_FOUNDATION` 不会自动出现**（P2.5 踩坑）— 包已安装但宏未定义时，真机 AR 路径会被编译掉，HUD 显示 `AR: UNITY_AR_FOUNDATION off`
+11. **Video pub yes 不是画面健康**（P2.5 踩坑）— LiveKit track 可存在但 `_rt` 长时间不更新；必须看 `HasFreshFrame` / `lastAge`
+12. **只安装 provider 不等于启用 provider** — AR Foundation 官方说明目标平台必须有 provider plug-in；Unity 还需要在 XR Plug-in Management 为 Android/iOS 启用对应 loader
+13. **ARCore 后台主动 blank OES 纹理**（Sprint4 调研 2026-04-29）— 详见 §7 Android 部分；过渡期 Blit 必须暂停，否则会推黑帧给 Gemini 污染 turn
+14. **`RTCRtpSender.SetParameters` 在 LiveKit Unity SDK 不暴露**（Sprint4 调研 2026-04-29）— FFI bridge 没透传；运行时调 maxBitrate/maxFramerate **无 API**。VideoTier 切换只能 `UnpublishTrack`+`PublishTrack`（见 §2 setVideoTier 切换路径），并加 cool-down `T_TIER_COOLDOWN`（≥ 3s）防 livekit/livekit #854 abandoned publish
+15. **Simulcast 默认 true 但单消费者拓扑不需要**（Sprint4 调研 2026-04-29）— `TrackPublishOptions.Simulcast=true` 在移动端上多路硬编 → CPU 飙升 + 发热降频；client-sdk-flutter #166 揭示 simulcast on 时切层会黑屏。Sprint4 默认 `Simulcast=false`，A10 多档订阅时再单独 spike
 
 ---
 
@@ -261,7 +291,7 @@ class DSGProcessor(BaseProcessor):  # Phase 3+, 需要 A10 GPU
 
 | 想了解… | 去哪里 |
 |:--------|:------|
-| 视频发布 Unity 代码 | `unity/ParrotDev/Assets/Scripts/LiveKit/ARVideoPublisher.cs` |
+| 视频发布 Unity 代码 | `unity/ParrotDev/Assets/Scripts/LiveKit/ARVideoPublisher.cs`（Sprint4 起搬迁到 `unity/ArSpike/Assets/Scripts/ParrotApp/`） |
 | 麦克风发布 Unity 代码 | `unity/ParrotDev/Assets/Scripts/LiveKit/MicrophonePublisher.cs` |
 | Brain Agent 视频输入配置 | `src/parrot/brain/agent.py` |
 | DSG Processor 接口 | `src/parrot/bus/processor_hook.py` |
@@ -271,3 +301,7 @@ class DSGProcessor(BaseProcessor):  # Phase 3+, 需要 A10 GPU
 | P2 连通性测试完整踩坑记录 | `Test/p2/connectivity_report_p2.md` |
 | 总架构图 (mermaid, "一流多采样"出处) | `docs/InfoCollections/Opus/10_architecture_diagram.md` |
 | SemanticNode 类型 | `src/parrot/dsg/l2b_types.py` |
+| **Lifecycle / 防御性 / Graceful shutdown / 重连 / VideoTier 切换 cool-down** | `.cursor/skills/livekit-unity-lifecycle/IMPL_REF.md` |
+| **可调参数表（统一一处）** | `livekit-unity-lifecycle/IMPL_REF.md` §10 |
+| **Sprint4 Phase 3 决策索引** | `docs/sprint4_research/result/INDEX_for_phase3.md` |
+| **Phase 3 厚稿（lifecycle 决策原因）** | `docs/sprint4_research/result/05_lifecycle_and_defensive_design.md` |

@@ -1,11 +1,13 @@
 ---
 name: ar-foundation-samples
-description: Use when looking for concrete AR Foundation 5.1 sample patterns (Unity 2022.3 LTS) — XRCpuImage frame grab, plane detection, image tracking, anchor placement, face/body tracking, Android runtime permissions, XR Simulation setup. Reference implementation from ar-foundation-samples repo.
+description: Use when looking for concrete AR Foundation 5.1 / 5.2 sample patterns (Unity 2022.3 LTS) — XRCpuImage frame grab, plane detection, image tracking, anchor placement, face/body tracking, Android runtime permissions, XR Simulation setup. Reference implementation from ar-foundation-samples repo.
 ---
 
-# AR Foundation Samples (Unity 2022.3 LTS, AR Foundation 5.1) Documentation
+# AR Foundation Samples (Unity 2022.3 LTS, AR Foundation 5.1 / 5.2) Documentation
 
-This skill provides comprehensive documentation and analysis for the `ar-foundation-samples` codebase, specifically targeting Unity 2022.3 LTS with AR Foundation 5.1.x. It includes detailed explanations of various AR features, API usage patterns, configuration best practices, and project structure, all derived from a local code analysis.
+> ⚠️ **NOTICE (2026-04-29)** — 工作区版本锁已升至 AR Foundation 5.2.2（含 ARCore/ARKit），见 `.cursor/rules/ar-foundation.mdc` §0–§1。本 SKILL 蒸馏自 ar-foundation-samples 仓库 5.1 分支，5.1 → 5.2 我们用到的 sample 模式（XRCpuImage 帧抓取、平面、Anchor 等）保持兼容，仍可参考。
+
+This skill provides comprehensive documentation and analysis for the `ar-foundation-samples` codebase, targeting Unity 2022.3 LTS with AR Foundation 5.1.x / 5.2.x. It includes detailed explanations of various AR features, API usage patterns, configuration best practices, and project structure, all derived from a local code analysis.
 
 ## When to Use This Skill
 

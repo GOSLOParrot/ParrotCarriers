@@ -8,7 +8,7 @@ last_reviewed: 2026-04-22
 # AR 特性 P2.5 实施计划
 
 > 创建: 2026-04-21
-> 前置文档: `ar_feature_vision.md` (愿景 + 架构) / `ar_app_plan.md` (需求问卷) / `ar_camera_interaction_survey.md` (玩法问卷) / `audit_identify_object_no_screenshot_20260420.md` (现有坑)
+> 前置文档: `ar_feature_vision.md` (愿景 + 架构) / `ar_app_flow_ui_design.md` (当前 App Flow + UI + 功能入口) / `ar_app_plan.md` (早期需求问卷追溯) / `ar_camera_interaction_survey.md` (玩法问卷) / `audit_identify_object_no_screenshot_20260420.md` (现有坑)
 > 原则: **简单 / 模块化 / 每 Sprint 独立可验收 / 不做不必要的"完美"**
 
 ---

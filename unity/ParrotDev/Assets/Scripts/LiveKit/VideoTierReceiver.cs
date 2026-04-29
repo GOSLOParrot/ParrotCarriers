@@ -11,12 +11,13 @@ using LiveKit;
 /// RPC <c>setVideoTier</c>. DSG mode changes do NOT come through this path —
 /// they live entirely inside the Python Bus and never touch Unity.
 ///
-/// RPC contract (mirrors _rpc_bridge.push_video_tier):
+/// RPC contract (mirrors _rpc_bridge.push_video_tier_result, Sprint4 ECP-minimal):
 ///     method  : setVideoTier
 ///     payload : { "video_tier": "VIDEO_OFF"|"VIDEO_GEMINI_ONLY"|"VIDEO_FULL"|"VIDEO_BURST",
-///                 "reason": "<human-readable cause>" }
-///     reply   : { "status": "ok",    "tier": "...",         "applied": <bool> }
-///             | { "status": "error", "message": "...",      "tier": "..." }
+///                 "reason":     "&lt;human-readable cause&gt;",
+///                 "_ecp":       <see cref="EcpCommandDto"/> }
+///     reply   : EcpAck JSON (status = completed / rejected / expired / failed)
+///             — see <see cref="EcpAckJson"/> for the small reason vocabulary.
 ///
 /// Current behavior: delegates tier commands to <see cref="ARVideoPublisher"/>
 /// and waits for the mute/rebuild result before responding. Brain tools rely
@@ -90,22 +91,30 @@ public class VideoTierReceiver : MonoBehaviour
             Debug.Log($"[VideoTierReceiver] setVideoTier <- {data.CallerIdentity}: {data.Payload}");
         }
 
+        SetVideoTierPayload p = default;
         try
         {
-            var p = JsonUtility.FromJson<SetVideoTierPayload>(data.Payload);
+            p = JsonUtility.FromJson<SetVideoTierPayload>(data.Payload);
+
+            if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
+            {
+                Debug.LogWarning($"[VideoTierReceiver] setVideoTier expired (command_id={p._ecp.command_id})");
+                return EcpAckJson.Expired(p._ecp, $"tier={p.video_tier}");
+            }
+
             var tier = ParseTier(p.video_tier);
             if (tier == VideoTier.Unknown)
             {
                 var msg = $"Unknown video_tier value: {p.video_tier}";
                 Debug.LogWarning($"[VideoTierReceiver] {msg}");
-                return $"{{\"status\":\"error\",\"message\":\"{EscapeJson(msg)}\",\"tier\":\"{EscapeJson(p.video_tier)}\"}}";
+                return EcpAckJson.Rejected(p._ecp, EcpAckJson.ReasonUnknownTier, msg);
             }
 
             if (videoPublisher == null)
             {
                 var msg = "No ARVideoPublisher in scene";
                 Debug.LogWarning($"[VideoTierReceiver] {msg}");
-                return ErrorJson(msg, p.video_tier, "no_video_publisher");
+                return EcpAckJson.Rejected(p._ecp, EcpAckJson.ReasonNoVideoPublisher, msg);
             }
 
             var tcs = new TaskCompletionSource<ARVideoPublisher.TierApplyResult>();
@@ -123,14 +132,20 @@ public class VideoTierReceiver : MonoBehaviour
             var apply = await tcs.Task;
 
             if (!apply.Ok)
-                return ErrorJson(apply.Detail, p.video_tier, apply.Reason);
+                return EcpAckJson.Rejected(p._ecp, apply.Reason, apply.Detail);
 
-            return $"{{\"status\":\"ok\",\"tier\":\"{EscapeJson(p.video_tier)}\",\"applied\":true,\"reason\":\"{EscapeJson(apply.Reason)}\"}}";
+            // ARVideoPublisher reports `applied` / `unchanged` in its result
+            // Reason; both are part of the small ECP reason vocabulary.
+            return EcpAckJson.Completed(
+                p._ecp,
+                EcpFrontendStateDto.ForVideoTier(p.video_tier, p._ecp?.command_id),
+                reason: apply.Reason
+            );
         }
         catch (Exception e)
         {
             Debug.LogError($"[VideoTierReceiver] setVideoTier error: {e.Message}");
-            return $"{{\"status\":\"error\",\"message\":\"{EscapeJson(e.Message)}\"}}";
+            return EcpAckJson.Failed(p._ecp, e.Message);
         }
     }
 
@@ -188,12 +203,6 @@ public class VideoTierReceiver : MonoBehaviour
         }
     }
 
-    private static string EscapeJson(string s) =>
-        s?.Replace("\\", "\\\\").Replace("\"", "\\\"") ?? "";
-
-    private static string ErrorJson(string message, string tier = "", string reason = "rejected") =>
-        $"{{\"status\":\"error\",\"reason\":\"{EscapeJson(reason)}\",\"message\":\"{EscapeJson(message)}\",\"tier\":\"{EscapeJson(tier)}\",\"applied\":false}}";
-
     void OnDestroy()
     {
         var rm = RoomManager.Instance;
@@ -206,5 +215,6 @@ public class VideoTierReceiver : MonoBehaviour
     {
         public string video_tier;
         public string reason;
+        public EcpCommandDto _ecp;
     }
 }
