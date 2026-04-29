@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using LiveKit;
+using LiveKit.Proto;
 using ParrotApp.LiveKit;
 using UnityEngine;
 
