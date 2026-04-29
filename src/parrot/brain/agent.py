@@ -378,14 +378,17 @@ async def brain_entrypoint(ctx: agents.JobContext):
         from parrot.brain.event_ingest import attach_ecp_event_ingest
         from parrot.brain.event_publisher import attach_ecp_event_publisher
         from parrot.brain.observer import register_phase4_observers
+        from parrot.brain import attention_config_handler
         from parrot.dsg.attention.threshold import FocusBboxThreshold
 
         ingest = attach_ecp_event_ingest(ctx.room)
         register_phase4_observers(ingest)
+        attention_config_handler.register(ingest)
         FocusBboxThreshold().register(ingest)
         attach_ecp_event_publisher(ctx.room)
         logger.info(
-            "Sprint4 Phase 4 wired: EcpEventIngest + Observers + FocusBboxThreshold + Publisher"
+            "Sprint4 Phase 4 wired: EcpEventIngest + Observers + AttentionConfigHandler "
+            "+ FocusBboxThreshold + Publisher"
         )
     except Exception:
         logger.exception("Sprint4 Phase 4: EcpEvent wire-up failed")

@@ -110,6 +110,16 @@ class EcpEventType(str, Enum):
     # Tool ① — gesture (optional Phase 4)
     GESTURE_RECOGNIZED = "gesture.recognized"
 
+    # Tool ③ — config Echo (Phase 4 W6-7, F-05 fix). Unity ScriptableObject
+    # `ParrotAttentionConfig` is the source of truth for Δ_focus / Δ_bbox /
+    # threshold / target_ttl_s; Unity publishes this on Room.OnConnected (incl.
+    # reconnect / Brain pipeline switch) so Brain `attention_config_handler`
+    # writes BB `global/attention_thresholds`. payload schema (locked in
+    # entry doc §8.1 L9 + bb_schema.py global/attention_thresholds comment):
+    #   {"delta_focus": float, "delta_bbox": float, "threshold": float,
+    #    "target_ttl_s": float, "schema_version": int = 1}
+    ATTENTION_CONFIG_ECHO = "attention.config.echo"
+
     # Defensive — emitted by `event_ingest` when an inbound EcpEvent fails the
     # 8KB payload cap (so observers / metrics see the rejection instead of a
     # silent drop). Brain-only producer.

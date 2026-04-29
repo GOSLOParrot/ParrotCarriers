@@ -195,7 +195,11 @@ why:         我在 commit message 写 "ParrotAttentionConfig SO ... 留 Unity c
              不知道 Brain 这边谁读。
 considered_intent:    partial — 知道 Unity 半边没做，但没意识到 Brain 半边读取也没做
 requirement_impact:   ❌ 不改 — 显式记录"未接通"，不动 §8 锁定值
-status:               proposed (推荐 entry doc + bb_schema 注释 ≥ 2 处)
+status:               partially-resolved (Unity B chat 2026-04-30 完成 ①+②：
+                      Unity ParrotAttentionConfig SO + AttentionConfigEchoPublisher
+                      + Brain attention_config_handler.py 写 BB；step ③
+                      FocusBboxThreshold 读 BB 仍 deferred — 触动 threshold.py
+                      锁定文件，留给独立 Brain chat 的 1 行 __init__ 改动)
 ```
 
 #### F-06 — `refs.reset_refs_for_session` 未 wire 进 brain/agent.py 的 Room.Disconnected hook

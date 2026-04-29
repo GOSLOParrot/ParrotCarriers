@@ -100,6 +100,14 @@ namespace ParrotApp.Ecp
         // Tool ① — gesture (optional Phase 4)
         public const string GestureRecognized = "gesture.recognized";
 
+        // Tool ③ — config Echo (Phase 4 W6-7, F-05 fix). Unity ScriptableObject
+        // ParrotAttentionConfig publishes Δ / threshold / TTL on Room.OnConnected
+        // (incl. reconnect / Brain pipeline switch). Brain attention_config_handler
+        // writes BB global/attention_thresholds. payload schema:
+        //   {"delta_focus": float, "delta_bbox": float, "threshold": float,
+        //    "target_ttl_s": float, "schema_version": int = 1}
+        public const string AttentionConfigEcho = "attention.config.echo";
+
         // Defensive — emitted by Brain ingest on payload > 8KB
         public const string EventRejectedOversize = "event.rejected.oversize";
     }

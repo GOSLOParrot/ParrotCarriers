@@ -1,8 +1,11 @@
 #if UNITY_EDITOR
 using System.IO;
+using ParrotApp.Attention;
+using ParrotApp.Config;
 using ParrotApp.Ecp;
 using ParrotApp.Hands;
 using ParrotApp.Lifecycle;
+using ParrotApp.LiveKit;
 using ParrotApp.Parrot;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -93,6 +96,30 @@ namespace ParrotApp.EditorTools
             handGo.transform.position = new Vector3(0.3f, 1.0f, 0.4f);
             var handSource = handGo.AddComponent<HandGestureSource>();
 
+            // ── Phase 4 W6-7: Attention (BBox / Focus / Echo) ──────────────
+            // RoomManager: 联机 smoke 时 publisher 用 (本场景为离线 smoke，
+            // EcpEventPublisher.logEvenWhenDropped 默认 true → 在 Console 打 wire JSON)
+            var attentionRootGo = new GameObject("Attention");
+            attentionRootGo.AddComponent<EcpEventPublisher>();
+            attentionRootGo.AddComponent<BBoxController>();
+            attentionRootGo.AddComponent<FocusController>();
+            var echoPub = attentionRootGo.AddComponent<AttentionConfigEchoPublisher>();
+
+            // ParrotAttentionConfig SO: 用 §8.1 L9 锁定起步值；保存到 Assets 让
+            // smoke + 真机一致。如果已存在则复用，避免每次 Build 重写。
+            const string AttentionConfigAssetPath =
+                "Assets/ParrotApp/Config/ParrotAttentionConfig.asset";
+            var attentionConfig =
+                AssetDatabase.LoadAssetAtPath<ParrotAttentionConfig>(AttentionConfigAssetPath);
+            if (attentionConfig == null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(AttentionConfigAssetPath));
+                attentionConfig = ScriptableObject.CreateInstance<ParrotAttentionConfig>();
+                AssetDatabase.CreateAsset(attentionConfig, AttentionConfigAssetPath);
+                AssetDatabase.SaveAssets();
+                Debug.Log($"[ParrotSmokeSceneBuilder] Created {AttentionConfigAssetPath}");
+            }
+
             // ── Wire references via SerializedObject ───────────────────────
             var perchSo = new SerializedObject(perch);
             perchSo.FindProperty("handTracker").objectReferenceValue = handSource;
@@ -104,20 +131,31 @@ namespace ParrotApp.EditorTools
             heartbeatSo.FindProperty("animationDriver").objectReferenceValue = animDriver;
             heartbeatSo.ApplyModifiedPropertiesWithoutUndo();
 
+            var echoSo = new SerializedObject(echoPub);
+            echoSo.FindProperty("config").objectReferenceValue = attentionConfig;
+            echoSo.ApplyModifiedPropertiesWithoutUndo();
+
             // ── Save ───────────────────────────────────────────────────────
             string savePath = EditorUtility.SaveFilePanelInProject(
                 "Save Smoke Scene", "ParrotSmokeScene", "unity",
-                "Choose where to save the W3.A.2/A.3 smoke scene.");
+                "Choose where to save the W3.A.2/A.3 + W6-7 smoke scene.");
             if (!string.IsNullOrEmpty(savePath))
                 EditorSceneManager.SaveScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene(), savePath);
 
             Debug.Log(
                 "[ParrotSmokeSceneBuilder] Scene built.\n" +
+                "── W3.A.2/A.3 (perch + EcpState) ───────────────\n" +
                 "► Play → wait 1s for [Heartbeat:LOG] in Console\n" +
                 "► Select HandSource → component ⋮ →\n" +
                 "    'Debug: Fire \"index_finger_branch\" gesture'\n" +
-                "► Parrot should fly to HandSource position, then tilt + wiggle head\n" +
-                "► 'Debug: Fire closed_fist' → parrot returns, head resets");
+                "► Parrot should fly, tilt + wiggle head\n" +
+                "── W6-7 (BBox / Focus / Attention Echo) ─────────\n" +
+                "► Select Attention → BBoxController ⋮ → 'Debug: Place Test BBox'\n" +
+                "    Console shows [EcpEvent:DROPPED room not ready] (no LiveKit) +\n" +
+                "    wire JSON for bbox.placed (event_id, payload incl. bbox_id/corners/pose)\n" +
+                "► FocusController ⋮ → 'Debug: Anchor Test Focus' (same dropped wire JSON)\n" +
+                "► AttentionConfigEchoPublisher ⋮ → 'Debug: Echo Now'\n" +
+                "    wire JSON for attention.config.echo (Δ + threshold + TTL + schema_version)");
         }
 
         [MenuItem(MenuPath, validate = true)]
