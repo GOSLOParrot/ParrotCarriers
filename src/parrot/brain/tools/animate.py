@@ -8,6 +8,7 @@ from __future__ import annotations
 from livekit.agents import RunContext, function_tool
 
 from parrot.brain.tools._rpc_bridge import call_unity_rpc
+from parrot.brain.tools._state_context import attach_state_header
 from parrot.shared.ecp import EcpCommandKind, wrap_legacy_rpc_payload
 from parrot.shared.parrot_actions import ParrotAnimation
 
@@ -48,4 +49,5 @@ async def animate(
         method="animate",
         payload=payload,
     )
-    return result
+    # Sprint4 Phase 4 W3 selection-C (entry doc §8.1 L10): see fly_to.py.
+    return attach_state_header(result)

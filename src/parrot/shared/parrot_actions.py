@@ -32,6 +32,31 @@ class ParrotBodyState(str, _Enum):
     FROZEN = "frozen"
 
 
+class CognitiveState(str, _Enum):
+    """Cognitive state mirror — Brain side, not Unity side.
+
+    Source: parrot_behavior_rules.md §1.3 (LISTENING / THINKING / SPEAKING /
+    IDLE_MIND). Mapped 1:1 from livekit-agents `AgentState` literal:
+
+        initializing → IDLE_MIND  (treat startup as no-cognitive-task)
+        idle         → IDLE_MIND
+        listening    → LISTENING
+        thinking     → THINKING
+        speaking     → SPEAKING
+
+    Producer (declared in `shared.bb_schema`): brain.agent (via
+    `parrot.brain.cognitive_state_tracker.attach_cognitive_state_tracker`).
+    Consumer: Sprint4 Phase 4 W3 selection-C tool wrappers (fly_to /
+    animate / set_video_tier prepend a state header to the LLM-facing tool
+    result).
+    """
+
+    LISTENING = "LISTENING"
+    THINKING = "THINKING"
+    SPEAKING = "SPEAKING"
+    IDLE_MIND = "IDLE_MIND"
+
+
 class BehaviorMode(Flag):
     """Behavior modes — stackable flags (Brooks subsumption-inspired).
 

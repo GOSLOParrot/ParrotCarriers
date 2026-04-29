@@ -307,6 +307,16 @@ async def brain_entrypoint(ctx: agents.JobContext):
     )
     _attach_gemini_transcript_to_terminal(session)
 
+    # Sprint4 Phase 4 W3 (entry doc §8.1 L10 selection-C):
+    # Mirror Gemini agent_state_changed → BB tick/cognitive_state so
+    # selection-C tool wrappers (fly_to / animate / set_video_tier) can
+    # surface cognitive state to the LLM in their return values.
+    try:
+        from parrot.brain.cognitive_state_tracker import attach_cognitive_state_tracker
+        attach_cognitive_state_tracker(session)
+    except Exception:
+        logger.exception("Sprint4 Phase 4: cognitive_state_tracker attach failed")
+
     manifest = _create_manifest()
     mount = ModuleMount(manifest)
 

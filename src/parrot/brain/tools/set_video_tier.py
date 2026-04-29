@@ -48,6 +48,7 @@ async def set_video_tier(
         get_perception_supervisor,
     )
     from parrot.brain.obs_log import log_obs_event
+    from parrot.brain.tools._state_context import attach_state_header
     from parrot.shared.tiers import DsgMode, VideoTier
 
     _TIER_MAP: dict[str, tuple[VideoTier, DsgMode]] = {
@@ -99,7 +100,8 @@ async def set_video_tier(
             f"原因: {result.get('reason', 'unknown')}。"
             f"{'细节: ' + str(result.get('detail')) if result.get('detail') else ''}"
         )
-        return json.dumps(
+        # Sprint4 Phase 4 W3 selection-C (entry doc §8.1 L10): see fly_to.py.
+        return attach_state_header(json.dumps(
             {
                 "status": result.get("status", "rejected"),
                 "tier": tier_upper,
@@ -109,7 +111,7 @@ async def set_video_tier(
                 "message": message,
             },
             ensure_ascii=False,
-        )
+        ))
 
     logger.info(
         "set_video_tier: manual override %s → %s (hold=%.0fs)",
@@ -123,7 +125,8 @@ async def set_video_tier(
             f"已切换到{_TIER_LABELS.get(tier_upper, tier_upper)}。"
             f"这个设置将保持约 {int(hold_s // 60)} 分钟，之后我会根据情况自动调整。"
         )
-    return json.dumps(
+    # Sprint4 Phase 4 W3 selection-C (entry doc §8.1 L10): see fly_to.py.
+    return attach_state_header(json.dumps(
         {
             "status": status,
             "tier": tier_upper,
@@ -133,7 +136,7 @@ async def set_video_tier(
             "message": message,
         },
         ensure_ascii=False,
-    )
+    ))
 
 
 __all__ = ["set_video_tier"]
