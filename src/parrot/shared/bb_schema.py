@@ -266,20 +266,47 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
     ),
     # CANDIDATE — Phase 4 (focus-tools / snapshot-identify) owns the producer.
     # See sprint4_protocol_v2_ecp.md §7.2 / §7.3.
+    #
+    # Phase 4 update (2026-04-29, entry doc §8.4): producer reassigned from
+    # `brain.telemetry_receiver` to `dsg.attention.threshold` — Focus/BBox
+    # attention is computed by the threshold accumulator, not by the raw
+    # telemetry receiver. The receiver only mirrors transport-level state;
+    # the Phase 4 临时阈值器 is the BB writer for this key. Mirror is removed
+    # when the Phase 4 W6-7 producer lands.
     BlackboardKey(
         BbScope.TRANSIENT,
-        "transient/current_attention_hint",  # CANDIDATE — no writer yet (Phase 4)
+        "transient/current_attention_hint",  # CANDIDATE — Phase 4 W6-7 producer = dsg.attention.threshold
         "dict[str, Any]",
-        "brain.telemetry_receiver",
+        "dsg.attention.threshold",
         "Current Focus / Bounding Box attention hint; expires quickly.",
         event_driven=True,
     ),
     BlackboardKey(
         BbScope.TRANSIENT,
-        "transient/last_sighting_event",  # CANDIDATE — no writer yet (Phase 4)
+        "transient/last_sighting_event",  # CANDIDATE — Phase 4 W4-5 producer = brain.observer.sighting
         "dict[str, Any]",
-        "brain.vision.snapshot",
+        "brain.observer.sighting",
         "Most recent object / region sighting evidence.",
+        event_driven=True,
+    ),
+
+    # ───── Sprint4 Phase 4 attention config (W6-7) ─────
+    # CANDIDATE — Unity ScriptableObject `ParrotAttentionConfig` writes the
+    # active Δ_focus / Δ_bbox / threshold + TTL into BB so backend tooling
+    # (FocusBboxThreshold, debug HUD) reads the same values the user sees in
+    # the Inspector. Locked in entry doc §8.1 L9.
+    #
+    # Wire format: {"delta_focus": float, "delta_bbox": float, "threshold":
+    # float, "target_ttl_s": float, "schema_version": int=1}. Producer = the
+    # `EcpEventDispatcher` (Unity downstream router) which echoes the SO on
+    # Brain handshake; documented here as `brain._rpc_bridge` because that is
+    # the Brain-side surface that receives the Echo and writes BB.
+    BlackboardKey(
+        BbScope.GLOBAL,
+        "global/attention_thresholds",  # CANDIDATE — Phase 4 W6-7 producer = brain._rpc_bridge (Echo from Unity SO)
+        "dict[str, Any]",
+        "brain._rpc_bridge",
+        "Δ_focus / Δ_bbox / threshold / target_ttl_s (Unity ScriptableObject Echo).",
         event_driven=True,
     ),
 )
