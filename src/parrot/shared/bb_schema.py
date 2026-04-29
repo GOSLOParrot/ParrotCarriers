@@ -311,9 +311,15 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
     # `EcpEventDispatcher` (Unity downstream router) which echoes the SO on
     # Brain handshake; documented here as `brain._rpc_bridge` because that is
     # the Brain-side surface that receives the Echo and writes BB.
+    #
+    # ⚠ Brain 自审 F-05 (2026-04-30): Echo 路径 Phase 4 W6-7 仅声明、未接通。
+    # Brain 端读取者 (FocusBboxThreshold.__init__) 当前不读这个 key，永远走
+    # 硬编码 DEFAULTS。完整接通顺序见 entry doc §8.1 L9 ⚠ 注。在 Unity B chat
+    # 落地 ParrotAttentionConfig SO + EcpEvent attention.config.echo 之前，
+    # 这个 key 保留 # CANDIDATE 标记。
     BlackboardKey(
         BbScope.GLOBAL,
-        "global/attention_thresholds",  # CANDIDATE — Phase 4 W6-7 producer = brain._rpc_bridge (Echo from Unity SO)
+        "global/attention_thresholds",  # CANDIDATE — Echo 路径未接通 (F-05)
         "dict[str, Any]",
         "brain._rpc_bridge",
         "Δ_focus / Δ_bbox / threshold / target_ttl_s (Unity ScriptableObject Echo).",
