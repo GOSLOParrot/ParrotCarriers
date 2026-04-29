@@ -233,3 +233,124 @@ W6-7 Unity + F-05 step ③ 都落地后：跑全链路 Editor → Brain → Edit
 - Observer/Attention 边界：entry doc §3.7
 - 跨语言契约：`tests/test_ecp_event/test_cs_parity.py`
 - bb_schema producer 真源：`src/parrot/shared/bb_schema.py:global/attention_thresholds`
+
+---
+
+## §10 前向兼容自审 — ChatBot / Live audio / 协作模式（用户 2026-04-30 追加锁）
+
+> **关键基调**（用户 sign-off 时原话）：
+> > ChatBot 在视频语音对话进行时其实不一定要完全同步，能用和通知消息发消息
+> > 进行给任务调度器发东西就行，其实就是个 Nanobot 挂的 ChatBot，一个有
+> > GOSLO 的意识，一个有 Cat Maid 的意识。
+>
+> **本节用途**：在 W6-7 落地后审计是否与"未来要做的 ChatBot 降级 / Live 视频
+> 语音对话延伸 / 后期状态同步 / 协作模式"四条主线冲突。**当前 chat 不实现
+> 这四条**（仍专注 W6-7 收口），仅记录边界让后续 chat 继承。
+
+### §10.1 BB-中心化对齐（ChatBot 设计基线）
+
+用户答了那个 rhetorical question：**ChatBot 不做 full state sync，BB 对齐 +
+scheduler 通知就够**。这与 W6-7 的设计**完全契合**：
+
+| W6-7 产出 | BB 可见范围 | ChatBot 接入方式 |
+|:--|:--|:--|
+| `global/attention_thresholds` | `BbScope.GLOBAL` | 直接读，不需要 LiveKit Room；Cat Maid Nanobot subagent 想知道当前 Δ / threshold → 一行 `bb.get` |
+| `transient/current_attention_hint` | `BbScope.TRANSIENT` | 同上；threshold cross 后 ChatBot 也能看到"用户最近在意 X" |
+| EcpEvent 流（`bbox.placed` / `attention.config.echo` 等） | 仅 LiveKit Room 内可见 | ChatBot **不需要**直接消费；Live agent 已经把结果落到 BB |
+
+**结论**：ChatBot 经 BB 对齐路径**已天然就绪**；W6-7 没引入"必须 wire LiveKit
+才能消费"的状态。
+
+### §10.2 ChatBot 降级模式（无 Live agent 时的 Echo 行为）
+
+**场景**：用户切到纯 ChatBot 模式（Live 视频语音不在线）。
+
+**当前 W6-7 的限制**：
+- `attention_config_handler.register(ingest)` 在 `brain.agent.brain_entrypoint`
+  里 wire（line 386），即 **Live agent 启动时才挂**
+- 纯 ChatBot 模式下若无 Live agent → 无 `event_ingest` → Echo 不到 Brain
+- BUT：`global/attention_thresholds` 是持久化 BB key，**前次 Live session 写
+  入的值在 ChatBot 模式仍可读**
+
+**未来 ChatBot 降级 chat 的选项**（**不是本 chat 范围**）：
+1. **A — 持久化 fallback**：纯 ChatBot 启动时若 BB key 已有值就用，否则用
+   `dsg/attention/threshold.py:DEFAULT_*` 直读 → 不需要任何 Echo wire
+2. **B — Nanobot 自挂 mini-handler**：Cat Maid Nanobot subagent 启动时自己挂
+   一个 attention_config_handler 等价物，从配置文件 / Nanobot persona 读取
+   阈值
+3. **C — 跨模式 BB writer**：把 `attention_config_handler.register` 提升到
+   "总线启动" 而不是 "Live agent 启动"，让 ChatBot 模式也能用同一 ingest
+   （但 ChatBot 模式无 LiveKit Room → ingest 还是收不到 EcpEvent，本质是
+   配置注入路径需重设计）
+
+**推荐 A**（最小 surface），但这是 ChatBot chat 的决策。本 chat 不锁。
+
+### §10.3 Live 视频语音对话 — W6-7 与现行 Live 模式无冲突
+
+| 现行 Live 模式机制 | W6-7 是否动 |
+|:--|:--|
+| `parrot.ecp.state` topic（W3.A.3 EcpState 心跳 + 三态） | ✗ 不动 |
+| `parrot.ecp.health` / `parrot.ecp.intent_disconnect` inline envelope | ✗ 不动 |
+| Gemini Live RealtimeModel + ParrotAssistant tools | ✗ 不动 |
+| ConnectionHealthAggregator + AppLifecycleManager | ✗ 不动 |
+| RoomManager.OnConnected 已存在事件 | ✓ **新订阅**（Echo + BBox/Focus reconnect 重 publish）— **不抢占现有订阅者**（`AnimationDriver` / `RoomManagerLifecycleBridge` 都是独立 listeners） |
+| ParticipantAttribute（spike S7 待定） | ✗ 不动 |
+
+**关键不变量**：W6-7 只**增加** RoomManager.OnConnected 的 listener，不替换
+任何现有 listener；Action 是 multicast delegate，新 listener 不互斥。
+
+### §10.4 协作模式（GOSLO + Cat Maid 同时活跃）
+
+**用户描述**："一个有 GOSLO 的意识，一个有 Cat Maid 的意识"。
+
+**W6-7 对协作的支持面**：
+
+| 协作场景 | W6-7 是否阻塞 | 理由 |
+|:--|:--|:--|
+| GOSLO Live 主导对话 + Cat Maid Nanobot 跑后台任务 | ✗ 不阻塞 | Cat Maid 经 BB 读 attention hint；scheduler 通知走现有 CH_SCHEDULER_TO_BRAIN（agent.py L451 已 wire） |
+| 双 Brain 同时想响应同一 BBox | ⚠ 留 hook | `FocusBboxThreshold._publish_attention_event` 当前固定走 BRAIN source 单 publisher；多 Brain 想 join → 走 scheduler 协调，不要让两个 publisher 抢同一 BB writer (`dsg.attention.threshold` single producer 锁，bb_schema.py 已声明) |
+| Cat Maid 想自己改 attention 阈值 | ⚠ Phase 5+ 决策 | 当前 `global/attention_thresholds` writer = `brain._rpc_bridge`（Unity SO 单一真源）；Cat Maid 想加自己的偏好 → 走另一条 BB key 或 Phase 5+ multi-producer 协调，本 chat 不开这个口 |
+| GOSLO ↔ Cat Maid 模式切换 | ✗ 不阻塞 | LiveKit Room 重连场景已在 §B.6 覆盖；BB 持久化 |
+
+**§3.7 Observer/Attention 边界 + 单 producer 原则**保护协作模式不退化为
+multi-writer 战争。
+
+### §10.5 后期状态同步 — 设计空间已隔离
+
+W6-7 用的 wire/BB 通道：
+
+| 通道 | 拥有者 | 后期 state sync 是否需要复用 |
+|:--|:--|:--|
+| `parrot.ecp.event` topic + `EcpEvent` envelope | Phase 4 wire envelope | 后期 state sync 应**新拓 topic**（如 `parrot.state.sync` 或走 ParticipantAttribute），不要复用 `parrot.ecp.event` 的 8KB / 60s dedup 语义 |
+| BB `global/attention_thresholds` | Unity SO Echo（W6-7） | 后期 state sync 不应复用此 key；想做"双 Brain 共享当前 state"加新 key |
+| RoomManager.OnConnected 事件 | multicast delegate | 后期可加更多 listener，互不干扰 |
+
+**结论**：W6-7 设计**没有占用后期 state sync 必需的资源**；后期 chat 拓新
+topic / 新 BB key 即可，不需要回头改 W6-7。
+
+### §10.6 给后续 4 条主线 chat 的入场提示
+
+| chat 主线 | 进入前必读 | 与 W6-7 的接合点 |
+|:--|:--|:--|
+| **F-05 step ③（已 spec，本 doc §8.1）** | `dsg/attention/threshold.py` + 本 doc §3.1 | `__init__` 读 BB `global/attention_thresholds`（W6-7 已写入） |
+| **联机 smoke + GAP-1** | W3.A.2/A.3 completion + 本 doc §5 | 验 attention.config.echo + bbox.placed + threshold.crossed 全链路 |
+| **ChatBot 降级模式** | 本 doc §10.2 + parrot_behavior_rules `parrot_behavior_rules.md` `chat_only_text` 状态 | Cat Maid Nanobot 经 BB 读 attention 配置；选择 §10.2 A/B/C 之一 |
+| **协作模式 / 双意识** | 本 doc §10.4 + entry doc §3.7 | 不破坏 single-producer-per-key；多 Brain 协调走 scheduler |
+
+---
+
+## §11 收口签名
+
+- 代码 commit：`4bd3475` (`feat(unity+brain): Phase 4 W6-7 Unity attention UI + Echo path ①+② (F-05)`)
+- doc-only follow-up commit：`<本 doc §10/§11 落地后填>`
+- 测试基线：`pytest tests/ --ignore=tests/integration -q` → **188/188 全绿**
+- 跨语言对齐：`tests/test_ecp_event/test_cs_parity.py` → **4/4 全绿**
+- 硬约束：10 条 audit defended 全部守住（threshold.py / observer/* / refs.py /
+  bb_schema.py / W3.A.2/A.3 / _rpc_bridge.py / EcpEventDispatcher topic 路由 /
+  ecp_event.py 8KB+topic+schema_version 常量 / lossy parrot.ecp.tick 拖动事件
+  — 无一动）
+- F-05 状态：① + ② LANDED；③ DEFERRED 给独立 Brain chat
+- §B.6 reconnect / Brain 管线切换：BBox / Focus / Echo 全量重发已实施；refs.py +
+  BB overwrite 双重幂等保护
+- §10 前向兼容：ChatBot 降级 / Live audio / 协作 / 后期状态同步 4 主线均无冲突，
+  接合点已 spec
