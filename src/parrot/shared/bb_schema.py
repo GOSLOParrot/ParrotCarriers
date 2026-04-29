@@ -300,26 +300,22 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         event_driven=True,
     ),
 
-    # ───── Sprint4 Phase 4 attention config (W6-7) ─────
-    # CANDIDATE — Unity ScriptableObject `ParrotAttentionConfig` writes the
-    # active Δ_focus / Δ_bbox / threshold + TTL into BB so backend tooling
-    # (FocusBboxThreshold, debug HUD) reads the same values the user sees in
-    # the Inspector. Locked in entry doc §8.1 L9.
+    # ───── Sprint4 Phase 4 attention config (W6-7) — Echo 全链路接通 ─────
+    # ✅ Echo path fully wired (2026-04-30):
+    #   ① Unity `ParrotAttentionConfig` SO + `AttentionConfigEchoPublisher`
+    #     publish EcpEvent `attention.config.echo` on RoomManager.OnConnected
+    #     (含 reconnect / Brain 管线切换).
+    #   ② Brain `attention_config_handler.py` subscribes via event_ingest →
+    #     writes this BB key (validated 5-field schema_version=1 payload).
+    #   ③ `FocusBboxThreshold.__init__` reads this BB on construct (sentinel-
+    #     None resolution — explicit kwargs > BB > DEFAULT_*).
+    # See entry doc §8.1 L9 + W6-7 Unity completion report §1.1 / §3.1.
     #
     # Wire format: {"delta_focus": float, "delta_bbox": float, "threshold":
-    # float, "target_ttl_s": float, "schema_version": int=1}. Producer = the
-    # `EcpEventDispatcher` (Unity downstream router) which echoes the SO on
-    # Brain handshake; documented here as `brain._rpc_bridge` because that is
-    # the Brain-side surface that receives the Echo and writes BB.
-    #
-    # ⚠ Brain 自审 F-05 (2026-04-30): Echo 路径 Phase 4 W6-7 仅声明、未接通。
-    # Brain 端读取者 (FocusBboxThreshold.__init__) 当前不读这个 key，永远走
-    # 硬编码 DEFAULTS。完整接通顺序见 entry doc §8.1 L9 ⚠ 注。在 Unity B chat
-    # 落地 ParrotAttentionConfig SO + EcpEvent attention.config.echo 之前，
-    # 这个 key 保留 # CANDIDATE 标记。
+    # float, "target_ttl_s": float, "schema_version": int=1}.
     BlackboardKey(
         BbScope.GLOBAL,
-        "global/attention_thresholds",  # CANDIDATE — Echo 路径未接通 (F-05)
+        "global/attention_thresholds",
         "dict[str, Any]",
         "brain._rpc_bridge",
         "Δ_focus / Δ_bbox / threshold / target_ttl_s (Unity ScriptableObject Echo).",

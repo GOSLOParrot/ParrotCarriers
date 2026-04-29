@@ -1,10 +1,10 @@
 ---
 status: ratified
-status_note: "Phase 4 Brain 侧自审 (W3.A.1 + W4-5 + W6-7) — 双轮 audit 后收口；13 项 finding，0 项触动 Phase 4 锁定需求/功能/契约。proposed 项待用户 sign off 后由实现 chat 应用。"
+status_note: "Phase 4 Brain 侧自审 (W3.A.1 + W4-5 + W6-7) — 双轮 audit 后收口；13 项 finding，0 项触动 Phase 4 锁定需求/功能/契约。**全部 9 项 §6.1 direct-fix + F-05 已收口** (本 chat 9 项 + Unity B chat F-05 ①+② + 本 chat F-05 ③ 收尾)；3 项 reject (Phase 5+)；1 项 (F-10) 可推。"
 last_reviewed: 2026-04-30
 audit_rounds: 2
-audit_scope: "commits d228626 → 7f20b18 (本 chat 全部 Brain 侧产出，9 个 commit)"
-test_baseline_at_audit: "176/176 全绿；0 lints；git tree clean"
+audit_scope: "commits d228626 → 7f20b18 (本 chat 全部 Brain 侧产出，9 个 commit) + W6-7 Unity 半边落地 + F-05 step ③ 收尾"
+test_baseline_at_audit: "176/176 全绿 (audit 时); 199/199 全绿 (F-05 全收口后, 本 chat 终态)"
 ---
 
 # Sprint4 Phase 4 — Brain 侧自审报告 (W3.A.1 + W4-5 + W6-7)
@@ -20,20 +20,23 @@ test_baseline_at_audit: "176/176 全绿；0 lints；git tree clean"
 
 ## §0 TL;DR
 
-| 严重度 | 计数 | 修复立场 |
+| 严重度 | 计数 | 收口状态 (2026-04-30 终态) |
 |:--|:--|:--|
-| 🔴 高 | 2 | 强烈建议修（边界 violation + 隐藏 attention 数学） |
-| 🟡 中 | 4 | 建议修但可推后（bug / doc 漂移 / wire 缺口） |
-| 🟢 低 | 7 | 按需修（doc / test / style） |
+| 🔴 高 | 2 | ✅ 全部修复（F-01 docstring + F-02(A) 删 +0.05） |
+| 🟡 中 | 4 | ✅ 全部收口（F-03/04/06 本 chat 修；F-05 ①+② Unity B chat + ③ 本 chat 终收口）|
+| 🟢 低 | 7 | ✅ 5 项修（F-07/08/09-B/13 + F-09 strengthen）；2 项 reject (F-11/F-12 → Phase 5+)；1 项可推 (F-10 metric 拆分) |
 
 **总 13 项 finding**。其中：
 
 - **0 项**修改会改动 Phase 4 锁定的需求 / 功能 / 契约（详见 §2 一致性核对表）
-- **9 项** proposed 等用户 sign off 即可应用
-- **3 项** 建议显式 reject (Phase 5+ 待办)
-- **1 项** 建议二轮加强（threshold key 改 `{kind}:{id}`）
+- **10 项** ✅ resolved (9 直接 fix + F-05 全链路收口)
+- **3 项** ⏸ rejected/deferred (F-10 / F-11 / F-12 → Phase 5+)
 
-测试基线：176/176 全绿，0 lints，工作树 clean。
+**测试基线演进**：
+- audit 时：176/176 全绿 (W6-7 Brain 半边落地后)
+- §6.1 9 项 direct fix 后：179/179 全绿 (+ 3 测试)
+- W6-7 Unity 半边 + F-05 ①+② 落地后：188/188 全绿 (+ 9 attention_config_handler 测试)
+- F-05 step ③ 终收口后 (本 chat 终态)：**199/199 全绿** (+ 11 BB injection 测试)
 
 ---
 
@@ -195,11 +198,17 @@ why:         我在 commit message 写 "ParrotAttentionConfig SO ... 留 Unity c
              不知道 Brain 这边谁读。
 considered_intent:    partial — 知道 Unity 半边没做，但没意识到 Brain 半边读取也没做
 requirement_impact:   ❌ 不改 — 显式记录"未接通"，不动 §8 锁定值
-status:               partially-resolved (Unity B chat 2026-04-30 完成 ①+②：
-                      Unity ParrotAttentionConfig SO + AttentionConfigEchoPublisher
-                      + Brain attention_config_handler.py 写 BB；step ③
-                      FocusBboxThreshold 读 BB 仍 deferred — 触动 threshold.py
-                      锁定文件，留给独立 Brain chat 的 1 行 __init__ 改动)
+status:               ✅ resolved (2026-04-30 收口于本 chat):
+                      • ① Unity ParrotAttentionConfig SO + AttentionConfigEchoPublisher
+                        (W6-7 Unity chat, completion report §1.1)
+                      • ② Brain attention_config_handler.py subscribe + 写 BB
+                        (W6-7 Unity chat 同上)
+                      • ③ FocusBboxThreshold.__init__ 读 BB 注入 DEFAULTS
+                        (本 chat F-05 step ③, sentinel-None resolution:
+                        explicit kwargs > BB > DEFAULT_*; 11 新 test 覆盖
+                        在 test_threshold_bb_injection.py;
+                        bb_schema.py # CANDIDATE 标记已移除;
+                        entry doc §8.1 L9 ⚠ 升级为 ✅ 全链路接通)
 ```
 
 #### F-06 — `refs.reset_refs_for_session` 未 wire 进 brain/agent.py 的 Room.Disconnected hook
