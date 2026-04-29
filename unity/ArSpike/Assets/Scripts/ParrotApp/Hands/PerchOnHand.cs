@@ -61,7 +61,6 @@ namespace ParrotApp.Hands
         public PerchState State { get; private set; } = PerchState.IDLE;
 
         private Vector3 _returnPosition;
-        private bool _havePosedReturn;
 
         public enum PerchState
         {
@@ -125,7 +124,6 @@ namespace ParrotApp.Hands
                         _returnPosition = (explicitReturnPosition == Vector3.zero)
                             ? transform.position
                             : explicitReturnPosition;
-                        _havePosedReturn = true;
                         TransitionTo(PerchState.FLYING_TO_HAND);
                     }
                     break;
@@ -234,7 +232,6 @@ namespace ParrotApp.Hands
                 case PerchState.IDLE:
                     animDriver.SetState(AnimationDriver.BodyState.Idle);
                     animDriver.SetHeadState(AnimationDriver.HeadState.Forward);
-                    _havePosedReturn = false;
                     break;
             }
         }
