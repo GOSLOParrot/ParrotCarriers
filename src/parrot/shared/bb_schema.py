@@ -275,7 +275,17 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
     # when the Phase 4 W6-7 producer lands.
     BlackboardKey(
         BbScope.TRANSIENT,
-        "transient/current_attention_hint",  # CANDIDATE — Phase 4 W6-7 producer = dsg.attention.threshold
+        "transient/current_attention_hint",  # Phase 4 W6-7 producer = dsg.attention.threshold (active)
+        # Payload shape (locked Phase 4 W6-7, schema_version=1):
+        #   schema_version: int
+        #   ref_id: str (RefBinding.ref_id, may be "" if registry race)
+        #   weight: float
+        #   subject_kind: "bbox" | "focus"
+        #   subject_id: Unity-side bbox_id or focus_id
+        #   label: str (human-readable)
+        #   delta_applied: float
+        #   source_event_id: str (EcpEvent.event_id of the trigger)
+        #   ts_ms: int (epoch ms)
         "dict[str, Any]",
         "dsg.attention.threshold",
         "Current Focus / Bounding Box attention hint; expires quickly.",
