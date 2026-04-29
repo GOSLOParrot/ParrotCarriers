@@ -4,20 +4,36 @@ using UnityEngine;
 namespace ParrotApp.Parrot
 {
     /// <summary>
-    /// Sprint 3 T-U4: Programmatic animation driver for GOSLO.<br/>
-    /// 从 ParrotDev 1:1 搬迁（Sprint4 Phase 3 / L3 Group 4），仅加 <c>ParrotApp.Parrot</c>
-    /// 命名空间，行为零变化。
+    /// Sprint4 Phase 4 W3.A.2 — Programmatic body/head state driver for GOSLO.
     ///
-    /// Drives four body states via procedural motion:
-    ///   idle / head_bob / fly / perch
+    /// <b>本类是 body_state / head_state 两条 wire 字段的 sole producer</b>。
+    /// 改造点（W3.A.2）：
+    /// <list type="bullet">
+    /// <item>新增 <see cref="BodyState.PerchedOnHand"/>（站在手指中段）</item>
+    /// <item>新增 <see cref="HeadState"/> enum + Update 末尾每帧 lerp 头部旋转</item>
+    /// <item>新增 producer events <see cref="OnBodyStateWireChanged"/> /
+    ///   <see cref="OnHeadStateWireChanged"/>，由
+    ///   <c>LifecycleHeartbeatPublisher</c>（A.3）订阅触发 EcpState 立即上报</item>
+    /// <item><see cref="HeadState.Tilt"/> 渲染：基础 18° pitch + 12° roll，
+    ///   外加 ~6° / 1.6Hz 的 sine 摆动，表达"怎么了吗？"</item>
+    /// </list>
     ///
-    /// Body state changes arrive via DataChannel "body_state" events
-    /// 或 RPC 路径 (<see cref="ParrotApp.RPC.ParrotRpcHandler"/>) 调
-    /// <see cref="ApplyBodyStateString"/>。
+    /// Wire-string 约定（与 Brain 端 _state_context.py 对齐）：
+    /// <list type="bullet">
+    /// <item>body_state ：lowercase / snake_case，匹配
+    ///   <c>parrot.shared.parrot_actions.ParrotBodyState.value</c>
+    ///   （<c>idle / flying / perching / perched_on_hand / dancing / frozen</c>）</item>
+    /// <item>head_state ：UPPERCASE 带 <c>HEAD_</c> 前缀，匹配
+    ///   <c>_state_context.py:_DEFAULT_HEAD = "HEAD_FORWARD"</c>
+    ///   （<c>HEAD_FORWARD / HEAD_LOOK_AT / HEAD_TILT / HEAD_NOD</c>）</item>
+    /// </list>
+    /// 内部 enum 名（<see cref="BodyState.Fly"/> / <see cref="HeadState.Tilt"/>）
+    /// 是 Unity 风格的简称；wire 翻译走静态 mapper，不污染 Update 主循环。
     /// </summary>
     public class AnimationDriver : MonoBehaviour
     {
-        public enum BodyState { Idle, HeadBob, Fly, Perch }
+        public enum BodyState { Idle, HeadBob, Fly, Perch, PerchedOnHand }
+        public enum HeadState { Forward, LookAt, Tilt, Nod }
 
         [Header("Movement")]
         [SerializeField] private float flySpeed = 2.5f;
@@ -37,11 +53,37 @@ namespace ParrotApp.Parrot
         [SerializeField] private float perchBreathAmplitude = 0.03f;
         [SerializeField] private float perchBreathFrequency = 0.8f;
 
+        [Header("Head Tilt (\"怎么了吗？\" expression)")]
+        [Tooltip("Base pitch when HEAD_TILT is active (degrees, +x = nod down)")]
+        [SerializeField] private float headTiltPitchDegrees = 18f;
+        [Tooltip("Base roll when HEAD_TILT is active (degrees, +z = roll right)")]
+        [SerializeField] private float headTiltRollDegrees = 12f;
+        [Tooltip("Amplitude of curiosity wiggle layered on top of base tilt (degrees)")]
+        [SerializeField] private float headTiltWiggleDegrees = 6f;
+        [Tooltip("Wiggle frequency (Hz) — bird-like curious head motion")]
+        [SerializeField] private float headTiltWiggleFrequency = 1.6f;
+        [Tooltip("Lerp speed for transitioning between head states")]
+        [SerializeField] private float headTransitionLerpSpeed = 6f;
+
         [Header("Model nodes (by name, D6 decision)")]
         [SerializeField] private string headNodeName = "Head";
         [SerializeField] private string bodyNodeName = "Body";
 
         public BodyState CurrentState { get; private set; } = BodyState.Idle;
+        public HeadState CurrentHeadState { get; private set; } = HeadState.Forward;
+
+        /// <summary>
+        /// Fired every time the body wire string changes (lowercase snake_case).
+        /// Subscribed by <c>LifecycleHeartbeatPublisher</c> (A.3) to trigger
+        /// immediate EcpState upload (entry doc §8.1 L1 "事件驱动 + 1Hz").
+        /// </summary>
+        public event Action<string> OnBodyStateWireChanged;
+
+        /// <summary>
+        /// Fired every time the head wire string changes (UPPERCASE HEAD_*).
+        /// Same EcpState trigger contract as <see cref="OnBodyStateWireChanged"/>.
+        /// </summary>
+        public event Action<string> OnHeadStateWireChanged;
 
         private Vector3 _flyTarget;
         private bool _isFlying;
@@ -49,6 +91,7 @@ namespace ParrotApp.Parrot
         private Quaternion _baseRotation;
         private Vector3 _baseScale;
         private float _stateTimer;
+        private float _headStateTimer;
 
         private Transform _headTransform;
         private Transform _bodyTransform;
@@ -73,6 +116,7 @@ namespace ParrotApp.Parrot
         void Update()
         {
             _stateTimer += Time.deltaTime;
+            _headStateTimer += Time.deltaTime;
 
             switch (CurrentState)
             {
@@ -80,7 +124,10 @@ namespace ParrotApp.Parrot
                 case BodyState.HeadBob: UpdateHeadBob(); break;
                 case BodyState.Fly: UpdateFly(); break;
                 case BodyState.Perch: UpdatePerch(); break;
+                case BodyState.PerchedOnHand: UpdatePerchedOnHand(); break;
             }
+
+            UpdateHeadOverlay();
         }
 
         public void FlyTo(Vector3 target)
@@ -93,29 +140,108 @@ namespace ParrotApp.Parrot
         public void SetState(BodyState state)
         {
             if (CurrentState == state) return;
+            string oldWire = BodyStateToWire(CurrentState);
             CurrentState = state;
             _stateTimer = 0f;
 
-            if (_headTransform != null && state != BodyState.HeadBob)
-                _headTransform.localRotation = _headBaseRot;
+            // Compatibility (parrot_behavior_rules §2.2): flying body 不允许歪头
+            if (state == BodyState.Fly && CurrentHeadState != HeadState.Forward)
+            {
+                SetHeadState(HeadState.Forward);
+            }
 
-            Debug.Log($"[AnimationDriver] State → {state}");
+            string newWire = BodyStateToWire(state);
+            Debug.Log($"[AnimationDriver] BodyState → {state} (wire={newWire})");
+
+            if (oldWire != newWire)
+            {
+                try { OnBodyStateWireChanged?.Invoke(newWire); }
+                catch (Exception ex) { Debug.LogError($"[AnimationDriver] OnBodyStateWireChanged threw: {ex}"); }
+            }
+        }
+
+        public void SetHeadState(HeadState state)
+        {
+            if (CurrentHeadState == state) return;
+            string oldWire = HeadStateToWire(CurrentHeadState);
+            CurrentHeadState = state;
+            _headStateTimer = 0f;
+
+            string newWire = HeadStateToWire(state);
+            Debug.Log($"[AnimationDriver] HeadState → {state} (wire={newWire})");
+
+            if (oldWire != newWire)
+            {
+                try { OnHeadStateWireChanged?.Invoke(newWire); }
+                catch (Exception ex) { Debug.LogError($"[AnimationDriver] OnHeadStateWireChanged threw: {ex}"); }
+            }
         }
 
         public void ApplyBodyStateString(string bodyState)
         {
-            switch (bodyState.ToLowerInvariant().Replace("-", "_"))
+            switch ((bodyState ?? "").ToLowerInvariant().Replace("-", "_"))
             {
                 case "idle": SetState(BodyState.Idle); break;
                 case "head_bob":
                 case "listening": SetState(BodyState.HeadBob); break;
-                case "fly": SetState(BodyState.Fly); break;
-                case "perch": SetState(BodyState.Perch); break;
+                case "fly":
+                case "flying": SetState(BodyState.Fly); break;
+                case "perch":
+                case "perching": SetState(BodyState.Perch); break;
+                case "perched_on_hand": SetState(BodyState.PerchedOnHand); break;
                 default:
                     Debug.LogWarning($"[AnimationDriver] Unknown body_state: '{bodyState}' — staying {CurrentState}");
                     break;
             }
         }
+
+        public void ApplyHeadStateString(string headState)
+        {
+            switch ((headState ?? "").ToUpperInvariant().Replace("-", "_"))
+            {
+                case "":
+                case "HEAD_FORWARD":
+                case "FORWARD": SetHeadState(HeadState.Forward); break;
+                case "HEAD_LOOK_AT":
+                case "LOOK_AT": SetHeadState(HeadState.LookAt); break;
+                case "HEAD_TILT":
+                case "TILT": SetHeadState(HeadState.Tilt); break;
+                case "HEAD_NOD":
+                case "NOD": SetHeadState(HeadState.Nod); break;
+                default:
+                    Debug.LogWarning($"[AnimationDriver] Unknown head_state: '{headState}' — staying {CurrentHeadState}");
+                    break;
+            }
+        }
+
+        // ─── wire mappers ────────────────────────────────────────────────
+
+        public static string BodyStateToWire(BodyState s)
+        {
+            switch (s)
+            {
+                case BodyState.Idle: return "idle";
+                case BodyState.HeadBob: return "idle"; // HeadBob is a head-layer hint; body remains idle on the wire
+                case BodyState.Fly: return "flying";
+                case BodyState.Perch: return "perching";
+                case BodyState.PerchedOnHand: return "perched_on_hand";
+                default: return "idle";
+            }
+        }
+
+        public static string HeadStateToWire(HeadState s)
+        {
+            switch (s)
+            {
+                case HeadState.Forward: return "HEAD_FORWARD";
+                case HeadState.LookAt: return "HEAD_LOOK_AT";
+                case HeadState.Tilt: return "HEAD_TILT";
+                case HeadState.Nod: return "HEAD_NOD";
+                default: return "HEAD_FORWARD";
+            }
+        }
+
+        // ─── per-state body update ───────────────────────────────────────
 
         private void UpdateIdle()
         {
@@ -129,7 +255,7 @@ namespace ParrotApp.Parrot
             float bob = Mathf.Sin(_stateTimer * idleBobFrequency * Mathf.PI * 2f) * idleBobAmplitude;
             transform.localPosition = _basePosition + new Vector3(0f, bob, 0f);
 
-            if (_headTransform != null)
+            if (_headTransform != null && CurrentHeadState == HeadState.Forward)
             {
                 float nod = Mathf.Sin(_stateTimer * headBobFrequency * Mathf.PI * 2f) * headBobAmplitude * 90f;
                 _headTransform.localRotation = _headBaseRot * Quaternion.Euler(nod, 0f, 0f);
@@ -165,6 +291,53 @@ namespace ParrotApp.Parrot
             float breath = Mathf.Sin(_stateTimer * perchBreathFrequency * Mathf.PI * 2f) * perchBreathAmplitude;
             transform.localScale = _baseScale * (1f + breath);
             transform.localRotation = Quaternion.Slerp(transform.localRotation, _baseRotation, 3f * Time.deltaTime);
+        }
+
+        /// <summary>
+        /// PerchedOnHand body state: position is driven externally by
+        /// <c>ParrotApp.Hands.PerchOnHand</c> (per-frame Lerp to IndexIntermediate
+        /// joint). This driver only adds the breathing-scale layer so it looks
+        /// alive while perched.
+        /// </summary>
+        private void UpdatePerchedOnHand()
+        {
+            float breath = Mathf.Sin(_stateTimer * perchBreathFrequency * Mathf.PI * 2f) * perchBreathAmplitude;
+            transform.localScale = _baseScale * (1f + breath);
+            // Do not rewrite position/rotation — PerchOnHand owns them.
+        }
+
+        // ─── head overlay (every frame, regardless of body state) ──────
+
+        private void UpdateHeadOverlay()
+        {
+            if (_headTransform == null) return;
+            // HeadBob has its own head-driving inside UpdateHeadBob; do not
+            // double-write when that body state is active.
+            if (CurrentState == BodyState.HeadBob && CurrentHeadState == HeadState.Forward) return;
+
+            Quaternion target;
+            switch (CurrentHeadState)
+            {
+                case HeadState.Tilt:
+                {
+                    float wiggleRoll = Mathf.Sin(_headStateTimer * headTiltWiggleFrequency * Mathf.PI * 2f) * headTiltWiggleDegrees;
+                    float wiggleYaw = Mathf.Cos(_headStateTimer * headTiltWiggleFrequency * Mathf.PI * 2f * 0.7f) * (headTiltWiggleDegrees * 0.5f);
+                    target = _headBaseRot * Quaternion.Euler(
+                        headTiltPitchDegrees,
+                        wiggleYaw,
+                        headTiltRollDegrees + wiggleRoll);
+                    break;
+                }
+                case HeadState.LookAt:
+                case HeadState.Nod:
+                case HeadState.Forward:
+                default:
+                    target = _headBaseRot;
+                    break;
+            }
+
+            _headTransform.localRotation = Quaternion.Slerp(
+                _headTransform.localRotation, target, headTransitionLerpSpeed * Time.deltaTime);
         }
 
         private static Transform FindDeep(Transform root, string name)
