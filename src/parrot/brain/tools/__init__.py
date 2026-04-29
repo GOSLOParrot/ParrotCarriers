@@ -21,10 +21,19 @@ ALL_TOOLS = [
 ]
 
 if os.getenv("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", "0").lower() in {"1", "true", "yes"}:
-    # identify_object is an on-demand conscious vision tool, but the current
-    # implementation still lacks captureSnapshot and same-turn visual evidence.
-    # Keep it opt-in so unfinished discovery behavior cannot steal Gemini turns
-    # during connection/audio stability tests.
+    # Sprint4 Phase 4 W4-5 (2026-04-30) rewrote identify_object as a staged
+    # L0-text → L1-Graphiti → L2-unknown pipeline with sync budget +
+    # sighting EcpEvent emission (entry doc §8.1 L11; audit_identify_object
+    # _no_screenshot_20260420.md §9). Felt-experience闭环 restored —
+    # `_deep_search` removed (audit §3.4); option α return 让 GOSLO 自决
+    # 下一步 (dispatch_task / save_new / 描述 / 反问 用户).
+    #
+    # Env gate KEPT for one more shake-down cycle: real-device validation +
+    # observer.sighting wiring confirmation in identify_object/Phase 4 W5.
+    # Un-gate (move to ALL_TOOLS unconditionally) when:
+    #   1. P2.5 真机 spike confirms 1.9s budget holds end-to-end (entry doc §8.1 L11)
+    #   2. Unity captureSnapshot RPC ECP-化 lands (audit DRIFT NOTE / def-1)
+    #   3. observer.sighting archiver path verified against Graphiti live
     from parrot.brain.tools.identify_object import identify_object
     ALL_TOOLS.append(identify_object)
 
