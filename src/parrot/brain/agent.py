@@ -359,6 +359,27 @@ async def brain_entrypoint(ctx: agents.JobContext):
     greeting_state = {"sent": False}
     _attach_scene_ready_rpc(ctx.room, session, greeting_state)
 
+    # Sprint4 Phase 4 W2 收口 (entry doc §8.1 L12 + §8.4):
+    # 上行 EcpEvent ingest + 下行 publisher + Phase 4 observers + 临时阈值器。
+    # Wire-up 顺序：先 ingest（subscriber 注册前必须有 ingest 实例），再注册
+    # observers/threshold（必须在 publisher 之前，避免 brain-source 事件在
+    # publisher 未绑定时被 publish_nowait 丢弃），最后 publisher。
+    try:
+        from parrot.brain.event_ingest import attach_ecp_event_ingest
+        from parrot.brain.event_publisher import attach_ecp_event_publisher
+        from parrot.brain.observer import register_phase4_observers
+        from parrot.dsg.attention.threshold import FocusBboxThreshold
+
+        ingest = attach_ecp_event_ingest(ctx.room)
+        register_phase4_observers(ingest)
+        FocusBboxThreshold().register(ingest)
+        attach_ecp_event_publisher(ctx.room)
+        logger.info(
+            "Sprint4 Phase 4 wired: EcpEventIngest + Observers + FocusBboxThreshold + Publisher"
+        )
+    except Exception:
+        logger.exception("Sprint4 Phase 4: EcpEvent wire-up failed")
+
     try:
         from parrot.memory.conversation_writer import attach_conversation_writer
         attach_conversation_writer(session)

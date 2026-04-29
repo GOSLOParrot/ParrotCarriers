@@ -1,7 +1,8 @@
 """Sprint4 Phase 4 L12 — Python upstream event ingest.
 
 Authoritative spec: ``architecture/sprint4_phase4_entry_20260430.md §8.1`` (L12)
-+ §8.4 (code entry table).
++ §8.4 (code entry table). Wire-up in ``brain.agent`` via
+:func:`attach_ecp_event_ingest`.
 
 Architecture
 ------------
@@ -52,7 +53,7 @@ import logging
 import time
 from collections import OrderedDict
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
 
@@ -63,6 +64,9 @@ from parrot.shared.ecp_event import (
     EcpEventSource,
     EcpEventType,
 )
+
+if TYPE_CHECKING:
+    from livekit.rtc import DataPacket, Room
 
 
 logger = logging.getLogger(__name__)
@@ -298,9 +302,90 @@ class EcpEventIngest:
         }
 
 
+# ─── module-level singleton + LiveKit room attach ──────────────────────
+
+
+_ingest_singleton: EcpEventIngest | None = None
+
+
+def get_ecp_event_ingest() -> EcpEventIngest:
+    """Lazy-construct the process-wide singleton.
+
+    Brain agent boot calls :func:`attach_ecp_event_ingest` (which wraps this
+    + binds the LiveKit Room). Tests / other callers that want to register
+    subscribers without binding to a Room can call this directly.
+    """
+    global _ingest_singleton
+    if _ingest_singleton is None:
+        _ingest_singleton = EcpEventIngest()
+    return _ingest_singleton
+
+
+def reset_ecp_event_ingest_for_tests() -> None:
+    """Drop the singleton — tests that need a clean slate call this in setup.
+
+    Production code MUST NOT call this; the singleton is process-wide for a
+    reason (subscribers register against it during boot).
+    """
+    global _ingest_singleton
+    _ingest_singleton = None
+
+
+def attach_ecp_event_ingest(room: Room) -> EcpEventIngest:
+    """Wire the EcpEventIngest singleton onto a live LiveKit Room.
+
+    Mirrors the style of :func:`parrot.brain.telemetry_receiver.attach_telemetry_receiver`:
+    listens on ``room.on("data_received")`` and routes inbound packets through
+    :meth:`EcpEventIngest.handle_raw`. Topic filtering happens inside the
+    ingest (foreign topics are silently ignored), so co-existence with the
+    telemetry receiver is conflict-free — they share the same SDK callback
+    fan-out.
+
+    Returns the singleton so the caller can immediately register Phase 4
+    observers / threshold accumulator on it before any data arrives.
+    """
+    ingest = get_ecp_event_ingest()
+
+    @room.on("data_received")
+    def _on_data(packet: DataPacket) -> None:
+        topic = getattr(packet, "topic", "") or ""
+        # Only act on the EcpEvent topic. Other topics belong to telemetry
+        # receiver / future state heartbeat consumer / health envelope
+        # consumer; cheap pre-filter avoids decoding for every inbound frame.
+        if topic != TOPIC_ECP_EVENT:
+            return
+
+        raw = packet.data if isinstance(packet.data, (bytes, bytearray)) else None
+        if raw is None:
+            # LiveKit Python SDK sometimes hands str; coerce to bytes.
+            try:
+                raw = (packet.data or "").encode("utf-8") if isinstance(packet.data, str) else b""
+            except Exception:
+                logger.debug("EcpEvent inbound: cannot coerce packet.data type=%s", type(packet.data))
+                return
+
+        try:
+            ingest.handle_raw(topic, bytes(raw))
+        except Exception:
+            # Defensive: handle_raw is supposed to swallow subscriber errors,
+            # but if anything escapes (bug in ingest itself), do not poison
+            # the LiveKit callback loop — that would silence the telemetry
+            # receiver too.
+            logger.exception("EcpEventIngest.handle_raw raised on topic=%s", topic)
+
+    logger.info(
+        "EcpEventIngest attached — listening on topic %s (dedup_window=%.0fs, max_entries=%d)",
+        TOPIC_ECP_EVENT, ingest._dedup_window_s, ingest._dedup_max,
+    )
+    return ingest
+
+
 __all__ = [
     "DEDUP_MAX_ENTRIES",
     "DEDUP_WINDOW_SECONDS",
     "EcpEventIngest",
     "SubscriberFn",
+    "attach_ecp_event_ingest",
+    "get_ecp_event_ingest",
+    "reset_ecp_event_ingest_for_tests",
 ]
