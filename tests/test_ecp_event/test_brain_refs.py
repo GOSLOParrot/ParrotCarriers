@@ -154,3 +154,35 @@ def test_metrics_track_counts():
 
     snap = refs_registry.metrics_snapshot()
     assert snap == {"total_refs": 3, "bbox_refs": 2, "focus_refs": 1}
+
+
+# ─── F-06: agent.py disconnect handler wires reset_refs_for_session ─
+
+
+def test_agent_disconnect_handler_invokes_reset_refs_for_session():
+    """Brain self-audit F-06 (2026-04-30): refs.py docstring claims
+    'Each LiveKit session ideally calls reset_refs_for_session on
+    disconnect'. The wire-up lives in brain/agent.py's
+    _on_room_disconnected. We assert the source contains the call so a
+    refactor that drops the cleanup will fail this freeze test.
+
+    Source-grep instead of behavioural test because driving an actual
+    LiveKit Room.Disconnected event requires the full agent boot and
+    a Gemini RealtimeModel — out of scope for a unit test.
+    """
+    from pathlib import Path
+
+    src = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "parrot"
+        / "brain"
+        / "agent.py"
+    ).read_text(encoding="utf-8")
+
+    # Both must appear inside the disconnect handler block.
+    assert "from parrot.brain.refs import reset_refs_for_session" in src
+    assert "reset_refs_for_session()" in src
+    # And must reference the audit finding so the why-comment survives
+    # ruthless cleanup passes.
+    assert "F-06" in src

@@ -86,15 +86,20 @@ def test_register_subscribes_to_both_event_types():
 
 
 @pytest.mark.asyncio
-async def test_matched_event_triggers_archiver_and_l2b_bump():
+async def test_matched_event_triggers_archiver_only_no_direct_l2b_write():
+    """Brain self-audit F-02 (2026-04-30): observer.sighting MUST NOT write
+    L2-B node attention directly. The only L2-B-touching side effect is
+    via the IngestRunner archiver pipeline. This test guards against
+    re-introducing the +0.05 direct write that would compound with the
+    in-tool _upsert_to_l2b's +0.2 to produce an undocumented +0.25.
+    """
     ingest = EcpEventIngest()
     sighting_observer.register(ingest)
 
     archiver_called = False
-    l2b_node_attention_before = 0.5
 
     class FakeNode:
-        attention = 0.5
+        attention = 0.5  # snapshot before observer fires
 
     fake_node = FakeNode()
 
@@ -131,9 +136,10 @@ async def test_matched_event_triggers_archiver_and_l2b_bump():
     assert metrics["archiver_attempts"] == 1
     assert archiver_called is True
     assert metrics["archiver_successes"] == 1
-    assert metrics["l2b_attention_bumps"] == 1
-    # Attention bumped from 0.5 to 0.55 (+0.05)
-    assert fake_node.attention == pytest.approx(0.55)
+    # F-02 guard: observer must NOT have touched the L2-B node directly.
+    assert fake_node.attention == pytest.approx(0.5)
+    # F-02 guard: removed metric must not reappear.
+    assert "l2b_attention_bumps" not in metrics
 
 
 @pytest.mark.asyncio
@@ -148,7 +154,6 @@ async def test_matched_event_missing_candidate_uuid_is_skipped():
     metrics = sighting_observer.get_metrics_snapshot()
     assert metrics["matched_received"] == 1  # received, but not fanned out
     assert metrics["archiver_attempts"] == 0
-    assert metrics["l2b_attention_bumps"] == 0
 
 
 def test_matched_event_without_loop_falls_back_silently():
@@ -182,9 +187,8 @@ def test_unmatched_event_only_increments_counter():
 
     metrics = sighting_observer.get_metrics_snapshot()
     assert metrics["unmatched_received"] == 1
-    # NO archiver / L2-B activity — that's the point of "unknown is GOSLO's call"
+    # NO archiver activity — that's the point of "unknown is GOSLO's call"
     assert metrics["archiver_attempts"] == 0
-    assert metrics["l2b_attention_bumps"] == 0
 
 
 # ─── metrics shape ─────────────────────────────────────────────────
@@ -192,10 +196,11 @@ def test_unmatched_event_only_increments_counter():
 
 def test_metrics_snapshot_has_expected_keys():
     snap = sighting_observer.get_metrics_snapshot()
+    # F-02 (2026-04-30): l2b_attention_bumps removed when direct L2-B
+    # write was deleted to fix the +0.25 compound bump bug.
     assert set(snap.keys()) == {
         "matched_received",
         "unmatched_received",
         "archiver_attempts",
         "archiver_successes",
-        "l2b_attention_bumps",
     }

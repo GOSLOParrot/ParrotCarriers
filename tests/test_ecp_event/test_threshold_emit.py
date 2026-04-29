@@ -290,3 +290,104 @@ async def test_hint_writer_called_but_no_op_when_ref_unresolved():
     metrics = hint_writer.metrics_snapshot()
     assert metrics["bumps_skipped_unresolved"] == 1
     assert metrics["bumps_applied"] == 0
+
+
+# ─── F-08: race — bbox.removed AFTER threshold crossed ──────────────
+
+
+@pytest.mark.asyncio
+async def test_bbox_removed_after_cross_drops_ref_no_crash():
+    """Brain self-audit F-08 (2026-04-30): user places a BBox (cross fires),
+    then removes it. The post-cross unbind must not crash; subsequent
+    threshold-cross-side dispatches see ref=None and silently no-op."""
+    room = _fake_room()
+    attach_ecp_event_publisher(room)
+
+    ingest = EcpEventIngest()
+    bbox_observer.register(ingest)
+    th = FocusBboxThreshold()
+    th.register(ingest)
+
+    # Place — crosses threshold
+    ingest.handle_raw(
+        "parrot.ecp.event",
+        _bbox_placed("bb_race").to_wire_json().encode("utf-8"),
+    )
+    await asyncio.sleep(0.02)
+    assert th.thresholds_crossed == 1
+    # Ref exists post-cross
+    assert refs_registry.get_ref_by_bbox("bb_race") is not None
+
+    # Remove — registry pops the Ref; weight is also pulled below threshold
+    e_remove = EcpEvent.build(
+        event_type=EcpEventType.BBOX_REMOVED,
+        source=EcpEventSource.UNITY,
+        payload={"bbox_id": "bb_race"},
+    )
+    ingest.handle_raw(
+        "parrot.ecp.event",
+        e_remove.to_wire_json().encode("utf-8"),
+    )
+    await asyncio.sleep(0.02)
+    assert refs_registry.get_ref_by_bbox("bb_race") is None
+
+    # Re-place — must rebind a NEW Ref under the same bbox_id and re-cross
+    # without raising (state.crossed reset to False on the negative-delta
+    # passage; new Ref created on next bind_bbox).
+    ingest.handle_raw(
+        "parrot.ecp.event",
+        _bbox_placed("bb_race").to_wire_json().encode("utf-8"),
+    )
+    await asyncio.sleep(0.02)
+    assert th.thresholds_crossed == 2
+    assert refs_registry.get_ref_by_bbox("bb_race") is not None
+
+
+# ─── F-09-B: cross-kind isolation — bbox_id "001" vs focus_id "001" ─
+
+
+@pytest.mark.asyncio
+async def test_bbox_and_focus_with_same_id_track_separately_in_threshold():
+    """Brain self-audit F-09-B (2026-04-30): _targets is keyed by
+    f"{subject_kind}:{subject_id}" so a BBox with id "001" and a Focus
+    with id "001" do not share an accumulator. Mirrors the cross-kind
+    isolation that test_brain_refs.py already verifies for the
+    RefBinding registry.
+
+    Emit 1 bbox.placed (Δ_bbox=1.0 → cross) and 4 focus.anchored events
+    (4 × Δ_focus=0.2 = 0.8 < 1.0 → no cross). If keys collided into
+    "001", the focus events would inherit the bbox's already-crossed
+    state and the focus side would never get to fire its own cross.
+    """
+    room = _fake_room()
+    attach_ecp_event_publisher(room)
+
+    ingest = EcpEventIngest()
+    bbox_observer.register(ingest)
+    focus_observer.register(ingest)
+    th = FocusBboxThreshold()
+    th.register(ingest)
+
+    # 1 BBox with id "001" → crosses
+    ingest.handle_raw(
+        "parrot.ecp.event",
+        _bbox_placed("001").to_wire_json().encode("utf-8"),
+    )
+    # 4 Focus events with id "001" → 0.8, no cross
+    for _ in range(4):
+        ingest.handle_raw(
+            "parrot.ecp.event",
+            _focus_anchored("001").to_wire_json().encode("utf-8"),
+        )
+    await asyncio.sleep(0.05)
+
+    # Exactly 1 cross — only the bbox. The focus accumulator stays at 0.8
+    # because it has its own _targets entry under "focus:001".
+    assert th.thresholds_crossed == 1
+    # 5th focus pushes focus side above threshold → second cross
+    ingest.handle_raw(
+        "parrot.ecp.event",
+        _focus_anchored("001").to_wire_json().encode("utf-8"),
+    )
+    await asyncio.sleep(0.02)
+    assert th.thresholds_crossed == 2
