@@ -381,3 +381,119 @@
 - `architecture/audit_identify_object_no_screenshot_20260420.md` — 工具 ② 设计源
 - `architecture/ar_app_flow_ui_design.md` — UI / 工具柜 / 道具入口
 - `unity/ArSpike/Assets/Scripts/ParrotApp/MIGRATION.md` — Unity 搬迁状态
+
+---
+
+## §8 Phase 4 决策锁附录（2026-04-29，authoritative）
+
+> 用户两轮 sign off 后固化（对话见 §6 prompt）。本节是 **Phase 4 实现的唯一真相源**；与 §3 任意章节冲突时以本节为准。修改本节 = 修改 Phase 4 协议合同。
+>
+> 已知与 §1 / §3 / §6.x 的旧叙述存在的轻量漂移已用 ⚠ 标出，由 Phase 4 收口时一次性清理（保留旧叙述以便追溯）。
+
+### §8.0 命名冲突解决（必读）
+
+`parrot.shared.event_log.EventEnvelope` 是 Sprint 0 已存在的 **L0 Redis Stream 内部封装**（freeze=True / kind 自由字符串 / EventLayer），**与 Phase 4 wire envelope 字段集和用途都不同**，不能复用。Phase 4 wire envelope 正名为 **`EcpEvent`**：
+
+| 用途 | Python 类 | 模块 | 通道 |
+|:--|:--|:--|:--|
+| L0 Redis Stream 内部（Sprint 0 已存在，**不动**） | `EventEnvelope` | `parrot.shared.event_log` | Redis Stream `parrot.events.log` |
+| Phase 4 跨语言 wire（**新增**） | `EcpEvent` | `parrot.shared.ecp_event` | LiveKit reliable DataChannel topic `parrot.ecp.event` |
+
+§3.3 / §3.5 / §3.7 / §6 出现的"EventEnvelope"如果指 Phase 4 wire envelope，**实际类名 = `EcpEvent`**。本节其余条目都用 `EcpEvent` 为准。
+
+### §8.1 决策锁全表
+
+| # | 决策项 | 锁定值 |
+|:--|:--|:--|
+| L1 | EcpState 频率 | **事件驱动 + 1Hz 全量心跳**。事件触发 = body / head / cognitive 任一变化、`active_locks` 增减、`active_command_id` 变化。Brain 端按 `EcpState.ts` + `last_ack_id` 去重。Topic：`parrot.ecp.state`（**已存在**）|
+| L2 | EcpEvent 通道 | **reliable DataChannel topic `parrot.ecp.event`**。强制字段：`event_id` (`evt_<ts_ms_hex>_<rand_hex>` 时间排序格式) / `event_type` / `created_at` (epoch ms) / `source` (enum: `unity` / `brain` / 预留 `nanobot`) / `schema_version` (int = 1) / `payload_bytes` / `payload` (dict)，可选 `correlation_id` / `unity_identity` / `room_id`。Brain 端按 `event_id` 去重，dedup 窗口 60s |
+| L3 | EcpEvent payload 大小红线 | **8 KB**。超过 → Unity 必须改走 `ref` 模式（payload 只放 ref，实际数据 HTTP/file upload）。Brain 端 `event_ingest` 拒收 > 8 KB 并发 `event.rejected.oversize` |
+| L4 | EcpEvent 与现有 inline envelope 关系 | `parrot.ecp.health` / `parrot.ecp.intent_disconnect` 现有 inline envelope **保持不动**（向后兼容）；Phase 4 新增 event_type 全部走 `parrot.ecp.event`。`LiveKitDataChannelHeartbeatTransport.BuildEventEnvelope` 不删除，但**不再扩展**新事件类型 |
+| L5 | BBox 通道 | 拖动 = **lossy DataChannel topic `parrot.ecp.tick`**（30-60Hz）；放置 = **reliable + EcpEvent**（`event_type=bbox.placed` / `bbox.removed`）；**不走 RPC**；BBox 必须 ON/OFF 显式（不是放着自动启用） |
+| L6 | Focus 通道 | 拖动 = **lossy DataChannel topic `parrot.ecp.tick`**；锚定 = **reliable + EcpEvent**（`event_type=focus.anchored` / `focus.released`）|
+| L7 | PhotoEvent 写 L2-B | **写 PhotoNode（非 ObjectNode）**。允许的关系：`Episode --has_photo--> PhotoNode`、`PhotoNode --captured_via--> Focus/BBox`、`PhotoNode --candidate_subject--> ObjectNode`（**仅当**已有候选时建边，**绝不**自动新建未知 ObjectNode） |
+| L8 | 照片 payload 通道 | **拆双通道**：preview（256px JPEG + pose + focus/bbox + candidate_refs，**必须 < 8 KB**）走 reliable DataChannel + EcpEvent；high-quality asset 走 **HTTP POST → Brain 暴露的本地 endpoint**（Phase 4：路径 `/upload/photo`，Castle 本地 cache，无 S3 / MinIO 依赖；**Phase 5+ 换对象存储**是单 Integration 模块替换）。EcpEvent / PhotoNode **只存 ref + metadata，绝不存大图 bytes** |
+| L9 | Δ 权重 + 阈值器位置 | **阈值器在 `dsg/attention/threshold.py`，不塞 BB**。BB 只放结果（`transient/current_attention_hint`）。**Phase 4 起步数值**：Δ_focus = 0.2，Δ_bbox = 1.0，threshold = 1.0（**1 BBox 直接到阈值**；**5 Focus 累加到阈值**）。**初始值入菜单** = Unity ScriptableObject `ParrotAttentionConfig`（参考 `ParrotLifecycleConfig` 模式），Brain 端通过 BB key `global/attention_thresholds`（# CANDIDATE）由 Unity Echo 注入。注：起步数值是"达阈值即上报"的最小可工作组合，W6-7 真机调时再细调（如 Δ_bbox 是否要 < threshold 给 release 留空间）|
+| L10 | LLM 注入路径 | **选项 C 主路径**：执行类 tool 在 execute 前检查 BB body / head / cognitive，附 reason 给 LLM。选项 A（system prompt 末段刷新）保留为"重大变化 fallback 接口"，**不默认开**。选项 B（`query_my_state` tool）显式不实现，避免 LLM 学会"先查再决定"烧 token |
+| L11 | identify_object 同步预算 | 总预算 **2.5s**：captureSnapshot ≤ 800ms / visual_match ≤ 1000ms / Graphiti search ≤ 600ms / 同步返回 buffer ~ 100ms。Graphiti 写入 / archiver / L2-B 候选权重 / SnapshotEvent / SightingEvent 走异步（不计入预算）。每段超时回退见 §C-e |
+| L12 | G1 拆双向 | **Unity 下行 router**（G1 原义）= `Room.DataReceived` 按 topic 分发，C# 类 `EcpEventDispatcher`；**Python 上行 event ingest** = `parrot.brain.event_ingest`，监听 LiveKit `Room.DataReceived`，做 schema 校验 + dedup + 转发到 Observer。Observer 不直接 listen DataChannel |
+| L13 | dsg/attention/ 边界硬约束 | `__init__.py` 只 export `FocusBboxThreshold`；**禁止**顶层 export `Attention` 类符号（避免误读为 L3 已落地）。`threshold.py` 文件头明写"Phase 4 临时阈值器，非 L3"。L3 完整设计见 §3.7，**不在 Phase 4 范围** |
+
+### §8.2 通道默认值最终表
+
+| 数据 | Topic | 通道 | 频率 |
+|:--|:--|:--|:--|
+| EcpState 全量心跳 | `parrot.ecp.state` | reliable DataChannel | 1Hz |
+| EcpState 状态变化 | `parrot.ecp.state` | reliable DataChannel | 事件驱动 |
+| EcpAck（命令回执） | — | RPC return value | 同步 |
+| connection.health.changed | `parrot.ecp.health` | reliable DataChannel（**existing inline envelope**，不迁移）| 事件 |
+| intent.disconnect | `parrot.ecp.intent_disconnect` | reliable DataChannel（**existing inline envelope**，不迁移）| 事件 |
+| Phase 4 新增事件全部 | `parrot.ecp.event` | reliable DataChannel + **EcpEvent** | 事件 |
+| 手势 / pose / Focus 拖动 / BBox 拖动 | `parrot.ecp.tick` | lossy DataChannel | 30-60Hz |
+| 照片 preview（< 8KB） | `parrot.ecp.event` | reliable + EcpEvent (`photo.taken_preview`) | 事件 |
+| 照片 high-quality asset | — | HTTP POST `/upload/photo` | 异步 |
+| `flyTo` / `animate` / `setVideoTier` / `captureSnapshot` / `capturePhoto` | — | LiveKit RPC | 同步 |
+
+### §8.3 Phase 4 EcpEvent 类型注册表（启动集合）
+
+`event_type` 必须是注册过的 enum 值。命名空间化、加新 type 不动旧 type。Phase 4 启动集合：
+
+| event_type | source | 触发时机 | payload 关键字段 | 工具 |
+|:--|:--|:--|:--|:--|
+| `snapshot.captured` | unity | `captureSnapshot` RPC 完成 | `snapshot_uuid` / `captured_at` / `pose` / `command_id` | ② |
+| `sighting.matched` | brain | `visual_match` 命中 L2-B 候选 | `candidate_uuid` / `score` / `snapshot_uuid` | ② |
+| `sighting.unmatched` | brain | `visual_match` 全 miss | `snapshot_uuid` / `top_candidates` | ② |
+| `bbox.placed` | unity | 用户放置 BBox | `bbox_id` / `corners` / `pose` / `correlation_id` | ③ |
+| `bbox.removed` | unity | 用户移除 BBox | `bbox_id` / `correlation_id` | ③ |
+| `focus.anchored` | unity | 放大镜锚定 | `focus_id` / `center` / `radius` / `pose` | ③ |
+| `focus.released` | unity | 放大镜松手 | `focus_id` | ③ |
+| `attention.threshold.crossed` | brain | 阈值器达阈值 | `attention_hint_id` / `weight` / `subject_ref` / `correlation_id` | ③ |
+| `photo.taken_preview` | unity | `capturePhoto` 完成 + preview ready | `photo_id` / `preview_jpeg_b64` (< 8KB) / `pose` / `episode_ref` | ④ |
+| `photo.asset_uploaded` | brain | HTTP `/upload/photo` 接收完 | `photo_id` / `asset_ref` / `bytes` | ④ |
+| `gesture.recognized` | unity | 手势检测器识别（可选 Phase 4） | `gesture_kind` / `hand_pose` / `since` | ① |
+
+`schema_version=1` 起步；payload schema 内部演化由各 event_type 独立 minor 升级，整体 schema_version 升 = 字段集变化。
+
+### §8.4 §3.7 表"代码入口"列回填
+
+| 模块 | 路径 | 起步 export |
+|:--|:--|:--|
+| **Observer**（"记录"） | `src/parrot/brain/observer/` (NEW) | `event_bus.py`（注册 + 路由）/ `snapshot.py`（→ `snapshot.captured` ❌ Unity 已发，Brain Observer 把它转 BB transient） + `sighting.py`（visual_match 命中 → `sighting.matched/unmatched`）+ `photo.py`（`photo.taken_preview` 到达 → BB transient + 触发 asset HTTP 等待器）|
+| **Attention**（"判断"，Phase 4 临时版） | `src/parrot/dsg/attention/` (NEW) | `threshold.py` — `FocusBboxThreshold` 累加 Focus / BBox 权重 + 阈值判定 → 写 `transient/current_attention_hint` + 发 `attention.threshold.crossed`；`hint_writer.py`（候选权重 +Δ 写 L2-B 节点）|
+| **Vision snapshot**（已存在） | `src/parrot/brain/vision/snapshot.py` | 不动；只增 hook：`captureSnapshot` 完成后 publish `snapshot.captured` 走 EcpEvent（由 Observer 监听） |
+| **Python 上行 event ingest** | `src/parrot/brain/event_ingest.py` (NEW) | 监听 LiveKit `Room.DataReceived`，按 topic + event_type 分发，做 dedup（按 event_id）+ schema 校验 + 8KB 拒收 |
+| **Unity 下行 router**（G1 原义） | `unity/ArSpike/Assets/Scripts/ParrotApp/Ecp/EcpEventDispatcher.cs` (NEW) | `Room.DataReceived` 按 topic 分发到 EcpDtos / EcpEvent handler |
+
+### §8.5 防漂移硬动作（5 条）
+
+1. EcpEvent JSON Schema 单独导出到 `src/parrot/shared/ecp_event_schema.json`，作为 Python ↔ C# 跨语言**唯一真相源**。CI 验证 `pydantic_model.model_json_schema() == json.load(file)`。
+2. `event_type` 落到 Python `Enum` (`EcpEventType`) + C# `string constants` (`EcpEventTypeNames`)。**禁止** free string 写 event_type。
+3. `dsg/attention/threshold.py` 文件头**明写"Phase 4 临时实现 — 非 L3"**（参考 `parrot_behavior_rules.md` frontmatter 模式）。
+4. 所有 Phase 4 新增 BB key 必须先在 `bb_schema.py` 注册 + 标 producer + 标 # CANDIDATE 直至 producer 落地。
+5. `EcpEventSource` enum 加值（如未来 `nanobot` / `maid` / `goslo_chat`）不破坏旧消费者；**禁止**直接接受 free string source。
+
+### §8.6 Phase 4 显式不做（防过度设计）
+
+- 不加 BB `peer/` scope（等真有第二个 nanobot 在房再加）
+- 不加 EcpEvent 版本协商 / 加密 / 签名（Phase 5+ 安全模型再说）
+- 不删除 `parrot.ecp.health` / `parrot.ecp.intent_disconnect` 现有 inline envelope（Phase 5+ 统一迁移）
+- 不实现 `query_my_state` tool（避免 LLM 烧 token）
+- 不在 Phase 4 范围内实现 DSG L3 完整注意力模块
+
+### §8.7 Phase 4 周次顺序（最终）
+
+| 周 | 内容 | 验收 |
+|:--|:--|:--|
+| 0（**已完成**）| 决策锁 §8 写入 + §3.7 表回填 | 用户 sign off |
+| 1-2（**当前**）| L12 G1 双向通路 + L2 EcpEvent L0 实现（Python `EcpEvent` + C# `EcpEventDto` + JSON Schema + round-trip 测试）+ L13 `dsg/attention/` package skeleton + `brain/observer/` package skeleton + ⓒ RefBinding schema | EcpEvent round-trip 测试通过；`event_ingest` 能 dedup；`attention/__init__.py` 硬约束生效 |
+| 3 | 工具 ① perch_to_finger 锚定动作 + EcpState 三态字段（L1 事件驱动 + 1Hz）+ L10 选项 C（`fly_to` / `animate` execute 前检查 BB） | 验收 1 + 验收 3 |
+| 4-5 | 工具 ② identify_object 重写（L11 预算）+ `snapshot.captured` / `sighting.*` observer + Graphiti 异步写入 | 验收 2 |
+| 6-7 | 工具 ③ Focus / BBox（L5 / L6）+ `FocusBboxThreshold`（L9）+ `ParrotAttentionConfig` SO + RefBinding 落地 | 验收 4 |
+| 8（视范围）| 工具 ④ PhotoEvent + PhotoNode (L7) + 照片双通道 (L8) + Editor HUD M2 + 全链路 Editor 跑通 | 验收 5 |
+
+### §8.8 ⚠ 已知漂移（Phase 4 收口时一次清理，不立刻改）
+
+- §3.5 表说"EventEnvelope（候选）走 reliable DataChannel" → §8 锁定为 EcpEvent，topic = `parrot.ecp.event`
+- §3.7 表"代码入口"列原本预留空，§8.4 已回填；entry doc 后续若改 §3.7 必须同步更新 §8.4
+- §6 prompt 提到"EventEnvelope L0"（ⓑ）→ 实际类名 = `EcpEvent`；下次维护 entry doc 时把 ⓑ 描述改成"EcpEvent L0"
+- §1.2 G1 行的"补 `Room.DataReceived` 路由"对应 §8 的 L12 **Unity 下行 router**；§8 显式拆出**Python 上行 event ingest**作为对偶通路
