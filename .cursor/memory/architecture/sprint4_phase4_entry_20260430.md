@@ -415,7 +415,7 @@
 | L8 | 照片 payload 通道 | **拆双通道**：preview（256px JPEG + pose + focus/bbox + candidate_refs，**必须 < 8 KB**）走 reliable DataChannel + EcpEvent；high-quality asset 走 **HTTP POST → Brain 暴露的本地 endpoint**（Phase 4：路径 `/upload/photo`，Castle 本地 cache，无 S3 / MinIO 依赖；**Phase 5+ 换对象存储**是单 Integration 模块替换）。EcpEvent / PhotoNode **只存 ref + metadata，绝不存大图 bytes** |
 | L9 | Δ 权重 + 阈值器位置 | **阈值器在 `dsg/attention/threshold.py`，不塞 BB**。BB 只放结果（`transient/current_attention_hint`）。**Phase 4 起步数值**：Δ_focus = 0.2，Δ_bbox = 1.0，threshold = 1.0（**1 BBox 直接到阈值**；**5 Focus 累加到阈值**）。**初始值入菜单** = Unity ScriptableObject `ParrotAttentionConfig`（参考 `ParrotLifecycleConfig` 模式），Brain 端通过 BB key `global/attention_thresholds`（# CANDIDATE）由 Unity Echo 注入。注：起步数值是"达阈值即上报"的最小可工作组合，W6-7 真机调时再细调（如 Δ_bbox 是否要 < threshold 给 release 留空间）|
 | L10 | LLM 注入路径 | **选项 C 主路径**：执行类 tool 在 execute 前检查 BB body / head / cognitive，附 reason 给 LLM。选项 A（system prompt 末段刷新）保留为"重大变化 fallback 接口"，**不默认开**。选项 B（`query_my_state` tool）显式不实现，避免 LLM 学会"先查再决定"烧 token |
-| L11 | identify_object 同步预算 | 总预算 **2.5s**：captureSnapshot ≤ 800ms / visual_match ≤ 1000ms / Graphiti search ≤ 600ms / 同步返回 buffer ~ 100ms。Graphiti 写入 / archiver / L2-B 候选权重 / SnapshotEvent / SightingEvent 走异步（不计入预算）。每段超时回退见 §C-e |
+| L11 | identify_object 同步预算 | **L0+L1 同步预算 2.5s**：captureSnapshot ≤ 800ms / L0 visual_match ≤ 1000ms / L1 Graphiti search ≤ 600ms / 同步返回 buffer ~ 100ms。**L0/L1 都未命中则进 L2，加 ≤ 1500ms web_search 预算**（option β：tool 内自包办 Gemini grounded search → GOSLO 同回合给口头概述，audit doc §1.4 选项 β + §5.4 实现阶段次序 #2）。**最坏路径总预算 ~4s**。Graphiti 写入 / archiver / L2-B 候选权重 / Sighting EcpEvent 走异步（不计入预算）。每段超时回退：captureSnapshot 超 → "我没看清，再试一次"；visual_match 超 → 退当前 L0 候选 (degraded)；Graphiti 超 → 直接进 L2 web_search；web_search 超 → 退 describe_image (≤ 800ms) → 还失败就 "嗯，我看了但描述不出来" |
 | L12 | G1 拆双向 | **Unity 下行 router**（G1 原义）= `Room.DataReceived` 按 topic 分发，C# 类 `EcpEventDispatcher`；**Python 上行 event ingest** = `parrot.brain.event_ingest`，监听 LiveKit `Room.DataReceived`，做 schema 校验 + dedup + 转发到 Observer。Observer 不直接 listen DataChannel |
 | L13 | dsg/attention/ 边界硬约束 | `__init__.py` 只 export `FocusBboxThreshold`；**禁止**顶层 export `Attention` 类符号（避免误读为 L3 已落地）。`threshold.py` 文件头明写"Phase 4 临时阈值器，非 L3"。L3 完整设计见 §3.7，**不在 Phase 4 范围** |
 
@@ -441,8 +441,9 @@
 | event_type | source | 触发时机 | payload 关键字段 | 工具 |
 |:--|:--|:--|:--|:--|
 | `snapshot.captured` | unity | `captureSnapshot` RPC 完成 | `snapshot_uuid` / `captured_at` / `pose` / `command_id` | ② |
-| `sighting.matched` | brain | `visual_match` 命中 L2-B 候选 | `candidate_uuid` / `score` / `snapshot_uuid` | ② |
-| `sighting.unmatched` | brain | `visual_match` 全 miss | `snapshot_uuid` / `top_candidates` | ② |
+| `sighting.matched` | brain | `visual_match` 命中 L2-B 候选 | `candidate_uuid` / `score` / `snapshot_uuid` / `match_source` (l0_visual / l1_graphiti) | ② |
+| `sighting.unmatched` | brain | L0+L1 全 miss（**L2 web_search 之前**发；纯属"记忆里没有"信号）| `snapshot_uuid` / `description` / `top_l2b_candidates` / `top_graphiti_candidates` | ② |
+| `sighting.researched` | brain | option β L2 web_search 完成（不论成败；W4-5 新增）| `snapshot_uuid` / `description` / `summary` / `confidence` / `research_backend` (gemini_grounded / describe_image_fallback) / `research_succeeded` | ② |
 | `bbox.placed` | unity | 用户放置 BBox | `bbox_id` / `corners` / `pose` / `correlation_id` | ③ |
 | `bbox.removed` | unity | 用户移除 BBox | `bbox_id` / `correlation_id` | ③ |
 | `focus.anchored` | unity | 放大镜锚定 | `focus_id` / `center` / `radius` / `pose` | ③ |

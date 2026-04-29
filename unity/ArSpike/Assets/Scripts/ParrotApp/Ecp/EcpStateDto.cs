@@ -84,6 +84,15 @@ namespace ParrotApp.Ecp
     {
         public string schema_version = "ecp.v2.alpha";
         public double ts;
+
+        /// <summary>
+        /// Sprint4 Phase 4 W3.A.3: monotonically-increasing per-publisher counter.
+        /// Brain 端去重用——若 EcpState ingest 在另一 chat 接通后，按
+        /// (unity_identity, sequence_id) 去重。事件驱动 + 1Hz 双触发可能在同一
+        /// 帧产生两条记录（罕见但可能），sequence_id 是去重的最廉价 key。
+        /// </summary>
+        public long sequence_id;
+
         public string unity_identity = "";
         public string room_id = "";
 
@@ -108,6 +117,25 @@ namespace ParrotApp.Ecp
         // 完整 ConnectionHealth（per-command ack 不带这个，只 4 态摘要进 EcpFrontendStateDto.connection_overall）
         public EcpConnectionHealthDto connection_health;
 
+        /// <summary>
+        /// Sprint4 Phase 4 W3.A.3 — extended signature.
+        ///
+        /// 新增可选参数：<paramref name="bodyStateWire"/> / <paramref name="headStateWire"/> /
+        /// <paramref name="cognitiveStateWire"/> / <paramref name="activeLocks"/> /
+        /// <paramref name="sequenceId"/>。所有都是默认空，保持向后兼容（Phase 3
+        /// 调用方不改也能编译）。
+        ///
+        /// <b>Wire 字符串约定</b>（与 Brain 端 _state_context.py 对齐）：
+        /// <list type="bullet">
+        /// <item>body_state ：lowercase / snake_case，匹配 ParrotBodyState.value
+        ///   （<c>idle / flying / perching / perched_on_hand / dancing / frozen</c>）</item>
+        /// <item>head_state ：UPPERCASE 带 HEAD_ 前缀
+        ///   （<c>HEAD_FORWARD / HEAD_LOOK_AT / HEAD_TILT / HEAD_NOD</c>）</item>
+        /// <item>cognitive_state ：Unity 永远填 ""——cognitive 由 Brain
+        ///   <c>cognitive_state_tracker</c> 直接写 BB <c>tick/cognitive_state</c>，
+        ///   字段保留只是为了 schema 完整性</item>
+        /// </list>
+        /// </summary>
         public static EcpStateDto BuildHeartbeat(
             string unityIdentity,
             string roomId,
@@ -115,12 +143,18 @@ namespace ParrotApp.Ecp
             in ConnectionHealthState health,
             string videoTier = null,
             string activeCommandId = null,
-            string lastAckId = null)
+            string lastAckId = null,
+            string bodyStateWire = "",
+            string headStateWire = "",
+            string cognitiveStateWire = "",
+            string[] activeLocks = null,
+            long sequenceId = 0)
         {
             double now = (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
             return new EcpStateDto
             {
                 ts = now,
+                sequence_id = sequenceId,
                 unity_identity = unityIdentity ?? "",
                 room_id = roomId ?? "",
                 app_lifecycle_state = appLifecycleState ?? "",
@@ -128,6 +162,10 @@ namespace ParrotApp.Ecp
                 video_tier = videoTier ?? health.VideoTier ?? "",
                 active_command_id = activeCommandId ?? "",
                 last_ack_id = lastAckId ?? "",
+                body_state = bodyStateWire ?? "",
+                head_state = headStateWire ?? "",
+                cognitive_state = cognitiveStateWire ?? "",
+                active_locks = activeLocks ?? new string[0],
                 connection_health = EcpConnectionHealthDto.FromSnapshot(health),
             };
         }
