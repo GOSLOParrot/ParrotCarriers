@@ -34,7 +34,10 @@ from parrot.brain.event_publisher import (
 from parrot.brain.observer import bbox as bbox_observer
 from parrot.brain.observer import focus as focus_observer
 from parrot.dsg.attention import hint_writer
-from parrot.dsg.attention.threshold import FocusBboxThreshold
+from parrot.dsg.attention.threshold import (
+    FocusBboxThreshold,
+    reset_attention_thresholds_for_tests,
+)
 from parrot.scheduler.blackboard import open_bb_client
 from parrot.shared.ecp_event import (
     EcpEvent,
@@ -59,6 +62,11 @@ def _reset():
     bbox_observer.reset_metrics_for_tests()
     focus_observer.reset_metrics_for_tests()
     hint_writer.reset_metrics_for_tests()
+    # F-05 step ③ side effect: FocusBboxThreshold() now reads BB on construct.
+    # Clear the attention-config BB key so DEFAULT_* assertions aren't
+    # contaminated by BB writes from test_attention_config_echo or any other
+    # test that populates global/attention_thresholds.
+    reset_attention_thresholds_for_tests()
     yield
     reset_ecp_event_ingest_for_tests()
     reset_ecp_event_publisher_for_tests()
@@ -66,6 +74,7 @@ def _reset():
     bbox_observer.reset_metrics_for_tests()
     focus_observer.reset_metrics_for_tests()
     hint_writer.reset_metrics_for_tests()
+    reset_attention_thresholds_for_tests()
 
 
 def _bbox_placed(bbox_id: str = "bb_emit") -> EcpEvent:

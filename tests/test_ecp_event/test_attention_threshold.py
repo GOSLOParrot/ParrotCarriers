@@ -20,8 +20,21 @@ from parrot.dsg.attention.threshold import (
     DEFAULT_DELTA_FOCUS,
     DEFAULT_THRESHOLD,
     FocusBboxThreshold,
+    reset_attention_thresholds_for_tests,
 )
 from parrot.shared.ecp_event import EcpEvent, EcpEventSource, EcpEventType
+
+
+@pytest.fixture(autouse=True)
+def _clear_attention_bb_overrides():
+    """F-05 step ③ side effect: FocusBboxThreshold() now reads BB on construct.
+    Clear the attention-config BB key between tests so DEFAULT_* assertions
+    here do not get contaminated by BB writes from test_attention_config_echo
+    or any other test that populates global/attention_thresholds.
+    """
+    reset_attention_thresholds_for_tests()
+    yield
+    reset_attention_thresholds_for_tests()
 
 
 def _make(et: EcpEventType, *, correlation_id: str = "tgt1") -> EcpEvent:

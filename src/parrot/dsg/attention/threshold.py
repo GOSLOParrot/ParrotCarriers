@@ -102,6 +102,12 @@ _BB_KEY_HINT = "transient/current_attention_hint"
 # so consumers can detect upgrade. Bump only on field-set change.
 _HINT_SCHEMA_VERSION = 1
 
+# F-05 step ③ — Echo path consumer side: BB key the AttentionConfigEcho
+# Unity → Brain handler writes (writer = brain._rpc_bridge per bb_schema.py
+# declaration). FocusBboxThreshold reads on construct to override DEFAULT_*.
+_BB_KEY_ATTENTION_CONFIG = "global/attention_thresholds"
+_ATTENTION_CONFIG_SCHEMA_VERSION = 1
+
 
 # ─── Phase 4 starter values (§8.1 L9) ───────────────────────────────────
 # Default Δ / threshold. Producers may override at construction time so the
@@ -116,6 +122,100 @@ DEFAULT_THRESHOLD: float = 1.0
 # many regions. Tuned to "user attention is sticky for ~30s of silence";
 # Phase 5+ DSG L3 may replace with a real decay curve.
 TARGET_TTL_SECONDS: float = 30.0
+
+
+# F-05 step ③ helpers ──────────────────────────────────────────────────
+
+
+def _read_bb_attention_overrides() -> dict[str, float]:
+    """Read W6-7 Unity ScriptableObject Echo from BB on construct.
+
+    Returns a sub-dict of ``{delta_focus, delta_bbox, threshold,
+    target_ttl_s}`` containing only the fields actually present + valid.
+    Missing / malformed fields fall through to module-level ``DEFAULT_*``.
+
+    Validation rules (defensive — ``attention_config_handler`` already
+    validates on write, but a stale BB write from a previous schema
+    revision would otherwise crash the bootstrap):
+
+    * Value at the BB key MUST be a dict.
+    * ``schema_version`` MUST equal :data:`_ATTENTION_CONFIG_SCHEMA_VERSION`.
+    * Each numeric field MUST be ``int`` or ``float`` (and not ``bool``,
+      because ``isinstance(True, int)`` is True in Python and we don't
+      want booleans silently coerced to 0.0/1.0).
+
+    Any failure returns ``{}`` so the caller falls through to DEFAULTS.
+    """
+    try:
+        from parrot.scheduler.blackboard import open_bb_client
+        bb = open_bb_client(name="threshold_bootstrap", writer=_BB_WRITER)
+    except Exception:
+        return {}
+
+    try:
+        value = bb.get(_BB_KEY_ATTENTION_CONFIG)
+    except KeyError:
+        return {}
+    except Exception:
+        return {}
+
+    if not isinstance(value, dict):
+        logger.debug(
+            "[threshold] %s is not a dict (%s); ignoring BB override",
+            _BB_KEY_ATTENTION_CONFIG, type(value).__name__,
+        )
+        return {}
+
+    schema_version = value.get("schema_version", 0)
+    if schema_version != _ATTENTION_CONFIG_SCHEMA_VERSION:
+        logger.debug(
+            "[threshold] %s schema_version=%r != %d; ignoring BB override",
+            _BB_KEY_ATTENTION_CONFIG, schema_version, _ATTENTION_CONFIG_SCHEMA_VERSION,
+        )
+        return {}
+
+    out: dict[str, float] = {}
+    for field_name in ("delta_focus", "delta_bbox", "threshold", "target_ttl_s"):
+        v = value.get(field_name)
+        if isinstance(v, bool):
+            continue  # reject silent bool→float coercion
+        if isinstance(v, (int, float)):
+            out[field_name] = float(v)
+    if out:
+        logger.info(
+            "[threshold] BB-injected attention config: %s",
+            {k: round(v, 3) for k, v in out.items()},
+        )
+    return out
+
+
+def reset_attention_thresholds_for_tests() -> None:
+    """Wipe the BB attention-config key so subsequent ``FocusBboxThreshold()``
+    constructions fall through to ``DEFAULT_*``. Tests only — production
+    code should never call this.
+
+    Implementation: writes an empty dict (which fails the schema_version
+    check on read → falls through). py-trees Blackboard does not expose a
+    "delete key" API cheap to use here; the empty-dict sentinel is
+    equivalent for the resolver's purposes.
+
+    NOTE: ``global/attention_thresholds`` is declared in ``bb_schema.py``
+    with writer = ``brain._rpc_bridge`` (Echo handler writer). py-trees
+    Blackboard enforces single-writer-per-key via Access.WRITE/READ
+    registration, so the test helper MUST open the BB client as the
+    declared writer or ``bb.set`` raises AttributeError silently caught
+    here. Using the production writer name is safe — this helper still
+    only runs in tests.
+    """
+    try:
+        from parrot.scheduler.blackboard import open_bb_client
+        bb = open_bb_client(
+            name="threshold_test_reset",
+            writer="brain._rpc_bridge",  # declared writer for global/attention_thresholds
+        )
+        bb.set(_BB_KEY_ATTENTION_CONFIG, {})
+    except Exception:
+        pass
 
 
 @dataclass
@@ -143,21 +243,57 @@ class FocusBboxThreshold:
     def __init__(
         self,
         *,
-        delta_focus: float = DEFAULT_DELTA_FOCUS,
-        delta_bbox: float = DEFAULT_DELTA_BBOX,
-        threshold: float = DEFAULT_THRESHOLD,
-        target_ttl_s: float = TARGET_TTL_SECONDS,
+        delta_focus: float | None = None,
+        delta_bbox: float | None = None,
+        threshold: float | None = None,
+        target_ttl_s: float | None = None,
     ) -> None:
-        self.delta_focus = delta_focus
-        self.delta_bbox = delta_bbox
-        self.threshold = threshold
-        self.target_ttl_s = target_ttl_s
+        """Construct with parameter resolution order (F-05 step ③, 2026-04-30):
 
-        # Keyed by correlation_id (= attention target id). Empty
-        # correlation_id is treated as "default target" — Phase 4 UI emits
-        # one BBox at a time, so a missing correlation_id won't cause cross-
-        # contamination, but Phase 5+ multi-target will need correlation_ids
-        # populated by the producer.
+            1. Explicit kwarg from caller (non-None) — highest priority,
+               preserves test ergonomics where a fixture wants to pin a value
+               regardless of session BB state.
+            2. BB key ``global/attention_thresholds`` — Unity ScriptableObject
+               Echo via :mod:`parrot.brain.attention_config_handler`. Only
+               applied when present + ``schema_version`` matches +
+               value is numeric. Stale / malformed BB falls through.
+            3. Module-level ``DEFAULT_*`` — Phase 4 starter values
+               (entry doc §8.1 L9).
+
+        Caller passing ``None`` (or omitting) yields the BB-then-DEFAULT
+        chain; caller passing a concrete float bypasses BB. The sentinel
+        pattern matters because Phase 4 W6-7 production agent boot
+        constructs a bare ``FocusBboxThreshold()`` that should pick up Echo
+        values, while ``test_attention_threshold.py`` / ``test_threshold_emit.py``
+        construct bare and rely on DEFAULTS — both work, since the per-test
+        autouse :func:`reset_attention_thresholds_for_tests` fixture clears
+        the BB key between tests.
+        """
+        bb = _read_bb_attention_overrides()
+
+        self.delta_focus = (
+            delta_focus
+            if delta_focus is not None
+            else bb.get("delta_focus", DEFAULT_DELTA_FOCUS)
+        )
+        self.delta_bbox = (
+            delta_bbox
+            if delta_bbox is not None
+            else bb.get("delta_bbox", DEFAULT_DELTA_BBOX)
+        )
+        self.threshold = (
+            threshold
+            if threshold is not None
+            else bb.get("threshold", DEFAULT_THRESHOLD)
+        )
+        self.target_ttl_s = (
+            target_ttl_s
+            if target_ttl_s is not None
+            else bb.get("target_ttl_s", TARGET_TTL_SECONDS)
+        )
+
+        # Keyed by f"{subject_kind}:{subject_id}" so bbox/focus with the same
+        # Unity-side numeric id stay isolated (mirrors parrot.brain.refs).
         self._targets: dict[str, _TargetState] = {}
 
         # Observability counters (parallel to EcpEventIngest's own counters)
@@ -388,4 +524,5 @@ __all__ = [
     "DEFAULT_THRESHOLD",
     "FocusBboxThreshold",
     "TARGET_TTL_SECONDS",
+    "reset_attention_thresholds_for_tests",
 ]
