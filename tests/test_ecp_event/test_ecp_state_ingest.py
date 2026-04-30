@@ -206,8 +206,10 @@ class TestMalformedJsonSkippedNoCrash:
         snap = ecp_state_ingest.get_metrics_snapshot()
         assert snap["parse_failures"] >= 1
 
-    def test_schema_version_mismatch_still_processes(self):
-        """schema_version mismatch is logged but NOT rejected (forward-compat)."""
+    def test_schema_version_mismatch_is_skipped(self):
+        """schema_version mismatch → packet is dropped, BB not written.
+        Prevents silently storing an incompatible schema into session/ecp_state.
+        When Unity bumps the version, _EXPECTED_SCHEMA_VERSION must be updated here."""
         room = FakeRoom()
         ecp_state_ingest.attach_ecp_state_ingest(room)
 
@@ -217,8 +219,8 @@ class TestMalformedJsonSkippedNoCrash:
 
         snap = ecp_state_ingest.get_metrics_snapshot()
         assert snap["schema_version_mismatch"] == 1
-        # Still dispatched despite mismatch (forward-compatible)
-        assert snap["dispatched_count"] == 1
+        # Must NOT dispatch — incompatible schema should not reach BB
+        assert snap["dispatched_count"] == 0
 
 
 class TestMetricsSnapshotKeys:

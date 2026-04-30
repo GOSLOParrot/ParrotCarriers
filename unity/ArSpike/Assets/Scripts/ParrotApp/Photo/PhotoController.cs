@@ -81,6 +81,11 @@ namespace ParrotApp.Photo
             public float CapturedAt;
             public string PreviewEventId;
             public UploadStatus Status;
+            /// <summary>true = preview EcpEvent was actually delivered to LiveKit (not just dropped).</summary>
+            public bool PreviewSent;
+            /// <summary>Cached full-res JPEG bytes for reconnect retry when Status=Failed.
+            /// Held until Status=Uploaded or app quits. Spike-acceptable memory cost (~100-500KB/photo).</summary>
+            public byte[] FullResJpeg;
         }
 
         // ─── State ────────────────────────────────────────────────────
@@ -123,28 +128,43 @@ namespace ParrotApp.Photo
         private void OnRoomConnected()
         {
             // Photo reconnect 与 BBox/Focus 不同（§B.5 锁定）：
-            // - 已上传成功：不重发（asset 已在 Brain disk，重传只是浪费带宽）
-            //   Brain 端 PhotoNode upsert 是幂等的（bump interaction_count only）
-            // - 上传失败：spike 期未缓存 full-res bytes，记录警告，无法自动重试
-            int failedCount = 0;
+            // - Uploaded：不重发（asset 已在 Brain disk；PhotoNode 幂等；重传无意义）
+            // - Failed + PreviewSent=true：重试 HTTP POST（Brain 已有 preview → PhotoNode
+            //   存在，只缺 asset_ref；不重发 preview）
+            // - Failed + PreviewSent=false：preview 也未到 Brain，无法恢复（只 log）
+            int retriedCount = 0;
+            int noRetryCount = 0;
             int uploadedCount = 0;
             foreach (var kv in _pendingPhotos)
             {
-                switch (kv.Value.Status)
+                var p = kv.Value;
+                switch (p.Status)
                 {
-                    case UploadStatus.Uploaded: uploadedCount++; break;
+                    case UploadStatus.Uploaded:
+                        uploadedCount++;
+                        break;
                     case UploadStatus.Failed:
-                        failedCount++;
-                        Debug.LogWarning(
-                            $"[PhotoController] Reconnect: photo_id={kv.Key} status=Failed — " +
-                            "full-res bytes not cached in spike mode; cannot auto-retry HTTP POST. " +
-                            "Phase 5+ should persist bytes for failed uploads.");
+                        if (p.PreviewSent && p.FullResJpeg != null)
+                        {
+                            // Preview reached Brain → retry HTTP POST only
+                            retriedCount++;
+                            p.Status = UploadStatus.Pending;
+                            _ = UploadAssetAsync(p.PhotoId, p.FullResJpeg, p.PreviewEventId);
+                        }
+                        else
+                        {
+                            // Preview was never sent — Brain has no PhotoNode; cannot recover
+                            noRetryCount++;
+                            Debug.LogWarning(
+                                $"[PhotoController] Reconnect: photo_id={kv.Key} status=Failed " +
+                                $"previewSent={p.PreviewSent} — Brain missing preview; cannot retry.");
+                        }
                         break;
                 }
             }
             Debug.Log(
-                $"[PhotoController] Reconnect: {uploadedCount} uploaded (NOT re-publishing, asset on Brain disk) / " +
-                $"{failedCount} failed (noted above).");
+                $"[PhotoController] Reconnect: {uploadedCount} uploaded (NOT re-publishing) / " +
+                $"{retriedCount} failed-retry-started / {noRetryCount} failed-no-preview (unrecoverable).");
         }
 
         // ─── Public API ───────────────────────────────────────────────
@@ -218,32 +238,47 @@ namespace ParrotApp.Photo
             string previewEventId = dto.event_id;
 
             // 8. Publish photo.taken_preview EcpEvent
-            bool sent = false;
+            bool previewSent = false;
             if (publisher != null)
             {
-                sent = publisher.Publish(dto);
+                previewSent = publisher.Publish(dto);
             }
             else
             {
                 Debug.LogWarning(
                     $"[PhotoController] photo_id={photoId} — no EcpEventPublisher; " +
-                    $"preview EcpEvent dropped (event_id={previewEventId})");
+                    $"preview EcpEvent dropped (event_id={previewEventId}).");
             }
 
-            // 9. Register in pending dict
+            if (!previewSent)
+            {
+                // Preview was dropped (room not ready / publisher missing).
+                // Brain has no PhotoNode yet. HTTP POST will still proceed so
+                // the asset lands on Brain disk, but Brain's photo_upload_server
+                // will log "asset_uploaded for unknown photo_id" (observer.photo
+                // §B.5). reconnect retry is disabled for this photo (PreviewSent=false).
+                Debug.LogWarning(
+                    $"[PhotoController] photo_id={photoId} — preview EcpEvent NOT delivered. " +
+                    "Brain will receive asset upload but PhotoNode may be missing (observer.photo " +
+                    "asset_for_unknown_photo_id). Reconnect will not retry HTTP POST for this photo.");
+            }
+
+            // 9. Register in pending dict (cache full-res bytes for reconnect retry)
             _pendingPhotos[photoId] = new PendingPhoto
             {
                 PhotoId = photoId,
                 CapturedAt = Time.realtimeSinceStartup,
                 PreviewEventId = previewEventId,
                 Status = UploadStatus.Pending,
+                PreviewSent = previewSent,
+                FullResJpeg = fullResJpeg,
             };
 
             Debug.Log(
                 $"[PhotoController] photo_id={photoId} preview_event_id={previewEventId} " +
                 $"src={srcWidth}x{srcHeight} jpeg_q={usedQuality} b64_bytes={previewB64.Length} " +
                 $"bbox_refs=[{string.Join(",", bboxRefs)}] focus_refs=[{string.Join(",", focusRefs)}] " +
-                $"candidate={candidateSubjectUuid} sent={sent}");
+                $"candidate={candidateSubjectUuid} previewSent={previewSent}");
 
             // 10. HTTP POST full-res asset (async, non-blocking)
             _ = UploadAssetAsync(photoId, fullResJpeg, previewEventId);
@@ -459,10 +494,11 @@ namespace ParrotApp.Photo
         private async Task UploadAssetAsync(string photoId, byte[] fullResJpeg, string previewEventId)
         {
             string url = $"http://{brainHost}:{brainPort}/upload/photo/{photoId}";
+            // 4 total attempts = initial attempt + 3 retries (1s / 2s / 4s backoff)
             int[] retryDelaysMs = { 1000, 2000, 4000 };
             bool success = false;
 
-            for (int attempt = 0; attempt < 3; attempt++)
+            for (int attempt = 0; attempt < 4; attempt++)
             {
                 if (attempt > 0)
                 {
@@ -490,7 +526,10 @@ namespace ParrotApp.Photo
                             $"[PhotoController] HTTP POST /upload/photo/{photoId} → {req.responseCode} " +
                             $"bytes={fullResJpeg.Length}");
                         if (_pendingPhotos.TryGetValue(photoId, out var p))
+                        {
                             p.Status = UploadStatus.Uploaded;
+                            p.FullResJpeg = null;  // Release cached bytes once uploaded
+                        }
                         success = true;
                         break;
                     }

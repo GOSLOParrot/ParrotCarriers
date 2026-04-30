@@ -136,14 +136,18 @@ def _on_ecp_state_packet(data: bytes | str) -> None:
         logger.debug("[ecp_state_ingest] expected dict, got %s", type(obj).__name__)
         return
 
-    # 3. schema_version soft-check (log but don't reject — forward-compatible)
+    # 3. schema_version check — reject unknown versions to avoid silently writing
+    #    an incompatible dict into session/ecp_state (prompt §A.1 spec: skip on mismatch).
+    #    When Unity rolls a new schema_version, bump _EXPECTED_SCHEMA_VERSION here too.
     sv = obj.get("schema_version", "")
     if sv != _EXPECTED_SCHEMA_VERSION:
         _metrics["schema_version_mismatch"] += 1
         logger.debug(
-            "[ecp_state_ingest] schema_version=%r (expected %r); processing anyway",
-            sv, _EXPECTED_SCHEMA_VERSION,
+            "[ecp_state_ingest] schema_version=%r (expected %r) — skipping to avoid "
+            "incompatible write to BB %s",
+            sv, _EXPECTED_SCHEMA_VERSION, _BB_KEY,
         )
+        return
 
     # 4. Write to BB session/ecp_state (complete dict — consumers pick fields)
     #    writer = "brain._rpc_bridge" as declared in bb_schema.py:178
