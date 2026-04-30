@@ -1,168 +1,127 @@
 ---
 status: partial
 category: completion-report
-status_note: "GAP-1 (EcpState ingest handler) ✅ 落地 + 230/230 全绿。联机 smoke（Editor↔Brain 5 验收口径）⏳ 等待环境就绪后补充。"
+status_note: "GAP-1 全部落地（含审计修复 ca913ac）。230/230 全绿。联机 smoke 5 验收口径 ⏳ 待环境就绪。"
 last_reviewed: 2026-04-30
+commits: "1ad3d37 (GAP-1 初版) + ca913ac (审计修复)"
 ---
 
 # Sprint4 Phase 4 联机 smoke + GAP-1 完成报告（2026-04-30）
 
-> **本文用途**：GAP-1 修复落地 + 联机 smoke 验证结果记录。
-> GAP-1 段（A）已完成；联机 smoke 段（B）在 Brain dev + LiveKit 环境就绪后补充。
+---
+
+## §0 完成状态总览
+
+| 任务段 | 状态 | 说明 |
+|:--|:--|:--|
+| **A — GAP-1 EcpState ingest** | ✅ 完成 | 含审计修复，230/230 |
+| **B — 联机 smoke 5 验收口径** | ⏳ 待环境 | 需 docker compose + Brain dev + Unity Play |
 
 ---
 
-## §0 TL;DR
+## §1 GAP-1 功能完成明细
 
-| 段 | 内容 | 状态 |
+| 功能点 | 状态 | 说明 |
 |:--|:--|:--|
-| A — GAP-1 | `ecp_state_ingest.py` + 10 测试 + doc 收口 | ✅ |
-| B — 联机 smoke | Editor↔Brain 全链路 5 验收口径 | ⏳ 待环境 |
+| `ecp_state_ingest.py` 文件新建 | ✅ | `src/parrot/brain/ecp_state_ingest.py` |
+| `attach_ecp_state_ingest(room)` 函数 | ✅ | 注册 `room.on("data_received")` 回调 |
+| Topic 过滤 `parrot.ecp.state` | ✅ | 其他 topic → silent ignore，计入 `foreign_topic_ignored` |
+| JSON 解析 + dict 类型检查 | ✅ | 失败 → `parse_failures` counter + return |
+| schema_version 不匹配 → **skip（不写 BB）** | ✅（审计修复后） | `ecp.v2.alpha` 之外全部跳过 |
+| BB `session/ecp_state` 写入 | ✅ | writer = `"brain._rpc_bridge"`（与 bb_schema:178 一致） |
+| **不写 `tick/body_state` / `tick/head_state`** | ✅ | single-producer 约束；writer = `brain.telemetry_receiver` |
+| 6 项 metrics（received/dispatched/parse_failures/schema_mismatch/bb_write_failures/foreign_ignored）| ✅ | |
+| `agent.py` boot wire-up | ✅ | `attach_ecp_state_ingest(ctx.room)`，位于 publisher 之后 |
+| `bb_schema.py` 移除 `# CANDIDATE` | ✅ | 注释更新为实际 producer |
+| 10 项测试全绿 | ✅ | `tests/test_ecp_event/test_ecp_state_ingest.py` |
+| `test_state_context.py` 注释更新 | ✅ | `test_get_snapshot_handles_missing_keys` 说明更新 |
+| audit doc §1.1/§3.3/§5.3/§5.4/§5.5/§5.6 更新 | ✅ | Finding B → ✅ resolved |
+| **sequence_id 去重** | ⚠ 未做 | 1Hz 心跳重连场景可能重复写；Phase 5+ 加 (identity, seq_id) 去重 |
+| **OnDisconnect 清 BB** | ⚠ 未做 | `session/ecp_state` 不随断连自动清空；旧值在下次 connect 前持续存在 |
 
-**测试基线**：230/230 全绿（220 baseline + 10 GAP-1 新增）。
+### 1.1 schema_version 策略（审计后最终决策）
+
+| 场景 | 行为 |
+|:--|:--|
+| `schema_version == "ecp.v2.alpha"` | 正常写入 BB `session/ecp_state` |
+| `schema_version` 缺失或不匹配 | skip（`schema_version_mismatch` +1）；不写 BB；不 crash |
+
+**理由**：防止 Unity 端升级 schema 后，Brain 端写入不兼容格式污染 `session/ecp_state`，导致 `_state_context.get_state_snapshot()` 读到格式错误的 dict 影响 LLM 注入。Unity 升级 schema_version 时需同步更新 `_EXPECTED_SCHEMA_VERSION`。
+
+### 1.2 GAP-1 修复效果
+
+修复前：`session/ecp_state` 永远 None → `format_state_header()` 里 `active_locks` / `active_command_id` 永远空白。
+
+修复后（联机时）：Brain 每秒收到 Unity `EcpStateDto`，写入 BB → `_state_context` 读到真实值 → LLM 看到 `[GOSLO state] locks=fly_to active_cmd=cmd_abc12345`。
 
 ---
 
-## §1 GAP-1 修复详情
-
-### 1.1 问题（audit §5.5 Finding B）
-
-Unity W3.A.3 `LifecycleHeartbeatPublisher` 在 `parrot.ecp.state` topic 以 1Hz + 事件驱动 publish `EcpStateDto`，但 Brain 端：
-- `event_ingest` 只路由 `parrot.ecp.event`
-- `telemetry_receiver` 路由 `parrot.telemetry` + `parrot.event`
-- `parrot.ecp.state` → 落到 **silent-ignore** 分支
-
-结果：BB `session/ecp_state` 永远 None → selection-C tool wrappers 看到 `active_locks=[]` / `active_command_id=""` 从 ECP 侧读不到实际状态。
-
-### 1.2 实施内容
-
-**新文件**：`src/parrot/brain/ecp_state_ingest.py`
-
-| 要素 | 实现 |
-|:--|:--|
-| 模式 | mirror `attach_telemetry_receiver` — `room.on("data_received")` + topic 过滤 |
-| Topic 过滤 | `TOPIC_ECP_STATE = "parrot.ecp.state"` (from `ecp_event.py` — 唯一真相源) |
-| 解析 | `json.loads` → dict（不 import EcpStateDto.cs；直接 dict 解析）|
-| BB 写入 | `session/ecp_state`，writer = `"brain._rpc_bridge"`（bb_schema.py:178 声明一致）|
-| tick 字段镜像 | **不写** `tick/body_state` / `tick/head_state`（writer = `brain.telemetry_receiver`，单 producer 约束）|
-| 防御策略 | JSON parse 失败 / 非 dict / schema_version 不匹配 → log debug + skip，不 crash |
-| schema_version 策略 | 不匹配 → 警告 + **仍处理**（forward-compatible；旧 Unity 客户端不中断）|
-| Metrics | 6 项：`received_count / dispatched_count / parse_failures / schema_version_mismatch / bb_write_failures / foreign_topic_ignored` |
-
-**改动文件**：
-
-| 文件 | 改动 |
-|:--|:--|
-| `src/parrot/brain/agent.py` | 在 `attach_ecp_event_publisher` 之后加 `attach_ecp_state_ingest(ctx.room)` + GAP-1 注释引用 |
-| `src/parrot/shared/bb_schema.py` | `session/ecp_state` 移除 `# CANDIDATE` marker，更新注释为实际 producer |
-| `.cursor/memory/architecture/sprint4_phase4_completion_and_final_audit_20260430.md` | §1.1 / §3.3 / §5.3 / §5.4 / §5.5 Finding B / §5.6 全部更新为 ✅ |
-
-**新增测试**（10 项）：`tests/test_ecp_event/test_ecp_state_ingest.py`
-
-| 测试类 | 测试项 | 覆盖 |
-|:--|:--|:--|
-| `TestAttachSubscribesToDataReceived` | test_registers_data_received_handler | room.on 注册验证 |
-| `TestValidPacketWritesBB` | test_writes_session_ecp_state | BB 值验证（body/head/active_cmd/locks）|
-| | test_dispatched_count_increments | metrics 验证 |
-| | test_sequence_overwrite | 后到包覆盖前包（last-write-wins）|
-| `TestForeignTopicSilentlyIgnored` | test_foreign_topic_does_not_write_bb | foreign topic counter |
-| `TestMalformedJsonSkippedNoCrash` | test_invalid_json | JSON 错误不 crash |
-| | test_non_dict_json_skipped | 非 dict payload 跳过 |
-| | test_schema_version_mismatch_still_processes | forward-compat（处理不拒收）|
-| `TestMetricsSnapshotKeys` | test_all_expected_keys_present | 6 个 key 全有 |
-| | test_initial_all_zeros | 初始值全 0 |
-
-### 1.3 GAP-1 修复后的效果
-
-Selection-C tool wrappers (`tools/_state_context.get_state_snapshot`) 现在可以从 `session/ecp_state` 读取：
-- `active_locks` — Unity 端 `active_locks[]` 字段
-- `active_command_id` — 当前执行中命令的 ID
-- `body_state` / `head_state` — ECP 侧（比 telemetry 侧更新）
-
-`format_state_header()` 在有 active_locks / active_command_id 时将展示 `locks=...` / `active_cmd=...` 字段，让 LLM 真正看到完整 ECP 状态。
-
-### 1.4 测试基线
+## §2 测试基线
 
 ```
 pytest tests/ --ignore=tests/integration -q
-→ 230 passed in 3.51s
+→ 230 passed in 3.54s
 ```
 
-### 1.5 已知设计选择
-
-| 选择 | 理由 |
+| 测试套 | 项数 |
 |:--|:--|
-| 不写 tick/body_state | bb_schema single-producer 约束：writer = `brain.telemetry_receiver`；ecp_state_ingest 若强写 = 双写者竞争，可能覆盖更新鲜的 telemetry 包 |
-| schema_version 不匹配仍处理 | forward-compatible：Unity 升级 schema_version 后 Brain 端不应直接 break；只 log 警告 |
-| session/ecp_state 写完整 dict | 消费方（_state_context）自己 `.get()` 需要的字段，不需要 ecp_state_ingest 做裁剪 |
+| W8 新增 (test_ecp_state_ingest.py) | 10 |
+| 原有 baseline | 220 |
+| **总计** | **230** |
+
+10 项覆盖：room 注册 / BB 写入 / 序列覆盖 / 外 topic 忽略 / JSON 错误 / 非 dict / schema_version skip / metrics 全 keys / metrics 初始值全零。
 
 ---
 
-## §2 联机 smoke — 环境配置说明
+## §3 联机 smoke — 环境启动顺序
 
-> **状态**：⏳ 等待环境就绪后补充验证结果
-
-### 2.1 前置环境启动顺序
+> **状态**：⏳ 等待用户启动环境后执行
 
 ```bash
-# 1. LiveKit dev server (Redis + LiveKit Server)
+# 1. LiveKit + Redis
 docker compose -f infra/docker-compose.dev.yml up -d
 
-# 2. Brain agent dev mode (新终端)
+# 2. Brain dev mode（新终端）
 python -m parrot.brain.agent dev
 
-# 3. Token 生成
+# 3. 生成 token
 python src/scripts/generate_token.py
-# 拷贝 token 到 unity/ArSpike/unity_join_token.txt (或 Inspector)
+# 填入 unity/ArSpike/unity_join_token.txt 或 Inspector
 
-# 4. Unity Editor: 打开 ParrotSmokeScene → Play
+# 4. Unity Editor → 打开 ParrotSmokeScene → Play
 ```
 
-### 2.2 环境需求
+**依赖 `.env` 变量**：`LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` / `GOOGLE_API_KEY`
 
-| 依赖 | 说明 |
+---
+
+## §4 联机 smoke — 5 验收口径（⏳ 待填）
+
+| # | 验收口径 | 触发操作 | 期望证据 | 状态 |
+|:--|:--|:--|:--|:--|
+| 1 | 工具 ①：perch_to_finger 体感闭环 | Editor: HandSource ContextMenu → `Debug: Fire "index_finger_branch" gesture` | AnimationDriver state=PERCHED_ON_HAND + HEAD_TILT；BB tick/body_state 更新 | ⏳ |
+| 2 | 工具 ②：identify_object 同步链（1.9s 内）| Brain 终端：sim_unity_client + PARROT_ENABLE_IDENTIFY_OBJECT_TOOL=1，让 GOSLO 说"那是什么" | Console: [capture]/[L0 no match]/[L1 no match] 三段；observer.sighting metrics +1；< 1.9s | ⏳ |
+| 3 | ECP frontend_state 三态 + GAP-1 | 验收 #1 同时 | Brain log: `[GOSLO state] body=perched_on_hand ...`；`session/ecp_state` BB 有值；`active_locks/active_command_id` 非空（如有命令在途）| ⏳ |
+| 4 | RefBinding + Event 不污染实时帧 | Editor: BBoxController × 1 + FocusController × 5 | Brain log: `attention.threshold.crossed` publish；Unity EcpEventDispatcher wildcard log；hint_writer metrics bumps_skipped_unresolved +1（UNRESOLVED 是常态）| ⏳ |
+| 5 | 全链路 Editor 跑通（含工具 ④ Photo）| Editor: PhotoController ContextMenu → `Debug: Capture Test Photo` | EcpEvent photo.taken_preview 到 Brain；HTTP POST 200；`data/photos/.../ph_xxx.jpg` 落盘；photo.asset_uploaded 回程；observer.photo metrics photo_nodes_upserted +1 + photo_nodes_updated_with_asset +1 | ⏳ |
+
+---
+
+## §5 已知遗留问题与 Phase 5+ defer
+
+| 项 | 严重性 | 触发条件 / 计划 |
+|:--|:--|:--|
+| GAP-1 sequence_id 去重 | 低 | 真机重连场景 1Hz 心跳可能短暂重复写 BB；Phase 5+ 加 `(unity_identity, sequence_id)` 去重 |
+| GAP-1 OnDisconnect 清 BB | 低 | `session/ecp_state` 跨 session 保持旧值，下次 connect 覆盖前可能被读到（无 stale 危害，只是不精确）；Phase 5+ 加 `OnDisconnected` handler |
+| W8 reconnect bytes 跨重启 | 低 | 内存缓存，App restart 后 `FullResJpeg=null` → Failed 照片不可恢复；Phase 5+ 加 PlayerPrefs / 磁盘缓存 |
+| W8 AR 正式帧抓取 | 中 | Editor smoke 用 Camera.main；真 AR 帧需 ARCameraManager.frameReceived 路径；Phase 5+ 接 W3.A.2/A.3 baseline |
+| W8 previewSent=false 时 PhotoNode 无法建立 | 中（设计限制）| room 断开时拍照，preview 不到 Brain，HTTP POST 收到 asset 后 observer.photo log `asset_for_unknown_photo_id`；Phase 5+ 考虑本地存 preview payload 等重连后补发 |
+
+---
+
+## §6 Commits
+
+| Commit | 内容 |
 |:--|:--|
-| Docker + compose | LiveKit + Redis |
-| Python .venv | Brain agent + 所有依赖 |
-| Unity 2022.3.62f3 | ParrotSmokeScene 已有 W3/W6-7/W8 全套 components |
-| `.env` | `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` / `GOOGLE_API_KEY` |
-
----
-
-## §3 联机 smoke — 5 验收口径（⏳ 待填）
-
-以下表格在联机 smoke 执行后填写：
-
-| # | 验收口径 | 状态 | 证据 |
-|:--|:--|:--|:--|
-| 1 | 工具 ①：perch_to_finger 体感闭环 | ⏳ | — |
-| 2 | 工具 ②：identify_object 同步链（1.9s 内）| ⏳ | — |
-| 3 | ECP frontend_state 三态对齐 LLM | ⏳ | — |
-| 4 | RefBinding + Event 落地不污染实时帧 | ⏳ | — |
-| 5 | 全链路 Editor 跑通（含工具 ④ Photo）| ⏳ | — |
-
----
-
-## §4 已知 Bug / Finding（联机 smoke 后补充）
-
-待联机 smoke 执行后填写。
-
----
-
-## §5 Phase 5+ 派生待办（已知）
-
-| 项 | 触发条件 |
-|:--|:--|
-| EcpState ingest sequence_id 去重 | 真机 spike 发现重复包时加 (unity_identity, sequence_id) 去重 |
-| EcpState ingest disconnect 清 BB | OnDisconnect 时把 session/ecp_state 设 None（防旧值残留影响下次 session）|
-| 联机 smoke 跑完后继续 P2.5 完成汇报 chat | 全 5 验收 ✅ 后起 |
-
----
-
-## §6 收口签名（GAP-1 段）
-
-- 新文件：`src/parrot/brain/ecp_state_ingest.py`
-- 改动：`agent.py` + `bb_schema.py` + audit doc + test_state_context.py 注释更新
-- 测试：230/230 全绿
-- entry §8 决策锁：0 漂移
-- 下一步：联机 smoke（环境就绪后）→ P2.5 完成汇报 chat
+| `1ad3d37` | GAP-1 初版：ecp_state_ingest.py + 10 测试 + agent wire-up + doc 收口 |
+| `ca913ac` | 审计修复：schema_version 策略改为 skip；测试名/断言更新 |
