@@ -44,6 +44,11 @@ class NodeKind(str, Enum):
     ZONE = "zone"
     PERSON = "person"
     EVENT = "event"
+    # Sprint4 Phase 4 W8 (2026-04-30, entry doc §8.1 L7) — PhotoNode is the
+    # L2-B representation of a user-captured photo. Distinct from OBJECT so
+    # the rule "PhotoEvent does NOT auto-create unknown ObjectNodes"
+    # (entry §8.1 L7) is enforceable at NodeKind level.
+    PHOTO = "photo"
 
 
 class Salience(str, Enum):
@@ -71,6 +76,13 @@ class EdgeKind(str, Enum):
     CO_OCCURRED = "co_occurred"
     SPATIAL_CONTEXT = "spatial_context"
     PART_OF_EPISODE = "part_of_episode"
+    # Sprint4 Phase 4 W8 (2026-04-30, entry doc §8.1 L7) — Photo-specific
+    # edges. Wiring connect() calls is mostly Phase 5+ (need full Episode
+    # graph + ObjectNode candidate already in L2-B); the enum values land
+    # in W8 so future wiring doesn't churn the schema.
+    HAS_PHOTO = "has_photo"             # Episode  → PhotoNode
+    CAPTURED_VIA = "captured_via"        # PhotoNode → Focus/BBox subject (Phase 5+)
+    CANDIDATE_SUBJECT = "candidate_subject"  # PhotoNode → ObjectNode (only when known)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

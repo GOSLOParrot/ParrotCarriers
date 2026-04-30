@@ -20,10 +20,17 @@ dev = [
     "pytest>=8.0,<10.0",
     "pytest-asyncio>=0.23,<2.0",
     "ruff>=0.4,<1.0",
+    "httpx>=0.27,<1.0",  # FastAPI TestClient backend (Sprint4 Phase 4 W8)
 ]
 memory = [
     "graphiti-core[falkordb,google-genai]>=0.28,<0.29",
     "rustworkx>=0.15,<1.0",
+]
+http = [
+    # Sprint 3 token_mint + Sprint4 Phase 4 W8 photo_upload_server.
+    # Castle docker-compose installs both services from this group.
+    "fastapi>=0.110,<1.0",
+    "uvicorn>=0.27,<1.0",
 ]
 
 [tool.hatch.build.targets.wheel]

@@ -393,6 +393,19 @@ async def brain_entrypoint(ctx: agents.JobContext):
     except Exception:
         logger.exception("Sprint4 Phase 4: EcpEvent wire-up failed")
 
+    # Sprint4 Phase 4 W8 (entry doc §8.1 L8 + audit §5.1 B3):
+    # photo asset upload server (FastAPI on 127.0.0.1:7889 by default) —
+    # accepts full-resolution photos via HTTP POST and publishes
+    # photo.asset_uploaded EcpEvent for observer.photo to update PhotoNode.
+    # Disabled when PARROT_DISABLE_PHOTO_UPLOAD=1 (e.g. multi-process or
+    # test environments that bring their own server).
+    if os.getenv("PARROT_DISABLE_PHOTO_UPLOAD", "0").lower() not in {"1", "true", "yes"}:
+        try:
+            from parrot.brain.photo_upload_server import start_photo_upload_server
+            await start_photo_upload_server()
+        except Exception:
+            logger.exception("Sprint4 Phase 4 W8: photo_upload_server start failed")
+
     try:
         from parrot.memory.conversation_writer import attach_conversation_writer
         attach_conversation_writer(session)

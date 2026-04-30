@@ -299,6 +299,33 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "Most recent object / region sighting evidence.",
         event_driven=True,
     ),
+    # ───── Sprint4 Phase 4 W8 photo events (2026-04-30) ─────
+    # Most recent photo evidence — written by brain.observer.photo on
+    # photo.taken_preview EcpEvent receive (Unity capture path) and updated
+    # again on photo.asset_uploaded (HTTP upload server completion).
+    # Payload shape (locked Phase 4 W8, schema_version=1):
+    #   schema_version: int
+    #   photo_id: str (Unity-side stable id, "ph_<guid8>")
+    #   stage: "preview" | "asset_uploaded"
+    #   pose: dict (camera pose at capture)
+    #   episode_ref: str (Episode id if currently in one, else "")
+    #   focus_refs: list[str] (RefBinding ref_ids of active Focus at capture)
+    #   bbox_refs: list[str] (RefBinding ref_ids of active BBox at capture)
+    #   candidate_subject_uuid: str (L2-B node uuid if capture aimed at a
+    #     known node; "" if no candidate)
+    #   preview_jpeg_b64: str (≤ 8KB, only on stage="preview")
+    #   asset_ref: str (HTTP path "/upload/photo/<photo_id>"; populated on
+    #     stage="asset_uploaded")
+    #   asset_bytes: int (uploaded bytes; only on stage="asset_uploaded")
+    #   ts_ms: int (epoch ms)
+    BlackboardKey(
+        BbScope.TRANSIENT,
+        "transient/last_photo_event",
+        "dict[str, Any]",
+        "brain.observer.photo",
+        "Most recent photo capture evidence (preview or asset_uploaded).",
+        event_driven=True,
+    ),
 
     # ───── Sprint4 Phase 4 attention config (W6-7) — Echo 全链路接通 ─────
     # ✅ Echo path fully wired (2026-04-30):
