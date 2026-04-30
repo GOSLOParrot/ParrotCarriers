@@ -110,8 +110,8 @@ namespace ParrotApp.Parrot
         [Tooltip("仅在 driveWingsFromShoulderGroup=false 时使用")]
         [SerializeField] private string leftWingRotNodeName  = "left_wing_rotation";
         [SerializeField] private string rightWingRotNodeName = "right_wing_rotation";
-        [Tooltip("翅膀拍翅方向轴，用 ContextMenu Axis Test 验证（推荐 NegZ）")]
-        [SerializeField] private WingFlapAxisMode wingFlapAxisMode = WingFlapAxisMode.NegZ;
+        [Tooltip("翅膀拍翅方向轴，用 ContextMenu Axis Test 验证。实测 NegZ 向内穿模时换成 PosZ。")]
+        [SerializeField] private WingFlapAxisMode wingFlapAxisMode = WingFlapAxisMode.PosZ;
 
         [Header("其他骨骼节点")]
         [SerializeField] private string leftLegNodeName  = "left_leg";
@@ -121,12 +121,14 @@ namespace ParrotApp.Parrot
         // ─── Inspector：Fly ──────────────────────────────────────────────
 
         [Header("Fly — 简单翅膀拍动")]
-        [Tooltip("拍翅振幅（度）")]
-        [SerializeField] private float flyWingAmpDegrees = 35f;
-        [Tooltip("拍翅频率（Hz）")]
-        [SerializeField] private float flyWingHz = 1.5f;
+        [Tooltip("拍翅振幅（度），翅膀从收拢到展开的最大角度")]
+        [SerializeField] private float flyWingAmpDegrees = 40f;
+        [Tooltip("拍翅频率（Hz），2.5 ≈ 鸟类快速飞行节奏")]
+        [SerializeField] private float flyWingHz = 2.5f;
         [Tooltip("飞行时 body 前倾角（度）")]
-        [SerializeField] private float flyBodyTiltDegrees = 20f;
+        [SerializeField] private float flyBodyTiltDegrees = 18f;
+        [Tooltip("起飞加速度（m/s²），让飞行有起步感")]
+        [SerializeField] private float flyAcceleration = 6f;
 
         // ─── Inspector：Dance ────────────────────────────────────────────
 
@@ -169,6 +171,7 @@ namespace ParrotApp.Parrot
 
         private Vector3    _flyTarget;
         private bool       _isFlying;
+        private float      _flyCurrentSpeed;
         private Vector3    _basePosition;
         private Quaternion _baseRotation;
         private Vector3    _baseScale;
@@ -255,8 +258,11 @@ namespace ParrotApp.Parrot
             CurrentState = state;
             _stateTimer  = 0f;
 
-            if (state == BodyState.Fly && CurrentHeadState != HeadState.Forward)
-                SetHeadState(HeadState.Forward);
+            if (state == BodyState.Fly)
+            {
+                _flyCurrentSpeed = 0f;
+                if (CurrentHeadState != HeadState.Forward) SetHeadState(HeadState.Forward);
+            }
 
             string newWire = BodyStateToWire(state);
             Debug.Log($"[AnimationDriver] BodyState → {state} (wire={newWire})");
@@ -359,7 +365,8 @@ namespace ParrotApp.Parrot
         [ContextMenu("Debug: Play Fly")]
         private void DebugPlayFly()
         {
-            _flyTarget = transform.position + transform.forward * 2f;
+            // 5m 距离足够展示完整的加速→拍翅→减速循环
+            _flyTarget = transform.position + transform.forward * 5f;
             _isFlying  = true;
             SetState(BodyState.Fly);
         }
@@ -435,20 +442,26 @@ namespace ParrotApp.Parrot
         }
 
         /// <summary>
-        /// 简单飞行动作：
-        ///   翅膀 ±flyWingAmpDegrees 对称拍动（flyWingHz Hz，cos 驱动，以收拢位置为中心）
-        ///   body 向前倾 flyBodyTiltDegrees
-        ///   尾巴向后伸
+        /// 简单飞行：
+        ///   速度曲线  — 加速起飞（flyAcceleration），距目标 0.6m 内减速
+        ///   翅膀公式  — (1 - cos(t)) / 2 * amp，从 0 开始平滑爬升到振幅，无负值，无起跳
+        ///   body 前倾，尾巴后展
         /// </summary>
         private void UpdateFly()
         {
             if (!_isFlying) return;
 
-            float t = _stateTimer;
+            float dist = Vector3.Distance(transform.position, _flyTarget);
+            var   dir  = (_flyTarget - transform.position).normalized;
 
-            // 移动
-            var dir = (_flyTarget - transform.position).normalized;
-            transform.position = Vector3.MoveTowards(transform.position, _flyTarget, flySpeed * Time.deltaTime);
+            // 速度曲线：线性加速 + 近终点减速
+            const float decelDist = 0.6f;
+            float topSpeed = dist < decelDist
+                ? flySpeed * Mathf.Sqrt(Mathf.Max(0, dist / decelDist))
+                : flySpeed;
+            _flyCurrentSpeed = Mathf.MoveTowards(_flyCurrentSpeed, topSpeed, flyAcceleration * Time.deltaTime);
+
+            transform.position = Vector3.MoveTowards(transform.position, _flyTarget, _flyCurrentSpeed * Time.deltaTime);
 
             if (dir.sqrMagnitude > 0.0001f)
             {
@@ -457,9 +470,12 @@ namespace ParrotApp.Parrot
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, 8f * Time.deltaTime);
             }
 
-            // 翅膀拍动：cos 以 0 为中心，±flyWingAmpDegrees，flyWingHz Hz
-            // left 翅 = +amp（向上），right 翅 = -amp（镜像）
-            float wingDeg = Mathf.Cos(t * flyWingHz * Mathf.PI * 2f) * flyWingAmpDegrees;
+            // 翅膀拍动：(1 - cos) / 2 * amp
+            //   t=0     → 0（无起跳）
+            //   t=0.5/Hz → amp（最大展开）
+            //   t=1/Hz  → 0（收拢，开始下一拍）
+            //   值域 [0, amp]，翅膀永远向外，不会穿进身体
+            float wingDeg = (1f - Mathf.Cos(_stateTimer * flyWingHz * Mathf.PI * 2f)) * 0.5f * flyWingAmpDegrees;
             SetWingsMirrored(wingDeg);
 
             // body 前倾
@@ -469,7 +485,7 @@ namespace ParrotApp.Parrot
                     _bodyBaseRot * Quaternion.Euler(flyBodyTiltDegrees, 0f, 0f),
                     5f * Time.deltaTime);
 
-            // 尾巴伸展
+            // 尾巴后展
             if (_tailTransform != null)
                 _tailTransform.localRotation = Quaternion.Slerp(
                     _tailTransform.localRotation,
@@ -478,10 +494,10 @@ namespace ParrotApp.Parrot
 
             LerpLegsToBase(3f);
 
-            if (Vector3.Distance(transform.position, _flyTarget) < flyArrivalThreshold)
+            if (dist < flyArrivalThreshold)
             {
                 transform.position = _flyTarget;
-                _isFlying  = false;
+                _isFlying     = false;
                 _basePosition = _flyTarget;
                 SetState(BodyState.Idle);
                 Debug.Log($"[AnimationDriver] Arrived at {_flyTarget}");
