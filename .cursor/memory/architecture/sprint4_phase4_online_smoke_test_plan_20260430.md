@@ -94,6 +94,17 @@ docker compose -f infra/docker-compose.dev.yml up -d
 #   "[RoomManager] Connected — room='parrot-main' identity='unity-...'"
 #   "[Heartbeat:DC] state sent ts=..." （W3.A.3 EcpState 心跳）
 #   "[AttentionConfigEchoPublisher] EchoNow sent=True ..." （F-05 Echo）
+
+# ⚠️  连 Castle Brain 时的额外检查（2026-04-30 新增）：
+#
+# A. PhotoController.brainHost 必须改成 Castle IP
+#    Scene Hierarchy → Photo → PhotoController Inspector
+#    → Brain Host 字段：127.0.0.1 改为 8.216.45.45（或 Castle 内网 IP）
+#    否则验收 #5 HTTP POST 全部失败（连本机 7889 打不到 Castle）
+#
+# B. ParrotSmokeScene.unity 为手工 YAML 编辑，打开后先看 Console 有无
+#    "Failed to load scene" / "unexpected token" 等 YAML 解析错误
+#    如有报错，重跑 Tools/Parrot/Build A2 Smoke Scene 重建场景即可
 ```
 
 ### 2.2 验收 #1 — 工具 ① perch_to_finger 体感闭环
