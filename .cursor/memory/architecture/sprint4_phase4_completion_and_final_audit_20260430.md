@@ -1,9 +1,9 @@
 ---
 status: ratified
-status_note: "Sprint4 Phase 4 完成报告 + 最终一致性审计。Brain 半边 + Unity 半边（W3.A.2/A.3 + W6-7 + Animation）+ Echo 全链路 + W8 PhotoEvent Brain 半边全部落地；220/220 测试全绿；entry §8 决策锁 0 漂移。Unity W8 半边 + 联机 smoke + GAP-1 (W3 EcpState ingest) 派发独立 chat。"
+status_note: "Sprint4 Phase 4 完成报告 + 最终一致性审计。Brain 半边 + Unity 半边（W3.A.2/A.3 + W6-7 + Animation + W8 PhotoEvent）+ Echo 全链路 + GAP-1 EcpState ingest 全部落地；230/230 测试全绿；entry §8 决策锁 0 漂移。联机 smoke（Editor↔Brain 全链路）待环境就绪执行。"
 last_reviewed: 2026-04-30
-acceptance_state: "4.5 / 5 验收口径达成（#5 离线 ✅ Brain 半 / 联机 ⏳）"
-test_baseline: "220/220 全绿 (pytest tests/ --ignore=tests/integration -q)"
+acceptance_state: "4.8 / 5 验收口径离线达成（#5 联机 ⏳ 环境就绪后跑）"
+test_baseline: "230/230 全绿 (pytest tests/ --ignore=tests/integration -q)"
 authoritative_for: "Phase 4 终态；P2.5 完成汇报、Phase 5+ 计划、独立 chat 派发的入场上下文"
 ---
 
@@ -56,8 +56,9 @@ authoritative_for: "Phase 4 终态；P2.5 完成汇报、Phase 5+ 计划、独�
 | Brain 自审 | 13 finding 收口（10 ✅ resolved + 3 reject）| ✅ | 本 chat / `0e764f7` `9ae5d65` `1b23ffa` |
 | F-05 全链路 | ① Unity SO + EchoPub / ② Brain handler / ③ FocusBboxThreshold 读 BB | ✅ | Unity W6-7 ①② + 本 chat ③ / `4bd3475` `399b7e0` `e00ae20` |
 | W8 Brain 半边 | NodeKind.PHOTO + observer/photo + photo_upload_server (FastAPI 7889) | ✅ | 本 chat / `84544dd` `b38de6e` `8f63ee2` |
-| W8 Unity 半边 | capturePhoto UI + 256px preview + HTTP POST + photo.taken_preview publish | ⏳ | 派发独立 chat（§8.1）|
-| 联机 smoke + GAP-1 | EcpState ingest 验证 + 全链路 Editor → Brain → Editor | ⏳ | 派发独立 chat（§8.2）|
+| W8 Unity 半边 | capturePhoto UI + 256px preview + HTTP POST + photo.taken_preview publish | ✅ | W8 Unity chat / commit `f6f3da9` |
+| GAP-1 (EcpState ingest) | ecp_state_ingest.py + 10 测试 + bb_schema # CANDIDATE 移除 | ✅ | smoke+GAP-1 chat / commit f6f3da9 后续 |
+| 联机 smoke | Editor → Brain → Editor 5 验收口径全链路 | ⏳ | 环境就绪后跑（前提：GAP-1 ✅ + W8 Unity ✅）|
 
 ### 1.2 多 chat 协作指标
 
@@ -134,7 +135,7 @@ Python `EcpEventType` enum 实测值（grep 自 `src/parrot/shared/ecp_event.py`
 | topic | reliability | 用途 | 拥有者 |
 |:--|:--|:--|:--|
 | `parrot.ecp.event` | reliable | Phase 4 EcpEvent（13 个 event_type） | event_ingest（Brain）+ EcpEventDispatcher（Unity）|
-| `parrot.ecp.state` | reliable | Phase 3 EcpState 心跳（Unity → Brain，1Hz + 事件驱动）| LifecycleHeartbeatPublisher（Unity）；**Brain 端 ingest handler 缺**（GAP-1）|
+| `parrot.ecp.state` | reliable | Phase 3 EcpState 心跳（Unity → Brain，1Hz + 事件驱动）| LifecycleHeartbeatPublisher（Unity）→ brain.ecp_state_ingest（**GAP-1 ✅**）→ BB session/ecp_state |
 | `parrot.ecp.health` | reliable | Phase 3 connection.health.changed inline envelope | Heartbeat transport（Unity）|
 | `parrot.ecp.intent_disconnect` | reliable | Phase 3 intent.disconnect inline envelope | Heartbeat transport（Unity）|
 | `parrot.ecp.tick` | lossy（30-60Hz）| 拖动 / pose（W6-7 lossy 部分）| W6-7 Unity 已 spec，drag UI 实现 defer |
@@ -269,7 +270,7 @@ Python `EcpEventType` enum 实测值（grep 自 `src/parrot/shared/ecp_event.py`
 | `transient/last_sighting_event` | brain.observer.sighting | **❗ 实测 observer/sighting.py 不写此 key**（只走 archiver）— § 5.4 finding | ⚠ |
 | `transient/last_photo_event` | brain.observer.photo | observer/photo.py `_build_bb_payload` + `bb.set` | ✅ |
 | `global/attention_thresholds` | brain._rpc_bridge | attention_config_handler.py（W6-7 Unity chat）— 名义上 brain._rpc_bridge 命名空间，handler 写 | ✅ |
-| `session/ecp_state` | brain._rpc_bridge | **❗ 实测无 ingest handler 把 Unity 的 EcpStateDto 写到此 key** — GAP-1，§5.5 | ⚠ |
+| `session/ecp_state` | brain._rpc_bridge | `brain.ecp_state_ingest.attach_ecp_state_ingest` — GAP-1 ✅ resolved，smoke+GAP-1 chat | ✅ |
 | 其他 21 项 | 各自 | 各自 | ✅ |
 
 ### 5.4 BB # CANDIDATE 残留分析（5 个 # CANDIDATE marker grep）
@@ -278,7 +279,7 @@ Python `EcpEventType` enum 实测值（grep 自 `src/parrot/shared/ecp_event.py`
 |:--|:--|:--|
 | `session/connection_health` | Phase 3 lifecycle / health 聚合 — Phase 4 不动 | Phase 5+ 真聚合时移除 |
 | `session/audio_route_policy` | Phase 3 audio policy — Phase 4 不动 | Phase 5+ 蓝牙 hand-off chat 完工时移除 |
-| `session/ecp_state` | **GAP-1 真实存在** — Unity W3.A.3 publish 但 Brain 端无 ingest handler | §8.2 联机 smoke chat 同步加 1 个 ecp_state_ingest_handler |
+| `session/ecp_state` | **GAP-1 ✅ resolved** — ecp_state_ingest.py 落地（smoke+GAP-1 chat）；bb_schema # CANDIDATE marker 已移除 | — |
 | `transient/current_attention_hint` 注释行（不在 # CANDIDATE 状态）| 历史注释提到 # CANDIDATE marker — 实测 key 已移除 | 注释清理 doc-only 操作 |
 | `transient/last_sighting_event` | observer/sighting 没真写此 key（只 archiver）| §5.5 finding A，Phase 5+ 把 archiver 命中也回写 BB 这个 key 或重 spec |
 
@@ -350,14 +351,17 @@ why:         entry doc §8.1 L1 锁定值要求"Brain 知道 GOSLO 当下状态"
 considered_intent: 部分 — 自审 §3.4 / W6-7 完成报告 §5 都提到 "联机 smoke
                    不能验证的部分" 包括 EcpState 收，但没明确 spec ingest
                    handler 的实现归属
-status:      proposed - 派发 §8.2 联机 smoke chat 时 spec 实现
+status:      ✅ resolved — src/parrot/brain/ecp_state_ingest.py 落地（smoke+GAP-1 chat）：
+             attach_ecp_state_ingest(room) → BB session/ecp_state 写入；
+             10 测试全绿；bb_schema.py # CANDIDATE 移除；
+             agent.py GAP-1 wire-up 注释引 Finding B
 ```
 
 ### 5.6 已知漂移与 defer 列表
 
 | 项 | 触发条件 | 关联 chat |
 |:--|:--|:--|
-| GAP-1 EcpState ingest handler | 联机 smoke chat 启动时 | §8.2 |
+| ~~GAP-1 EcpState ingest handler~~ | **✅ resolved** — ecp_state_ingest.py 落地 | smoke+GAP-1 chat |
 | Finding A: last_sighting_event BB write | sighting → identify_object resolver flow（Phase 5+）| §6 |
 | Unity W8 半边（capturePhoto UI + 256px preview + HTTP POST + photo.taken_preview publish）| Unity W8 chat | §8.1 |
 | Editor HUD M2（debug HUD for attention / photo / EcpState）| 需要时 | Phase 5+ |

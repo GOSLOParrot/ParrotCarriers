@@ -175,7 +175,7 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
     ),
     BlackboardKey(
         BbScope.SESSION,
-        "session/ecp_state",  # CANDIDATE — no writer yet (Phase 2 EcpState upload)
+        "session/ecp_state",  # writer: brain.ecp_state_ingest (GAP-1, Sprint4 Phase 4 smoke+GAP-1 chat)
         "dict[str, Any]",
         "brain._rpc_bridge",
         "Latest Unity frontend state-machine snapshot.",

@@ -386,9 +386,19 @@ async def brain_entrypoint(ctx: agents.JobContext):
         attention_config_handler.register(ingest)
         FocusBboxThreshold().register(ingest)
         attach_ecp_event_publisher(ctx.room)
+
+        # GAP-1 (audit §5.5 Finding B): wire EcpState ingest so Unity W3.A.3
+        # LifecycleHeartbeatPublisher packets on parrot.ecp.state reach Brain
+        # and populate BB session/ecp_state (writer=brain._rpc_bridge).
+        # Without this handler, session/ecp_state is always None and
+        # selection-C tool wrappers see active_locks=[] / active_command_id=""
+        # from the ECP side regardless of what Unity reports.
+        from parrot.brain.ecp_state_ingest import attach_ecp_state_ingest
+        attach_ecp_state_ingest(ctx.room)
+
         logger.info(
             "Sprint4 Phase 4 wired: EcpEventIngest + Observers + AttentionConfigHandler "
-            "+ FocusBboxThreshold + Publisher"
+            "+ FocusBboxThreshold + Publisher + EcpStateIngest(GAP-1)"
         )
     except Exception:
         logger.exception("Sprint4 Phase 4: EcpEvent wire-up failed")

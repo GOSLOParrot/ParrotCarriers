@@ -51,12 +51,20 @@ def test_get_snapshot_returns_four_keys():
 
 
 def test_get_snapshot_handles_missing_keys():
-    """head_state and ecp_state have no producers in W1-2 — must return
-    None instead of raising."""
+    """head_state returns None when not set; ecp_state is None before the
+    first EcpState packet arrives (or after test teardown clears it).
+
+    Note: GAP-1 added ecp_state_ingest as the real producer of
+    session/ecp_state.  This test covers the _safe_get None-return path
+    for a key that has not yet been written in this test's process context
+    (test_ecp_state_ingest fixtures clean up after themselves by setting
+    session/ecp_state = None, restoring the "no packet received" observable).
+    """
     snap = get_state_snapshot()
     # head_state has no producer in Phase 4 W1-2 stage; should be None
     assert snap["head_state"] is None
-    # ecp_state CANDIDATE — no producer either
+    # ecp_state: None when no EcpState packet has been received (or after
+    # test teardown reset). GAP-1 ecp_state_ingest fixture clears this.
     assert snap["ecp_state"] is None
 
 
