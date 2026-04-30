@@ -99,19 +99,36 @@ docker logs nanobot-api --tail 50
 # 不应有 Gemini 400 / redis connection refused / function name invalid 等错误
 ```
 
-### 步骤 7：ParrotCarriers Brain 依赖安装（W8 引入 fastapi + uvicorn）
+### 步骤 7：ParrotCarriers Brain 依赖安装（W8 引入 fastapi + uvicorn + httpx）
+
+> **关键提醒（漏装则 brain agent boot 时 photo_upload_server 启动失败）**
 
 ```bash
 cd /opt/parrotcarriers
-.venv/bin/pip install fastapi uvicorn
-# 或重装完整依赖
+.venv/bin/pip install fastapi uvicorn httpx
+# 或重装完整依赖（推荐，确保所有 extras 都有）
 .venv/bin/pip install '.[http,memory,dev]'
 ```
 
 验证：
 ```bash
-.venv/bin/python -c "import fastapi, uvicorn; print('OK')"
+.venv/bin/python -c "import fastapi, uvicorn, httpx; print('OK')"
 ```
+
+### 步骤 8：Castle .env 关键配置项
+
+> 以下几项与本机不同，**Castle 必须设**：
+
+```bash
+# Castle 上 photo_upload_server 要接受真机 HTTP POST，必须绑定 0.0.0.0
+# （本机默认 127.0.0.1；Castle 上改为 0.0.0.0）
+echo 'PARROT_PHOTO_UPLOAD_HOST=0.0.0.0' >> /opt/parrotcarriers/.env
+
+# 验收 #2 identify_object 工具默认关闭（安全 gate），Castle 必须打开
+echo 'PARROT_ENABLE_IDENTIFY_OBJECT_TOOL=1' >> /opt/parrotcarriers/.env
+```
+
+同时确认安全组放通 **TCP 7889**（photo_upload_server）— 否则 Unity 真机 POST 无法到达 Castle。
 
 ### 步骤 8：Brain health check
 
@@ -174,6 +191,36 @@ ECS 上 ParrotCarriers 服务就绪后，下一个 chat 按 `sprint4_phase4_onli
 | P4 | GWS Resource 名称含空格 | ✅ **本机正式修复** `mcp.py` commit `870812e`（不再是猴子补丁）|
 | P5 | OAuth 回调 ECS 无法访问 | ⏳ 本机完成 OAuth → scp token（任务 C+D）|
 | P6 | ECS 无法 git push | ✅ 本机推送 GitHub 完成 |
+
+---
+
+## 五、联机 smoke 关键验证提醒
+
+> 以下几点是 ECS 上跑联机 smoke 时特别容易踩坑的地方，ECS 执行人必看：
+
+| # | 提醒 | 后果（不做会怎样）|
+|:--|:--|:--|
+| 1 | **`pip install '.[http,memory,dev]'`** 必须跑 | `photo_upload_server` 启动失败（`ImportError: fastapi`），brain boot 报错但不 fatal，W8 链路全断 |
+| 2 | **`PARROT_PHOTO_UPLOAD_HOST=0.0.0.0`** Castle 必须设 | photo_upload_server 只监听 127.0.0.1，Unity 真机 HTTP POST 打不进来 |
+| 3 | **安全组 TCP 7889 放通** | 同上，HTTP POST 超时失败 |
+| 4 | **`PARROT_ENABLE_IDENTIFY_OBJECT_TOOL=1`** | 验收 #2 identify_object 工具被跳过，Brain 不注册该函数，Gemini 调不到 |
+| 5 | **验收 #3 看 `[GOSLO state] active_cmd=... locks=...`** | GAP-1 关键验证点 — 修复前这两字段永远空；出现了才算 GAP-1 真正接通 |
+| 6 | **验收 #5 photo 全链路 5 段 log 必须全出现** | 任意一段缺失即 bug：preview EcpEvent → BB transient → HTTP 200 → Brain disk 落盘 → photo.asset_uploaded 回程 |
+
+### 验收 #5 Photo 5 段 log 串联参考
+
+```
+[1] Unity:  [PhotoController] photo_id=ph_xxx ... previewSent=True
+[2] Brain:  [observer.photo] PhotoNode upserted photo_id=ph_xxx
+            BB transient/last_photo_event stage="preview"
+[3] Unity:  [PhotoController] HTTP POST /upload/photo/ph_xxx → 200 bytes=N
+[4] Brain:  [photo_upload] saved photo_id=ph_xxx ... publish_ok=True
+[5] Brain:  [observer.photo] PhotoNode photo_id=ph_xxx asset_ref=/upload/photo/.../ph_xxx.jpg
+            BB transient/last_photo_event stage="asset_uploaded"
+            (Unity EcpEventDispatcher) received event_type=photo.asset_uploaded
+```
+
+缺 [2] = EcpEvent 未到 Brain；缺 [3] = photo_upload_server 未启动或端口不通；缺 [4]/[5] = fastapi/uvicorn 缺包。
 
 ---
 
