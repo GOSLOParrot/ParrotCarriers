@@ -7,6 +7,7 @@ using ParrotApp.Hands;
 using ParrotApp.Lifecycle;
 using ParrotApp.LiveKit;
 using ParrotApp.Parrot;
+using ParrotApp.Photo;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -124,6 +125,11 @@ namespace ParrotApp.EditorTools
                 Debug.Log($"[ParrotSmokeSceneBuilder] Created {AttentionConfigAssetPath}");
             }
 
+            // ── Phase 4 W8: Photo (capturePhoto + 256px preview + HTTP POST) ───
+            // PhotoController: 离线 smoke 用 ContextMenu 触发，联机 smoke 验证 HTTP POST 路径
+            var photoRootGo = new GameObject("Photo");
+            photoRootGo.AddComponent<PhotoController>();
+
             // ── Wire references via SerializedObject ───────────────────────
             var perchSo = new SerializedObject(perch);
             perchSo.FindProperty("handTracker").objectReferenceValue = handSource;
@@ -159,7 +165,14 @@ namespace ParrotApp.EditorTools
                 "    wire JSON for bbox.placed (event_id, payload incl. bbox_id/corners/pose)\n" +
                 "► FocusController ⋮ → 'Debug: Anchor Test Focus' (same dropped wire JSON)\n" +
                 "► AttentionConfigEchoPublisher ⋮ → 'Debug: Echo Now'\n" +
-                "    wire JSON for attention.config.echo (Δ + threshold + TTL + schema_version)");
+                "    wire JSON for attention.config.echo (Δ + threshold + TTL + schema_version)\n" +
+                "── W8 (Photo capture + preview + HTTP POST) ──────\n" +
+                "► Select Photo → PhotoController ⋮ → 'Debug: Capture Test Photo'\n" +
+                "    Console shows [EcpEvent:DROPPED] event_type=photo.taken_preview\n" +
+                "    wire JSON contains 12-field payload incl. preview_jpeg_b64 + pose\n" +
+                "    [PhotoController] HTTP POST attempt will fail (Brain not running) — expected\n" +
+                "► 'Debug: Capture With Test Candidate' → same + candidate_subject_uuid=obj_test_42\n" +
+                "► 'Debug: Capture With Active Refs' → same + bbox_refs/focus_refs from active controllers");
         }
 
         [MenuItem(MenuPath, validate = true)]

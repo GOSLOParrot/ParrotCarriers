@@ -58,6 +58,13 @@ namespace ParrotApp.Attention
 
         public int ActiveCount => _active.Count;
 
+        /// <summary>Append current active bbox_id strings into <paramref name="output"/>.
+        /// Read-only accessor for PhotoController payload building.</summary>
+        public void AppendActiveIds(System.Collections.Generic.List<string> output)
+        {
+            foreach (var k in _active.Keys) output.Add(k);
+        }
+
         void Awake()
         {
             if (Instance != null && Instance != this)

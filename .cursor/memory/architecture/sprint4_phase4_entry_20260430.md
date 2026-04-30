@@ -490,7 +490,7 @@
 | 3 ✅ | 工具 ① perch_to_finger 锚定动作 + EcpState 三态字段（L1 事件驱动 + 1Hz）+ L10 选项 C（`fly_to` / `animate` execute 前检查 BB） | 验收 1 + 验收 3 |
 | 4-5 ✅ | 工具 ② identify_object 重写（L11 预算）+ `snapshot.captured` / `sighting.*` observer + Graphiti 异步写入 | 验收 2 |
 | 6-7 ✅ | 工具 ③ Focus / BBox（L5 / L6）+ `FocusBboxThreshold`（L9）+ `ParrotAttentionConfig` SO + RefBinding 落地 + F-05 Echo 全链路接通 | 验收 4 |
-| 8 ✅ Brain 半边 | 工具 ④ PhotoEvent — Brain 半边落地（NodeKind.PHOTO + 3 EdgeKind / observer.photo / photo_upload_server FastAPI on 7889 + Castle 本地 cache `data/photos/{yyyy-mm-dd}/{photo_id}.jpg` + photo.asset_uploaded EcpEvent 发回 / agent.py boot wire-up + transient/last_photo_event BB key + 21 测试全绿）；Unity 半边（capturePhoto UI + 256px preview JPEG + HTTP POST + photo.taken_preview publish）派发独立 chat；Editor HUD M2 / 联机 smoke 验证留 P2.5 真机 spike chat | 验收 5 离线 Brain 半 ✅ / 联机 ⏳ |
+| 8 ✅ | 工具 ④ PhotoEvent — Brain 半边（NodeKind.PHOTO + 3 EdgeKind / observer.photo / photo_upload_server FastAPI on 7889 / transient/last_photo_event BB key / 21 测试全绿）+ Unity 半边（PhotoController.cs：`ph_<guid8>` / 256px quality cascade 75→60→50→40 / 12 字段 photo.taken_preview / HTTP POST + X-Photo-Preview-Event-Id / PendingPhoto reconnect 不重发策略 / 3 ContextMenu 兜底）全部落地；Editor HUD M2 / 联机 smoke 验证留 P2.5 真机 spike chat | 验收 5 离线 Brain+Unity ✅ / 联机 ⏳ |
 
 ### §8.8 ⚠ 已知漂移（Phase 4 收口时一次清理，不立刻改）
 
