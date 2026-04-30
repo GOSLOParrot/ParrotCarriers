@@ -16,10 +16,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from parrot.shared.config import ParrotConfig
 
-from livekit.api import AccessToken, RoomAgentDispatch, VideoGrants
-from livekit.protocol.room import RoomConfiguration
+from livekit.api import AccessToken, VideoGrants
 
-AGENT_NAME = "parrot-brain"
+# Brain registers with agent_name="" (unnamed default handler via @server.rtc_session()).
+# Do NOT set roomConfig.agents[agentName] here — LiveKit dispatches to unnamed workers
+# automatically when a participant joins. Adding a named agentName here causes dispatch
+# to fail because no worker with that name exists (Brain uses the default unnamed slot).
+# See agent.py brain_entrypoint docstring for the design rationale.
 
 
 def generate(
@@ -30,9 +33,6 @@ def generate(
     cfg = ParrotConfig()
     room = room or cfg.livekit.room_name
 
-    room_config = RoomConfiguration(
-        agents=[RoomAgentDispatch(agent_name=AGENT_NAME)],
-    )
     token = (
         AccessToken(cfg.livekit.api_key, cfg.livekit.api_secret)
         .with_identity(identity)
@@ -41,9 +41,11 @@ def generate(
             VideoGrants(
                 room_join=True,
                 room=room,
+                can_publish=True,
+                can_subscribe=True,
+                can_publish_data=True,
             )
         )
-        .with_room_config(room_config)
         .with_ttl(timedelta(seconds=ttl_seconds))
     )
     return token.to_jwt()
