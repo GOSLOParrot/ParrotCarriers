@@ -4,187 +4,145 @@ using UnityEngine;
 namespace ParrotApp.Parrot
 {
     /// <summary>
-    /// Sprint4 Phase 4 W3.A.2 / Animation-Port — Programmatic body/head state driver for GOSLO.
+    /// Sprint4 Phase 4 — Programmatic body/head state driver for GOSLO.glb (Blockbench parrot).
     ///
-    /// <b>本类是 body_state / head_state 两条 wire 字段的 sole producer</b>。
+    /// Animation formulas come from two verified public sources:
+    ///   [A] Vanilla ParrotModel.java (Forge/Fabric javadoc + SpigotMC decompile thread):
+    ///         flying: leftWing.zRot = Mth.cos(limbSwing * 0.6662f) * 0.25f  (radians, no bias)
+    ///                 rightWing.zRot = -leftWing.zRot
+    ///         party:  leftWing.zRot = -0.34906584f  rightWing.zRot = +0.34906584f  (fixed ±20°)
+    ///                 body bounces with sin(ageInTicks * 0.6662f)
+    ///   [B] Blockbench Outline from user screenshot: left_wing_rotation has rotation Y=-180,
+    ///       so we drive the PARENT left_wing / right_wing shoulder group to avoid mid-mesh pivot.
     ///
-    /// W3.A.2 改造点：
-    /// <list type="bullet">
-    /// <item>新增 <see cref="BodyState.PerchedOnHand"/>（站在手指中段）</item>
-    /// <item>新增 <see cref="HeadState"/> enum + Update 末尾每帧 lerp 头部旋转</item>
-    /// <item>新增 producer events <see cref="OnBodyStateWireChanged"/> /
-    ///   <see cref="OnHeadStateWireChanged"/>，由
-    ///   <c>LifecycleHeartbeatPublisher</c>（A.3）订阅触发 EcpState 立即上报</item>
-    /// <item><see cref="HeadState.Tilt"/> 渲染：基础 18° pitch + 12° roll，
-    ///   外加 ~6° / 1.6Hz 的 sine 摆动，表达"怎么了吗？"</item>
-    /// </list>
+    /// Wing axis mapping (GOSLO.glb → Unity via gltfast):
+    ///   Use <see cref="WingFlapAxisMode"/> to select correct local axis empirically in Play mode.
+    ///   Default = <see cref="WingFlapAxisMode.NegZ"/> which matches vanilla zRot after glTF import.
+    ///   Use ContextMenu "Debug: Axis Test …" entries to find the correct axis quickly.
     ///
-    /// Animation-Port 改造点（Minecraft Java Parrot 风格骨骼动画）：
-    /// <list type="bullet">
-    /// <item>新增 <see cref="BodyState.Dance"/> / <see cref="BodyState.Sit"/></item>
-    /// <item>Awake 缓存翅膀驱动（默认 shoulder：left_wing / right_wing，可切回 rotation 空体）+ 腿 / 尾 / feather</item>
-    /// <item>Vanilla <c>age</c> 用 <c>Time.time * 20</c> 近似 tick 轴；飞行翅膀用弧度式 cos(McAge*0.6)*osc+bias</item>
-    /// <item><see cref="WingFlapAxisMode.LocalXShoulderFlap"/> 将增量映射到本地 X，减轻 GLB zRoll 枢轴落在翅中段时的穿模</item>
-    /// <item>Idle：尾摆 + 翅呼吸 + McAge 时间轴</item>
-    /// <item>Fly：vanilla 镜像右翼 + 尾下压</item>
-    /// <item>Dance：身体 yaw/roll + 头 pitch/yaw + 双翅 cos(…)/cos(…+π) 快速反相（jukebox PARTY）</item>
-    /// <item>Sit：腿弯 + 身体降低 + 翅贴身 + 尾微抬</item>
-    /// <item>PerchedOnHand：呼吸 + 轻量翅/尾/腿</item>
-    /// </list>
-    ///
-    /// Wire-string 约定（与 Brain 端 _state_context.py 对齐）：
-    /// <list type="bullet">
-    /// <item>body_state ：lowercase / snake_case（idle / flying / perching / perched_on_hand / dancing）</item>
-    /// <item>head_state ：UPPERCASE HEAD_* 前缀（HEAD_FORWARD / HEAD_LOOK_AT / HEAD_TILT / HEAD_NOD）</item>
-    /// </list>
-    ///
-    /// Minecraft 算法来源：Forge javadoc / Yarn 1.20.3-pre1 / MCreator 教程（公开 modding 参考，
-    /// 非 Mojang 私有代码）。所有 sin/cos 系数注释均标注来源。
+    /// Wire-string contract (Brain _state_context.py alignment) — NOT CHANGED:
+    ///   body_state: lowercase snake_case  (idle / flying / perching / perched_on_hand / dancing)
+    ///   head_state: UPPERCASE HEAD_*      (HEAD_FORWARD / HEAD_LOOK_AT / HEAD_TILT / HEAD_NOD)
     /// </summary>
     public class AnimationDriver : MonoBehaviour
     {
+        // ─── enums ───────────────────────────────────────────────────────
+
         // Dance and Sit added by Animation-Port; existing values NOT modified.
-        // Wire-mapper extended below (BodyStateToWire).
         public enum BodyState { Idle, HeadBob, Fly, Perch, PerchedOnHand, Dance, Sit }
         public enum HeadState { Forward, LookAt, Tilt, Nod }
 
         /// <summary>
-        /// Minecraft Java parrot wings use <i>roll</i> (ModelPart.zRot). Blockbench-GLB
-        /// import may map that to Unity local Z correctly — or not. If wings slice into
-        /// the torso, try <see cref="LocalXShoulderFlap"/>.
+        /// Which local axis to use when applying wing-flap Euler deltas.
+        /// Try each in Play mode with <c>Debug: Axis Test …</c> ContextMenus.
         /// </summary>
         public enum WingFlapAxisMode
         {
-            /// <summary>Match vanilla: delta applied on local Z (roll), right wing negated.</summary>
-            MinecraftZRoll = 0,
-            /// <summary>Unity-friendly shoulder hinge: delta on local X, right wing negated.</summary>
-            LocalXShoulderFlap = 1,
+            PosZ = 0,
+            NegZ = 1,
+            PosX = 2,
+            NegX = 3,
         }
 
-        // ─── existing inspector fields (W3.A.2 baseline — DO NOT REMOVE) ──
+        // ─── inspector: existing baseline (W3.A.2 — DO NOT REMOVE) ──────
 
         [Header("Movement")]
         [SerializeField] private float flySpeed = 2.5f;
         [SerializeField] private float flyArrivalThreshold = 0.04f;
         [SerializeField] private float flyTiltDegrees = 15f;
 
-        [Header("Idle hover")]
+        [Header("Idle / Perch breathing")]
         [SerializeField] private float idleBobAmplitude = 0.04f;
         [SerializeField] private float idleBobFrequency = 1.2f;
-        [SerializeField] private float idleRotateSpeed = 18f;
+        [SerializeField] private float perchBreathAmplitude = 0.03f;
+        [SerializeField] private float perchBreathFrequency = 0.8f;
 
         [Header("Head bob (listening)")]
         [SerializeField] private float headBobAmplitude = 0.06f;
         [SerializeField] private float headBobFrequency = 2.5f;
 
-        [Header("Perch (breathing scale)")]
-        [SerializeField] private float perchBreathAmplitude = 0.03f;
-        [SerializeField] private float perchBreathFrequency = 0.8f;
-
-        [Header("Head Tilt (\"怎么了吗？\" expression)")]
-        [Tooltip("Base pitch when HEAD_TILT is active (degrees, +x = nod down)")]
+        [Header("Head Tilt — confusion expression")]
+        [Tooltip("+x = nod down")]
         [SerializeField] private float headTiltPitchDegrees = 18f;
-        [Tooltip("Base roll when HEAD_TILT is active (degrees, +z = roll right)")]
+        [Tooltip("+z = roll right")]
         [SerializeField] private float headTiltRollDegrees = 12f;
-        [Tooltip("Amplitude of curiosity wiggle layered on top of base tilt (degrees)")]
         [SerializeField] private float headTiltWiggleDegrees = 6f;
-        [Tooltip("Wiggle frequency (Hz) — bird-like curious head motion")]
         [SerializeField] private float headTiltWiggleFrequency = 1.6f;
-        [Tooltip("Lerp speed for transitioning between head states")]
         [SerializeField] private float headTransitionLerpSpeed = 6f;
 
-        [Header("Model nodes (head + body, W3.A.2)")]
+        [Header("Model nodes — head + body (W3.A.2)")]
         [SerializeField] private string headNodeName = "Head";
         [SerializeField] private string bodyNodeName = "Body";
 
-        // ─── new inspector fields (Animation-Port — Minecraft bone nodes) ──
+        // ─── inspector: Animation-Port bone config ───────────────────────
 
-        [Header("Model nodes — extra bones (Animation-Port)")]
-        [Tooltip("If true, drive wings from left_wing / right_wing group pivots (Blockbench shoulder). " +
-                 "False = use the serialized rotation empties below (e.g. left_wing_rotation). " +
-                 "When the inner empty sits mid-mesh, shoulder parenting fixes clipping.")]
+        [Header("Wing bones — drive from shoulder group (recommended)")]
+        [Tooltip("Drive left_wing / right_wing GROUP pivot (shoulder). Avoids the Y=-180 mid-mesh empty.")]
         [SerializeField] private bool driveWingsFromShoulderGroup = true;
-        [Tooltip("Nested rotation Empty inside left_wing group (used when driveWingsFromShoulderGroup=false)")]
-        [SerializeField] private string leftWingRotNodeName = "left_wing_rotation";
-        [Tooltip("Nested rotation Empty inside right_wing group (used when driveWingsFromShoulderGroup=false)")]
-        [SerializeField] private string rightWingRotNodeName = "right_wing_rotation";
-        [Tooltip("Parent group pivot — used when driveWingsFromShoulderGroup=true (case-insensitive FindDeep)")]
-        [SerializeField] private string leftWingGroupNodeName = "left_wing";
+        [SerializeField] private string leftWingGroupNodeName  = "left_wing";
         [SerializeField] private string rightWingGroupNodeName = "right_wing";
+        [Tooltip("Only used when driveWingsFromShoulderGroup = false")]
+        [SerializeField] private string leftWingRotNodeName  = "left_wing_rotation";
+        [SerializeField] private string rightWingRotNodeName = "right_wing_rotation";
+        [Tooltip("Local axis for wing delta. Use 'Debug: Axis Test' ContextMenus to find the right one.")]
+        [SerializeField] private WingFlapAxisMode wingFlapAxisMode = WingFlapAxisMode.NegZ;
 
-        [Tooltip("How cosine-driven wing angles map into Unity local Euler deltas.")]
-        [SerializeField] private WingFlapAxisMode wingFlapAxisMode = WingFlapAxisMode.LocalXShoulderFlap;
-        [SerializeField] private string leftLegNodeName = "left_leg";
+        [Header("Other bones")]
+        [SerializeField] private string leftLegNodeName  = "left_leg";
         [SerializeField] private string rightLegNodeName = "right_leg";
-        [SerializeField] private string tailNodeName = "tail";
-        [SerializeField] private string featherNodeName = "feather";
+        [SerializeField] private string tailNodeName     = "tail";
+        [SerializeField] private string featherNodeName  = "feather";
 
-        [Header("Idle — Minecraft extra bones")]
-        [Tooltip("Amplitude of the idle head yaw sway (degrees). " +
-                 "Minecraft ref: cos(age*0.7)*0.4 rad ≈ 23°; tuned down for subtlety.")]
-        [SerializeField] private float idleHeadSwayDegrees = 14f;
-        [Tooltip("Idle head sway: cos(McAge * mult) * degrees. Vanilla multiplier ≈ 0.7 (tick timeline).")]
-        [SerializeField] private float idleHeadSwayMcMult = 0.7f;
-        [Tooltip("Amplitude of idle tail yaw sway (degrees). " +
-                 "Minecraft ref: cos(age*0.3)*0.2 rad ≈ 11.5°.")]
+        // ─── inspector: idle bone animation ─────────────────────────────
+
+        [Header("Idle — vanilla tail + head sway")]
+        [Tooltip("Head yaw sway amplitude (deg). Vanilla: cos(age*0.7)*0.4 rad ≈ 23°; tuned down.")]
+        [SerializeField] private float idleHeadSwayDegrees = 12f;
+        [Tooltip("Tail yaw sway amplitude (deg). Vanilla: cos(age*0.3)*0.2 rad ≈ 11.5°.")]
         [SerializeField] private float idleTailSwayDegrees = 11f;
-        [Tooltip("Idle tail sway: cos(McAge * mult) * degrees. Vanilla multiplier ≈ 0.3.")]
-        [SerializeField] private float idleTailSwayMcMult = 0.3f;
-        [Tooltip("Wing breathing amplitude during idle/perched (degrees, z-roll).")]
-        [SerializeField] private float idleWingBreathDegrees = 8f;
+        [Tooltip("Wing closed-position breath amplitude (deg, tiny).")]
+        [SerializeField] private float idleWingBreathDegrees = 5f;
 
-        [Header("Fly — vanilla ParrotEntityModel (tick timeline)")]
-        [Tooltip("Vanilla flying wing: zRot = cos(age * 0.6) * osc + bias (radians). " +
-                 "`age` advances ~20 per second (Minecraft ticks) — we use (Time.time * McTicksPerSecond).")]
-        [SerializeField] private float flyWingBiasRad = 1.0f;
-        [SerializeField] private float flyWingOscRad = 0.5f;
-        [Tooltip("Multiply the cos term only (clip-safe tuning without killing mean spread).")]
-        [SerializeField] private float flyWingOscillationScale = 0.55f;
+        // ─── inspector: fly wing (vanilla-correct) ───────────────────────
 
-        [Header("Dance — jukebox / PARTY parrot (approx vanilla pacing)")]
-        [Tooltip("Root vertical bob (m) — bounce on locomotion root only.")]
-        [SerializeField] private float danceRootBobMeters = 0.022f;
-        [Tooltip("Body group yaw sway (degrees) — party groove.")]
-        [SerializeField] private float danceBodyYawDegrees = 14f;
-        [Tooltip("Body roll wobble amplitude (degrees).")]
-        [SerializeField] private float danceBodyRollDegrees = 10f;
-        [Tooltip("Head pitch amplitude (degrees) — PARTY is not only left-right head.")]
-        [SerializeField] private float danceHeadPitchDegrees = 18f;
-        [Tooltip("Head yaw amplitude (degrees).")]
-        [SerializeField] private float danceHeadYawDegrees = 22f;
-        [Tooltip("Party wings: left channel uses cos(age*0.8)*osc+bias (radians); right uses +π phase.")]
-        [SerializeField] private float danceWingBiasRad = 0.75f;
-        [SerializeField] private float danceWingOscRad = 0.55f;
-        [Tooltip("Tail fan sway amplitude during dance (degrees).")]
-        [SerializeField] private float danceTailFanDegrees = 20f;
+        [Header("Fly wing — vanilla ParrotModel formula (source A)")]
+        [Tooltip("Vanilla: cos(limbSwing*0.6662)*0.25 rad. Amplitude = 0.25 rad ≈ 14.3°. NO bias.")]
+        [SerializeField] private float flyWingAmpRad = 0.25f;
+        [Tooltip("Angular frequency multiplier on McAge. Vanilla uses ~6.662 rad/s (= 0.6662 * ~10 limbSwing rate).")]
+        [SerializeField] private float flyWingFreqMult = 6.662f;
+
+        // ─── inspector: party / dance ────────────────────────────────────
+
+        [Header("Dance — vanilla PARTY parrot (source A)")]
+        [Tooltip("Wings held fixed at this spread (radians). Vanilla: ±0.34906584 rad ≈ ±20°.")]
+        [SerializeField] private float danceWingSpreadRad = 0.349f;
+        [Tooltip("Body vertical bounce amplitude (m).")]
+        [SerializeField] private float danceBodyBobMeters = 0.022f;
+        [Tooltip("Body bounce angular frequency. Vanilla ageInTicks * 0.6662 → ~13 rad/s at 20 ticks/s.")]
+        [SerializeField] private float danceBodyBobFreqMult = 13.324f;
+        [Tooltip("Head bob amplitude during party (degrees, pitch).")]
+        [SerializeField] private float danceHeadBobDegrees = 12f;
+        [Tooltip("Tail fan max angle during party (degrees).")]
+        [SerializeField] private float danceTailFanDegrees = 18f;
+
+        // ─── inspector: sit ──────────────────────────────────────────────
 
         [Header("Sit")]
-        [Tooltip("Downward body offset when sitting (m).")]
         [SerializeField] private float sitBodyLower = 0.03f;
-        [Tooltip("Leg bend angle when sitting (degrees, x-pitch).")]
         [SerializeField] private float sitLegBendDegrees = 30f;
-        [Tooltip("Wing fold angle when sitting (degrees, z-roll; wings tuck inward).")]
-        [SerializeField] private float sitWingCloseDegrees = 12f;
+        [SerializeField] private float sitWingCloseDegrees = 10f;
 
         // ─── public state ────────────────────────────────────────────────
 
         public BodyState CurrentState { get; private set; } = BodyState.Idle;
         public HeadState CurrentHeadState { get; private set; } = HeadState.Forward;
 
-        /// <summary>
-        /// Fired every time the body wire string changes (lowercase snake_case).
-        /// Subscribed by <c>LifecycleHeartbeatPublisher</c> (A.3) to trigger
-        /// immediate EcpState upload (entry doc §8.1 L1 "事件驱动 + 1Hz").
-        /// </summary>
+        /// <summary>Wire event for body state change (lowercase). Subscribed by LifecycleHeartbeatPublisher (A.3).</summary>
         public event Action<string> OnBodyStateWireChanged;
-
-        /// <summary>
-        /// Fired every time the head wire string changes (UPPERCASE HEAD_*).
-        /// Same EcpState trigger contract as <see cref="OnBodyStateWireChanged"/>.
-        /// </summary>
+        /// <summary>Wire event for head state change (UPPERCASE HEAD_*). Same EcpState trigger.</summary>
         public event Action<string> OnHeadStateWireChanged;
 
-        // ─── private runtime state ───────────────────────────────────────
+        // ─── runtime state ───────────────────────────────────────────────
 
         private Vector3 _flyTarget;
         private bool _isFlying;
@@ -194,33 +152,29 @@ namespace ParrotApp.Parrot
         private float _stateTimer;
         private float _headStateTimer;
 
-        // W3.A.2 cached transforms
         private Transform _headTransform;
         private Transform _bodyTransform;
         private Quaternion _headBaseRot;
         private Quaternion _bodyBaseRot;
 
-        // Animation-Port cached transforms (FindDeep in Awake)
-        private Transform _leftWingRotTransform;
-        private Transform _rightWingRotTransform;
+        private Transform _leftWingTransform;
+        private Transform _rightWingTransform;
         private Transform _leftLegTransform;
         private Transform _rightLegTransform;
         private Transform _tailTransform;
         private Transform _featherTransform;
-        private Quaternion _leftWingRotBaseRot;
-        private Quaternion _rightWingRotBaseRot;
+        private Quaternion _leftWingBaseRot;
+        private Quaternion _rightWingBaseRot;
         private Quaternion _leftLegBaseRot;
         private Quaternion _rightLegBaseRot;
         private Quaternion _tailBaseRot;
         private Quaternion _featherBaseRot;
 
-        /// <summary>
-        /// Vanilla client animation uses a tick clock (partial ticks). Good-enough Unity mapping:
-        /// treat `age` in wiki/javadoc cos/sin as ~McTicksPerSecond * time(seconds).
-        /// </summary>
-        private const float McTicksPerSecond = 20f;
+        // ─── tick timeline ───────────────────────────────────────────────
 
-        private static float McAge => Time.time * McTicksPerSecond;
+        /// <summary>Vanilla Minecraft age approximation: ~20 ticks per second.</summary>
+        private const float McTicksPerSec = 20f;
+        private static float McAge => Time.time * McTicksPerSec;
 
         // ─── lifecycle ───────────────────────────────────────────────────
 
@@ -228,55 +182,52 @@ namespace ParrotApp.Parrot
         {
             _basePosition = transform.localPosition;
             _baseRotation = transform.localRotation;
-            _baseScale = transform.localScale;
+            _baseScale    = transform.localScale;
 
-            // W3.A.2 nodes
-            if (!string.IsNullOrEmpty(headNodeName))
-                _headTransform = FindDeep(transform, headNodeName);
-            if (!string.IsNullOrEmpty(bodyNodeName))
-                _bodyTransform = FindDeep(transform, bodyNodeName);
-
+            _headTransform = FindDeep(transform, headNodeName);
+            _bodyTransform = FindDeep(transform, bodyNodeName);
             if (_headTransform != null) _headBaseRot = _headTransform.localRotation;
             if (_bodyTransform != null) _bodyBaseRot = _bodyTransform.localRotation;
 
-            // Wing drives: prefer shoulder group pivot (fixes mid-mesh rotation empties).
+            // Wing pivot: prefer shoulder group over mid-mesh rotation empty.
             if (driveWingsFromShoulderGroup)
             {
-                _leftWingRotTransform  = FindDeepLog(leftWingGroupNodeName);
-                _rightWingRotTransform = FindDeepLog(rightWingGroupNodeName);
+                _leftWingTransform  = FindDeepLog(leftWingGroupNodeName);
+                _rightWingTransform = FindDeepLog(rightWingGroupNodeName);
             }
             else
             {
-                _leftWingRotTransform  = FindDeepLog(leftWingRotNodeName);
-                _rightWingRotTransform = FindDeepLog(rightWingRotNodeName);
+                _leftWingTransform  = FindDeepLog(leftWingRotNodeName);
+                _rightWingTransform = FindDeepLog(rightWingRotNodeName);
             }
-            _leftLegTransform      = FindDeepLog(leftLegNodeName);
-            _rightLegTransform     = FindDeepLog(rightLegNodeName);
-            _tailTransform         = FindDeepLog(tailNodeName);
-            _featherTransform      = FindDeepLog(featherNodeName);
 
-            if (_leftWingRotTransform  != null) _leftWingRotBaseRot  = _leftWingRotTransform.localRotation;
-            if (_rightWingRotTransform != null) _rightWingRotBaseRot = _rightWingRotTransform.localRotation;
-            if (_leftLegTransform      != null) _leftLegBaseRot      = _leftLegTransform.localRotation;
-            if (_rightLegTransform     != null) _rightLegBaseRot     = _rightLegTransform.localRotation;
-            if (_tailTransform         != null) _tailBaseRot         = _tailTransform.localRotation;
-            if (_featherTransform      != null) _featherBaseRot      = _featherTransform.localRotation;
+            _leftLegTransform  = FindDeepLog(leftLegNodeName);
+            _rightLegTransform = FindDeepLog(rightLegNodeName);
+            _tailTransform     = FindDeepLog(tailNodeName);
+            _featherTransform  = FindDeepLog(featherNodeName);
+
+            if (_leftWingTransform  != null) _leftWingBaseRot  = _leftWingTransform.localRotation;
+            if (_rightWingTransform != null) _rightWingBaseRot = _rightWingTransform.localRotation;
+            if (_leftLegTransform   != null) _leftLegBaseRot   = _leftLegTransform.localRotation;
+            if (_rightLegTransform  != null) _rightLegBaseRot  = _rightLegTransform.localRotation;
+            if (_tailTransform      != null) _tailBaseRot      = _tailTransform.localRotation;
+            if (_featherTransform   != null) _featherBaseRot   = _featherTransform.localRotation;
         }
 
         void Update()
         {
-            _stateTimer += Time.deltaTime;
+            _stateTimer     += Time.deltaTime;
             _headStateTimer += Time.deltaTime;
 
             switch (CurrentState)
             {
-                case BodyState.Idle:         UpdateIdle();          break;
-                case BodyState.HeadBob:      UpdateHeadBob();       break;
-                case BodyState.Fly:          UpdateFly();           break;
-                case BodyState.Perch:        UpdatePerch();         break;
+                case BodyState.Idle:          UpdateIdle();          break;
+                case BodyState.HeadBob:       UpdateHeadBob();       break;
+                case BodyState.Fly:           UpdateFly();           break;
+                case BodyState.Perch:         UpdatePerch();         break;
                 case BodyState.PerchedOnHand: UpdatePerchedOnHand(); break;
-                case BodyState.Dance:        UpdateDance();         break;
-                case BodyState.Sit:          UpdateSit();           break;
+                case BodyState.Dance:         UpdateDance();         break;
+                case BodyState.Sit:           UpdateSit();           break;
             }
 
             UpdateHeadOverlay();
@@ -287,7 +238,7 @@ namespace ParrotApp.Parrot
         public void FlyTo(Vector3 target)
         {
             _flyTarget = target;
-            _isFlying = true;
+            _isFlying  = true;
             SetState(BodyState.Fly);
         }
 
@@ -296,13 +247,11 @@ namespace ParrotApp.Parrot
             if (CurrentState == state) return;
             string oldWire = BodyStateToWire(CurrentState);
             CurrentState = state;
-            _stateTimer = 0f;
+            _stateTimer  = 0f;
 
-            // Compatibility (parrot_behavior_rules §2.2): flying body 不允许歪头
+            // parrot_behavior_rules §2.2: no head tilt during flight
             if (state == BodyState.Fly && CurrentHeadState != HeadState.Forward)
-            {
                 SetHeadState(HeadState.Forward);
-            }
 
             string newWire = BodyStateToWire(state);
             Debug.Log($"[AnimationDriver] BodyState → {state} (wire={newWire})");
@@ -319,7 +268,7 @@ namespace ParrotApp.Parrot
             if (CurrentHeadState == state) return;
             string oldWire = HeadStateToWire(CurrentHeadState);
             CurrentHeadState = state;
-            _headStateTimer = 0f;
+            _headStateTimer  = 0f;
 
             string newWire = HeadStateToWire(state);
             Debug.Log($"[AnimationDriver] HeadState → {state} (wire={newWire})");
@@ -335,18 +284,18 @@ namespace ParrotApp.Parrot
         {
             switch ((bodyState ?? "").ToLowerInvariant().Replace("-", "_"))
             {
-                case "idle": SetState(BodyState.Idle); break;
+                case "idle":             SetState(BodyState.Idle);          break;
                 case "head_bob":
-                case "listening": SetState(BodyState.HeadBob); break;
+                case "listening":        SetState(BodyState.HeadBob);       break;
                 case "fly":
-                case "flying": SetState(BodyState.Fly); break;
+                case "flying":           SetState(BodyState.Fly);           break;
                 case "perch":
-                case "perching": SetState(BodyState.Perch); break;
-                case "perched_on_hand": SetState(BodyState.PerchedOnHand); break;
+                case "perching":         SetState(BodyState.Perch);         break;
+                case "perched_on_hand":  SetState(BodyState.PerchedOnHand); break;
                 case "dance":
-                case "dancing": SetState(BodyState.Dance); break;
+                case "dancing":          SetState(BodyState.Dance);         break;
                 case "sit":
-                case "sitting": SetState(BodyState.Sit); break;
+                case "sitting":          SetState(BodyState.Sit);           break;
                 default:
                     Debug.LogWarning($"[AnimationDriver] Unknown body_state: '{bodyState}' — staying {CurrentState}");
                     break;
@@ -359,32 +308,32 @@ namespace ParrotApp.Parrot
             {
                 case "":
                 case "HEAD_FORWARD":
-                case "FORWARD": SetHeadState(HeadState.Forward); break;
+                case "FORWARD":   SetHeadState(HeadState.Forward); break;
                 case "HEAD_LOOK_AT":
-                case "LOOK_AT": SetHeadState(HeadState.LookAt); break;
+                case "LOOK_AT":   SetHeadState(HeadState.LookAt);  break;
                 case "HEAD_TILT":
-                case "TILT": SetHeadState(HeadState.Tilt); break;
+                case "TILT":      SetHeadState(HeadState.Tilt);    break;
                 case "HEAD_NOD":
-                case "NOD": SetHeadState(HeadState.Nod); break;
+                case "NOD":       SetHeadState(HeadState.Nod);     break;
                 default:
                     Debug.LogWarning($"[AnimationDriver] Unknown head_state: '{headState}' — staying {CurrentHeadState}");
                     break;
             }
         }
 
-        // ─── wire mappers (DO NOT RENAME — Brain wire contract) ─────────
+        // ─── wire mappers (Brain wire contract — DO NOT RENAME) ──────────
 
         public static string BodyStateToWire(BodyState s)
         {
             switch (s)
             {
                 case BodyState.Idle:          return "idle";
-                case BodyState.HeadBob:       return "idle"; // HeadBob is head-layer only; body wire stays idle
+                case BodyState.HeadBob:       return "idle";
                 case BodyState.Fly:           return "flying";
                 case BodyState.Perch:         return "perching";
                 case BodyState.PerchedOnHand: return "perched_on_hand";
                 case BodyState.Dance:         return "dancing";
-                case BodyState.Sit:           return "idle"; // Sit is a visual pose variant; wire stays idle
+                case BodyState.Sit:           return "idle";
                 default:                      return "idle";
             }
         }
@@ -401,7 +350,7 @@ namespace ParrotApp.Parrot
             }
         }
 
-        // ─── ContextMenu debug entries ───────────────────────────────────
+        // ─── ContextMenu — state debug ───────────────────────────────────
 
         [ContextMenu("Debug: Play Idle")]
         private void DebugPlayIdle() => SetState(BodyState.Idle);
@@ -410,7 +359,7 @@ namespace ParrotApp.Parrot
         private void DebugPlayFly()
         {
             _flyTarget = transform.position + transform.forward * 2f;
-            _isFlying = true;
+            _isFlying  = true;
             SetState(BodyState.Fly);
         }
 
@@ -420,81 +369,108 @@ namespace ParrotApp.Parrot
         [ContextMenu("Debug: Play Sit")]
         private void DebugPlaySit() => SetState(BodyState.Sit);
 
-        // ─── per-state body update ───────────────────────────────────────
+        // ─── ContextMenu — wing axis diagnostic ─────────────────────────
+        // Use these in Play mode to find which axis makes wings flap up/down.
+
+        [ContextMenu("Debug: Axis Test +Z 30°")]
+        private void AxisTestPosZ() => ApplyWingDeltaDeg_Diagnostic(30f, WingFlapAxisMode.PosZ);
+
+        [ContextMenu("Debug: Axis Test -Z 30°")]
+        private void AxisTestNegZ() => ApplyWingDeltaDeg_Diagnostic(30f, WingFlapAxisMode.NegZ);
+
+        [ContextMenu("Debug: Axis Test +X 30°")]
+        private void AxisTestPosX() => ApplyWingDeltaDeg_Diagnostic(30f, WingFlapAxisMode.PosX);
+
+        [ContextMenu("Debug: Axis Test -X 30°")]
+        private void AxisTestNegX() => ApplyWingDeltaDeg_Diagnostic(30f, WingFlapAxisMode.NegX);
+
+        [ContextMenu("Debug: Wing Reset to Base")]
+        private void WingResetToBase()
+        {
+            if (_leftWingTransform  != null) _leftWingTransform.localRotation  = _leftWingBaseRot;
+            if (_rightWingTransform != null) _rightWingTransform.localRotation = _rightWingBaseRot;
+        }
+
+        // ─── per-state update ────────────────────────────────────────────
 
         private void UpdateIdle()
         {
+            float t = _stateTimer;
             float mc = McAge;
 
-            // Position hover bob (existing baseline)
-            float bob = Mathf.Sin(_stateTimer * idleBobFrequency * Mathf.PI * 2f) * idleBobAmplitude;
+            // Gentle hover bob (keep existing to not disturb W3.A.2 feel)
+            float bob = Mathf.Sin(t * idleBobFrequency * Mathf.PI * 2f) * idleBobAmplitude;
             transform.localPosition = _basePosition + new Vector3(0f, bob, 0f);
-            transform.Rotate(Vector3.up, idleRotateSpeed * Time.deltaTime, Space.Self);
+            // NOTE: no constant Y-rotation here — vanilla parrot just stands.
 
-            // Tail gentle yaw sway — modding standard, see Forge javadoc / Yarn 1.20.3 (tick timeline)
+            // Tail gentle yaw sway — vanilla ref cos(age*0.3)*0.2 rad (source A)
             if (_tailTransform != null)
             {
-                float tailSway = Mathf.Cos(mc * idleTailSwayMcMult) * idleTailSwayDegrees;
+                float tailSway = Mathf.Cos(mc * 0.3f) * idleTailSwayDegrees;
                 _tailTransform.localRotation = _tailBaseRot * Quaternion.Euler(0f, tailSway, 0f);
             }
 
-            ApplyWingBreathDeltaDegrees(Mathf.Cos(mc * 0.8f) * idleWingBreathDegrees);
+            // Wings barely breathe — tiny fold/unfold, not real flapping
+            ApplyWingDeltaDeg(Mathf.Sin(t * 0.8f * Mathf.PI * 2f) * idleWingBreathDegrees);
 
+            ResetBodyToBase(4f);
             LerpLegsToBase(4f);
-            ResetBodyBoneTowardBase(4f);
         }
 
         private void UpdateHeadBob()
         {
-            float bob = Mathf.Sin(_stateTimer * idleBobFrequency * Mathf.PI * 2f) * idleBobAmplitude;
+            float t = _stateTimer;
+            float bob = Mathf.Sin(t * idleBobFrequency * Mathf.PI * 2f) * idleBobAmplitude;
             transform.localPosition = _basePosition + new Vector3(0f, bob, 0f);
 
             if (_headTransform != null && CurrentHeadState == HeadState.Forward)
             {
-                float nod = Mathf.Sin(_stateTimer * headBobFrequency * Mathf.PI * 2f) * headBobAmplitude * 90f;
+                float nod = Mathf.Sin(t * headBobFrequency * Mathf.PI * 2f) * headBobAmplitude * 90f;
                 _headTransform.localRotation = _headBaseRot * Quaternion.Euler(nod, 0f, 0f);
             }
 
             LerpBonesToBase(3f);
-            ResetBodyBoneTowardBase(3f);
         }
 
         private void UpdateFly()
         {
             if (!_isFlying) return;
 
-            float mc = McAge;
-
-            var dir = (_flyTarget - transform.position).normalized;
+            float t   = Time.time;
+            var   dir = (_flyTarget - transform.position).normalized;
             transform.position = Vector3.MoveTowards(transform.position, _flyTarget, flySpeed * Time.deltaTime);
 
-            if (dir.magnitude > 0.01f)
+            if (dir.sqrMagnitude > 0.0001f)
             {
                 var targetRot = Quaternion.LookRotation(dir, Vector3.up)
                                 * Quaternion.Euler(-flyTiltDegrees, 0f, 0f);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, 8f * Time.deltaTime);
             }
 
-            // Flying wing — vanilla ParrotEntityModel: leftWing.zRot = cos(age*0.6)*0.5 + 1.0 (radians),
-            // rightWing.zRot = -leftWing.zRot. `age` is tick-like; modding standard, see Forge javadoc / Yarn 1.20.
-            float leftZRad = Mathf.Cos(mc * 0.6f) * (flyWingOscRad * flyWingOscillationScale) + flyWingBiasRad;
-            ApplyWingsMirroredFromLeftZRads(leftZRad);
+            // Vanilla flying wing: leftWing.zRot = cos(limbSwing * 0.6662f) * 0.25f (rad), rightWing = -left
+            // source A: SpigotMC + Forge javadoc decompile
+            float leftRad = Mathf.Cos(t * flyWingFreqMult) * flyWingAmpRad;
+            ApplyWingMirroredRad(leftRad);
+
+            // Forward body tilt during flight
+            if (_bodyTransform != null)
+                _bodyTransform.localRotation = Quaternion.Slerp(
+                    _bodyTransform.localRotation,
+                    _bodyBaseRot * Quaternion.Euler(20f, 0f, 0f),
+                    5f * Time.deltaTime);
 
             if (_tailTransform != null)
-            {
                 _tailTransform.localRotation = Quaternion.Slerp(
                     _tailTransform.localRotation,
                     _tailBaseRot * Quaternion.Euler(-10f, 0f, 0f),
                     5f * Time.deltaTime);
-            }
 
             LerpLegsToBase(3f);
-            ResetBodyBoneTowardBase(3f);
 
             if (Vector3.Distance(transform.position, _flyTarget) < flyArrivalThreshold)
             {
                 transform.position = _flyTarget;
-                _isFlying = false;
+                _isFlying  = false;
                 _basePosition = _flyTarget;
                 SetState(BodyState.Idle);
                 Debug.Log($"[AnimationDriver] Arrived at {_flyTarget}");
@@ -508,75 +484,79 @@ namespace ParrotApp.Parrot
             transform.localRotation = Quaternion.Slerp(transform.localRotation, _baseRotation, 3f * Time.deltaTime);
 
             LerpBonesToBase(3f);
-            ResetBodyBoneTowardBase(3f);
         }
 
         /// <summary>
-        /// <c>ParrotApp.Hands.PerchOnHand</c> (per-frame Lerp to IndexIntermediate
-        /// joint). This driver adds breathing-scale + subtle idle bone movement so
-        /// the parrot looks alive while perched and not stiff.
+        /// Position driven externally by <c>PerchOnHand</c>. Driver only adds subtle
+        /// alive-feeling idle animation on bones.
         /// </summary>
         private void UpdatePerchedOnHand()
         {
+            float t  = Time.time;
             float mc = McAge;
 
-            float breath = Mathf.Sin(Time.time * perchBreathFrequency * Mathf.PI * 2f) * perchBreathAmplitude;
+            float breath = Mathf.Sin(t * perchBreathFrequency * Mathf.PI * 2f) * perchBreathAmplitude;
             transform.localScale = _baseScale * (1f + breath);
 
-            ApplyWingBreathDeltaDegrees(Mathf.Cos(mc * 0.8f) * (idleWingBreathDegrees * 0.5f));
+            // Tiny wing breath — wings should be mostly closed when perched
+            ApplyWingDeltaDeg(Mathf.Sin(t * 0.8f * Mathf.PI * 2f) * (idleWingBreathDegrees * 0.5f));
 
             if (_tailTransform != null)
             {
-                float tailSway = Mathf.Cos(mc * idleTailSwayMcMult) * (idleTailSwayDegrees * 0.5f);
-                _tailTransform.localRotation = _tailBaseRot * Quaternion.Euler(0f, tailSway, 0f);
+                float sway = Mathf.Cos(mc * 0.3f) * (idleTailSwayDegrees * 0.5f);
+                _tailTransform.localRotation = _tailBaseRot * Quaternion.Euler(0f, sway, 0f);
             }
 
+            // Weight-shift between feet
             if (_leftLegTransform != null && _rightLegTransform != null)
             {
-                float legShift = Mathf.Sin(mc * idleTailSwayMcMult) * 4f;
-                _leftLegTransform.localRotation  = _leftLegBaseRot  * Quaternion.Euler( legShift, 0f, 0f);
-                _rightLegTransform.localRotation = _rightLegBaseRot * Quaternion.Euler(-legShift, 0f, 0f);
+                float shift = Mathf.Sin(mc * 0.3f) * 4f;
+                _leftLegTransform.localRotation  = _leftLegBaseRot  * Quaternion.Euler( shift, 0f, 0f);
+                _rightLegTransform.localRotation = _rightLegBaseRot * Quaternion.Euler(-shift, 0f, 0f);
             }
 
-            ResetBodyBoneTowardBase(4f);
+            ResetBodyToBase(4f);
         }
 
         /// <summary>
-        /// Dance / Party parrot state.
-        /// Head animation is driven here directly (parrot_behavior_rules §2.2: Dance
-        /// owns its own head animation; UpdateHeadOverlay skips this state).
+        /// Vanilla PARTY state (source A):
+        ///   • Wings FIXED at ±0.349 rad (≈±20°) — NOT animated
+        ///   • Body bounces vertically with sin(ageInTicks * 0.6662)
+        ///   • Head bobs in sync
+        ///   Dance owns head animation; UpdateHeadOverlay skips this state (parrot_behavior_rules §2.2).
         /// </summary>
         private void UpdateDance()
         {
+            float t  = Time.time;
             float mc = McAge;
 
-            // Root bounce (small) + body bone groove (jukebox PARTY reads as whole-bird sway, not only head yaw)
-            float rootBob = Mathf.Sin(mc * 0.3f) * danceRootBobMeters;
-            transform.localPosition = _basePosition + new Vector3(0f, rootBob, 0f);
+            // Body vertical bounce — vanilla: driven by danceAngle = ageInTicks % N
+            float bodyBob = Mathf.Sin(t * danceBodyBobFreqMult) * danceBodyBobMeters;
+            transform.localPosition = _basePosition + new Vector3(0f, bodyBob, 0f);
 
+            // Body slight rock
             if (_bodyTransform != null)
             {
-                float yaw = Mathf.Sin(mc * 0.5f) * danceBodyYawDegrees;
-                float roll = Mathf.Sin(mc * 0.35f) * danceBodyRollDegrees;
-                _bodyTransform.localRotation = _bodyBaseRot * Quaternion.Euler(0f, yaw, roll);
+                float roll = Mathf.Sin(t * danceBodyBobFreqMult * 0.5f) * 6f;
+                _bodyTransform.localRotation = _bodyBaseRot * Quaternion.Euler(0f, 0f, roll);
             }
 
+            // Head bobs with body bounce (pitch)
             if (_headTransform != null)
             {
-                float pitch = Mathf.Sin(mc * 0.7f) * danceHeadPitchDegrees;
-                float yaw = Mathf.Sin(mc * 1.15f) * danceHeadYawDegrees;
-                _headTransform.localRotation = _headBaseRot * Quaternion.Euler(pitch, yaw, 0f);
+                float pitch = Mathf.Sin(t * danceBodyBobFreqMult) * danceHeadBobDegrees;
+                _headTransform.localRotation = _headBaseRot * Quaternion.Euler(pitch, 0f, 0f);
             }
 
-            // PARTY wings: faster than mistaken "Hz" version; opposite phase between sides (jukebox feel)
-            float leftRad = Mathf.Cos(mc * 0.8f) * danceWingOscRad + danceWingBiasRad;
-            float rightRad = Mathf.Cos(mc * 0.8f + Mathf.PI) * danceWingOscRad + danceWingBiasRad;
-            ApplyWingsIndependentZRads(leftRad, rightRad);
+            // Wings FIXED at party spread — vanilla: leftWing.zRot = -0.34906584f, rightWing = +0.34906584f
+            // source A: SpigotMC decompile snippet (rotateAngleZ values for PARTY)
+            ApplyWingPartySpread();
 
+            // Tail fans with body bob
             if (_tailTransform != null)
             {
-                float tailFan = Mathf.Cos(mc * 0.3f) * danceTailFanDegrees;
-                _tailTransform.localRotation = _tailBaseRot * Quaternion.Euler(0f, tailFan, 0f);
+                float fan = Mathf.Cos(mc * 0.3f) * danceTailFanDegrees;
+                _tailTransform.localRotation = _tailBaseRot * Quaternion.Euler(0f, fan, 0f);
             }
 
             LerpLegsToBase(3f);
@@ -584,61 +564,45 @@ namespace ParrotApp.Parrot
 
         private void UpdateSit()
         {
-            // Body lowered — lerp to avoid snap
             transform.localPosition = Vector3.Lerp(
                 transform.localPosition,
                 _basePosition - new Vector3(0f, sitBodyLower, 0f),
                 5f * Time.deltaTime);
 
-            // Legs bent (x-pitch simulates knee bend)
             if (_leftLegTransform != null && _rightLegTransform != null)
             {
-                var legBent = Quaternion.Euler(sitLegBendDegrees, 0f, 0f);
-                _leftLegTransform.localRotation = Quaternion.Slerp(
-                    _leftLegTransform.localRotation, _leftLegBaseRot * legBent, 5f * Time.deltaTime);
-                _rightLegTransform.localRotation = Quaternion.Slerp(
-                    _rightLegTransform.localRotation, _rightLegBaseRot * legBent, 5f * Time.deltaTime);
+                var bent = Quaternion.Euler(sitLegBendDegrees, 0f, 0f);
+                _leftLegTransform.localRotation  = Quaternion.Slerp(_leftLegTransform.localRotation,  _leftLegBaseRot  * bent, 5f * Time.deltaTime);
+                _rightLegTransform.localRotation = Quaternion.Slerp(_rightLegTransform.localRotation, _rightLegBaseRot * bent, 5f * Time.deltaTime);
             }
 
-            // Wings folded close to body (small z-roll inward)
-            if (_leftWingRotTransform != null && _rightWingRotTransform != null)
+            if (_leftWingTransform != null && _rightWingTransform != null)
             {
-                _leftWingRotTransform.localRotation = Quaternion.Slerp(
-                    _leftWingRotTransform.localRotation,
-                    _leftWingRotBaseRot * Quaternion.Euler(0f, 0f, -sitWingCloseDegrees),
-                    5f * Time.deltaTime);
-                _rightWingRotTransform.localRotation = Quaternion.Slerp(
-                    _rightWingRotTransform.localRotation,
-                    _rightWingRotBaseRot * Quaternion.Euler(0f, 0f, sitWingCloseDegrees),
-                    5f * Time.deltaTime);
+                float closeDeg = -sitWingCloseDegrees;
+                _leftWingTransform.localRotation  = Quaternion.Slerp(_leftWingTransform.localRotation,
+                    _leftWingBaseRot  * MakeWingDelta(-closeDeg), 5f * Time.deltaTime);
+                _rightWingTransform.localRotation = Quaternion.Slerp(_rightWingTransform.localRotation,
+                    _rightWingBaseRot * MakeWingDelta( closeDeg), 5f * Time.deltaTime);
             }
 
-            // Tail slightly elevated when sitting
             if (_tailTransform != null)
-            {
                 _tailTransform.localRotation = Quaternion.Slerp(
                     _tailTransform.localRotation,
                     _tailBaseRot * Quaternion.Euler(-12f, 0f, 0f),
                     5f * Time.deltaTime);
-            }
 
-            ResetBodyBoneTowardBase(4f);
+            ResetBodyToBase(4f);
         }
 
-        // ─── head overlay (every frame, regardless of body state) ────────
+        // ─── head overlay (every frame) ──────────────────────────────────
 
         private void UpdateHeadOverlay()
         {
             if (_headTransform == null) return;
-
-            // HeadBob drives head internally when HEAD_FORWARD; skip to avoid double-write.
             if (CurrentState == BodyState.HeadBob && CurrentHeadState == HeadState.Forward) return;
-
-            // Dance owns its own head animation (parrot_behavior_rules §2.2); skip.
-            if (CurrentState == BodyState.Dance) return;
+            if (CurrentState == BodyState.Dance) return; // Dance drives head internally
 
             Quaternion target;
-
             switch (CurrentHeadState)
             {
                 case HeadState.Tilt:
@@ -654,14 +618,14 @@ namespace ParrotApp.Parrot
                 case HeadState.Forward:
                 default:
                 {
-                    // Idle-like head yaw — cos(McAge * 0.7) style (tick timeline); modding standard, see Forge javadoc / Yarn 1.20.
+                    // Gentle idle head yaw sway on idle-like states — vanilla ref cos(age*0.7)*~12°
                     bool idleLike = CurrentState == BodyState.Idle
                                  || CurrentState == BodyState.Sit
                                  || CurrentState == BodyState.Perch
                                  || CurrentState == BodyState.HeadBob;
                     if (idleLike)
                     {
-                        float headYaw = Mathf.Cos(McAge * idleHeadSwayMcMult) * idleHeadSwayDegrees;
+                        float headYaw = Mathf.Cos(McAge * 0.7f) * idleHeadSwayDegrees;
                         target = _headBaseRot * Quaternion.Euler(0f, headYaw, 0f);
                     }
                     else
@@ -680,75 +644,83 @@ namespace ParrotApp.Parrot
                 _headTransform.localRotation, target, headTransitionLerpSpeed * Time.deltaTime);
         }
 
-        // ─── helpers ─────────────────────────────────────────────────────
+        // ─── wing helpers ─────────────────────────────────────────────────
 
-        private void ResetBodyBoneTowardBase(float speed)
+        /// <summary>
+        /// Flying mirror: left = +rad, right = -rad (vanilla leftWing.zRot / rightWing.zRot = -left).
+        /// Radians are converted to degrees and applied on the configured axis.
+        /// </summary>
+        private void ApplyWingMirroredRad(float leftRad)
+        {
+            if (_leftWingTransform == null || _rightWingTransform == null) return;
+            float lDeg = leftRad * Mathf.Rad2Deg;
+            _leftWingTransform.localRotation  = _leftWingBaseRot  * MakeWingDelta( lDeg);
+            _rightWingTransform.localRotation = _rightWingBaseRot * MakeWingDelta(-lDeg);
+        }
+
+        /// <summary>Symmetric delta (same magnitude, mirrored) — used for idle breath and perch.</summary>
+        private void ApplyWingDeltaDeg(float deltaDeg)
+        {
+            if (_leftWingTransform == null || _rightWingTransform == null) return;
+            _leftWingTransform.localRotation  = _leftWingBaseRot  * MakeWingDelta( deltaDeg);
+            _rightWingTransform.localRotation = _rightWingBaseRot * MakeWingDelta(-deltaDeg);
+        }
+
+        /// <summary>
+        /// Vanilla PARTY fixed spread: leftWing = -0.349 rad, rightWing = +0.349 rad.
+        /// This is the NEGATED convention from vanilla (left wing tucks under, right spreads, or vice versa —
+        /// exact visual depends on bone axis; adjust danceWingSpreadRad sign if needed).
+        /// Source A: SpigotMC decompile: leftWing.rotateAngleZ = -0.34906584F, right = +0.34906584F.
+        /// </summary>
+        private void ApplyWingPartySpread()
+        {
+            if (_leftWingTransform == null || _rightWingTransform == null) return;
+            float spreadDeg = danceWingSpreadRad * Mathf.Rad2Deg;
+            _leftWingTransform.localRotation  = _leftWingBaseRot  * MakeWingDelta(-spreadDeg);
+            _rightWingTransform.localRotation = _rightWingBaseRot * MakeWingDelta( spreadDeg);
+        }
+
+        private Quaternion MakeWingDelta(float deg)
+        {
+            switch (wingFlapAxisMode)
+            {
+                case WingFlapAxisMode.PosZ:  return Quaternion.Euler(0f, 0f,  deg);
+                case WingFlapAxisMode.NegZ:  return Quaternion.Euler(0f, 0f, -deg);
+                case WingFlapAxisMode.PosX:  return Quaternion.Euler( deg, 0f, 0f);
+                case WingFlapAxisMode.NegX:  return Quaternion.Euler(-deg, 0f, 0f);
+                default:                     return Quaternion.Euler(0f, 0f, -deg);
+            }
+        }
+
+        private void ApplyWingDeltaDeg_Diagnostic(float deg, WingFlapAxisMode mode)
+        {
+            if (_leftWingTransform == null || _rightWingTransform == null)
+            {
+                Debug.LogWarning("[AnimationDriver] Wing transforms not found — can't axis-test.");
+                return;
+            }
+            Quaternion deltaL = Quaternion.identity, deltaR = Quaternion.identity;
+            switch (mode)
+            {
+                case WingFlapAxisMode.PosZ: deltaL = Quaternion.Euler(0f, 0f,  deg); deltaR = Quaternion.Euler(0f, 0f, -deg); break;
+                case WingFlapAxisMode.NegZ: deltaL = Quaternion.Euler(0f, 0f, -deg); deltaR = Quaternion.Euler(0f, 0f,  deg); break;
+                case WingFlapAxisMode.PosX: deltaL = Quaternion.Euler( deg, 0f, 0f); deltaR = Quaternion.Euler(-deg, 0f, 0f); break;
+                case WingFlapAxisMode.NegX: deltaL = Quaternion.Euler(-deg, 0f, 0f); deltaR = Quaternion.Euler( deg, 0f, 0f); break;
+            }
+            _leftWingTransform.localRotation  = _leftWingBaseRot  * deltaL;
+            _rightWingTransform.localRotation = _rightWingBaseRot * deltaR;
+            Debug.Log($"[AnimationDriver] Axis test {mode} {deg}°. Check if wings flap toward body or away.");
+        }
+
+        // ─── misc helpers ─────────────────────────────────────────────────
+
+        private void ResetBodyToBase(float speed)
         {
             if (_bodyTransform == null) return;
             _bodyTransform.localRotation = Quaternion.Slerp(
                 _bodyTransform.localRotation, _bodyBaseRot, speed * Time.deltaTime);
         }
 
-        /// <summary>
-        /// Vanilla flying mirror: rightWing.z = -leftWing.z. We map signed Z radians through
-        /// <see cref="wingFlapAxisMode"/> into Unity local Euler deltas on top of bind pose.
-        /// </summary>
-        private void ApplyWingsMirroredFromLeftZRads(float leftWingZRotRad)
-        {
-            if (_leftWingRotTransform == null || _rightWingRotTransform == null) return;
-
-            float lDeg = leftWingZRotRad * Mathf.Rad2Deg;
-            float rDeg = -leftWingZRotRad * Mathf.Rad2Deg;
-
-            switch (wingFlapAxisMode)
-            {
-                case WingFlapAxisMode.MinecraftZRoll:
-                    _leftWingRotTransform.localRotation  = _leftWingRotBaseRot  * Quaternion.Euler(0f, 0f, lDeg);
-                    _rightWingRotTransform.localRotation = _rightWingRotBaseRot * Quaternion.Euler(0f, 0f, rDeg);
-                    break;
-                case WingFlapAxisMode.LocalXShoulderFlap:
-                    // Shoulder hinge for side-mounted wings (reduces mid-mesh Z pivot clipping on GLB)
-                    _leftWingRotTransform.localRotation  = _leftWingRotBaseRot  * Quaternion.Euler(lDeg, 0f, 0f);
-                    _rightWingRotTransform.localRotation = _rightWingRotBaseRot * Quaternion.Euler(rDeg, 0f, 0f);
-                    break;
-            }
-        }
-
-        private void ApplyWingsIndependentZRads(float leftWingZRotRad, float rightWingZRotRad)
-        {
-            if (_leftWingRotTransform == null || _rightWingRotTransform == null) return;
-            float lDeg = leftWingZRotRad * Mathf.Rad2Deg;
-            float rDeg = rightWingZRotRad * Mathf.Rad2Deg;
-            switch (wingFlapAxisMode)
-            {
-                case WingFlapAxisMode.MinecraftZRoll:
-                    _leftWingRotTransform.localRotation  = _leftWingRotBaseRot  * Quaternion.Euler(0f, 0f, lDeg);
-                    _rightWingRotTransform.localRotation = _rightWingRotBaseRot * Quaternion.Euler(0f, 0f, rDeg);
-                    break;
-                case WingFlapAxisMode.LocalXShoulderFlap:
-                    _leftWingRotTransform.localRotation  = _leftWingRotBaseRot  * Quaternion.Euler(lDeg, 0f, 0f);
-                    _rightWingRotTransform.localRotation = _rightWingRotBaseRot * Quaternion.Euler(rDeg, 0f, 0f);
-                    break;
-            }
-        }
-
-        private void ApplyWingBreathDeltaDegrees(float deltaDeg)
-        {
-            if (_leftWingRotTransform == null || _rightWingRotTransform == null) return;
-            switch (wingFlapAxisMode)
-            {
-                case WingFlapAxisMode.MinecraftZRoll:
-                    _leftWingRotTransform.localRotation  = _leftWingRotBaseRot  * Quaternion.Euler(0f, 0f,  deltaDeg);
-                    _rightWingRotTransform.localRotation = _rightWingRotBaseRot * Quaternion.Euler(0f, 0f, -deltaDeg);
-                    break;
-                case WingFlapAxisMode.LocalXShoulderFlap:
-                    _leftWingRotTransform.localRotation  = _leftWingRotBaseRot  * Quaternion.Euler(deltaDeg, 0f, 0f);
-                    _rightWingRotTransform.localRotation = _rightWingRotBaseRot * Quaternion.Euler(-deltaDeg, 0f, 0f);
-                    break;
-            }
-        }
-
-        /// <summary>Lerp legs back to base when the current state doesn't own them.</summary>
         private void LerpLegsToBase(float speed)
         {
             float t = speed * Time.deltaTime;
@@ -756,15 +728,14 @@ namespace ParrotApp.Parrot
             if (_rightLegTransform != null) _rightLegTransform.localRotation = Quaternion.Slerp(_rightLegTransform.localRotation, _rightLegBaseRot, t);
         }
 
-        /// <summary>Lerp all extra bones (wings + legs + tail) back to base.</summary>
         private void LerpBonesToBase(float speed)
         {
             float t = speed * Time.deltaTime;
-            if (_leftWingRotTransform  != null) _leftWingRotTransform.localRotation  = Quaternion.Slerp(_leftWingRotTransform.localRotation,  _leftWingRotBaseRot,  t);
-            if (_rightWingRotTransform != null) _rightWingRotTransform.localRotation = Quaternion.Slerp(_rightWingRotTransform.localRotation, _rightWingRotBaseRot, t);
-            if (_leftLegTransform      != null) _leftLegTransform.localRotation      = Quaternion.Slerp(_leftLegTransform.localRotation,      _leftLegBaseRot,      t);
-            if (_rightLegTransform     != null) _rightLegTransform.localRotation     = Quaternion.Slerp(_rightLegTransform.localRotation,     _rightLegBaseRot,     t);
-            if (_tailTransform         != null) _tailTransform.localRotation         = Quaternion.Slerp(_tailTransform.localRotation,         _tailBaseRot,         t);
+            if (_leftWingTransform  != null) _leftWingTransform.localRotation  = Quaternion.Slerp(_leftWingTransform.localRotation,  _leftWingBaseRot,  t);
+            if (_rightWingTransform != null) _rightWingTransform.localRotation = Quaternion.Slerp(_rightWingTransform.localRotation, _rightWingBaseRot, t);
+            if (_leftLegTransform   != null) _leftLegTransform.localRotation   = Quaternion.Slerp(_leftLegTransform.localRotation,   _leftLegBaseRot,   t);
+            if (_rightLegTransform  != null) _rightLegTransform.localRotation  = Quaternion.Slerp(_rightLegTransform.localRotation,  _rightLegBaseRot,  t);
+            if (_tailTransform      != null) _tailTransform.localRotation      = Quaternion.Slerp(_tailTransform.localRotation,      _tailBaseRot,      t);
         }
 
         private Transform FindDeepLog(string nodeName)
@@ -772,17 +743,16 @@ namespace ParrotApp.Parrot
             if (string.IsNullOrEmpty(nodeName)) return null;
             var t = FindDeep(transform, nodeName);
             if (t == null)
-                Debug.LogWarning($"[AnimationDriver] Bone not found: '{nodeName}' — animation for this bone will be skipped");
+                Debug.LogWarning($"[AnimationDriver] Bone not found: '{nodeName}'");
             return t;
         }
 
         private static Transform FindDeep(Transform root, string name)
         {
-            foreach (Transform child in root.GetComponentsInChildren<Transform>(includeInactive: true))
-            {
-                if (string.Equals(child.name, name, StringComparison.OrdinalIgnoreCase))
-                    return child;
-            }
+            if (string.IsNullOrEmpty(name)) return null;
+            foreach (Transform c in root.GetComponentsInChildren<Transform>(true))
+                if (string.Equals(c.name, name, StringComparison.OrdinalIgnoreCase))
+                    return c;
             return null;
         }
     }
