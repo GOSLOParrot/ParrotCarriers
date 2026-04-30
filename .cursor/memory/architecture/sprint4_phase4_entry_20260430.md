@@ -485,12 +485,12 @@
 
 | 周 | 内容 | 验收 |
 |:--|:--|:--|
-| 0（**已完成**）| 决策锁 §8 写入 + §3.7 表回填 | 用户 sign off |
-| 1-2（**当前**）| L12 G1 双向通路 + L2 EcpEvent L0 实现（Python `EcpEvent` + C# `EcpEventDto` + JSON Schema + round-trip 测试）+ L13 `dsg/attention/` package skeleton + `brain/observer/` package skeleton + ⓒ RefBinding schema | EcpEvent round-trip 测试通过；`event_ingest` 能 dedup；`attention/__init__.py` 硬约束生效 |
-| 3 | 工具 ① perch_to_finger 锚定动作 + EcpState 三态字段（L1 事件驱动 + 1Hz）+ L10 选项 C（`fly_to` / `animate` execute 前检查 BB） | 验收 1 + 验收 3 |
-| 4-5 | 工具 ② identify_object 重写（L11 预算）+ `snapshot.captured` / `sighting.*` observer + Graphiti 异步写入 | 验收 2 |
-| 6-7 | 工具 ③ Focus / BBox（L5 / L6）+ `FocusBboxThreshold`（L9）+ `ParrotAttentionConfig` SO + RefBinding 落地 | 验收 4 |
-| 8（视范围）| 工具 ④ PhotoEvent + PhotoNode (L7) + 照片双通道 (L8) + Editor HUD M2 + 全链路 Editor 跑通 | 验收 5 |
+| 0 ✅ | 决策锁 §8 写入 + §3.7 表回填 | 用户 sign off |
+| 1-2 ✅ | L12 G1 双向通路 + L2 EcpEvent L0 实现（Python `EcpEvent` + C# `EcpEventDto` + JSON Schema + round-trip 测试）+ L13 `dsg/attention/` package skeleton + `brain/observer/` package skeleton + ⓒ RefBinding schema | EcpEvent round-trip 测试通过；`event_ingest` 能 dedup；`attention/__init__.py` 硬约束生效 |
+| 3 ✅ | 工具 ① perch_to_finger 锚定动作 + EcpState 三态字段（L1 事件驱动 + 1Hz）+ L10 选项 C（`fly_to` / `animate` execute 前检查 BB） | 验收 1 + 验收 3 |
+| 4-5 ✅ | 工具 ② identify_object 重写（L11 预算）+ `snapshot.captured` / `sighting.*` observer + Graphiti 异步写入 | 验收 2 |
+| 6-7 ✅ | 工具 ③ Focus / BBox（L5 / L6）+ `FocusBboxThreshold`（L9）+ `ParrotAttentionConfig` SO + RefBinding 落地 + F-05 Echo 全链路接通 | 验收 4 |
+| 8 ✅ Brain 半边 | 工具 ④ PhotoEvent — Brain 半边落地（NodeKind.PHOTO + 3 EdgeKind / observer.photo / photo_upload_server FastAPI on 7889 + Castle 本地 cache `data/photos/{yyyy-mm-dd}/{photo_id}.jpg` + photo.asset_uploaded EcpEvent 发回 / agent.py boot wire-up + transient/last_photo_event BB key + 21 测试全绿）；Unity 半边（capturePhoto UI + 256px preview JPEG + HTTP POST + photo.taken_preview publish）派发独立 chat；Editor HUD M2 / 联机 smoke 验证留 P2.5 真机 spike chat | 验收 5 离线 Brain 半 ✅ / 联机 ⏳ |
 
 ### §8.8 ⚠ 已知漂移（Phase 4 收口时一次清理，不立刻改）
 
