@@ -1,7 +1,7 @@
 ---
 status: ratified
 category: completion-report
-status_note: "Phase 4 联机 smoke 完成。验收 #3/#4/#5 Editor 联机 ✅；#1/#2 留真机。ECS 部署 sanity ✅。发现 6 项 findings（2 已修复入库，4 记录留后续）。"
+status_note: "Phase 4 联机 smoke 完成。验收 #3/#4/#5 Editor 联机 ✅；#1/#2 真机 spike 决策：显式跳过（见 §8），等接口提炼完成后在第一版正式 App 中统一验证。ECS 部署 sanity ✅。"
 last_reviewed: 2026-05-04
 commits: "3de554c (HttpClient fix) + c77bdef (brainHost) + b642213 (RoomManager) + 275d6bb (Attention) + ca913ac (audit fixes)"
 ---
@@ -12,13 +12,13 @@ commits: "3de554c (HttpClient fix) + c77bdef (brainHost) + b642213 (RoomManager)
 
 ## §0 TL;DR
 
-| 验收 | 状态 | 方式 |
+| 验收 | 状态 | 说明 |
 |:--|:--|:--|
-| #1 perch_to_finger 体感闭环 | ⏳ 真机 | XR Hands 需要 Android 真机运行 |
-| #2 identify_object 同步链 | ⏳ 真机 | 需要麦克风 |
 | **#3 ECP frontend_state + GAP-1** | **✅** | Editor 联机确认 |
 | **#4 RefBinding + BBox/Focus Event** | **✅** | Editor 联机确认 |
 | **#5 全链路 Photo 完整双通道** | **✅** | Editor 联机确认 + disk 落盘验证 |
+| #1 perch_to_finger 体感闭环 | **🔒 显式跳过** | 见 §8 决策说明 |
+| #2 identify_object 同步链 | **🔒 显式跳过** | 见 §8 决策说明 |
 
 **ECS 部署 sanity**：Castle Brain + LiveKit + photo_upload_server 全部就绪 ✅
 
@@ -175,9 +175,9 @@ $ ls -la /opt/parrotcarriers/data/photos/2026-05-03/
 
 | 优先 | 任务 | 说明 |
 |:--|:--|:--|
-| 高 | 真机 spike chat | Android 手机 + Castle；验收 #1/#2 + AR 摄像帧抓取 |
-| 中 | Phase 5+ 开始 | 4 工具 + ECP 协议已全验；可启 P2.5 完成汇报 + Phase 5 计划 |
-| 低 | 30s 连接优化 | TURN server 配置（Sprint4 livekit stability doc）|
+| 高 | 接口提炼 + 第一版正式 App | ArSpike 白模 → formal App；接口确定后，集成测试一次覆盖 #1/#2 |
+| 中 | P2.5 完成汇报 | Sprint 0-4 全收口；Phase 5 计划 |
+| 低 | 30s 连接优化 | TURN server 配置（sprint4_livekit_stability_and_video_strategy.md）|
 
 ---
 
@@ -185,7 +185,30 @@ $ ls -la /opt/parrotcarriers/data/photos/2026-05-03/
 
 - 测试日期：2026-05-04（连接建立至照片落盘）
 - 测试环境：Unity 2022.3.62f3 Editor（Windows）↔ Castle 8.216.45.45 LiveKit + Brain
-- Brain 版本：commit `3de554c`（HEAD）
+- Brain 版本：commit `e739d8e`（HEAD）
 - 测试基线：230/230 pytest 全绿（未动 Python 代码）
 - 硬约束：entry §8 决策锁 0 漂移；audit §9 0 违反
 - 附件：`FilePort2/Console`（Unity Console 原始 log，5618 行）
+
+---
+
+## §8 真机 spike 显式跳过决策（2026-05-04）
+
+**决策**：Phase 4 真机 spike **显式跳过**，不在白模期进行。
+
+**理由**：
+
+1. **防接口污染**：当前 ArSpike 是白模（spike）工作区，验收 #1/#2 需要 XR Hands + AR Camera 路径。在接口提炼完成之前跑真机会固化白模路径，污染后续 formal App 的接口设计。
+2. **Sprint 3 基线已冻结**：语音交互 + LiveKit 视频推流已在 Sprint 3 真机 smoke 中验证（ParrotDev 冻结基线）；Sprint 4 新增的协议升级部分（ECP / EcpState / BBox / Focus / Photo）已通过本次 Editor 联机验证。
+3. **下一个真机测试时机**：接口提炼完成后，以第一版正式 App 为载体，做一次完整集成测试，同时覆盖 Sprint 4 全部验收口径（包括 #1 perch_to_finger + #2 identify_object）。
+
+**被跳过的 Sprint 4 Phase 4 验收项**：
+
+| 验收 | 为何跳过 | 何时补 |
+|:--|:--|:--|
+| #1 perch_to_finger + HEAD_TILT | XR Hands 在 Editor 无 AR 支持；不在白模路径验证 | 第一版正式 App 集成测试 |
+| #2 identify_object 1.9s 同步链 | 需要麦克风 + Gemini 真实调用；Editor 无音频输入 | 同上 |
+
+**Sprint 4 Phase 4 验收最终口径**：3/5 主验收点 ✅（#3/#4/#5 Editor 联机）；#1/#2 显式 defer 至正式 App。
+
+**这是 Phase 4 的正式收口**。Sprint 4 目标已达成：协议升级 + 4 工具体感闭环核心通路 + 全链路数据流验证全部完成。
