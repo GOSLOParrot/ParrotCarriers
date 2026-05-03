@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 using ParrotApp.Attention;
 using ParrotApp.Ecp;
 using ParrotApp.LiveKit;
 using UnityEngine;
-using UnityEngine.Networking;
 
 namespace ParrotApp.Photo
 {
@@ -465,6 +466,14 @@ namespace ParrotApp.Photo
                 + "}";
         }
 
+        // ─── HttpClient (replaces UnityWebRequest to bypass Android cleartext policy) ──
+
+        // Single shared instance — HttpClient is designed to be reused.
+        // Using System.Net.Http.HttpClient bypasses Unity's UnityWebRequest
+        // Android cleartext-traffic security layer, which blocks http:// in
+        // Editor Play Mode when the build target is Android.
+        private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+
         // ─── Active refs helpers ──────────────────────────────────────
 
         private static List<string> GetActiveBboxRefs()
@@ -486,10 +495,10 @@ namespace ParrotApp.Photo
         // ─── HTTP upload ──────────────────────────────────────────────
 
         /// <summary>
-        /// POST full-res JPEG to Brain photo_upload_server.
+        /// POST full-res JPEG to Brain photo_upload_server using System.Net.Http.HttpClient.
+        /// Uses HttpClient instead of UnityWebRequest to bypass Unity's Android cleartext-
+        /// traffic security layer (which blocks http:// in Editor with Android build target).
         /// Retry up to 3 times: 1s / 2s / 4s exponential backoff.
-        /// On failure: marks PendingPhoto.Status = Failed + logs error.
-        /// Does NOT re-publish photo.taken_preview on failure (preview already received by Brain).
         /// </summary>
         private async Task UploadAssetAsync(string photoId, byte[] fullResJpeg, string previewEventId)
         {
@@ -509,21 +518,21 @@ namespace ParrotApp.Photo
 
                 try
                 {
-                    using var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST);
-                    req.uploadHandler = new UploadHandlerRaw(fullResJpeg);
-                    req.downloadHandler = new DownloadHandlerBuffer();
-                    req.SetRequestHeader("Content-Type", "image/jpeg");
+                    using var content = new ByteArrayContent(fullResJpeg);
+                    content.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+
+                    using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                    request.Content = content;
                     // Required: Brain uses this as correlation_id for photo.asset_uploaded event
-                    req.SetRequestHeader("X-Photo-Preview-Event-Id", previewEventId);
+                    request.Headers.TryAddWithoutValidation("X-Photo-Preview-Event-Id", previewEventId);
 
-                    var op = req.SendWebRequest();
-                    while (!op.isDone)
-                        await Task.Yield();
+                    using var response = await _httpClient.SendAsync(request);
+                    int statusCode = (int)response.StatusCode;
 
-                    if (req.result == UnityWebRequest.Result.Success)
+                    if (response.IsSuccessStatusCode)
                     {
                         Debug.Log(
-                            $"[PhotoController] HTTP POST /upload/photo/{photoId} → {req.responseCode} " +
+                            $"[PhotoController] HTTP POST /upload/photo/{photoId} → {statusCode} " +
                             $"bytes={fullResJpeg.Length}");
                         if (_pendingPhotos.TryGetValue(photoId, out var p))
                         {
@@ -536,13 +545,13 @@ namespace ParrotApp.Photo
 
                     Debug.LogWarning(
                         $"[PhotoController] HTTP POST /upload/photo/{photoId} attempt={attempt + 1}/3 " +
-                        $"result={req.result} code={req.responseCode} error={req.error}");
+                        $"status={statusCode}");
                 }
                 catch (Exception ex)
                 {
                     Debug.LogWarning(
                         $"[PhotoController] HTTP POST /upload/photo/{photoId} attempt={attempt + 1}/3 " +
-                        $"exception: {ex.Message}");
+                        $"exception: {ex.GetType().Name}: {ex.Message}");
                 }
             }
 
@@ -551,8 +560,7 @@ namespace ParrotApp.Photo
                 if (_pendingPhotos.TryGetValue(photoId, out var p))
                     p.Status = UploadStatus.Failed;
                 Debug.LogError(
-                    $"[PhotoController] HTTP POST /upload/photo/{photoId} FAILED after 3 attempts. " +
-                    $"status=Failed. Reconnect will note but cannot auto-retry (bytes not cached in spike mode).");
+                    $"[PhotoController] HTTP POST /upload/photo/{photoId} FAILED after 3 attempts (status=Failed).");
             }
         }
 
