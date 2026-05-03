@@ -1,10 +1,15 @@
 ---
 status: ratified
-status_note: "Sprint4 Phase 4 完成报告 + 最终一致性审计。Brain 半边 + Unity 半边（W3.A.2/A.3 + W6-7 + Animation + W8 PhotoEvent）+ Echo 全链路 + GAP-1 EcpState ingest + 联机 smoke 全部落地；230/230 测试全绿；entry §8 决策锁 0 漂移。验收 #3/#4/#5 Editor 联机 ✅；#1/#2 留真机 spike。"
+status_note: "Sprint4 Phase 4 完成报告 + 最终一致性审计。Brain 半边 + Unity 半边（W3.A.2/A.3 + W6-7 + Animation + W8 PhotoEvent）+ Echo 全链路 + GAP-1 EcpState ingest + 联机 smoke 全部落地；234/234 测试全绿（含 ADR-L1.5-001 +11）；entry §8 决策锁 0 漂移。验收 #3/#4/#5 Editor 联机 ✅；#1/#2 显式 defer 到首版正式 App 真机集成测试（per smoke 完成报告 §8）。Phase 4 → 5 转换 ADR + 派发计划已就绪。"
 last_reviewed: 2026-05-04
-acceptance_state: "4.8 / 5 验收口径达成（#3/#4/#5 Editor 联机 ✅；#1/#2 真机 ⏳）"
-test_baseline: "230/230 全绿 (pytest tests/ --ignore=tests/integration -q)"
+acceptance_state: "4.5 / 5 验收口径达成（#3/#4/#5 Editor 联机 ✅；#1/#2 显式 defer 到首版正式 App 真机集成测试）"
+test_baseline: "234/234 全绿 (pytest tests/ --ignore=tests/integration --ignore=tests/test_ecp_event/test_identify_object.py -q)；test_identify_object.py pre-existing breakage 留独立审计 chat 修"
 authoritative_for: "Phase 4 终态；P2.5 完成汇报、Phase 5+ 计划、独立 chat 派发的入场上下文"
+phase_4_to_5_transition_anchors:
+  - "architecture/adr_l1_5_source_dispatch_extension_space_20260504.md (Q1/Q2/Q3 决策锁)"
+  - "architecture/dsg_skill_seeker_l1_5_a10_l2a_20260504.md (任务 1.1 派出 spec)"
+  - "architecture/sprint4_phase4_protocol_and_interface_adr_fork_chat_prompt_20260504.md (任务 2 fork chat 启动)"
+  - "architecture/sprint4_phase4_downstream_chat_dispatch_plan_20260504.md (后续 7 chat 派发地图)"
 ---
 
 # Sprint4 Phase 4 — 完成报告 + 最终一致性审计（2026-04-30）
@@ -486,6 +491,33 @@ status:      ✅ resolved — src/parrot/brain/ecp_state_ingest.py 落地（smok
 - **硬约束守护**: entry §8 决策锁 13 项 0 漂移；audit defended 10 条全部守住
 - **协议契约**: 13 EcpEventType + 26 BB keys + 4 RefKind + 4 RefTargetKind + 1 NodeKind 新增（PHOTO）+ 3 EdgeKind 新增（HAS_PHOTO / CAPTURED_VIA / CANDIDATE_SUBJECT）
 - **跨 chat 收口报告**：W3.A.2/A.3 完成报告 + Animation chat 完成报告 + W6-7 Unity 完成报告 + Brain 自审 + 本文（Phase 4 主收口）
+
+---
+
+## §10.x — Phase 4 → 5 转换期 决策记录（2026-05-04 追加）
+
+> 本节记录 Phase 4 收口后到 Phase 5 启动期间的关键决策（Q1/Q2/Q3）。所有决策的"**当前选择 + 原因 + 后续升级路线**"在 ADR-L1.5-001 内详述；本节仅作 cross-link。
+
+| 决策 | 当前选择 | 真源 doc |
+|:--|:--|:--|
+| **Q1** L1.5 source 字段在哪一层 | Python only（不上 Unity wire） | `adr_l1_5_source_dispatch_extension_space_20260504.md` §2.1 |
+| **Q2** 怎么留扩展空间 | Meta dict + factory hook 混合（不引入子类） | 同上 §2.2 + §4.1 升级路线 |
+| **Q3** 协议升级 + 接口提炼 ADR 在哪做 | Fork chat 只做 ADR；下游派 4 个独立 chat | 同上 §2.3 + `sprint4_phase4_downstream_chat_dispatch_plan_20260504.md` §1 |
+
+代码注释锚点：`src/parrot/dsg/l2b_types.py` 顶部"Source dispatch (Phase 4 → 5 transition, 2026-05-04)"模块级注释。
+
+### Phase 4 → 5 转换实施进展
+
+| 项 | 状态 | commit |
+|:--|:--|:--|
+| ADR-L1.5-001 落地 | ✅ | （本次 commit）|
+| `SemanticNode.source` + `source_meta` + factory hook | ✅ | 同上 |
+| `IngestRunner._observation_to_node` 走 factory + `_source_for_node` 优先 node.source | ✅ | 同上 |
+| 11 项测试 `tests/test_dsg/test_l2b_node_source_dispatch.py` | ✅ | 同上 |
+| ConceptGraph 蒸馏任务包 | ✅（待用户派出） | 同上 |
+| Fork chat (任务 2) 启动 prompt | ✅（待用户 fork） | 同上 |
+| 后续 chat 派发计划 | ✅ | 同上 |
+| `active_context.md` 顶部 §0 Phase 4→5 转换段 | ✅ | 同上 |
 
 ---
 

@@ -1,5 +1,110 @@
 # 当前进度与下一步
 
+> ⚠ **2026-05-04 重大更新**：Sprint 4 Phase 4 **整体收口完成** + 联机 smoke 通过 + Phase 5 入场转换包就绪。下面 §0 是当前权威入场点，旧 4/29 内容（§1+ 起）保留作历史。
+
+---
+
+## §0 当前阶段（2026-05-04 — Phase 4 → 5 转换期）
+
+### §0.1 Phase 4 终态（authoritative）
+
+**协议升级 + 4 工具 + 全链路数据流 全部落地**：
+
+- entry §8 决策锁 13 条 0 漂移
+- 234/234 pytest（含 ADR-L1.5-001 新增 11 项）
+- Echo 全链路接通（Unity SO Echo → Brain handler → FocusBboxThreshold 读 BB）
+- Photo 全链路（preview EcpEvent + HTTP 全量上传 + asset_uploaded 回程）
+- 联机 smoke #3/#4/#5 ✅；#1/#2 显式 defer 到首版正式 App 真机集成测试
+- ECS 部署 sanity（Castle Brain + LiveKit + token_mint:7888 + photo_upload_server:7889 全绿）
+
+### §0.2 Phase 4 → 5 转换期 决策记录（**高优 AI 可读 — 必读**）
+
+本节合并三组关键决策的"**当前选择 + 原因 + 后续升级路线**"，新 chat 看完不必回读旧 doc。
+
+#### Q1 — `SemanticNode.source` 字段在哪一层？
+
+| 维度 | 值 |
+|:--|:--|
+| **当前选择** | **Python only**（Brain 内部 dsg/l2b_types.py + dsg/ingest/runner.py），**不上 Unity wire** |
+| **原因** | A10 入口是 Brain-side CV pipeline 不通过 Unity；EcpEventSource enum 已隐含 unity/brain/nanobot 来源标识；wire 加新字段会动 cs_parity 跨语言守护 → 协议合同变更 |
+| **后续升级路线** | 当 Unity 端某新功能必须知道某 Node 的 ingest source 时（目前没有这种需求），考虑 BB key 投影一份 read-only summary；**不要**直接加 EcpEvent 字段 |
+| **真源 doc** | `architecture/adr_l1_5_source_dispatch_extension_space_20260504.md` §2.1 |
+
+#### Q2 — 怎么留扩展空间（不锁子类 axis）？
+
+| 维度 | 值 |
+|:--|:--|
+| **当前选择** | **Meta dict + factory hook 混合** — `SemanticNode.source: str` + `SemanticNode.source_meta: dict[str, Any]` + `SemanticNode.from_observation()` classmethod + `_SOURCE_META_FACTORIES` 注册表（新 source 调 `register_source_meta_factory()`） |
+| **原因** | 用户原话"具体的多样化 Node 状态和生命周期设计在 L2-B 完善过程中完成，效果未知"——立刻引入子类会锁错 axis（行为差异 vs 数据 shape 差异 vs 字段差异，未明）|
+| **后续升级路线**（按触发条件）| ① 若 ≥3 字段稳定 → meta dict 升 typed Pydantic model ② 若 ≥2 source 行为多态（如 A10 自动 decay confidence vs user 不 decay）→ 升 SemanticNode 子类 ③ 若 isinstance 反复手写 → 升 typed dispatch |
+| **真源 doc** | `architecture/adr_l1_5_source_dispatch_extension_space_20260504.md` §2.2 + §4.1 |
+| **代码注释锚点** | `src/parrot/dsg/l2b_types.py` 顶部 "Source dispatch (Phase 4 → 5 transition)" 模块级注释 |
+
+#### Q3 — 协议升级 + 接口提炼 ADR 在哪做？
+
+| 维度 | 值 |
+|:--|:--|
+| **当前选择** | **4 chat 路径**：fork chat 只做 ADR + 要求归纳；接口提炼实施派独立 chat；独立审计派独立 chat；Sprint 4 总结报告派独立 chat |
+| **原因** | 用户 5/4 原话"任务 2 是此 chat 的 fork chat 内完成足够多的协议升级和接口提炼的要求归纳和 ADR；然后我们开始 chat 接口提炼和独立审计"——4 阶段路径已锁；fork chat 不做实施避免上游 ADR 与下游设计互相污染 |
+| **后续升级路线** | 任何阶段如果发现"ADR 不够 / 实施暴露设计漏洞"，回溯到对应 chat 修订；不允许在下游实施 chat 内擅自改 ADR（必须先回 fork chat 类似 chat 重写 ADR） |
+| **真源 doc** | `architecture/adr_l1_5_source_dispatch_extension_space_20260504.md` §2.3 + `architecture/sprint4_phase4_downstream_chat_dispatch_plan_20260504.md` §1 |
+
+### §0.3 Phase 4 → 5 转换期 派出文件清单
+
+| 文件 | 用途 | 派出方向 |
+|:--|:--|:--|
+| `architecture/sprint4_phase4_completion_and_final_audit_20260430.md` | Phase 4 完成报告 + 终一致性审计 | 所有下游 chat 入场 |
+| `architecture/sprint4_phase4_online_smoke_completion_20260504.md` | 联机 smoke 收口 + #1/#2 显式 defer 决策 | 真机 spike chat |
+| `architecture/adr_l1_5_source_dispatch_extension_space_20260504.md` | Q1/Q2/Q3 决策锁 + L1.5 source 字段 ADR | 任何动 dsg/ 的 chat 必读 |
+| `architecture/dsg_skill_seeker_l1_5_a10_l2a_20260504.md` | ConceptGraph 仓库蒸馏任务包 | 用户派出独立 workspace |
+| `architecture/sprint4_phase4_protocol_and_interface_adr_fork_chat_prompt_20260504.md` | 任务 2 fork chat 启动 prompt | 用户 fork chat |
+| `architecture/sprint4_phase4_downstream_chat_dispatch_plan_20260504.md` | 全下游 chat 派发地图（**这一份是路径全景**）| 用户决策派发顺序 |
+
+### §0.4 任务 2 fork chat 产出（**fork chat 完成后填这里**）
+
+> 占位区（fork chat 完成 T2-A/B/C 后回填路径 + 一句话摘要）：
+>
+> - **T2-A 协议升级总结 ADR**：_（待 fork chat 填路径）_
+> - **T2-B 接口提炼要求归纳 ADR**：_（待 fork chat 填路径）_
+> - **T2-C 接口提炼 chat 启动 prompt**：_（待 fork chat 填路径）_
+
+### §0.5 推荐启动顺序
+
+参考 `architecture/sprint4_phase4_downstream_chat_dispatch_plan_20260504.md` §3：
+
+```
+Step 1（并行）: Chat 3 (协议+接口 ADR fork) + Chat 1 (ConceptGraph 蒸馏，独立 workspace)
+Step 2: Chat 2 (用户做 L1.5 池设计) ← 等 Chat 1 完成
+Step 3: Chat 4 (接口提炼实施) ← 等 Chat 3 完成 + 用户 sign off
+Step 4: Chat 5 (独立审计) ← 等 Chat 4 完成
+Step 5: Chat 6 (Sprint 4 总结：协议升级报告 + 接口设计报告) ← 等 Chat 5 完成
+Step 6: 真机 spike (首版正式 App 集成测试，验收 #1/#2) ← 等 Chat 4 完成 + AR 工作区 ready
+Step 7: Chat 7 (P2.5 完成汇报) ← 等真机 spike 全 5 验收 ✅
+```
+
+### §0.6 已完成 / 不重启的事项
+
+| 项 | 状态 |
+|:--|:--|
+| Phase 4 W0-W8 + Echo + Photo | ✅ 落地 |
+| 联机 smoke #3/#4/#5 | ✅ 通过 |
+| ECS 部署 sanity | ✅ 通过 |
+| Brain 自审 13 项 | ✅ 10 resolved + 3 reject |
+| GAP-1 (EcpState ingest) | ✅ 已修（联机 smoke chat 内）|
+| Unity W8 半边（PhotoController）| ✅ 已合并（联机 smoke chat 内）|
+| W3 Animation Minecraft port | ✅ 已合并 |
+| 真机 spike #1/#2 验收 | 🔒 显式 defer 到首版正式 App 集成测试 |
+
+### §0.7 已知 pre-existing breakage（留给独立审计 chat 修）
+
+- `tests/test_ecp_event/test_identify_object.py` 收集时 ImportError（`id_module._match_staged` 路径与 env gate 冲突）— 与 Phase 4 → 5 转换无关；独立审计 chat 修
+
+### §0.8 下面是历史档（仅追溯用）
+
+旧 4/29 内容从下方继续；当前阶段以 §0 为准。
+
+---
+
 > 最后更新: 2026-04-29 晚 (Sprint 4 协议升级 Phase 1 / ECP-minimal 已落地 + 审计回路完成；ArSpike 工作区已奠基 + ECP DTO 迁移；**Phase 3 前置调研已收口**，决策索引 + skill 拆分已落地；**Android 15+ 16KB 对齐补丁已合入** — LiveKit SDK pin → main HEAD `7d868ef` (FFI v0.12.53)，ARCore/ARFoundation/ARKit 5.1.5 → 5.2.2，Editor 2022.3.62f3 不动，C# 代码 0 处需改)
 > **当前阶段**: **Sprint 4 协议升级 Phase 1 已完成 + Phase 3 前置调研已收口**
 > - Phase 1 = ECP-minimal：Pydantic schema (`src/parrot/shared/ecp.py`) + `_rpc_bridge` mirror + Unity DTO/handler + 19 项 pytest 全绿
