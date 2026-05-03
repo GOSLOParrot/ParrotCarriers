@@ -1,8 +1,8 @@
 ---
 status: ratified
-status_note: "Sprint4 Phase 4 完成报告 + 最终一致性审计。Brain 半边 + Unity 半边（W3.A.2/A.3 + W6-7 + Animation + W8 PhotoEvent）+ Echo 全链路 + GAP-1 EcpState ingest 全部落地；230/230 测试全绿；entry §8 决策锁 0 漂移。联机 smoke（Editor↔Brain 全链路）待环境就绪执行。"
-last_reviewed: 2026-04-30
-acceptance_state: "4.8 / 5 验收口径离线达成（#5 联机 ⏳ 环境就绪后跑）"
+status_note: "Sprint4 Phase 4 完成报告 + 最终一致性审计。Brain 半边 + Unity 半边（W3.A.2/A.3 + W6-7 + Animation + W8 PhotoEvent）+ Echo 全链路 + GAP-1 EcpState ingest + 联机 smoke 全部落地；230/230 测试全绿；entry §8 决策锁 0 漂移。验收 #3/#4/#5 Editor 联机 ✅；#1/#2 留真机 spike。"
+last_reviewed: 2026-05-04
+acceptance_state: "4.8 / 5 验收口径达成（#3/#4/#5 Editor 联机 ✅；#1/#2 真机 ⏳）"
 test_baseline: "230/230 全绿 (pytest tests/ --ignore=tests/integration -q)"
 authoritative_for: "Phase 4 终态；P2.5 完成汇报、Phase 5+ 计划、独立 chat 派发的入场上下文"
 ---
@@ -21,8 +21,8 @@ authoritative_for: "Phase 4 终态；P2.5 完成汇报、Phase 5+ 计划、独�
 
 | 维度 | 状态 |
 |:--|:--|
-| 验收 5 条达成 | **4.5 / 5**（#5 联机 spike ⏳ 派发独立 chat）|
-| 测试基线 | **220/220 全绿**（W0 时 0 → W8 终 220）|
+| 验收 5 条达成 | **4.8 / 5**（#3/#4/#5 Editor 联机 ✅ 2026-05-04；#1/#2 真机 ⏳）|
+| 测试基线 | **230/230 全绿**（W0 时 0 → GAP-1 后 230）|
 | Lints | 0 |
 | entry doc §8 决策锁 13 项 | **L1-L13 全部对应实际 code 落地**（§5.1 逐条核对）|
 | EcpEventType 注册表 | 13 个 event_type（§3.1）|
@@ -80,7 +80,7 @@ authoritative_for: "Phase 4 终态；P2.5 完成汇报、Phase 5+ 计划、独�
 | 2 | 工具 ② 跑通：identify_object 同步 captureSnapshot + L2-B 候选 + Graphiti 扩搜，不再 fire-and-forget；同步体感闭环 | ✅ | W4-5 identify_object 三段重写（_match_staged）+ 1.9s budget + sighting EcpEvent + observer/sighting 异步 archiver；`_deep_search` 火即忘路径已删除（audit §3.4 / §9.4 fix） |
 | 3 | ECP frontend_state 至少 body / head / cognitive 三态对齐 LLM | ✅ | W3.A.3 Unity LifecycleHeartbeatPublisher 事件驱动 + 1Hz 双触发 EcpStateDto；W3.A.1 cognitive_state_tracker 接 Gemini agent_state_changed → BB tick/cognitive_state；selection-C 三 tool wrappers 把状态附在 LLM-facing return |
 | 4 | RefBinding + 至少一种 Event 落地，从 Unity 走到 L2-B / Graphiti 且不污染实时帧循环 | ✅ | W6-7 Brain refs registry + bbox/focus observer + threshold + hint_writer；W6-7 Unity BBoxController/FocusController/ParrotAttentionConfig；F-05 Echo 全链路接通；attention.threshold.crossed publish + transient/current_attention_hint BB；W8 PhotoEvent 真 PhotoNode 落 L2-B（NodeKind.PHOTO） |
-| 5 | 全链路 Editor 跑通 | **离线 ✅ / 联机 ⏳** | 离线 Editor smoke：W6-7 Unity completion §5 已实测（attention echo / bbox.placed / focus.anchored DROPPED log 含真 wire JSON）；联机部分需真机 / LiveKit env，**派发 §8.2 chat** |
+| 5 | 全链路 Editor 跑通（含 Photo）| **Editor 联机 ✅** (2026-05-04) | #3 GAP-1+EcpState / #4 BBox+Focus DataChannel / #5 Photo preview+HTTP 200+disk 21690B 全部 ✅；#1 perch_to_finger / #2 identify_object 留真机（XR Hands + 麦克风）。完整报告：`sprint4_phase4_online_smoke_completion_20260504.md` |
 
 ---
 

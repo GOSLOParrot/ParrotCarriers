@@ -99,11 +99,11 @@ python src/scripts/generate_token.py
 
 | # | 验收口径 | 触发操作 | 期望证据 | 状态 |
 |:--|:--|:--|:--|:--|
-| 1 | 工具 ①：perch_to_finger 体感闭环 | Editor: HandSource ContextMenu → `Debug: Fire "index_finger_branch" gesture` | AnimationDriver state=PERCHED_ON_HAND + HEAD_TILT；BB tick/body_state 更新 | ⏳ |
-| 2 | 工具 ②：identify_object 同步链（1.9s 内）| Brain 终端：sim_unity_client + PARROT_ENABLE_IDENTIFY_OBJECT_TOOL=1，让 GOSLO 说"那是什么" | Console: [capture]/[L0 no match]/[L1 no match] 三段；observer.sighting metrics +1；< 1.9s | ⏳ |
-| 3 | ECP frontend_state 三态 + GAP-1 | 验收 #1 同时 | Brain log: `[GOSLO state] body=perched_on_hand ...`；`session/ecp_state` BB 有值；`active_locks/active_command_id` 非空（如有命令在途）| ⏳ |
-| 4 | RefBinding + Event 不污染实时帧 | Editor: BBoxController × 1 + FocusController × 5 | Brain log: `attention.threshold.crossed` publish；Unity EcpEventDispatcher wildcard log；hint_writer metrics bumps_skipped_unresolved +1（UNRESOLVED 是常态）| ⏳ |
-| 5 | 全链路 Editor 跑通（含工具 ④ Photo）| Editor: PhotoController ContextMenu → `Debug: Capture Test Photo` | EcpEvent photo.taken_preview 到 Brain；HTTP POST 200；`data/photos/.../ph_xxx.jpg` 落盘；photo.asset_uploaded 回程；observer.photo metrics photo_nodes_upserted +1 + photo_nodes_updated_with_asset +1 | ⏳ |
+| 1 | 工具 ①：perch_to_finger 体感闭环 | Editor: HandSource ContextMenu → `Debug: Fire "index_finger_branch" gesture` | AnimationDriver state=PERCHED_ON_HAND + HEAD_TILT；BB tick/body_state 更新 | ⏳ 真机 |
+| 2 | 工具 ②：identify_object 同步链（1.9s 内）| Brain 终端：sim_unity_client + PARROT_ENABLE_IDENTIFY_OBJECT_TOOL=1，让 GOSLO 说"那是什么" | Console: [capture]/[L0 no match]/[L1 no match] 三段；observer.sighting metrics +1；< 1.9s | ⏳ 真机 |
+| **3** | **ECP frontend_state 三态 + GAP-1** | Brain log: `GAP-1 attached`；Unity 1Hz heartbeat；GOSLO 说话 | ✅ 2026-05-04 |
+| **4** | **RefBinding + BBox/Focus Event** | Console: bb_30ff4597 + 5×fc_xxx 无 DROPPED；Photo refs 带入正确 | ✅ 2026-05-04 |
+| **5** | **全链路 Photo 完整双通道** | `previewSent=True` + HTTP 200 + Castle disk `ph_0a6c6924.jpg` 21690B | ✅ 2026-05-04 |
 
 ---
 
