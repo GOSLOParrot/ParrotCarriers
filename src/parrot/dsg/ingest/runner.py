@@ -231,39 +231,48 @@ class IngestRunner:
         return changed
 
     def _observation_to_node(self, obs: Observation) -> SemanticNode:
-        return SemanticNode(
-            kind=obs.kind,
-            label=obs.label,
-            graphiti_uuid=obs.graphiti_uuid,
-            obsidian_uuid=obs.obsidian_uuid,
-            description=obs.description,
-            known_facts=[obs.description] if obs.description else [],
-            confirmation=obs.confirmation,
-            evidence_score=obs.confidence,
-            attention=0.6 if obs.confirmation == ConfirmationStatus.CONFIRMED else 0.35,
-            salience=(
-                Salience.FOREGROUND
-                if obs.source in (
-                    ObservationSource.USER_EXPLICIT,
-                    ObservationSource.USER_TAG_OBSIDIAN,
-                )
-                else Salience.ACTIVE
-            ),
-            reference_image_path=obs.reference_image_path,
-            last_sighting_path=obs.last_sighting_path,
-            provenance_stream_id=obs.provenance_stream_id,
-        )
+        """Build a SemanticNode from an Observation.
+
+        Phase 4 → 5 transition (2026-05-04, ADR
+        `adr_l1_5_source_dispatch_extension_space_20260504.md`):
+        delegate to `SemanticNode.from_observation()` factory, which handles
+        the source dispatch (Q1: Python only / Q2: meta+factory hybrid).
+        We still apply the local `Salience` upgrade for user-sourced
+        observations because that's a *runner-level* policy, not a
+        per-source schema concern (the factory keeps the default ACTIVE).
+        """
+        node = SemanticNode.from_observation(obs)
+        if obs.source in (
+            ObservationSource.USER_EXPLICIT,
+            ObservationSource.USER_TAG_OBSIDIAN,
+        ):
+            node.salience = Salience.FOREGROUND
+        return node
 
 
 def _source_for_node(node: SemanticNode) -> ObservationSource:
-    """Best-effort reverse map from an existing node to its dominant source.
+    """Map an existing node to its dominant source for authority comparison.
 
-    Heuristic — existing nodes don't carry the source tag (the schema-V1
-    SemanticNode didn't need it). We reconstruct from the identifiers:
-        obsidian_uuid    → USER_TAG_OBSIDIAN
-        graphiti_uuid    → IDENTIFY_OBJECT (most common upstream)
-        otherwise         → GEMINI_ORAL (tentative starting floor)
+    Resolution order (Phase 4 → 5 transition, 2026-05-04):
+      1. **Authoritative**: ``node.source`` (set by ``from_observation()``
+         factory on Phase 4 W3+ ingestion paths). This is the right answer
+         and skips heuristics.
+      2. **Heuristic fallback**: identifier inference, kept for backward
+         compat with pre-Phase-4 nodes (preloaded from Graphiti without
+         going through IngestRunner; or test fixtures that construct
+         SemanticNode bare). The mapping is conservative:
+            obsidian_uuid    → USER_TAG_OBSIDIAN
+            graphiti_uuid    → IDENTIFY_OBJECT
+            otherwise         → GEMINI_ORAL
     """
+    if node.source:
+        try:
+            return ObservationSource(node.source)
+        except ValueError:
+            # Node carries an unknown source string (forward-compat from a
+            # newer pipeline) — fall through to the heuristic so the merge
+            # logic still has a comparable priority value.
+            pass
     if node.obsidian_uuid:
         return ObservationSource.USER_TAG_OBSIDIAN
     if node.graphiti_uuid:
