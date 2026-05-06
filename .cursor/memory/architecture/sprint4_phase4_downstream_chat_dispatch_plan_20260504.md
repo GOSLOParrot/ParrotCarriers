@@ -105,12 +105,12 @@ parent_doc: "sprint4_phase4_completion_and_final_audit_20260430.md"
 | 字段 | 值 |
 |:--|:--|
 | 范围 | 实施 Chat 3 T2-B 的接口设计 + 重构（不限于：模块拆分 / API 公开面定义 / wire schema 演进策略） |
-| 启动 prompt | `interface_refinement_chat_launch_prompt_<date>.md`（Chat 3 输出） |
+| 启动 prompt | ⭐ `chat4_interface_refinement_launch_prompt_20260507.md`（2026-05-07 落地 — 简单版，不预设计划，启动后先和用户讨论 §3 七问）+ 旧嵌入式指引保留在 `adr_protocol_upgrade_and_interface_refinement_background_20260504.md §7` 作背景 |
 | 工作区 | 同仓 |
-| 依赖 | Chat 3 完成 |
-| 输出 | 代码改动 + 接口设计 doc + 测试 |
-| 何时启动 | Chat 3 完成 + 用户 sign off ADR 后 |
-| 完成判据 | pytest 全绿 + 接口面 doc 已落 + 与 Chat 3 ADR 0 漂移 |
+| 依赖 | Chat 3 完成 + DSG Chat 2 完成（2026-05-06）+ GOSLO 模块化完成（2026-05-06）+ 跨 chat 待办登记表（`cross_chat_pending_registry_20260507.md`） |
+| 输出 | 代码改动 + 接口设计 doc + 测试（具体形态由启动后 §3 Q7 与用户讨论决定） |
+| 何时启动 | Chat 3 完成 + 用户 sign off ADR 后（**当前已就绪**：408/408 pytest + 三大 chat 收口 + 登记表 + 启动 prompt 全部齐全） |
+| 完成判据 | pytest 全绿 + 接口面 doc 已落 + 与 Chat 3 ADR 0 漂移 + 跨 chat 登记表 NEED-P2.5-* 处理 / defer 路径明确 |
 
 #### Chat 5 — 独立审计
 

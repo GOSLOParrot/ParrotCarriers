@@ -2,6 +2,28 @@
 
 P1.5: BehaviorMode-aware instruction assembly.
 BASE + COMPANION are always active. BUTLER/RESEARCHER/PLAYFUL added in P2.
+
+NEED-P2.5-A (cross_chat_pending_registry_20260507 §3.A): the inline
+``CORE_INSTRUCTIONS`` / ``COMPANION_INSTRUCTIONS`` / ``PLAYFUL_INSTRUCTIONS``
+hardcode parrot-flavored persona text. When swapping to a non-parrot
+model (Q-chibi / humanoid / etc.) Unity bones drive correctly but LLM
+voice still says "I'm Parrot... shoulder perching... squawk", which
+breaks the "custom-model-also-runs-naturally" promise from the GOSLO
+modularization chat (goslo_modularization_residual_debt_20260506.md §2.1).
+
+Recommended fix (recorded for the DSG protocol upgrade chat that does
+NEED-P3-B 4-block menu-canvas):
+    1. Extract CORE / per-mode instructions into
+       ``src/parrot/brain/personas/<persona_id>.md`` (or .toml)
+    2. Add ``parrot.brain.persona_loader.load(persona_id)``
+    3. New BB key ``global/active_persona_id`` (default
+       ``goslo_parrot_default``; existing text moves verbatim → 0 drift)
+    4. Coordinate with NEED-P3-B 4-block registry (Model / Persona /
+       Mode / Scene) so persona file format reuses the same loader
+       contract as ModelManifest.
+
+This is intentionally deferred (user 2026-05-06 sign-off) to avoid a
+half-baked persona schema causing the p3 menu-canvas chat to redo it.
 """
 
 from __future__ import annotations

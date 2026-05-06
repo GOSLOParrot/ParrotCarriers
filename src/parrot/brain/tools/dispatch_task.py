@@ -30,6 +30,19 @@ async def do_dispatch_task(
     """Core dispatch logic — callable from tests and from the function tool.
 
     Returns the task_id for tracking.
+
+    # TODO(Chat4-plan-dispatch): When ``parrot.brain.plan.PlanRegistry``
+    #   wires real Nanobot dispatch (DSG Chat 2 §9.1 F-3 +
+    #   cross_chat_pending_registry_20260507 §3.B NEED-P2.5-PLAN-INTEGRATION),
+    #   PlanRegistry.start_executing must call this function with:
+    #       params={**step.inputs, "plan_id": plan.plan_id,
+    #                "step_id": step.step_id,
+    #                "result_channel": CH_NANOBOT_RESULTS}
+    #   so that Scheduler / nanobot can correlate the task back to its
+    #   originating Plan + step. The Scheduler side is also stubbed; see
+    #   ``scheduler/nodes.py:DispatchToNanobot`` and
+    #   ``scheduler/service.py:_listen_nanobot_results`` for the matching
+    #   ``TODO(Chat4-plan-nanobot-correlation)`` markers.
     """
     task_id = str(uuid.uuid4())[:8]
     task = {

@@ -132,7 +132,18 @@ class SchedulerService:
                 logger.exception("Error routing task")
 
     async def _listen_nanobot_results(self) -> None:
-        """Aggregate Nanobot results → correlate with active_tasks → forward to Brain."""
+        """Aggregate Nanobot results → correlate with active_tasks → forward to Brain.
+
+        # TODO(Chat4-plan-step-result-route): when ``active_tasks[task_id]``
+        #   carries non-empty ``plan_id`` + ``step_id`` (set by
+        #   ``DispatchToNanobot`` per cross_chat_pending_registry_20260507
+        #   §3.B step 3), this listener must additionally route the result
+        #   to ``parrot.brain.plan.PlanRegistry.report_step_result(plan_id,
+        #   step_id, success=(status=="completed"), result_summary=...)``
+        #   so Plan-and-Execute state machine can advance / cascade /
+        #   fail-transition. The forward-to-Brain path (CH_SCHEDULER_TO_BRAIN)
+        #   stays unchanged for non-Plan tasks.
+        """
         r = await get_redis()
         pubsub = r.pubsub()
         await pubsub.subscribe(CH_NANOBOT_RESULTS)
@@ -154,6 +165,10 @@ class SchedulerService:
                     active[task_id]["status"] = status
                     self._router.active_tasks = active
 
+                # TODO(Chat4-plan-step-result-route): if active[task_id]
+                #   has plan_id + step_id, additionally call
+                #   ``PlanRegistry.report_step_result(...)`` here.
+
                 summary = {
                     "task_id": task_id,
                     "type": task_type,
@@ -171,7 +186,16 @@ class SchedulerService:
 
 
     async def _check_timeouts(self) -> None:
-        """Periodically check for timed-out Nanobot tasks and notify Brain."""
+        """Periodically check for timed-out Nanobot tasks and notify Brain.
+
+        # TODO(Chat4-plan-step-timeout): when active_tasks[task_id] has
+        #   plan_id + step_id, the timeout path must also call
+        #   ``PlanRegistry.report_step_result(plan_id, step_id,
+        #   success=False, error="timeout after Ns")`` so Plan transitions
+        #   to FAILED (or revisable) state. Otherwise a stuck Plan never
+        #   completes / never fails. See cross_chat_pending_registry_20260507
+        #   §3.B step 5.
+        """
         while True:
             try:
                 await asyncio.sleep(TIMEOUT_CHECK_INTERVAL)

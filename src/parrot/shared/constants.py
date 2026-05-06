@@ -13,6 +13,12 @@ CH_DSG_SCENE_UPDATE = "parrot.dsg.scene_update"
 CH_DSG_SENTINEL = "parrot.dsg.sentinel.evidence"
 CH_SCHEDULER_COMMANDS = "parrot.scheduler.commands"
 CH_SCHEDULER_RESULTS = "parrot.scheduler.results"
+# CH_NANOBOT_RESULTS — single channel for both legacy direct-Brain forward
+# and Plan-and-Execute step-result correlation.
+# TODO(Chat4-plan-step-result-route): when active_tasks[task_id] carries
+# plan_id + step_id, scheduler/service.py:_listen_nanobot_results must
+# additionally route the result to PlanRegistry.report_step_result(...)
+# so Plan state machine advances. See cross_chat_pending_registry_20260507 §3.B.
 CH_NANOBOT_RESULTS = "parrot.nanobot.results"
 CH_SCHEDULER_TO_BRAIN = "parrot.scheduler.to_brain"
 CH_EXTERNAL_COMMANDS = "parrot.external.commands"

@@ -1,6 +1,19 @@
 """B4: fly_to — command the parrot to fly to a position in AR space.
 
 Brain → LiveKit RPC → Unity Animator.
+
+NEED-P3-CAPABILITY-GATING (cross_chat_pending_registry_20260507 §4.F):
+    The verb ``fly_to`` semantically assumes the model can fly. Non-flying
+    models (humanoid, Q-chibi etc.) registered via ModelManifest will still
+    have this tool exposed to the LLM, leading to visually nonsensical
+    "fly" commands.
+
+    Fix (Chat 4 increment OR P3): Brain agent reads active model's
+    ``ModelManifest.declared_capability_ids`` at startup and dynamically
+    registers tools — fly_to only registered when active model declares
+    "fly" capability. Requires a ``ModelManifestRegistry`` Brain-side
+    mirror (GOSLO Step 3 added ``model_id`` parameter but did not add the
+    registry — see ``goslo_modularization_residual_debt_20260506.md §2.2 #3``).
 """
 
 from __future__ import annotations

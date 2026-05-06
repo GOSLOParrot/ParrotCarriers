@@ -1,7 +1,7 @@
 ﻿# ParrotCarriers 全局索引
 
 > 用途: 项目唯一真相源，供 Cursor 与用户快速定位关键信息
-> 更新: 2026-05-06 (Sprint4 Phase 4 **完成** → Phase 5 转换期；联机 smoke #3/#4/#5 ✅；234/234 pytest；fork chat T2-A/T2-B ADR 落地；adr_l1_5 决策锁落地；DSG 工作区建立，与 AR 工作区对位；2026-05-04 LineB STT-LLM-TTS 双管线落地；2026-05-06 DSG 工作区增补决策总表 + 4 新 DSG skill + NewZone 蒸馏素材池)
+> 更新: 2026-05-07 (DSG Chat 2 + GOSLO 模块化 双 chat 收口 → 跨 chat 待办登记表落地；408/408 pytest；Phase 4 §8 + cs_parity 4/4 + ADR-L1.5-001 11/11 三守护通过；模块化产出 14 + 改动 5 + 新测试 118/57)
 > 路由: 由 `.cursor/rules/workspace.mdc` (alwaysApply) 指向本文件
 
 **全局约定**:
@@ -14,9 +14,10 @@
 ## 〇、当前阶段必读 (按序, 不读后续)
 
 > **原则**: 进入任何 Sprint 前, **只读这几份**, 不翻历史。
-> **当前**: Sprint 4 Phase 4 **完成** → Phase 5 转换期 (2026-05-04)
+> **当前**: Sprint 4 Phase 4 **完成** → Phase 5 转换期 (2026-05-04) → DSG Chat 2 + GOSLO 模块化收口 (2026-05-06) → 跨 chat 待办登记表 (2026-05-07)
 > **Phase 4→5 补读**（下游 chat 必读，接口提炼 / dsg 动代码前）: `adr_protocol_upgrade_and_interface_refinement_background_20260504.md` + `adr_l1_5_source_dispatch_extension_space_20260504.md`
 > **DSG 系列设计 chat 入场必读**: `architecture/dsg/workspace_index.md` → `dsg_current_state_distilled.md`（与 AR 工作区对位）
+> **下游 chat（Chat 4 / DSG 协议升级 / AR menu / P3 wire ADR）入场必读**: ⭐ `architecture/cross_chat_pending_registry_20260507.md` — 三大 chat（Sprint4 / DSG Chat 2 / GOSLO mod）完成后的统一 TODO + NEED 登记表，含 grep 索引 / 严重度 / 修复 chat 路径表
 
 | # | 文件 | 读什么 |
 |:--|:-----|:-------|
@@ -29,6 +30,8 @@
 | 7 | `.cursor/memory/architecture/sprint4_phase3_l3_entry_20260429.md` | Phase 3 L3 收口承接（已完成）— L1+L2 + 4 组拆分 + R1-R6+D5 audit fix；Phase 4 主线**承接**而非**重读** |
 | 8 | `.cursor/memory/architecture/ar_app_flow_ui_design.md` | 当前 App Flow / UI / 功能入口设计基线 |
 | 9 | `.cursor/memory/architecture/dsg/workspace_index.md` | **DSG 工作区入口**（2026-05-04 新增；2026-05-06 增补决策总表 + 4 新 skill + NewZone 素材池）— DSG 系列设计 chat（L1.5 池 / lifecycle / L2-B 升级 / Phase 5+ A10）入场必读；与 AR 工作区对位。冷读完 `dsg_current_state_distilled.md` 一份能回答 DSG 全景；用户已决事项进 `dsg_decisions_master.md`（master，长期累加） |
+| 10 | ⭐ `.cursor/memory/architecture/cross_chat_pending_registry_20260507.md` | **跨 chat 待办登记表（master）** — 三大 chat（Sprint4 主线 / DSG Chat 2 / GOSLO 模块化）完成后的统一 TODO + NEED 标签登记。覆盖 16 文件 26 处源码标签 + 4 P2.5 NEED + 8 P3 NEED + 6 修复 chat 路径表。任何下游 chat 入场前先读 §5 找自己的标签清单。**新 NEED 标签必须先入本表再加到源码注释。** |
+| 11 | ⭐ `.cursor/memory/architecture/chat4_interface_refinement_launch_prompt_20260507.md` | **Chat 4 接口提炼 chat 启动 prompt**（2026-05-07 新建）— 简单版，不预设计划，让启动 chat **先规划后实施**。覆盖三大 chat（Sprint4 / DSG Chat 2 / GOSLO mod）完成报告 + 跨 chat 待办登记表 + Phase 4 § 8 锁的必读索引 + 21 个必答关键问题（§3）+ 多方案对比要求 + sign-off gate。Sign off 后才进 ADR-PROTOCOL-INTERFACE-001 §7.1 实施阶段。 |
 
 ---
 

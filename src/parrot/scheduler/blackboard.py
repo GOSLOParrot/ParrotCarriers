@@ -14,6 +14,24 @@ Two layers coexist here (Sprint 1 S1.A):
    else. This enforces the "single-writer per key" contract from
    `ar_feature_vision.md §3.5` without a custom runtime checker.
 
+3. **Plan namespace** (`plan/{plan_id}/*`) — added by DSG Chat 2 / BRAIN-PLAN-V1.
+   Each Plan owns a sub-blackboard via ``parrot.brain.plan.PlanBlackboardClient``
+   so PlanSteps can publish intermediate state without polluting the
+   global / scheduler / transient namespaces.
+
+   # TODO(Chat4-plan-bb-namespace): Plan namespace is currently NOT
+   #   declared in ``bb_schema.BB_KEYS`` — the per-Plan keys are
+   #   dynamically allocated (plan_id is generated at draft() time) so
+   #   they can't fit the static schema. Chat 4 (interface refinement)
+   #   should decide:
+   #     (a) declare a ``plan/`` scope with a wildcard contract +
+   #         single-writer = "brain.plan.PlanRegistry", or
+   #     (b) leave Plan namespace as a documented exception (current path)
+   #         and add a docstring guard in PlanBlackboardClient.
+   #   Either way the bb_schema.md doc + cross-module BB write contract
+   #   should reference Plan namespace explicitly. See
+   #   cross_chat_pending_registry_20260507 §2.2.
+
 Usage (cross-module):
 
     from parrot.scheduler.blackboard import open_bb_client

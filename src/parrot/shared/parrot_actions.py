@@ -23,7 +23,24 @@ class ParrotAnimation(str, _Enum):
 
 
 class ParrotBodyState(str, _Enum):
-    """High-level body states (Unity Animator top layer)."""
+    """High-level body states (Unity Animator top layer).
+
+    NEED-P3-A (cross_chat_pending_registry_20260507 §4.A): these 5
+    values are wire-locked (Phase 4 §8 + cs_parity guard). They suit
+    bird-like avatars; non-bird models registered via ModelManifest
+    must squash their own state ("walking" / "waving" / "sitting") to
+    the closest of these 5 → wire粒度 loss.
+
+    Two upgrade options (need P3 ADR + cs_parity bump):
+        Option A (conservative): keep these 5 + add
+            ``EcpFrontendState.controller_body_state: str`` free field
+            (model-defined), Brain LLM reads via attach_state_header.
+        Option B (aggressive): upgrade body_state to free string;
+            old 5 become "standard dialect".
+
+    See goslo_modularization_residual_debt_20260506.md §2.2 #2 for the
+    full evaluation.
+    """
 
     IDLE = "idle"
     FLYING = "flying"

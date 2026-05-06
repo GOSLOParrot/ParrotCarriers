@@ -53,11 +53,22 @@ class DispatchToNanobot(py_trees.behaviour.Behaviour):
 
         task_id = event.get("task_id", "unknown")
 
+        # TODO(Chat4-plan-nanobot-correlation): when PlanRegistry calls
+        #   do_dispatch_task with params={..., "plan_id", "step_id"}, the
+        #   incoming ``event["params"]`` will carry both. Stash them into
+        #   active_tasks so ``service._listen_nanobot_results`` can route
+        #   the result back to PlanRegistry.report_step_result(...). See
+        #   cross_chat_pending_registry_20260507 §3.B step 3.
+        params = event.get("params", {}) or {}
         active = self.blackboard.active_tasks
         active[task_id] = {
             "type": task_type,
             "status": "dispatched",
             "destination": "nanobot",
+            # NEED-P2.5-PLAN-INTEGRATION: extract Plan correlation fields
+            # so result回流 / timeout 路径都能找到 Plan owner.
+            "plan_id": params.get("plan_id", ""),
+            "step_id": params.get("step_id", ""),
         }
         self.blackboard.active_tasks = active
         self.blackboard.route_result = {"destination": "nanobot", "task_id": task_id}
