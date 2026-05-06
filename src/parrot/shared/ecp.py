@@ -163,8 +163,18 @@ class EcpCommand(BaseModel):
         expires_in_s: float = 10.0,
         interruptibility: EcpInterruptibility = EcpInterruptibility.INTERRUPTIBLE,
         expected_duration_ms: int = 0,
+        meta: dict[str, Any] | None = None,
     ) -> "EcpCommand":
-        """Build an ECP command for an existing Unity RPC handler."""
+        """Build an ECP command for an existing Unity RPC handler.
+
+        ``meta`` carries optional routing / addressing hints that ride alongside
+        the command without changing the wire envelope (Phase 4 §8 lock holds:
+        ``EcpCommand.meta`` is an existing ``dict[str, Any]`` field). The first
+        consumer is the GOSLO-model-modularization work — Brain stamps
+        ``meta={"model_id": "..."}`` so Unity-side ParrotRegistry can route
+        future multi-actor commands without breaking single-active deployments
+        (handlers that don't care about ``meta`` simply ignore it).
+        """
         now = time.time()
         return cls(
             kind=kind,
@@ -177,6 +187,7 @@ class EcpCommand(BaseModel):
             source=EcpSource(actor=actor),
             target=target,
             expected_duration_ms=expected_duration_ms,
+            meta=dict(meta) if meta else {},
         )
 
 
@@ -333,12 +344,19 @@ def wrap_legacy_rpc_payload(
     priority: int = 50,
     expires_in_s: float = 10.0,
     expected_duration_ms: int = 0,
+    meta: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], EcpCommand]:
     """Attach `_ecp` to a legacy Unity RPC payload.
 
     Unity's current JsonUtility-based handlers ignore unknown fields, so this is
     safe while old handlers are still deployed. New handlers can read `_ecp` and
     return an ECP-shaped ack.
+
+    ``meta`` is the routing-hint pass-through introduced for the GOSLO model
+    modularization work (Step 1, 2026-05-06). ``EcpCommand.meta`` is the
+    existing ``dict[str, Any]`` slot on the wire; populating it does not bump
+    ``schema_version`` and does not require a cs_parity-side change. Tools
+    that don't need routing hints simply omit the kwarg.
     """
     command = EcpCommand.for_legacy_rpc(
         kind=kind,
@@ -348,6 +366,7 @@ def wrap_legacy_rpc_payload(
         priority=priority,
         expires_in_s=expires_in_s,
         expected_duration_ms=expected_duration_ms,
+        meta=meta,
     )
     wrapped = dict(payload)
     wrapped["_ecp"] = command.model_dump(mode="json")

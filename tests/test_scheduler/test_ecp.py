@@ -53,6 +53,40 @@ def test_wrap_legacy_rpc_payload_zero_expires_means_no_expiry():
     assert payload["_ecp"]["expires_at"] == 0.0
 
 
+def test_wrap_legacy_rpc_payload_meta_kwarg_pass_through():
+    """GOSLO model modularization (Step 1, 2026-05-06): tools may attach
+    routing-hint metadata (today: ``model_id``; future: actor address /
+    capability hint) via the ``meta`` kwarg. ``EcpCommand.meta`` is the
+    existing free-form ``dict[str, Any]`` slot, so this is 0 wire change /
+    0 schema_version bump / 0 cs_parity impact.
+    """
+    payload, command = wrap_legacy_rpc_payload(
+        {"animation": "fly"},
+        kind=EcpCommandKind.ANIMATE,
+        target={"animation": "fly"},
+        actor="test",
+        meta={"model_id": "owl_v1"},
+    )
+
+    assert payload["_ecp"]["meta"] == {"model_id": "owl_v1"}
+    assert command.meta == {"model_id": "owl_v1"}
+
+
+def test_wrap_legacy_rpc_payload_default_meta_is_empty_dict():
+    """Tools that don't use the ``meta`` kwarg get the existing wire shape
+    (empty meta dict on the envelope) — guarantees we don't accidentally
+    require meta at the consumer."""
+    payload, command = wrap_legacy_rpc_payload(
+        {},
+        kind=EcpCommandKind.ANIMATE,
+        target={},
+        actor="test",
+    )
+
+    assert payload["_ecp"]["meta"] == {}
+    assert command.meta == {}
+
+
 def test_ecp_command_layer_round_trips_event_layer_enum():
     cmd = EcpCommand(kind=EcpCommandKind.PERCH_TO_FINGER, layer=EventLayer.REFLEX)
 
