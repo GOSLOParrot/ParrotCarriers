@@ -18,6 +18,7 @@ async def fly_to(
     x: float,
     y: float,
     z: float,
+    model_id: str = "",
 ) -> str:
     """Command the parrot to fly to a specific position in AR space.
 
@@ -25,6 +26,11 @@ async def fly_to(
         x: Target X coordinate in world space.
         y: Target Y coordinate in world space.
         z: Target Z coordinate in world space.
+        model_id: Optional. Reserved for multi-companion scenarios — names a
+            specific model controller registered on Unity side. Leave empty
+            (default) unless the user has explicitly addressed a specific
+            named companion. Empty string routes to the currently active
+            controller via the Unity-side ParrotRegistry.
     """
     # Phase 2 TODO (Sprint4 ECP-minimal, 2026-04-29):
     # `_command` is intentionally discarded here. The Sprint4 protocol design
@@ -35,6 +41,10 @@ async def fly_to(
     # individual tools — we'll fold it in alongside the EcpAck full-shape
     # upgrade. Until then, command_id is preserved on the wire via `_ecp` so
     # cross-side correlation still works.
+    #
+    # GOSLO model modularization (Step 3, 2026-05-06): see `animate.py` for
+    # the model_id meta routing rationale. Same wire slot, same default.
+    meta_kwarg: dict[str, str] | None = {"model_id": model_id} if model_id else None
     payload, _command = wrap_legacy_rpc_payload(
         {"x": x, "y": y, "z": z},
         kind=EcpCommandKind.MOVE_TO,
@@ -46,6 +56,7 @@ async def fly_to(
         actor="brain.tools.fly_to",
         expires_in_s=5.0,
         expected_duration_ms=1500,
+        meta=meta_kwarg,
     )
     result = await call_unity_rpc(
         method="flyTo",

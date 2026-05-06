@@ -66,10 +66,26 @@ ECP 协议代码以 ArSpike 为新主仓位；ParrotDev 的同名脚本视为 Sp
 
 | 文件 | 状态 | 命名空间 | 操作 |
 |:--|:--|:--|:--|
-| `Parrot/AnimationDriver.cs` | ✅ Group 4 | `ParrotApp.Parrot` | 已 1:1 搬，仅加命名空间 |
-| `Parrot/ParrotController.cs` | ✅ Group 4 | `ParrotApp.Parrot` | 已 1:1 搬，仅加命名空间 |
-| `RPC/ParrotRpcHandler.cs` | ✅ Group 4 | `ParrotApp.RPC` | 已搬，保留 ECP-minimal `expires_at` / `active_locks=["body"]` 行为 + 加灌 `rpc_ready`（两个 RegisterRpcMethod 都成功后；本类是 sole producer） |
+| `Parrot/AnimationDriver.cs` | ✅ Group 4 + GOSLO 模块化 Step 2 | `ParrotApp.Parrot` | 已 1:1 搬；2026-05-06 加 `ReflexEnabled` 公共 flag — manifest 驱动 sin/cos 次级行为开关（默认 true，行为零漂移）|
+| `Parrot/ParrotController.cs` | ✅ Group 4 + GOSLO 模块化 Step 2 | `ParrotApp.Parrot` | 已 1:1 搬；2026-05-06 加 `FlyTo(target, modelId)` / `PlayAnimation(name, modelId)` 重载 — 优先走 `ParrotRegistry.Resolve(modelId)` → `IParrotController.ApplyCapability`；fallback 至 `AnimationDriver` / `Animator` / dev-pulse（向后兼容） |
+| `RPC/ParrotRpcHandler.cs` | ✅ Group 4 + GOSLO 模块化 Step 2 | `ParrotApp.RPC` | 已搬，保留 ECP-minimal `expires_at` / `active_locks=["body"]` 行为 + 加灌 `rpc_ready`；2026-05-06 加 `_ecp.meta.model_id` 提取 + 透传到 `ParrotController` 路由重载 |
+| `RPC/EcpDtos.cs` | ✅ + GOSLO 模块化 Step 2 | global | 2026-05-06 加 `EcpCommandMetaDto` `[Serializable]` typed wrapper（含 `model_id`）+ `EcpCommandDto.meta` 字段 + `EcpCommandDto.ModelId` 便捷只读属性。Brain 端 `EcpCommand.meta dict[str, Any]` 经 JsonUtility 反序列化为该 typed slot；未声明 key（如 future `actor_id`）silently ignored — 安全前向兼容 |
 | `LiveKit/VideoTierReceiver.cs` | ✅ Group 4 | `ParrotApp.LiveKit` | 已搬，保留 ECP-minimal `unknown_tier` / `no_video_publisher` reason；本类<b>不</b>灌 `video_tier`（ARVideoPublisher 是 sole producer） |
+
+#### GOSLO 模型模块化 Step 2 — Manifest-driven controller layer ✅
+
+> 2026-05-06 落地。spec：[`goslo_model_manifest_protocol_v1.md`](../../../../../.cursor/memory/architecture/goslo_model_manifest_protocol_v1.md) + [`goslo_modularization_residual_debt_20260506.md`](../../../../../.cursor/memory/architecture/goslo_modularization_residual_debt_20260506.md)
+>
+> 设计哲学：能力开放注册 + ParrotAnimation enum 8 项 = Brain LLM 词汇表 AND Parrot Reflex 触发器；非鹦鹉模型可完全自定义 capability_id，Reflex 关闭。Wire 0 改动（`EcpCommand.meta` 是 Phase 4 §8 锁内既有 dict 槽）。
+
+| 文件 | 状态 | 命名空间 | 操作 |
+|:--|:--|:--|:--|
+| `Parrot/IParrotController.cs` | ✅ 新建 | `ParrotApp.Parrot` | Capability 路由契约 — 任何 model 控制器实现该 interface 即可接入。`ApplyCapability(id, paramsJson)` 返回 `false` = capability 未声明 → graceful-ignore；返回 `true` = 已 dispatch。 |
+| `Parrot/ModelManifestDto.cs` | ✅ 新建 | `ParrotApp.Parrot` | JsonUtility 适配 DTO，Python `parrot.shared.model_manifest.ModelManifest` 的 C# 镜像；`Resources.Load<TextAsset>("parrot_models/<modelId>")` 读 + 自带 `ParrotReflexEnabled` / `DeclaredCapabilityIds` / `Supports()` 派生属性（与 Python 端语义对齐）。 |
+| `Parrot/ParrotRegistry.cs` | ✅ 新建（P1 stub） | `ParrotApp.Parrot` | scene-singleton（参 RoomManager 模式）。P1 单 active：last-registered 控制器 + `Resolve("")` 返回 active；P3 多 actor 真路由由后续 Chat 接管。`EnsureInstance()` 由 ModelDriver 兜底实例化，无需手动布在 prefab 上。 |
+| `Parrot/ModelDriver.cs` | ✅ 新建（OPTIONAL component） | `ParrotApp.Parrot` | Awake：`ModelManifestDto.LoadFromResources(modelId)`；Start：反射 `Type.GetType(controller_type)` → AddComponent → `Register(IParrotController)` + 可选 `auto_scale_to_pet_height`（按 renderer.bounds.size.y 推算缩放比）。Inspector `modelId` 字段空 = `"GOSLO_default"`。**未挂 ModelDriver 的旧场景仍能通过 AnimationDriver 直接路径跑**。 |
+| `Parrot/GosloLegacyController.cs` | ✅ 新建 | `ParrotApp.Parrot` | `[RequireComponent(typeof(AnimationDriver))]` — IParrotController 的 GOSLO 实现，路由 `capability_id` → `AnimationDriver.SetState/FlyTo`；接受 `ConfigureFromManifest(manifest)` 灌 reflex 标志（`AnimationDriver.ReflexEnabled = manifest.ParrotReflexEnabled`）。无 manifest 时 fallback 全 8 reserved id + reflex on。 |
+| `Resources/parrot_models/goslo_default.json` | ✅ 新建 | — | GOSLO 默认 manifest baseline — 8 reserved capability_id 全声明、`auto_scale_to_pet_height=false`（保留现有 prefab 大小）。Step 2 兼容性 sentinel：挂 ModelDriver 用此 manifest 跑，行为应与不挂 ModelDriver 的现有 GOSLO 完全一致。 |
 
 #### 延后（明确不进 L3）
 

@@ -167,6 +167,20 @@ namespace ParrotApp.Parrot
         public event Action<string> OnBodyStateWireChanged;
         public event Action<string> OnHeadStateWireChanged;
 
+        /// <summary>
+        /// Sprint4 GOSLO model modularization (Step 2, 2026-05-06): when
+        /// false, the per-frame sin/cos reflex behaviour (idle breath /
+        /// head bob / tail sway / wing micro-flap) does not run — only
+        /// explicit state transitions still apply. Set by
+        /// <see cref="GosloLegacyController.ConfigureFromManifest"/> based
+        /// on the manifest's <c>parrot_reflex_enabled</c> derived flag, so
+        /// non-bird models with no reserved ParrotAnimation capability
+        /// avoid bird-flavoured idle motion they don't have rigging for.
+        /// Defaults to true — backward compat with pre-modularization
+        /// scenes that do not load a manifest.
+        /// </summary>
+        public bool ReflexEnabled { get; set; } = true;
+
         // ─── 私有运行时 ──────────────────────────────────────────────────
 
         private Vector3    _flyTarget;
@@ -225,6 +239,17 @@ namespace ParrotApp.Parrot
         void Update()
         {
             _stateTimer += Time.deltaTime;
+
+            // Manifest-driven reflex gate (Step 2, 2026-05-06).
+            // When disabled we still honour Fly's actual translation (it's
+            // motion, not reflex) but skip all sin/cos secondary motion —
+            // non-bird controllers handle their own animation via Animator
+            // clip / timeline and don't want bird-flavoured idle breathing.
+            if (!ReflexEnabled)
+            {
+                if (CurrentState == BodyState.Fly) UpdateFly();
+                return;
+            }
 
             switch (CurrentState)
             {

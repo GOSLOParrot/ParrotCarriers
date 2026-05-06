@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "manifest_version": 1,
+  "model_id": "GOSLO_default",
+  "display_name": "GOSLO (default parrot)",
+  "asset_path": "parrot_models/goslo_default",
+  "controller_type": "ParrotApp.Parrot.GosloLegacyController",
+  "forward_axis": "+Z",
+  "up_axis": "+Y",
+  "unit_meters": 1.0,
+  "default_pet_height_m": 0.20,
+  "auto_scale_to_pet_height": false,
+  "capabilities": [
+    {"capability_id": "idle",      "kind": "pose",      "handler": "Idle"},
+    {"capability_id": "fly",       "kind": "pose",      "handler": "Fly"},
+    {"capability_id": "dance",     "kind": "pose",      "handler": "Dance"},
+    {"capability_id": "wing_flap", "kind": "animation", "handler": "WingFlap"},
+    {"capability_id": "perch",     "kind": "pose",      "handler": "Perch"},
+    {"capability_id": "sit",       "kind": "pose",      "handler": "Sit"},
+    {"capability_id": "head_bob",  "kind": "pose",      "handler": "HeadBob"},
+    {"capability_id": "sleep",     "kind": "pose",      "handler": "Idle"}
+  ],
+  "preview_image": ""
+}

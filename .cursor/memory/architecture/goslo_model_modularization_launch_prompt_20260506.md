@@ -273,6 +273,9 @@ class ModelManifest(BaseModel):
 - Brain Tools：`src/parrot/brain/tools/{animate,fly_to}.py`
 - 样板报告：[`lineb_implementation_completion_20260504.md`](lineb_implementation_completion_20260504.md)
 - Skill：[`.cursor/skills/ar-foundation-api/SKILL.md`](../../skills/ar-foundation-api/SKILL.md) / [`ar-foundation-samples/SKILL.md`](../../skills/ar-foundation-samples/SKILL.md)（Unity 端 API）
+- **Step 1 协议文档**：[`goslo_model_manifest_protocol_v1.md`](goslo_model_manifest_protocol_v1.md)
+- **Step 1.5 暗线审计**：[`goslo_modularization_residual_debt_20260506.md`](goslo_modularization_residual_debt_20260506.md)（7 类 parrot-isms 残余债 + p2.5/p3 前瞻需求注记，供 DSG 协议升级 Chat 标 TODO + Chat 4 接口提炼入场）
+- **Step 5 完成报告**：[`goslo_modularization_completion_20260506.md`](goslo_modularization_completion_20260506.md)（Step 1-5 + 1.5 落地证据 / Phase 4 §8 0 漂移 / Deferred 工作清单 / 下游 Chat 入场素材）
 
 ---
 

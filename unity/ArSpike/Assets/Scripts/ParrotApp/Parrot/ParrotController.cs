@@ -49,6 +49,22 @@ namespace ParrotApp.Parrot
                 Debug.Log("[Parrot] No Animator/AnimationDriver — dev pulse fallback");
         }
 
+        /// <summary>
+        /// Sprint4 GOSLO model modularization (Step 2, 2026-05-06):
+        ///   When a <see cref="ParrotApp.Parrot.ParrotRegistry"/> exists and
+        ///   has a controller for the requested <paramref name="modelId"/>
+        ///   (or any active controller for empty modelId), route the call
+        ///   through <see cref="IParrotController.ApplyCapability"/>.
+        ///   Returns the controller if routed, null otherwise — caller falls
+        ///   back to the legacy AnimationDriver / Animator / dev-pulse path.
+        /// </summary>
+        private IParrotController ResolveControllerOrFallback(string modelId)
+        {
+            var registry = ParrotRegistry.Instance;
+            if (registry == null) return null;
+            return registry.Resolve(modelId);
+        }
+
         void Update()
         {
             if (_animDriver == null && _isMoving)
@@ -85,7 +101,29 @@ namespace ParrotApp.Parrot
 
         public void FlyTo(Vector3 target)
         {
-            Debug.Log($"[Parrot] FlyTo -> {target}");
+            FlyTo(target, modelId: "");
+        }
+
+        /// <summary>
+        /// Sprint4 GOSLO model modularization (Step 2, 2026-05-06): routing
+        /// overload. <paramref name="modelId"/> comes from
+        /// <c>EcpCommandDto.meta.model_id</c>. Empty = active controller via
+        /// Registry, or legacy AnimationDriver fallback when no Registry.
+        /// </summary>
+        public void FlyTo(Vector3 target, string modelId)
+        {
+            Debug.Log($"[Parrot] FlyTo -> {target} (model_id='{modelId ?? ""}')");
+
+            // Manifest-driven path: route through IParrotController.fly capability.
+            var controller = ResolveControllerOrFallback(modelId);
+            if (controller != null)
+            {
+                var paramsJson = JsonUtility.ToJson(new Vec3JsonPayload { x = target.x, y = target.y, z = target.z });
+                if (controller.ApplyCapability("fly", paramsJson)) return;
+                Debug.LogWarning(
+                    $"[Parrot] controller '{controller.GetType().Name}' did not declare 'fly' " +
+                    $"capability — falling back to legacy AnimationDriver.");
+            }
 
             if (_animDriver != null)
             {
@@ -105,8 +143,28 @@ namespace ParrotApp.Parrot
 
         public void PlayAnimation(string animationName)
         {
+            PlayAnimation(animationName, modelId: "");
+        }
+
+        /// <summary>
+        /// Sprint4 GOSLO model modularization (Step 2, 2026-05-06): routing
+        /// overload. <paramref name="modelId"/> comes from
+        /// <c>EcpCommandDto.meta.model_id</c>.
+        /// </summary>
+        public void PlayAnimation(string animationName, string modelId)
+        {
             _currentAnimation = animationName;
-            Debug.Log($"[Parrot] PlayAnimation -> {animationName}");
+            Debug.Log($"[Parrot] PlayAnimation -> {animationName} (model_id='{modelId ?? ""}')");
+
+            // Manifest-driven path: route through IParrotController.
+            var controller = ResolveControllerOrFallback(modelId);
+            if (controller != null)
+            {
+                if (controller.ApplyCapability(animationName, "")) return;
+                Debug.LogWarning(
+                    $"[Parrot] controller '{controller.GetType().Name}' did not declare " +
+                    $"capability_id='{animationName}' — falling back to legacy AnimationDriver.");
+            }
 
             if (_animDriver != null)
             {
@@ -129,5 +187,10 @@ namespace ParrotApp.Parrot
                     + $"(scale ±{devPulseScaleAmplitude:P0}, yaw ±{devPulseYawDegrees}° — watch Game view)");
             }
         }
+
+        // Local payload helper — kept private to avoid leaking a typed
+        // payload to other modules. Mirrors the FlyToPayload x/y/z subset
+        // GosloLegacyController already deserialises.
+        [System.Serializable] private struct Vec3JsonPayload { public float x, y, z; }
     }
 }

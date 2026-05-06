@@ -87,6 +87,84 @@ def test_wrap_legacy_rpc_payload_default_meta_is_empty_dict():
     assert command.meta == {}
 
 
+def test_wrap_legacy_rpc_payload_meta_unknown_keys_survive_python_side():
+    """GOSLO model modularization — Brain may attach future meta keys
+    (``actor_id`` / ``capability_hint``) before Unity has typed slots for
+    them. JsonUtility on Unity side silently drops unknown fields, so the
+    Python wrap path must accept any string-keyed dict without forcing a
+    schema bump."""
+    payload, command = wrap_legacy_rpc_payload(
+        {},
+        kind=EcpCommandKind.ANIMATE,
+        target={},
+        actor="test",
+        meta={"model_id": "owl_v1", "actor_id": "owl_left", "capability_hint": "fly"},
+    )
+
+    assert payload["_ecp"]["meta"]["model_id"] == "owl_v1"
+    assert payload["_ecp"]["meta"]["actor_id"] == "owl_left"
+    assert payload["_ecp"]["meta"]["capability_hint"] == "fly"
+    assert command.meta == {
+        "model_id": "owl_v1",
+        "actor_id": "owl_left",
+        "capability_hint": "fly",
+    }
+
+
+def test_ecp_command_meta_unity_dto_field_parity():
+    """Soft cs-parity guard: the Unity ``EcpCommandMetaDto`` C# struct must
+    declare every meta key that the Python side currently considers a
+    well-known typed slot. Today that's just ``model_id`` (Step 2,
+    2026-05-06) — extending Python with a new typed key without adding the
+    matching C# field would silently lose data on the Unity side.
+
+    Mirrors the regex approach of ``tests/test_ecp_event/test_cs_parity.py``
+    so the wire schema doesn't drift between languages.
+    """
+    import re
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    cs_path = (
+        repo_root
+        / "unity"
+        / "ArSpike"
+        / "Assets"
+        / "Scripts"
+        / "ParrotApp"
+        / "RPC"
+        / "EcpDtos.cs"
+    )
+    cs_text = cs_path.read_text(encoding="utf-8")
+
+    # Find the body of `public class EcpCommandMetaDto { ... }`
+    pattern = re.compile(
+        r"public\s+class\s+EcpCommandMetaDto\s*{(?P<body>.*?)^\s*}",
+        re.DOTALL | re.MULTILINE,
+    )
+    m = pattern.search(cs_text)
+    assert m is not None, f"EcpCommandMetaDto not found in {cs_path}"
+    body = m.group("body")
+
+    # Field declarations look like `public string model_id = "";`
+    field_re = re.compile(r"public\s+(?P<type>\w+)\s+(?P<name>\w+)\s*=")
+    cs_fields = {fm.group("name"): fm.group("type") for fm in field_re.finditer(body)}
+
+    # Keys the Python side guarantees as well-known typed slots.
+    # Extend this set when adding a new typed meta key on Brain side.
+    PYTHON_TYPED_META_KEYS = {"model_id"}
+    missing = PYTHON_TYPED_META_KEYS - set(cs_fields.keys())
+    assert not missing, (
+        f"EcpCommandMetaDto is missing typed slot(s) {missing}. "
+        f"Add a `public string <name> = \"\";` field to keep parity."
+    )
+    # All required slots must be `string` to match the Pydantic dict[str, Any] wire shape.
+    for key in PYTHON_TYPED_META_KEYS:
+        assert cs_fields[key] == "string", (
+            f"EcpCommandMetaDto.{key} is '{cs_fields[key]}', expected 'string' to match wire."
+        )
+
+
 def test_ecp_command_layer_round_trips_event_layer_enum():
     cmd = EcpCommand(kind=EcpCommandKind.PERCH_TO_FINGER, layer=EventLayer.REFLEX)
 

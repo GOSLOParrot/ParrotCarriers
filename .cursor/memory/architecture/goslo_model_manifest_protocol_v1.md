@@ -51,6 +51,9 @@ related:
 | wire 路由槽位 | `src/parrot/shared/ecp.py` (`EcpCommand.meta`) + `wrap_legacy_rpc_payload(meta=...)` |
 | Brain LLM 词汇表 | `src/parrot/shared/parrot_actions.py` (`ParrotAnimation` enum) |
 | Phase 4 §8 决策锁 | `architecture/sprint4_phase4_entry_20260430.md §8` |
+| **暗线审计 / 残余债清单 / p2.5 p3 前瞻需求注记** | `goslo_modularization_residual_debt_20260506.md` |
+| **Step 5 完成报告** | `goslo_modularization_completion_20260506.md` |
+| **AI CLI** | `src/scripts/asset_to_manifest.py` |
 | Unity ModelDriver / GosloLegacyController | `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/` (Step 2 后回填) |
 | 默认 GOSLO manifest | `unity/ArSpike/Assets/Resources/parrot_models/goslo_default.json` (Step 2 后回填) |
 | AI CLI | `src/scripts/asset_to_manifest.py` (Step 4 后回填) |

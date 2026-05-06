@@ -17,6 +17,29 @@ using UnityEngine;
 ///   2026 epoch). Keeping the in-memory representation as `double` lets the
 ///   `expires_at` check actually mean something.
 /// </summary>
+/// <summary>
+/// Routing-hint metadata that rides on <see cref="EcpCommandDto.meta"/>.
+///
+/// Sprint4 GOSLO model modularization (Step 2, 2026-05-06):
+///   Brain attaches <c>meta.model_id</c> when an animate / fly_to call should
+///   be routed to a specific model instance. Empty string = "any active model"
+///   (P1 single-active deployments + backward compat with pre-modularization
+///   wire). P3 multi-actor will populate this from a future spawn / despawn
+///   tool; P1 just resolves it through <c>ParrotRegistry.Resolve(...)</c>'s
+///   single-active stub.
+///
+/// JsonUtility-friendly typed mirror of Python <c>EcpCommand.meta</c>
+/// <c>dict[str, Any]</c>. Other meta keys (Brain may add <c>actor_id</c>,
+/// <c>capability_hint</c>, etc. later) are silently dropped on the C# side
+/// until they get a typed slot here — that's the safe forward-compat
+/// behaviour of <c>JsonUtility</c>.
+/// </summary>
+[Serializable]
+public class EcpCommandMetaDto
+{
+    public string model_id = "";
+}
+
 [Serializable]
 public class EcpCommandDto
 {
@@ -31,6 +54,13 @@ public class EcpCommandDto
     public string interruptibility = "interruptible";
 
     /// <summary>
+    /// Routing-hint metadata. See <see cref="EcpCommandMetaDto"/>. Defaults to
+    /// an empty meta block — wire-compat: Brain payloads built before the
+    /// model_id work simply round-trip with <c>meta.model_id == ""</c>.
+    /// </summary>
+    public EcpCommandMetaDto meta = new EcpCommandMetaDto();
+
+    /// <summary>
     /// Returns true when the command has an `expires_at` and Unix-time now is
     /// past it. A zero/negative `expires_at` means "no expiry" by convention,
     /// matching `EcpCommand.for_legacy_rpc(expires_in_s=0)` on the Python side.
@@ -39,6 +69,14 @@ public class EcpCommandDto
     {
         return expires_at > 0.0 && nowUnix > expires_at;
     }
+
+    /// <summary>
+    /// Convenience accessor for the routing model_id with null-safe fallback.
+    /// Returns empty string when meta is missing (which JsonUtility never
+    /// produces — it always materialises the default — but defensive code
+    /// in <see cref="ParrotRpcHandler"/>-style call sites doesn't trust it).
+    /// </summary>
+    public string ModelId => meta != null ? (meta.model_id ?? "") : "";
 }
 
 [Serializable]

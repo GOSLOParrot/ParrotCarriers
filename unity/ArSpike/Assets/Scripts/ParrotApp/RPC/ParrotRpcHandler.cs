@@ -125,10 +125,17 @@ namespace ParrotApp.RPC
                 LifecycleHeartbeatPublisher.Instance?.ReportActiveCommand(commandId, new[] { "body" });
                 reported = true;
 
+                // Sprint4 GOSLO model modularization (Step 2, 2026-05-06):
+                // route through ParrotController by model_id from _ecp.meta.
+                // ParrotController falls back to AnimationDriver direct path
+                // when no Registry / controller is present, so existing GOSLO
+                // scenes that haven't added a ModelDriver keep working.
+                string modelId = p._ecp?.ModelId ?? "";
+
                 var tcs = new TaskCompletionSource<bool>();
                 UnityMainThread.Enqueue(() =>
                 {
-                    _parrot.FlyTo(new Vector3(p.x, p.y, p.z));
+                    _parrot.FlyTo(new Vector3(p.x, p.y, p.z), modelId);
                     tcs.SetResult(true);
                 });
 
@@ -170,10 +177,15 @@ namespace ParrotApp.RPC
                 LifecycleHeartbeatPublisher.Instance?.ReportActiveCommand(commandId, new[] { "body" });
                 reported = true;
 
+                // Sprint4 GOSLO model modularization (Step 2, 2026-05-06):
+                // pass model_id through to ParrotController; see HandleFlyTo
+                // for the routing rationale.
+                string modelId = p._ecp?.ModelId ?? "";
+
                 var tcs = new TaskCompletionSource<bool>();
                 UnityMainThread.Enqueue(() =>
                 {
-                    _parrot.PlayAnimation(p.animation);
+                    _parrot.PlayAnimation(p.animation, modelId);
                     tcs.SetResult(true);
                 });
 
