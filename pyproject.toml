@@ -32,6 +32,14 @@ http = [
     "fastapi>=0.110,<1.0",
     "uvicorn>=0.27,<1.0",
 ]
+line_b = [
+    # Sprint 4 Phase 5+ Line B (2026-05-04) — STT-LLM-TTS pipeline:
+    #   * silero.VAD       — Voice Activity Detector
+    #   * google.STT/TTS   — Cloud Speech / TTS (require GOOGLE_APPLICATION_CREDENTIALS)
+    #   * google.LLM       — Gemini text API (uses GOOGLE_API_KEY)
+    # Line B 默认不开 (PARROT_LLM_PIPELINE=line_a 默认); 装这一组即可 env-gate 切换.
+    "livekit-plugins-silero>=1.5,<2.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/parrot"]

@@ -1,6 +1,10 @@
 # 当前进度与下一步
 
 > ⚠ **2026-05-04 重大更新**：Sprint 4 Phase 4 **整体收口完成** + 联机 smoke 通过 + Phase 5 入场转换包就绪。下面 §0 是当前权威入场点，旧 4/29 内容（§1+ 起）保留作历史。
+>
+> **2026-05-04 追加**：DSG 工作区已建立（`architecture/dsg/`），作为 DSG 系列设计 chat（L1.5 池 / lifecycle / L2-B 简单升级 / Phase 5+ A10 接入）的 SSOT 入场点，与 AR 工作区（`ar_workspace_index.md`）对位。Chat 2 启动前先读 `architecture/dsg/workspace_index.md` + `dsg_current_state_distilled.md`。
+>
+> **🟢 2026-05-06 重大更新**：**DSG Chat 2（L1.5 Pool + Lifecycle + IntentWorkspace + Plan）实施完成** — 8 份设计/协议文档 + 14 新模块 + 5 改动既有 + 118 新测试 → **352/352 pytest 全绿**；Phase 4 § 8 + cs_parity 4/4 + ADR-L1.5-001 11/11 三大守护通过；ADR-L1.5-001 §4.1 三触发器全部未触发（继续 meta+factory hybrid）；master 11 条 `provisional-revisit-after-L2-design` 全部回审完毕。详见 [`architecture/dsg/dsg_l1_5_implementation_completion_20260506.md`](architecture/dsg/dsg_l1_5_implementation_completion_20260506.md)。下游：Chat 4（接口提炼实施）/ Chat 5（独立审计）+ P3 真闲时归档 / A10 接入 chat。
 
 ---
 
@@ -60,13 +64,15 @@
 | `architecture/sprint4_phase4_protocol_and_interface_adr_fork_chat_prompt_20260504.md` | 任务 2 fork chat 启动 prompt | 用户 fork chat |
 | `architecture/sprint4_phase4_downstream_chat_dispatch_plan_20260504.md` | 全下游 chat 派发地图（**这一份是路径全景**）| 用户决策派发顺序 |
 
-### §0.4 任务 2 fork chat 产出（**fork chat 完成后填这里**）
+### §0.4 任务 2 fork chat 产出（**fork chat 完成 2026-05-04**）
 
-> 占位区（fork chat 完成 T2-A/B/C 后回填路径 + 一句话摘要）：
->
-> - **T2-A 协议升级总结 ADR**：_（待 fork chat 填路径）_
-> - **T2-B 接口提炼要求归纳 ADR**：_（待 fork chat 填路径）_
-> - **T2-C 接口提炼 chat 启动 prompt**：_（待 fork chat 填路径）_
+Fork chat 按用户更新口径（"我们就写一份给 AI 够看的"）合并 T2-A + T2-B 为单 ADR，T2-C 在 ADR §7 内嵌"派发提示"，不出独立 prompt 文件：
+
+- **T2-A 协议升级总结 ADR + T2-B 接口提炼要求归纳 ADR（合并）**：
+  `.cursor/memory/architecture/adr_protocol_upgrade_and_interface_refinement_background_20260504.md`
+  ADR-PROTOCOL-INTERFACE-001 — 单文档收集 Sprint 4 协议升级"升了什么"+ Phase 4 锁定约束 + 遗留问题 + 接口提炼任务输入（用户 2 个 motivating examples 问题清单 + 现有"准接口文档" inventory + 8 候选分类维度 + 单/双份现状证据 + 5 项隐含需求清单）+ 与 §8 锁定值兼容性证明 + 下游 chat 派发提示。0 修改 Phase 4 锁定值；测试基线 234/234 不动。
+- **T2-C 接口提炼 chat 启动 prompt**：
+  **不创建独立文件**（fork prompt §0 / §2.2 #7 显式授权）。下游接口提炼 chat 入场清单已落 ADR §7.1（必读 / 该做 / 不该做 三栏）。
 
 ### §0.5 推荐启动顺序
 

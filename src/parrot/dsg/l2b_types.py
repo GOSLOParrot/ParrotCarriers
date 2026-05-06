@@ -255,6 +255,33 @@ class SemanticNode:
     #     data/snapshots/sightings/{yyyy-mm-dd}/{ts}.jpg
     last_sighting_path: str = ""
 
+    # ── Informational tag fields (DSG-POOL-V1 / DSG-INTENT-EVENT-V1 /
+    #    DSG-SCENE-V1, 2026-05-06) ──
+    # All four are *labels*; they do not change behaviour by themselves.
+    # The L1.5 Pool / IntentEventBoundary / SceneRegistry modules drive
+    # behaviour through their own state. Adding these fields is additive
+    # (Phase 4 § 8 L1 NodeKind / EdgeKind enum stay untouched).
+    #
+    # bucket_id   — L1.5 Bucket the node lives in (parrot.dsg.l1_5.buckets).
+    #               Values: "main" / "obsidian_setting_daily" / etc.
+    #               Default "main" so existing code paths land in the
+    #               default bucket without any change.
+    #
+    # event_id    — Current IntentEvent the node belongs to (cognitive
+    #               focus window). Empty = not yet associated with any
+    #               IntentEvent. Strict naming: never "Event" alone (see
+    #               dsg_protocol_intent_event_boundary_v1 § 0).
+    #
+    # scene_type  — SceneType label ("desktop" / "home_indoor" / ...).
+    #               Empty = legacy / preloaded node without scene info.
+    #
+    # location_tag — Physical LocationTag ("desk" / "kitchen" / ...).
+    #               Empty = no location attached yet.
+    bucket_id: str = "main"
+    event_id: str = ""
+    scene_type: str = ""
+    location_tag: str = ""
+
     # ── Source dispatch fields (Phase 4 → 5 transition, 2026-05-04) ──
     # See module-level "Source dispatch" comment above for the full
     # rationale (Q1: Python only / Q2: meta+factory hybrid / future

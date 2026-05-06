@@ -75,13 +75,14 @@ parent_doc: "sprint4_phase4_completion_and_final_audit_20260430.md"
 
 | 字段 | 值 |
 |:--|:--|
-| 范围 | 设计 L1.5 预加载 Node 池 + 状态生命周期（**A10 入口除外** — 那是 Chat 1 蒸馏的输入） |
-| 启动 prompt | 用户自己起 |
+| 范围 | 设计 L1.5 预加载 Node 池 + 状态生命周期（**A10 入口除外** — 那是 Chat 1 蒸馏的输入）+ L2-B 组织方式简单升级（保留复杂仿生设计空间）+ L1.5 ↔ L2 调研后审 + Obsidian / GOSLO 主动发现 / 已有 source 差异化 lifecycle |
+| 启动 prompt | [`architecture/dsg/dsg_l1_5_pool_design_chat_launch_prompt_20260506.md`](dsg/dsg_l1_5_pool_design_chat_launch_prompt_20260506.md)（2026-05-06 新建）|
 | 工作区 | 同仓 |
-| 依赖 | Chat 1 完成（拿蒸馏的 SKILL.md 当输入）+ ADR-L1.5-001（已落） |
-| 输出 | 设计 doc + 可能的 SemanticNode 子类设计提案（如果触发 ADR-L1.5-001 §4.1 升级条件） |
-| 何时启动 | Chat 1 完成后 |
-| 完成判据 | 设计 doc + 可能的 ADR 修订 / supersede |
+| 依赖 | Chat 1 完成（拿蒸馏的 SKILL.md 当输入）+ ADR-L1.5-001（已落）+ **DSG 工作区**（已落，2026-05-04 + 2026-05-06 增补）+ **LineB 完成**（2026-05-04 已落，DSG 不再被它阻塞） |
+| **入场必读**（2026-05-06 更新）| 1. `architecture/dsg/workspace_index.md`<br/>2. `architecture/dsg/dsg_decisions_master.md` — 用户已决事项 SSOT，不再讨论 ratified 条目<br/>3. `architecture/dsg/dsg_current_state_distilled.md`（含 §11 防爆炸门控分层 + §12 工作记忆延迟归档）<br/>4. **4 个 DSG skill** — 按 `dsg-rustworkx-master/SKILL.md §0` 路由表决定回读哪个 + `dsg-l2b-node-organization-options` 选项库 + `dsg-attention-schema-papers` 论文索引 + `dsg-l1-5-l2a-conceptgraph-distilled`（A10 占位）<br/>5. 按需 `opus_dsg_residual_intent.md` / `source_x_lifecycle_status.md` / `open_questions_for_design_chat.md` Q4.x 锁面核对<br/>6. 按需 `NewZone/distill_output/` 6 份 Gemini 蒸馏深读 |
+| 输出 | 设计 doc（建议路径 `architecture/dsg/dsg_l1_5_pool_and_lifecycle_design_<date>.md`）+ 必要时新 ADR（触发 ADR-L1.5-001 §4.1 升级条件 / 或回审 master `provisional-revisit-after-L2-design` 条目时 supersede）|
+| 何时启动 | Chat 1 完成 + DSG 工作区 sign off 后（用户已 sign off 2026-05-06 增补） |
+| 完成判据 | 设计 doc + 必要时 ADR 修订 / supersede + 回审 master §8 触发条件 + 开放问题 Q1-Q4 逐条回答 |
 
 ---
 

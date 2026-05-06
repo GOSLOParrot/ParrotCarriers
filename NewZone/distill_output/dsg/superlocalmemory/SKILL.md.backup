@@ -1,0 +1,344 @@
+---
+name: superlocalmemory
+description: Local codebase analysis for slm-clone
+doc_version: 
+---
+
+# slm-clone Codebase
+
+## Description
+
+Local codebase analysis and documentation generated from code analysis.
+
+**Path:** `C:\Users\Bin\AppData\Local\Temp\slm-clone`
+**Files Analyzed:** 0
+**Languages:** 
+**Analysis Depth:** surface
+
+## When to Use This Skill
+
+Use this skill when you need to:
+- Understand the codebase architecture and design patterns
+- Find implementation examples and usage patterns
+- Review API documentation extracted from code
+- Check configuration patterns and best practices
+- Explore test examples and real-world usage
+- Navigate the codebase structure efficiently
+
+## ⚡ Quick Reference
+
+### Codebase Statistics
+
+**Languages:**
+
+**Analysis Performed:**
+- ✅ API Reference (C2.5)
+- ✅ Dependency Graph (C2.6)
+- ✅ Design Patterns (C3.1)
+- ✅ Test Examples (C3.2)
+- ✅ Configuration Patterns (C3.4)
+- ✅ Architectural Analysis (C3.7)
+- ✅ Project Documentation (C3.9)
+
+### 🎨 Design Patterns Detected
+
+*From C3.1 codebase analysis (confidence > 0.7)*
+
+- **Adapter**: 22 instances
+- **Builder**: 6 instances
+- **Strategy**: 6 instances
+- **Observer**: 3 instances
+
+*Total: 36 high-confidence patterns*
+
+*See `references/patterns/` for complete pattern analysis*
+
+## 📝 Code Examples
+
+*High-quality examples extracted from test files (C3.2)*
+
+**Workflow: Consumer uses fenced writes; stale received value is rejected.** (complexity: 1.00)
+
+```python
+'Consumer uses fenced writes; stale received value is rejected.'
+q = _make_queue(tmp_path)
+rid = q.enqueue(query='fenced', limit_n=3, mode='B', agent_id='hook', session_id='s1')
+c1 = q.claim_pending(priority='high', stall_timeout_s=0.01)
+assert c1 is not None
+time.sleep(0.02)
+c2 = q.claim_pending(priority='high', stall_timeout_s=25.0)
+assert c2 is not None
+n = q.complete(rid, received=1, result_json=json.dumps({'stale': True}))
+assert n == 0, 'Stale write should be fenced out'
+n = q.complete(rid, received=2, result_json=json.dumps({'ok': True}))
+assert n == 1
+q.close()
+```
+
+**Workflow: test user prompt returns envelope on hit** (complexity: 1.00)
+
+```python
+from superlocalmemory.core.topic_signature import compute_topic_signature
+prompt = 'please refactor the context cache writer into smaller functions'
+sig = compute_topic_signature(prompt)
+cache = cc.ContextCache(db_path=home / 'active_brain_cache.db', home_dir=home)
+try:
+    cache.upsert(cc.CacheEntry(session_id='sess-envelope', topic_sig=sig, content='prior work: split ContextCache into writer/reader', fact_ids=['f42'], provenance='tool_observation', computed_at=int(time.time())))
+finally:
+    cache.close()
+payload = json.dumps({'session_id': 'sess-envelope', 'prompt': prompt})
+rc, out = _run_hook(user_prompt_hook.main, payload, monkeypatch)
+assert rc == 0
+parsed = json.loads(out)
+assert 'hookSpecificOutput' in parsed
+inner = parsed['hookSpecificOutput']
+assert inner['hookEventName'] == 'UserPromptSubmit'
+assert 'prior work' in inner['additionalContext']
+ac = inner['additionalContext']
+assert '[BEGIN UNTRUSTED SLM CONTEXT' in ac
+assert '[END UNTRUSTED SLM CONTEXT]' in ac
+begin_idx = ac.index('[BEGIN UNTRUSTED SLM CONTEXT')
+end_idx = ac.index('[END UNTRUSTED SLM CONTEXT]')
+assert begin_idx < ac.index('prior work') < end_idx
+```
+
+**Workflow: test post tool async sends install token** (complexity: 1.00)
+
+```python
+token = sp.ensure_install_token()
+captured: dict = {}
+
+def fake_urlopen(req, timeout=0.5):
+    captured['url'] = req.full_url
+    captured['token'] = req.headers.get('X-slm-hook-token') or req.headers.get('X-Slm-Hook-Token')
+    captured['body'] = req.data
+
+    class _R:
+
+        def read(self) -> bytes:
+            return b'{}'
+
+        def close(self) -> None:
+            return None
+    return _R()
+import urllib.request as _ur
+monkeypatch.setattr(_ur, 'urlopen', fake_urlopen)
+rc, out = _run_hook(post_tool_async_hook.main, json.dumps({'session_id': 's', 'tool_name': 'Read', 'tool_input': {'file_path': '/x'}, 'tool_response': 'some content'}), monkeypatch)
+assert rc == 0
+assert json.loads(out) == {'async': True}
+assert captured['token'] == token
+assert isinstance(captured['body'], bytes)
+body = json.loads(captured['body'].decode('utf-8'))
+assert body['session_id'] == 's'
+assert body['tool_name'] == 'Read'
+```
+
+**Workflow: test post tool async without token** (complexity: 1.00)
+
+```python
+token_path = home / '.install_token'
+if token_path.exists():
+    token_path.unlink()
+called = {'count': 0}
+
+def fake_urlopen(*args, **kwargs):
+    called['count'] += 1
+    raise AssertionError('urlopen should not be called without token')
+import urllib.request as _ur
+monkeypatch.setattr(_ur, 'urlopen', fake_urlopen)
+rc, out = _run_hook(post_tool_async_hook.main, json.dumps({'session_id': 's', 'tool_name': 'Read'}), monkeypatch)
+assert rc == 0
+assert json.loads(out) == {'async': True}
+assert called['count'] == 0
+```
+
+**Workflow: test post tool async truncates large output** (complexity: 1.00)
+
+```python
+sp.ensure_install_token()
+captured: dict = {}
+
+def fake_urlopen(req, timeout=0.5):
+    captured['body'] = req.data
+
+    class _R:
+
+        def read(self) -> bytes:
+            return b'{}'
+
+        def close(self) -> None:
+            return None
+    return _R()
+import urllib.request as _ur
+monkeypatch.setattr(_ur, 'urlopen', fake_urlopen)
+big = 'y' * 20000
+rc, out = _run_hook(post_tool_async_hook.main, json.dumps({'session_id': 's', 'tool_name': 'X', 'tool_input': {'arg': 'a' * 5000}, 'tool_response': big}), monkeypatch)
+assert rc == 0
+body = json.loads(captured['body'])
+assert len(body['output_summary']) <= 4000
+assert len(body['input_summary']) <= 2000
+```
+
+**Workflow: SIGTERM kills a cooperative process.** (complexity: 1.00)
+
+```python
+'SIGTERM kills a cooperative process.'
+from superlocalmemory.infra.process_reaper import kill_orphan
+ready_file = tmp_path / 'ready'
+pid_file = tmp_path / 'child_pid'
+launcher = tmp_path / 'launcher.py'
+launcher.write_text(f"""import os, pathlib, subprocess, sys\nproc = subprocess.Popen([sys.executable, '-c', 'import time, pathlib; pathlib.Path(\\"{ready_file}\\").touch(); time.sleep(300)'], start_new_session=True)\npathlib.Path('{pid_file}').write_text(str(proc.pid))\n""")
+subprocess.run([sys.executable, str(launcher)], timeout=5, check=True)
+target_pid = int(pid_file.read_text().strip())
+deadline = time.monotonic() + 5.0
+while time.monotonic() < deadline:
+    if ready_file.exists():
+        break
+    time.sleep(0.1)
+result = kill_orphan(target_pid, graceful_timeout_seconds=10.0)
+assert result['killed'] is True
+assert result['method'] == 'sigterm'
+assert result['error'] is None
+```
+
+**Workflow: test startup reaps stale from pid file** (complexity: 1.00)
+
+```python
+from superlocalmemory.infra.pid_manager import PidManager
+from superlocalmemory.infra.process_reaper import reap_stale_on_startup
+mgr = PidManager(tmp_pid_file)
+mgr.register(99999, 88888)
+result = reap_stale_on_startup(default_reaper_config, mgr)
+records = mgr.read_all()
+pids = [r.pid for r in records]
+assert 99999 not in pids
+assert os.getpid() in pids
+assert result['registered_pid'] == os.getpid()
+```
+
+**Workflow: When reaper is disabled, still register current PID.** (complexity: 1.00)
+
+```python
+'When reaper is disabled, still register current PID.'
+from superlocalmemory.infra.pid_manager import PidManager
+from superlocalmemory.infra.process_reaper import ReaperConfig, reap_stale_on_startup
+config = ReaperConfig(enabled=False)
+mgr = PidManager(tmp_pid_file)
+result = reap_stale_on_startup(config, mgr)
+records = mgr.read_all()
+pids = [r.pid for r in records]
+assert os.getpid() in pids
+assert result['registered_pid'] == os.getpid()
+```
+
+**Workflow: Active processes with living parents are NEVER killed.** (complexity: 1.00)
+
+```python
+'Active processes with living parents are NEVER killed.'
+from superlocalmemory.infra.process_reaper import ReaperConfig, SlmProcessInfo, cleanup_all_orphans
+config = ReaperConfig(orphan_age_threshold_hours=0.0)
+orphan = SlmProcessInfo(pid=11111, ppid=99999, start_time=time.time() - 7200, command='python -m superlocalmemory.mcp.server', is_orphan=True, parent_name='', age_hours=2.0)
+active = SlmProcessInfo(pid=22222, ppid=os.getppid(), start_time=time.time() - 3600, command='python -m superlocalmemory.mcp.server', is_orphan=False, parent_name='node', age_hours=1.0)
+monkeypatch.setattr('superlocalmemory.infra.process_reaper.find_slm_processes', lambda: [orphan, active])
+killed_pids: list[int] = []
+
+def mock_kill(pid: int, **kwargs) -> dict:
+    killed_pids.append(pid)
+    return {'pid': pid, 'killed': True, 'method': 'sigterm', 'error': None}
+monkeypatch.setattr('superlocalmemory.infra.process_reaper.kill_orphan', mock_kill)
+result = cleanup_all_orphans(config)
+assert 11111 in killed_pids
+assert 22222 not in killed_pids
+assert result['skipped'] >= 1
+```
+
+**Workflow: PermissionError on os.kill(pid, 0) returns refused.** (complexity: 1.00)
+
+```python
+'PermissionError on os.kill(pid, 0) returns refused.'
+from superlocalmemory.infra.process_reaper import kill_orphan
+real_pid = os.getpid()
+real_ppid = os.getppid()
+fake_pid = real_pid + 10000
+
+def mock_kill(pid, sig):
+    if sig == 0:
+        raise PermissionError('Operation not permitted')
+    raise AssertionError('Should not reach SIGTERM')
+monkeypatch.setattr('os.kill', mock_kill)
+monkeypatch.setattr('os.getpid', lambda: real_pid)
+monkeypatch.setattr('os.getppid', lambda: real_ppid)
+result = kill_orphan(fake_pid)
+assert result['killed'] is False
+assert result['method'] == 'refused'
+assert 'Permission denied' in result['error']
+```
+
+*See `references/test_examples/` for all extracted examples*
+
+## ⚙️ Configuration Patterns
+
+*From C3.4 configuration analysis*
+
+**Configuration Files Analyzed:** 26
+**Total Settings:** 331
+**Patterns Detected:** 0
+
+**Configuration Types:**
+- unknown: 26 files
+
+*See `references/config_patterns/` for detailed configuration analysis*
+
+## 📖 Project Documentation
+
+*Extracted from markdown files in the project (C3.9)*
+
+**Total Documentation Files:** 126
+**Categories:** 8
+
+### Overview
+
+- **ATTRIBUTION.md** (`ATTRIBUTION.md`)
+- **README.md** (`README.md`)
+- **SKILL.md** (`SKILL.md`)
+
+### Architecture
+
+- **ACCESSIBILITY.md** (`docs\v2-archive\ACCESSIBILITY.md`)
+- **ARCHITECTURE.md** (`docs\v2-archive\ARCHITECTURE.md`)
+- **CLI-COMMANDS-REFERENCE.md** (`docs\v2-archive\CLI-COMMANDS-REFERENCE.md`)
+- **COMPRESSION-README.md** (`docs\v2-archive\COMPRESSION-README.md`)
+- **FRAMEWORK-INTEGRATIONS.md** (`docs\v2-archive\FRAMEWORK-INTEGRATIONS.md`)
+- *...and 46 more*
+
+### Authors
+
+- **AUTHORS.md** (`AUTHORS.md`)
+
+### Changelog
+
+- **CHANGELOG.md** (`CHANGELOG.md`)
+
+### Contributing
+
+- **CONTRIBUTING.md** (`CONTRIBUTING.md`)
+
+### License
+
+- **COMMERCIAL-LICENSE.md** (`COMMERCIAL-LICENSE.md`)
+
+*See `references/documentation/` for all project documentation*
+
+## 📚 Available References
+
+This skill includes detailed reference documentation:
+
+- **Dependencies**: `references/dependencies/` - Dependency graph and analysis
+- **Patterns**: `references/patterns/` - Detected design patterns
+- **Examples**: `references/test_examples/` - Usage examples from tests
+- **Configuration**: `references/config_patterns/` - Configuration patterns
+- **Documentation**: `references/documentation/` - Project documentation
+
+---
+
+**Generated by Skill Seeker** | Codebase Analyzer with C3.x Analysis

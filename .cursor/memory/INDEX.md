@@ -1,7 +1,7 @@
-# ParrotCarriers 全局索引
+﻿# ParrotCarriers 全局索引
 
 > 用途: 项目唯一真相源，供 Cursor 与用户快速定位关键信息
-> 更新: 2026-04-30 (Sprint4 Phase 4 启动：整体协议升级 — ECP + Scheduler + DSG/Graphiti 交互，4 工具协议验证)
+> 更新: 2026-05-06 (Sprint4 Phase 4 **完成** → Phase 5 转换期；联机 smoke #3/#4/#5 ✅；234/234 pytest；fork chat T2-A/T2-B ADR 落地；adr_l1_5 决策锁落地；DSG 工作区建立，与 AR 工作区对位；2026-05-04 LineB STT-LLM-TTS 双管线落地；2026-05-06 DSG 工作区增补决策总表 + 4 新 DSG skill + NewZone 蒸馏素材池)
 > 路由: 由 `.cursor/rules/workspace.mdc` (alwaysApply) 指向本文件
 
 **全局约定**:
@@ -13,8 +13,10 @@
 
 ## 〇、当前阶段必读 (按序, 不读后续)
 
-> **原则**: 进入任何 Sprint 前, **只读这 7 份**, 不翻历史。
-> **当前**: Sprint 4 Phase 4 启动 (2026-04-30)
+> **原则**: 进入任何 Sprint 前, **只读这几份**, 不翻历史。
+> **当前**: Sprint 4 Phase 4 **完成** → Phase 5 转换期 (2026-05-04)
+> **Phase 4→5 补读**（下游 chat 必读，接口提炼 / dsg 动代码前）: `adr_protocol_upgrade_and_interface_refinement_background_20260504.md` + `adr_l1_5_source_dispatch_extension_space_20260504.md`
+> **DSG 系列设计 chat 入场必读**: `architecture/dsg/workspace_index.md` → `dsg_current_state_distilled.md`（与 AR 工作区对位）
 
 | # | 文件 | 读什么 |
 |:--|:-----|:-------|
@@ -26,6 +28,7 @@
 | 6 | `.cursor/memory/architecture/sprint4_phase4_entry_20260430.md` | ⭐ **Phase 4 入场锚点（authoritative）** — Sprint4 终极目标 + 验收 / Phase 1-3 已落地清单 / 协议整体性 7 个再理解点 / 行为矩阵填表起点 / 观察者 vs 注意力模块边界 / 启动序 / Ref 路由 |
 | 7 | `.cursor/memory/architecture/sprint4_phase3_l3_entry_20260429.md` | Phase 3 L3 收口承接（已完成）— L1+L2 + 4 组拆分 + R1-R6+D5 audit fix；Phase 4 主线**承接**而非**重读** |
 | 8 | `.cursor/memory/architecture/ar_app_flow_ui_design.md` | 当前 App Flow / UI / 功能入口设计基线 |
+| 9 | `.cursor/memory/architecture/dsg/workspace_index.md` | **DSG 工作区入口**（2026-05-04 新增；2026-05-06 增补决策总表 + 4 新 skill + NewZone 素材池）— DSG 系列设计 chat（L1.5 池 / lifecycle / L2-B 升级 / Phase 5+ A10）入场必读；与 AR 工作区对位。冷读完 `dsg_current_state_distilled.md` 一份能回答 DSG 全景；用户已决事项进 `dsg_decisions_master.md`（master，长期累加） |
 
 ---
 
@@ -47,6 +50,21 @@
 | `architecture/sprint4_phase3_l3_entry_20260429.md` | Phase 3 L3 入场锚点（**已收口承接**）— L1+L2 已完成内容、4 组拆分（foundations / chokepoint+transport / publishers / consumers）、ParrotApp 命名空间约定、§7.5 R1-R6+D5 audit 修复记录 |
 | `architecture/sprint4_phase4_entry_20260430.md` | ⭐ **Phase 4 入场锚点**（authoritative）— Sprint4 终极目标重申 + 验收口径 / Phase 1-3 落地清单 / 协议整体性 7 个再理解点（含 §3.3 行为矩阵 + §3.7 观察者 vs 注意力模块边界）/ 启动序 / 给新 chat 的开局 prompt |
 | `architecture/ar_app_flow_ui_design.md` | AR App Flow / UI / 功能入口当前设计基线 |
+| `architecture/dsg/workspace_index.md` | **DSG 工作区入口**（2026-05-04 新建；2026-05-06 增补）— DSG 系列设计 chat 单一入场点；与 `ar_workspace_index.md` 对位 |
+| `architecture/dsg/dsg_decisions_master.md` | **DSG 决策总表**（master，2026-05-06 新建，长期累加）— Chat 2 入场 SSOT；用户已决事项 + status 分级（ratified / provisional / deferred-to-design / deferred-to-P3 / tbd）|
+| `architecture/dsg/dsg_current_state_distilled.md` | **DSG 当前全景理解快照**（核心，2026-05-06 增补 §11 防爆炸门控分层 + §12 工作记忆延迟归档）— 冷读完一份能回答 DSG 全景 |
+| `architecture/dsg/opus_dsg_residual_intent.md` | Opus 09/11/12/17/18/19 仍生效的设计意图蒸馏（distill+cite）— 2026-05-06 修正 attention 双开放路径 |
+| `architecture/dsg/source_x_lifecycle_status.md` | 7 项现有 source + Obsidian 三分类 + GOSLO 主动 + A10 占位的 lifecycle 处理现状对照表（2026-05-06 增补 Q2.x 已决条目）|
+| `architecture/dsg/open_questions_for_design_chat.md` | Chat 2 需回答的开放问题（含用户 Q&A 原文）；§0 已决汇总指向 dsg_decisions_master.md |
+| `architecture/dsg/dsg_l1_5_pool_design_chat_launch_prompt_20260506.md` | **Chat 2 启动 prompt**（2026-05-06 新建）— 入场必读 / scope / 锁 / 提问纪律 / 输出物 / 开局 prompt |
+| `architecture/lineb_implementation_completion_20260504.md` | **Line B 完成报告**（Sprint 4 Phase 5+）— STT-LLM-TTS 双管线兼容性验证；Phase 4 §8 0 漂移；234/234 pytest |
+| `architecture/sprint4_phase4_completion_and_final_audit_20260430.md` | **Phase 4 完成报告 + 终一致性审计** — 234/234 pytest + Echo/Photo 全链路 + §8 决策锁 13 条 0 漂移。所有下游 chat 入场必读 |
+| `architecture/sprint4_phase4_online_smoke_completion_20260504.md` | **联机 smoke 收口**（2026-05-04）— smoke #3/#4/#5 ✅；#1/#2 显式 defer 到真机集成测试 |
+| `architecture/sprint4_phase4_downstream_chat_dispatch_plan_20260504.md` | **全下游 chat 派发地图** — Step 1-7 顺序 + 各 chat 角色 / 输入 / 输出边界 |
+| `architecture/adr_protocol_upgrade_and_interface_refinement_background_20260504.md` | **ADR-PROTOCOL-INTERFACE-001**（fork chat 产出）— Sprint4 协议升级总结 + 接口提炼任务输入。下游接口提炼 chat 必读；不修改 Phase 4 锁定值 |
+| `architecture/adr_l1_5_source_dispatch_extension_space_20260504.md` | **ADR-L1.5-SOURCE-DISPATCH-001** — Q1 SemanticNode.source 字段边界 + Q2 Meta dict/factory hook 扩展空间 + Q3 chat 路径锁。**任何动 dsg/ 的 chat 必读** |
+| `architecture/sprint4_deferred_issues_and_bugs_20260504.md` | Phase 4 遗留问题 + pre-existing breakage 汇总（独立审计 chat 处理）|
+| `architecture/dsg_skill_seeker_l1_5_a10_l2a_20260504.md` | ConceptGraph 蒸馏任务包（派出独立 workspace，Chat 1）|
 
 ### 1.2 reference — 当前稳定事实源 (status: ratified)
 
@@ -93,6 +111,19 @@
 | `docs/InfoCollections/Opus/` | 2026-02 ~ 03 的 26 篇调研文档 (架构起源, 大多已被 `.cursor/memory` 吸收). **按需 @ 引用, 不作依赖源**. 见 `docs/InfoCollections/Opus/INDEX.md` |
 | `docs/InfoCollections/HumanPlan/` | 用户早期手写计划 (legacy). **只读追溯**, 不作依赖 |
 | `docs/references/skill_seekers_output/` | SDK / 库的源文档蒸馏结果 (LiveKit / Graphiti / SVA / Nanobot). 供 skill 文件引用 |
+| `NewZone/distill_output/dsg/` | **DSG 蒸馏素材池**（2026-05-06 新增）— ConceptGraph / RustworkX docs+repo / SuperLocalMemory 4 份 Gemini 蒸馏。**不进 `.cursor/skills/`**（避免上下文污染）；按需 @ 引用 |
+| `NewZone/distill_output/dsg_l2b_org_raw/` | **DSG L2-B 组织专题素材池**（2026-05-06 新增）— HippoRAG / AriGraph 2 份 Gemini 蒸馏 |
+| `NewZone/skill_distill_bundle/` | 6 份 focus 配置（重新蒸馏用）|
+| `NewZone/RustworkX 图模拟研究案例.md` | RustworkX 仿生研究案例综述（§119-§122 仿生 4 范式）|
+
+### 1.6 Skills（DSG 系列 — 2026-05-06 新增 4 个）
+
+| Skill | 角色 |
+|:-----|:-----|
+| `.cursor/skills/dsg-rustworkx-master/` | DSG 设计 chat 总入口路由 + RustworkX 实操 + 仿生 4 范式 + 跨 skill 论文索引 |
+| `.cursor/skills/dsg-l2b-node-organization-options/` | L2-B Node/Edge 组织 5 选项 + 子图分层 P1-P4 + 跨源合并信号 |
+| `.cursor/skills/dsg-attention-schema-papers/` | 13 篇论文索引（GAT / DySAT / AGCN / G-HAM / Schema / Hippocampal Indexing / Spreading Activation / CLS / Tulving / ASD/MDD）|
+| `.cursor/skills/dsg-l1-5-l2a-conceptgraph-distilled/` | A10 入口门控 + L2-A 语义抽象（A10 Phase 5+ 接入参考）|
 
 ---
 

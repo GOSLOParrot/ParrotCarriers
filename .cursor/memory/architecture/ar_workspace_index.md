@@ -1,4 +1,4 @@
----
+﻿---
 status: tentative
 category: active
 status_note: "AR 工作区聚合入口。把分散在 INDEX 不同节的 AR / LiveKit / Unity App 相关文档、skill、规则、ArSpike 仓位、调研产物归到一处。新增 AR 相关产物时，先在这里登记一行，再决定是否进 INDEX 主表。"
@@ -45,6 +45,17 @@ ParrotDev 与 ArSpike 同时存在期间，ECP 协议代码以 ArSpike 为准；
 | `architecture/sprint4_protocol_v2_ecp.md` | Protocol V2 / ECP 正式设计稿：最小合同、状态面、Snapshot/Sighting/RefBinding、Lifecycle/Audio |
 | `architecture/sprint4_ecp_minimal_audit_20260429.md` | **Phase 1 审计护栏**：A1-A5 修复 / B1-B5 推迟 + DRIFT NOTE / Phase 2 入场清单 / "不允许误读" |
 
+### 2.2b Phase 4 完成 + Phase 5 转换前置（2026-05-04 新增）
+
+| 文件 | 角色 |
+|:--|:--|
+| `architecture/sprint4_phase4_completion_and_final_audit_20260430.md` | **Phase 4 完成报告 + 终一致性审计** — 234/234 pytest + Echo/Photo 全链路 + §8 决策锁 13 条 0 漂移。**所有下游 chat 入场必读** |
+| `architecture/sprint4_phase4_online_smoke_completion_20260504.md` | **联机 smoke 收口** — smoke #3/#4/#5 ✅；#1/#2 显式 defer 到真机集成测试 |
+| `architecture/sprint4_phase4_downstream_chat_dispatch_plan_20260504.md` | **全下游 chat 派发地图** — Step 1-7 顺序 + 各 chat 角色 / 输入 / 输出边界 |
+| `architecture/adr_protocol_upgrade_and_interface_refinement_background_20260504.md` | **ADR-PROTOCOL-INTERFACE-001**（fork chat 产出）— Sprint4 协议升级总结 + 接口提炼任务输入。下游接口提炼 chat 必读；不修改 Phase 4 锁定值 |
+| `architecture/adr_l1_5_source_dispatch_extension_space_20260504.md` | **ADR-L1.5-SOURCE-DISPATCH-001** — Q1 SemanticNode.source 字段边界 + Q2 Meta dict/factory hook 扩展空间 + Q3 chat 路径锁。**任何动 dsg/ 的 chat 必读** |
+| `architecture/sprint4_deferred_issues_and_bugs_20260504.md` | Phase 4 遗留问题 + pre-existing breakage 汇总（独立审计 chat 处理）|
+| `architecture/dsg_skill_seeker_l1_5_a10_l2a_20260504.md` | ConceptGraph 蒸馏任务包（派出独立 workspace，Chat 1）|
 ### 2.3 视频 / 数据流前置调研
 
 | 文件 | 角色 |
@@ -167,3 +178,4 @@ sprint4_ecp_minimal_audit_20260429.md (审计模板)
 
 - 2026-04-29: 创建。聚合 17 份 AR 工作区相关文档 + 4 个 AR/LiveKit skill + 3 条规则 + ArSpike 仓位。来源是路由审计修复（INDEX §1.1 active 登记）。
 - 2026-04-29 (晚): Phase 3 调研产物落地登记。新增 `INDEX_for_phase3.md`（薄索引）+ 新建 `livekit-unity-lifecycle/` skill（IMPL_REF 承载 Patch 3/4/7/9 + 17 个可调参数表）+ `livekit-unity-video-publish/IMPL_REF.md` 合入 Patch 1/2/5/6/8/10。skill 拆分决策（不改名 + 新建独立 lifecycle skill）已写入 §4.3。
+- 2026-05-04: Phase 4 完成 + Phase 5 转换期。新增 §2.2b，登记 7 份 5/4 新产出：Phase 4 完成报告 + 联机 smoke 收口 + 全下游 chat 派发地图 + ADR-PROTOCOL-INTERFACE-001（fork chat 产出）+ ADR-L1.5-SOURCE-DISPATCH-001（dsg/ 决策锁）+ 遗留问题汇总 + ConceptGraph 蒸馏任务包。INDEX.md §1.1 同步登记。

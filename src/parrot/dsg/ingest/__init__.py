@@ -7,8 +7,10 @@ filters land in Sprint 2:
     tool_result_filter.py        — identify_object hits (ratified)
     user_tag_filter.py           — Obsidian double-link sync (ratified)
     cv_track_filter.py           — A10 detections (tentative, P3+)
-    gemini_transcript_extractor  — NP + locative preposition extractor,
-                                   feeds text_source_filter
+    transcript_extractor         — pipeline-agnostic LLM transcript bridge,
+                                   feeds text_source_filter (Sprint 4 Phase 5+
+                                   Line B rename of gemini_transcript_extractor;
+                                   old module kept as alias shim)
 
 See `ar_feature_vision.md §3.6` for why this layer exists and how
 `DsgMode` activates different subsets.

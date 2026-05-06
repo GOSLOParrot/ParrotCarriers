@@ -94,6 +94,113 @@ def _create_manifest() -> ModuleManifest:
 server = AgentServer()
 
 
+# region pipeline selection (Sprint 4 Phase 5+ Line B, 2026-05-04)
+#
+# `PARROT_LLM_PIPELINE=line_a / line_b` env-gates the AgentSession
+# construction. Default = line_a (Gemini Live RealtimeModel — Phase 4 baseline,
+# fully validated). line_b uses livekit-agents STT-LLM-TTS pipeline with
+# Gemini text API + google.STT + google.TTS + silero.VAD (per
+# sprint4_pre_entry §双管线适配边界 + GAP-2 §options E trade-off).
+#
+# Failure mode: any unknown PARROT_LLM_PIPELINE value or any missing Line B
+# dependency raises explicitly at session build time. NO silent fallback to
+# line_a (per Phase 5+ chat task §2 spec); a misconfigured Line B run must
+# surface, not silently masquerade as Line A.
+#
+# This is the ONLY differential between Line A and Line B. All other wiring
+# (transcript listener, cognitive_state_tracker, DSG triggers, observers,
+# selection-C tool wrappers, etc.) is pipeline-agnostic.
+
+_PIPELINE_LINE_A = "line_a"
+_PIPELINE_LINE_B = "line_b"
+_DEFAULT_PIPELINE = _PIPELINE_LINE_A
+
+
+def _resolve_pipeline() -> str:
+    raw = os.getenv("PARROT_LLM_PIPELINE", _DEFAULT_PIPELINE).strip().lower()
+    if raw not in (_PIPELINE_LINE_A, _PIPELINE_LINE_B):
+        raise RuntimeError(
+            f"PARROT_LLM_PIPELINE={raw!r} invalid; expected {_PIPELINE_LINE_A!r} "
+            f"or {_PIPELINE_LINE_B!r} (default {_DEFAULT_PIPELINE!r})."
+        )
+    return raw
+
+
+def _build_session(pipeline: str, config: ParrotConfig) -> AgentSession:
+    """Construct AgentSession for the requested pipeline.
+
+    line_a: google.realtime.RealtimeModel (Gemini Live, multimodal native).
+    line_b: google.STT + google.LLM (Gemini text API) + google.TTS + silero.VAD.
+
+    Both yield an AgentSession that emits the same agent_state_changed /
+    user_input_transcribed / conversation_item_added events the rest of the
+    Brain wire-up (cognitive_state_tracker, transcript extractor,
+    context_injector C2/C3/C4) consumes.
+    """
+    if pipeline == _PIPELINE_LINE_A:
+        logger.info(
+            "Brain pipeline=line_a (Gemini Live): model=%s voice=%s",
+            config.gemini.live_model, config.gemini.live_voice,
+        )
+        return AgentSession(
+            llm=google.realtime.RealtimeModel(
+                voice=config.gemini.live_voice,
+                model=config.gemini.live_model,
+                api_key=config.google_api_key or None,
+            ),
+        )
+
+    # line_b — STT-LLM-TTS pipeline (no fallback if any plugin import fails).
+    #
+    # Auth note (FINDING-LB-AUTH, Sprint 4 Phase 5+ Line B 2026-05-04):
+    #   * google.LLM (Gemini text API)   → uses ``api_key`` (GOOGLE_API_KEY env)
+    #   * google.STT / google.TTS        → use Google Cloud ADC; require
+    #     ``GOOGLE_APPLICATION_CREDENTIALS`` to point at a service account
+    #     JSON with Speech-to-Text + Text-to-Speech roles.
+    # If ADC is unset, livekit-plugins-google will surface the credentials
+    # error at first STT/TTS invocation (after Room connect), not at Session
+    # construction. Surface this fast at boot so misconfigured deployments
+    # do not appear "connected but mute".
+    from livekit.plugins import silero
+
+    text_model = os.getenv("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
+    stt_model = os.getenv("GOOGLE_STT_MODEL", "latest_long")
+    stt_lang = os.getenv("GOOGLE_STT_LANGUAGES", "cmn-CN,en-US")
+    tts_voice = os.getenv("GOOGLE_TTS_VOICE", "cmn-CN-Wavenet-D")
+    tts_lang = os.getenv("GOOGLE_TTS_LANGUAGE", "cmn-CN")
+
+    api_key = config.google_api_key or None
+    if not api_key:
+        raise RuntimeError(
+            "PARROT_LLM_PIPELINE=line_b requires GOOGLE_API_KEY for google.LLM "
+            "(Gemini text API)."
+        )
+    if not (
+        os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        or os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    ):
+        logger.warning(
+            "PARROT_LLM_PIPELINE=line_b: GOOGLE_APPLICATION_CREDENTIALS not set — "
+            "google.STT / google.TTS will fail at first invocation. Set ADC to "
+            "a service account JSON with Speech-to-Text + Text-to-Speech roles."
+        )
+
+    languages = [s.strip() for s in stt_lang.split(",") if s.strip()] or ["cmn-CN"]
+    logger.info(
+        "Brain pipeline=line_b (STT-LLM-TTS): llm=%s stt=%s lang=%s tts_voice=%s",
+        text_model, stt_model, languages, tts_voice,
+    )
+    return AgentSession(
+        vad=silero.VAD.load(),
+        stt=google.STT(model=stt_model, languages=languages),
+        llm=google.LLM(model=text_model, api_key=api_key),
+        tts=google.TTS(language=tts_lang, voice_name=tts_voice),
+    )
+
+
+# endregion
+
+
 async def _set_goslo_mode(mode: str, session_id: str = "") -> None:
     """Write GOSLO body-mode signal to Redis Hash."""
     from datetime import datetime, timezone
@@ -109,27 +216,36 @@ async def _set_goslo_mode(mode: str, session_id: str = "") -> None:
     )
 
 
-def _attach_gemini_transcript_to_terminal(session: AgentSession) -> None:
-    """Gemini 侧用户转写与助手文本: 打终端 + 喂 DSG Ingest (Sprint 2 T7).
+def _attach_transcript_listener_to_session(session: AgentSession) -> None:
+    """LLM 侧用户转写与助手文本: 打终端 + 喂 DSG Ingest.
+
+    Sprint 2 T7 wiring. **Pipeline-agnostic** (Sprint 4 Phase 5+ Line B,
+    2026-05-04): both Gemini Live (Line A) and STT-LLM-TTS (Line B) emit
+    the same ``user_input_transcribed`` / ``conversation_item_added``
+    events on AgentSession, so this hook works for both.
 
     Two sinks per event (order matters — terminal log runs even if the
     Ingest path is missing a Graphiti/L2-B dep, because the logs are what
     ops actually watches):
 
         1. terminal print + logger.info            (Sprint 1 behaviour)
-        2. GeminiTranscriptExtractor.feed_transcript (Sprint 2 T7)
+        2. TranscriptExtractor.feed_transcript     (Sprint 2 T7)
 
     The extractor drops status/context echoes itself (see sprint2_plan
     §9.N3), so we just forward everything we see here.
+
+    The terminal label still says ``[Gemini·…]`` because the LLM provider
+    in both Line A and Line B is Gemini (Realtime vs text API). When
+    DeepSeek V4 / other LLMs land as a third Line, revisit the label.
     """
     try:
-        from parrot.dsg.ingest.gemini_transcript_extractor import (
-            get_gemini_transcript_extractor,
+        from parrot.dsg.ingest.transcript_extractor import (
+            get_transcript_extractor,
         )
-        extractor = get_gemini_transcript_extractor()
+        extractor = get_transcript_extractor()
     except Exception:
         extractor = None
-        logger.warning("Gemini transcript extractor unavailable — DSG ingest disabled")
+        logger.warning("transcript extractor unavailable — DSG ingest disabled")
 
     @session.on("user_input_transcribed")
     def _on_user_transcribed(ev: UserInputTranscribedEvent) -> None:
@@ -294,18 +410,9 @@ async def brain_entrypoint(ctx: agents.JobContext):
     # endregion
 
     assistant = ParrotAssistant()
-    logger.info(
-        "Brain Gemini Live: model=%s voice=%s",
-        config.gemini.live_model, config.gemini.live_voice,
-    )
-    session = AgentSession(
-        llm=google.realtime.RealtimeModel(
-            voice=config.gemini.live_voice,
-            model=config.gemini.live_model,
-            api_key=config.google_api_key or None,
-        ),
-    )
-    _attach_gemini_transcript_to_terminal(session)
+    pipeline = _resolve_pipeline()
+    session = _build_session(pipeline, config)
+    _attach_transcript_listener_to_session(session)
 
     # Sprint4 Phase 4 W3 (entry doc §8.1 L10 selection-C):
     # Mirror Gemini agent_state_changed → BB tick/cognitive_state so

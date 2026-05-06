@@ -6,6 +6,12 @@ All triggers follow the same lifecycle:
   3. on_tick() — periodic execution (called by trigger runner)
   4. on_event(event) — react to a specific event
   5. results → either mutate L2-B graph directly, or dispatch to Nanobot
+
+DSG-TRIGGER-V2 (2026-05-06):
+  TriggerOutcome supersedes TriggerResult (alias kept for back-compat).
+  New 5 upload-channel fields (commit_observations / bucket_ops /
+  archive_request / staged_refs / plan_request) let triggers participate
+  in the GOSLO "subconscious协作面" without bypassing IngestRunner.
 """
 
 from __future__ import annotations
@@ -17,6 +23,11 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from parrot.brain.intent_workspace import StagedRefRequest
+    from parrot.brain.plan import PlanProposal
+    from parrot.dsg.archive.conversation import ArchiveRequest
+    from parrot.dsg.ingest.base import Observation
+    from parrot.dsg.l1_5.buckets import BucketOp
     from parrot.dsg.l2b_graph import L2BGraph
 
 logger = logging.getLogger(__name__)
@@ -30,8 +41,17 @@ class TriggerKind(str, Enum):
 
 
 @dataclass
-class TriggerResult:
-    """What a trigger produced — for reporting to Gemini via Context Injector."""
+class TriggerOutcome:
+    """What a trigger produced.
+
+    Legacy 7 fields (Phase 4) reach the Brain Context Injector +
+    Scheduler / Nanobot path unchanged. New 5 fields (DSG-TRIGGER-V2)
+    flow into L1.5 Pool / IntentWorkspace / Plan / Archive subsystems.
+
+    See dsg_protocol_trigger_v2_20260506.md § 2 for the contract.
+    """
+
+    # ── Legacy 7 (Phase 4) ──
     trigger_name: str = ""
     summary: str = ""
     nodes_affected: list[str] = field(default_factory=list)
@@ -39,6 +59,17 @@ class TriggerResult:
     nanobot_task: dict[str, Any] | None = None
     notify_gemini: bool = False
     notification_text: str = ""
+
+    # ── DSG-TRIGGER-V2 upload channels ──
+    commit_observations: tuple["Observation", ...] = ()
+    bucket_ops: tuple["BucketOp", ...] = ()
+    archive_request: "ArchiveRequest | None" = None
+    staged_refs: tuple["StagedRefRequest", ...] = ()
+    plan_request: "PlanProposal | None" = None
+
+
+# Back-compat alias — existing 4 triggers keep working unchanged.
+TriggerResult = TriggerOutcome
 
 
 class BaseTrigger(ABC):
@@ -54,17 +85,17 @@ class BaseTrigger(ABC):
         self._run_count: int = 0
 
     @abstractmethod
-    async def on_startup(self) -> TriggerResult | None:
+    async def on_startup(self) -> TriggerOutcome | None:
         """Called once when the Brain Agent starts. Return None to skip."""
         ...
 
     @abstractmethod
-    async def on_tick(self) -> TriggerResult | None:
+    async def on_tick(self) -> TriggerOutcome | None:
         """Called periodically (interval_seconds). Return None if nothing to do."""
         ...
 
     @abstractmethod
-    async def on_event(self, event: dict[str, Any]) -> TriggerResult | None:
+    async def on_event(self, event: dict[str, Any]) -> TriggerOutcome | None:
         """Called when a relevant event occurs. Return None if not interested."""
         ...
 

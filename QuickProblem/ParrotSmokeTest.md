@@ -1,0 +1,1 @@
+1.找到问题根因了。Brain 用 @server.rtc_session()（无 agentName），但我们的 token 在 roomConfig 里指定了 agentName: "parrot-brain"——两边不匹配，LiveKit 找不到对应 worker，job 没有 dispatch。

@@ -52,6 +52,11 @@ _SOURCE_PRIORITY: dict[ObservationSource, int] = {
     ObservationSource.USER_TAG_OBSIDIAN: 100,
     ObservationSource.USER_EXPLICIT: 95,
     ObservationSource.IDENTIFY_OBJECT: 80,
+    # GOSLO_AUTONOMOUS sits between user-asked (IDENTIFY_OBJECT=80)
+    # and passive CV (CV_A10=60). Master § 3.3: GOSLO self-initiated
+    # findings rank lower than user-prompted ones, higher than passive
+    # CV detections so curiosity beats periodic re-identification.
+    ObservationSource.GOSLO_AUTONOMOUS: 70,
     ObservationSource.CV_A10: 60,
     ObservationSource.CV_SENTINEL: 40,
     ObservationSource.GEMINI_ORAL: 30,
@@ -166,7 +171,16 @@ class IngestRunner:
                 actor="dsg.ingest.runner",
             )
 
-            # TODO(S4.B): write-back to Graphiti here for CONFIRMED nodes.
+            # DSG-ARCHIVE-V1 (2026-05-06): NEVER write-back to Graphiti
+            # here. CONFIRMED nodes flow through the three-phase delayed
+            # archive pipeline:
+            #   Phase 1 (this method): commit only to L2-B in-memory +
+            #     L1.5 Pool metadata.
+            #   Phase 2 (ConversationArchive.serialize): on conversation
+            #     boundary, dump to disk.
+            #   Phase 3 (nanobot idle, IdleArchiveTrigger): unified_filter
+            #     + LLM → Graphiti.
+            # See dsg_protocol_archive_v1_20260506.md.
 
             return changed
         except Exception:

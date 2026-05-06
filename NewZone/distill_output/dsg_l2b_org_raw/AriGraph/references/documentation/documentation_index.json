@@ -1,0 +1,16 @@
+{
+  "total_files": 1,
+  "categories": {
+    "overview": [
+      "README.md"
+    ]
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "filename": "README.md",
+      "category": "overview",
+      "size_bytes": 4756
+    }
+  ]
+}

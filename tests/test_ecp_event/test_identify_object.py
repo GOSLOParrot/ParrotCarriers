@@ -20,9 +20,19 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-# Mock LiveKit RunContext — identify_object decorator wraps with
-# function_tool, so we test the underlying coroutine via _func.
-from parrot.brain.tools import identify_object as id_module
+# BUG-T1 fix (2026-05-04): both of these fail because parrot.brain.tools.__init__.py
+# does `from .identify_object import identify_object`, which registers a *FunctionTool*
+# on the package namespace under the name "identify_object".  When Python resolves
+# `import parrot.brain.tools.identify_object as id_module` or
+# `from parrot.brain.tools import identify_object as id_module`, attribute lookup on
+# the package returns the FunctionTool — not the submodule — so `._match_staged`
+# raises AttributeError at collection time.
+#
+# Fix: bypass the package namespace entirely and import the submodule via importlib,
+# which always returns the module object (not the shadowing FunctionTool attribute).
+import importlib
+
+id_module = importlib.import_module("parrot.brain.tools.identify_object")
 from parrot.brain.tools._budget import SegmentResult
 
 

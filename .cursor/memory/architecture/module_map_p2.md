@@ -510,22 +510,30 @@ Brain Agent (Gemini Live)
 | 层 | 类比 | 职责 | 数据结构 | 当前现状 |
 |:---|:-----|:-----|:---------|:---------|
 | **L1** | 视网膜 (Retina) | 原始感知 → Detection/Pose/Hand | 帧级数据流 | **PLANNED** (A10 上跑 SAM2+DINOv2, 未启动) |
-| **L1.5** | 视觉皮层 | A10 / Sentinel 残血版输出, 过滤到 L2 之前 | Detection 列表 | **PLANNED** (Sprint 2 起) |
+| **L1.5** | 视觉皮层 | 多源 Node 出口管理面（Bucket / RefTable / Timeline / SceneRegistry） | `dsg.l1_5/` 子包 7 文件 | ✅ **IMPLEMENTED**（DSG-POOL-V1，2026-05-06）|
 | **L2-A** | 背侧通路 (Where) | 空间拓扑: Object→Surface→Zone | RustworkX 空间图 | **PLANNED** (P3) |
-| **L2-B** | 腹侧通路 (What) | 语义注意力 + 关联 + 新旧判定 | RustworkX 语义图 (`l2b_graph.py`) | ✅ **IMPLEMENTED** (P2.5) |
+| **L2-B** | 腹侧通路 (What) | 语义注意力 + 关联 + Compartment 视图 + IntentEvent 边界 | RustworkX 语义图 (`l2b_graph.py`) + `dsg.l2b/` 子包 | ✅ **IMPLEMENTED**（P2.5 + DSG-INTENT-EVENT-V1，2026-05-06）|
 | **L3** | 前额叶 (Narrative) | 观察者聚合 + 事件叙事 + Graphiti 归档 | ObservationLog (Redis Stream) + Graphiti | **PLANNED** (Sprint 1 S1.E 铺日志, P3 做观察者) |
 
 ### 10.2 现在能做什么 / 不能做什么
 
-**能做 (P2.5 已实现)**:
-- L2-B 语义记忆: 物体标签/关联/新物体发现
-- L2-B 触发器: 4 个 (Calendar / Message / SSOTEnrichment / SceneContext)
-- 对话归档: `conversation_writer` → Graphiti
+**能做 (DSG-POOL-V1 + 8 份协议落地后, 2026-05-06)**:
+- L2-B 语义记忆: 物体标签/关联/新物体发现 + Compartment lazy view（5 轴：bucket / event / scene / location / kind）
+- L1.5 Pool: AdmissionPolicy strategy + 6 个默认 Bucket + RefTable + Timeline + SceneRegistry
+- L2-B 触发器: 4 legacy + 5 new (Scene / IntentEvent / Roleplay / Curiosity / IdleArchive) = 9 个
+- TriggerOutcome 7 路上行（2 legacy + 5 新通道）
+- 对话延迟归档: 三阶段管线（hot / cold / nanobot 闲时归档）+ ConversationBoundary 多信号 OR
+- IntentWorkspace: GOSLO Intent 层大文件常驻（9 StagedRefKind + InMemory/Disk Backend）
+- Plan-and-Execute: 8 状态机 + IntentWorkspace 主存 + L2-B 镜像（reuse `NodeKind.EVENT`）
+- 注意力: 字段层 (既有 SemanticNode 字段) + 机制层 strategy（限深 BFS baseline + Spreading Activation 占位）
 
-**不能做 (Sprint 0-4 内不做)**:
-- ❌ L1 真实视觉识别 (需 A10, 属 Sprint 2+)
+**不能做 (Sprint 0-4 内不做, 留 Chat 4 / P3)**:
+- ❌ L1 真实视觉识别 (需 A10, 属 P3+)
 - ❌ L2-A 空间拓扑 (需 AR 真机数据, P3)
-- ❌ L3 四观察者 (P3, Sprint 1 只铺 ObservationLog 日志)
+- ❌ L3 四观察者 (P3)
+- ❌ Plan UI wire（用户在 Unity 确认 Plan）— 留 P3 wire ADR
+- ❌ 真闲时归档 LLM 蒸馏 → Graphiti（接口就位，调用未连）— 留 Chat 4
+- ❌ NanobotTask 真派发（Plan.start_executing 仅标 DISPATCHED，未调 dispatch_task）— 留 Chat 4
 
 ### 10.3 DSG 工作模式 (两轴正交, 详见 `ar_feature_vision.md §3.6`)
 
@@ -533,6 +541,75 @@ Brain Agent (Gemini Live)
 - **DsgMode** (DSG 工作模式): DSG_TEXT_ONLY / DSG_GEMINI_VISION / DSG_FULL / DSG_SENTINEL_AUX
 
 两轴独立切换, A10 关闭时 DSG 仍能部分工作。Sprint 2 实现。
+
+### 10.4 模块依赖架构图（DSG L1.5 升级后，2026-05-06）
+
+```
+                     ┌──────────────────────────────────────────┐
+                     │            Triggers (9 个 in ALL)         │
+                     │  legacy 4 + new 5 (Scene/Intent/Roleplay/ │
+                     │  Curiosity/IdleArchive)                   │
+                     └──────────────┬───────────────────────────┘
+                                    │ TriggerOutcome (7 channels)
+                                    ▼
+              ┌─────────────────────────────────────────────────┐
+              │           TriggerRunner._process_result          │
+              │  → bucket_ops          → L1.5 Pool                │
+              │  → commit_observations → L1.5 Pool.admit          │
+              │  → staged_refs         → IntentWorkspace.stage    │
+              │  → archive_request     → Archive.dispatch         │
+              │  → plan_request        → PlanRegistry.draft       │
+              │  → dispatch_to_nanobot → Scheduler+Nanobot (旧)   │
+              │  → notify_gemini       → Brain Context Injector(旧) │
+              └────────────────────────┬────────────────────────┘
+                    ┌──────────────┬───┴───┬──────────────┬───────────────┐
+                    ▼              ▼       ▼              ▼               ▼
+        ┌──────────────────┐ ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+        │   L1.5 Pool      │ │  L2-B   │ │ Archive  │ │ Intent-  │ │  Plan    │
+        │ (parrot.dsg.l1_5)│ │ (l2b_   │ │ (parrot. │ │Workspace │ │ Registry │
+        │                  │ │  graph) │ │ dsg.     │ │ (parrot. │ │ (parrot. │
+        │ Buckets×6        │ │ +views  │ │ archive) │ │ brain)   │ │ brain.   │
+        │ RefTable         │ │ +Compart│ │          │ │          │ │ plan)    │
+        │ Timeline         │ │ +Intent │ │ 3-Phase  │ │ 9 Kinds  │ │ 8 States │
+        │ SceneRegistry    │ │ Event   │ │ Pipeline │ │ Backend  │ │ Plan-and │
+        │ AdmissionPolicy  │ │ Boundary│ │ Boundary │ │ Strategy │ │ -Execute │
+        │ (Desktop)        │ │ Handler │ │ Detector │ │          │ │          │
+        └────────┬─────────┘ └────┬────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘
+                 │                │           │            │            │
+                 │ admit() 内部委托│           │            │            │
+                 ▼                │           │            │            │
+        ┌──────────────────┐      │           │            │            │
+        │ IngestRunner     │      │           │            │            │
+        │ commit_observation│     │           │            │            │
+        │ (single L2-B 写门)│      │           │            │            │
+        └────────┬─────────┘      │           │            │            │
+                 │                │           │            │            │
+                 ▼                ▼           │            │            │
+        ┌────────────────────────────────────┐│            │            │
+        │     L2BGraph (single PyDiGraph)     ││            │            │
+        │  SemanticNode + 4 informational tags││            │            │
+        │  (bucket_id / event_id / scene_type ││            │            │
+        │   / location_tag) + 既有字段全保留   │             │            │
+        └────────────────────────────────────┘│            │            │
+                                              │            │            │
+                          ┌───────────────────┘            │            │
+                          ▼                                ▼            ▼
+                    ┌─────────────────────────────────────────────────────┐
+                    │  Conversation 归档管线 (Phase 2 / 3)                 │
+                    │  hot → 序列化到 data/conversations/{conv_id}/*.jsonl │
+                    │  → IdleArchiveTrigger → unified_filter + LLM →      │
+                    │  → Graphiti.add_episode (Phase 3)                   │
+                    └─────────────────────────────────────────────────────┘
+```
+
+**关键不变量（实测落地）**:
+- **L1.5 不持节点**：BucketRegistry 仅持 node_uuid set；节点本体在 L2BGraph
+- **Ingest 唯一写门**：所有 L2-B 写入经 IngestRunner（preload 例外）
+- **Plan 主存 IntentWorkspace + L2-B 镜像**：reuse `NodeKind.EVENT`，不动 Phase 4 § 8 L1 enum
+- **5 路上行通道**：触发器协作面纯 Python 内部，不动 Unity wire
+- **测试基线 0 漂移**：Phase 4 § 8 13 锁 + cs_parity 4/4 + ADR-L1.5-001 11/11 全护
+
+详见 [`architecture/dsg/dsg_l1_5_pool_and_lifecycle_design_20260506.md`](dsg/dsg_l1_5_pool_and_lifecycle_design_20260506.md) §2 模块布局 + 完成报告 [`architecture/dsg/dsg_l1_5_implementation_completion_20260506.md`](dsg/dsg_l1_5_implementation_completion_20260506.md)。
 
 ---
 

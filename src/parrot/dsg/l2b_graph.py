@@ -169,16 +169,27 @@ class L2BGraph:
     # ━━━ Episode management ━━━
 
     def start_episode(self, title: str = "", trigger_source: str = "") -> EpisodeMarker:
-        """Begin a new episode. Closes and archives the previous one if open."""
+        """Begin a new episode.
+
+        DSG-ARCHIVE-V1 § 5.1 (2026-05-06): the previous episode is
+        **not** immediately archived to Graphiti anymore. It is
+        enqueued into the idle-archive disk queue and processed by
+        ``IdleArchiveTrigger`` when the nanobot worker is idle.
+
+        ``archive_episode_to_graphiti`` itself is preserved; it is
+        invoked by ``ConversationArchive.archive_to_graphiti`` during
+        Phase 3 of the delayed-archive pipeline.
+        """
         if self._current_episode_id:
             old_ep = self.close_current_episode()
             if old_ep:
-                import asyncio
                 try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(self.archive_episode_to_graphiti(old_ep.episode_id))
-                except RuntimeError:
-                    pass
+                    from parrot.dsg.archive.conversation import (
+                        enqueue_episode_for_idle_archive,
+                    )
+                    enqueue_episode_for_idle_archive(old_ep.episode_id)
+                except Exception:
+                    logger.exception("L2B: enqueue_for_idle_archive failed")
 
         ep = EpisodeMarker(title=title, trigger_source=trigger_source)
         self._episodes[ep.episode_id] = ep

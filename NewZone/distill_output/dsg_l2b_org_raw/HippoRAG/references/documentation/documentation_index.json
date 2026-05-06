@@ -1,0 +1,50 @@
+{
+  "total_files": 5,
+  "categories": {
+    "contributing": [
+      "CONTRIBUTING.md"
+    ],
+    "overview": [
+      "README.md"
+    ],
+    "other": [
+      "reproduce\\README.md",
+      "src\\hipporag\\evaluation\\README.md"
+    ],
+    "templates": [
+      "src\\hipporag\\prompts\\templates\\README.md"
+    ]
+  },
+  "files": [
+    {
+      "path": "CONTRIBUTING.md",
+      "filename": "CONTRIBUTING.md",
+      "category": "contributing",
+      "size_bytes": 2295
+    },
+    {
+      "path": "README.md",
+      "filename": "README.md",
+      "category": "overview",
+      "size_bytes": 17917
+    },
+    {
+      "path": "reproduce\\README.md",
+      "filename": "README.md",
+      "category": "other",
+      "size_bytes": 88
+    },
+    {
+      "path": "src\\hipporag\\evaluation\\README.md",
+      "filename": "README.md",
+      "category": "other",
+      "size_bytes": 34
+    },
+    {
+      "path": "src\\hipporag\\prompts\\templates\\README.md",
+      "filename": "README.md",
+      "category": "templates",
+      "size_bytes": 693
+    }
+  ]
+}

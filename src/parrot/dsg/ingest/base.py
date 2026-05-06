@@ -42,9 +42,16 @@ from parrot.shared.snapshot import BBox
 class ObservationSource(str, Enum):
     """Ultimate origin of the observation.
 
-    Ordered roughly by default authority (USER > IDENTIFY_OBJECT > GEMINI_ORAL
-    > CV_*). Actual TENTATIVE / CONFIRMED mapping is filter-specific; see
-    `Observation.confirmation`.
+    Ordered roughly by default authority (USER > IDENTIFY_OBJECT >
+    GOSLO_AUTONOMOUS > CV_* > GEMINI_ORAL). Actual TENTATIVE / CONFIRMED
+    mapping is filter-specific; see `Observation.confirmation`.
+
+    Additive history (do not change existing values — Phase 4 § 8 + LineB
+    § 1.3 lock both rely on the seven baseline strings):
+        Phase 4 W3 (2026-04): seven baseline entries below.
+        DSG-POOL-V1 (2026-05-06): + ``GOSLO_AUTONOMOUS`` for self-initiated
+        curiosity (master § 3.3, brain_protocol_plan_v1 § 3 PlanProposal
+        path). Pure addition; no value rename, no value re-order.
     """
 
     USER_TAG_OBSIDIAN = "user_tag_obsidian"
@@ -54,6 +61,7 @@ class ObservationSource(str, Enum):
     CV_A10 = "cv_a10"
     CV_SENTINEL = "cv_sentinel"
     MOCK = "mock"
+    GOSLO_AUTONOMOUS = "goslo_autonomous"
 
 
 class Observation(BaseModel):

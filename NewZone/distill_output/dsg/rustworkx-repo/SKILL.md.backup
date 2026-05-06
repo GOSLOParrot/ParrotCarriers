@@ -1,0 +1,387 @@
+---
+name: rustworkx-repo
+description: Local codebase analysis for rwx-clone
+doc_version: 
+---
+
+# rwx-clone Codebase
+
+## Description
+
+Local codebase analysis and documentation generated from code analysis.
+
+**Path:** `C:\Users\Bin\AppData\Local\Temp\rwx-clone`
+**Files Analyzed:** 0
+**Languages:** 
+**Analysis Depth:** surface
+
+## When to Use This Skill
+
+Use this skill when you need to:
+- Understand the codebase architecture and design patterns
+- Find implementation examples and usage patterns
+- Review API documentation extracted from code
+- Check configuration patterns and best practices
+- Explore test examples and real-world usage
+- Navigate the codebase structure efficiently
+
+## ⚡ Quick Reference
+
+### Codebase Statistics
+
+**Languages:**
+
+**Analysis Performed:**
+- ✅ API Reference (C2.5)
+- ✅ Dependency Graph (C2.6)
+- ✅ Design Patterns (C3.1)
+- ✅ Test Examples (C3.2)
+- ✅ Configuration Patterns (C3.4)
+- ✅ Architectural Analysis (C3.7)
+- ✅ Project Documentation (C3.9)
+
+### 🎨 Design Patterns Detected
+
+*From C3.1 codebase analysis (confidence > 0.7)*
+
+- **Strategy**: 1 instances
+- **Builder**: 1 instances
+
+*Total: 2 high-confidence patterns*
+
+*See `references/patterns/` for complete pattern analysis*
+
+## 📝 Code Examples
+
+*High-quality examples extracted from test files (C3.2)*
+
+**Workflow: test is isomorphic nodes compare raises** (complexity: 1.00)
+
+```python
+dag_a = rustworkx.PyDAG()
+dag_b = rustworkx.PyDAG()
+node_a = dag_a.add_node('a_1')
+dag_a.add_child(node_a, 'a_2', 'a_1')
+dag_a.add_child(node_a, 'a_3', 'a_2')
+node_b = dag_b.add_node('b_1')
+dag_b.add_child(node_b, 'b_2', 'b_1')
+dag_b.add_child(node_b, 'b_3', 'b_2')
+
+def compare_nodes(a, b):
+    raise TypeError('Failure')
+self.assertRaises(TypeError, rustworkx.is_isomorphic, (dag_a, dag_b, compare_nodes))
+```
+
+**Workflow: test deepcopy with holes returns graph** (complexity: 1.00)
+
+```python
+dag_a = rustworkx.PyGraph()
+node_a = dag_a.add_node('a_1')
+node_b = dag_a.add_node('a_2')
+dag_a.add_edge(node_a, node_b, 'edge_1')
+node_c = dag_a.add_node('a_3')
+dag_a.add_edge(node_b, node_c, 'edge_2')
+dag_a.remove_node(node_b)
+dag_b = copy.deepcopy(dag_a)
+self.assertIsInstance(dag_b, rustworkx.PyGraph)
+self.assertEqual([node_a, node_c], dag_b.node_indexes())
+```
+
+**Workflow: test deepcopy with holes returns graph** (complexity: 1.00)
+
+```python
+dag_a = rustworkx.PyGraph()
+node_a = dag_a.add_node('a_1')
+node_b = dag_a.add_node('a_2')
+dag_a.add_edge(node_a, node_b, 'edge_1')
+node_c = dag_a.add_node('a_3')
+dag_a.add_edge(node_b, node_c, 'edge_2')
+dag_a.remove_node(node_b)
+dag_b = copy.deepcopy(dag_a)
+self.assertIsInstance(dag_b, rustworkx.PyGraph)
+self.assertEqual([node_a, node_c], dag_b.node_indexes())
+```
+
+**Workflow: test dagcircuit basic** (complexity: 1.00)
+
+```python
+dag = rustworkx.PyDAG()
+qr_0_in = dag.add_node('qr[0]')
+qr_0_out = dag.add_node('qr[0]')
+qr_1_in = dag.add_node('qr[1]')
+qr_1_out = dag.add_node('qr[1]')
+cr_0_in = dag.add_node('cr[0]')
+cr_0_out = dag.add_node('cr[0]')
+cr_1_in = dag.add_node('cr[1]')
+cr_1_out = dag.add_node('cr[1]')
+input_nodes = [qr_0_in, qr_1_in, cr_0_in, cr_1_in]
+h_gate = dag.add_child(qr_0_in, 'h', 'qr[0]')
+cx_gate = dag.add_child(h_gate, 'cx', 'qr[0]')
+dag.add_edge(qr_1_in, cx_gate, 'qr[1]')
+measure_qr_1 = dag.add_child(cx_gate, 'measure', 'qr[1]')
+dag.add_edge(cr_1_in, measure_qr_1, 'cr[1]')
+x_gate = dag.add_child(measure_qr_1, 'x', 'qr[1]')
+dag.add_edge(measure_qr_1, x_gate, 'cr[1]')
+dag.add_edge(cr_0_in, x_gate, 'cr[0]')
+measure_qr_0 = dag.add_child(cx_gate, 'measure', 'qr[0]')
+dag.add_edge(measure_qr_0, qr_0_out, 'qr[0]')
+dag.add_edge(measure_qr_0, cr_0_out, 'cr[0]')
+dag.add_edge(x_gate, measure_qr_0, 'cr[0]')
+measure_qr_1_out = dag.add_child(x_gate, 'measure', 'cr[1]')
+dag.add_edge(x_gate, measure_qr_1_out, 'qr[1]')
+dag.add_edge(measure_qr_1_out, qr_1_out, 'qr[1]')
+dag.add_edge(measure_qr_1_out, cr_1_out, 'cr[1]')
+res = rustworkx.layers(dag, input_nodes)
+expected = [['qr[0]', 'qr[1]', 'cr[0]', 'cr[1]'], ['h'], ['cx'], ['measure'], ['x'], ['measure', 'measure'], ['cr[1]', 'qr[1]', 'cr[0]', 'qr[0]']]
+self.assertEqual(expected, res)
+```
+
+**Workflow: test dagcircuit basic index output** (complexity: 1.00)
+
+```python
+dag = rustworkx.PyDAG()
+qr_0_in = dag.add_node('qr[0]')
+qr_0_out = dag.add_node('qr[0]')
+qr_1_in = dag.add_node('qr[1]')
+qr_1_out = dag.add_node('qr[1]')
+cr_0_in = dag.add_node('cr[0]')
+cr_0_out = dag.add_node('cr[0]')
+cr_1_in = dag.add_node('cr[1]')
+cr_1_out = dag.add_node('cr[1]')
+input_nodes = [qr_0_in, qr_1_in, cr_0_in, cr_1_in]
+h_gate = dag.add_child(qr_0_in, 'h', 'qr[0]')
+cx_gate = dag.add_child(h_gate, 'cx', 'qr[0]')
+dag.add_edge(qr_1_in, cx_gate, 'qr[1]')
+measure_qr_1 = dag.add_child(cx_gate, 'measure', 'qr[1]')
+dag.add_edge(cr_1_in, measure_qr_1, 'cr[1]')
+x_gate = dag.add_child(measure_qr_1, 'x', 'qr[1]')
+dag.add_edge(measure_qr_1, x_gate, 'cr[1]')
+dag.add_edge(cr_0_in, x_gate, 'cr[0]')
+measure_qr_0 = dag.add_child(cx_gate, 'measure', 'qr[0]')
+dag.add_edge(measure_qr_0, qr_0_out, 'qr[0]')
+dag.add_edge(measure_qr_0, cr_0_out, 'cr[0]')
+dag.add_edge(x_gate, measure_qr_0, 'cr[0]')
+measure_qr_1_out = dag.add_child(x_gate, 'measure', 'cr[1]')
+dag.add_edge(x_gate, measure_qr_1_out, 'qr[1]')
+dag.add_edge(measure_qr_1_out, qr_1_out, 'qr[1]')
+dag.add_edge(measure_qr_1_out, cr_1_out, 'cr[1]')
+res = rustworkx.layers(dag, input_nodes, index_output=True)
+expected = [[qr_0_in, qr_1_in, cr_0_in, cr_1_in], [h_gate], [cx_gate], [measure_qr_1], [x_gate], [measure_qr_1_out, measure_qr_0], [cr_1_out, qr_1_out, cr_0_out, qr_0_out]]
+self.assertEqual(expected, res)
+```
+
+**Workflow: test dagcircuit basic** (complexity: 1.00)
+
+```python
+dag = rustworkx.PyDAG()
+qr_0_in = dag.add_node('qr[0]')
+qr_0_out = dag.add_node('qr[0]')
+qr_1_in = dag.add_node('qr[1]')
+qr_1_out = dag.add_node('qr[1]')
+cr_0_in = dag.add_node('cr[0]')
+cr_0_out = dag.add_node('cr[0]')
+cr_1_in = dag.add_node('cr[1]')
+cr_1_out = dag.add_node('cr[1]')
+input_nodes = [qr_0_in, qr_1_in, cr_0_in, cr_1_in]
+h_gate = dag.add_child(qr_0_in, 'h', 'qr[0]')
+cx_gate = dag.add_child(h_gate, 'cx', 'qr[0]')
+dag.add_edge(qr_1_in, cx_gate, 'qr[1]')
+measure_qr_1 = dag.add_child(cx_gate, 'measure', 'qr[1]')
+dag.add_edge(cr_1_in, measure_qr_1, 'cr[1]')
+x_gate = dag.add_child(measure_qr_1, 'x', 'qr[1]')
+dag.add_edge(measure_qr_1, x_gate, 'cr[1]')
+dag.add_edge(cr_0_in, x_gate, 'cr[0]')
+measure_qr_0 = dag.add_child(cx_gate, 'measure', 'qr[0]')
+dag.add_edge(measure_qr_0, qr_0_out, 'qr[0]')
+dag.add_edge(measure_qr_0, cr_0_out, 'cr[0]')
+dag.add_edge(x_gate, measure_qr_0, 'cr[0]')
+measure_qr_1_out = dag.add_child(x_gate, 'measure', 'cr[1]')
+dag.add_edge(x_gate, measure_qr_1_out, 'qr[1]')
+dag.add_edge(measure_qr_1_out, qr_1_out, 'qr[1]')
+dag.add_edge(measure_qr_1_out, cr_1_out, 'cr[1]')
+res = rustworkx.layers(dag, input_nodes)
+expected = [['qr[0]', 'qr[1]', 'cr[0]', 'cr[1]'], ['h'], ['cx'], ['measure'], ['x'], ['measure', 'measure'], ['cr[1]', 'qr[1]', 'cr[0]', 'qr[0]']]
+self.assertEqual(expected, res)
+```
+
+**Workflow: test dagcircuit basic index output** (complexity: 1.00)
+
+```python
+dag = rustworkx.PyDAG()
+qr_0_in = dag.add_node('qr[0]')
+qr_0_out = dag.add_node('qr[0]')
+qr_1_in = dag.add_node('qr[1]')
+qr_1_out = dag.add_node('qr[1]')
+cr_0_in = dag.add_node('cr[0]')
+cr_0_out = dag.add_node('cr[0]')
+cr_1_in = dag.add_node('cr[1]')
+cr_1_out = dag.add_node('cr[1]')
+input_nodes = [qr_0_in, qr_1_in, cr_0_in, cr_1_in]
+h_gate = dag.add_child(qr_0_in, 'h', 'qr[0]')
+cx_gate = dag.add_child(h_gate, 'cx', 'qr[0]')
+dag.add_edge(qr_1_in, cx_gate, 'qr[1]')
+measure_qr_1 = dag.add_child(cx_gate, 'measure', 'qr[1]')
+dag.add_edge(cr_1_in, measure_qr_1, 'cr[1]')
+x_gate = dag.add_child(measure_qr_1, 'x', 'qr[1]')
+dag.add_edge(measure_qr_1, x_gate, 'cr[1]')
+dag.add_edge(cr_0_in, x_gate, 'cr[0]')
+measure_qr_0 = dag.add_child(cx_gate, 'measure', 'qr[0]')
+dag.add_edge(measure_qr_0, qr_0_out, 'qr[0]')
+dag.add_edge(measure_qr_0, cr_0_out, 'cr[0]')
+dag.add_edge(x_gate, measure_qr_0, 'cr[0]')
+measure_qr_1_out = dag.add_child(x_gate, 'measure', 'cr[1]')
+dag.add_edge(x_gate, measure_qr_1_out, 'qr[1]')
+dag.add_edge(measure_qr_1_out, qr_1_out, 'qr[1]')
+dag.add_edge(measure_qr_1_out, cr_1_out, 'cr[1]')
+res = rustworkx.layers(dag, input_nodes, index_output=True)
+expected = [[qr_0_in, qr_1_in, cr_0_in, cr_1_in], [h_gate], [cx_gate], [measure_qr_1], [x_gate], [measure_qr_1_out, measure_qr_0], [cr_1_out, qr_1_out, cr_0_out, qr_0_out]]
+self.assertEqual(expected, res)
+```
+
+**Workflow: test single source all shortest paths zero weight** (complexity: 1.00)
+
+```python
+graph = rustworkx.PyGraph()
+nodes = graph.add_nodes_from([0, 1, 2, 3])
+graph.add_edge(nodes[0], nodes[1], 0.0)
+graph.add_edge(nodes[1], nodes[2], 0.0)
+graph.add_edge(nodes[2], nodes[0], 0.0)
+graph.add_edge(nodes[2], nodes[3], 1.0)
+source = nodes[0]
+shortest_lengths = rustworkx.dijkstra_shortest_path_lengths(graph, source, lambda x: x)
+
+def path_weight(path):
+    total = 0.0
+    for i in range(len(path) - 1):
+        edge_data = graph.get_edge_data(path[i], path[i + 1])
+        total += edge_data
+    return total
+expected = {source: [[source]]}
+for target in graph.nodes():
+    if target != source:
+        paths = rustworkx.all_simple_paths(graph, source, target)
+        expected_paths = [path for path in paths if path_weight(path) == shortest_lengths[target]]
+        expected[target] = expected_paths
+paths = rustworkx.graph_single_source_all_shortest_paths(graph, source)
+for node in expected:
+    self.assertEqual(sorted(paths[node]), sorted(expected[node]))
+```
+
+**Workflow: test single source all shortest paths zero weight** (complexity: 1.00)
+
+```python
+graph = rustworkx.PyGraph()
+nodes = graph.add_nodes_from([0, 1, 2, 3])
+graph.add_edge(nodes[0], nodes[1], 0.0)
+graph.add_edge(nodes[1], nodes[2], 0.0)
+graph.add_edge(nodes[2], nodes[0], 0.0)
+graph.add_edge(nodes[2], nodes[3], 1.0)
+source = nodes[0]
+shortest_lengths = rustworkx.dijkstra_shortest_path_lengths(graph, source, lambda x: x)
+
+def path_weight(path):
+    total = 0.0
+    for i in range(len(path) - 1):
+        edge_data = graph.get_edge_data(path[i], path[i + 1])
+        total += edge_data
+    return total
+expected = {source: [[source]]}
+for target in graph.nodes():
+    if target != source:
+        paths = rustworkx.all_simple_paths(graph, source, target)
+        expected_paths = [path for path in paths if path_weight(path) == shortest_lengths[target]]
+        expected[target] = expected_paths
+paths = rustworkx.graph_single_source_all_shortest_paths(graph, source)
+for node in expected:
+    self.assertEqual(sorted(paths[node]), sorted(expected[node]))
+```
+
+**Workflow: test remove nodes from** (complexity: 1.00)
+
+```python
+graph = rustworkx.PyGraph()
+node_a = graph.add_node('a')
+node_b = graph.add_node('b')
+graph.add_edge(node_a, node_b, 'Edgy')
+node_c = graph.add_node('c')
+graph.add_edge(node_b, node_c, 'Edgy_mk2')
+graph.remove_nodes_from([node_b, node_c])
+res = graph.nodes()
+self.assertEqual(['a'], res)
+self.assertEqual([0], graph.node_indexes())
+```
+
+*See `references/test_examples/` for all extracted examples*
+
+## ⚙️ Configuration Patterns
+
+*From C3.4 configuration analysis*
+
+**Configuration Files Analyzed:** 280
+**Total Settings:** 588
+**Patterns Detected:** 0
+
+**Configuration Types:**
+- unknown: 280 files
+
+*See `references/config_patterns/` for detailed configuration analysis*
+
+## 📖 Project Documentation
+
+*Extracted from markdown files in the project (C3.9)*
+
+**Total Documentation Files:** 46
+**Categories:** 8
+
+### Overview
+
+- **README.md** (`README.md`)
+
+### Guides
+
+- **betweenness_centrality.rst** (`docs\source\tutorial\betweenness_centrality.rst`)
+- **dags.rst** (`docs\source\tutorial\dags.rst`)
+- **index.rst** (`docs\source\tutorial\index.rst`)
+- **introduction.rst** (`docs\source\tutorial\introduction.rst`)
+
+### Api
+
+- **centrality.rst** (`docs\source\api\algorithm_functions\centrality.rst`)
+- **coloring.rst** (`docs\source\api\algorithm_functions\coloring.rst`)
+- **connectivity_and_cycles.rst** (`docs\source\api\algorithm_functions\connectivity_and_cycles.rst`)
+- **dag_algorithms.rst** (`docs\source\api\algorithm_functions\dag_algorithms.rst`)
+- **dominance.rst** (`docs\source\api\algorithm_functions\dominance.rst`)
+- *...and 21 more*
+
+### Community
+
+- **CODE_OF_CONDUCT.md** (`CODE_OF_CONDUCT.md`)
+
+### Contributing
+
+- **CONTRIBUTING.md** (`CONTRIBUTING.md`)
+
+### Other
+
+- **PULL_REQUEST_TEMPLATE.md** (`.github\PULL_REQUEST_TEMPLATE.md`)
+- **benchmarks.rst** (`docs\source\benchmarks.rst`)
+- **CONTRIBUTING.md** (`docs\source\CONTRIBUTING.md`)
+- **index.rst** (`docs\source\index.rst`)
+- **install.rst** (`docs\source\install.rst`)
+- *...and 4 more*
+
+*See `references/documentation/` for all project documentation*
+
+## 📚 Available References
+
+This skill includes detailed reference documentation:
+
+- **Dependencies**: `references/dependencies/` - Dependency graph and analysis
+- **Patterns**: `references/patterns/` - Detected design patterns
+- **Examples**: `references/test_examples/` - Usage examples from tests
+- **Configuration**: `references/config_patterns/` - Configuration patterns
+- **Documentation**: `references/documentation/` - Project documentation
+
+---
+
+**Generated by Skill Seeker** | Codebase Analyzer with C3.x Analysis

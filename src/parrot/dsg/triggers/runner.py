@@ -17,7 +17,7 @@ import logging
 import time
 
 from parrot.dsg.l2b_graph import L2BGraph, get_l2b_graph
-from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerResult
+from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerOutcome, TriggerResult
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class TriggerRunner:
         if self._event_task:
             self._event_task.cancel()
 
-    async def fire_event(self, event: dict) -> list[TriggerResult]:
+    async def fire_event(self, event: dict) -> list[TriggerOutcome]:
         """Manually fire an event to all EVENT_DRIVEN triggers."""
         results = []
         for t in self._triggers:
@@ -137,24 +137,113 @@ class TriggerRunner:
         except Exception:
             logger.exception("TriggerRunner: event loop error")
 
-    async def _process_result(self, result: TriggerResult) -> None:
-        """Process a trigger result: log, update context, optionally tell Gemini."""
+    async def _process_result(self, result: TriggerOutcome) -> None:
+        """Process a TriggerOutcome (DSG-TRIGGER-V2 § 4).
+
+        Order is fixed (avoid inter-channel dependency races):
+            1. bucket_ops              影响 admit 路由
+            2. commit_observations     入 L1.5 池
+            3. staged_refs             stage 大文件
+            4. archive_request         入归档队列
+            5. plan_request            draft Plan
+            6. dispatch_to_nanobot     既有 — 后台任务
+            7. notify_gemini           既有 — 上报 Brain
+        Each channel is wrapped in its own try/except so a failure in
+        one channel does not block the others.
+        """
         logger.info(
-            "Trigger [%s]: %s (nodes=%d, nanobot=%s, notify=%s)",
+            "Trigger [%s]: %s (nodes=%d, nanobot=%s, notify=%s, "
+            "obs=%d, bucket_ops=%d, refs=%d, archive=%s, plan=%s)",
             result.trigger_name,
             result.summary,
             len(result.nodes_affected),
             result.dispatch_to_nanobot,
             result.notify_gemini,
+            len(result.commit_observations),
+            len(result.bucket_ops),
+            len(result.staged_refs),
+            "yes" if result.archive_request else "no",
+            "yes" if result.plan_request else "no",
         )
 
+        # ── 1. bucket_ops ──
+        if result.bucket_ops:
+            try:
+                from parrot.dsg.l1_5 import get_l1_5_pool
+                pool = get_l1_5_pool()
+                for op in result.bucket_ops:
+                    op_result = await pool.apply_bucket_op(op)
+                    if not op_result.success:
+                        logger.warning(
+                            "bucket_op failed: %s — %s", op, op_result.error,
+                        )
+            except Exception:
+                logger.exception("bucket_ops dispatch failed")
+
+        # ── 2. commit_observations ──
+        # Route through L15Pool.admit so triggers get full pool
+        # bookkeeping (bucket assignment + RefTable bind + Timeline
+        # marker). Pool internally calls IngestRunner._merge / _commit
+        # so the Phase 4 invariants (Ingest = sole L2-B write gate)
+        # remain intact.
+        if result.commit_observations:
+            try:
+                from parrot.dsg.l1_5 import get_l1_5_pool
+                pool = get_l1_5_pool()
+                await pool.admit(tuple(result.commit_observations))
+            except Exception:
+                logger.exception("commit_observations dispatch failed")
+
+        # ── 3. staged_refs ──
+        if result.staged_refs:
+            try:
+                from parrot.brain.intent_workspace import get_intent_workspace
+                ws = get_intent_workspace()
+                for req in result.staged_refs:
+                    await ws.stage(req)
+            except Exception:
+                logger.exception("staged_refs dispatch failed")
+
+        # ── 4. archive_request ──
+        if result.archive_request is not None:
+            try:
+                from parrot.dsg.archive import dispatch_archive_request
+                await dispatch_archive_request(result.archive_request)
+            except Exception:
+                logger.exception("archive_request dispatch failed")
+
+        # ── 5. plan_request ──
+        if result.plan_request is not None:
+            try:
+                from parrot.brain.plan import get_plan_registry
+                registry = get_plan_registry()
+                await registry.draft(result.plan_request)
+            except Exception:
+                logger.exception("plan_request dispatch failed")
+
+        # ── 6. dispatch_to_nanobot (legacy) ──
+        if result.dispatch_to_nanobot and result.nanobot_task:
+            try:
+                from parrot.brain.tools.dispatch_task import do_dispatch_task
+                task_type = result.nanobot_task.get("task_type", "")
+                params = result.nanobot_task.get("params", {})
+                priority = result.nanobot_task.get("priority", "normal")
+                if task_type:
+                    await do_dispatch_task(task_type, params, priority=priority)
+            except Exception:
+                logger.exception("nanobot dispatch failed for %s", result.trigger_name)
+
+        # ── 7. notify_gemini (legacy) ──
         if result.notify_gemini and result.notification_text and self._session:
             try:
                 await self._session.generate_reply(
                     instructions=result.notification_text
                 )
             except Exception:
-                logger.debug("TriggerRunner: failed to notify Gemini for %s", result.trigger_name)
+                logger.debug(
+                    "TriggerRunner: failed to notify Gemini for %s",
+                    result.trigger_name,
+                )
 
 
 _runner: TriggerRunner | None = None

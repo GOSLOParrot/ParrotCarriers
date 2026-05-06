@@ -67,6 +67,25 @@ _EXPECTED_SCHEMA_VERSION = "ecp.v2.alpha"  # EcpStateDto.schema_version constant
 
 _bb: "py_trees.blackboard.Client | None" = None
 
+# ── sequence_id dedup state (BUG-P3, 2026-05-04) ────────────────────────────
+# Tracks the last accepted sequence_id per unity_identity so that duplicate
+# packets (e.g. Publisher sends the same 1Hz tick twice during reconnect
+# handoff) are dropped before reaching BB.
+#
+# Design:
+#   • key   = unity_identity (str from EcpStateDto)
+#   • value = last processed sequence_id (int)
+#   • Skip condition: incoming seq <= last AND the gap is small (≤ DEDUP_WINDOW).
+#     A large jump backwards means Publisher restarted (boot) — accept it and
+#     reset tracking.  Without a boot_id (BUG-U2) we can't distinguish these
+#     perfectly, but the window makes the heuristic cheap and low-risk.
+#
+# NOTE: This does NOT deduplicate across Publisher restarts.  That requires
+# BUG-U2 (boot_id field in EcpStateDto).  For now we only handle the simple
+# "same packet delivered twice" scenario.
+_last_seq: dict[str, int] = {}
+_DEDUP_WINDOW = 10  # treat as restart if backwards gap exceeds this value
+
 # ── observability counters ───────────────────────────────────────────────────
 _metrics: dict[str, int] = {
     "received_count": 0,
@@ -75,6 +94,8 @@ _metrics: dict[str, int] = {
     "schema_version_mismatch": 0,
     "bb_write_failures": 0,
     "foreign_topic_ignored": 0,
+    # BUG-P3: duplicate packets dropped by (identity, sequence_id) dedup
+    "duplicate_skipped": 0,
 }
 
 
@@ -84,11 +105,13 @@ def get_metrics_snapshot() -> dict[str, int]:
 
 
 def reset_metrics_for_tests() -> None:
-    """Reset all counters and BB client — call in pytest setup only."""
+    """Reset all counters, dedup state and BB client — call in pytest setup only."""
     global _bb
     for k in _metrics:
         _metrics[k] = 0
     _bb = None
+    # BUG-P3: also wipe the per-identity dedup tracker so tests are isolated
+    _last_seq.clear()
 
 
 # ── BB client ────────────────────────────────────────────────────────────────
@@ -149,7 +172,30 @@ def _on_ecp_state_packet(data: bytes | str) -> None:
         )
         return
 
-    # 4. Write to BB session/ecp_state (complete dict — consumers pick fields)
+    # 4. Sequence-id dedup (BUG-P3, 2026-05-04): drop packets whose sequence_id
+    #    has already been processed for this unity_identity.  This prevents the
+    #    "Publisher sends the same 1Hz tick twice during reconnect" scenario from
+    #    producing redundant BB writes.
+    #
+    #    We skip dedup when either field is absent/zero (cold start or old Unity).
+    #    We treat a large backwards jump (> _DEDUP_WINDOW) as a Publisher restart
+    #    and reset tracking rather than silently dropping valid new packets.
+    unity_identity = str(obj.get("unity_identity", "") or "")
+    seq = int(obj.get("sequence_id", 0) or 0)
+    if unity_identity and seq:
+        last = _last_seq.get(unity_identity, -1)
+        if 0 <= last - seq < _DEDUP_WINDOW:
+            # seq is equal to, or slightly behind, last accepted — duplicate
+            _metrics["duplicate_skipped"] += 1
+            logger.debug(
+                "[ecp_state_ingest] duplicate seq=%d (last=%d identity=%r) — skipped",
+                seq, last, unity_identity,
+            )
+            return
+        # Accept: seq > last, or backwards jump (Publisher restart)
+        _last_seq[unity_identity] = seq
+
+    # 5. Write to BB session/ecp_state (complete dict — consumers pick fields)
     #    writer = "brain._rpc_bridge" as declared in bb_schema.py:178
     try:
         bb = _ensure_bb()
@@ -219,8 +265,36 @@ def attach_ecp_state_ingest(room: Room) -> None:
     )
 
 
+# ── disconnect helper (BUG-P4, 2026-05-04) ───────────────────────────────────
+
+
+def clear_bb_ecp_state() -> None:
+    """Write None to BB session/ecp_state on room disconnect.
+
+    Called from ``brain.agent._on_room_disconnected`` (BUG-P4 fix) so that
+    ``_state_context.get_state_snapshot()`` cannot serve stale EcpState data
+    from the previous session during the reconnect gap.
+
+    The next ``_on_ecp_state_packet`` call (within 1 s of reconnect, per L1
+    1Hz lock) will overwrite this with fresh Unity-side data.
+
+    Design note: we intentionally write None rather than {} so that
+    ``_state_context`` path that reads ``session/ecp_state`` can distinguish
+    "never received" from "stale cleared" — both collapse to the same
+    ``active_locks=[] / active_command_id=None`` default, but the log entry
+    helps debug reconnect timing issues.
+    """
+    try:
+        bb = _ensure_bb()
+        bb.set(_BB_KEY, None)
+        logger.debug("[ecp_state_ingest] BB %s cleared on disconnect (BUG-P4)", _BB_KEY)
+    except Exception:
+        logger.debug("[ecp_state_ingest] clear_bb_ecp_state failed", exc_info=True)
+
+
 __all__ = [
     "attach_ecp_state_ingest",
+    "clear_bb_ecp_state",
     "get_metrics_snapshot",
     "reset_metrics_for_tests",
 ]

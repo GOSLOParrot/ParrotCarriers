@@ -65,3 +65,5 @@ FilePort/
 *.zip
 # Root-only: legacy local harness (was `Test/` — on Windows that also ignored `docs/test/`)
 /Test/
+*.token.txt
+unity_join_token.txt
