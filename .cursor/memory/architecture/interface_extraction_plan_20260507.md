@@ -1,8 +1,12 @@
 ---
-status: draft / pending-user-signoff
-category: planning
-status_note: "Chat 4 实施前置 — 需求 / 能力 / 接口 / 协议 提炼方案规划稿。本稿不实施代码；产出后 user sign off → fork 进 ADR-PROTOCOL-INTERFACE-001 §7.1 描述的实施阶段。"
+status: superseded-by-pivot
+category: planning-history
+status_note: "⚠️ 2026-05-07 Pivot：Chat 4 接口提炼任务 pivot — 49 文件产出基本是 reorganize 已有 doc，user 决定止损转向 app 实施。本规划稿仅作历史决策追溯保留（Q9-Q13 sign-offs + amendment 方法论修正）；正式 SSOT 收口产物 → [`module_map_p4_snapshot.md`](module_map_p4_snapshot.md) + [`../protocol_snapshot_p4.md`](../protocol_snapshot_p4.md) + [`../interfaces/README.md`](../interfaces/README.md)（保留 4 件高价值文件）。"
 last_reviewed: 2026-05-07
+superseded_by:
+  - "architecture/module_map_p4_snapshot.md (架构 SSOT)"
+  - "protocol_snapshot_p4.md (协议 SSOT)"
+  - "interfaces/README.md (Pivot 说明)"
 parent_doc: "../INDEX.md"
 parent_launch_prompt: "chat4_interface_refinement_launch_prompt_20260507.md"
 adr_input: "adr_protocol_upgrade_and_interface_refinement_background_20260504.md"

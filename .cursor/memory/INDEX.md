@@ -1,8 +1,9 @@
 ﻿# ParrotCarriers 全局索引
 
 > 用途: 项目唯一真相源，供 Cursor 与用户快速定位关键信息
-> 更新: 2026-05-07 (DSG Chat 2 + GOSLO 模块化 双 chat 收口 → 跨 chat 待办登记表落地；408/408 pytest；Phase 4 §8 + cs_parity 4/4 + ADR-L1.5-001 11/11 三守护通过；模块化产出 14 + 改动 5 + 新测试 118/57)
+> 更新: 2026-05-07 (Chat 4 接口提炼 pivot → SSOT 双件落地：`architecture/module_map_p4_snapshot.md` + `protocol_snapshot_p4.md`)
 > 路由: 由 `.cursor/rules/workspace.mdc` (alwaysApply) 指向本文件
+> **当前阶段**: Sprint 4 Phase 4 收口 + DSG Chat 2 + GOSLO mod + Chat 4 接口提炼 pivot → 转向 **App 实施**（接口在实施中浮现）
 
 **全局约定**:
 - **事实源**: 只有 `.cursor/memory/**`。`docs/InfoCollections/**` 是**文档库/考古资料**, 按需 `@` 引用, 不作事实源。
@@ -21,7 +22,9 @@
 
 | # | 文件 | 读什么 |
 |:--|:-----|:-------|
-| 1 | `.cursor/memory/architecture/module_map_p2.md` | **全景架构入口** — §〇 项目边界 / §一 模块清单 / §二 数据流 / §九 外挂生态 / §十 DSG 分层 / §十一 时间轴 |
+| 0a | ⭐ `.cursor/memory/architecture/module_map_p4_snapshot.md` | **🆕 当前架构 SSOT 速查**（2026-05-07 Pivot 后产）— 单图速查：部署拓扑 + 模块状态表（含 status: ratified / experimental / proposed-new）+ 三层 Bus + 三条主数据流 + cs_parity 守护。详细 module 清单仍看 module_map_p2.md。|
+| 0b | ⭐ `.cursor/memory/protocol_snapshot_p4.md` | **🆕 当前协议全集 SSOT**（2026-05-07 Pivot 后产）— §1-§28 全协议 reference：5 LiveKit topic / EcpEvent envelope + 13 EcpEventType / EcpState/Ack/Command / 7 RPC method / RefBinding 4+4 / NodeKind 6 + EdgeKind 8 / BB 26 keys / 4 行为 enum + RESERVED_PARROT_CAPABILITY_IDS / GOSLO ModelManifest / Photo 双通道 / HTTP / Redis 3 类 / Graphiti 5 分区 / 6 BucketKind / 9 StagedRefKind / 9 触发器 + TriggerOutcome 5+2 路上行 / Phase 4 §8 13 锁 reference / cs_parity 4/4 守护 / 27 项 upgrade backlog 入口。|
+| 1 | `.cursor/memory/architecture/module_map_p2.md` | **详细全景架构** — §〇 项目边界 / §一 模块清单 / §二 数据流 / §九 外挂生态 / §十 DSG 分层 / §十一 时间轴（保留作 detail；快速速查看 0a）|
 | 2 | `.cursor/memory/active_context.md` | 头部 + 本周关键路径 (先确认自己在哪一步) |
 | 3 | `.cursor/memory/architecture/sprint4_pre_entry_prompt_and_plan.md` | Sprint4 前置、测试束隔离、数据流 / 协议 V2 / 后端接口提炼 |
 | 4 | `.cursor/memory/architecture/sprint4_protocol_ecp_background_20260429.md` | Sprint4 协议 / ECP 背景锚点：用户原话、RIT/BT/BT 森林关系、DSG/Graphiti/Obsidian/Ref 边界 |

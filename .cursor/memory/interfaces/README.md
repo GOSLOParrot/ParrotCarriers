@@ -1,87 +1,68 @@
 ---
-status: skeleton
-category: interface-overview
+status: ratified-salvage
+category: working-notes
+status_note: "Chat 4 接口提炼任务 pivot 后保留的 4 件高价值文件。其余 44 件（wire / cross / in / capability / inventory / sync / 元接口 / INDEX / README / TODO 等）已删除——它们基本上是已有 doc 的 reorganization 而非新价值。"
 last_reviewed: 2026-05-07
-ai_priority: high
+parent_doc: "../INDEX.md"
+ai_priority: medium
 ai_audience: both
 ---
 
-# Chat 4 接口提炼工作区 — README
+# Interfaces 工作区 — Pivot 后保留区
 
-> ParrotCarriers 接口提炼成果 single-source-of-truth 工作区。
+> **Pivot 说明（2026-05-07）**：Chat 4 "接口提炼"任务最初产出 49 文件，但绝大多数是把已有协议 / 完成报告 / behavior_rules / DSG 协议等内容 reorganize 成"接口面"视角——**没有产生新价值**，反而让 INDEX 冗余。User 决定止损，转向**直接推进 App 实施**，让接口在实施中自然浮现。
 >
-> 本目录回答：「这个项目里到底有哪些接口？谁是 producer？谁是 consumer？哪些 locked / evolving / proposed？怎么扩展？」
+> **保留 4 件**因为它们在已有 doc 之外有独立价值；其余 44 件已删除。
+>
+> **正式 SSOT 收口**：
+> - 架构图 → [`../architecture/module_map_p4_snapshot.md`](../architecture/module_map_p4_snapshot.md)
+> - 协议全集 → [`../protocol_snapshot_p4.md`](../protocol_snapshot_p4.md)
 
 ---
 
-## 目录树速览
+## §1 保留的 4 件 + 1 sync
 
-```
-.cursor/memory/interfaces/
-├── INDEX.md                       # 单一真源入口（先读）
-├── README.md                      # 顶层导览（你正在读）
-├── methodology.md                 # 方法论原则（不反推代码！driver 优先）
-├── TODO.md                        # 主时间线（接口章节作主时间轴）
-│
-├── needs_inventory.md             # Stage 1 — 需求清单（4-B-req）
-├── app_flow_inventory.md          # Stage 1 — App 流程清单（4-B-req）
-├── capabilities_inventory.md      # Stage 2 — 能力四态表（4-B-cap）
-│
-├── wire/                          # Stage 3 — 跨语言接口
-├── cross_process/                 # Stage 3 — Castle 边界外
-├── in_process/                    # Stage 3 — Brain Python 内
-├── capability/                    # Stage 2 末段 — 能力层副维度
-│
-├── upgrade_roadmap.md             # Stage 4 — 缺口 + 漂移 + upgrade plan
-├── deprecation.md                 # 接口废弃流程
-├── extension_points.md            # 第三方扩展占位
-├── schema_evolution.md            # schema_version 演进
-├── change_impact_table.md         # 变更影响表
-│
-└── _sync/                         # sub-chat 同步报告 + grep 验证
-```
+| 文件 | 价值 | 何时用 |
+|:--|:--|:--|
+| [`methodology.md`](methodology.md) | "不反推代码 + driver 优先 + status 5 态"通用编码原则 | 任何写设计 doc / 接口 spec 时 |
+| [`upgrade_roadmap.md`](upgrade_roadmap.md) | 18 项整合 backlog（5 high + 8 mid + 5 low），与 cross-chat-registry 对账 | 推下游 chat 时 |
+| [`change_impact_table.md`](change_impact_table.md) | "改 X 影响 Y"通用 reference table | 改协议 / wire / enum 前回查 |
+| [`_sync/grep_verification_20260507.md`](_sync/grep_verification_20260507.md) | 真审计发现：13 attach helpers vs 5 doc / 命名漂（AttentionDecayStrategy vs AttentionDecayPolicy）| 引用为 audit 证据 |
 
 ---
 
-## 关键阅读顺序
+## §2 已删除的 44 件（不可恢复，git 可追）
 
-1. [`methodology.md`](methodology.md) — **必读**，方法论原则（driver 优先 + 不反推代码）
-2. [`INDEX.md`](INDEX.md) — 全局接口索引
-3. [`TODO.md`](TODO.md) — 主时间线（当前进度 + 下一步）
-4. 按主题进入：`needs_inventory.md` / `app_flow_inventory.md` → `capabilities_inventory.md` → 各拓扑边界子目录
-5. 完成判据：`../architecture/interface_extraction_plan_20260507.md` §8
+按目录：
 
----
-
-## 设计原则速记
-
-| 原则 | 一句话 |
-|:--|:--|
-| **driver 优先** | 拓扑边界（分类）+ App 流程 + 需求 + 能力（内容）→ 接口（derived）|
-| **不反推代码** | 既有代码 = 参考 / 升级起点 / 验证锚点；不允许"代码这样写所以接口这样" |
-| **0 漂移守 Phase 4 §8** | 13 决策锁 / cs_parity 4/4 / ADR-L1.5-001 §4.1 三触发器 |
-| **subdir 隔离** | 每 sub-chat 仅写自己拓扑层子目录；INDEX 由主 chat merge |
-| **frontmatter 9 字段强制** | `driven_by` / `upgrade_from` / `producer` / `consumer` / `freeze_test` 等强制填 |
-| **status 5 态** | `locked` / `evolving` / `experimental` / `proposed-upgrade` / `proposed-new` |
+| 目录 / 类型 | 数 | 删除理由 |
+|:--|:--:|:--|
+| `wire/*.md` | 9 | reorganize Phase 4 §8 + completion 报告 — 已在 protocol_snapshot_p4 收口 |
+| `cross_process/*.md` | 6 | reorganize bus_v4 + protocol_snapshot_p1 — 同上 |
+| `in_process/*.md` | 10 | reorganize completion 报告 — 同上 |
+| `capability/*.md` | 7 | reorganize behavior_rules + parrot_actions enums — 已在 protocol_snapshot_p4 收口 |
+| `needs_inventory.md` + `app_flow_inventory.md` | 2 | reorganize requirements.md + ar_app_flow_ui_design.md |
+| `capabilities_inventory.md` | 1 | reorganize 已有 + 6 场景模拟（场景成 app 实施时的天然 test case，不需独立 doc）|
+| `deprecation.md` + `extension_points.md` + `schema_evolution.md` | 3 | template-only，价值低 |
+| `INDEX.md` + `README.md` + `TODO.md` | 3 | pivot 后无意义 |
+| `_sync/4-B-{req,cap,wire}_completion.md` + `interface_extraction_completion_20260507.md` | 4 | sync 历史，无 forward 价值 |
+| **总** | **44** | |
 
 ---
 
-## 与项目其他工作区关系
+## §3 Pivot 后下一步
 
-| 工作区 | 关系 |
-|:--|:--|
-| `.cursor/memory/architecture/` | 接口提炼**输入**（ADR / decision-locks / completion-reports / 协议设计稿）|
-| `.cursor/memory/architecture/dsg/` | DSG 设计 chat 工作区（接口提炼读 DSG 7 协议作输入）|
-| `.cursor/memory/lore/ideas.md` | 灵感来源（人类手写，AI 只读）|
-| `.cursor/skills/` | 外部技术能力（接口提炼引用 skill 但不在这里维护）|
-| `src/parrot/` 源码 | **验证锚点**（不反推） |
-| `unity/ArSpike/Assets/Scripts/ParrotApp/` | C# wire mirror（cs_parity 守）|
+User 直接进入 **app 实施**。接口在实施中自然浮现：
+
+- 写代码时遇到的具体接口问题，**就地修**（修代码 + 同步 protocol_snapshot_p4 §x 章节）
+- 不再追求"先写接口 doc 再写代码"
+- methodology.md §2 的"不反推代码"原则**仍然适用**（不要看 X 已经怎么写的就锁成正式接口；问"为什么这样设计"）
 
 ---
 
-## 父引用
+## §4 关联
 
-- 规划稿：[`../architecture/interface_extraction_plan_20260507.md`](../architecture/interface_extraction_plan_20260507.md)
-- launch prompt：[`../architecture/chat4_interface_refinement_launch_prompt_20260507.md`](../architecture/chat4_interface_refinement_launch_prompt_20260507.md)
-- ADR：[`../architecture/adr_protocol_upgrade_and_interface_refinement_background_20260504.md`](../architecture/adr_protocol_upgrade_and_interface_refinement_background_20260504.md)
-- 跨 chat 待办登记：[`../architecture/cross_chat_pending_registry_20260507.md`](../architecture/cross_chat_pending_registry_20260507.md)
+- 父 INDEX：[`../INDEX.md`](../INDEX.md)
+- Pivot 后正式 SSOT：[`../architecture/module_map_p4_snapshot.md`](../architecture/module_map_p4_snapshot.md) + [`../protocol_snapshot_p4.md`](../protocol_snapshot_p4.md)
+- 上游规划稿（标 superseded）：[`../architecture/interface_extraction_plan_20260507.md`](../architecture/interface_extraction_plan_20260507.md)
+- 跨 chat 待办登记表：[`../architecture/cross_chat_pending_registry_20260507.md`](../architecture/cross_chat_pending_registry_20260507.md)

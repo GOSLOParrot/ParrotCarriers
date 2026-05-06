@@ -1,5 +1,17 @@
 # 当前进度与下一步
 
+> ⚠ **2026-05-07 Pivot — 转向 App 实施**：Chat 4"接口提炼"任务 pivot；49 文件产出基本 reorganize 已有 doc，止损改向**直接推进 App 实施 + 代码编写**。接口在实施中自然浮现。
+>
+> **新 SSOT 双件**（替代接口提炼工作）：
+> - 架构图 → [`architecture/module_map_p4_snapshot.md`](architecture/module_map_p4_snapshot.md) — 单一清晰最新模块架构 + 三条主路径 + 模块状态表
+> - 协议全集 → [`protocol_snapshot_p4.md`](protocol_snapshot_p4.md) — Sprint 4 收口 + DSG Chat 2 + GOSLO mod 全协议 SSOT（§1-§28，含 13 EcpEventType / 26 BB keys / 8 enum / Phase 4 §8 13 锁等）
+>
+> **`.cursor/memory/interfaces/`**：保留 4 件高价值（methodology.md / upgrade_roadmap.md / change_impact_table.md / _sync/grep_verification_20260507.md）；其余 44 件已删（详 [`interfaces/README.md`](interfaces/README.md) §2）。
+>
+> **下一步**：直接进入 App 实施。upgrade_roadmap.md §1（Chat 4 4-A 实施轨 5 项）+ 既有 NEED-* 标签是 backlog；遇到具体接口问题就地修代码 + 同步 protocol_snapshot_p4。
+>
+> ---
+>
 > ⚠ **2026-05-04 重大更新**：Sprint 4 Phase 4 **整体收口完成** + 联机 smoke 通过 + Phase 5 入场转换包就绪。下面 §0 是当前权威入场点，旧 4/29 内容（§1+ 起）保留作历史。
 >
 > **2026-05-04 追加**：DSG 工作区已建立（`architecture/dsg/`），作为 DSG 系列设计 chat（L1.5 池 / lifecycle / L2-B 简单升级 / Phase 5+ A10 接入）的 SSOT 入场点，与 AR 工作区（`ar_workspace_index.md`）对位。Chat 2 启动前先读 `architecture/dsg/workspace_index.md` + `dsg_current_state_distilled.md`。
