@@ -74,6 +74,60 @@ ParrotDev 与 ArSpike 同时存在期间，ECP 协议代码以 ArSpike 为准；
 | `architecture/ar_camera_interaction_survey.md` | AR 摄影互动问卷（已回填，不再改） |
 | `architecture/ar_skill_seekers_distillation_report.md` | AR Foundation 5.1 蒸馏报告（一次性产物） |
 
+### 2.2c GOSLO 模块化报告（2026-05-07 补充索引）
+
+| 文件 | 角色 |
+|:--|:--|
+| `architecture/goslo_model_manifest_protocol_v1.md` | **GOSLO ModelManifest 协议 v1** — 自定义模型作者接入 SSOT；schema 字段 / IParrotController / capability 注册 / MMD 端到端 walkthrough |
+| `architecture/goslo_modularization_completion_20260506.md` | **GOSLO 模块化完成报告** — Step 1-5 + 1.5 暗线审计；ModelManifest + IParrotController + ModelDriver + GosloLegacyController + AI CLI；415 pytest + Phase 4 §8 0 漂移 |
+| `architecture/goslo_modularization_residual_debt_20260506.md` | **GOSLO 残余债审计** — 7 类 parrot-isms + p2.5/p3 前瞻需求注记；**4 类块菜单画布构想**（§4.3 model/persona/mode/scene + 预设 + 节点画布）+ Chat 4 接口提炼输入素材 |
+| `architecture/goslo_model_modularization_launch_prompt_20260506.md` | GOSLO 模块化任务启动 prompt（历史参考）|
+
+### 2.3 ECP 协议 / 安全策略文档索引（2026-05-07 补充）
+
+| 文件 | 角色 |
+|:--|:--|
+| `architecture/sprint4_phase4_entry_20260430.md §8` | **Phase 4 §8 13 决策锁**（wire / 通道 / 阈值 / 8KB / dedup — authoritative；不可动）|
+| `../protocol_snapshot_p4.md` | **全协议 SSOT**（28 章：EcpEvent / EcpCommand / EcpAck / EcpState / RefBinding / BB key / ObservationSource / BucketKind / StagedRefKind / Trigger V2 / LineB env-gate）|
+| `architecture/sprint4_phase4_completion_and_final_audit_20260430.md` | Phase 4 完成报告 + 协议契约最终态 §3 |
+| `architecture/adr_protocol_upgrade_and_interface_refinement_background_20260504.md` | ADR-PROTOCOL-INTERFACE-001 — 协议升级总结 + 接口提炼任务输入 |
+| `architecture/adr_l1_5_source_dispatch_extension_space_20260504.md` | ADR-L1.5-SOURCE-DISPATCH-001 — SemanticNode.source / meta+factory / chat 路径锁 |
+| 数据流安全策略（5 条）| ① 8KB 红线 + 60s dedup ② Photo 双通道 ③ Echo 全链路（防阈值漂移）④ LineB 无 silent fallback ⑤ reliable / lossy / RPC 三通道速率红线 — 见 `protocol_snapshot_p4 §23` + `app_completion_master_audit §0 TL;DR` |
+
+### 2.5 Interface 工作区文档（2026-05-07 新增）
+
+> **触发**：App 完成度审计总 chat 产出，与 AR 工作区 + DSG 工作区共同消费。
+
+| 文件 | 角色 |
+|:--|:--|
+| **`architecture/Interface/interface_design_and_how_todo_v0_20260507.md`** | 接口设计 v0（12 场景 + 4 横切）— Sonnet 4.6 抄码主表 |
+| **`architecture/Interface/interface_design_supplement_20260507.md`** | v0 补丁（7 项新发现）+ 完整性确认 + 文档索引段落 |
+| **`architecture/Interface/concept_dictionary_20260507.md`** | ≈100 项术语 + 设计文档路由指引 |
+| **`architecture/Interface/legacy_issues_split_20260507.md`** | 遗留问题 P2.5/P3 二分（含**新 P2.5**：2D 工作区 nanobot 汇报 + Google 日程批改 + 工作区模块连接）|
+| **`architecture/Interface/menu_design_complete_20260507.md`** | **完整菜单设计 SSOT** — 三层架构（启动页/HUD/工具柜/节点画布）+ 4 类块（Model/Persona/Mode/Scene）+ 预设系统 + 海盗换肤 + 像素画素材清单按菜单细分 |
+
+### 2.6 App 完成度审计 + Sub-Chat 入场 prompt（2026-05-07）
+
+| 文件 | 角色 |
+|:--|:--|
+| `architecture/app_completion_master_audit_20260507.md` | **App 完成度总 chat 主 doc** — 8 场景对账 + 5 发现 + Sub-Chat A/B 派发 + 像素画 UI 资产清单（9 类 30+ 项） |
+| `architecture/app_flow_requirements_interface_chat_launch_prompt_20260507.md` | **Sub-Chat A 启动 prompt**（用户视角）— 已加新 P2.5 子任务（T-A1-T-A5：2D 工作区入口流程 + Google 日程批改流程）|
+| `architecture/backend_interface_refinement_chat_launch_prompt_20260507.md` | **Sub-Chat B 启动 prompt**（模块视角）— 已加新 P2.5 子任务（T-B1-T-B7：Google 日程桶联动后端 + 工作区模块连接接口）|
+
+### 2.7 菜单画布 + GOSLO 模块化 + 新 P2.5 需求（2026-05-07）
+
+**新需求明细**（user 2026-05-07 钦定 P2.5 额外完成）：
+
+| 需求 | 设计决策 | 关联文件 |
+|:--|:--|:--|
+| 菜单画布 4 类块（Model/Persona/Mode/Scene）| NEED-P3-B/C/D/E；先完成 NEED-P2.5-A persona 外置 | `Interface/menu_design_complete §3-§5` |
+| 动画素材收集（像素画资产）| user 自管美术；占位推进；资产清单见 §6 | `app_completion_master_audit §6` + `Interface/menu_design_complete §7` |
+| GOSLO 模块化挂载自定义模型协议 | ✅ 已落地（ModelManifest + IParrotController + AI CLI）| `goslo_model_manifest_protocol_v1.md` |
+| **2D 独立工作区**（nanobot 汇报批改 + Google 日程批改）| P2.5 新增：普通 HUD 入口（简单按钮）+ 2D 工作区（Paper Please 风）| `Interface/legacy_issues_split §1.10` |
+| 2D 工作区模块连接（所见即所得）| 类菜单画布设计；连上不同模块（GOSLO=IntentWorkspace / 黑板 / Nanobot）| Sub-Chat A T-A5 + Sub-Chat B T-B7 |
+| Google 日程批改联动 | 前端批改 → nanobot tasks；若 Google 桶开 = Node 加入 IntentWorkspace；若未开 = nanobot 本地处理 | Sub-Chat B T-B7 + `dsg_protocol_scene_snapshot_v1 §1.1 GOOGLE_CALENDAR` |
+| 海盗主题换肤（P3）| NEED-P3-PIRATE-SKIN；ScriptableObject swap | `Interface/menu_design_complete §6` |
+
 ## 3. 规则（自动加载或按 glob 加载）
 
 | 规则 | 加载条件 | 角色 |
@@ -179,3 +233,9 @@ sprint4_ecp_minimal_audit_20260429.md (审计模板)
 - 2026-04-29: 创建。聚合 17 份 AR 工作区相关文档 + 4 个 AR/LiveKit skill + 3 条规则 + ArSpike 仓位。来源是路由审计修复（INDEX §1.1 active 登记）。
 - 2026-04-29 (晚): Phase 3 调研产物落地登记。新增 `INDEX_for_phase3.md`（薄索引）+ 新建 `livekit-unity-lifecycle/` skill（IMPL_REF 承载 Patch 3/4/7/9 + 17 个可调参数表）+ `livekit-unity-video-publish/IMPL_REF.md` 合入 Patch 1/2/5/6/8/10。skill 拆分决策（不改名 + 新建独立 lifecycle skill）已写入 §4.3。
 - 2026-05-04: Phase 4 完成 + Phase 5 转换期。新增 §2.2b，登记 7 份 5/4 新产出：Phase 4 完成报告 + 联机 smoke 收口 + 全下游 chat 派发地图 + ADR-PROTOCOL-INTERFACE-001（fork chat 产出）+ ADR-L1.5-SOURCE-DISPATCH-001（dsg/ 决策锁）+ 遗留问题汇总 + ConceptGraph 蒸馏任务包。INDEX.md §1.1 同步登记。
+- **2026-05-07 (P2.5 App 设计 + Interface 工作区建立)**：
+  - 新增 §2.2c：GOSLO 模块化报告 3 份（Protocol v1 / 完成报告 / 残余债审计）
+  - 新增 §2.5：Interface 工作区 5 文件（接口设计 v0+补丁 / 概念词典 / 遗留问题 / 菜单设计 SSOT）
+  - 新增 §2.6：App 完成度审计总 chat + Sub-Chat A/B 入场 prompt（含新 P2.5：2D 工作区）
+  - 新增 §2.7：ECP 协议 + GOSLO 模块化相关文档索引补全
+  - **新 P2.5 需求**：2D 独立工作区（nanobot 汇报批改 + Google 日程批改 + 工作区模块连接）纳入 AR 工作区范围

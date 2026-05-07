@@ -1,9 +1,8 @@
 ﻿# ParrotCarriers 全局索引
 
 > 用途: 项目唯一真相源，供 Cursor 与用户快速定位关键信息
-> 更新: 2026-05-07 (Chat 4 接口提炼 pivot → SSOT 双件落地：`architecture/module_map_p4_snapshot.md` + `protocol_snapshot_p4.md`)
+> 更新: 2026-05-07 (DSG Chat 2 + GOSLO 模块化 双 chat 收口 → 跨 chat 待办登记表落地；408/408 pytest；Phase 4 §8 + cs_parity 4/4 + ADR-L1.5-001 11/11 三守护通过；模块化产出 14 + 改动 5 + 新测试 118/57；App 完成度总 chat 主 doc + Sub-Chat A/B 入场 prompt + 像素画 UI 资产清单；**P2.5 App 设计 + 接口/能力 提炼 pre 产物**：Interface/ 工作区 5 份文件（接口设计 v0 + 补丁 + 概念词典 + 遗留问题 + 菜单设计）；新增 P2.5 需求：2D 工作区（nanobot 汇报 + Google 日程批改 + 工作区模块连接）)
 > 路由: 由 `.cursor/rules/workspace.mdc` (alwaysApply) 指向本文件
-> **当前阶段**: Sprint 4 Phase 4 收口 + DSG Chat 2 + GOSLO mod + Chat 4 接口提炼 pivot → 转向 **App 实施**（接口在实施中浮现）
 
 **全局约定**:
 - **事实源**: 只有 `.cursor/memory/**`。`docs/InfoCollections/**` 是**文档库/考古资料**, 按需 `@` 引用, 不作事实源。
@@ -15,16 +14,17 @@
 ## 〇、当前阶段必读 (按序, 不读后续)
 
 > **原则**: 进入任何 Sprint 前, **只读这几份**, 不翻历史。
-> **当前**: Sprint 4 Phase 4 **完成** → Phase 5 转换期 (2026-05-04) → DSG Chat 2 + GOSLO 模块化收口 (2026-05-06) → 跨 chat 待办登记表 (2026-05-07)
+> **当前**: Sprint 4 Phase 4 **完成** → Phase 5 转换期 (2026-05-04) → DSG Chat 2 + GOSLO 模块化收口 (2026-05-06) → 跨 chat 待办登记表 + **P2.5 App 设计 + Interface 接口提炼 pre** (2026-05-07)
 > **Phase 4→5 补读**（下游 chat 必读，接口提炼 / dsg 动代码前）: `adr_protocol_upgrade_and_interface_refinement_background_20260504.md` + `adr_l1_5_source_dispatch_extension_space_20260504.md`
 > **DSG 系列设计 chat 入场必读**: `architecture/dsg/workspace_index.md` → `dsg_current_state_distilled.md`（与 AR 工作区对位）
 > **下游 chat（Chat 4 / DSG 协议升级 / AR menu / P3 wire ADR）入场必读**: ⭐ `architecture/cross_chat_pending_registry_20260507.md` — 三大 chat（Sprint4 / DSG Chat 2 / GOSLO mod）完成后的统一 TODO + NEED 登记表，含 grep 索引 / 严重度 / 修复 chat 路径表
+> **App 完成度审计入场**（Sub-Chat A / B 启动前必读 + 任何 user-visible 流程 chat 启动前必读）: ⭐ `architecture/app_completion_master_audit_20260507.md` — 8 场景对账表是 user-visible 完成度的 SSOT；§6 像素画 UI 资产清单是 user 自管美术依据
+> **Interface 工作区**（P2.5 App 设计 + 接口/能力提炼 pre；Sonnet 4.6 实施 + Opus 4.7 ×2 调研）: `architecture/Interface/` — 5 文件（接口设计 v0 + 补丁 + 概念词典 + 遗留问题 + 菜单设计）；**任何 user-visible UI / 接口提炼 / 命名审计 / 菜单实施 chat 必读**
+> **新 P2.5 需求**（2026-05-07）: 2D 独立工作区（nanobot 汇报 + Google 日程批改 + 工作区模块连接）— 见 `architecture/Interface/legacy_issues_split_20260507.md §1` + 本表 §〇 第 12 行
 
 | # | 文件 | 读什么 |
 |:--|:-----|:-------|
-| 0a | ⭐ `.cursor/memory/architecture/module_map_p4_snapshot.md` | **🆕 当前架构 SSOT 速查**（2026-05-07 Pivot 后产）— 单图速查：部署拓扑 + 模块状态表（含 status: ratified / experimental / proposed-new）+ 三层 Bus + 三条主数据流 + cs_parity 守护。详细 module 清单仍看 module_map_p2.md。|
-| 0b | ⭐ `.cursor/memory/protocol_snapshot_p4.md` | **🆕 当前协议全集 SSOT**（2026-05-07 Pivot 后产）— §1-§28 全协议 reference：5 LiveKit topic / EcpEvent envelope + 13 EcpEventType / EcpState/Ack/Command / 7 RPC method / RefBinding 4+4 / NodeKind 6 + EdgeKind 8 / BB 26 keys / 4 行为 enum + RESERVED_PARROT_CAPABILITY_IDS / GOSLO ModelManifest / Photo 双通道 / HTTP / Redis 3 类 / Graphiti 5 分区 / 6 BucketKind / 9 StagedRefKind / 9 触发器 + TriggerOutcome 5+2 路上行 / Phase 4 §8 13 锁 reference / cs_parity 4/4 守护 / 27 项 upgrade backlog 入口。|
-| 1 | `.cursor/memory/architecture/module_map_p2.md` | **详细全景架构** — §〇 项目边界 / §一 模块清单 / §二 数据流 / §九 外挂生态 / §十 DSG 分层 / §十一 时间轴（保留作 detail；快速速查看 0a）|
+| 1 | `.cursor/memory/architecture/module_map_p2.md` | **全景架构入口** — §〇 项目边界 / §一 模块清单 / §二 数据流 / §九 外挂生态 / §十 DSG 分层 / §十一 时间轴 |
 | 2 | `.cursor/memory/active_context.md` | 头部 + 本周关键路径 (先确认自己在哪一步) |
 | 3 | `.cursor/memory/architecture/sprint4_pre_entry_prompt_and_plan.md` | Sprint4 前置、测试束隔离、数据流 / 协议 V2 / 后端接口提炼 |
 | 4 | `.cursor/memory/architecture/sprint4_protocol_ecp_background_20260429.md` | Sprint4 协议 / ECP 背景锚点：用户原话、RIT/BT/BT 森林关系、DSG/Graphiti/Obsidian/Ref 边界 |
@@ -34,7 +34,8 @@
 | 8 | `.cursor/memory/architecture/ar_app_flow_ui_design.md` | 当前 App Flow / UI / 功能入口设计基线 |
 | 9 | `.cursor/memory/architecture/dsg/workspace_index.md` | **DSG 工作区入口**（2026-05-04 新增；2026-05-06 增补决策总表 + 4 新 skill + NewZone 素材池）— DSG 系列设计 chat（L1.5 池 / lifecycle / L2-B 升级 / Phase 5+ A10）入场必读；与 AR 工作区对位。冷读完 `dsg_current_state_distilled.md` 一份能回答 DSG 全景；用户已决事项进 `dsg_decisions_master.md`（master，长期累加） |
 | 10 | ⭐ `.cursor/memory/architecture/cross_chat_pending_registry_20260507.md` | **跨 chat 待办登记表（master）** — 三大 chat（Sprint4 主线 / DSG Chat 2 / GOSLO 模块化）完成后的统一 TODO + NEED 标签登记。覆盖 16 文件 26 处源码标签 + 4 P2.5 NEED + 8 P3 NEED + 6 修复 chat 路径表。任何下游 chat 入场前先读 §5 找自己的标签清单。**新 NEED 标签必须先入本表再加到源码注释。** |
-| 11 | ⭐ `.cursor/memory/architecture/chat4_interface_refinement_launch_prompt_20260507.md` | **Chat 4 接口提炼 chat 启动 prompt**（2026-05-07 新建）— 简单版，不预设计划，让启动 chat **先规划后实施**。覆盖三大 chat（Sprint4 / DSG Chat 2 / GOSLO mod）完成报告 + 跨 chat 待办登记表 + Phase 4 § 8 锁的必读索引 + 21 个必答关键问题（§3）+ 多方案对比要求 + sign-off gate。Sign off 后才进 ADR-PROTOCOL-INTERFACE-001 §7.1 实施阶段。 |
+| 11 | ⭐ `.cursor/memory/architecture/app_completion_master_audit_20260507.md` | **App 完成度 + DSG 必要升级 总 chat 主 doc**（2026-05-07）— 8 场景对账表（涉及模块 / 已交付能力 / 缺口 NEED-* / 派发）+ 5 个发现 + Sub-Chat A/B 派发清单 + **像素画 UI 资产清单**（user 自管美术 9 类 30+ 项）。Sub-Chat A（`app_flow_requirements_interface_chat_launch_prompt_20260507.md`，用户视角）+ Sub-Chat B（`backend_interface_refinement_chat_launch_prompt_20260507.md`，后端模块视角）入场必读；上一轮"接口提炼几乎只是把仓库复制了一半"失败后的纠偏产物。 |
+| 12 | ⭐ `.cursor/memory/architecture/Interface/` | **Interface 工作区**（P2.5 App 设计 + 接口/能力提炼 pre，2026-05-07）— 5 文件：① `interface_design_and_how_todo_v0_20260507.md`（接口设计 v0，12 场景+4 横切，Sonnet 4.6 抄码主表）② `interface_design_supplement_20260507.md`（v0 补丁+7 项新发现+完整性确认）③ `concept_dictionary_20260507.md`（≈100 项术语+设计文档路由指引）④ `legacy_issues_split_20260507.md`（遗留问题 P2.5/P3 二分，含新 P2.5：**2D 独立工作区** = nanobot 汇报批改 + Google 日程批改 + 工作区模块连接）⑤ `menu_design_complete_20260507.md`（完整菜单设计 SSOT）。任何 user-visible UI / 接口提炼 / 命名审计必读。 |
 
 ---
 
@@ -71,6 +72,14 @@
 | `architecture/adr_l1_5_source_dispatch_extension_space_20260504.md` | **ADR-L1.5-SOURCE-DISPATCH-001** — Q1 SemanticNode.source 字段边界 + Q2 Meta dict/factory hook 扩展空间 + Q3 chat 路径锁。**任何动 dsg/ 的 chat 必读** |
 | `architecture/sprint4_deferred_issues_and_bugs_20260504.md` | Phase 4 遗留问题 + pre-existing breakage 汇总（独立审计 chat 处理）|
 | `architecture/dsg_skill_seeker_l1_5_a10_l2a_20260504.md` | ConceptGraph 蒸馏任务包（派出独立 workspace，Chat 1）|
+| `architecture/app_completion_master_audit_20260507.md` | **App 完成度总 chat 主 doc** — 8 场景对账 + Sub-Chat A/B 派发 + 像素画 UI 资产清单 |
+| `architecture/app_flow_requirements_interface_chat_launch_prompt_20260507.md` | Sub-Chat A 启动 prompt（用户视角 App Flow + 新 P2.5 2D 工作区子任务）|
+| `architecture/backend_interface_refinement_chat_launch_prompt_20260507.md` | Sub-Chat B 启动 prompt（后端模块视角 + 新 P2.5 Google 日程桶联动子任务）|
+| **`architecture/Interface/interface_design_and_how_todo_v0_20260507.md`** | **接口设计 v0（P2.5 pre）** — 12 场景+4 横切关注点；Sonnet 4.6 抄码主表 |
+| **`architecture/Interface/interface_design_supplement_20260507.md`** | **接口设计补丁** — v0 之外 7 项新发现 + 完整性确认 + 文档索引段落 |
+| **`architecture/Interface/concept_dictionary_20260507.md`** | **概念词典** — ≈100 项术语 + 设计文档路由指引 |
+| **`architecture/Interface/legacy_issues_split_20260507.md`** | **遗留问题二分（含新 P2.5：2D 工作区）** — P2.5 要解决（30+ 项）+ P3（40+ 项）+ grep 速查 + 修复 chat 派发表 |
+| **`architecture/Interface/menu_design_complete_20260507.md`** | **完整菜单设计 SSOT** — 三层架构 + 4 类块 + 预设系统 + 海盗换肤 + 像素画素材清单 |
 
 ### 1.2 reference — 当前稳定事实源 (status: ratified)
 

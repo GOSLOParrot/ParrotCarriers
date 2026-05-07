@@ -205,10 +205,63 @@ open_questions_for_design_chat.md (回答 deferred-to-design 项)
 
 ---
 
+## 1.4 跨工作区交集 — Interface 工作区（2026-05-07 新增）
+
+> Interface 工作区在 `architecture/Interface/`，是 AR + DSG 两个工作区的**接口/设计交集**入口。
+
+**DSG 工作区主要消费**：
+
+| 文件 | DSG 关注点 |
+|:--|:--|
+| `Interface/concept_dictionary §2` | DSG 概念全集（L1.5-L2-B / ObservationSource / Bucket / Episode / TriggerOutcome / Plan 等 ≈40 项）|
+| `Interface/interface_design_supplement §1.1` | **Obsidian 3 子类 Ingest 路径**（NEED-P2.5-OBSIDIAN-3SUB：USER_TAG_OBSIDIAN + meta.profile ref/daily/roleplay）|
+| `Interface/interface_design_supplement §1.4` | **2 Scene baseline**（DESKTOP_WEBCAM + AR_HANDHELD；SceneType enum 升级路径 + 不破 cs_parity）|
+| `Interface/interface_design_supplement §1.5` | **三阶段延迟归档约束**（hot 内存 → cold 硬盘 → nanobot 闲时；配合 TODO(Chat4-archive-llm-defer)）|
+| `Interface/interface_design_supplement §1.6` | **3 层防爆炸门控数值基线**（A10 deferred / L1.5 入池门 / L2-B 入图门）|
+| `Interface/legacy_issues_split §2.2` | **4 类块菜单画布 P3-B/C 主线** — 推 DSG 协议升级 chat 实施 |
+| `Interface/legacy_issues_split §1.10（新 P2.5）` | **2D 工作区 Google 日程桶联动** — `BucketKind.GOOGLE_CALENDAR` 激活逻辑 + IntentWorkspace 联动 |
+
+**交集约束**（Phase 4 §8 为准）：
+- EcpEvent / PhotoNode / RefBinding 三类接口 = AR × DSG 工作区共同遵守 `protocol_snapshot_p4.md §2-§8`
+- 4 类块菜单画布 = AR 工作区（UI 层，NEED-P3-D/E）+ DSG 工作区（Persona/Scene 后端，NEED-P3-B/C）共同
+- Obsidian 3 子类 = DSG 工作区主场（IngestFilter，NEED-P2.5-OBSIDIAN-3SUB）; AR 工作区（菜单选择 UI）配合
+- **新 P2.5 需求（2026-05-07）**：2D 工作区 Google 日程批改 → `BucketKind.GOOGLE_CALENDAR` 联动 + IntentWorkspace — DSG 协议升级 chat + Sub-Chat B T-B7 主场
+
+## 2.7 Google 日程桶联动设计说明（DSG 工作区关注）
+
+> 背景：user 决定 P2.5 额外完成 2D 工作区 Google 日程批改功能。DSG 工作区需要确认以下接口。
+
+**联动逻辑**（待 DSG 协议升级 chat 校准）：
+
+```
+前端批改日程（2D 工作区）
+   ↓
+nanobot tasks 同步状态
+   ↓
+写 Blackboard (scheduler/active_tasks + 状态)
+   ↓
+分支判断：
+  ├─ 若 BucketKind.GOOGLE_CALENDAR 已激活（菜单里开关 / 菜单画布 Google 块已连接）
+  │     → L2-B 有 Google Node（已加入 GOOGLE_CALENDAR 桶）
+  │     → 可 stage 到 IntentWorkspace (StagedRefKind.CUSTOM / 或新定义 CALENDAR_REF)
+  │     → 触发 IntentEventBoundaryHandler 处理（如计划提醒 → GOSLO 主动通报）
+  └─ 若 BucketKind.GOOGLE_CALENDAR 未激活
+        → nanobot 本地处理（Tasks 同步到 Google Calendar API）
+        → 不进 L2-B / 不进 IntentWorkspace
+        → 结果写 Blackboard 供查询
+```
+
+**需要确认的接口（Sub-Chat B T-B7 + DSG 协议升级 chat）**：
+1. ~~`BucketKind.GOOGLE_CALENDAR` 是否已定义~~ — ✅ **已定义并落地**（`src/parrot/dsg/l1_5/buckets.py:33` = `GOOGLE_CALENDAR = "google_calendar"`；`dsg_protocol_pool_v1 §168` 桌面 4 桶之一；`protocol_snapshot_p4 §18` 只列 6 项是文档漏记）
+2. `StagedRefKind` 是否需要新增 `CALENDAR_REF` / 用 `CUSTOM` 兜底
+3. 菜单连接开关的 BB key（`global/google_calendar_bucket_enabled: bool`？或直接用 `BucketRegistry` 判断桶是否有节点）
+4. `IntentWorkspace.stage()` 调用点（CalendarTrigger 既有路径 vs 2D 工作区批改新路径）
+
 ## 7. 变更日志
 
 - 2026-05-04: 创建。聚合 DSG 模块层散落的 ADR / Opus 调研 / SKILL / source code。骨架 4 份新文件 + 路由接入 workspace.mdc / INDEX.md / active_context.md / 派发计划。建立目的是给 Chat 2（L1.5 池设计）当入场前置 SSOT。
 - 2026-05-06: 用户回答 Q1.1-Q3.4 第一问后增补：(1) 新增 `dsg_decisions_master.md` 决策总表；(2) 4 个新 DSG skill（dsg-rustworkx-master / dsg-l2b-node-organization-options / dsg-attention-schema-papers / dsg-l1-5-l2a-conceptgraph-distilled）落入 §2.4；(3) NewZone 蒸馏素材池入 §2.5；(4) LineB 完成报告入 §2.6；(5) `dsg_current_state_distilled.md` 加 §11 防爆炸门控分层 + §12 工作记忆延迟归档；(6) `source_x_lifecycle_status.md` Obsidian 拆 3 子类 + Q2.x 已决条目；(7) `opus_dsg_residual_intent.md` 修正 attention 双开放路径（修正上轮"走 RustworkX 而非字段"的偏差）；(8) `open_questions_for_design_chat.md` 头部加 §0 已决汇总 + Q1.7 工作记忆归档时机。
+- **2026-05-07（P2.5 App 设计 + Interface 工作区建立）**：新增 §1.4（Interface 工作区交集）+ §2.7（Google 日程桶联动设计说明）。补充**新 P2.5 需求**：2D 工作区 Google 日程批改 → BucketKind.GOOGLE_CALENDAR 联动 + IntentWorkspace — 待 DSG 协议升级 chat + Sub-Chat B T-B7 确认接口。
 - **2026-05-06（Chat 2 实施完成）**：本工作区 §1 文件清单追加 8 份新产物：
   - 主设计稿：`dsg_l1_5_pool_and_lifecycle_design_20260506.md`
   - 协议 V1（5 份 DSG + 2 份 Brain）：`dsg_protocol_pool_v1` / `dsg_protocol_trigger_v2` / `dsg_protocol_intent_event_boundary_v1` / `dsg_protocol_archive_v1` / `dsg_protocol_scene_snapshot_v1` / `brain_protocol_intent_workspace_v1` / `brain_protocol_plan_v1`

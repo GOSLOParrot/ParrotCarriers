@@ -661,7 +661,7 @@ MonoBehaviour:
   disableRenderingOnOverride: 1
   updateTiming: 1
   unscaledTime: 0
-  _animationName: Happy_1
+  _animationName: Happy_3
   loop: 1
   timeScale: 1
 --- !u!23 &1861972827

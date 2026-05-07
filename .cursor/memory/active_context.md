@@ -1,17 +1,5 @@
 # 当前进度与下一步
 
-> ⚠ **2026-05-07 Pivot — 转向 App 实施**：Chat 4"接口提炼"任务 pivot；49 文件产出基本 reorganize 已有 doc，止损改向**直接推进 App 实施 + 代码编写**。接口在实施中自然浮现。
->
-> **新 SSOT 双件**（替代接口提炼工作）：
-> - 架构图 → [`architecture/module_map_p4_snapshot.md`](architecture/module_map_p4_snapshot.md) — 单一清晰最新模块架构 + 三条主路径 + 模块状态表
-> - 协议全集 → [`protocol_snapshot_p4.md`](protocol_snapshot_p4.md) — Sprint 4 收口 + DSG Chat 2 + GOSLO mod 全协议 SSOT（§1-§28，含 13 EcpEventType / 26 BB keys / 8 enum / Phase 4 §8 13 锁等）
->
-> **`.cursor/memory/interfaces/`**：保留 4 件高价值（methodology.md / upgrade_roadmap.md / change_impact_table.md / _sync/grep_verification_20260507.md）；其余 44 件已删（详 [`interfaces/README.md`](interfaces/README.md) §2）。
->
-> **下一步**：直接进入 App 实施。upgrade_roadmap.md §1（Chat 4 4-A 实施轨 5 项）+ 既有 NEED-* 标签是 backlog；遇到具体接口问题就地修代码 + 同步 protocol_snapshot_p4。
->
-> ---
->
 > ⚠ **2026-05-04 重大更新**：Sprint 4 Phase 4 **整体收口完成** + 联机 smoke 通过 + Phase 5 入场转换包就绪。下面 §0 是当前权威入场点，旧 4/29 内容（§1+ 起）保留作历史。
 >
 > **2026-05-04 追加**：DSG 工作区已建立（`architecture/dsg/`），作为 DSG 系列设计 chat（L1.5 池 / lifecycle / L2-B 简单升级 / Phase 5+ A10 接入）的 SSOT 入场点，与 AR 工作区（`ar_workspace_index.md`）对位。Chat 2 启动前先读 `architecture/dsg/workspace_index.md` + `dsg_current_state_distilled.md`。
@@ -21,10 +9,28 @@
 > **🟢 2026-05-06 重大更新**：**GOSLO 模型 + 行为树模块化任务实施完成** — `parrot.shared.model_manifest` Pydantic + Unity 三层（IParrotController / ModelDriver / ParrotRegistry / GosloLegacyController shim）+ Brain `animate` / `fly_to` 加 `model_id` 透传 + AI CLI `asset_to_manifest.py` MVP + 23/6/23/5 新测试 → **415/415 pytest** + Phase 4 § 8 wire 0 漂移；Step 6（LLM persona 参数化）确认推下游与 p3 菜单画布 4 类块同设计。详见 [`architecture/goslo_modularization_completion_20260506.md`](architecture/goslo_modularization_completion_20260506.md) + [`architecture/goslo_modularization_residual_debt_20260506.md`](architecture/goslo_modularization_residual_debt_20260506.md) + [`architecture/goslo_model_manifest_protocol_v1.md`](architecture/goslo_model_manifest_protocol_v1.md)。
 >
 > **🟢 2026-05-07 跨 chat 统一标注 pass**：三大 chat（Sprint4 主线 / DSG Chat 2 / GOSLO 模块化）完成后的统一 TODO + NEED 标签登记表落地 → [`architecture/cross_chat_pending_registry_20260507.md`](architecture/cross_chat_pending_registry_20260507.md)。**16 文件 26 处源码标签 + 4 P2.5 NEED + 8 P3 NEED + 6 修复 chat 路径表**；408/408 pytest 全绿（DSG Chat 2 之后 GOSLO mod 之前）/ cs_parity 4/4 守护通过。下游：Chat 4（接口提炼实施，处理 NEED-P2.5-PLAN-INTEGRATION + NANOBOT-HEARTBEAT + ARCHIVE-LLM 等）/ DSG 协议升级 chat（NEED-P2.5-A persona 外置 + NEED-P3-B/C 4 类块 + 预设）/ AR menu chat（NEED-P3-D/E）/ P3 wire ADR chat（NEED-P3-A body_state 解锁 + Plan UI wire）/ P3 仿生升级 chat（fold / spreading / RefHealth）/ A10 接入 chat（multi-scene）。
+>
+> **🟢 2026-05-07 P2.5 App 设计 + 接口/能力提炼 pre（本 chat）**：App 完成度审计总 chat 完成 → Interface 工作区建立（`.cursor/memory/architecture/Interface/` 5 文件）→ Sub-Chat A（用户视角 App Flow）+ Sub-Chat B（后端模块视角）入场 prompt 落地，已加新 P2.5 需求（2D 独立工作区 + Google 日程批改 + 工作区模块连接）。详见 [`architecture/app_completion_master_audit_20260507.md`](architecture/app_completion_master_audit_20260507.md) + [`architecture/Interface/`](architecture/Interface/)。
+>
+> **⚠️ 2026-05-07 新 P2.5 需求确认**：P2.5 补充完成 **2D 独立工作区**（nanobot 汇报批改 + Google 日程批改 + 工作区模块连接）。设计决策：
+> - 普通 HUD 界面：对话验证 + 消息提醒 + 汇报文件简单按钮（确认/删除/完成）
+> - 2D 工作区（Paper Please 风）：更完整的文件批改 + 工作区模块连接（类菜单画布设计）
+> - Google 日程联动逻辑：前端批改 → nanobot tasks 同步 → 黑板（Blackboard）状态；**若开了 Google 桶**（BucketKind.GOOGLE_CALENDAR）→ L2-B 有 Google Node → 可加入 IntentWorkspace（由菜单画布连接开关控制）；**若未开** → tasks 由 nanobot 自己处理同步 Google 日程
+> - 确认以上逻辑与 DSG 协议升级 chat 协调（BucketKind.GOOGLE_CALENDAR + IntentWorkspace 联动 + 菜单连接开关 NEED-P3-B/C 配套）
 
 ---
 
-## §0 当前阶段（2026-05-04 — Phase 4 → 5 转换期）
+## §0 当前阶段（2026-05-07 — P2.5 App 设计 + Interface 接口提炼 pre）
+
+> **最新状态**（2026-05-07）：P2.5 App 设计 + 接口/能力提炼 pre 完成。Interface 工作区建立，5 文件就位。下一步：
+> 1. user 把 4 份 markdown 复制到 `architecture/Interface/`（目录已创建）
+> 2. Sub-Chat A 启动（`app_flow_requirements_interface_chat_launch_prompt_20260507.md`）
+> 3. Sub-Chat B 启动（`backend_interface_refinement_chat_launch_prompt_20260507.md`）
+> 4. 两个 Opus 4.7 各自调研补漏后 + Sonnet 4.6 按接口设计 v0 + 补丁实施
+> 5. 里程碑触发 Review（每场景完成后 ping 我）
+> 6. 新 P2.5 需求（2D 工作区）与 Chat 4 4-A + DSG 协议升级 chat 协调实施
+
+
 
 ### §0.1 Phase 4 终态（authoritative）
 
