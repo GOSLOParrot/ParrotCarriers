@@ -9,6 +9,7 @@ import asyncio
 import json
 
 import pytest
+from redis.exceptions import RedisError
 
 from parrot.brain.tools.dispatch_task import do_dispatch_task
 from parrot.bus.nanobot_consumer import NanobotConsumer
@@ -23,12 +24,19 @@ from parrot.shared.redis_client import close_redis, get_redis
 @pytest.fixture
 async def redis():
     r = await get_redis()
-    yield r
-    await close_redis()
+    try:
+        await r.ping()
+    except RedisError as exc:
+        await close_redis()
+        pytest.skip(f"Redis integration dependency unavailable: {exc}")
+    try:
+        yield r
+    finally:
+        await close_redis()
 
 
 @pytest.fixture
-async def scheduler():
+async def scheduler(redis):
     svc = SchedulerService()
     await svc.start()
     yield svc
@@ -36,7 +44,7 @@ async def scheduler():
 
 
 @pytest.fixture
-async def nanobot():
+async def nanobot(redis):
     consumer = NanobotConsumer()
     await consumer.start()
     yield consumer

@@ -15,18 +15,18 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 import pytest
+from redis.exceptions import RedisError
 
 NANOBOT_ROOT = Path(__file__).resolve().parents[3] / "nanobot"
 if str(NANOBOT_ROOT) not in sys.path:
     sys.path.insert(0, str(NANOBOT_ROOT))
 
-from parrot.brain.tools.dispatch_task import do_dispatch_task
-from parrot.scheduler.service import SchedulerService
-from parrot.shared.constants import CH_NANOBOT_RESULTS, CH_SCHEDULER_TO_BRAIN
-from parrot.shared.redis_client import close_redis, get_redis
+from parrot.brain.tools.dispatch_task import do_dispatch_task  # noqa: E402
+from parrot.scheduler.service import SchedulerService  # noqa: E402
+from parrot.shared.constants import CH_NANOBOT_RESULTS, CH_SCHEDULER_TO_BRAIN  # noqa: E402
+from parrot.shared.redis_client import close_redis, get_redis  # noqa: E402
 
 
 def _make_parrot_bus_channel():
@@ -50,12 +50,19 @@ def _make_parrot_bus_channel():
 @pytest.fixture
 async def redis():
     r = await get_redis()
-    yield r
-    await close_redis()
+    try:
+        await r.ping()
+    except RedisError as exc:
+        await close_redis()
+        pytest.skip(f"Redis integration dependency unavailable: {exc}")
+    try:
+        yield r
+    finally:
+        await close_redis()
 
 
 @pytest.fixture
-async def scheduler():
+async def scheduler(redis):
     svc = SchedulerService()
     await svc.start()
     yield svc
@@ -63,7 +70,7 @@ async def scheduler():
 
 
 @pytest.fixture
-async def parrot_bus():
+async def parrot_bus(redis):
     """Start the ParrotBusChannel and auto-reply from the bus."""
     channel, bus = _make_parrot_bus_channel()
 

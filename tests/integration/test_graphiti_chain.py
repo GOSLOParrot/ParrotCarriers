@@ -13,8 +13,8 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import os
-import sys
 
 import pytest
 
@@ -22,6 +22,10 @@ pytestmark = [
     pytest.mark.skipif(
         not os.getenv("GOOGLE_API_KEY"),
         reason="GOOGLE_API_KEY not set",
+    ),
+    pytest.mark.skipif(
+        importlib.util.find_spec("graphiti_core") is None,
+        reason="graphiti-core not installed",
     ),
 ]
 
@@ -31,7 +35,10 @@ async def graphiti():
     """Get a fresh Graphiti instance."""
     from parrot.memory.graphiti_client import close_graphiti, get_graphiti
 
-    g = await get_graphiti()
+    try:
+        g = await get_graphiti()
+    except RuntimeError as exc:
+        pytest.skip(f"Graphiti integration dependency unavailable: {exc}")
     yield g
     await close_graphiti()
 
@@ -94,7 +101,7 @@ async def test_scene_partition_isolated(graphiti):
         group_ids=[PARTITIONS.SCENE],
         num_results=3,
     )
-    goslo_results = await graphiti.search(
+    _goslo_results = await graphiti.search(
         query="blue mug",
         group_ids=[PARTITIONS.GOSLO],
         num_results=3,
