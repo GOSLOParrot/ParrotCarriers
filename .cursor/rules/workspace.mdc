@@ -80,6 +80,10 @@ ParrotCarriers 是 GOSLOParrot 的通信总线子项目（RFC 1149: IPoAC, but p
 6. **测试束隔离**: `unity/ParrotDev/`、Runtime HUD、SelfTest、Launcher→Dev 临时流程、WebCam fallback、`FindObjectOfType` 自动补绑定都是 P2.5 测试束，不得反推为正式 App 启动流程；正式 App 工作区在 `unity/ArSpike/Assets/Scripts/ParrotApp/`，受 `MIGRATION.md` 治理。
 7. **ECP 协议边界**: ECP 是 Brain↔Unity 的"目标驱动 + 状态同步"协议层，不是 Scheduler / BT / BT 森林的替代；详见 `sprint4_protocol_ecp_background_20260429.md` 与 `sprint4_protocol_v2_ecp.md`。
 8. **DSG 工作区是 DSG 系列设计 chat 的 SSOT 入口**: 与 AR 工作区对位（`ar_workspace_index.md`）。任何 DSG L1.5 池 / lifecycle / L2-B 升级 / Phase 5+ A10 接入 chat 必须先读 `architecture/dsg/workspace_index.md` + `dsg_current_state_distilled.md`，再决定回读哪些 ADR / Opus / 源码。本工作区**不修改** ADR-L1.5-001 决策、Phase 4 §8 决策锁、ConceptGraph SKILL 蒸馏产物。
+9. **接口分类骨架是接口提炼/Web 控制台/Obsidian/Figma 等业务 chat 的入场前置**: 任何动 `src/parrot/**` 公开表面或 `unity/ArSpike/Assets/Scripts/ParrotApp/**` DTO 的 chat **入场必读** `architecture/Interface/INDEX.md` §0 失败教训 + §2 4 字段业务模板。**禁止**走"自下而上 12 场景穷举"老路（v0 + supplement 已 superseded）；核心接口签名见 `backend_interface_refinement_20260507.md`，不在业务 chat 内复制。
+10. **第二前端工作区边界（Cursor vs Codex+Unity MCP）**: 任何动 Unity DTO / Editor / Asset / Scene wiring 的 chat **必读** `architecture/frontend_workspace_boundary.md`。**Codex 工作区不能产生新协议字段**——所有 wire / ECP / RPC / DataChannel / topic / BB key 必须先在 Cursor 改 `protocol_snapshot_p4` + cs_parity，Codex 才能动 C# DTO。跨工作区任务交接走 `cross_chat_pending_registry_20260507.md`（双向写）。
+11. **Sprint 0-4 已收口产物物理外迁到 `docs/sprint_archive/`**: 不读正文（除非追溯历史）；统一入口 `docs/sprint_archive/INDEX.md`（按时间线 / 按 sprint / 按文件类型 三轴聚合）。`.cursor/memory/architecture/` 顶层只保留 ~20 份活跃事实源（协议 / 接口 / 模块 / AR 设计 / master registry）+ Interface/ + dsg/ 子目录 + chat_launches/ 子目录。
+12. **四轴速查**: 查 Protocol / Interface / Design / Requirements 走 `.cursor/memory/INDEX.md` §六。
 
 ## 源码结构速查
 

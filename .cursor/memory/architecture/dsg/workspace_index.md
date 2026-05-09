@@ -13,6 +13,8 @@ sibling_workspace: "../ar_workspace_index.md"
 
 > 创建：2026-05-04（Phase 4 收口 + Phase 5 转换期，与 AR 工作区对位）
 > 用途：DSG 模块层（L1.5 / L2-A / L2-B / 触发器 / Ingest 过滤 / Graphiti 桥）相关任务的**单一入口**。下次会话只要打算碰 DSG 的"设计层"，先读这一份再决定继续读什么。
+>
+> **2026-05-09 路由整理**：本文中**所有 `../sprint*_*.md` / `../audit_*.md` / `../lineb_implementation_*` / `../dsg_skill_seeker_*` / `../goslo_*` 的内联引用**已物理外迁到 `docs/sprint_archive/{sprint0..4, superseded}/`，文件名不变。统一聚合入口：[`../../../docs/sprint_archive/INDEX.md`](../../../docs/sprint_archive/INDEX.md)。本文内联链接保留作历史上下文，**不读正文**；活跃事实源仍在 `.cursor/memory/architecture/`。
 > 边界：本文不复述具体决策；只做**路由 + 角色 + 入口模式**的聚合。深入内容请按链接进对应文件。
 > **不做事项**（与本工作区 sign off 的硬约束一致）：不动 ADR-L1.5-001 决策、不动 Phase 4 §8 决策锁、不引入 SemanticNode 子类、不改 ConceptGraph SKILL 蒸馏产物。
 
@@ -44,6 +46,7 @@ sibling_workspace: "../ar_workspace_index.md"
 | `brain_protocol_intent_workspace_v1_20260506.md` | BRAIN-INTENT-WS-V1 — Brain Intent 层资源暂存（9 StagedRefKind + Backend strategy）|
 | `brain_protocol_plan_v1_20260506.md` | BRAIN-PLAN-V1 — Plan-and-Execute 8 状态机 + IntentWorkspace 主存 + L2-B 镜像 |
 | **`dsg_l1_5_implementation_completion_20260506.md`** | **完成报告** — 352/352 pytest + Phase 4 § 8 0 漂移 + ADR-L1.5-001 三触发器全未触发 + master 11 条回审完毕 |
+| **`../backend_interface_refinement_20260507.md`** | **接口提炼 + Phase 1-4 build 落地** — 菜单后端 API + 4-scope BB 4 active keys + IntentWorkspace 升级（disk recover / scope chain / pressure callbacks / role helpers）+ L2-B baseline 真算法（ConnectedComponents 聚类 + IterativeSpreading 扩散 + 跨 compartment 边降权）|
 
 阅读顺序（cold start）：
 

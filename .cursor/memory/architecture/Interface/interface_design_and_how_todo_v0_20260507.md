@@ -1,13 +1,16 @@
 ---
-status: draft / interface-design
-category: interface-design
-status_note: "接口设计 v0 — 12 场景 + 4 横切关注点的接口签名 + How TODO + TODO 注释草稿。Sonnet 4.6 抄码主表；Opus 4.7 ×2 校准。"
+status: superseded
+category: interface-design-historical
+superseded_by: "INDEX.md（2026-05-09 路由整理：本文路线已被本目录 INDEX.md 的核心/业务二分骨架取代；12 场景清单仍可参考但不再当接口设计产物）"
+status_note: "接口设计 v0 — 12 场景 + 4 横切关注点的接口签名 + How TODO + TODO 注释草稿。原产出路线"自下而上 12 场景穷举"导致仓库被复印半份，已在 2026-05-09 整理时改用核心/业务二分骨架（见 INDEX.md §0 失败教训）。本文不删，留作场景清单参考。"
 last_reviewed: 2026-05-07
-ai_priority: high
-ai_audience: "Sonnet 4.6 实施 chat + Opus 4.7 ×2 调研 chat"
-parent_doc: "../app_completion_master_audit_20260507.md"
+superseded_at: 2026-05-09
+ai_priority: low
+ai_audience: "考古追溯 + 业务 chat 启动时对照"我这条业务在 v0 第几场景""
+parent_doc: "INDEX.md"
 related:
-  - "interface_design_supplement_20260507.md (v0 补丁)"
+  - "INDEX.md (本目录核心/业务二分骨架，2026-05-09 新建)"
+  - "interface_design_supplement_20260507.md (v0 补丁，同样 superseded)"
   - "concept_dictionary_20260507.md (术语查询)"
   - "legacy_issues_split_20260507.md (遗留问题)"
   - "menu_design_complete_20260507.md (菜单设计)"

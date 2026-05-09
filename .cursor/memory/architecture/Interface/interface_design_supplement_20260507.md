@@ -1,12 +1,16 @@
 ---
-status: draft / interface-design-supplement
-category: interface-design
-status_note: "v0 补丁包 — v0 之外 7 项新发现（Obsidian 3 子类 / 4 级视觉自我感知 / 2 Scene baseline / 三合一意识 / 三阶段归档 / 海盗换肤 / 多设备）+ 完整性确认 + 文档索引段落。"
+status: superseded
+category: interface-design-historical
+superseded_by: "INDEX.md（2026-05-09 路由整理：v0 + 本补丁的"穷举接口签名"路线已被核心/业务二分骨架取代；7 项新发现仍是有效背景，业务 chat 内可引用）"
+status_note: "v0 补丁包 — v0 之外 7 项新发现（Obsidian 3 子类 / 4 级视觉自我感知 / 2 Scene baseline / 三合一意识 / 三阶段归档 / 海盗换肤 / 多设备）+ 完整性确认 + 文档索引段落。原路线已 superseded（见 INDEX.md §0 失败教训）。"
 last_reviewed: 2026-05-07
-ai_priority: high
-ai_audience: "Sonnet 4.6 + Opus 4.7 ×2"
-parent_doc: "interface_design_and_how_todo_v0_20260507.md"
+superseded_at: 2026-05-09
+ai_priority: low
+ai_audience: "业务 chat 内引用 7 项新发现作为设计输入"
+parent_doc: "INDEX.md"
 related:
+  - "INDEX.md (本目录核心/业务二分骨架，2026-05-09 新建)"
+  - "interface_design_and_how_todo_v0_20260507.md (parent，同样 superseded)"
   - "concept_dictionary_20260507.md"
   - "legacy_issues_split_20260507.md"
   - "menu_design_complete_20260507.md"
@@ -497,3 +501,4 @@ public class DeviceSelector : MonoBehaviour {
 ## §6 变更日志
 
 - **2026-05-07 v0.1**：本文创建。v0 (interface_design_and_how_todo_v0) 之外的 7 项新发现 + v0 完整性确认表 + 文档索引段落（用于 6 处复制）+ Sub-Chat A/B 额外子任务派发清单。
+- **2026-05-07 backend build patch**：§1.4 SceneType 升 2 baseline (DESKTOP_WEBCAM + AR_HANDHELD) 已实施 (`src/parrot/dsg/l1_5/scene_snapshot.py`，DESKTOP 保留作 backward-compat alias)；§1.3 4-scope BB namespace 4 active keys 已落 (`shared/bb_schema.py:global/active_persona_id|active_model_id|active_scene_id|active_mode`，单写 = `brain.preset_loader`)；详见 `architecture/backend_interface_refinement_20260507.md`。

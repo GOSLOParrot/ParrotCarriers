@@ -10,6 +10,8 @@ last_reviewed: 2026-04-29
 > 创建：2026-04-29（Sprint4 协议升级 Phase 1 完成 + 路由审计后）
 > 用途：AR / LiveKit / Unity App / ArSpike 相关任务的**单一入口**。下次会话只要打算碰 AR 工作区，先读这一份再决定继续读什么。
 > 边界：本文不复述具体决策；只做**路由 + 角色 + 入口模式**的聚合。深入内容请按链接进对应文件。
+>
+> **2026-05-09 路由整理**：本文中**所有 `architecture/sprint*_*.md` / `architecture/audit_*.md` / `architecture/lineb_implementation_*` / `architecture/animation_coord_*` / `architecture/dsg_skill_seeker_*` / `architecture/goslo_modularization_*` / `architecture/goslo_model_modularization_*` / `architecture/app_*_chat_launch_*` / `architecture/backend_interface_refinement_chat_launch_*` 的内联引用**已物理外迁到 `docs/sprint_archive/{sprint0..4, superseded}/`，文件名不变。统一聚合入口：[`docs/sprint_archive/INDEX.md`](../../docs/sprint_archive/INDEX.md)。本文内联链接保留作历史上下文，**不读正文**；活跃事实源（`protocol_snapshot_p4` / `bus_v4` / `sprint4_protocol_v2_ecp` / 2 ADR / `module_map_p2` / `module_map_p4_snapshot` / `cross_chat_pending_registry` / `app_completion_master_audit` / `Interface/INDEX` / `frontend_workspace_boundary` / `chat_launches/`）仍在 `.cursor/memory/architecture/`。
 
 ## 1. 仓位与角色边界
 
