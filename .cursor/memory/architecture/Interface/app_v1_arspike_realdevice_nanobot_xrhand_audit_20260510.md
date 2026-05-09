@@ -72,6 +72,12 @@ Before a phone/Quest run:
 9. Run parrot flow: joystick walk -> release -> home return -> XRHand debug branch.
 10. If real XRHand is required, install `com.unity.xr.hands`, add `UNITY_XR_HANDS`, and verify the OpenXR/AR provider actually exposes hand joints on the target device.
 
+Mint startup fix:
+
+- 2026-05-10 audit found the smoke scene could still auto-connect through `RoomManager`'s editor token-file path while `AppV1MetaUI.startupFlow` was empty.
+- `ParrotSmokeSceneBuilder.UpgradeCurrentSmokeScene()` now ensures `AppStartupFlowController` + `LiveKitTokenMintClient` exist on `Lifecycle`, wires `AppV1MetaUI.startupFlow`, and sets `RoomManager.autoConnectOnStart=false` / `allowEditorTokenFile=false`.
+- Current `ParrotSmokeScene.unity` has `LiveKitTokenMintClient.mintEndpoint=http://127.0.0.1:7888/mint`; for real device testing this must be changed to the phone-reachable LAN/Castle endpoint.
+
 ## 4. Current XRHand answer
 
 The code path for "gesture/command flies to the index-finger middle segment, plays perch animation, and flies back" is implemented for editor smoke and ready for real package activation:
@@ -114,3 +120,4 @@ What is not yet real-device complete:
   - 2026-05-10 NekoClaw smoke found `NekoClawReportPaw` and `PaperNote_DraggableSelectable` in Play Mode.
   - Console compile/import errors: 0.
   - Play Mode still reports expected LiveKit connection failure when local/server LiveKit is not reachable; this is an environment prerequisite, not a NekoClaw/UI compile failure.
+  - 2026-05-10 Mint startup correction: Unity MCP found `AppStartupFlowController`, `LiveKitTokenMintClient`, and `RoomManager`; scene serialization shows `startupFlow` wired and `autoConnectOnStart=0`, `allowEditorTokenFile=0`.

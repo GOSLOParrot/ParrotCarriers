@@ -83,9 +83,15 @@ def test_smoke_scene_builder_mounts_meta_ui_and_wires_existing_tools() -> None:
 
     assert "using ParrotApp.UI;" in text
     assert "AddComponent<AppV1MetaUiController>()" in text
+    assert "AddComponent<AppStartupFlowController>()" in text
+    assert "AddComponent<LiveKitTokenMintClient>()" in text
+    assert "ConfigureRoomManagerForMint" in text
+    assert 'SetBool(roomManager, "autoConnectOnStart", false)' in text
+    assert 'SetBool(roomManager, "allowEditorTokenFile", false)' in text
     assert "Upgrade Current A2 Smoke Scene" in text
     assert "UpgradeCurrentSmokeScene" in text
     assert "FindOrCreateRoot(\"AppV1MetaUI\")" in text
+    assert 'FindProperty("startupFlow")' in text
     assert 'FindProperty("photoController")' in text
     assert 'FindProperty("parrotController")' in text
     assert 'FindProperty("focusController")' in text

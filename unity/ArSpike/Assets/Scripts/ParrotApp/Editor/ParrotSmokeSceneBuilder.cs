@@ -79,9 +79,15 @@ namespace ParrotApp.EditorTools
             // yet run → NullReferenceException). Instead, add LifecycleSmokeForcer
             // which runs in Start() (after Awake) and pushes the FSM to Connected.
             var lifecycleGo = new GameObject("Lifecycle");
-            lifecycleGo.AddComponent<AppLifecycleManager>();
+            var lifecycleManager = lifecycleGo.AddComponent<AppLifecycleManager>();
             lifecycleGo.AddComponent<LifecycleHeartbeatPublisher>();
             lifecycleGo.AddComponent<LifecycleSmokeForcer>();
+            var shutdownService = lifecycleGo.AddComponent<LifecycleShutdownService>();
+            var startupFlow = lifecycleGo.AddComponent<AppStartupFlowController>();
+            var tokenMintClient = lifecycleGo.AddComponent<LiveKitTokenMintClient>();
+
+            var roomManager = new GameObject("RoomManager").AddComponent<RoomManager>();
+            ConfigureRoomManagerForMint(roomManager);
 
             // ── Parrot ─────────────────────────────────────────────────────
             var glbInstance = (GameObject)PrefabUtility.InstantiatePrefab(glbAsset);
@@ -158,6 +164,7 @@ namespace ParrotApp.EditorTools
             echoSo.ApplyModifiedPropertiesWithoutUndo();
 
             var uiSo = new SerializedObject(appUi);
+            uiSo.FindProperty("startupFlow").objectReferenceValue = startupFlow;
             uiSo.FindProperty("photoController").objectReferenceValue = photoController;
             uiSo.FindProperty("parrotController").objectReferenceValue = parrotController;
             uiSo.FindProperty("focusController").objectReferenceValue =
@@ -171,6 +178,8 @@ namespace ParrotApp.EditorTools
             uiSo.FindProperty("filledPaperNoteSprite").objectReferenceValue = LoadSprite(PaperNoteFilledSpritePath);
             uiSo.FindProperty("nekoClawSprite").objectReferenceValue = LoadSprite(NekoClawSpritePath);
             uiSo.ApplyModifiedPropertiesWithoutUndo();
+
+            WireStartupFlow(startupFlow, roomManager, lifecycleManager, shutdownService, tokenMintClient);
 
             // ── Save ───────────────────────────────────────────────────────
             string savePath = EditorUtility.SaveFilePanelInProject(
@@ -226,6 +235,18 @@ namespace ParrotApp.EditorTools
                 ? GetOrAdd<PerchOnHand>(parrotRoot)
                 : Object.FindObjectOfType<PerchOnHand>();
 
+            var lifecycleRoot = FindOrCreateRoot("Lifecycle");
+            var lifecycleManager = GetOrAdd<AppLifecycleManager>(lifecycleRoot);
+            var shutdownService = GetOrAdd<LifecycleShutdownService>(lifecycleRoot);
+            var startupFlow = GetOrAdd<AppStartupFlowController>(lifecycleRoot);
+            var tokenMintClient = GetOrAdd<LiveKitTokenMintClient>(lifecycleRoot);
+            GetOrAdd<RoomManagerLifecycleBridge>(lifecycleRoot);
+
+            var roomManager = Object.FindObjectOfType<RoomManager>();
+            if (roomManager == null)
+                roomManager = GetOrAdd<RoomManager>(FindOrCreateRoot("RoomManager"));
+            ConfigureRoomManagerForMint(roomManager);
+
             var handSource = Object.FindObjectOfType<HandGestureSource>();
             if (handSource == null)
                 handSource = GetOrAdd<HandGestureSource>(FindOrCreateRoot("HandSource"));
@@ -243,6 +264,7 @@ namespace ParrotApp.EditorTools
             var uiRoot = FindOrCreateRoot("AppV1MetaUI");
             var appUi = GetOrAdd<AppV1MetaUiController>(uiRoot);
 
+            SetObjectRef(appUi, "startupFlow", startupFlow);
             SetObjectRef(appUi, "photoController", photoController);
             SetObjectRef(appUi, "focusController", focusController);
             SetObjectRef(appUi, "bboxController", bboxController);
@@ -252,7 +274,10 @@ namespace ParrotApp.EditorTools
 
             SetObjectRef(perch, "handTracker", handSource);
             SetObjectRef(perch, "animDriver", animDriver);
+            WireStartupFlow(startupFlow, roomManager, lifecycleManager, shutdownService, tokenMintClient);
 
+            EditorUtility.SetDirty(lifecycleRoot);
+            EditorUtility.SetDirty(roomManager);
             EditorUtility.SetDirty(uiRoot);
             EditorUtility.SetDirty(attentionRoot);
             if (parrotRoot != null) EditorUtility.SetDirty(parrotRoot);
@@ -264,8 +289,8 @@ namespace ParrotApp.EditorTools
 
             Debug.Log(
                 "[ParrotSmokeSceneBuilder] Current scene upgraded for App V1: " +
-                "AppV1MetaUI, paper-note drag/drop UI, parrot joystick wiring, " +
-                "Photo/Focus/BBox/XRHand references.");
+                "AppV1MetaUI, Mint startup flow, paper-note drag/drop UI, " +
+                "parrot joystick wiring, Photo/Focus/BBox/XRHand references.");
         }
 
         // ─── helpers ──────────────────────────────────────────────────────
@@ -293,6 +318,39 @@ namespace ParrotApp.EditorTools
             var prop = so.FindProperty(propertyName);
             if (prop == null) return;
             prop.objectReferenceValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void ConfigureRoomManagerForMint(RoomManager roomManager)
+        {
+            if (roomManager == null) return;
+            SetBool(roomManager, "autoConnectOnStart", false);
+            SetBool(roomManager, "allowEditorTokenFile", false);
+        }
+
+        private static void WireStartupFlow(
+            AppStartupFlowController startupFlow,
+            RoomManager roomManager,
+            AppLifecycleManager lifecycleManager,
+            LifecycleShutdownService shutdownService,
+            LiveKitTokenMintClient tokenMintClient)
+        {
+            if (startupFlow == null) return;
+            SetObjectRef(startupFlow, "roomManager", roomManager);
+            SetObjectRef(startupFlow, "lifecycleManager", lifecycleManager);
+            SetObjectRef(startupFlow, "shutdownService", shutdownService);
+            SetObjectRef(startupFlow, "tokenMintClient", tokenMintClient);
+            SetObjectRef(startupFlow, "microphonePublisher", Object.FindObjectOfType<MicrophonePublisher>());
+            SetObjectRef(startupFlow, "videoPublisher", Object.FindObjectOfType<ARVideoPublisher>());
+        }
+
+        private static void SetBool(UnityEngine.Object target, string propertyName, bool value)
+        {
+            if (target == null) return;
+            var so = new SerializedObject(target);
+            var prop = so.FindProperty(propertyName);
+            if (prop == null || prop.propertyType != SerializedPropertyType.Boolean) return;
+            prop.boolValue = value;
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
