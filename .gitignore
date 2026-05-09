@@ -27,7 +27,9 @@ neo4j_data/
 
 # Unity local secrets (copy from *.example.json — never commit real values)
 unity/*/Assets/Resources/parrot_config.json
+unity/*/Assets/Resources/parrot_config.json.meta
 unity/*/Assets/Resources/parrotdev.json
+unity/*/Assets/Resources/parrotdev.json.meta
 
 # Unity (both ParrotDev and future ParrotAR)
 unity/*/Library/

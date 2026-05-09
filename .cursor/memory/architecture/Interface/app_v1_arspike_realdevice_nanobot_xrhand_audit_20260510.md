@@ -5,6 +5,8 @@ date: 2026-05-10
 owner: Codex / App V1
 scope: ArSpike real-device smoke prep, Nanobot paper reports, XRHand perch, parrot plane walk
 code:
+  - unity/ArSpike/Assets/Scripts/ParrotApp/LiveKit/LiveKitTokenMintClient.cs
+  - unity/ArSpike/Assets/Resources/parrot_config.json.example
   - unity/ArSpike/Assets/Scripts/ParrotApp/UI/AppV1MetaUiController.cs
   - unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/ParrotController.cs
   - unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/AnimationDriver.cs
@@ -78,6 +80,15 @@ Mint startup fix:
 - `ParrotSmokeSceneBuilder.UpgradeCurrentSmokeScene()` now ensures `AppStartupFlowController` + `LiveKitTokenMintClient` exist on `Lifecycle`, wires `AppV1MetaUI.startupFlow`, and sets `RoomManager.autoConnectOnStart=false` / `allowEditorTokenFile=false`.
 - Current `ParrotSmokeScene.unity` has `LiveKitTokenMintClient.mintEndpoint=http://127.0.0.1:7888/mint`; for real device testing this must be changed to the phone-reachable LAN/Castle endpoint.
 
+2026-05-10 follow-up after backend restart:
+
+- Bug found: ArSpike `LiveKitTokenMintClient` had a serialized `bearerSecret` field but did not load the shared D3 runtime config, so a restarted backend with `PARROT_MINT_SECRET` enabled returned `401 unauthorized` unless the secret was hand-filled in the scene.
+- Fix: `LiveKitTokenMintClient.Awake()` now reads gitignored `Resources/parrot_config.json` and applies `mintUrl` / `mintSecret`. It accepts `liveKitUrl` / `room` in the same file for ParrotDev compatibility, but still lets `AppStartupFlowController` own room selection and use the Mint response URL.
+- Safety: `unity/*/Assets/Resources/parrot_config.json.meta` and `parrotdev.json.meta` are now ignored alongside the secret JSON files. The committed ArSpike file is only `parrot_config.json.example`; the real local config is ignored and must not be committed.
+- Local prep done: copied the existing local ParrotDev config into `unity/ArSpike/Assets/Resources/parrot_config.json` and normalized `mintUrl` to `http://127.0.0.1:7888/mint` for Editor smoke. This file is intentionally gitignored.
+- Mint probe: using the ArSpike local config, `POST /mint` returned HTTP 200 with a token and `ws://8.216.45.45:7880`.
+- Current port probe: LiveKit `7880`, Mint `7888`, Web console `7892`, and Redis `6379` are open. Photo upload `7889` is still not reachable, so original photo-file upload remains a real-device blocker unless that service moved to a different port.
+
 ## 4. Current XRHand answer
 
 The code path for "gesture/command flies to the index-finger middle segment, plays perch animation, and flies back" is implemented for editor smoke and ready for real package activation:
@@ -113,6 +124,13 @@ What is not yet real-device complete:
 - Python static/tests:
   - `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py tests/test_brain/test_app_first_version_facade.py tests/test_brain/test_app_v1_monitor.py -q`
   - `uv run ruff check src/parrot/brain/app_first_version.py src/parrot/brain/app_live_state.py src/scripts/prepare_app_v1_device_smoke.py tests/test_unity/test_app_v1_meta_ui_static.py`
+  - 2026-05-10 follow-up: `uv run pytest tests/test_brain/test_app_first_version_facade.py tests/test_brain/test_app_v1_monitor.py tests/test_unity/test_app_v1_meta_ui_static.py -q` => 17 passed.
+  - 2026-05-10 follow-up: `uv run ruff check tests/test_unity/test_app_v1_meta_ui_static.py` => pass. Full-repo `ruff check .` still reports unrelated historical lint debt.
+  - 2026-05-10 follow-up: `uv run python src/scripts/run_app_v1_self_check.py --obsidian-vault D:\GOSLOParrot\GOSLObsidian\GOSLOParrot` => passed 14/14.
+- Web console live-state:
+  - `GET /api/app/live-state` returns `blackboard`, `intent_workspace`, `refs`, `l2b`, `tool_artifacts`, and `audit`.
+  - Live service flow test executed `camera/capture-request`, `test/focus`, `test/bbox`, `test/photo-preview`, and `nanobot/report`; all returned HTTP 200 + success.
+  - After the flow, `tool_artifacts.camera` was visible in Blackboard, IntentWorkspace, and L2-B; `magnifier_focus` and `boundary_box` were visible in RefRegistry; `workdesk_notes` were visible in Blackboard + IntentWorkspace. A new `PHOTO` L2-B node and new Nanobot note ref were observed.
 - Unity MCP:
   - Active project: `ArSpike`, Unity `2022.3.62f3`, platform `Android`.
   - Active scene before fix lacked `AppV1MetaUI`; this was fixed by the upgrader.
@@ -121,3 +139,4 @@ What is not yet real-device complete:
   - Console compile/import errors: 0.
   - Play Mode still reports expected LiveKit connection failure when local/server LiveKit is not reachable; this is an environment prerequisite, not a NekoClaw/UI compile failure.
   - 2026-05-10 Mint startup correction: Unity MCP found `AppStartupFlowController`, `LiveKitTokenMintClient`, and `RoomManager`; scene serialization shows `startupFlow` wired and `autoConnectOnStart=0`, `allowEditorTokenFile=0`.
+  - 2026-05-10 follow-up: after script refresh, Unity MCP bridge stopped answering pings with WebSocket close warnings, but the Unity process remained responsive and Editor.log contained no `error CS` / compilation failed entries for `LiveKitTokenMintClient.cs`. Treat this as MCP transport instability, not a confirmed Unity compile failure.

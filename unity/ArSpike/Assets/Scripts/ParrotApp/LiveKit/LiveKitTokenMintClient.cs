@@ -19,6 +19,15 @@ namespace ParrotApp.LiveKit
         [SerializeField] private string bearerSecret = "";
 
         [Serializable]
+        private class RuntimeConfigDto
+        {
+            public string mintUrl = "";
+            public string mintSecret = "";
+            public string liveKitUrl = "";
+            public string room = "";
+        }
+
+        [Serializable]
         private class MintRequestDto
         {
             public string room;
@@ -57,6 +66,39 @@ namespace ParrotApp.LiveKit
         {
             get => bearerSecret;
             set => bearerSecret = value ?? "";
+        }
+
+        private void Awake()
+        {
+            LoadRuntimeConfig();
+        }
+
+        private void LoadRuntimeConfig()
+        {
+            // Shared D3 runtime config: gitignored Resources/parrot_config.json.
+            // The file may also include liveKitUrl/room for ParrotDev compatibility;
+            // this client only owns mint endpoint and bearer auth.
+            var asset = Resources.Load<TextAsset>("parrot_config");
+            if (asset == null)
+                return;
+
+            try
+            {
+                var config = JsonUtility.FromJson<RuntimeConfigDto>(asset.text);
+                if (config == null)
+                    return;
+
+                if (!string.IsNullOrWhiteSpace(config.mintUrl))
+                    mintEndpoint = config.mintUrl;
+                if (!string.IsNullOrWhiteSpace(config.mintSecret))
+                    bearerSecret = config.mintSecret;
+
+                Debug.Log("[TokenMint] loaded parrot_config from Resources");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[TokenMint] failed to parse parrot_config: {ex.Message}");
+            }
         }
 
         public IEnumerator Mint(string roomId, string identity, Action<MintResult> onComplete)

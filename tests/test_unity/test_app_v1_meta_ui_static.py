@@ -13,6 +13,9 @@ PARROT_CONTROLLER = (
 ANIMATION_DRIVER = (
     UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "AnimationDriver.cs"
 )
+TOKEN_MINT_CLIENT = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "LiveKit" / "LiveKitTokenMintClient.cs"
+)
 SMOKE_BUILDER = (
     UNITY_ROOT
     / "Scripts"
@@ -160,3 +163,23 @@ def test_app_v1_curated_asset_slots_are_imported_to_unity() -> None:
         assert "enableMipMap: 0" in meta_text
 
     assert slots["CameraIcon"]["status"] == "placeholder"
+
+
+def test_arspike_mint_client_uses_gitignored_runtime_config_without_logging_secret() -> None:
+    text = TOKEN_MINT_CLIENT.read_text(encoding="utf-8")
+    example = UNITY_ROOT / "Resources" / "parrot_config.json.example"
+
+    assert 'Resources.Load<TextAsset>("parrot_config")' in text
+    assert "mintUrl" in text
+    assert "mintSecret" in text
+    assert "SetRequestHeader(\"Authorization\"" in text
+    assert "loaded parrot_config" in text
+    debug_lines = [line for line in text.splitlines() if "Debug." in line]
+    assert all("bearerSecret" not in line for line in debug_lines)
+    assert all("mintSecret" not in line for line in debug_lines)
+
+    assert example.exists()
+    config = json.loads(example.read_text(encoding="utf-8"))
+    assert config["mintUrl"].endswith(":7888/mint")
+    assert config["mintSecret"] == "same-as-PARROT_MINT_SECRET-on-castle"
+    assert config["room"] == "parrot-main"
