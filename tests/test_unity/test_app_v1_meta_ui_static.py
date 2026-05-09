@@ -23,6 +23,8 @@ def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
     assert "StartupSurface" in text
     assert "StartupTransitionSurface" in text
     assert "ToolCabinet_WoodDrawer" in text
+    assert "AppV1SettingsDialoguePanel" in text
+    assert "SettingsDialogueStatus" in text
     assert "CameraModeOverlay_TransparentWysiwyg" in text
     assert "CameraModeTinyTopEdge" in text
     assert "CameraGestureRail_Zoom" in text
@@ -38,6 +40,11 @@ def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
     assert "DebugFireBranchGesture" in text
 
     assert "photoController.CapturePhoto()" in text
+    assert "AppCapabilityModeNames.SessionOnlySilent" in text
+    assert "ReportSceneReadyFromSettings" in text
+    assert "ToggleAwarenessMode" in text
+    assert "SceneReady does not greet" in text
+    assert "ready_after_placement" in text
     assert 'SetCameraOverlayMode("preview")' in text
     assert 'SetCameraOverlayMode("capture_locked")' in text
     assert "ToggleCameraProSettings" in text

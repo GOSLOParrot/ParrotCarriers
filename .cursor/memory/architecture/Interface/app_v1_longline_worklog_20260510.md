@@ -91,3 +91,13 @@ owner: Codex / App V1
 - 齿轮展开 `CameraProSettingsPanel`，包含 filter / preview / ready / hide UI / pixel BBox stamp slot。
 - 新增 `app_v1_frontend_camera_ux_realdevice_audit_20260510.md`，记录多场景前端流程审计和真机测试准备。
 - 静态测试已改为防止重新引入 `CameraPreviewFrame`。
+
+## 06:20-06:45 Frontend Flow / Dialogue / Real-Device Prep
+
+- 审计发现 Settings 只有纸条反馈，真机测试时无法连续看到能力模式、对话 gate、Awareness。
+- 新增 `AppV1SettingsDialoguePanel`：Quiet / Voice / Full AR、SceneReady、Placed、Aware、Workdesk、Notes。
+- 修复主界面内切能力模式可能回到 Startup 的 UX bug；Main UI 内现在只发纸条和刷新 HUD。
+- HUD 增加 Mode / Dialogue / Camera / Focus+BBox / Notes 摘要，方便拍屏验收。
+- 相机 zoom/EV rail 改为 Slider 直接挂在 rail 面板上，避免触摸 hit area 过小。
+- 新增 `src/scripts/prepare_app_v1_device_smoke.py`，输出手机可访问 LiveKit / token mint / photo upload / Web console URL 与 smoke 顺序。
+- 新增 `app_v1_frontend_flow_modes_audit_20260510.md`，固化多模式/多菜单/对话流程审计。

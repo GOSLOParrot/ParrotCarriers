@@ -47,6 +47,7 @@ namespace ParrotApp.UI
         private RectTransform _transitionSurface;
         private RectTransform _mainSurface;
         private RectTransform _toolDrawer;
+        private RectTransform _settingsPanel;
         private RectTransform _cameraOverlay;
         private RectTransform _cameraProPanel;
         private RectTransform _cameraTransitionSlot;
@@ -59,6 +60,7 @@ namespace ParrotApp.UI
         private Text _startupStatus;
         private Text _transitionText;
         private Text _hudText;
+        private Text _settingsStatus;
         private Text _cameraLabel;
         private Text _cameraProLabel;
         private Text _cameraTransitionText;
@@ -71,18 +73,23 @@ namespace ParrotApp.UI
         private Slider _magnifierSlider;
 
         private bool _drawerOpen;
+        private bool _settingsOpen;
         private bool _cameraOpen;
         private bool _cameraProOpen;
         private bool _workspaceOpen;
         private bool _magnifierOpen;
         private bool _magnifierSettingsOpen;
         private bool _bboxOpen;
+        private bool _gosloPlaced;
         private int _noteCount;
         private int _photoRequestCount;
         private int _cameraFilterIndex;
         private float _cameraZoom = 1f;
         private float _cameraExposure;
         private float _magnifierScale = 2f;
+        private string _capabilityMode = AppCapabilityModeNames.FullARCompanion;
+        private string _dialogueState = "waiting_for_placement";
+        private string _awarenessMode = "AWARE_SILENT";
         private string _cameraMode = "off";
         private string _activeFocusId = "";
         private string _activeBBoxId = "";
@@ -225,6 +232,7 @@ namespace ParrotApp.UI
         {
             _hudText = BuildHud(root);
             _toolDrawer = BuildToolDrawer(root);
+            _settingsPanel = BuildSettingsPanel(root);
             _cameraOverlay = BuildCameraOverlay(root);
             _workspace = BuildWorkspace(root);
             _noteStack = BuildNoteStack(root);
@@ -232,6 +240,7 @@ namespace ParrotApp.UI
             _bboxOverlay = BuildBBoxOverlay(root);
 
             _drawerOpen = false;
+            _settingsOpen = false;
             RefreshDrawerPosition();
             root.gameObject.SetActive(false);
         }
@@ -283,6 +292,41 @@ namespace ParrotApp.UI
             var tab = AddToolButton(drawer, "<", 272, ToggleDrawer);
             Anchor(tab.GetComponent<RectTransform>(), LeftCenter(), LeftCenter(), LeftCenter(), new Vector2(-34, 0), new Vector2(34, 82));
             return drawer;
+        }
+
+        private RectTransform BuildSettingsPanel(RectTransform root)
+        {
+            var panel = CreatePanel("AppV1SettingsDialoguePanel", root, new Color(0.045f, 0.048f, 0.060f, 0.92f));
+            Anchor(panel, TopLeft(), TopLeft(), TopLeft(), new Vector2(24, -190), new Vector2(420, 504));
+
+            var title = CreateText("SettingsDialogueTitle", panel, "SESSION", 20, TextAnchor.MiddleLeft);
+            Anchor(title.rectTransform, TopLeft(), TopLeft(), TopLeft(), new Vector2(22, -20), new Vector2(220, 42));
+
+            AddCameraHudButton(panel, "x", "SettingsDialogueClose", TopRight(), new Vector2(-20, -18), new Vector2(44, 34), ToggleSettings);
+
+            _settingsStatus = CreateText("SettingsDialogueStatus", panel, "", 15, TextAnchor.UpperLeft);
+            Stretch(_settingsStatus.rectTransform, new Vector2(22, 72), new Vector2(-22, -208));
+
+            AddSettingsButton(panel, "Quiet", new Vector2(-128, 154), () => ApplyCapability(AppCapabilityModeNames.SessionOnlySilent));
+            AddSettingsButton(panel, "Voice", new Vector2(0, 154), () => ApplyCapability(AppCapabilityModeNames.VoiceOnlyNoVideo));
+            AddSettingsButton(panel, "Full AR", new Vector2(128, 154), () => ApplyCapability(AppCapabilityModeNames.FullARCompanion));
+            AddSettingsButton(panel, "SceneReady", new Vector2(-128, 104), ReportSceneReadyFromSettings);
+            AddSettingsButton(panel, "Placed", new Vector2(0, 104), ReportGosloPlaced);
+            AddSettingsButton(panel, "Aware", new Vector2(128, 104), ToggleAwarenessMode);
+            AddSettingsButton(panel, "Workdesk", new Vector2(-64, 54), ToggleWorkspace);
+            AddSettingsButton(panel, "Notes", new Vector2(64, 54), SpawnNanobotNote);
+
+            var footer = CreateText(
+                "SettingsRealDeviceFooter",
+                panel,
+                "Real-device smoke: use LAN host, token mint, LiveKit, Brain upload, AR tracking.",
+                13,
+                TextAnchor.MiddleLeft);
+            Anchor(footer.rectTransform, BottomCenter(), BottomCenter(), BottomCenter(), new Vector2(0, 20), new Vector2(360, 44));
+
+            panel.gameObject.SetActive(false);
+            RefreshSettingsPanel();
+            return panel;
         }
 
         private RectTransform BuildCameraOverlay(RectTransform root)
@@ -491,6 +535,12 @@ namespace ParrotApp.UI
             Anchor(btn.GetComponent<RectTransform>(), BottomCenter(), BottomCenter(), BottomCenter(), position, new Vector2(106, 38));
         }
 
+        private void AddSettingsButton(RectTransform parent, string label, Vector2 position, UnityEngine.Events.UnityAction action)
+        {
+            var button = AddToolButton(parent, label, 0, action);
+            Anchor(button.GetComponent<RectTransform>(), BottomCenter(), BottomCenter(), BottomCenter(), position, new Vector2(112, 38));
+        }
+
         private void AddCornerButton(RectTransform parent, string label, Vector2 anchoredPosition, UnityEngine.Events.UnityAction action)
         {
             var button = AddToolButton(parent, label, 0, action);
@@ -681,15 +731,31 @@ namespace ParrotApp.UI
         private void ApplyCapability(string mode)
         {
             ResolveDependencies();
+            _capabilityMode = AppCapabilityModeNames.Normalize(mode);
+            _dialogueState = _capabilityMode == AppCapabilityModeNames.SessionOnlySilent
+                ? "quiet_keepalive"
+                : (_gosloPlaced ? "ready_after_placement" : "waiting_for_placement");
             if (startupFlow != null)
             {
-                startupFlow.ApplyCapabilityMode(mode);
-                ShowStartup("Capability mode requested: " + mode);
+                startupFlow.ApplyCapabilityMode(_capabilityMode);
+                if (_mainSurface != null && _mainSurface.gameObject.activeSelf)
+                {
+                    AddPaperNote("Capability", "Mode requested: " + _capabilityMode + ".");
+                }
+                else
+                {
+                    ShowStartup("Capability mode requested: " + _capabilityMode);
+                }
             }
             else
             {
-                ShowStartup("Capability mode placeholder: " + mode);
+                if (_mainSurface != null && _mainSurface.gameObject.activeSelf)
+                    AddPaperNote("Capability placeholder", "Mode requested: " + _capabilityMode + ".");
+                else
+                    ShowStartup("Capability mode placeholder: " + _capabilityMode);
             }
+            RefreshSettingsPanel();
+            RefreshHud();
         }
 
         private void OnStartupTransitionStarted(AppStartupConfigDto _)
@@ -740,13 +806,43 @@ namespace ParrotApp.UI
         private void ReportGosloPlaced()
         {
             ResolveDependencies();
+            _gosloPlaced = true;
+            _dialogueState = "ready_after_placement";
             if (startupFlow != null) startupFlow.ReportGosloPlaced();
             AddPaperNote("GOSLO placed", "Greeting gate opened after placement.");
+            RefreshSettingsPanel();
+            RefreshHud();
         }
 
         private void ToggleSettings()
         {
-            AddPaperNote("Settings", "Awareness, camera mode, and capability mode stay backend-owned.");
+            _settingsOpen = !_settingsOpen;
+            if (_settingsPanel != null) _settingsPanel.gameObject.SetActive(_settingsOpen);
+            RefreshSettingsPanel();
+            if (_settingsOpen)
+            {
+                AddPaperNote("Settings", "Session, dialogue gate, and real-device smoke status are visible.");
+            }
+        }
+
+        private void ReportSceneReadyFromSettings()
+        {
+            ResolveDependencies();
+            _dialogueState = _gosloPlaced ? "ready_after_placement" : "scene_ready_silent";
+            if (startupFlow != null) startupFlow.ReportSceneReady();
+            AddPaperNote("Scene ready", "Scene readiness reported; greeting still waits for GOSLO placement.");
+            RefreshSettingsPanel();
+            RefreshHud();
+        }
+
+        private void ToggleAwarenessMode()
+        {
+            _awarenessMode = _awarenessMode == "UNAWARE_RECORDED"
+                ? "AWARE_SILENT"
+                : (_awarenessMode == "AWARE_SILENT" ? "AWARE_REACT" : "UNAWARE_RECORDED");
+            AddPaperNote("Awareness", _awarenessMode + " selected locally; backend policy remains facade-owned.");
+            RefreshSettingsPanel();
+            RefreshHud();
         }
 
         private void ToggleCameraPreview()
@@ -774,6 +870,7 @@ namespace ParrotApp.UI
             _cameraMode = mode;
             RefreshCameraLabel();
             RefreshCameraProLabel();
+            RefreshSettingsPanel();
             RefreshHud();
         }
 
@@ -789,6 +886,7 @@ namespace ParrotApp.UI
             _cameraZoom = value;
             RefreshCameraLabel();
             RefreshCameraProLabel();
+            RefreshSettingsPanel();
         }
 
         private void SetCameraExposure(float value)
@@ -796,6 +894,7 @@ namespace ParrotApp.UI
             _cameraExposure = value;
             RefreshCameraLabel();
             RefreshCameraProLabel();
+            RefreshSettingsPanel();
         }
 
         private void CycleCameraFilter()
@@ -1018,10 +1117,47 @@ namespace ParrotApp.UI
             int bboxCount = bboxController != null ? bboxController.ActiveCount : 0;
             _hudText.text =
                 "GOSLO\n" +
-                "Greeting: waits for placement\n" +
+                "Mode: " + ShortCapabilityName(_capabilityMode) + "\n" +
+                "Dialogue: " + ShortDialogueState() + "\n" +
                 "Camera: " + _cameraMode + " " + _cameraZoom.ToString("0.0") + "x\n" +
-                "Notes: " + _noteCount + "\n" +
-                "Focus " + focusCount + " / BBox " + bboxCount;
+                "Focus " + focusCount + " / BBox " + bboxCount + "\n" +
+                "Notes: " + _noteCount;
+        }
+
+        private void RefreshSettingsPanel()
+        {
+            if (_settingsStatus == null) return;
+            _settingsStatus.text =
+                "Capability: " + _capabilityMode + "\n" +
+                "Dialogue: " + _dialogueState + "\n" +
+                "GOSLO placed: " + (_gosloPlaced ? "yes" : "no") + "\n" +
+                "Awareness: " + _awarenessMode + "\n" +
+                "Camera: " + _cameraMode + " / " + _cameraZoom.ToString("0.0") + "x / " +
+                _cameraExposure.ToString("+0.0;-0.0;0.0") + " EV\n\n" +
+                "SceneReady does not greet. Placed opens the greeting gate.";
+        }
+
+        private static string ShortCapabilityName(string mode)
+        {
+            switch (mode)
+            {
+                case AppCapabilityModeNames.SessionOnlySilent:
+                    return "Silent";
+                case AppCapabilityModeNames.VoiceOnlyNoVideo:
+                    return "Voice";
+                case AppCapabilityModeNames.VoiceVideoNoActionMonitor:
+                    return "Voice+Cam";
+                default:
+                    return "Full AR";
+            }
+        }
+
+        private string ShortDialogueState()
+        {
+            if (_dialogueState == "ready_after_placement") return "ready";
+            if (_dialogueState == "quiet_keepalive") return "quiet";
+            if (_dialogueState == "scene_ready_silent") return "scene ready";
+            return "wait place";
         }
 
         private void RefreshCameraLabel()

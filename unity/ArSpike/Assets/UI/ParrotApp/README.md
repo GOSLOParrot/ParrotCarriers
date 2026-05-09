@@ -16,6 +16,10 @@ shell uses these files as stable visual slots:
 | BoundaryBoxIcon | `Assets/UI/ParrotApp/Icons/BoundaryBox_Frame.png` | placeholder |
 | WorkspaceDesk | `Assets/UI/ParrotApp/Workspace` | slot only |
 | TransitionAnimation | `Assets/UI/ParrotApp/Transitions` | slot only |
+| SettingsDialoguePanel | runtime UGUI using wood/paper slots | implemented |
+| CameraProToolbox | runtime UGUI using paper/BBox stamp slots | implemented |
+| NanobotPaperAnimation | `Assets/UI/ParrotApp/Notifications` | slot only |
+| RealDeviceSmokeBadge | runtime text badge in Settings panel | implemented |
 
 Unity import target for these PNGs: `Sprite (2D and UI)`, point filtering, no
 mipmaps, and 9-slice borders later for stretched wood/paper panels.

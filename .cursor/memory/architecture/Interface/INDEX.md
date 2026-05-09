@@ -142,6 +142,7 @@ related:
 - App V1 facade：[`app_v1_facade_core_business_interface_20260510.md`](app_v1_facade_core_business_interface_20260510.md) - 菜单画布外部模块、相机/Awareness、Google draft、Obsidian、XRHand、Nanobot 报告统一业务接口
 - App V1 自检完成记录：[`app_v1_longline_self_check_completion_20260510.md`](app_v1_longline_self_check_completion_20260510.md) - 长线自检目标、实现、浏览器/Unity/pytest 验证、剩余问题
 - App V1 前端相机与真机审计：[`app_v1_frontend_camera_ux_realdevice_audit_20260510.md`](app_v1_frontend_camera_ux_realdevice_audit_20260510.md) - 透明 WYSIWYG 相机模式、专业设置面板、工具场景覆盖、真机测试准备
+- App V1 前端流程/模式审计：[`app_v1_frontend_flow_modes_audit_20260510.md`](app_v1_frontend_flow_modes_audit_20260510.md) - 对话 gate、能力模式、菜单/工具场景覆盖、真机 smoke 配置脚本
 
 ### §3.2 Web 控制台 read-only 优先
 
@@ -175,6 +176,7 @@ related:
 | `app_v1_tool_dataflow_interface_20260510.md` | active / Business Interface | 相机、放大镜、BBox、XRHand、工作桌、Web 控制台数据流 |
 | `app_v1_longline_worklog_20260510.md` | active / Worklog | App V1 长线实现时间线、关键决策、阻塞与测试记录 |
 | `app_v1_frontend_camera_ux_realdevice_audit_20260510.md` | active / Frontend Audit | 透明相机 HUD、专业相机设置槽、工具多场景 UX 审计、真机测试准备 |
+| `app_v1_frontend_flow_modes_audit_20260510.md` | active / Frontend Audit | 对话 gate、能力模式、Settings 面板、工具菜单矩阵、真机 smoke 配置脚本 |
 | ~~`goslo_app_game_overview_asset_brief_20260507.md`~~ | 已被 `../user_ideas_and_backend_capability_brief_20260509.md` 替代 | user 自行删除原文件 |
 | `interface_design_and_how_todo_v0_20260507.md` | superseded_by INDEX.md | 12 场景接口栈穷举主表（场景清单仍可参考） |
 | `interface_design_supplement_20260507.md` | superseded_by INDEX.md | v0 之外 7 项新发现 |
