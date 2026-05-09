@@ -8,6 +8,7 @@ using ParrotApp.Lifecycle;
 using ParrotApp.LiveKit;
 using ParrotApp.Parrot;
 using ParrotApp.Photo;
+using ParrotApp.UI;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -128,7 +129,12 @@ namespace ParrotApp.EditorTools
             // ── Phase 4 W8: Photo (capturePhoto + 256px preview + HTTP POST) ───
             // PhotoController: 离线 smoke 用 ContextMenu 触发，联机 smoke 验证 HTTP POST 路径
             var photoRootGo = new GameObject("Photo");
-            photoRootGo.AddComponent<PhotoController>();
+            var photoController = photoRootGo.AddComponent<PhotoController>();
+
+            // ── App V1 Meta UI: startup page, HUD, tool cabinet, workdesk,
+            // draggable magnifier Focus and resizable BoundaryBox overlays.
+            var uiRootGo = new GameObject("AppV1MetaUI");
+            var appUi = uiRootGo.AddComponent<AppV1MetaUiController>();
 
             // ── Wire references via SerializedObject ───────────────────────
             var perchSo = new SerializedObject(perch);
@@ -144,6 +150,15 @@ namespace ParrotApp.EditorTools
             var echoSo = new SerializedObject(echoPub);
             echoSo.FindProperty("config").objectReferenceValue = attentionConfig;
             echoSo.ApplyModifiedPropertiesWithoutUndo();
+
+            var uiSo = new SerializedObject(appUi);
+            uiSo.FindProperty("photoController").objectReferenceValue = photoController;
+            uiSo.FindProperty("focusController").objectReferenceValue =
+                attentionRootGo.GetComponent<FocusController>();
+            uiSo.FindProperty("bboxController").objectReferenceValue =
+                attentionRootGo.GetComponent<BBoxController>();
+            uiSo.FindProperty("handGestureSource").objectReferenceValue = handSource;
+            uiSo.ApplyModifiedPropertiesWithoutUndo();
 
             // ── Save ───────────────────────────────────────────────────────
             string savePath = EditorUtility.SaveFilePanelInProject(
@@ -172,7 +187,13 @@ namespace ParrotApp.EditorTools
                 "    wire JSON contains 12-field payload incl. preview_jpeg_b64 + pose\n" +
                 "    [PhotoController] HTTP POST attempt will fail (Brain not running) — expected\n" +
                 "► 'Debug: Capture With Test Candidate' → same + candidate_subject_uuid=obj_test_42\n" +
-                "► 'Debug: Capture With Active Refs' → same + bbox_refs/focus_refs from active controllers");
+                "► 'Debug: Capture With Active Refs' → same + bbox_refs/focus_refs from active controllers\n" +
+                "── App V1 Meta UI ─────────────────────────────\n" +
+                "► Play → StartupSurface appears. Choose LOCAL PREVIEW for offline UI smoke\n" +
+                "► HUD Tools opens a wood pull-out cabinet\n" +
+                "► Magnifier creates a draggable Focus overlay with x + gear\n" +
+                "► BoundaryBox creates a draggable/resizable BBox overlay with x + gear\n" +
+                "► Workdesk opens the 2D paper desk; Notes spawns Nanobot paper notes");
         }
 
         [MenuItem(MenuPath, validate = true)]

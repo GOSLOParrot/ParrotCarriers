@@ -170,6 +170,9 @@ related:
 | `chatB_true_connection_completion_record_20260509.md` | completed / Record | 本轮真连接修复、验证与剩余缺口 |
 | `app_v1_facade_core_business_interface_20260510.md` | active / Business Interface | App V1 统一 facade、BB keys、IntentWorkspace roles、白膜设计落点 |
 | `app_v1_longline_self_check_completion_20260510.md` | completed / Record | App V1 长线自检、Awareness v1、Web monitor、Unity MCP smoke 验证 |
+| `app_v1_longline_expanded_execution_plan_20260510.md` | active / Implementation Plan | App V1 从启动页到工具柜/Web 控制台/自检的扩展执行计划 |
+| `app_v1_tool_dataflow_interface_20260510.md` | active / Business Interface | 相机、放大镜、BBox、XRHand、工作桌、Web 控制台数据流 |
+| `app_v1_longline_worklog_20260510.md` | active / Worklog | App V1 长线实现时间线、关键决策、阻塞与测试记录 |
 | ~~`goslo_app_game_overview_asset_brief_20260507.md`~~ | 已被 `../user_ideas_and_backend_capability_brief_20260509.md` 替代 | user 自行删除原文件 |
 | `interface_design_and_how_todo_v0_20260507.md` | superseded_by INDEX.md | 12 场景接口栈穷举主表（场景清单仍可参考） |
 | `interface_design_supplement_20260507.md` | superseded_by INDEX.md | v0 之外 7 项新发现 |

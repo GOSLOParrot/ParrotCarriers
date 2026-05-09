@@ -181,6 +181,14 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
     ),
     BlackboardKey(
         BbScope.SESSION,
+        "session/photo_capture_request",
+        "dict[str, Any]",
+        "brain.app_first_version",
+        "Latest explicit App camera capture request; Unity PhotoController still owns pixels.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.SESSION,
         "session/photo_awareness_policy",
         "str",
         "brain.app_first_version",

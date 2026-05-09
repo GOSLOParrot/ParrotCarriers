@@ -8,6 +8,7 @@ import pytest
 from parrot.brain.intent_workspace import IntentWorkspace, StagedRefKind, set_intent_workspace_for_test
 from parrot.brain.app_first_version import (
     AppFirstVersionFacade,
+    AppToolId,
     CameraMode,
     ExternalModuleId,
     PhotoAwarenessPolicy,
@@ -88,6 +89,7 @@ def test_camera_and_awareness_write_backend_owned_state() -> None:
     facade = AppFirstVersionFacade()
 
     camera_result = facade.set_camera_mode(CameraMode.PHOTO_READY)
+    capture_result = facade.request_camera_capture(candidate_subject_uuid="obj_1")
     awareness_result = facade.set_photo_awareness(
         PhotoAwarenessPolicy.AWARE_SILENT,
         enabled=True,
@@ -95,8 +97,10 @@ def test_camera_and_awareness_write_backend_owned_state() -> None:
 
     bb = open_bb_client(name="test.app_facade.read", writer=None)
     assert camera_result.success
+    assert capture_result.success
     assert awareness_result.success
-    assert bb.get("session/camera_mode") == CameraMode.PHOTO_READY.value
+    assert bb.get("session/camera_mode") == CameraMode.CAPTURE_LOCKED.value
+    assert bb.get("session/photo_capture_request")["candidate_subject_uuid"] == "obj_1"
     assert bb.get("session/photo_awareness_policy") == PhotoAwarenessPolicy.AWARE_SILENT.value
     assert bb.get("session/photo_awareness_enabled") is True
     assert bb.get("session/photo_awareness_allows_interrupt") is False
@@ -163,6 +167,25 @@ async def test_canvas_snapshot_collects_workspace_notes_and_photo_refs(tmp_path:
         "calendar_draft",
         "nanobot_report",
     }
+    assert {tool["tool_id"] for tool in snapshot["tool_cabinet"]} >= {
+        AppToolId.CAMERA.value,
+        AppToolId.MAGNIFIER_FOCUS.value,
+        AppToolId.BOUNDARY_BOX.value,
+        AppToolId.NOTE_INBOX.value,
+    }
+    assert snapshot["asset_manifest"]["schema_version"] == 1
+
+
+def test_tool_cabinet_documents_camera_and_attention_tools() -> None:
+    facade = AppFirstVersionFacade()
+
+    tools = {tool.tool_id: tool for tool in facade.list_tool_cabinet()}
+
+    assert set(tools) == set(AppToolId)
+    assert "PhotoController" in " ".join(tools[AppToolId.CAMERA].flow)
+    assert "/api/app/test/focus" in tools[AppToolId.MAGNIFIER_FOCUS].action_endpoints
+    assert "/api/app/test/bbox" in tools[AppToolId.BOUNDARY_BOX].action_endpoints
+    assert tools[AppToolId.NOTE_INBOX].asset_slot == "paper_note_newspaper"
 
 
 def test_xrhand_mode_updates_without_scene_switch() -> None:

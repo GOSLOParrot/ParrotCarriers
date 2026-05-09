@@ -9,15 +9,33 @@ IntentWorkspace payloads.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-from parrot.brain.app_first_version import AppFirstVersionFacade
+from parrot.brain.app_first_version import (
+    AppFirstVersionFacade,
+    CameraMode,
+    PhotoAwarenessPolicy,
+)
+from parrot.brain.app_test_harness import (
+    simulate_bbox_event,
+    simulate_focus_event,
+    simulate_photo_preview,
+)
+from parrot.brain.app_v1_self_check import run_app_v1_self_check
+from parrot.brain.graphiti_console import (
+    add_episode,
+    draft_episode,
+    graphiti_status,
+    search_graphiti,
+)
 from parrot.brain.l2b_monitor import build_l2b_snapshot
 
 try:
-    from fastapi import FastAPI
+    from fastapi import Body, FastAPI
     from fastapi.responses import HTMLResponse
     from fastapi.staticfiles import StaticFiles
 except ImportError:  # pragma: no cover - only matters on deployments without [http]
+    Body = None  # type: ignore[assignment]
     FastAPI = None  # type: ignore[assignment]
     HTMLResponse = None  # type: ignore[assignment]
     StaticFiles = None  # type: ignore[assignment]
@@ -45,13 +63,133 @@ def build_app():  # type: ignore[no-untyped-def]
     async def app_modules():  # type: ignore[no-untyped-def]
         return [status.as_json() for status in AppFirstVersionFacade().list_module_statuses()]
 
+    @app.get("/api/app/tool-cabinet")
+    async def tool_cabinet():  # type: ignore[no-untyped-def]
+        return [tool.as_json() for tool in AppFirstVersionFacade().list_tool_cabinet()]
+
+    @app.get("/api/app/assets")
+    async def app_assets():  # type: ignore[no-untyped-def]
+        return AppFirstVersionFacade().asset_manifest()
+
+    @app.post("/api/app/workspace/apply")
+    async def apply_workspace(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        workspace_id = str(body.get("workspace_id") or "workdesk")
+        return AppFirstVersionFacade().apply_workspace(workspace_id).as_json()
+
+    @app.post("/api/app/camera/mode")
+    async def set_camera_mode(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        mode = str(body.get("mode") or CameraMode.PREVIEW.value)
+        return AppFirstVersionFacade().set_camera_mode(mode).as_json()
+
+    @app.post("/api/app/camera/capture-request")
+    async def camera_capture_request(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return AppFirstVersionFacade().request_camera_capture(
+            candidate_subject_uuid=str(body.get("candidate_subject_uuid") or ""),
+            awareness_policy=str(body.get("awareness_policy") or PhotoAwarenessPolicy.AWARE_SILENT.value),
+        ).as_json()
+
+    @app.post("/api/app/awareness")
+    async def set_awareness(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return AppFirstVersionFacade().set_photo_awareness(
+            str(body.get("policy") or PhotoAwarenessPolicy.AWARE_SILENT.value),
+            enabled=bool(body.get("enabled", True)),
+            preview_ttl_seconds=int(body.get("preview_ttl_seconds") or 15 * 60),
+        ).as_json()
+
+    @app.post("/api/app/nanobot/report")
+    async def nanobot_report(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return (await AppFirstVersionFacade().stage_nanobot_report(
+            task_id=str(body.get("task_id") or "web_console_task"),
+            title=str(body.get("title") or "Web console Nanobot note"),
+            body=str(body.get("body") or "Fixture Nanobot report from App V1 Web console."),
+        )).as_json()
+
+    @app.post("/api/app/calendar/draft")
+    async def calendar_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return (await AppFirstVersionFacade().create_calendar_draft(
+            action=str(body.get("action") or "create"),
+            title=str(body.get("title") or "Web console calendar draft"),
+            time_range=str(body.get("time_range") or ""),
+            payload=body.get("payload") if isinstance(body.get("payload"), dict) else None,
+        )).as_json()
+
+    @app.post("/api/app/test/focus")
+    async def test_focus(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return simulate_focus_event(
+            focus_id=str(body.get("focus_id") or "fc_web_console"),
+            action=str(body.get("action") or "anchored"),
+            label=str(body.get("label") or "web console focus"),
+        ).as_json()
+
+    @app.post("/api/app/test/bbox")
+    async def test_bbox(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return simulate_bbox_event(
+            bbox_id=str(body.get("bbox_id") or "bb_web_console"),
+            action=str(body.get("action") or "placed"),
+            label=str(body.get("label") or "web console bbox"),
+        ).as_json()
+
+    @app.post("/api/app/test/photo-preview")
+    async def test_photo_preview(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return simulate_photo_preview(
+            photo_id=str(body.get("photo_id") or "ph_web_console"),
+            candidate_subject_uuid=str(body.get("candidate_subject_uuid") or ""),
+        ).as_json()
+
+    @app.post("/api/app/self-check")
+    async def app_self_check():  # type: ignore[no-untyped-def]
+        return (await run_app_v1_self_check()).as_json()
+
     @app.get("/api/l2b/snapshot")
     async def l2b_snapshot(limit: int = 80):  # type: ignore[no-untyped-def]
         return build_l2b_snapshot(limit=max(1, min(limit, 200))).as_json()
 
+    @app.get("/api/graphiti/status")
+    async def graphiti_status_endpoint():  # type: ignore[no-untyped-def]
+        return graphiti_status().as_json()
+
+    @app.post("/api/graphiti/search")
+    async def graphiti_search_endpoint(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return (await search_graphiti(
+            query=str(body.get("query") or ""),
+            partition=str(body.get("partition") or "goslo"),
+            limit=int(body.get("limit") or 5),
+        )).as_json()
+
+    @app.post("/api/graphiti/episode/draft")
+    async def graphiti_episode_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return draft_episode(
+            name=str(body.get("name") or "app_console_episode"),
+            body=str(body.get("body") or ""),
+            partition=str(body.get("partition") or "goslo"),
+            source_description=str(body.get("source_description") or "app-web-console"),
+        ).as_json()
+
+    @app.post("/api/graphiti/episode")
+    async def graphiti_episode(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return (await add_episode(
+            name=str(body.get("name") or "app_console_episode"),
+            body=str(body.get("body") or ""),
+            partition=str(body.get("partition") or "goslo"),
+            source_description=str(body.get("source_description") or "app-web-console"),
+            dry_run=bool(body.get("dry_run", True)),
+        )).as_json()
+
     @app.get("/health")
     async def health():  # type: ignore[no-untyped-def]
-        return {"ok": True, "service": "app-v1-monitor"}
+        return {"ok": True, "service": "app-v1-monitor", "mode": "developer-console"}
 
     return app
 
@@ -66,28 +204,33 @@ def _index_html() -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GOSLO App V1 Monitor</title>
+  <title>GOSLO App V1 Console</title>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #111116;
-      --panel: #1a1a22;
-      --panel-2: #24232f;
-      --ink: #ece9f7;
-      --muted: #a9a3bd;
-      --accent: #9d7cff;
+      --bg: #202024;
+      --bg-2: #17171b;
+      --panel: #27262d;
+      --panel-2: #302e38;
+      --panel-3: #1f1e25;
+      --ink: #dcddde;
+      --muted: #a6a3ad;
+      --accent: #8b6cef;
+      --accent-2: #b9a7ff;
       --ok: #83e6b2;
       --warn: #ffd37a;
+      --bad: #ff8f9c;
+      --line: #3b3945;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
       background:
-        linear-gradient(180deg, rgba(17,17,22,.96), rgba(17,17,22,.98)),
+        linear-gradient(180deg, rgba(32,32,36,.96), rgba(23,23,27,.99)),
         url('/pixel-assets/curated/00_previews/Paper_UI_preview.png');
       color: var(--ink);
-      font: 14px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+      font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       image-rendering: pixelated;
     }
     header {
@@ -95,56 +238,114 @@ def _index_html() -> str:
       align-items: center;
       justify-content: space-between;
       padding: 18px 22px;
-      border-bottom: 1px solid #302b43;
-      background: rgba(18, 17, 25, .92);
+      border-bottom: 1px solid var(--line);
+      background: rgba(23, 23, 27, .94);
     }
     h1 { margin: 0; font-size: 18px; letter-spacing: 0; }
+    .statusline { color: var(--muted); font-size: 12px; margin-top: 3px; }
     button {
-      border: 1px solid #5d4a93;
-      background: #211b33;
+      border: 1px solid #5b4f80;
+      background: #2b253b;
       color: var(--ink);
       padding: 8px 11px;
       border-radius: 6px;
       cursor: pointer;
+      min-height: 34px;
+    }
+    button:hover { border-color: var(--accent-2); color: #fff; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #1b1a20;
+      color: var(--ink);
+      border-radius: 5px;
+      padding: 8px;
+      font: inherit;
+    }
+    textarea { min-height: 72px; resize: vertical; }
+    label { display: block; color: var(--muted); font-size: 11px; margin: 8px 0 4px; }
+    nav {
+      display: flex;
+      gap: 6px;
+      padding: 9px 14px;
+      background: rgba(31, 30, 37, .94);
+      border-bottom: 1px solid var(--line);
+      overflow-x: auto;
+    }
+    nav button { background: transparent; border-color: transparent; color: var(--muted); }
+    nav button.active { background: #302a45; border-color: #5b4f80; color: #fff; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .pill {
+      border: 1px solid var(--line);
+      background: #1d1c23;
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 5px 8px;
+      font-size: 12px;
     }
     main {
       display: grid;
-      grid-template-columns: 1.1fr .9fr;
+      grid-template-columns: 1.05fr .95fr;
       gap: 14px;
       padding: 14px;
     }
     section {
-      border: 1px solid #39314c;
-      background: rgba(26, 26, 34, .94);
+      border: 1px solid var(--line);
+      background: rgba(39, 38, 45, .95);
       border-radius: 6px;
       min-height: 140px;
       overflow: hidden;
     }
+    .tab { display: none; }
+    .tab.active { display: grid; }
     h2 {
       margin: 0;
       padding: 10px 12px;
       font-size: 13px;
       color: #dcd4ff;
-      background: #242032;
-      border-bottom: 1px solid #39314c;
+      background: #25232d;
+      border-bottom: 1px solid var(--line);
     }
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 10px; }
-    .card { background: var(--panel-2); border: 1px solid #343042; border-radius: 5px; padding: 10px; min-height: 86px; }
+    .card { background: var(--panel-2); border: 1px solid #403d4d; border-radius: 5px; padding: 10px; min-height: 86px; }
     .name { color: var(--accent); font-weight: 700; }
     .state { margin-top: 6px; color: var(--ok); }
     .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
     .muted { color: var(--muted); }
-    pre { margin: 0; padding: 12px; white-space: pre-wrap; color: #d6d0e8; }
+    pre {
+      margin: 0;
+      padding: 12px;
+      white-space: pre-wrap;
+      color: #d6d0e8;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+      max-height: 520px;
+      overflow: auto;
+    }
+    .form { padding: 10px; display: grid; gap: 8px; }
     .wide { grid-column: 1 / -1; }
     @media (max-width: 900px) { main { grid-template-columns: 1fr; } .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <header>
-    <h1>GOSLO App V1 Monitor</h1>
-    <button onclick="refresh()">Refresh</button>
+    <div>
+      <h1>GOSLO App V1 Console</h1>
+      <div class="statusline">Developer console for App shell, tool flow, L2-B, Graphiti, and assets</div>
+    </div>
+    <div class="actions">
+      <span class="pill" id="health">health: loading</span>
+      <button onclick="refresh()">Refresh</button>
+    </div>
   </header>
-  <main>
+  <nav>
+    <button class="active" onclick="showTab('overview', this)">Overview</button>
+    <button onclick="showTab('tools', this)">Tool Flow</button>
+    <button onclick="showTab('memory', this)">L2-B / Graphiti</button>
+    <button onclick="showTab('assets', this)">Assets</button>
+    <button onclick="showTab('selfcheck', this)">Self-check</button>
+  </nav>
+  <main id="overview" class="tab active">
     <section>
       <h2>Module Rail</h2>
       <div id="modules" class="grid"></div>
@@ -166,11 +367,136 @@ def _index_html() -> str:
       <pre id="l2b">loading...</pre>
     </section>
   </main>
+  <main id="tools" class="tab">
+    <section class="wide">
+      <h2>Tool Cabinet</h2>
+      <div id="toolcabinet" class="grid"></div>
+    </section>
+    <section>
+      <h2>Camera Flow</h2>
+      <div class="form">
+        <label>camera mode</label>
+        <select id="cameraMode">
+          <option value="preview">preview</option>
+          <option value="photo_ready">photo_ready</option>
+          <option value="capture_locked">capture_locked</option>
+          <option value="off">off</option>
+        </select>
+        <label>candidate subject uuid</label>
+        <input id="cameraCandidate" value="obj_web_console" />
+        <div class="actions">
+          <button onclick="postJson('/api/app/camera/mode', {mode: value('cameraMode')})">Set Mode</button>
+          <button onclick="postJson('/api/app/camera/capture-request', {candidate_subject_uuid: value('cameraCandidate')})">Request Capture</button>
+          <button onclick="postJson('/api/app/test/photo-preview', {photo_id: 'ph_web_console'})">Sim Preview</button>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Focus / BoundaryBox</h2>
+      <div class="form">
+        <label>focus id</label>
+        <input id="focusId" value="fc_web_console" />
+        <label>bbox id</label>
+        <input id="bboxId" value="bb_web_console" />
+        <div class="actions">
+          <button onclick="postJson('/api/app/test/focus', {focus_id: value('focusId'), action:'anchored'})">Anchor Focus</button>
+          <button onclick="postJson('/api/app/test/focus', {focus_id: value('focusId'), action:'released'})">Release Focus</button>
+          <button onclick="postJson('/api/app/test/bbox', {bbox_id: value('bboxId'), action:'placed'})">Place BBox</button>
+          <button onclick="postJson('/api/app/test/bbox', {bbox_id: value('bboxId'), action:'removed'})">Remove BBox</button>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Paper Note Inputs</h2>
+      <div class="form">
+        <label>note title</label>
+        <input id="noteTitle" value="Web console paper note" />
+        <label>note body</label>
+        <textarea id="noteBody">Nanobot fixture report for App V1 testing.</textarea>
+        <div class="actions">
+          <button onclick="postJson('/api/app/nanobot/report', {title:value('noteTitle'), body:value('noteBody'), task_id:'web_console'})">Nanobot Note</button>
+          <button onclick="postJson('/api/app/calendar/draft', {title:value('noteTitle'), action:'create'})">Calendar Draft</button>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Last Action</h2>
+      <pre id="lastAction">no action yet</pre>
+    </section>
+  </main>
+  <main id="memory" class="tab">
+    <section>
+      <h2>Graphiti Core</h2>
+      <div class="form">
+        <label>partition</label>
+        <select id="graphitiPartition">
+          <option value="goslo">goslo</option>
+          <option value="maid">maid</option>
+          <option value="scene">scene</option>
+          <option value="user">user</option>
+        </select>
+        <label>query</label>
+        <input id="graphitiQuery" value="GOSLO app v1" />
+        <label>episode body</label>
+        <textarea id="episodeBody">App console dry-run episode.</textarea>
+        <div class="actions">
+          <button onclick="loadGraphitiStatus()">Status</button>
+          <button onclick="postJson('/api/graphiti/search', {query:value('graphitiQuery'), partition:value('graphitiPartition')})">Search</button>
+          <button onclick="postJson('/api/graphiti/episode/draft', {name:'app_console_episode', body:value('episodeBody'), partition:value('graphitiPartition')})">Draft Episode</button>
+          <button onclick="postJson('/api/graphiti/episode', {name:'app_console_episode', body:value('episodeBody'), partition:value('graphitiPartition'), dry_run:true})">Dry Run Write</button>
+        </div>
+      </div>
+    </section>
+    <section>
+      <h2>Graphiti Result</h2>
+      <pre id="graphiti">loading...</pre>
+    </section>
+    <section class="wide">
+      <h2>L2-B Topology</h2>
+      <pre id="l2b2">loading...</pre>
+    </section>
+  </main>
+  <main id="assets" class="tab">
+    <section class="wide">
+      <h2>Asset Map</h2>
+      <pre id="assetMap">loading...</pre>
+    </section>
+  </main>
+  <main id="selfcheck" class="tab">
+    <section>
+      <h2>App V1 Self-check</h2>
+      <div class="form">
+        <button onclick="runSelfCheck()">Run Self-check</button>
+      </div>
+    </section>
+    <section>
+      <h2>Self-check Result</h2>
+      <pre id="selfcheckResult">not run</pre>
+    </section>
+  </main>
   <script>
     async function getJson(url) {
       const res = await fetch(url, {cache: 'no-store'});
       if (!res.ok) throw new Error(`${url}: ${res.status}`);
       return res.json();
+    }
+    async function postJson(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body || {})
+      });
+      const data = await res.json();
+      document.getElementById('lastAction').textContent = JSON.stringify(data, null, 2);
+      await refresh();
+      return data;
+    }
+    function value(id) { return document.getElementById(id).value; }
+    function showTab(id, btn) {
+      document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
+      btn.classList.add('active');
     }
     function card(status) {
       const health = status.health === 'ok' ? 'state' : 'state warn';
@@ -178,12 +504,23 @@ def _index_html() -> str:
         `<div class="${health}">${status.state}</div>` +
         `<div class="muted">${status.summary || ''}</div></div>`;
     }
+    function toolCard(tool) {
+      const stateClass = tool.enabled ? 'state' : 'state bad';
+      return `<div class="card"><div class="name">${tool.label}</div>` +
+        `<div class="${stateClass}">${tool.state}</div>` +
+        `<div class="muted">${tool.summary}</div>` +
+        `<div class="muted">asset: ${tool.asset_slot}</div></div>`;
+    }
     async function refresh() {
-      const [canvas, l2b] = await Promise.all([
+      const [health, canvas, l2b, graphitiStatus] = await Promise.all([
+        getJson('/health'),
         getJson('/api/app/canvas'),
-        getJson('/api/l2b/snapshot?limit=60')
+        getJson('/api/l2b/snapshot?limit=60'),
+        getJson('/api/graphiti/status')
       ]);
+      document.getElementById('health').textContent = `health: ${health.service} / ${health.mode}`;
       document.getElementById('modules').innerHTML = canvas.module_statuses.map(card).join('');
+      document.getElementById('toolcabinet').innerHTML = canvas.tool_cabinet.map(toolCard).join('');
       document.getElementById('workspace').textContent = JSON.stringify({
         active_workspace_id: canvas.active_workspace_id,
         workspaces: canvas.workspaces
@@ -191,6 +528,18 @@ def _index_html() -> str:
       document.getElementById('paper').textContent = JSON.stringify(canvas.paper_notes, null, 2);
       document.getElementById('photo').textContent = JSON.stringify(canvas.photo_refs, null, 2);
       document.getElementById('l2b').textContent = JSON.stringify(l2b, null, 2);
+      document.getElementById('l2b2').textContent = JSON.stringify(l2b, null, 2);
+      document.getElementById('graphiti').textContent = JSON.stringify(graphitiStatus, null, 2);
+      document.getElementById('assetMap').textContent = JSON.stringify(canvas.asset_manifest, null, 2);
+    }
+    async function loadGraphitiStatus() {
+      document.getElementById('graphiti').textContent =
+        JSON.stringify(await getJson('/api/graphiti/status'), null, 2);
+    }
+    async function runSelfCheck() {
+      const res = await fetch('/api/app/self-check', {method:'POST'});
+      document.getElementById('selfcheckResult').textContent =
+        JSON.stringify(await res.json(), null, 2);
     }
     refresh().catch(err => {
       document.getElementById('modules').innerHTML =

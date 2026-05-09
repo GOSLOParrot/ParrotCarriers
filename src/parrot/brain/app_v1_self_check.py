@@ -19,6 +19,8 @@ from parrot.brain.app_first_version import (
     ExternalModuleId,
     PhotoAwarenessPolicy,
 )
+from parrot.brain.app_test_harness import simulate_bbox_event, simulate_focus_event
+from parrot.brain.graphiti_console import graphiti_status
 from parrot.brain.photo_awareness import handle_photo_preview_awareness
 
 
@@ -62,6 +64,12 @@ async def run_app_v1_self_check(
     camera = facade.set_camera_mode(CameraMode.PHOTO_READY)
     record("camera_mode_photo_ready", camera.success, camera.message)
 
+    capture_request = facade.request_camera_capture(
+        candidate_subject_uuid="selfcheck_candidate",
+        awareness_policy=PhotoAwarenessPolicy.AWARE_SILENT,
+    )
+    record("camera_capture_request", capture_request.success, capture_request.message)
+
     awareness = facade.set_photo_awareness(
         PhotoAwarenessPolicy.AWARE_SILENT,
         enabled=True,
@@ -103,7 +111,17 @@ async def run_app_v1_self_check(
     )
     record("nanobot_report_note", report.success and bool(report.intent_workspace_ref_id))
 
+    focus = simulate_focus_event(focus_id="fc_selfcheck")
+    bbox = simulate_bbox_event(bbox_id="bb_selfcheck")
+    record("focus_tool_ecp_flow", focus.success, focus.event_id)
+    record("bbox_tool_ecp_flow", bbox.success, bbox.event_id)
+
     snapshot = facade.canvas_snapshot().as_json()
+    record(
+        "tool_cabinet_complete",
+        len(snapshot.get("tool_cabinet", [])) >= 6,
+        str(len(snapshot.get("tool_cabinet", []))),
+    )
     record(
         "canvas_snapshot_paper_notes",
         len(snapshot.get("paper_notes", [])) >= 2,
@@ -113,6 +131,12 @@ async def run_app_v1_self_check(
         "canvas_snapshot_photo_refs",
         any(ref.get("role") == "photo_preview_awareness" for ref in snapshot.get("photo_refs", [])),
         str(len(snapshot.get("photo_refs", []))),
+    )
+    g_status = graphiti_status().as_json()
+    record(
+        "graphiti_console_graceful_status",
+        bool(g_status.get("success")),
+        str(g_status.get("message", "")),
     )
 
     passed = all(check["ok"] for check in checks)
