@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GOSLO Parrot Main HUD v0</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #232832;
+      display: grid;
+      place-items: center;
+      font-family: "Courier New", monospace;
+    }
+    .phone {
+      width: min(96vw, 1160px);
+      aspect-ratio: 20 / 9;
+      position: relative;
+      overflow: hidden;
+      border: 8px solid #101318;
+      background:
+        linear-gradient(180deg, #a8c6d9 0 55%, #d2c7b6 55% 100%);
+      image-rendering: pixelated;
+    }
+    .grid {
+      position: absolute;
+      inset: 55% 0 0;
+      background:
+        repeating-linear-gradient(0deg, transparent 0 27px, #ffffff42 28px 29px),
+        repeating-linear-gradient(90deg, transparent 0 54px, #ffffff35 55px 56px);
+    }
+    .companion {
+      position: absolute;
+      left: 50%;
+      top: 45%;
+      width: 74px;
+      height: 94px;
+      transform: translate(-50%, -50%);
+      background: #e9f8f0;
+      border: 4px solid #18202b;
+      box-shadow:
+        -22px 28px 0 -8px #9fd4ff,
+        22px 28px 0 -8px #9fd4ff,
+        0 -34px 0 -12px #fff9e8;
+    }
+    .hud-block,
+    .toolbox-block,
+    .hud-panel-x,
+    .hud-panel-y,
+    .tool-drawer-x,
+    .tool-drawer-y {
+      position: absolute;
+      border-style: solid;
+      box-shadow: 6px 6px 0 #5b3522;
+      color: #101318;
+    }
+    .hud-block {
+      left: 14px;
+      top: 14px;
+      width: 126px;
+      min-height: 48px;
+      padding: 7px;
+      background: #1d2930e6;
+      border-width: 3px;
+      border-color: #8ee6c8;
+      color: #e8fff7;
+      box-shadow: 4px 4px 0 #0b1014;
+    }
+    .hud-title,
+    .tool-title {
+      font-size: 12px;
+      font-weight: 900;
+      padding-bottom: 4px;
+    }
+    .hud-title { border-bottom: 2px solid #8ee6c8; }
+    .tool-title { border-bottom: 3px solid #b86f34; }
+    .hud-pills {
+      display: flex;
+      gap: 5px;
+      margin-top: 6px;
+    }
+    .pill {
+      width: 24px;
+      height: 13px;
+      background: #e8fff7;
+      border: 2px solid #8ee6c8;
+    }
+    .hud-panel-x {
+      left: 146px;
+      top: 14px;
+      width: 420px;
+      height: 58px;
+      padding: 9px 12px;
+      background: #18242bdd;
+      border-width: 3px;
+      border-color: #8ee6c8;
+      color: #e8fff7;
+      box-shadow: 4px 4px 0 #0b1014;
+    }
+    .hud-panel-y {
+      left: 14px;
+      top: 70px;
+      width: 56px;
+      height: 238px;
+      background: #18242bdd;
+      border-width: 3px;
+      border-color: #8ee6c8;
+      box-shadow: 4px 4px 0 #0b1014;
+    }
+    .hud-status-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      height: 100%;
+    }
+    .hud-status {
+      display: grid;
+      place-items: center;
+      border: 2px solid #8ee6c8;
+      background: #0f171ccc;
+      font-size: 10px;
+      font-weight: 900;
+    }
+    .hud-y-light {
+      width: 24px;
+      height: 24px;
+      margin: 12px auto;
+      background: #8ee6c8;
+      border: 3px solid #e8fff7;
+    }
+    .toolbox-block {
+      right: 14px;
+      bottom: 14px;
+      width: 142px;
+      min-height: 56px;
+      padding: 7px;
+      background: #fff0c7;
+      border-width: 4px;
+      border-color: #b86f34;
+    }
+    .drawer-slots {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .slot {
+      height: 20px;
+      background: #ffd992;
+      border: 3px solid #9e5f2f;
+    }
+    .tool-drawer-x {
+      right: 162px;
+      bottom: 14px;
+      width: 452px;
+      height: 76px;
+      padding: 10px 12px;
+      background: #f4c06f;
+      border-width: 5px;
+      border-color: #9e5f2f;
+      box-shadow: 7px 7px 0 #5b3522;
+    }
+    .tool-drawer-y {
+      right: 14px;
+      bottom: 76px;
+      width: 72px;
+      height: 252px;
+      padding: 9px;
+      background: #f4c06f;
+      border-width: 5px;
+      border-color: #9e5f2f;
+      box-shadow: 7px 7px 0 #5b3522;
+    }
+    .drawer-row {
+      display: grid;
+      grid-template-columns: 78px 78px 78px 78px 78px;
+      gap: 8px;
+      height: 100%;
+      align-items: center;
+    }
+    .drawer-tool {
+      height: 48px;
+      background: #fff0c7;
+      border: 4px solid #b86f34;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      font-weight: 900;
+    }
+    .vertical-tool {
+      width: 44px;
+      height: 44px;
+      margin: 0 auto 8px;
+      background: #fff0c7;
+      border: 4px solid #b86f34;
+    }
+    .overlap-safe {
+      position: absolute;
+      right: 80px;
+      bottom: 88px;
+      width: 96px;
+      height: 96px;
+      border: 3px dashed #fff0c766;
+      background: #10131833;
+    }
+    .hint {
+      position: absolute;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      color: #fff;
+      font-size: 12px;
+      text-shadow: 2px 2px 0 #101318;
+    }
+  </style>
+</head>
+<body>
+  <main class="phone" aria-label="Landscape AR HUD and toolbox sketch">
+    <div class="grid"></div>
+    <div class="companion"></div>
+
+    <section class="hud-block">
+      <div class="hud-title">HUD</div>
+      <div class="hud-pills">
+        <span class="pill"></span><span class="pill"></span><span class="pill"></span>
+      </div>
+    </section>
+    <section class="hud-panel-x" aria-label="HUD can pull horizontally">
+      <div class="hud-status-row">
+        <span class="hud-status">ROOM</span>
+        <span class="hud-status">VOICE</span>
+        <span class="hud-status">BRAIN</span>
+        <span class="hud-status">VISION</span>
+      </div>
+    </section>
+    <section class="hud-panel-y" aria-label="HUD can pull vertically">
+      <div class="hud-y-light"></div>
+      <div class="hud-y-light"></div>
+      <div class="hud-y-light"></div>
+      <div class="hud-y-light"></div>
+    </section>
+
+    <section class="tool-drawer-x" aria-label="Tool drawer can pull horizontally">
+      <div class="drawer-row">
+        <span class="drawer-tool">CAM</span>
+        <span class="drawer-tool">PHOTO</span>
+        <span class="drawer-tool">BBOX</span>
+        <span class="drawer-tool">MENU</span>
+        <span class="drawer-tool">2D</span>
+      </div>
+    </section>
+    <section class="tool-drawer-y" aria-label="Tool drawer can pull vertically">
+      <div class="vertical-tool"></div>
+      <div class="vertical-tool"></div>
+      <div class="vertical-tool"></div>
+      <div class="vertical-tool"></div>
+    </section>
+    <div class="overlap-safe" aria-label="Overlap safe zone with no tool or HUD info"></div>
+    <section class="toolbox-block">
+      <div class="tool-title">TOOL DRAWER</div>
+      <div class="drawer-slots">
+        <span class="slot"></span><span class="slot"></span><span class="slot"></span><span class="slot"></span>
+      </div>
+    </section>
+
+    <div class="hint">left-top HUD / right-bottom drawer / both can pull x or y</div>
+  </main>
+</body>
+</html>

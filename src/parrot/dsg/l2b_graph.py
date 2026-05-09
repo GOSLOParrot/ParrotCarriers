@@ -23,12 +23,10 @@ from __future__ import annotations
 import datetime
 import logging
 import re
-import time
 from typing import Callable
 
 from parrot.dsg.l2b_types import (
     ConfirmationStatus,
-    EdgeKind,
     EpisodeMarker,
     NodeKind,
     Salience,
@@ -161,6 +159,23 @@ class L2BGraph:
         for target_idx in self._graph.neighbors(idx):
             edge_data = self._graph.get_edge_data(idx, target_idx)
             result.append((self._graph[target_idx], edge_data))
+        return result
+
+    def all_edges(self) -> list[tuple[SemanticNode, SemanticNode, SemanticEdge]]:
+        """Return all directed edges with source/target node payloads.
+
+        This is primarily a read-only monitor/export surface. It keeps Web
+        consoles and smoke tests away from RustworkX internals while preserving
+        ``L2BGraph`` as the only owner of the PyDiGraph index mapping.
+        """
+        result: list[tuple[SemanticNode, SemanticNode, SemanticEdge]] = []
+        for edge_idx in self._graph.edge_indices():
+            src_idx, dst_idx = self._graph.get_edge_endpoints_by_index(edge_idx)
+            result.append((
+                self._graph[src_idx],
+                self._graph[dst_idx],
+                self._graph.get_edge_data_by_index(edge_idx),
+            ))
         return result
 
     # ━━━ Attention queries ━━━

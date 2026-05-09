@@ -16,16 +16,29 @@ import py_trees
 
 logger = logging.getLogger(__name__)
 
-NANOBOT_TASK_TYPES = frozenset({
-    "research", "summarize", "remind",
-    "memory_consolidation", "vocabulary_learn",
+GENERAL_NANOBOT_TASK_TYPES = frozenset({
+    "research",
+    "summarize",
+    "remind",
+    "memory_consolidation",
+    "vocabulary_learn",
 })
+
+GOOGLE_WORKSPACE_TASK_TYPES = frozenset({
+    "calendar_fetch",
+    "calendar_create",
+    "calendar_patch",
+    "calendar_delete",
+    "message_check",
+})
+
+NANOBOT_TASK_TYPES = GENERAL_NANOBOT_TASK_TYPES | GOOGLE_WORKSPACE_TASK_TYPES
 
 BB_NS = "scheduler"
 
 
 class DispatchToNanobot(py_trees.behaviour.Behaviour):
-    """Route research / memory / vocabulary tasks to Nanobot."""
+    """Route background and external-connector tasks to Nanobot."""
 
     def __init__(self, name: str = "DispatchToNanobot"):
         super().__init__(name)
@@ -65,6 +78,10 @@ class DispatchToNanobot(py_trees.behaviour.Behaviour):
             "type": task_type,
             "status": "dispatched",
             "destination": "nanobot",
+            # Trigger-driven tasks use this to fan the Nanobot result back to
+            # CH_TRIGGER_RESULTS. The Scheduler is the single fan-out owner;
+            # Nanobot only needs to publish one normal task result.
+            "result_channel": params.get("result_channel", ""),
             # NEED-P2.5-PLAN-INTEGRATION: extract Plan correlation fields
             # so result回流 / timeout 路径都能找到 Plan owner.
             "plan_id": params.get("plan_id", ""),

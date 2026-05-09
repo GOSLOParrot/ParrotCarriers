@@ -1,4 +1,4 @@
-"""MenuRegistry — frontend-facing aggregator for the 4 menu blocks.
+"""MenuRegistry — frontend-facing aggregator for the app menu blocks.
 
 This module is the single Python entry the Unity menu canvas / HUD calls
 into. It surfaces:
@@ -6,6 +6,7 @@ into. It surfaces:
     * Persona block         — list_personas() / current persona
     * Mode block            — BehaviorMode flags (BASE..ROLEPLAY)
     * Scene block           — registered SceneType profiles
+    * 2DWorkspace block     — in-app desk/surface, independent from Scene
     * Model block           — ModelManifest list (delegates to the
                               ModelManifestRegistry mirror once a Brain-
                               side mirror lands; baseline returns a single
@@ -40,10 +41,12 @@ from parrot.brain.persona_loader import (
 from parrot.brain.preset_loader import (
     DEFAULT_MODEL_ID,
     DEFAULT_SCENE_ID,
+    DEFAULT_WORKSPACE_ID,
     Preset,
     PresetApplyResult,
     get_preset_loader,
 )
+from parrot.brain.workspace_registry import WorkspaceSummary, get_workspace_registry
 from parrot.dsg.l1_5.scene_snapshot import SceneType
 from parrot.shared.parrot_actions import BehaviorMode
 
@@ -95,10 +98,12 @@ class MenuRegistrySnapshot:
     modes: tuple[ModeBlockSummary, ...]
     scenes: tuple[SceneBlockSummary, ...]
     models: tuple[ModelBlockSummary, ...]
+    workspaces: tuple[WorkspaceSummary, ...]
     active_persona_id: str
     active_mode_flags: tuple[str, ...]
     active_scene_id: str
     active_model_id: str
+    active_workspace_id: str
     available_preset_ids: tuple[str, ...] = ()
 
 
@@ -110,6 +115,10 @@ class MenuSelection:
     mode_flags: tuple[str, ...]
     scene_id: str
     model_id: str
+    # reason: Workspace switching is orthogonal to Scene and must keep the
+    # LiveKit room alive. It rides in the same atomic selection DTO so startup
+    # and preset application can set all user-visible blocks together.
+    workspace_id: str = DEFAULT_WORKSPACE_ID
     metadata: dict = field(default_factory=dict)
 
 
@@ -241,6 +250,9 @@ class MenuRegistry:
         active_persona_id = _read_active("global/active_persona_id") or DEFAULT_PERSONA_ID
         active_scene_id = _read_active("global/active_scene_id") or DEFAULT_SCENE_ID
         active_model_id = _read_active("global/active_model_id") or DEFAULT_MODEL_ID
+        active_workspace_id = (
+            _read_active("global/active_workspace_id") or DEFAULT_WORKSPACE_ID
+        )
         active_mode_flags = _read_active_mode_flags()
 
         try:
@@ -253,27 +265,34 @@ class MenuRegistry:
             modes=self._mode_descriptors,
             scenes=tuple(scenes),
             models=models,
+            workspaces=get_workspace_registry().list_workspaces(),
             active_persona_id=active_persona_id,
             active_mode_flags=active_mode_flags,
             active_scene_id=active_scene_id,
             active_model_id=active_model_id,
+            active_workspace_id=active_workspace_id,
             available_preset_ids=preset_ids,
         )
 
     # ─── Apply ───────────────────────────────────────────────────
 
     def apply_selection(self, selection: MenuSelection) -> PresetApplyResult:
-        """Atomic apply of a 4-block selection.
+        """Atomic apply of a menu selection.
 
         Synthesises an ad-hoc Preset (preset_id="ephemeral") and routes
         through PresetLoader.apply so the BB single-writer contract holds.
         """
+        workspace_id = selection.workspace_id or DEFAULT_WORKSPACE_ID
+        if get_workspace_registry().get(workspace_id) is None:
+            workspace_id = get_workspace_registry().fallback_workspace().workspace_id
+
         preset = Preset(
             preset_id="ephemeral",
             active_persona_id=selection.persona_id or DEFAULT_PERSONA_ID,
             active_model_id=selection.model_id or DEFAULT_MODEL_ID,
             active_scene_id=selection.scene_id or DEFAULT_SCENE_ID,
             active_mode=tuple(s.upper() for s in selection.mode_flags) or ("BASE", "COMPANION"),
+            active_workspace_id=workspace_id,
             metadata=dict(selection.metadata),
         )
         return get_preset_loader().apply(preset)
@@ -324,6 +343,7 @@ __all__ = [
     "ModeBlockSummary",
     "ModelBlockSummary",
     "SceneBlockSummary",
+    "WorkspaceSummary",
     "get_menu_registry",
     "set_menu_registry_for_test",
 ]

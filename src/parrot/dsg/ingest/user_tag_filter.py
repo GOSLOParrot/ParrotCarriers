@@ -1,25 +1,31 @@
-"""user_tag_filter — Obsidian double-link tag sync → Observations.
+"""Obsidian three-profile ingest filter.
 
-Sprint 2 T6. Consumes the structured payload emitted by
-`parrot.dsg.triggers.ssot_enrichment_trigger` when the user adds / edits
-a `[[name]]` double-link in an Obsidian note that carries a `uuid::...`
-identifier.
+App V1 treats Obsidian as three distinct source profiles, not as one
+UUID-bound lane:
 
-Authority model:
-    Obsidian tags come from a human, with a known UUID — highest trust.
-    Emit CONFIRMED with confidence=1.0 and stamp `obsidian_uuid` so the
-    runner can match existing L2-B nodes by that handle instead of label.
+* ``profile=ref`` is a binding/strengthening note. It must carry
+  ``obsidian_uuid`` because it points at an existing L2-B / Graphiti node and
+  must not create a new setting node.
+* ``profile=daily`` and ``profile=roleplay`` are setting-source notes. They
+  may omit ``obsidian_uuid`` and use ``obsidian_note_key`` / path / title as
+  local provenance.
+
+This distinction is intentionally repeated here because menu-canvas Obsidian
+settings, roleplay packs, and UUID-bound reference notes have different
+write paths and must not be collapsed during future refactors.
 
 Input shape (from ssot_enrichment_trigger):
     {
         "label": "user's backpack",
-        "obsidian_uuid": "...",        # required, this is what makes the tag trusted
+        "obsidian_uuid": "...",        # required only for profile=ref
+        "obsidian_note_key": "...",    # path/key for daily/roleplay provenance
+        "profile": "daily",            # ref | daily | roleplay
         "description": "...",          # optional, from note body
         "tags": ["..."],               # optional
     }
 
-Missing uuid → rejection (freeform tags without uuid belong to
-text_source_filter's USER_EXPLICIT lane, not here).
+Missing uuid means rejection only for ``profile=ref``. Daily/roleplay setting
+notes can use obsidian_note_key/path as provenance.
 """
 
 from __future__ import annotations
@@ -39,6 +45,17 @@ from parrot.dsg.l2b_types import ConfirmationStatus, NodeKind
 logger = logging.getLogger(__name__)
 
 _MAX_LABEL_LEN = 128
+_VALID_PROFILES = frozenset({"ref", "daily", "roleplay"})
+_PROFILE_ALIASES = {
+    "setting": "daily",
+    "setting_daily": "daily",
+    "daily_setting": "daily",
+    "setting_roleplay": "roleplay",
+    "roleplay_setting": "roleplay",
+    "rp": "roleplay",
+    "reference": "ref",
+    "ref_reinforce": "ref",
+}
 
 
 class UserTagFilter(IngestFilter):
@@ -72,29 +89,80 @@ class UserTagFilter(IngestFilter):
             )
         label = str(payload.get("label", "")).strip()[:_MAX_LABEL_LEN]
         uuid = str(payload.get("obsidian_uuid", "")).strip()
-        if not label or not uuid:
+        if not label:
             return IngestOutcome(
                 filter_name=self.name,
                 rejected=1,
-                reason="missing_label_or_uuid",
+                reason="missing_label",
             )
+
+        profile = _normalize_profile(payload.get("profile", "daily"))
+        if profile not in _VALID_PROFILES:
+            return IngestOutcome(
+                filter_name=self.name,
+                rejected=1,
+                reason="invalid_profile",
+            )
+        # Only ref notes require an Obsidian UUID. Daily/roleplay notes are
+        # setting sources for the menu and can be identified by path/title.
+        if profile == "ref" and not uuid:
+            return IngestOutcome(
+                filter_name=self.name,
+                rejected=1,
+                reason="missing_ref_uuid",
+            )
+
+        kind = _normalize_node_kind(payload.get("kind", NodeKind.OBJECT.value))
+        tags = [str(tag) for tag in list(payload.get("tags", []))[:10]]
+        meta = {
+            "profile": profile,
+            "tags": tags,
+        }
+        # These fields are operational metadata for vault reconciliation and
+        # source health views. They stay in Observation.meta/source_meta instead
+        # of becoming new SemanticNode top-level fields.
+        for key in (
+            "obsidian_path",
+            "obsidian_note_key",
+            "file_mtime",
+            "double_link_count",
+            "target_node_uuid",
+        ):
+            if key in payload:
+                meta[key] = payload[key]
 
         obs = Observation(
             source=ObservationSource.USER_TAG_OBSIDIAN,
             provenance_stream_id=provenance_stream_id,
             obsidian_uuid=uuid,
+            graphiti_uuid=str(payload.get("graphiti_uuid", "") or ""),
             label=label,
-            kind=NodeKind.OBJECT,
+            kind=kind,
             description=str(payload.get("description", ""))[:400],
             confidence=1.0,
             confirmation=ConfirmationStatus.CONFIRMED,
-            meta={"tags": list(payload.get("tags", []))[:10]},
+            meta=meta,
         )
         return IngestOutcome(
             filter_name=self.name,
             accepted=1,
             observations=(obs,),
         )
+
+
+def _normalize_profile(raw: Any) -> str:
+    """Normalize Obsidian's three agreed profiles to canonical names."""
+    value = str(raw or "daily").strip().lower().replace("-", "_")
+    return _PROFILE_ALIASES.get(value, value)
+
+
+def _normalize_node_kind(raw: Any) -> NodeKind:
+    """Parse optional Obsidian node kind without letting bad input crash sync."""
+    try:
+        return NodeKind(str(raw or NodeKind.OBJECT.value).strip().lower())
+    except ValueError:
+        logger.debug("user_tag_filter: unknown node kind %r, defaulting to object", raw)
+        return NodeKind.OBJECT
 
 
 __all__ = ["UserTagFilter"]

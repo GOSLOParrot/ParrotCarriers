@@ -71,6 +71,13 @@
 | `architecture/Interface/concept_dictionary_20260507.md` | **概念词典** — ≈100 项术语 + 设计文档路由指引 |
 | `architecture/Interface/legacy_issues_split_20260507.md` | **遗留问题二分**（含新 P2.5：2D 独立工作区）— P2.5 / P3 + grep 速查 + 修复 chat 派发表 |
 | `architecture/Interface/menu_design_complete_20260507.md` | **完整菜单设计 SSOT** — 三层架构 + 4 类块 + 预设 + 海盗换肤 + 像素画素材清单 |
+| `architecture/Interface/chatB_obsidian_google_nanobot_realconnect_audit_20260509.md` | **Chat B 真连接审计** — Obsidian + Google Calendar + Nanobot 能力、阻塞 bug、业务流/数据流/接口草案、监控点 |
+| `architecture/Interface/obsidian_true_connection_guide_20260509.md` | **Obsidian 真连接指南** — 三 profile、L1.5 入池、L2-B / RefTable / IntentWorkspace 写边界 |
+| `architecture/Interface/google_calendar_nanobot_true_connection_guide_20260509.md` | **Google Calendar + Nanobot 真连接指南** — Scheduler / Nanobot / Google / L1.5 链路、writeback draft 边界 |
+| `architecture/Interface/photo_memory_awareness_true_connection_guide_20260509.md` | **Photo 记忆与 Awareness 真连接指南** — HTTP 落盘、IntentWorkspace staged ref、PhotoNode、GOSLO Awareness 缺口 |
+| `architecture/Interface/chatB_true_connection_completion_record_20260509.md` | **Chat B 真连接完成记录** — 代码修复、验证、剩余缺口、下一步顺序 |
+| `architecture/Interface/app_v1_facade_core_business_interface_20260510.md` | **App V1 facade 核心/业务接口** — 菜单画布外部模块、相机/Awareness、Google draft、Obsidian、XRHand、Nanobot 报告 |
+| `architecture/Interface/app_v1_longline_self_check_completion_20260510.md` | **App V1 长线自检完成记录** — Awareness v1、Web monitor、Unity MCP、pytest/ruff/browser 验证与剩余问题 |
 | ~~`architecture/Interface/goslo_app_game_overview_asset_brief_20260507.md`~~ | （已被 `user_ideas_and_backend_capability_brief_20260509.md` 替代；user 自行删除原文件） |
 | `architecture/Interface/interface_design_and_how_todo_v0_20260507.md` | （已 superseded → Interface/INDEX.md）12 场景接口栈穷举主表，留作场景清单参考 |
 | `architecture/Interface/interface_design_supplement_20260507.md` | （已 superseded → Interface/INDEX.md）v0 之外 7 项新发现 |
@@ -342,6 +349,11 @@ Castle 进程布局:
 | ⭐ `architecture/Interface/INDEX.md` | **接口分类骨架（2026-05-09）** — Core/Business 分类规则 + 4 字段业务模板 + 失败教训 |
 | `architecture/backend_interface_refinement_20260507.md` | **Brain Core 接口 SSOT** — Persona / Menu / Preset / IntentWorkspace / L2-B baseline |
 | `architecture/dsg/workspace_index.md` | DSG 模块接口入口（dsg_protocol_*_v1 系列） |
+| `architecture/Interface/obsidian_true_connection_guide_20260509.md` | Obsidian 真连接业务接口与写边界 |
+| `architecture/Interface/google_calendar_nanobot_true_connection_guide_20260509.md` | Google Calendar + Nanobot 真连接业务接口与监控点 |
+| `architecture/Interface/photo_memory_awareness_true_connection_guide_20260509.md` | Photo + IntentWorkspace + GOSLO Awareness 业务接口与缺口 |
+| `architecture/Interface/app_v1_facade_core_business_interface_20260510.md` | App V1 facade 业务接口与白膜状态 DTO |
+| `architecture/Interface/app_v1_longline_self_check_completion_20260510.md` | App V1 长线自检完成记录与剩余决策 |
 
 ### 6.3 Design — 设计层（"用户视角与场景如何编织"）
 

@@ -47,7 +47,7 @@ related:
 | §11 | ParrotAnimation / BodyState / HeadState / BehaviorMode / CognitiveState | 8 + 5 + 4 + 5 flags + 4 |
 | §12 | GOSLO ModelManifest + Capability | schema |
 | §13 | Photo 双通道 | preview + asset HTTP |
-| §14 | HTTP endpoints | 2（/upload/photo + /token_mint）|
+| §14 | HTTP endpoints | 2（/upload/photo + /mint）|
 | §15 | Redis namespaces | Pub/Sub + Stream + HASH |
 | §16 | Graphiti 5 group_id 分区 | 5 |
 | §17 | ObservationSource | 7+1（GOSLO_AUTONOMOUS 加）|
@@ -214,6 +214,27 @@ C# 端：`EcpCommandMetaDto` typed mirror（GOSLO Step 2 加）。
 
 注：dispatch_task / set_mode 实际**不通过 LiveKit RPC**，但 Brain tool 调用语义相同。
 
+### §7.1 ChatA app-level RPC addendum（2026-05-09）
+
+以下是 App 菜单/启动业务 RPC，不新增 LiveKit DataChannel topic，也不新增
+EcpEventType。它们跑在 LiveKit participant RPC 层，用于 Unity 与 Brain 的
+应用状态协商。
+
+| method | 调用方 | 应答端 | 同步语义 | 写入/效果 |
+|:--|:--|:--|:--|:--|
+| `listMenuBlocks` | Unity menu/startup | Brain `MenuRegistry` | 同步 JSON | none |
+| `applyMenuSelection` | Unity menu | Brain `MenuRegistry` | 同步 JSON | `global/active_*` 5 keys |
+| `applyPreset` | Unity menu/startup | Brain `PresetLoader` | 同步 JSON | same active keys |
+| `saveAsPreset` | Unity menu | Brain `PresetLoader` | 同步 JSON | preset file |
+| `applyWorkspace` | Unity 2DWorkspace | Brain `WorkspaceRegistry` | 同步 JSON | `global/active_workspace_id` |
+| `setAppCapabilityMode` | Unity startup/lifecycle | Brain `session_policy` + `PerceptionSupervisor` | 同步 JSON | `session/app_capability_mode` + perception profile |
+| `onSceneReady` | Unity scene lifecycle | Brain startup gate | 同步 JSON | readiness marker only |
+| `onGosloPlaced` | Unity placement lifecycle | Brain startup gate | 同步 JSON | optional first greeting after policy gate |
+
+Security note: each handler must treat `callerIdentity` as an audit input, not
+as sufficient authorization by itself. Join-token grants remain the primary
+LiveKit permission boundary.
+
 ---
 
 ## §8 RefBinding（Phase 4 §8 W6-7 锁）
@@ -311,6 +332,20 @@ class RefBinding:
 - `session/connection_health` — Phase 3 lifecycle 聚合
 - `session/audio_route_policy` — Phase 3 audio policy
 - `transient/current_attention_hint` 注释行（实测 key 已移除）
+
+### §10.1 ChatA BB additions（2026-05-09）
+
+ChatA adds two app-level BB keys without changing EcpEvent/DataChannel wire
+schema:
+
+| key | scope | writer | 状态 |
+|:--|:--|:--|:--|
+| `global/active_workspace_id` | global | `brain.preset_loader` | 2DWorkspace active surface |
+| `session/app_capability_mode` | session | `brain.session_policy` | LiveKit app capability and silent keepalive policy |
+
+`global/active_workspace_id` belongs to the 2D UI/canvas layer. It must not be
+confused with IntentWorkspace staged refs. IntentWorkspace remains the Brain
+resource lifecycle layer.
 
 ---
 
@@ -410,7 +445,15 @@ Brain photo_upload_server → 写盘 → publish photo.asset_uploaded
 | endpoint | 方法 | 用途 | 鉴权 |
 |:--|:--|:--|:--|
 | `http://<brain>:7889/upload/photo/{photo_id}` | POST | Photo asset 上传 | 无（Phase 5+ Bearer）|
-| `http://<brain>:<port>/token_mint` | POST | LiveKit JWT 颁发 | 无（Phase 5+ Bearer）|
+| `http://<brain>:<port>/mint` | POST | LiveKit JWT 颁发 | Bearer secret recommended; local dev may run open |
+
+ChatA token policy:
+
+- API secret remains server-side. Unity requests only a short-lived join token.
+- Grants are scoped to room join, publish, subscribe, and data. No client
+  admin/list/create/record grants.
+- Default TTL is short because self-hosted LiveKit cannot immediately revoke an
+  already-issued token.
 
 ---
 
@@ -643,4 +686,5 @@ DSG Chat 2 §5 已确认全未触发；继续 meta dict + factory hybrid。
 
 ## §28 变更日志
 
+- **2026-05-09 ChatA**：补充 app-level LiveKit RPC addendum、2DWorkspace BB key、app capability mode、token mint 短 TTL/最小 grant 策略。DataChannel 5 topic、EcpEventType 13 项、Phase 4 §8 锁均未新增。
 - **2026-05-07**：本文创建（Sprint 4 收口 + DSG Chat 2 + GOSLO mod 后的全协议 SSOT）。补充 protocol_snapshot_p1.md（Phase 1 历史保留），整合 Chat 4 接口提炼工作中的可用协议字段（结构 + enum + 锁）。Chat 4 接口提炼 chat pivot 后的收口产物。

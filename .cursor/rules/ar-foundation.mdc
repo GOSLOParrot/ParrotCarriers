@@ -4,14 +4,14 @@ globs:
   - "unity/**/*.cs"
 alwaysApply: false
 status: ratified
-status_note: "核心版本锁已固定：Unity 2022.3 LTS + AR Foundation/ARCore/ARKit 5.1.x。Sprint3/4 期间继续补充真实踩坑，完成后冻结为 AR 工作区/app 独立设计规则。"
+status_note: "核心版本锁已固定：Unity 2022.3.62f3 + AR Foundation/ARCore/ARKit 5.2.2。Sprint3/4 期间继续补充真实踩坑，完成后冻结为 AR 工作区/app 独立设计规则。"
 last_reviewed: 2026-04-25
 ---
 
 # AR Foundation — 已知坑（代码级）
 
 > **配套 Skills（深度参考）**
-> - `.cursor/skills/ar-foundation-api/SKILL.md` — AR Foundation 5.1.x 完整 API 参考（Packages.md）
+> - `.cursor/skills/ar-foundation-api/SKILL.md` — AR Foundation 5.1.x / 5.2.x API 参考（Packages.md；本仓库用到的 API 面在 5.1 → 5.2 中未变）
 > - `.cursor/skills/ar-foundation-samples/SKILL.md` — 官方 Samples 实现模式（帧抓取、平面、面部、Anchor 等）
 > - `.cursor/skills/livekit-unity-video-publish/IMPL_REF.md` — AR 帧抓取 → LiveKit 推流接缝（`ARCameraBackground` Blit / `_rt` / TrackSource / 12 条踩坑表）；与本规则 §2 双向引用
 >
@@ -140,6 +140,6 @@ Permission.RequestUserPermission(Permission.Microphone);
 
 ## 9. 必须开启并使用 XR Simulation 进行 Editor Play 测试
 
-由于频繁真机打包太慢，我们必须使用 AR Foundation 5.1.x 自带的 XR Simulation 进行初步测试。
+由于频繁真机打包太慢，我们必须使用 AR Foundation 5.2.x 自带的 XR Simulation 进行初步测试。
 - **环境要求**：在 `XR Plug-in Management` 里，对于 PC/Mac Standalone 平台，**勾选 XR Simulation**。
 - **限制与坑**：Editor 下 `XR Simulation` 会模拟注入虚拟环境，WASD 控制相机，代码层应该把 XR Simulation 和真机视为同一逻辑流。如果发现模拟环境中 Plane 扫描正常但没法触发某些真机独有事件，请人工通过 Android 真机兜底测试。绝大部分情况，Gate 1 测试必须依赖 XR Simulation。

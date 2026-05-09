@@ -487,14 +487,14 @@ Graphiti node UUID 是和 L2-B node 高效适配的重要锚点。Obsidian Ref �
 
 ### 9.3 AudioRoutePolicy
 
-Sprint3 证明非蓝牙 48k baseline 可用，但外放回声和设备切换属于正式 App 策略。
+Sprint3 证明非蓝牙 48k baseline 可用；ChatA 2026-05-09 将蓝牙从“实验/降级提示”提升为正式 App 必须支持的设备路由。
 
 最小策略：
 
-- 默认 `phone_mic_48k_headphones_recommended`。
+- 默认 route-aware：检测到蓝牙输入路由时优先使用蓝牙设备；无蓝牙时使用手机麦克风 / 有线麦克风。
 - 明确识别 `speaker_echo_risk`，外放时不要假定 Gemini VAD 稳定。
-- 蓝牙输入/输出先标记为 `unsupported_or_experimental`，不让 `MicrophonePublisher` 靠隐式设备选择决定产品行为。
-- 设备切换必须生成 `MediaRouteEvent`，包含输入设备、输出路线、采样率、回声风险。
+- 蓝牙 / 手机麦克风切换不能触发 LiveKit room 重连；Unity 本地必须串行执行 mic unpublish → rebuild source/sample-rate → publish。
+- 设备切换未来必须生成 `MediaRouteEvent`，包含输入设备、输出路线、采样率、回声风险；当前 ChatA 只先保证 Unity route-aware republish 稳定。
 - 自建 Line B ASR/VAD 以后可以接管更复杂的 echo cancellation；Sprint4 只预留边界。
 
 ## 10. ECP 与 RIT / BT / BT 森林
@@ -590,7 +590,7 @@ Sprint4 的最小 Arbiter 只需三个资源通道：
 
 1. 新增 `AppLifecycleManager`。
 2. 新增 `ConnectionHealthState` 上报。
-3. 把 `MicrophonePublisher` 的设备选择上移为 `AudioRoutePolicy`，本类只执行 publish。
+3. `MicrophonePublisher` 当前执行 route-aware 设备选择与串行 republish；后续再把 `AudioRoutePolicy` 升格为协议 producer / UI 设备选择源。
 4. `VideoStateReporter` 与 `ARVideoPublisher` 的 first/fresh frame 状态进入统一 health state。
 
 ### Phase 4: Snapshot / Identify / Ref
@@ -614,5 +614,5 @@ Sprint4 协议升级的最小验收只看四件事：
 - `EcpState` 用 reliable DataChannel 还是 Participant Attributes，需要根据 LiveKit Unity SDK 当前稳定性实测决定。
 - `ecpCommand` 是新增 Unity RPC 统一入口，还是先长期保留旧 RPC + envelope wrapper，需要在 Phase 1 实测后决定。
 - `RefBinding` 的持久化位置先放 L2-B graph meta、Graphiti episode，还是单独本地 registry，需要结合现有 `sync_obsidian_to_graphiti.py` 决定。
-- 蓝牙音频是否进入 Sprint4 支持范围，目前建议只做显式识别和降级提示。
+- 蓝牙音频已进入 ChatA 支持范围：默认蓝牙优先，支持蓝牙 / 手机麦克风往返切换且不重连 room。仍待后续补 `MediaRouteEvent` / `session/audio_route_policy` producer。
 

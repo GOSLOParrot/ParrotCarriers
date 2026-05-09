@@ -25,6 +25,7 @@ from parrot.shared.constants import (
     CH_SCHEDULER_COMMANDS,
     CH_SCHEDULER_RESULTS,
     CH_SCHEDULER_TO_BRAIN,
+    CH_TRIGGER_RESULTS,
     STREAM_NANOBOT_DISPATCH,
 )
 from parrot.shared.redis_client import get_redis
@@ -81,8 +82,7 @@ class SchedulerService:
         try:
             from livekit import rtc
             from livekit.api import AccessToken, VideoGrants
-            import asyncio
-            
+
             token = (
                 AccessToken(self._config.livekit.api_key, self._config.livekit.api_secret)
                 .with_identity(self._manifest.livekit_identity)
@@ -161,6 +161,7 @@ class SchedulerService:
                 self._pending_tasks.pop(task_id, None)
 
                 active = self._router.active_tasks
+                task_meta = active.get(task_id, {})
                 if task_id in active:
                     active[task_id]["status"] = status
                     self._router.active_tasks = active
@@ -168,6 +169,26 @@ class SchedulerService:
                 # TODO(Chat4-plan-step-result-route): if active[task_id]
                 #   has plan_id + step_id, additionally call
                 #   ``PlanRegistry.report_step_result(...)`` here.
+
+                # Trigger tasks use Nanobot for external I/O but need the
+                # structured result to re-enter the DSG trigger runner. The
+                # Scheduler owns this fan-out because it has the dispatch-time
+                # Blackboard metadata even when Nanobot is a separate process.
+                result_channel = (
+                    result.get("result_channel")
+                    or task_meta.get("result_channel", "")
+                )
+                if result_channel:
+                    trigger_payload = dict(result)
+                    trigger_payload["type"] = result_channel
+                    trigger_payload.setdefault("original_type", task_type)
+                    await r.publish(CH_TRIGGER_RESULTS, json.dumps(trigger_payload))
+                    logger.info(
+                        "Scheduler fanned Nanobot result to TriggerRunner: "
+                        "task=%s channel=%s",
+                        task_id,
+                        result_channel,
+                    )
 
                 summary = {
                     "task_id": task_id,

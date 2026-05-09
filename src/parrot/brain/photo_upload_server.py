@@ -161,12 +161,14 @@ def build_app():  # type: ignore[no-untyped-def]
             raise HTTPException(status_code=500, detail=f"save failed: {exc}") from exc
 
         asset_ref = asset_ref_for(photo_id)
+        asset_path = str(path)
         bytes_written = len(body)
         correlation_id = request.headers.get("X-Photo-Preview-Event-Id", "")
 
         publish_ok = await _publish_asset_uploaded_event(
             photo_id=photo_id,
             asset_ref=asset_ref,
+            asset_path=asset_path,
             asset_bytes=bytes_written,
             correlation_id=correlation_id,
         )
@@ -179,6 +181,7 @@ def build_app():  # type: ignore[no-untyped-def]
             "ok": True,
             "photo_id": photo_id,
             "asset_ref": asset_ref,
+            "asset_path": asset_path,
             "bytes": bytes_written,
             "publish_ok": publish_ok,
         }
@@ -193,6 +196,7 @@ async def _publish_asset_uploaded_event(
     *,
     photo_id: str,
     asset_ref: str,
+    asset_path: str,
     asset_bytes: int,
     correlation_id: str = "",
 ) -> bool:
@@ -219,6 +223,9 @@ async def _publish_asset_uploaded_event(
             payload={
                 "photo_id": photo_id,
                 "asset_ref": asset_ref,
+                # ``asset_ref`` is the HTTP-style pointer. ``asset_path`` is the
+                # real disk path used by L2-B RefTable / IntentWorkspace.
+                "asset_path": asset_path,
                 "asset_bytes": asset_bytes,
             },
             correlation_id=correlation_id or photo_id,

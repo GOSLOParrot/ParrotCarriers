@@ -17,7 +17,7 @@ import logging
 import time
 
 from parrot.dsg.l2b_graph import L2BGraph, get_l2b_graph
-from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerOutcome, TriggerResult
+from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -113,12 +113,16 @@ class TriggerRunner:
     async def _event_loop(self) -> None:
         """Subscribe to Redis channels for trigger events."""
         try:
-            from parrot.shared.constants import CH_DSG_EVENTS, CH_NANOBOT_RESULTS, CH_TRIGGER_RESULTS
+            from parrot.shared.constants import CH_DSG_EVENTS, CH_TRIGGER_RESULTS
             from parrot.shared.redis_client import get_redis
 
             r = await get_redis()
             pubsub = r.pubsub()
-            await pubsub.subscribe(CH_DSG_EVENTS, CH_NANOBOT_RESULTS, CH_TRIGGER_RESULTS)
+            # The Scheduler is the single fan-out owner for Nanobot task
+            # results. TriggerRunner only consumes the explicit trigger
+            # channel, which prevents duplicate calendar/message processing
+            # when a worker and Scheduler both see the same Nanobot result.
+            await pubsub.subscribe(CH_DSG_EVENTS, CH_TRIGGER_RESULTS)
 
             async for message in pubsub.listen():
                 if not self._running:
@@ -236,6 +240,14 @@ class TriggerRunner:
         # ── 7. notify_gemini (legacy) ──
         if result.notify_gemini and result.notification_text and self._session:
             try:
+                from parrot.brain.session_policy import should_generate_reply
+
+                if not should_generate_reply(f"trigger:{result.trigger_name}"):
+                    logger.info(
+                        "TriggerRunner: notification suppressed by session policy (%s)",
+                        result.trigger_name,
+                    )
+                    return
                 await self._session.generate_reply(
                     instructions=result.notification_text
                 )

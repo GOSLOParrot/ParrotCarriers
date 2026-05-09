@@ -134,6 +134,13 @@ related:
 
 - Launch prompt：[`../chat_launches/obsidian_realconnect_launch_20260509.md`](../chat_launches/obsidian_realconnect_launch_20260509.md)
 - Scope：后端 ↔ Obsidian 三子类（Ref-加强 / 设定-日常 / 设定-Roleplay）真连接 ingest；Web 真连接显式 defer
+- Chat B 审计报告：[`chatB_obsidian_google_nanobot_realconnect_audit_20260509.md`](chatB_obsidian_google_nanobot_realconnect_audit_20260509.md) - Obsidian + Google Calendar + Nanobot 真连接能力、阻塞 bug、业务流/数据流/接口草案、监控点
+- Obsidian 指南：[`obsidian_true_connection_guide_20260509.md`](obsidian_true_connection_guide_20260509.md) - 三 profile、L1.5 入池、L2-B / RefTable / IntentWorkspace 写边界
+- Google 指南：[`google_calendar_nanobot_true_connection_guide_20260509.md`](google_calendar_nanobot_true_connection_guide_20260509.md) - Scheduler ↔ Nanobot ↔ Google ↔ L1.5 真实连接与 writeback draft 边界
+- Photo 指南：[`photo_memory_awareness_true_connection_guide_20260509.md`](photo_memory_awareness_true_connection_guide_20260509.md) - HTTP 落盘、IntentWorkspace staged ref、PhotoNode、GOSLO Awareness 开关与缺口
+- 完成记录：[`chatB_true_connection_completion_record_20260509.md`](chatB_true_connection_completion_record_20260509.md) - 本轮代码修复、验证、剩余缺口和下一步顺序
+- App V1 facade：[`app_v1_facade_core_business_interface_20260510.md`](app_v1_facade_core_business_interface_20260510.md) - 菜单画布外部模块、相机/Awareness、Google draft、Obsidian、XRHand、Nanobot 报告统一业务接口
+- App V1 自检完成记录：[`app_v1_longline_self_check_completion_20260510.md`](app_v1_longline_self_check_completion_20260510.md) - 长线自检目标、实现、浏览器/Unity/pytest 验证、剩余问题
 
 ### §3.2 Web 控制台 read-only 优先
 
@@ -148,7 +155,7 @@ related:
 
 ---
 
-## §4 本目录 8 份文件状态
+## §4 本目录 12 份文件状态
 
 | 文件 | 状态 | 角色 |
 |:--|:--|:--|
@@ -156,6 +163,13 @@ related:
 | `concept_dictionary_20260507.md` | active / Design | ≈100 项术语 + 路由指引 |
 | `legacy_issues_split_20260507.md` | active / Requirements | P2.5 / P3 NEED 二分 + grep 速查 + 修复 chat 派发表 |
 | `menu_design_complete_20260507.md` | active / Design | 完整菜单设计 SSOT（4 类块 + 预设 + 海盗换肤） |
+| `chatB_obsidian_google_nanobot_realconnect_audit_20260509.md` | active / Business Audit | Obsidian + Google Calendar + Nanobot 真实连接审计与阻塞 bug |
+| `obsidian_true_connection_guide_20260509.md` | active / Business Guide | Obsidian 三 profile、L1.5、L2-B、IntentWorkspace 边界 |
+| `google_calendar_nanobot_true_connection_guide_20260509.md` | active / Business Guide | Google Calendar + Nanobot 真实连接、读写链路、状态监控 |
+| `photo_memory_awareness_true_connection_guide_20260509.md` | active / Business Guide | Photo 落盘、IntentWorkspace、PhotoNode、GOSLO Awareness 策略 |
+| `chatB_true_connection_completion_record_20260509.md` | completed / Record | 本轮真连接修复、验证与剩余缺口 |
+| `app_v1_facade_core_business_interface_20260510.md` | active / Business Interface | App V1 统一 facade、BB keys、IntentWorkspace roles、白膜设计落点 |
+| `app_v1_longline_self_check_completion_20260510.md` | completed / Record | App V1 长线自检、Awareness v1、Web monitor、Unity MCP smoke 验证 |
 | ~~`goslo_app_game_overview_asset_brief_20260507.md`~~ | 已被 `../user_ideas_and_backend_capability_brief_20260509.md` 替代 | user 自行删除原文件 |
 | `interface_design_and_how_todo_v0_20260507.md` | superseded_by INDEX.md | 12 场景接口栈穷举主表（场景清单仍可参考） |
 | `interface_design_supplement_20260507.md` | superseded_by INDEX.md | v0 之外 7 项新发现 |

@@ -9,58 +9,69 @@ using UnityEngine;
 namespace ParrotApp.LiveKit
 {
     /// <summary>
-    /// 把本机麦克风编码为 LiveKit 本地音频轨。<br/>
-    /// 从 ParrotDev 搬迁（Sprint4 Phase 3 / L3 Group 3），并在 Phase 3 后段补上
-    /// 蓝牙路由 + 采样率自适应（详见类内 §"Bluetooth audio compatibility"）。
+    /// Encodes the local microphone as a LiveKit local audio track.<br/>
+    /// Migrated from ParrotDev for Sprint4 Phase 3 / L3 Group 3, then extended
+    /// with Bluetooth route handling and sample-rate adaptation.
     /// <list type="bullet">
-    /// <item>命名空间收口为 <c>ParrotApp.LiveKit</c>。</item>
-    /// <item>实现 <see cref="IGracefulShutdownParticipant"/>，让
-    ///   <c>LifecycleShutdownService</c> 在 chokepoint 步骤 1 等本组件 unpublish。</item>
-    /// <item><see cref="ConnectionHealthAggregator"/> 灌入：本类是
+    /// <item>Namespace is narrowed to <c>ParrotApp.LiveKit</c>.</item>
+    /// <item>Implements <see cref="IGracefulShutdownParticipant"/> so
+    ///   <c>LifecycleShutdownService</c> can wait for audio unpublish during
+    ///   chokepoint step 1.</item>
+    /// <item><see cref="ConnectionHealthAggregator"/> ownership: this class is the
     ///   <c>audio_publish_attempted</c> / <c>audio_published</c> / <c>audio_last_error</c>
-    ///   的<b>唯一</b> producer（IMPL_REF.md §4.2）。蓝牙补丁不引入第二 producer。</item>
+    ///   sole producer per IMPL_REF.md §4.2. The Bluetooth patch does not add a
+    ///   second producer.</item>
     /// </list>
     ///
-    /// <b>Bluetooth audio compatibility (Sprint4 Phase 3 后段)</b>：
+    /// <b>Bluetooth audio compatibility (late Sprint4 Phase 3)</b>:
     /// <list type="number">
-    /// <item>采样率不再固定 48k baseline；从 <see cref="AudioRouteDetector"/> 读
-    ///   <see cref="AudioRoutePolicy.PreferredSampleRate"/>（speaker/wired 48k；
-    ///   bluetooth_sco/a2dp 16k；unknown 48k 安全默认）。</item>
-    /// <item>设备选择：BT 路由活跃时优先选名字含 <c>bluetooth</c>/<c>airpods</c>/<c>sco</c>
-    ///   的 <see cref="UnityEngine.Microphone"/> 设备；否则系统默认（[0]）。
-    ///   <see cref="preferredDevice"/> 仍可在 Inspector 显式覆盖。</item>
-    /// <item>路由切换检测由 <see cref="AudioRouteDetector"/> 负责
-    ///   （<c>AudioSettings.OnAudioConfigurationChanged</c> + 兜底 polling）。
-    ///   收到事件后本类执行 unpublish-republish，让 LiveKit native source 用新采样率重建。</item>
-    /// <item>路由切换 reason 字符串透传到 <c>audio_last_error</c>：
-    ///   <c>route_changed_&lt;old&gt;_to_&lt;new&gt;</c>。republish 成功后被 ""
-    ///   清空（语义：当前已恢复 healthy）；失败则被 publish_failed 等覆盖。</item>
+    /// <item>The sample rate is no longer hard-coded to 48k. It comes from
+    ///   <see cref="AudioRoutePolicy.PreferredSampleRate"/> via
+    ///   <see cref="AudioRouteDetector"/>: speaker/wired use 48k,
+    ///   bluetooth_sco/a2dp use 16k, and unknown falls back to 48k.</item>
+    /// <item>Device selection prefers a <see cref="UnityEngine.Microphone"/> whose
+    ///   name contains <c>bluetooth</c>, <c>airpods</c>, or <c>sco</c> while a
+    ///   Bluetooth route is active. Otherwise it uses the system default.
+    ///   <see cref="preferredDevice"/> can still override this from Inspector.</item>
+    /// <item><see cref="AudioRouteDetector"/> owns route detection through
+    ///   <c>AudioSettings.OnAudioConfigurationChanged</c> plus polling fallback.
+    ///   On changes, this class unpublishes and republishes so the LiveKit native
+    ///   source is rebuilt with the new sample rate.</item>
+    /// <item>The route-change reason is reported through <c>audio_last_error</c> as
+    ///   <c>route_changed_&lt;old&gt;_to_&lt;new&gt;</c>. A successful republish clears
+    ///   it to mean the current route is healthy.</item>
     /// </list>
     ///
-    /// <b>不在 Sprint4 Phase 3 范围（明确不做）</b>：
+    /// <b>Out of scope for Sprint4 Phase 3</b>:
     /// <list type="bullet">
-    /// <item>UI 设备选择器、用户手动 push-to-talk、外放回声策略（独立 Phase 4 任务）。</item>
-    /// <item>把 <see cref="AudioRoutePolicy"/> 灌进候选 BB 键
-    ///   <c>session/audio_route_policy</c> 或 <c>EcpFrontendState</c>
-    ///   （留 # CANDIDATE，等 ECP 协议升级一起做）。</item>
-    /// <item>iOS native <c>AVAudioSession</c> bridge（Detector 用 device-name fallback）。</item>
+    /// <item>UI device picker, manual push-to-talk, and speaker echo policy.</item>
+    /// <item>Writing <see cref="AudioRoutePolicy"/> into candidate BB key
+    ///   <c>session/audio_route_policy</c> or <c>EcpFrontendState</c>
+    ///   remains a later ECP upgrade.</item>
+    /// <item>iOS native <c>AVAudioSession</c> bridge; detector uses device-name fallback.</item>
     /// </list>
     /// // AudioRoutePolicy producer hook reserved for Sprint4 Phase 4
     /// </summary>
     public class MicrophonePublisher : MonoBehaviour, IGracefulShutdownParticipant
     {
-        [Tooltip("空时按当前路由（蓝牙 / 系统默认）选；非空则始终强制使用此 device 名。")]
+        [Tooltip("Empty = select from the current route; non-empty forces this microphone device name.")]
         [SerializeField] private string preferredDevice = "";
 
-        [Tooltip("Inspector 兜底：当 AudioRouteDetector 拿不到（比如 Editor 第一帧），" +
-                 "用此值作为 fallback。运行时若 Detector 提供 policy 则会被覆盖。")]
+        [Tooltip("Inspector fallback used when AudioRouteDetector has no policy yet, for example the first Editor frame.")]
         [SerializeField] private int fallbackSampleRate = 48000;
 
-        [Tooltip("可选；为空时尝试 GetComponentInParent / FindObjectOfType。")]
+        [Tooltip("Optional; resolved through GetComponentInParent / FindObjectOfType when empty.")]
         [SerializeField] private AppLifecycleManager lifecycleManager;
 
-        [Tooltip("可选；为空时 FindObjectOfType；仍为空则在本 GameObject 上 AddComponent。")]
+        [Tooltip("Optional; resolved through FindObjectOfType or added to this GameObject when empty.")]
         [SerializeField] private AudioRouteDetector routeDetector;
+
+        [Tooltip("Small debounce to coalesce Bluetooth/SCO route-change bursts before rebuilding the LiveKit audio source.")]
+        [SerializeField] private float routeRepublishDebounceSeconds = 0.5f;
+
+        [Header("Session Policy")]
+        [Tooltip("False = keep the LiveKit room alive but do not publish microphone audio.")]
+        [SerializeField] private bool publishIntentEnabled = true;
 
         private MicrophoneSource _micSource;
         private LocalAudioTrack _audioTrack;
@@ -73,6 +84,10 @@ namespace ParrotApp.LiveKit
         private int _configuredSampleRate;
         private int _unityOutputSampleRate;
         private AudioRoutePolicy _activePolicy = AudioRoutePolicy.Default();
+        private uint _routeVersion;
+        private uint _publishedRouteVersion;
+        private Coroutine _routeRepublishCoroutine;
+        private string _pendingRouteRepublishReason = "";
 
         private ConnectionHealthAggregator HealthAggregator =>
             lifecycleManager != null ? lifecycleManager.HealthAggregator : null;
@@ -84,14 +99,15 @@ namespace ParrotApp.LiveKit
         public int ConfiguredSampleRate => _configuredSampleRate;
         public int UnityOutputSampleRate => _unityOutputSampleRate;
         public AudioRoutePolicy ActivePolicy => _activePolicy;
+        public bool PublishIntentEnabled => publishIntentEnabled;
 
-        // ─── IGracefulShutdownParticipant ────────────────────────────────
+        // IGracefulShutdownParticipant.
 
-        public int ShutdownOrder => 20; // 视频先 (10)，音频后 (20)，其他 (100)
+        public int ShutdownOrder => 20; // Video first (10), audio next (20), generic participants later (100).
 
         public IEnumerator UnpublishAndStop(string reason)
         {
-            _shutdownInitiated = true; // 阻止后续 OnAudioRouteChanged 触发 republish
+            _shutdownInitiated = true; // Prevent later route changes from triggering republish.
 
             if (_audioTrack != null)
             {
@@ -105,7 +121,7 @@ namespace ParrotApp.LiveKit
             StopPublishing($"chokepoint:{reason}");
         }
 
-        // ─── lifecycle ────────────────────────────────────────────────────
+        // Lifecycle.
 
         void Start()
         {
@@ -136,20 +152,71 @@ namespace ParrotApp.LiveKit
 
         private void OnRoomConnected()
         {
+            if (!publishIntentEnabled)
+            {
+                Debug.Log("[MicrophonePublisher] publish intent disabled; room stays connected without mic");
+                return;
+            }
             if (_isPublishing || _publishInProgress) return;
-            // 进 publish 之前主动拉一次 detector，确保 policy 是最新的
-            if (routeDetector != null) _activePolicy = routeDetector.DetectNow();
+            // Pull the detector before publishing so the route policy is fresh.
+            if (routeDetector != null) RefreshActivePolicy(routeDetector.DetectNow(), "room_connected");
             StartCoroutine(RequestAndPublish(initialReason: null));
         }
 
         /// <summary>
-        /// 主 publish 协程。<paramref name="initialReason"/> 在 republish 路径下用于
-        /// 把 route_changed_* 透传到 health.audio_last_error，让外部观察者能看到原因；
-        /// 路由切换成功后正常的 success path（<see cref="ReportAudioPublished"/> 传 ""）
-        /// 会清空该字段。冷启动正常路径传 <c>null</c>，行为与 Phase 3 L3 一致。
+        /// Session policy gate used by startup/menu flows.
+        ///
+        /// reason: SessionOnlySilent and VoiceVideo capability modes need to
+        /// keep the LiveKit room alive while enabling/disabling local mic
+        /// publishing independently from RoomManager disconnect.
+        /// </summary>
+        public void SetPublishIntent(bool enabled, string reason = "session_policy")
+        {
+            if (publishIntentEnabled == enabled)
+            {
+                if (enabled && RoomManager.Instance?.IsConnected == true
+                    && !_isPublishing && !_publishInProgress)
+                {
+                    StartCoroutine(RequestAndPublish(initialReason: $"policy_enabled:{reason}"));
+                }
+                return;
+            }
+
+            publishIntentEnabled = enabled;
+            if (!enabled)
+            {
+                if (_publishInProgress && !_isPublishing && _audioTrack == null && _micSource == null)
+                {
+                    Debug.Log($"[MicrophonePublisher] publish disable queued while permission/setup is in progress ({reason})");
+                    HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), $"policy_disabled:{reason}");
+                    return;
+                }
+                if (_isPublishing || _publishInProgress || _audioTrack != null || _micSource != null)
+                    StartCoroutine(UnpublishForPolicy(reason));
+                else
+                    HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), $"policy_disabled:{reason}");
+                return;
+            }
+
+            _shutdownInitiated = false;
+            if (RoomManager.Instance?.IsConnected == true && !_isPublishing && !_publishInProgress)
+                StartCoroutine(RequestAndPublish(initialReason: $"policy_enabled:{reason}"));
+        }
+
+        /// <summary>
+        /// Main publish coroutine. During republish, <paramref name="initialReason"/>
+        /// carries route_changed_* into health.audio_last_error so observers can see
+        /// why audio briefly went unhealthy. The success path clears it with an empty
+        /// string; cold-start publish passes <c>null</c> to preserve Phase 3 behavior.
         /// </summary>
         private IEnumerator RequestAndPublish(string initialReason)
         {
+            if (!publishIntentEnabled)
+            {
+                Debug.Log("[MicrophonePublisher] RequestAndPublish skipped: publish intent disabled");
+                yield break;
+            }
+
             _publishInProgress = true;
             _publishAttempted = true;
             _lastError = initialReason ?? "";
@@ -169,6 +236,14 @@ namespace ParrotApp.LiveKit
                 yield break;
             }
 
+            if (!publishIntentEnabled)
+            {
+                Debug.Log("[MicrophonePublisher] publish intent disabled after permission gate; aborting");
+                _publishInProgress = false;
+                HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), "policy_disabled_after_permission");
+                yield break;
+            }
+
             if (Microphone.devices.Length == 0)
             {
                 _lastError = "no_microphone_devices";
@@ -178,9 +253,12 @@ namespace ParrotApp.LiveKit
                 yield break;
             }
 
-            string device = SelectDevice(_activePolicy);
+            AudioRoutePolicy publishPolicy = _activePolicy;
+            uint publishRouteVersion = _routeVersion;
+
+            string device = SelectDevice(publishPolicy);
             _selectedDevice = device;
-            Debug.Log($"[MicrophonePublisher] Using device: '{device}' for policy={_activePolicy}");
+            Debug.Log($"[MicrophonePublisher] Using device: '{device}' for policy={publishPolicy}");
 
             var room = RoomManager.Instance?.Room;
             if (room == null)
@@ -192,7 +270,15 @@ namespace ParrotApp.LiveKit
                 yield break;
             }
 
-            ConfigureLiveKitMicrophoneSampleRate(device, _activePolicy);
+            if (!publishIntentEnabled)
+            {
+                Debug.Log("[MicrophonePublisher] publish intent disabled before track publish; aborting");
+                _publishInProgress = false;
+                HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), "policy_disabled_before_publish");
+                yield break;
+            }
+
+            ConfigureLiveKitMicrophoneSampleRate(device, publishPolicy);
 
             _micSource = new MicrophoneSource(device, gameObject);
             _audioTrack = LocalAudioTrack.CreateAudioTrack("microphone", _micSource, room);
@@ -218,23 +304,34 @@ namespace ParrotApp.LiveKit
             _micSource.Start();
             _isPublishing = true;
             _publishInProgress = false;
+            _publishedRouteVersion = publishRouteVersion;
             _lastError = "";
             HealthAggregator?.ReportAudioPublished(true, UnixSeconds(), "");
             Debug.Log(
-                $"[MicrophonePublisher] publishing started: device='{device}' route={_activePolicy.RouteName} " +
+                $"[MicrophonePublisher] publishing started: device='{device}' route={publishPolicy.RouteName} " +
                 $"configuredSampleRate={_configuredSampleRate} unityOutputSampleRate={_unityOutputSampleRate}");
+
+            if (publishRouteVersion != _routeVersion && publishIntentEnabled && !_shutdownInitiated)
+            {
+                QueueRouteRepublish(
+                    _activePolicy,
+                    $"route_changed_during_publish_to_{_activePolicy.RouteName}");
+            }
         }
 
         /// <summary>
-        /// 根据当前 <paramref name="policy"/> 设置 LiveKit native source 期望采样率。
+        /// Sets the sample rate expected by the LiveKit native source.
         ///
-        /// <b>口径来源</b>：<c>livekit-unity-sdk.mdc §"Android 麦克风采样率不要跟随
-        /// 不稳定路由漂移"</c>。Sprint3 brain_connected_black_video 修复确认：
+        /// <b>Source of truth</b>: livekit-unity-sdk.mdc recommends not deriving
+        /// Android microphone sample rate from unstable route output state.
+        /// Sprint3 brain_connected_black_video confirmed:
         /// <list type="bullet">
-        /// <item>不能用 <c>AudioSettings.outputSampleRate</c>（路由切换后不可靠）。</item>
-        /// <item>必须在 <see cref="MicrophoneSource"/> 构造前设
-        ///   <see cref="RtcAudioSource.DefaultMicrophoneSampleRate"/>。</item>
-        /// <item>和实际路由对齐才能避免 <c>InvalidState: sample_rate and num_channels don't match</c>。</item>
+        /// <item>Do not use <c>AudioSettings.outputSampleRate</c>; it is unreliable
+        /// after route changes.</item>
+        /// <item>Set <see cref="RtcAudioSource.DefaultMicrophoneSampleRate"/> before
+        /// constructing <see cref="MicrophoneSource"/>.</item>
+        /// <item>Match the active route to avoid
+        /// <c>InvalidState: sample_rate and num_channels don't match</c>.</item>
         /// </list>
         /// </summary>
         private void ConfigureLiveKitMicrophoneSampleRate(string device, AudioRoutePolicy policy)
@@ -252,12 +349,14 @@ namespace ParrotApp.LiveKit
         }
 
         /// <summary>
-        /// 设备枚举与选择。优先级：<see cref="preferredDevice"/> &gt; 蓝牙路由匹配 &gt;
-        /// Microphone.devices[0]（系统默认）。
+        /// Enumerates and selects the microphone device. Priority:
+        /// <see cref="preferredDevice"/> &gt; Bluetooth route match &gt;
+        /// Microphone.devices[0] system default.
         ///
-        /// <b>蓝牙优先口径</b>：当 detector 给出蓝牙 policy 时，遍历 <c>Microphone.devices</c>
-        /// 找名字含 bluetooth/airpods/sco/headset 的项；找不到则 fallback 默认设备
-        /// （此情形下 native source 仍按 16k 配，让 SCO 即使在 device list 看不到也能工作）。
+        /// <b>Bluetooth rule</b>: when detector reports a Bluetooth policy, scan
+        /// <c>Microphone.devices</c> for bluetooth/airpods/sco/headset names. If no
+        /// explicit device is visible, fall back to the default while keeping the
+        /// native source at 16k so SCO can still work behind Android routing.
         /// </summary>
         private string SelectDevice(AudioRoutePolicy policy)
         {
@@ -285,36 +384,45 @@ namespace ParrotApp.LiveKit
                 }
                 Debug.Log(
                     "[MicrophonePublisher] BT policy active but no BT device name in Microphone.devices; " +
-                    "using default[0] (Android 通常默认 = SCO 路由源)");
+                    "using default[0] (Android usually maps default input to the SCO route)");
             }
 
             return devices[0];
         }
 
-        // ─── 路由切换 ────────────────────────────────────────────────────
+        // Route changes.
 
         private void OnAudioRouteChanged(AudioRoutePolicy oldPolicy, AudioRoutePolicy newPolicy)
         {
-            // 即使没在推流也要更新缓存，下次 publish 直接走新档
-            _activePolicy = newPolicy;
+            // Cache route state even when not publishing; the next publish uses it.
+            RefreshActivePolicy(newPolicy, "route_changed");
+
+            if (!publishIntentEnabled)
+            {
+                Debug.Log($"[MicrophonePublisher] route cached while publish disabled: {oldPolicy} -> {newPolicy}");
+                return;
+            }
 
             if (_shutdownInitiated)
             {
-                Debug.Log($"[MicrophonePublisher] route change ignored (shutdown in progress): {oldPolicy} → {newPolicy}");
+                Debug.Log($"[MicrophonePublisher] route change ignored (shutdown in progress): {oldPolicy} -> {newPolicy}");
                 return;
             }
 
-            // 还没开始推流：仅更新缓存即可
+            // Before publish starts, caching is enough.
             if (!_isPublishing && !_publishInProgress)
             {
-                Debug.Log($"[MicrophonePublisher] route cached pre-publish: {oldPolicy} → {newPolicy}");
+                Debug.Log($"[MicrophonePublisher] route cached pre-publish: {oldPolicy} -> {newPolicy}");
                 return;
             }
 
-            // 当前 publish 协程在跑：跳过这次，detector 的 polling 兜底会再触发
+            // The current publish coroutine is still running. Queue the route
+            // rebuild instead of overlapping UnpublishTrack/PublishTrack calls.
             if (_publishInProgress)
             {
-                Debug.Log($"[MicrophonePublisher] route change during publish-in-progress; will catch up on next poll: {oldPolicy} → {newPolicy}");
+                string pendingReason = $"route_changed_{oldPolicy.RouteName}_to_{newPolicy.RouteName}";
+                QueueRouteRepublish(newPolicy, pendingReason);
+                Debug.Log($"[MicrophonePublisher] route change queued during publish-in-progress: {oldPolicy} -> {newPolicy}");
                 return;
             }
 
@@ -325,21 +433,86 @@ namespace ParrotApp.LiveKit
             }
 
             string reason = $"route_changed_{oldPolicy.RouteName}_to_{newPolicy.RouteName}";
-            StartCoroutine(RepublishForRouteChange(newPolicy, reason));
+            QueueRouteRepublish(newPolicy, reason);
+        }
+
+        private void RefreshActivePolicy(AudioRoutePolicy policy, string trigger)
+        {
+            if (policy.Equals(_activePolicy)) return;
+            var oldPolicy = _activePolicy;
+            _activePolicy = policy;
+            _routeVersion++;
+            Debug.Log($"[MicrophonePublisher] active route policy updated via {trigger}: {oldPolicy} -> {policy} (v{_routeVersion})");
+        }
+
+        private void QueueRouteRepublish(AudioRoutePolicy policy, string reason)
+        {
+            _pendingRouteRepublishReason = string.IsNullOrEmpty(reason)
+                ? $"route_changed_to_{policy.RouteName}"
+                : reason;
+
+            if (_routeRepublishCoroutine != null)
+            {
+                Debug.Log($"[MicrophonePublisher] route republish already queued; coalescing to {_pendingRouteRepublishReason}");
+                return;
+            }
+
+            _routeRepublishCoroutine = StartCoroutine(RouteRepublishLoop());
+        }
+
+        private IEnumerator RouteRepublishLoop()
+        {
+            while (publishIntentEnabled && !_shutdownInitiated)
+            {
+                string reason = string.IsNullOrEmpty(_pendingRouteRepublishReason)
+                    ? $"route_changed_to_{_activePolicy.RouteName}"
+                    : _pendingRouteRepublishReason;
+                _pendingRouteRepublishReason = "";
+
+                if (routeRepublishDebounceSeconds > 0f)
+                    yield return new WaitForSeconds(routeRepublishDebounceSeconds);
+
+                // Avoid overlapping LiveKit publish instructions. Route events can
+                // arrive in bursts while Android moves between A2DP and SCO.
+                while (_publishInProgress)
+                    yield return null;
+
+                if (!publishIntentEnabled || _shutdownInitiated || RoomManager.Instance?.Room == null)
+                    break;
+
+                if (!_isPublishing && _audioTrack == null && _micSource == null)
+                    yield return RequestAndPublish(initialReason: reason);
+                else
+                    yield return RepublishForRouteChange(_activePolicy, reason);
+
+                if (!_isPublishing)
+                    break;
+
+                if (_publishedRouteVersion == _routeVersion
+                    && string.IsNullOrEmpty(_pendingRouteRepublishReason))
+                    break;
+
+                if (string.IsNullOrEmpty(_pendingRouteRepublishReason))
+                    _pendingRouteRepublishReason = $"route_changed_retry_to_{_activePolicy.RouteName}";
+            }
+
+            _routeRepublishCoroutine = null;
         }
 
         /// <summary>
-        /// 路由切换重发布：先 unpublish 旧轨（让对端 Brain 收到 unpublish 事件做 graceful
-        /// 处理），再用新 policy 跑 <see cref="RequestAndPublish"/>。
+        /// Republish after route changes. The old track is unpublished first so the
+        /// remote Brain side can observe a graceful unpublish event, then
+        /// <see cref="RequestAndPublish"/> rebuilds the source from the new policy.
         ///
-        /// <b>为什么不能 in-place reconfigure</b>：LiveKit <c>MicrophoneSource</c> 的采样率
-        /// 在构造时就锁进了 native audio source；不重建会重现 Sprint3
-        /// <c>actualRate=X expectedRate=Y</c> 的 InvalidState。
+        /// <b>Why not reconfigure in place</b>: LiveKit <c>MicrophoneSource</c>
+        /// locks the sample rate into the native audio source at construction time.
+        /// Reusing the source can recreate the Sprint3
+        /// <c>actualRate=X expectedRate=Y</c> InvalidState failure.
         /// </summary>
         private IEnumerator RepublishForRouteChange(AudioRoutePolicy newPolicy, string reason)
         {
             Debug.Log($"[MicrophonePublisher] republishing for {reason}; new policy={newPolicy}");
-            _publishInProgress = true; // 阻止并发的 OnRoomConnected / OnAudioRouteChanged
+            _publishInProgress = true; // Prevent concurrent OnRoomConnected / OnAudioRouteChanged publish attempts.
 
             HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), reason);
             _lastError = reason;
@@ -350,16 +523,31 @@ namespace ParrotApp.LiveKit
                 yield return room.LocalParticipant.UnpublishTrack(_audioTrack, stopOnUnpublish: true);
             }
 
-            // 静默清理本地资源：preserve lastError = reason，让 health 上保留
-            // route_changed_* 直到新 publish 成功（成功路径会把 lastError 清空）
+            // Clean local resources without clearing lastError, preserving
+            // route_changed_* until a successful publish clears it.
             StopPublishingInner();
 
-            // RequestAndPublish 会先灌一次 ReportAudioPublished(false,..,reason) 再走 attempt → success
-            _publishInProgress = false; // 让 RequestAndPublish 自己 set true
+            // RequestAndPublish reports the transient unhealthy reason, then goes attempt -> success.
+            _publishInProgress = false; // Let RequestAndPublish own the flag again.
             yield return RequestAndPublish(initialReason: reason);
         }
 
-        // ─── 收尾 ────────────────────────────────────────────────────────
+        private IEnumerator UnpublishForPolicy(string reason)
+        {
+            _publishInProgress = true;
+            var room = RoomManager.Instance?.Room;
+            if (_audioTrack != null && room != null)
+            {
+                Debug.Log($"[MicrophonePublisher] policy UnpublishTrack (reason={reason})");
+                yield return room.LocalParticipant.UnpublishTrack(_audioTrack, stopOnUnpublish: true);
+            }
+            StopPublishingInner();
+            _publishInProgress = false;
+            HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), $"policy_disabled:{reason}");
+            Debug.Log($"[MicrophonePublisher] microphone publish disabled by policy ({reason})");
+        }
+
+        // Cleanup.
 
         private void OnRoomDisconnected()
         {
@@ -376,8 +564,8 @@ namespace ParrotApp.LiveKit
         }
 
         /// <summary>
-        /// 不写 health 的"纯本地资源清理"：路由切换 republish 路径用，避免 ""
-        /// 把 <c>route_changed_*</c> 提前清空。
+        /// Local cleanup without writing health. The route-change republish path
+        /// uses this to avoid clearing <c>route_changed_*</c> before success.
         /// </summary>
         private void StopPublishingInner()
         {

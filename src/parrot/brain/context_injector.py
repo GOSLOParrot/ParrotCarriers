@@ -175,6 +175,11 @@ class ContextInjector:
 
     async def inject_notification(self, message: str) -> None:
         """Layer ③ heavy: make Gemini speak about it immediately (C4)."""
+        from parrot.brain.session_policy import should_generate_reply
+
+        if not should_generate_reply("context_injector.notification"):
+            logger.info("injector C4 skipped by session policy: %s", message[:120])
+            return
         await self._session.generate_reply(instructions=message)
 
     # ───────────────────────── C3: chat-ctx append (role=user) ────────────
@@ -197,6 +202,11 @@ class ContextInjector:
 
     async def _push_speech(self, body: str) -> None:
         """Layer ③ heavy (C4): ask Gemini to speak this now."""
+        from parrot.brain.session_policy import should_generate_reply
+
+        if not should_generate_reply("context_injector.C4"):
+            logger.info("injector C4 skipped by session policy: %s", body[:120])
+            return
         try:
             await self._session.generate_reply(instructions=body)
             logger.info("injector C4: %s", body)

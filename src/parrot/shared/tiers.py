@@ -61,6 +61,41 @@ class DsgMode(str, Enum):
     DSG_SENTINEL_AUX = "dsg_sentinel_aux"
 
 
+class AppCapabilityMode(str, Enum):
+    """User-visible capability bundle for the app session.
+
+    reason: ``VideoTier`` and ``DsgMode`` are lower-level perception axes.
+    Startup/menu UX needs a single business mode that also says whether the
+    mic should publish, whether GOSLO may greet, and whether action monitoring
+    is armed.
+    """
+
+    SESSION_ONLY_SILENT = "SessionOnlySilent"
+    VOICE_ONLY_NO_VIDEO = "VoiceOnlyNoVideo"
+    VOICE_VIDEO_NO_ACTION_MONITOR = "VoiceVideoNoActionMonitor"
+    FULL_AR_COMPANION = "FullARCompanion"
+
+
+CAPABILITY_MODE_DEFAULTS: dict[AppCapabilityMode, tuple[VideoTier, DsgMode]] = {
+    AppCapabilityMode.SESSION_ONLY_SILENT: (
+        VideoTier.VIDEO_OFF,
+        DsgMode.DSG_TEXT_ONLY,
+    ),
+    AppCapabilityMode.VOICE_ONLY_NO_VIDEO: (
+        VideoTier.VIDEO_OFF,
+        DsgMode.DSG_TEXT_ONLY,
+    ),
+    AppCapabilityMode.VOICE_VIDEO_NO_ACTION_MONITOR: (
+        VideoTier.VIDEO_GEMINI_ONLY,
+        DsgMode.DSG_GEMINI_VISION,
+    ),
+    AppCapabilityMode.FULL_AR_COMPANION: (
+        VideoTier.VIDEO_FULL,
+        DsgMode.DSG_FULL,
+    ),
+}
+
+
 ALLOWED_COMBOS: frozenset[tuple[VideoTier, DsgMode]] = frozenset(
     {
         (VideoTier.VIDEO_OFF, DsgMode.DSG_TEXT_ONLY),
@@ -97,6 +132,8 @@ def validate_combo(video_tier: VideoTier, dsg_mode: DsgMode) -> None:
 
 __all__ = [
     "ALLOWED_COMBOS",
+    "AppCapabilityMode",
+    "CAPABILITY_MODE_DEFAULTS",
     "DEFAULT_COMBO",
     "DsgMode",
     "IllegalCombinationError",

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GOSLO Parrot IPoAC Transition v0</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #232832;
+      display: grid;
+      place-items: center;
+      font-family: "Courier New", monospace;
+    }
+    .phone {
+      width: min(96vw, 1160px);
+      aspect-ratio: 20 / 9;
+      position: relative;
+      overflow: hidden;
+      border: 8px solid #101318;
+      background: #fffdf4;
+      image-rendering: pixelated;
+    }
+    .center {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 520px;
+      display: grid;
+      grid-template-columns: 190px 1fr;
+      gap: 24px;
+      align-items: center;
+    }
+    .portrait {
+      width: 190px;
+      height: 120px;
+      border: 6px solid #0754bb;
+      background: #80d2ff;
+      box-shadow: 8px 8px 0 #00387f;
+      position: relative;
+    }
+    .bird {
+      position: absolute;
+      left: 46px;
+      top: 34px;
+      width: 72px;
+      height: 46px;
+      background: #e9f8f0;
+      border: 4px solid #0d4588;
+      box-shadow:
+        48px 16px 0 -10px #9fd4ff,
+        -20px 24px 0 -8px #9fd4ff;
+    }
+    .pack {
+      position: absolute;
+      right: 26px;
+      top: 56px;
+      width: 44px;
+      height: 26px;
+      background: #c83f4b;
+      color: #fff;
+      border: 3px solid #fff;
+      font-size: 11px;
+      font-weight: 900;
+      display: grid;
+      place-items: center;
+    }
+    .panel {
+      min-height: 112px;
+      padding: 14px;
+      background: #77a8f4;
+      border-bottom: 18px solid #ffc1b5;
+      color: #fff;
+      box-shadow: 8px 8px 0 #dde8ff inset;
+    }
+    .label {
+      font-size: 20px;
+      font-weight: 900;
+      border-bottom: 3px dotted #fff;
+      padding-bottom: 6px;
+    }
+    .msg {
+      margin-top: 16px;
+      text-align: center;
+      font-size: 17px;
+      font-weight: 900;
+    }
+    .progress-wrap {
+      position: absolute;
+      left: 50%;
+      bottom: 78px;
+      transform: translateX(-50%);
+      width: 520px;
+      color: #18202b;
+      font-size: 14px;
+      font-weight: 900;
+      text-align: center;
+    }
+    .progress {
+      margin-top: 10px;
+      height: 18px;
+      border: 4px solid #0754bb;
+      background:
+        linear-gradient(90deg, #8ee6c8 0 3%, transparent 3% 100%);
+    }
+  </style>
+</head>
+<body>
+  <main class="phone" aria-label="IPoAC startup transition sketch">
+    <section class="center">
+      <div class="portrait">
+        <div class="bird"></div>
+        <div class="pack">1TB</div>
+      </div>
+      <div class="panel">
+        <div class="label">Packet Carrier</div>
+        <div class="msg">正在计算风阻...</div>
+      </div>
+    </section>
+    <section class="progress-wrap">
+      <div>0% / waiting for carrier arrival</div>
+      <div class="progress"></div>
+    </section>
+  </main>
+</body>
+</html>

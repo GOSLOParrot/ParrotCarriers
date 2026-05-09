@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 CONSUMER_GROUP = "nanobot-workers"
 CONSUMER_NAME = "worker-0"
+HEARTBEAT_KEY = "parrot:nanobot_heartbeat"
+HEARTBEAT_FIELD = "main_worker"
+HEARTBEAT_BUSY_FIELD = "main_worker_busy"
 
 
 class NanobotConsumer:
@@ -106,6 +109,10 @@ class NanobotConsumer:
         params = task.get("params", {})
 
         logger.info("Nanobot processing task: %s (id=%s)", task_type, task_id)
+        await r.hset(HEARTBEAT_KEY, mapping={
+            HEARTBEAT_FIELD: str(time.time()),
+            HEARTBEAT_BUSY_FIELD: "1",
+        })
 
         result = {
             "task_id": task_id,
@@ -117,14 +124,16 @@ class NanobotConsumer:
 
         result_channel = params.get("result_channel")
         if result_channel:
-            result["type"] = result_channel
+            # Keep the normal task type on the Nanobot result. Scheduler owns
+            # trigger fan-out and rewrites ``type`` only on CH_TRIGGER_RESULTS.
+            result["result_channel"] = result_channel
 
         await r.xack(STREAM_NANOBOT_DISPATCH, CONSUMER_GROUP, msg_id)
         await r.publish(CH_NANOBOT_RESULTS, json.dumps(result))
-
-        if result_channel:
-            from parrot.shared.constants import CH_TRIGGER_RESULTS
-            await r.publish(CH_TRIGGER_RESULTS, json.dumps(result))
+        await r.hset(HEARTBEAT_KEY, mapping={
+            HEARTBEAT_FIELD: str(time.time()),
+            HEARTBEAT_BUSY_FIELD: "0",
+        })
 
         logger.info("Nanobot task completed: %s (id=%s) result_channel=%s",
                      task_type, task_id, result_channel or "(default)")

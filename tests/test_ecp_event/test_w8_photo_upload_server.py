@@ -106,6 +106,7 @@ def test_upload_photo_saves_bytes_and_returns_ref(_isolated):
     assert body["bytes"] == len(payload)
     assert body["asset_ref"].startswith("/upload/photo/")
     assert body["asset_ref"].endswith("/ph_save01.jpg")
+    assert body["asset_path"].endswith("ph_save01.jpg")
 
     # Verify the file actually landed on disk under the cache root
     saved_files = list(Path(_isolated).rglob("ph_save01.jpg"))
@@ -183,6 +184,7 @@ def test_upload_publishes_photo_asset_uploaded_event(_isolated):
     assert '"event_type":"photo.asset_uploaded"' in wire
     assert '"source":"brain"' in wire
     assert '"photo_id":"ph_publish"' in wire
+    assert '"asset_path"' in wire
     # correlation_id chains back to preview event_id when header provided
     assert '"correlation_id":"evt_preview_corr"' in wire
     # asset_bytes matches uploaded bytes

@@ -226,29 +226,30 @@ PublishTrack(new options)
 
 ## 7. AudioRoutePolicy（候选 BB 键 `session/audio_route_policy`，Sprint4 仅 baseline）
 
-> 设计稿 §9.3。Sprint4 蓝牙 OOS。
+> 设计稿 §9.3；2026-05-09 ChatA 已将蓝牙升级为正式 App 支持范围。
 
 ### 7.1 baseline schema
 
 ```text
-input_device:    phone_mic | wired_headset_mic | bluetooth_mic(unsupported_or_experimental)
-output_device:   phone_speaker | earpiece | wired_headset | bluetooth_a2dp(unsupported_or_experimental)
-sample_rate_hz:  16000 | 24000 | 48000      # 当前 baseline=48000
+input_device:    phone_mic | wired_headset_mic | bluetooth_mic
+output_device:   phone_speaker | earpiece | wired_headset | bluetooth_a2dp | bluetooth_sco
+sample_rate_hz:  16000 | 24000 | 48000      # phone/wired baseline=48000; bluetooth current=16000
 echo_risk:       none | low | high(speakerphone)
-status_note:     'phone_mic_48k_headphones_recommended'  # 默认
+status_note:     'route_aware_mic_publish'  # default policy is route-aware
 last_change_at:  float
 ```
 
 ### 7.2 Sprint4 落地约束
 
 - Sprint4 **不**写 producer；候选 BB 键保留 `# CANDIDATE — no writer yet (Phase X)` 标记（审计 B5 反模式护栏）。
-- 蓝牙输入/输出**显式**标 `unsupported_or_experimental`，`MicrophonePublisher` **不**自动选蓝牙。
-- 非蓝牙 48k baseline 已修（Sprint3 brain_connected_black_video fix）；Sprint4 不退回。
-- **禁止** Reflex 层自动切麦；任何路由变更走 Intent 或用户。
+- 2026-05-09 ChatA 修订：正式 App 必须支持蓝牙。检测到蓝牙输入路由时，`MicrophonePublisher` 默认优先使用蓝牙设备；切回手机麦克风 / 再切回蓝牙必须通过串行 unpublish → rebuild source → publish 完成，不能导致 LiveKit room 断连。
+- 非蓝牙 48k baseline 已修（Sprint3 brain_connected_black_video fix）；蓝牙 SCO/A2DP 路径使用 route policy 的采样率（当前 16k）。
+- **禁止** Reflex / Brain 层隐式切麦；设备切换是 Unity 本地媒体路由策略。Brain 只通过 health / future `session/audio_route_policy` 观察，不直接驱动 LiveKit 连接生命周期。
+- `session/audio_route_policy` 仍是候选 BB key；当前实现只在 Unity 本地做 route detection 与 microphone republish。
 
-### 7.3 spike S8（不实现 producer）
+### 7.3 spike S8（不实现协议 producer）
 
-仅确认 Android 上 `AudioSettings.OnAudioConfigurationChanged` 是否在蓝牙连接 / 有线插拔时触发；接口可用即闭项，producer 留 Phase 4+。
+确认 Android 上 `AudioSettings.OnAudioConfigurationChanged` / polling 能覆盖蓝牙连接、有线插拔、A2DP ↔ SCO 切换；验收以蓝牙 / 手机麦克风往返切换不崩 LiveKit room 为准。协议 producer 留 Phase 4+。
 
 ---
 
@@ -310,10 +311,11 @@ last_change_at:  float
 | S5 setVideoTier 黑帧时长 | §6 + §10 T_TIER_COOLDOWN | P95 < 800ms |
 | S6 ARCore pause/resume crash 率 | §5 + §10 T_AR_SESSION_TOGGLE_MIN | < 5% |
 | S7 ParticipantAttributes 稳定性 | §8 | < 95% 成功 → 弃用 |
-| S8 蓝牙/有线插拔检测 API | §7 | 接口存在即闭项 |
+| S8 蓝牙/有线插拔检测 API | §7 | 蓝牙默认优先 + 手机麦克风往返切换不崩 room |
 
 ---
 
 ## 12. 变更日志
 
 - 2026-04-29：创建。承载 `result/05_lifecycle_and_defensive_design.md` 调研产物的实现侧速查；Patch 3/4/5/6/7/9 主体；Patch 6 #13（重连不可靠）独立条目。可调参数表是用户筛查后明确要求的"集合至一处可调参数表，方便后续加入 app 菜单"。
+- 2026-05-09：ChatA 修订 AudioRoutePolicy 口径。蓝牙不再视为 unsupported baseline；正式 App 需要默认蓝牙优先并稳定支持蓝牙 / 手机麦克风切换。BB producer 仍后置，Unity 本地先保证 route-aware republish 不断 room。

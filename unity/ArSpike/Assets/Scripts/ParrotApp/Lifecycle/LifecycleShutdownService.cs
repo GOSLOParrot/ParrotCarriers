@@ -205,10 +205,12 @@ namespace ParrotApp.Lifecycle
                         disposable.Dispose();
                         Debug.Log("[Shutdown] step 5: Room.Dispose() done");
                     }
+                    roomManager.CompleteChokepointDisconnect(reason);
                 }
                 catch (Exception e)
                 {
                     Debug.LogWarning($"[Shutdown] Room.Dispose threw: {e.Message}");
+                    roomManager.CompleteChokepointDisconnect($"dispose_failed:{reason}");
                 }
             }
             else

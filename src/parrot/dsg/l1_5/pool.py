@@ -195,6 +195,29 @@ class L15Pool:
             decision = self._policy.evaluate(obs, ctx)
             bucket = target_bucket or decision.target_bucket
 
+            # Obsidian profile=ref is a lightweight strengthening link, not a
+            # new L2-B node. It binds the note UUID to an already-known node and
+            # exits before bucket assignment/commit so daily/roleplay authority
+            # buckets stay reserved for real setting nodes.
+            if (
+                obs.source == ObservationSource.USER_TAG_OBSIDIAN
+                and (obs.meta or {}).get("profile") == "ref"
+            ):
+                ref_node_uuid = self._bind_obsidian_ref_observation(obs, runner)
+                if ref_node_uuid:
+                    promoted.append(ref_node_uuid)
+                else:
+                    rejected.append(RejectedObservation(
+                        obs_id=obs.obs_id,
+                        reason=AdmitRejectReason.POLICY_REJECTED,
+                        detail=(
+                            "obsidian profile=ref requires an existing target "
+                            "node matched by target_node_uuid, obsidian_uuid, "
+                            "graphiti_uuid, or label"
+                        ),
+                    ))
+                continue
+
             # Bucket frozen / unknown gate
             handle = self._buckets.get(bucket)
             if handle is None:
@@ -267,6 +290,10 @@ class L15Pool:
                 self._refs.bind_ref(
                     node.uuid, RefKind.PHOTO_PATH, obs.reference_image_path,
                 )
+            if obs.source == ObservationSource.GOOGLE_CALENDAR:
+                ref_value = self._google_calendar_ref_value(obs)
+                if ref_value:
+                    self._refs.bind_ref(node.uuid, RefKind.OTHER, ref_value)
 
             if changed:
                 admitted.append(node.uuid)
@@ -293,6 +320,17 @@ class L15Pool:
             graph = runner._graph
             if graph is None:
                 return None
+            if obs.source.value == "google_calendar":
+                ref_value = L15Pool._google_calendar_ref_value(obs)
+                if ref_value:
+                    _, calendar_id, event_id = ref_value.split(":", 2)
+                    for n in graph.all_nodes():
+                        meta = n.source_meta or {}
+                        if (
+                            meta.get("calendar_id", "primary") == calendar_id
+                            and meta.get("calendar_event_id") == event_id
+                        ):
+                            return n
             if obs.obsidian_uuid:
                 for n in graph.all_nodes():
                     if n.obsidian_uuid == obs.obsidian_uuid:
@@ -304,6 +342,72 @@ class L15Pool:
             return graph.get_node_by_label(obs.label)
         except Exception:
             return None
+
+    def _bind_obsidian_ref_observation(
+        self,
+        obs: "Observation",
+        runner: Any,
+    ) -> str:
+        """Bind an Obsidian reference note to an existing L2-B node.
+
+        ``profile=ref`` notes are documentation/strengthening refs. They must
+        not create a new node or enter an authority bucket. The binding is
+        intentionally lightweight: RefTable owns the UUID lookup, and the node
+        gets only trace metadata so future health/status views can show which
+        Obsidian file strengthened it.
+        """
+        try:
+            graph = runner._graph
+            if graph is None or not obs.obsidian_uuid:
+                return ""
+
+            meta = obs.meta or {}
+            target_node_uuid = str(meta.get("target_node_uuid", "") or "")
+            node = graph.get_node(target_node_uuid) if target_node_uuid else None
+
+            if node is None and obs.graphiti_uuid:
+                for candidate in graph.all_nodes():
+                    if candidate.graphiti_uuid == obs.graphiti_uuid:
+                        node = candidate
+                        break
+
+            if node is None and obs.obsidian_uuid:
+                for candidate in graph.all_nodes():
+                    if candidate.obsidian_uuid == obs.obsidian_uuid:
+                        node = candidate
+                        break
+
+            if node is None:
+                node = graph.get_node_by_label(obs.label)
+
+            if node is None:
+                return ""
+
+            if not node.obsidian_uuid:
+                node.obsidian_uuid = obs.obsidian_uuid
+            node.source_meta.setdefault("obsidian_ref_profile", "ref")
+            node.source_meta.setdefault("obsidian_refs", [])
+            refs = node.source_meta["obsidian_refs"]
+            if isinstance(refs, list) and obs.obsidian_uuid not in refs:
+                refs.append(obs.obsidian_uuid)
+            if meta.get("obsidian_path"):
+                node.source_meta["obsidian_path"] = meta["obsidian_path"]
+
+            self._refs.bind_ref(node.uuid, RefKind.OBSIDIAN_UUID, obs.obsidian_uuid)
+            return node.uuid
+        except Exception:
+            logger.exception("L15Pool: obsidian ref binding failed")
+            return ""
+
+    @staticmethod
+    def _google_calendar_ref_value(obs: "Observation") -> str:
+        """Return the lightweight RefTable key for a Google Calendar event."""
+        meta = obs.meta or {}
+        event_id = str(meta.get("calendar_event_id", "") or "")
+        if not event_id:
+            return ""
+        calendar_id = str(meta.get("calendar_id", "primary") or "primary")
+        return f"google_calendar:{calendar_id}:{event_id}"
 
     async def evict(self, node_uuid: str, reason: EvictReason) -> bool:
         """Remove a node from the L2-B graph and clean up bookkeeping."""

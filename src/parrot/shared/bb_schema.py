@@ -77,7 +77,7 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         event_driven=True,
     ),
 
-    # ───── 4 menu active keys (NEED-P2.5-A / NEED-P3-B / Phase 1 menu) ─────
+    # ───── Menu active keys (NEED-P2.5-A / NEED-P3-B / ChatA 2DWorkspace) ─────
     # Single writer = brain.preset_loader. ``MenuRegistry.apply_selection``
     # never writes BB directly; it routes through ``PresetLoader.apply()`` so
     # only one module owns these slots.
@@ -113,6 +113,18 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "Active BehaviorMode flag names (e.g. [BASE, COMPANION, ROLEPLAY]).",
         event_driven=True,
     ),
+    # reason: Scene is the perception baseline (AR handheld / desktop webcam),
+    # while 2DWorkspace is the app surface (mansion_hub / workdesk /
+    # report_desk). A separate global key lets users switch desks without
+    # implying a LiveKit room rebuild or AR session reset.
+    BlackboardKey(
+        BbScope.GLOBAL,
+        "global/active_workspace_id",
+        "str",
+        "brain.preset_loader",
+        "Active in-app 2D workspace id; switching it must keep the LiveKit session alive.",
+        event_driven=True,
+    ),
     # NOTE (Sprint 2 T12, closes Sprint 1 §6.1):
     # `global/soul_constraints` was declared here in Sprint 1 planning but the
     # SOUL_CONSTRAINTS table ended up as a module-level dict inside
@@ -144,6 +156,68 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "float",
         "brain.agent",
         "Unix epoch of LiveKit connect.",
+    ),
+    # reason: VideoTier x DsgMode does not say whether the Unity app should
+    # publish microphone audio, suppress greeting, or disable action monitors.
+    # This session-scoped mode records that user-visible capability bundle
+    # without changing the lower-level tier enums.
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/app_capability_mode",
+        "AppCapabilityMode",
+        "brain.session_policy",
+        "Current app capability mode: silent / voice-only / voice+video / full AR.",
+        event_driven=True,
+    ),
+    # App v1 menu-canvas policy keys. Single writer is the App facade so Unity
+    # buttons and the temporary Web monitor cannot bypass backend policy gates.
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/camera_mode",
+        "str",
+        "brain.app_first_version",
+        "Current first-version camera mode: off / preview / photo_ready / capture_locked.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/photo_awareness_policy",
+        "str",
+        "brain.app_first_version",
+        "Photo Awareness v1 policy: UNAWARE_RECORDED / AWARE_SILENT / AWARE_REACT.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/photo_awareness_enabled",
+        "bool",
+        "brain.app_first_version",
+        "Whether GOSLO is internally notified when the user captures a photo.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/photo_awareness_allows_interrupt",
+        "bool",
+        "brain.app_first_version",
+        "App v1 keeps this false so photo awareness never interrupts speech.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/photo_awareness_preview_ttl_seconds",
+        "int",
+        "brain.app_first_version",
+        "TTL for short-lived preview refs staged when Photo Awareness is enabled.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/xrhand_mode",
+        "str",
+        "brain.app_first_version",
+        "XRHand interaction mode for the App shell; does not switch Scene.",
+        event_driven=True,
     ),
     BlackboardKey(
         BbScope.SESSION,
@@ -308,7 +382,7 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
     # `brain.telemetry_receiver` to `dsg.attention.threshold` — Focus/BBox
     # attention is computed by the threshold accumulator, not by the raw
     # telemetry receiver. The receiver only mirrors transport-level state;
-    # the Phase 4 临时阈值器 is the BB writer for this key. Mirror is removed
+    # the Phase 4 temporary threshold accumulator is the BB writer here. Mirror is removed
     # when the Phase 4 W6-7 producer lands.
     BlackboardKey(
         BbScope.TRANSIENT,
@@ -363,15 +437,23 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "Most recent photo capture evidence (preview or asset_uploaded).",
         event_driven=True,
     ),
+    BlackboardKey(
+        BbScope.TRANSIENT,
+        "transient/photo_awareness_notice",
+        "dict[str, Any]",
+        "brain.photo_awareness",
+        "Latest Photo Awareness decision: whether GOSLO was notified and which preview ref was staged.",
+        event_driven=True,
+    ),
 
-    # ───── Sprint4 Phase 4 attention config (W6-7) — Echo 全链路接通 ─────
-    # ✅ Echo path fully wired (2026-04-30):
-    #   ① Unity `ParrotAttentionConfig` SO + `AttentionConfigEchoPublisher`
+    # ───── Sprint4 Phase 4 attention config (W6-7) — Echo path wiring ─────
+    # Echo path fully wired (2026-04-30):
+    #   1. Unity `ParrotAttentionConfig` SO + `AttentionConfigEchoPublisher`
     #     publish EcpEvent `attention.config.echo` on RoomManager.OnConnected
-    #     (含 reconnect / Brain 管线切换).
-    #   ② Brain `attention_config_handler.py` subscribes via event_ingest →
+    #     including reconnect and Brain pipeline switch cases.
+    #   2. Brain `attention_config_handler.py` subscribes via event_ingest →
     #     writes this BB key (validated 5-field schema_version=1 payload).
-    #   ③ `FocusBboxThreshold.__init__` reads this BB on construct (sentinel-
+    #   3. `FocusBboxThreshold.__init__` reads this BB on construct (sentinel-
     #     None resolution — explicit kwargs > BB > DEFAULT_*).
     # See entry doc §8.1 L9 + W6-7 Unity completion report §1.1 / §3.1.
     #

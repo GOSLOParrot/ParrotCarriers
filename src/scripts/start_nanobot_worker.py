@@ -58,13 +58,12 @@ def setup_config(force: bool = False, enable_weixin: bool = True) -> Path:
             servers = config.setdefault("tools", {}).setdefault("mcpServers", {})
             servers.setdefault("github", {}).setdefault("env", {})["GITHUB_PERSONAL_ACCESS_TOKEN"] = github_token
 
-        # Google Workspace MCP is enabled by default in parrot_config.json
+        # Google Workspace MCP is enabled by default in parrot_config.json.
         # The MCP server manages its own OAuth state via browser login.
-        # Ensure we don't accidentally leak Gemini API keys into it.
+        # Keep its environment separate from Gemini provider credentials.
         servers = config.setdefault("tools", {}).setdefault("mcpServers", {})
-        if "google-workspace" in servers:
-            # Just to be safe, ensure env is isolated from Gemini keys
-            servers["google-workspace"].setdefault("env", {})
+        if "google_workspace" in servers:
+            servers["google_workspace"].setdefault("env", {})
 
         if not enable_weixin:
             channels = config.get("channels", {})

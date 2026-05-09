@@ -1,20 +1,21 @@
-"""PresetLoader — 4-block menu preset application (NEED-P3-C).
+"""PresetLoader — menu preset application (NEED-P3-C + 2DWorkspace MVP).
 
-A *Preset* is a named tuple of the four user-facing menu blocks:
+A *Preset* is a named tuple of the user-facing menu blocks:
 
     {
         "active_model_id":   "GOSLO_default",
         "active_persona_id": "goslo_parrot_default",
         "active_mode":       ["BASE", "COMPANION"],
         "active_scene_id":   "ar_handheld",
+        "active_workspace_id": "mansion_hub",
     }
 
 ``PresetLoader.load`` reads ``data/presets/<id>.json`` and returns a
-:class:`Preset` value object. ``PresetLoader.apply`` writes the four
+:class:`Preset` value object. ``PresetLoader.apply`` writes the five
 ``global/active_*`` Blackboard keys atomically (single writer per
 ``shared/bb_schema``) and returns a :class:`PresetApplyResult`.
 
-This is the **only** path that should write the four active BB keys.
+This is the **only** path that should write the menu active BB keys.
 ``MenuRegistry.apply_selection`` constructs an ad-hoc Preset from a
 selection and routes it through here so the contract stays single-writer.
 
@@ -26,8 +27,8 @@ Watcher integration:
 
 How TODO decisions:
 - Preset JSON schema is intentionally tiny: 4 strings + a metadata dict.
-  Adding fields (e.g. theme skin selection) goes through a schema_version
-  bump rather than a parallel preset format.
+  Adding ``active_workspace_id`` bumps to schema v2 while keeping v1 files
+  readable through a default value.
 - Validation: model_id is checked when the Brain mirror of
   ``ModelManifestRegistry`` lands; for now we accept any non-empty string.
 - Default fallback: ``data/presets/default.json`` ships with the project
@@ -52,8 +53,9 @@ logger = logging.getLogger(__name__)
 PRESETS_DIR_ENV = "PARROT_PRESETS_DIR"
 DEFAULT_MODEL_ID = "GOSLO_default"
 DEFAULT_SCENE_ID = "ar_handheld"
+DEFAULT_WORKSPACE_ID = "mansion_hub"
 DEFAULT_PRESET_ID = "default"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 # ─── Preset value object ─────────────────────────────────────────────
@@ -68,6 +70,10 @@ class Preset:
     active_persona_id: str = DEFAULT_PERSONA_ID
     active_mode: tuple[str, ...] = ("BASE", "COMPANION")
     active_scene_id: str = DEFAULT_SCENE_ID
+    # reason: Scene is the perception/environment baseline; 2DWorkspace is
+    # the in-app desktop surface. Keeping a separate id lets the user switch
+    # workspaces without making the LiveKit room look like a new AR scene.
+    active_workspace_id: str = DEFAULT_WORKSPACE_ID
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -85,6 +91,7 @@ class Preset:
             "active_persona_id": self.active_persona_id,
             "active_mode": list(self.active_mode),
             "active_scene_id": self.active_scene_id,
+            "active_workspace_id": self.active_workspace_id,
             "metadata": dict(self.metadata),
         }
 
@@ -104,6 +111,7 @@ class Preset:
             active_persona_id=str(raw.get("active_persona_id", DEFAULT_PERSONA_ID)),
             active_mode=tuple(str(x).upper() for x in mode_raw),
             active_scene_id=str(raw.get("active_scene_id", DEFAULT_SCENE_ID)),
+            active_workspace_id=str(raw.get("active_workspace_id", DEFAULT_WORKSPACE_ID)),
             metadata=dict(raw.get("metadata") or {}),
         )
 
@@ -139,7 +147,7 @@ class PresetApplyResult:
 
 
 class PresetLoader:
-    """Disk-backed loader + single-writer apply path for the 4 active keys."""
+    """Disk-backed loader + single-writer apply path for menu active keys."""
 
     def __init__(self, search_paths: list[Path] | None = None) -> None:
         if search_paths is None:
@@ -204,19 +212,58 @@ class PresetLoader:
         return path
 
     def apply(self, preset: Preset) -> PresetApplyResult:
-        """Write the 4 ``global/active_*`` BB keys for ``preset``.
+        """Write the menu ``global/active_*`` BB keys for ``preset``.
 
         Returns a :class:`PresetApplyResult` regardless of whether the BB
         client is available — the menu UI must surface success/failure to
         the user.
         """
+        return self._apply_values(
+            preset_id=preset.preset_id,
+            behavior_mode=preset.behavior_mode(),
+            values={
+                "global/active_persona_id": preset.active_persona_id,
+                "global/active_model_id": preset.active_model_id,
+                "global/active_scene_id": preset.active_scene_id,
+                "global/active_mode": list(preset.active_mode),
+                "global/active_workspace_id": preset.active_workspace_id,
+            },
+        )
+
+    def apply_workspace_id(
+        self,
+        workspace_id: str,
+        *,
+        preset_id: str = "workspace_only",
+    ) -> PresetApplyResult:
+        """Apply only ``global/active_workspace_id`` through the same writer.
+
+        reason: Workspace switching is a frequent in-session operation. It
+        needs the PresetLoader writer so the BB single-writer contract remains
+        true, but it must not rewrite model/persona/mode/scene or tear down the
+        LiveKit room.
+        """
+        safe = str(workspace_id or DEFAULT_WORKSPACE_ID).strip() or DEFAULT_WORKSPACE_ID
+        return self._apply_values(
+            preset_id=preset_id,
+            behavior_mode=BehaviorMode.BASE | BehaviorMode.COMPANION,
+            values={"global/active_workspace_id": safe},
+        )
+
+    def _apply_values(
+        self,
+        *,
+        preset_id: str,
+        behavior_mode: BehaviorMode,
+        values: dict[str, Any],
+    ) -> PresetApplyResult:
         try:
             from parrot.scheduler.blackboard import open_bb_client
         except Exception:
             return PresetApplyResult(
-                preset_id=preset.preset_id,
+                preset_id=preset_id,
                 applied_keys=(),
-                behavior_mode=preset.behavior_mode(),
+                behavior_mode=behavior_mode,
                 success=False,
                 errors=("blackboard module unavailable",),
             )
@@ -225,9 +272,9 @@ class PresetLoader:
             bb = open_bb_client(name="preset_loader.apply", writer="brain.preset_loader")
         except Exception as exc:  # noqa: BLE001
             return PresetApplyResult(
-                preset_id=preset.preset_id,
+                preset_id=preset_id,
                 applied_keys=(),
-                behavior_mode=preset.behavior_mode(),
+                behavior_mode=behavior_mode,
                 success=False,
                 errors=(f"open_bb_client failed: {exc!r}",),
             )
@@ -244,10 +291,8 @@ class PresetLoader:
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{key}: {exc!r}")
 
-        _try_set("global/active_persona_id", preset.active_persona_id)
-        _try_set("global/active_model_id", preset.active_model_id)
-        _try_set("global/active_scene_id", preset.active_scene_id)
-        _try_set("global/active_mode", list(preset.active_mode))
+        for key, value in values.items():
+            _try_set(key, value)
 
         # Fan out to any in-process watcher subscribers (persona reload /
         # mode_watcher / scene_watcher). Cross-process watchers (Redis
@@ -262,9 +307,9 @@ class PresetLoader:
             logger.exception("preset_loader: watcher fan-out failed")
 
         return PresetApplyResult(
-            preset_id=preset.preset_id,
+            preset_id=preset_id,
             applied_keys=tuple(applied),
-            behavior_mode=preset.behavior_mode(),
+            behavior_mode=behavior_mode,
             success=not errors,
             errors=tuple(errors),
         )
@@ -313,6 +358,7 @@ __all__ = [
     "DEFAULT_MODEL_ID",
     "DEFAULT_PRESET_ID",
     "DEFAULT_SCENE_ID",
+    "DEFAULT_WORKSPACE_ID",
     "PRESETS_DIR_ENV",
     "Preset",
     "PresetApplyResult",

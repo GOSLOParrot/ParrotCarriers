@@ -76,6 +76,9 @@ async def dispatch_task(
             'remind' — create a reminder or timed notification.
             'memory_consolidation' — summarize and archive conversation history.
             'vocabulary_learn' — learn new words or concepts.
+            'calendar_fetch' / 'calendar_create' / 'calendar_patch' /
+            'calendar_delete' use Google Calendar via Nanobot Google Workspace MCP.
+            'message_check' uses Gmail via Nanobot Google Workspace MCP.
             Other types are handled directly by Brain (not dispatched to Nanobot).
         params: JSON-encoded parameters for the task.
         priority: Task priority — 'reflex', 'high', 'normal', or 'low'.

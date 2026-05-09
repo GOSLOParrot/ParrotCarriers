@@ -25,7 +25,6 @@ a `TODO(S4.B)` marker inline but does NOT call Graphiti here.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -35,7 +34,6 @@ from parrot.dsg.ingest.base import IngestOutcome, Observation, ObservationSource
 from parrot.dsg.l2b_graph import get_l2b_graph
 from parrot.dsg.l2b_types import (
     ConfirmationStatus,
-    NodeKind,
     Salience,
     SemanticNode,
 )
@@ -57,6 +55,9 @@ _SOURCE_PRIORITY: dict[ObservationSource, int] = {
     # findings rank lower than user-prompted ones, higher than passive
     # CV detections so curiosity beats periodic re-identification.
     ObservationSource.GOSLO_AUTONOMOUS: 70,
+    # Google Calendar is a user-owned external source. It should beat passive
+    # CV, but it must not override explicit user/Obsidian authority.
+    ObservationSource.GOOGLE_CALENDAR: 65,
     ObservationSource.CV_A10: 60,
     ObservationSource.CV_SENTINEL: 40,
     ObservationSource.GEMINI_ORAL: 30,
@@ -188,7 +189,21 @@ class IngestRunner:
             return False
 
     def _find_existing(self, obs: Observation) -> SemanticNode | None:
-        """Look up an existing node by, in order, obsidian_uuid / graphiti_uuid / label."""
+        """Look up an existing node by stable source identity before label.
+
+        Calendar events are deliberately excluded from the generic label
+        fallback. A meeting title can easily match an object/person label; a
+        Google event should only merge with another Google event carrying the
+        same calendar/event identity.
+        """
+        if obs.source == ObservationSource.GOOGLE_CALENDAR:
+            ref_key = _calendar_ref_key_from_obs(obs)
+            if ref_key:
+                for n in self._graph.all_nodes():
+                    if _calendar_ref_key_from_node(n) == ref_key:
+                        return n
+            return None
+
         if obs.obsidian_uuid:
             for n in self._graph.all_nodes():
                 if n.obsidian_uuid == obs.obsidian_uuid:
@@ -228,6 +243,24 @@ class IngestRunner:
         if obs.provenance_stream_id and not existing.provenance_stream_id:
             existing.provenance_stream_id = obs.provenance_stream_id
             changed = True
+
+        if obs.source == ObservationSource.GOOGLE_CALENDAR:
+            # Calendar refreshes should update the runtime event view in place
+            # without creating a duplicate node. Source meta keeps the Google
+            # identity/version tokens needed for later write-back.
+            if obs.label and existing.label != obs.label:
+                existing.label = obs.label
+                changed = True
+            if obs.description and existing.description != obs.description:
+                existing.description = obs.description
+                changed = True
+            if existing.time_span != obs.time_span:
+                existing.time_span = obs.time_span
+                changed = True
+            for key, value in obs.meta.items():
+                if existing.source_meta.get(key) != value:
+                    existing.source_meta[key] = value
+                    changed = True
 
         existing.touch()
 
@@ -292,6 +325,27 @@ def _source_for_node(node: SemanticNode) -> ObservationSource:
     if node.graphiti_uuid:
         return ObservationSource.IDENTIFY_OBJECT
     return ObservationSource.GEMINI_ORAL
+
+
+def _calendar_ref_key_from_obs(obs: Observation) -> tuple[str, str] | None:
+    """Return the stable Google Calendar identity carried by an Observation."""
+    calendar_id = str((obs.meta or {}).get("calendar_id", "primary") or "primary")
+    event_id = str((obs.meta or {}).get("calendar_event_id", "") or "")
+    if not event_id:
+        return None
+    return calendar_id, event_id
+
+
+def _calendar_ref_key_from_node(node: SemanticNode) -> tuple[str, str] | None:
+    """Return the stable Google Calendar identity carried by a SemanticNode."""
+    if node.source != ObservationSource.GOOGLE_CALENDAR.value:
+        return None
+    source_meta = node.source_meta or {}
+    event_id = str(source_meta.get("calendar_event_id", "") or "")
+    if not event_id:
+        return None
+    calendar_id = str(source_meta.get("calendar_id", "primary") or "primary")
+    return calendar_id, event_id
 
 
 def _confirmation_rank(c: ConfirmationStatus) -> int:

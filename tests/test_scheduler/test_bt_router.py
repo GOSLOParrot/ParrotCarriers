@@ -38,6 +38,16 @@ def test_route_vocabulary_learn_to_nanobot(router):
     assert result["destination"] == "nanobot"
 
 
+def test_route_google_calendar_fetch_to_nanobot(router):
+    result = router.route({
+        "task_id": "gcal",
+        "type": "calendar_fetch",
+        "params": {"result_channel": "calendar_result"},
+    })
+    assert result["destination"] == "nanobot"
+    assert router.active_tasks["gcal"]["result_channel"] == "calendar_result"
+
+
 def test_route_unknown_to_brain_direct(router):
     result = router.route({"task_id": "t4", "type": "conversation", "params": {}})
     assert result["destination"] == "brain_direct"

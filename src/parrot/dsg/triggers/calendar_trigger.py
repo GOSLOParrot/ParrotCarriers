@@ -1,42 +1,27 @@
-"""Calendar Trigger — loads Google Calendar events and enriches DSG.
+"""Google Calendar trigger.
 
-Trigger mode: STARTUP + PERIODIC (every 15 min)
+This trigger owns the read side of the Google Calendar true connection:
 
-Three-tier reminder system:
-  1. DIGEST  — On startup / morning: "Today's schedule overview"
-  2. PREP    — 30 min before event: "Upcoming: X in 30 min, you might need Y"
-  3. IMMINENT — 5 min before event: "X starting in 5 min!"
+    Scheduler -> Nanobot -> Google Workspace MCP -> calendar_result
+        -> CalendarTrigger -> L1.5 Pool -> GOOGLE_CALENDAR bucket -> L2-B EVENT nodes
 
-Quiet hours: No reminders between 23:00–07:00 unless event is marked urgent.
-Cooldown: Same event won't be re-notified at the same tier within the tier window.
-
-Google Calendar access:
-  - Via Nanobot with Google Calendar MCP tool (requires user's Google OAuth)
-  - Nanobot fetches events, extracts structured data, returns via result_channel
-  - CalendarTrigger processes results and fills DSG
-
-Flow:
-  1. On startup: fetch today's events → digest notification
-  2. Every 15 min: re-fetch and check for approaching events
-  3. On calendar_result event from Nanobot: process and update DSG
+Calendar event bytes are small enough to live as L2-B metadata. IntentWorkspace
+is intentionally not used for the read path; it is reserved for later edit
+drafts, confirmation flows, rich reports, or other heavy/temporary payloads.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import time
 from datetime import datetime, timezone
 from typing import Any
 
-from parrot.dsg.l2b_types import (
-    ConfirmationStatus,
-    EdgeKind,
-    NodeKind,
-    Salience,
-    SemanticEdge,
-    SemanticNode,
-)
-from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerResult
+from parrot.dsg.ingest.base import Observation, ObservationSource
+from parrot.dsg.l2b_types import ConfirmationStatus, NodeKind, Salience, SemanticNode
+from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -52,187 +37,195 @@ IMMINENT_MINUTES = 5
 
 
 class CalendarTrigger(BaseTrigger):
-    """Fetches calendar events and enriches DSG with time-sensitive context."""
+    """Fetch Google Calendar events and publish them through L1.5."""
 
     name = "calendar_trigger"
-    kinds = [TriggerKind.STARTUP, TriggerKind.PERIODIC]
+    kinds = [TriggerKind.STARTUP, TriggerKind.PERIODIC, TriggerKind.EVENT_DRIVEN]
     interval_seconds = 900.0  # 15 minutes
 
     def __init__(self, graph):
         super().__init__(graph)
-        self._known_event_ids: set[str] = set()
-        self._events_cache: list[dict] = []
-        self._notified: dict[str, set[str]] = {}  # event_id → set of tiers already sent
+        self._events_cache: list[dict[str, Any]] = []
+        # event_key -> tiers already notified. The key is calendar_id:event_id.
+        self._notified: dict[str, set[str]] = {}
 
-    async def on_startup(self) -> TriggerResult | None:
+    async def on_startup(self) -> TriggerOutcome | None:
         return await self._fetch_and_process(is_startup=True)
 
-    async def on_tick(self) -> TriggerResult | None:
+    async def on_tick(self) -> TriggerOutcome | None:
         self._check_approaching_events()
         return await self._fetch_and_process(is_startup=False)
 
-    async def on_event(self, event: dict[str, Any]) -> TriggerResult | None:
-        if event.get("type") == "calendar_result":
-            raw = event.get("result", "")
-            return await self._parse_and_process(raw)
-        return None
+    async def on_event(self, event: dict[str, Any]) -> TriggerOutcome | None:
+        if event.get("type") != "calendar_result":
+            return None
+        raw = event.get("result", "")
+        return await self._parse_and_process(raw)
 
-    # ━━━ Core pipeline ━━━
-
-    async def _fetch_and_process(self, *, is_startup: bool) -> TriggerResult | None:
-        """Dispatch a Nanobot task to fetch today's calendar events."""
+    async def _fetch_and_process(self, *, is_startup: bool) -> TriggerOutcome | None:
+        """Dispatch a Nanobot task to fetch today's Google Calendar events."""
+        params = {
+            "query": "Fetch today's Google Calendar events for the user",
+            "instructions": (
+                "Use the Google Calendar API or MCP tool to get today's events. "
+                "For each event, extract: id, title, start_time (ISO 8601), "
+                "end_time, location, description, html_link, etag, updated, "
+                "status, iCalUID, and any mentioned objects or items to prepare. "
+                "Also flag if the event is marked urgent/important. Return as "
+                "JSON only: "
+                '[{"id": str, "title": str, "start_time": str, "end_time": str, '
+                '"location": str, "description": str, "objects": [str], '
+                '"is_urgent": bool, "html_link": str, "etag": str, '
+                '"updated": str, "status": str, "iCalUID": str}]'
+            ),
+            "result_channel": "calendar_result",
+        }
         task_id = await self._dispatch_nanobot(
             task_type="calendar_fetch",
-            params={
-                "query": "Fetch today's Google Calendar events for the user",
-                "instructions": (
-                    "Use the Google Calendar API or MCP tool to get today's events. "
-                    "For each event, extract: id, title, start_time (ISO 8601), "
-                    "end_time, location, description, and any mentioned objects "
-                    "or items to prepare. Also flag if the event is marked "
-                    "as urgent/important. "
-                    "Return as JSON array: "
-                    '[{"id": str, "title": str, "start_time": str, '
-                    '"end_time": str, "location": str, "description": str, '
-                    '"objects": [str], "is_urgent": bool}]'
-                ),
-                "result_channel": "calendar_result",
+            params=params,
+        )
+        if not task_id:
+            return None
+
+        summary = "Calendar fetch dispatched"
+        if is_startup:
+            summary += " (startup digest)"
+        return TriggerOutcome(
+            trigger_name=self.name,
+            summary=summary,
+            # _dispatch_nanobot already sent the task. Keep this false so the
+            # runner does not try to dispatch a second legacy task.
+            dispatch_to_nanobot=False,
+            nanobot_task={
+                "task_id": task_id,
+                "task_type": "calendar_fetch",
+                "params": params,
             },
         )
 
-        if task_id:
-            summary = "Calendar fetch dispatched"
-            if is_startup:
-                summary += " (startup digest)"
-            return TriggerResult(
-                trigger_name=self.name,
-                summary=summary,
-                dispatch_to_nanobot=True,
-                nanobot_task={"task_id": task_id, "type": "calendar_fetch"},
-            )
-        return None
-
-    async def _parse_and_process(self, raw_result: str) -> TriggerResult | None:
-        """Parse Nanobot result (may be JSON string) and process events."""
-        import json
-        try:
-            if isinstance(raw_result, str):
-                data = json.loads(raw_result)
-            else:
-                data = raw_result
-
-            if isinstance(data, list):
-                events = data
-            elif isinstance(data, dict) and "events" in data:
-                events = data["events"]
-            else:
-                events = []
-        except (json.JSONDecodeError, TypeError):
-            logger.debug("calendar: failed to parse result: %s", str(raw_result)[:100])
-            events = []
-
-        if events:
-            return await self._process_calendar_data(events)
-        return None
-
-    async def _process_calendar_data(self, events: list[dict]) -> TriggerResult | None:
-        """Process calendar events — fill DSG and generate tiered notifications."""
-        if not events:
+    async def _parse_and_process(self, raw_result: Any) -> TriggerOutcome | None:
+        """Parse Nanobot result and convert events into Observations."""
+        data = _loads_jsonish(raw_result)
+        events = _extract_event_list(data)
+        normalized = [self._normalize_event(ev) for ev in events if isinstance(ev, dict)]
+        normalized = [ev for ev in normalized if ev]
+        if not normalized:
             return None
+        return await self._process_calendar_data(normalized)
 
+    async def _process_calendar_data(
+        self,
+        events: list[dict[str, Any]],
+    ) -> TriggerOutcome | None:
+        """Build Observation objects for L1.5 instead of mutating L2-B directly."""
         self._events_cache = events
+        observations: list[Observation] = []
+        digest_parts: list[str] = []
+        prep_parts: list[str] = []
+        imminent_parts: list[str] = []
         now = time.time()
-        nodes_affected = []
-        digest_parts = []
-        prep_parts = []
-        imminent_parts = []
 
         for ev in events:
-            ev_id = ev.get("id", f"ev_{hash(ev.get('title', ''))}")
-            title = ev.get("title", "")
-            start_time_str = ev.get("start_time", "")
-            objects_mentioned = ev.get("objects", [])
-            is_urgent = ev.get("is_urgent", False)
+            event_key = _event_key(ev)
+            start_ts = self._parse_time(str(ev.get("start_time", "") or ""))
+            end_ts = self._parse_time(str(ev.get("end_time", "") or ""))
 
-            start_ts = self._parse_time(start_time_str)
+            observations.append(self._event_to_observation(ev, start_ts, end_ts))
 
-            event_node = SemanticNode(
-                uuid=f"cal_{ev_id}",
-                kind=NodeKind.EVENT,
-                label=title or f"Event {ev_id}",
-                description=f"{start_time_str} — {title}",
-                tags=["calendar", "upcoming"],
-                attention=0.7,
-                salience=Salience.ACTIVE,
-                confirmation=ConfirmationStatus.CONFIRMED,
-            )
-            self._graph.upsert_node(event_node)
-            self._graph.assign_node_to_current_episode(event_node.uuid)
-            nodes_affected.append(event_node.uuid)
-
-            for obj_name in objects_mentioned:
-                await self._link_object_to_event(obj_name, event_node)
-
-            if ev_id not in self._notified:
-                self._notified[ev_id] = set()
-
-            time_display = self._format_time(start_time_str)
+            self._notified.setdefault(event_key, set())
+            time_display = self._format_time(str(ev.get("start_time", "") or ""))
+            title = str(ev.get("title", "") or event_key)
+            objects_mentioned = list(ev.get("objects", []) or [])
             obj_hint = ""
             if objects_mentioned:
-                obj_hint = f" (prepare: {', '.join(objects_mentioned[:3])})"
+                obj_hint = f" (prepare: {', '.join(map(str, objects_mentioned[:3]))})"
 
-            if TIER_DIGEST not in self._notified[ev_id]:
+            if TIER_DIGEST not in self._notified[event_key]:
                 digest_parts.append(f"{time_display}: {title}{obj_hint}")
-                self._notified[ev_id].add(TIER_DIGEST)
+                self._notified[event_key].add(TIER_DIGEST)
 
             if start_ts:
                 minutes_until = (start_ts - now) / 60.0
-
-                if (0 < minutes_until <= PREP_MINUTES
-                        and TIER_PREP not in self._notified[ev_id]):
-                    prep_parts.append(
-                        f"{title} in ~{int(minutes_until)} min{obj_hint}"
-                    )
-                    self._notified[ev_id].add(TIER_PREP)
-                    event_node.attention = min(1.0, event_node.attention + 0.2)
-
-                if (0 < minutes_until <= IMMINENT_MINUTES
-                        and TIER_IMMINENT not in self._notified[ev_id]):
-                    imminent_parts.append(f"{title} starting NOW!")
-                    self._notified[ev_id].add(TIER_IMMINENT)
-                    event_node.attention = 1.0
-                    event_node.salience = Salience.ALERT
+                if 0 < minutes_until <= PREP_MINUTES and TIER_PREP not in self._notified[event_key]:
+                    prep_parts.append(f"{title} in ~{int(minutes_until)} min{obj_hint}")
+                    self._notified[event_key].add(TIER_PREP)
+                if (
+                    0 < minutes_until <= IMMINENT_MINUTES
+                    and TIER_IMMINENT not in self._notified[event_key]
+                ):
+                    imminent_parts.append(f"{title} starting now")
+                    self._notified[event_key].add(TIER_IMMINENT)
 
         notification = self._build_notification(
-            digest_parts, prep_parts, imminent_parts, is_urgent=any(
-                ev.get("is_urgent") for ev in events
-            ),
-        )
-
-        result = TriggerResult(
-            trigger_name=self.name,
-            summary=f"Processed {len(events)} calendar events",
-            nodes_affected=nodes_affected,
-            notify_gemini=bool(notification),
-            notification_text=notification,
+            digest_parts,
+            prep_parts,
+            imminent_parts,
+            is_urgent=any(bool(ev.get("is_urgent")) for ev in events),
         )
 
         if notification:
             await self._notify_brain(notification)
 
-        return result
+        return TriggerOutcome(
+            trigger_name=self.name,
+            summary=f"Processed {len(events)} calendar events into L1.5",
+            commit_observations=tuple(observations),
+            notify_gemini=bool(notification),
+            notification_text=notification,
+        )
+
+    def _event_to_observation(
+        self,
+        ev: dict[str, Any],
+        start_ts: float | None,
+        end_ts: float | None,
+    ) -> Observation:
+        """Convert a normalized calendar event into a GOOGLE_CALENDAR Observation."""
+        title = str(ev.get("title", "") or "Untitled calendar event")[:128]
+        start_time = str(ev.get("start_time", "") or "")
+        end_time = str(ev.get("end_time", "") or "")
+        location = str(ev.get("location", "") or "")
+        description = str(ev.get("description", "") or "")
+
+        detail_parts = [p for p in (start_time, end_time, location, description) if p]
+        obs_description = " | ".join(detail_parts)[:400]
+        begin = start_ts or time.time()
+
+        return Observation(
+            source=ObservationSource.GOOGLE_CALENDAR,
+            label=title,
+            kind=NodeKind.EVENT,
+            description=obs_description,
+            confidence=1.0,
+            confirmation=ConfirmationStatus.CONFIRMED,
+            observed_at=begin,
+            time_span=(begin, end_ts),
+            meta={
+                "calendar_id": str(ev.get("calendar_id", "primary") or "primary"),
+                "calendar_event_id": str(ev.get("id", "") or ""),
+                "ical_uid": str(ev.get("ical_uid", "") or ""),
+                "etag": str(ev.get("etag", "") or ""),
+                "html_link": str(ev.get("html_link", "") or ""),
+                "status": str(ev.get("status", "") or ""),
+                "start_time": start_time,
+                "end_time": end_time,
+                "timezone": str(ev.get("timezone", "") or ""),
+                "location": location,
+                "updated": str(ev.get("updated", "") or ""),
+                "objects": list(ev.get("objects", []) or []),
+                "is_urgent": bool(ev.get("is_urgent")),
+            },
+        )
 
     def _check_approaching_events(self) -> None:
-        """Promote attention on events getting closer (called on every tick)."""
+        """Promote attention on existing L2-B calendar nodes as time approaches."""
         now = time.time()
         for ev in self._events_cache:
-            ev_id = ev.get("id", "")
-            start_ts = self._parse_time(ev.get("start_time", ""))
+            start_ts = self._parse_time(str(ev.get("start_time", "") or ""))
             if not start_ts:
                 continue
-
-            node = self._graph.get_node(f"cal_{ev_id}")
-            if not node:
+            node = self._find_calendar_node(ev)
+            if node is None:
                 continue
 
             minutes_until = (start_ts - now) / 60.0
@@ -246,7 +239,16 @@ class CalendarTrigger(BaseTrigger):
                 node.attention = max(node.attention, 0.8)
                 node.salience = Salience.ACTIVE
 
-    # ━━━ Notification builder ━━━
+    def _find_calendar_node(self, ev: dict[str, Any]) -> SemanticNode | None:
+        """Find a committed calendar node by its Google event identity."""
+        target_key = _event_key(ev)
+        for node in self._graph.all_nodes():
+            if node.source != ObservationSource.GOOGLE_CALENDAR.value:
+                continue
+            node_key = _event_key(node.source_meta or {})
+            if node_key == target_key:
+                return node
+        return None
 
     def _build_notification(
         self,
@@ -259,59 +261,87 @@ class CalendarTrigger(BaseTrigger):
         if self._is_quiet_hour() and not is_urgent:
             return ""
 
-        parts = []
-
+        parts: list[str] = []
         if imminent:
-            parts.append(
-                "[Reminder — NOW]\n" + "\n".join(f"  ⚡ {p}" for p in imminent)
-            )
-
+            parts.append("[Reminder now]\n" + "\n".join(f"  - {p}" for p in imminent))
         if prep:
-            parts.append(
-                "[Coming up soon]\n" + "\n".join(f"  🔔 {p}" for p in prep)
-            )
-
+            parts.append("[Coming up soon]\n" + "\n".join(f"  - {p}" for p in prep))
         if digest and not prep and not imminent:
-            parts.append(
-                "[Today's schedule]\n" + "\n".join(f"  📅 {p}" for p in digest)
-            )
+            parts.append("[Today's schedule]\n" + "\n".join(f"  - {p}" for p in digest))
 
         if not parts:
             return ""
-
         return (
-            "Gently tell the user about their schedule. "
-            "Don't just list items — weave them into natural conversation. "
-            "Be helpful but not pushy.\n\n" + "\n\n".join(parts)
+            "Gently tell the user about their schedule. Be helpful but not pushy.\n\n"
+            + "\n\n".join(parts)
         )
 
-    # ━━━ Helpers ━━━
+    def _normalize_event(self, ev: dict[str, Any]) -> dict[str, Any]:
+        """Normalize Google API and Nanobot-friendly event shapes."""
+        start_raw = ev.get("start_time") or ev.get("start") or {}
+        end_raw = ev.get("end_time") or ev.get("end") or {}
+        start_time, start_tz = _extract_google_time(start_raw)
+        end_time, end_tz = _extract_google_time(end_raw)
 
-    def _is_quiet_hour(self) -> bool:
+        title = ev.get("title") or ev.get("summary") or ev.get("label") or ""
+        event_id = (
+            ev.get("id")
+            or ev.get("event_id")
+            or ev.get("google_event_id")
+            or _stable_event_id(title, start_time, end_time, ev.get("location", ""))
+        )
+
+        objects = ev.get("objects", [])
+        if isinstance(objects, str):
+            objects = [p.strip() for p in objects.split(",") if p.strip()]
+        if not isinstance(objects, list):
+            objects = []
+
+        return {
+            "id": str(event_id),
+            "calendar_id": str(ev.get("calendar_id", "primary") or "primary"),
+            "title": str(title or "Untitled calendar event"),
+            "start_time": str(start_time),
+            "end_time": str(end_time),
+            "timezone": str(ev.get("timezone") or start_tz or end_tz or ""),
+            "location": str(ev.get("location", "") or ""),
+            "description": str(ev.get("description", "") or ""),
+            "objects": [str(item) for item in objects[:16]],
+            "is_urgent": _coerce_bool(ev.get("is_urgent") or ev.get("urgent")),
+            "html_link": str(ev.get("html_link") or ev.get("htmlLink") or ""),
+            "etag": str(ev.get("etag", "") or ""),
+            "updated": str(ev.get("updated", "") or ""),
+            "status": str(ev.get("status", "") or ""),
+            "ical_uid": str(ev.get("ical_uid") or ev.get("iCalUID") or ""),
+        }
+
+    @staticmethod
+    def _is_quiet_hour() -> bool:
         hour = datetime.now().hour
-        if QUIET_HOUR_START <= hour or hour < QUIET_HOUR_END:
-            return True
-        return False
+        return QUIET_HOUR_START <= hour or hour < QUIET_HOUR_END
 
     @staticmethod
     def _parse_time(time_str: str) -> float | None:
-        """Parse ISO 8601 time string to Unix timestamp."""
+        """Parse ISO-like Google time strings into Unix timestamps."""
         if not time_str:
             return None
-        for fmt in (
-            "%Y-%m-%dT%H:%M:%S%z",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%dT%H:%M%z",
-            "%Y-%m-%dT%H:%M",
-            "%H:%M",
-        ):
+        cleaned = time_str.strip()
+        try:
+            # Google uses RFC3339 and may emit a trailing Z for UTC.
+            dt = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
+            return dt.timestamp()
+        except ValueError:
+            pass
+
+        for fmt in ("%Y-%m-%d", "%H:%M"):
             try:
-                dt = datetime.strptime(time_str, fmt)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
+                dt = datetime.strptime(cleaned, fmt)
                 if dt.year == 1900:
-                    now = datetime.now(timezone.utc)
-                    dt = dt.replace(year=now.year, month=now.month, day=now.day)
+                    today = datetime.now().astimezone()
+                    dt = dt.replace(year=today.year, month=today.month, day=today.day)
+                dt = dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
                 return dt.timestamp()
             except ValueError:
                 continue
@@ -319,63 +349,71 @@ class CalendarTrigger(BaseTrigger):
 
     @staticmethod
     def _format_time(time_str: str) -> str:
-        """Format time string for human display."""
         if not time_str:
             return "TBD"
-        for fmt in (
-            "%Y-%m-%dT%H:%M:%S%z",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%dT%H:%M%z",
-            "%Y-%m-%dT%H:%M",
-        ):
-            try:
-                dt = datetime.strptime(time_str, fmt)
-                return dt.strftime("%H:%M")
-            except ValueError:
-                continue
-        return time_str
+        ts = CalendarTrigger._parse_time(time_str)
+        if ts is None:
+            return time_str
+        return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().strftime("%H:%M")
 
-    async def _link_object_to_event(self, obj_name: str, event_node: SemanticNode) -> None:
-        """Search L2-B and Graphiti for an object mentioned in a calendar event."""
-        existing = self._graph.get_node_by_label(obj_name)
-        if existing:
-            existing.attention = max(existing.attention, 0.6)
-            existing.salience = Salience.ACTIVE
-            existing.tags = list(set(existing.tags + ["calendar_relevant"]))
-            self._graph.connect(
-                event_node.uuid,
-                existing.uuid,
-                SemanticEdge(kind=EdgeKind.ASSOCIATED_WITH, source="calendar"),
-            )
-            return
 
-        try:
-            from parrot.memory.graphiti_client import PARTITIONS, get_graphiti
+def _loads_jsonish(raw: Any) -> Any:
+    """Load JSON returned by Nanobot, tolerating fenced JSON blocks."""
+    if not isinstance(raw, str):
+        return raw
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if len(lines) >= 3:
+            text = "\n".join(lines[1:-1]).strip()
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        logger.debug("calendar: failed to parse result: %s", text[:160])
+        return []
 
-            g = await get_graphiti()
-            results = await g.search(
-                query=f"object: {obj_name}",
-                group_ids=[PARTITIONS.SCENE],
-                num_results=3,
-            )
-            if results:
-                fact = getattr(results[0], "fact", None) or getattr(results[0], "text", "")
-                obj_node = SemanticNode(
-                    uuid=getattr(results[0], "uuid", f"cal_obj_{obj_name}"),
-                    kind=NodeKind.OBJECT,
-                    label=obj_name,
-                    graphiti_uuid=getattr(results[0], "uuid", ""),
-                    known_facts=[fact] if fact else [],
-                    attention=0.6,
-                    salience=Salience.ACTIVE,
-                    tags=["calendar_relevant"],
-                    confirmation=ConfirmationStatus.EXPECTED,
-                )
-                self._graph.upsert_node(obj_node)
-                self._graph.connect(
-                    event_node.uuid,
-                    obj_node.uuid,
-                    SemanticEdge(kind=EdgeKind.ASSOCIATED_WITH, source="calendar"),
-                )
-        except Exception:
-            logger.debug("calendar: Graphiti lookup failed for '%s'", obj_name)
+
+def _extract_event_list(data: Any) -> list[Any]:
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("events", "items", "calendar_events"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return value
+    return []
+
+
+def _extract_google_time(value: Any) -> tuple[str, str]:
+    """Return (time_value, timezone) from Google API or normalized strings."""
+    if isinstance(value, dict):
+        time_value = value.get("dateTime") or value.get("date") or ""
+        tz = value.get("timeZone") or ""
+        return str(time_value), str(tz)
+    return str(value or ""), ""
+
+
+def _stable_event_id(*parts: Any) -> str:
+    """Create a deterministic fallback id when Nanobot omits Google's id."""
+    h = hashlib.sha1()
+    for part in parts:
+        h.update(str(part or "").encode("utf-8", "replace"))
+        h.update(b"\0")
+    return f"generated_{h.hexdigest()[:16]}"
+
+
+def _event_key(ev: dict[str, Any]) -> str:
+    calendar_id = str(ev.get("calendar_id", "primary") or "primary")
+    event_id = str(ev.get("id") or ev.get("calendar_event_id") or "")
+    return f"{calendar_id}:{event_id}"
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "urgent", "important"}
+    return bool(value)
+
+
+__all__ = ["CalendarTrigger"]

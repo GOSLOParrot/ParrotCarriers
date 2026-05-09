@@ -76,8 +76,8 @@ sources_re_audited:
 | Obsidian 子类 | 用途 | UUID 绑定 | 永久权威 | 进 L1.5 池 | 进 L2-B 节点 | Bucket | Graphiti 分区 |
 |:--|:--|:--|:--|:--|:--|:--|:--|
 | **Obsidian-Ref-加强** | 加强既有节点的 Ref（不是节点本身）| 是 | — | ❌ 不进 | 作为其他节点 `meta.obsidian_uuid` 引用 | — | 生活区 |
-| **Obsidian-设定-日常** | 介绍家具 / 公用场景 / 可作其他节点引用 | 是（节点）| 是 | ✅ 进 | ✅ 是节点本身（OBJECT/SURFACE/PERSON）| OBSIDIAN_SETTING_DAILY | 生活区 |
-| **Obsidian-设定-Roleplay** | Roleplay 模式自定义；中世纪 / XXX 物品 | 是 | 是 | ✅ 进（roleplay 模式时） | ✅ 是节点本身 | OBSIDIAN_SETTING_ROLEPLAY | **roleplay 自定义区** |
+| **Obsidian-设定-日常** | 介绍家具 / 公用场景 / 可作其他节点引用 | 不强制；path/title/note key 可作本地身份 | 是 | ✅ 进 | ✅ 是节点本身（OBJECT/SURFACE/PERSON）| OBSIDIAN_SETTING_DAILY | 生活区 |
+| **Obsidian-设定-Roleplay** | Roleplay 模式自定义；中世纪 / XXX 物品 | 不强制；path/title/note key 可作本地身份 | 是 | ✅ 进（roleplay 模式时） | ✅ 是节点本身 | OBSIDIAN_SETTING_ROLEPLAY | **roleplay 自定义区** |
 
 **接口签名草稿**：
 ```python

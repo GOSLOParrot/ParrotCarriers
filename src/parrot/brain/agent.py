@@ -284,7 +284,7 @@ async def _generate_reply_after_current_speech(
     session: AgentSession,
     instructions: str,
     reason: str,
-) -> None:
+) -> bool:
     """Call Gemini programmatic speech without overlapping the active turn.
 
     Gemini Live + LiveKit Agents can time out or cancel tool calls if multiple
@@ -292,11 +292,132 @@ async def _generate_reply_after_current_speech(
     Keep explicit Brain prompts serialized so startup greetings and status
     notices do not steal the user's first turn.
     """
+    from parrot.brain.session_policy import should_generate_reply
+
+    if not should_generate_reply(reason):
+        return False
+
     current_speech = getattr(session, "current_speech", None)
     if current_speech is not None:
         logger.debug("%s: waiting for current_speech before generate_reply", reason)
         await current_speech
     await session.generate_reply(instructions=instructions)
+    return True
+
+
+def _attach_menu_rpc(room: "Any") -> None:
+    """Expose menu/workspace business RPCs to Unity.
+
+    reason: The existing Brain core interfaces are Python objects
+    (MenuRegistry/PresetLoader/WorkspaceRegistry). Unity needs a minimal
+    LiveKit RPC boundary to list/apply/save menu selections without learning
+    Blackboard internals or reconnecting the room on 2DWorkspace switches.
+    """
+    import json as _json
+    from dataclasses import asdict, is_dataclass
+
+    def _to_wire(obj: "Any") -> "Any":
+        if is_dataclass(obj):
+            return _to_wire(asdict(obj))
+        if isinstance(obj, dict):
+            return {str(k): _to_wire(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_to_wire(v) for v in obj]
+        if hasattr(obj, "name") and hasattr(obj, "value"):
+            return getattr(obj, "name")
+        return obj
+
+    def _dump(obj: "Any") -> str:
+        return _json.dumps(_to_wire(obj), ensure_ascii=False)
+
+    def _payload(data: "Any") -> dict:
+        try:
+            raw = _json.loads(data.payload) if data.payload else {}
+        except Exception:
+            raw = {}
+        return raw if isinstance(raw, dict) else {}
+
+    @room.local_participant.register_rpc_method("listMenuBlocks")
+    async def _list_menu_blocks(data: "Any") -> str:
+        from parrot.brain.menu_registry import get_menu_registry
+
+        return _dump({"status": "ok", "snapshot": get_menu_registry().list_blocks()})
+
+    @room.local_participant.register_rpc_method("applyMenuSelection")
+    async def _apply_menu_selection(data: "Any") -> str:
+        from parrot.brain.menu_registry import MenuSelection, get_menu_registry
+
+        payload = _payload(data)
+        mode_flags = payload.get("mode_flags") or payload.get("active_mode") or ()
+        if isinstance(mode_flags, str):
+            mode_flags = [s.strip() for s in mode_flags.split("|") if s.strip()]
+        selection = MenuSelection(
+            persona_id=str(payload.get("persona_id") or payload.get("active_persona_id") or ""),
+            mode_flags=tuple(str(x) for x in mode_flags),
+            scene_id=str(payload.get("scene_id") or payload.get("active_scene_id") or ""),
+            model_id=str(payload.get("model_id") or payload.get("active_model_id") or ""),
+            workspace_id=str(
+                payload.get("workspace_id") or payload.get("active_workspace_id") or ""
+            ),
+            metadata=dict(payload.get("metadata") or {}),
+        )
+        result = get_menu_registry().apply_selection(selection)
+        return _dump({"status": "ok" if result.success else "error", "result": result})
+
+    @room.local_participant.register_rpc_method("applyPreset")
+    async def _apply_preset(data: "Any") -> str:
+        from parrot.brain.menu_registry import get_menu_registry
+
+        payload = _payload(data)
+        preset_id = str(payload.get("preset_id") or "default")
+        result = get_menu_registry().apply_preset_id(preset_id)
+        return _dump({"status": "ok" if result.success else "error", "result": result})
+
+    @room.local_participant.register_rpc_method("saveAsPreset")
+    async def _save_as_preset(data: "Any") -> str:
+        from parrot.brain.preset_loader import Preset, get_preset_loader
+
+        payload = _payload(data)
+        preset = Preset.from_json(payload)
+        path = get_preset_loader().save(preset)
+        return _dump({"status": "ok", "preset_id": preset.preset_id, "path": str(path)})
+
+    @room.local_participant.register_rpc_method("applyWorkspace")
+    async def _apply_workspace(data: "Any") -> str:
+        from parrot.brain.workspace_registry import get_workspace_registry
+
+        payload = _payload(data)
+        workspace_id = str(payload.get("workspace_id") or payload.get("active_workspace_id") or "")
+        result = get_workspace_registry().apply_workspace(workspace_id)
+        return _dump({"status": "ok" if result.success else "error", "result": result})
+
+    @room.local_participant.register_rpc_method("setAppCapabilityMode")
+    async def _set_app_capability_mode(data: "Any") -> str:
+        from parrot.brain.session_policy import apply_capability_mode
+
+        payload = _payload(data)
+        profile = apply_capability_mode(payload.get("mode") or payload.get("capability_mode"))
+        supervisor_applied = False
+        try:
+            from parrot.brain.perception_supervisor import get_perception_supervisor
+
+            supervisor = get_perception_supervisor()
+            if supervisor is not None:
+                supervisor_applied = await supervisor.apply_capability_profile(profile)
+        except Exception:
+            logger.exception("setAppCapabilityMode: supervisor policy apply failed")
+        return _dump(
+            {
+                "status": "ok",
+                "profile": profile,
+                "supervisor_applied": supervisor_applied,
+            }
+        )
+
+    logger.info(
+        "Menu RPC handlers registered: listMenuBlocks, applyMenuSelection, "
+        "applyPreset, saveAsPreset, applyWorkspace, setAppCapabilityMode"
+    )
 
 
 def _attach_scene_ready_rpc(
@@ -304,13 +425,12 @@ def _attach_scene_ready_rpc(
     session: AgentSession,
     greeting_state: dict[str, bool],
 ) -> None:
-    """Sprint 3 S3.D4: handle Unity 'onSceneReady' RPC → time-of-day greeting.
+    """Handle Unity startup/placement RPCs.
 
-    Unity sends this 500ms after LiveKit connect. Brain generates a brief
-    greeting appropriate to the time of day.  The existing `generate_reply`
-    at session start fires immediately (before Unity connects); this handler
-    fires again when the AR scene is ready — typically they don't overlap
-    because the AR scene takes a moment to load after LiveKit connects.
+    reason: LiveKit connection success only means transport is alive. The user
+    asked that GOSLO stay silent until AR plane detection and explicit placement
+    finish, so ``onSceneReady`` is now a readiness marker and the greeting moves
+    to ``onGosloPlaced``.
     """
     import json as _json
 
@@ -320,37 +440,48 @@ def _attach_scene_ready_rpc(
             payload = _json.loads(data.payload) if data.payload else {}
         except Exception:
             payload = {}
-        time_of_day = payload.get("time_of_day", "morning")
-        greeting_map = {
-            "morning":   "早上好！我现在在你桌面上了，有什么可以帮你的吗？",
-            "afternoon": "下午好！我在这里陪你，有什么想聊的吗？",
-            "evening":   "晚上好！今天过得怎么样？",
-        }
-        instructions = (
-            f"AR 场景已就绪，用户的 AR 鹦鹉刚刚出现在桌面上。"
-            f"时段: {time_of_day}。请用以下语气打招呼（参考但不照搬）: "
-            f"'{greeting_map.get(time_of_day, greeting_map['morning'])}' "
-            f"保持角色，简短活泼，体现你是 GOSLO 鹦鹉这个身份。"
-        )
-        try:
-            if greeting_state.get("sent"):
-                logger.info("onSceneReady: greeting already sent; skipping duplicate")
-                return _json.dumps({"status": "ok", "skipped": "duplicate_greeting"})
-            greeting_state["sent"] = True
-            await _generate_reply_after_current_speech(
-                session,
-                instructions,
-                "onSceneReady",
-            )
-            logger.info("onSceneReady: greeting generated (time_of_day=%s)", time_of_day)
-        except Exception:
-            logger.exception("onSceneReady: generate_reply failed")
-        return _json.dumps({"status": "ok"})
+        logger.info("onSceneReady: readiness marker only payload=%s", payload)
+        return _json.dumps({"status": "ok", "greeting": "deferred_until_goslo_placed"})
 
     @room.local_participant.register_rpc_method("onGosloPlaced")
     async def _on_goslo_placed(data: "Any") -> str:
-        """Unity sends this when user taps to place GOSLO on the desk."""
-        logger.info("onGosloPlaced: GOSLO placed on desk — no action needed in Brain")
+        """Unity sends this after AR plane detection + explicit user placement."""
+        try:
+            payload = _json.loads(data.payload) if data.payload else {}
+        except Exception:
+            payload = {}
+        time_of_day = payload.get("time_of_day", "morning")
+        mode = str(payload.get("capability_mode", "") or "")
+        if mode == "SessionOnlySilent":
+            logger.info("onGosloPlaced: silent mode; greeting suppressed")
+            return _json.dumps({"status": "ok", "skipped": "silent_mode"})
+
+        greeting_map = {
+            "morning": "早上好！我现在在你桌面上了，有什么可以帮你的吗？",
+            "afternoon": "下午好！我在这里陪你，有什么想聊的吗？",
+            "evening": "晚上好！今天过得怎么样？",
+        }
+        instructions = (
+            "AR 平面识别已经完成，用户也手动放置好了 GOSLO。"
+            f"时段: {time_of_day}。请用以下语气打招呼（参考但不照搬）: "
+            f"'{greeting_map.get(time_of_day, greeting_map['morning'])}' "
+            "保持角色，简短活泼，体现你是 GOSLO 鹦鹉这个身份。"
+        )
+        try:
+            if greeting_state.get("sent"):
+                logger.info("onGosloPlaced: greeting already sent; skipping duplicate")
+                return _json.dumps({"status": "ok", "skipped": "duplicate_greeting"})
+            generated = await _generate_reply_after_current_speech(
+                session,
+                instructions,
+                "onGosloPlaced",
+            )
+            if not generated:
+                return _json.dumps({"status": "ok", "skipped": "session_policy"})
+            greeting_state["sent"] = True
+            logger.info("onGosloPlaced: greeting generated (time_of_day=%s)", time_of_day)
+        except Exception:
+            logger.exception("onGosloPlaced: generate_reply failed")
         return _json.dumps({"status": "ok"})
 
     @room.local_participant.register_rpc_method("setScene")
@@ -473,6 +604,7 @@ async def brain_entrypoint(ctx: agents.JobContext):
 
     attach_telemetry_receiver(ctx.room)
     attach_video_state_rpc(ctx.room)
+    _attach_menu_rpc(ctx.room)
     greeting_state = {"sent": False}
     _attach_scene_ready_rpc(ctx.room, session, greeting_state)
 
@@ -627,25 +759,10 @@ async def brain_entrypoint(ctx: agents.JobContext):
 
     asyncio.create_task(_listen_scheduler_results())
 
-    async def _fallback_startup_greeting() -> None:
-        # Unity usually sends onSceneReady after connection. Use this fallback
-        # only when that RPC never arrives, so Gemini does not speak two opening
-        # greetings and confuse turn detection/transcription.
-        await asyncio.sleep(3.0)
-        if greeting_state.get("sent"):
-            return
-        greeting_state["sent"] = True
-        try:
-            await _generate_reply_after_current_speech(
-                session,
-                "Greet the user briefly as Parrot. Be cheerful and short.",
-                "startup_fallback",
-            )
-            logger.info("startup fallback greeting generated")
-        except Exception:
-            logger.exception("startup fallback greeting failed")
-
-    asyncio.create_task(_fallback_startup_greeting())
+    # ChatA startup policy (2026-05-09): do not auto-greet on LiveKit connect.
+    # Greeting is explicitly gated by Unity RPC ``onGosloPlaced`` after AR plane
+    # detection and user placement. Keeping this silent avoids stealing the
+    # first turn while the user is still in the transition/loading flow.
 
     @ctx.room.on("disconnected")
     def _on_room_disconnected(*_args) -> None:

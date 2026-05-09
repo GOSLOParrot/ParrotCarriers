@@ -33,6 +33,7 @@ from parrot.dsg.triggers.goslo_curiosity_trigger import GosloCuriosityTrigger
 from parrot.dsg.triggers.idle_archive_trigger import IdleArchiveTrigger
 from parrot.dsg.triggers.intent_event_boundary_trigger import IntentEventBoundaryTrigger
 from parrot.dsg.triggers.message_trigger import MessageNotificationTrigger
+from parrot.dsg.triggers.obsidian_ingest_trigger import ObsidianIngestTrigger
 from parrot.dsg.triggers.roleplay_mode_trigger import RoleplayModeTrigger
 from parrot.dsg.triggers.scene_context_trigger import SceneContextTrigger
 from parrot.dsg.triggers.scene_switch_trigger import SceneSwitchTrigger
@@ -49,6 +50,7 @@ ALL_TRIGGERS: list[type[BaseTrigger]] = [
     IntentEventBoundaryTrigger,
     RoleplayModeTrigger,
     GosloCuriosityTrigger,
+    ObsidianIngestTrigger,
     IdleArchiveTrigger,
 ]
 
@@ -60,6 +62,7 @@ __all__ = [
     "IdleArchiveTrigger",
     "IntentEventBoundaryTrigger",
     "MessageNotificationTrigger",
+    "ObsidianIngestTrigger",
     "RoleplayModeTrigger",
     "SSOTEnrichmentTrigger",
     "SceneContextTrigger",

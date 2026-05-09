@@ -121,7 +121,7 @@ related:
 2. 启动页菜单展示
 3. user 在 #1 #2 #3 #4 #5 选好 → 点"开始 AR"
 4. 权限请求（如未授）
-5. Token Mint POST /token_mint
+5. Token Mint POST `/mint`
 6. LiveKit room.connect()
 7. AR session start（视 #5 选择 DESKTOP_WEBCAM 或 AR_HANDHELD）
 8. onSceneReady → Brain 单次问候（去重）
@@ -515,6 +515,70 @@ def apply_preset(preset: Preset) -> None:
 
 ---
 
+## §7.6 ChatA LiveKit 启动切片补丁（2026-05-09）
+
+本节是 Sub-Chat A 当前实现约束。画布菜单只做最小实现，是因为它与 LiveKit 稳定连接、启动顺序、切屏生命周期互相阻塞；LiveKit 连接机制本身不按占位处理，按 `client-sdk-unity`、`livekit-unity-lifecycle`、已有问题表和官方 LiveKit 安全资料落最终路径。
+
+### §7.6.1 5 类块：新增 2DWorkspace
+
+| 维度 | 内容 |
+|:--|:--|
+| ID | `workspace_id`，如 `mansion_hub` / `workdesk` / `report_desk` |
+| 数据格式 | `WorkspaceSummary`，只存 UI/canvas surface 摘要和轻量 metadata |
+| 加载器 | `parrot.brain.workspace_registry.WorkspaceRegistry` |
+| active BB key | `global/active_workspace_id` |
+| 切换事件 | `applyWorkspace` RPC 或 `applyMenuSelection` 里的 `workspace_id` |
+| 当前默认 | `mansion_hub` |
+
+`2DWorkspace` 与 `IntentWorkspace` 必须区分：
+
+- `2DWorkspace` 是用户看见的 2D App / Canvas / 报告桌 / 工作台表面，负责“当前在看哪个 2D 工具或页面”。
+- `IntentWorkspace` 是 Brain 内部资源暂存和生命周期管理层，负责 staged photo、event、note、plan ref、owner scope、磁盘恢复等。
+- 两者有交互：2DWorkspace 的 metadata 未来可以保存 IntentWorkspace ref id，用于在报告桌打开某个 staged result；但 2DWorkspace 不持有大 payload，也不替代 IntentWorkspace 的回收/pressure 逻辑。
+
+### §7.6.2 启动与问候策略
+
+当前启动流改为：
+
+```
+1. 启动页收集 room / scene / workspace / capability_mode
+2. 权限检查；Mic 和 Camera 均按 capability mode 决定是否请求或发布
+3. POST `/mint` 获取短期 LiveKit join token
+4. RoomManager.Connect(livekit_url, join_token)
+5. setAppCapabilityMode RPC 对齐 Brain 侧 session policy
+6. onSceneReady 只登记 ready，不主动问候
+7. onGosloPlaced 后才允许首次问候，并且必须通过 session_policy.should_generate_reply
+8. 进入 HUD + 工具柜；切 workspace 不断 LiveKit room
+```
+
+### §7.6.3 静默保活与对话关闭
+
+| 模式 | LiveKit room | Mic publish | Video publish | Brain speech | 用途 |
+|:--|:--|:--|:--|:--|:--|
+| `SessionOnlySilent` | 保持连接 | 禁止 publish intent，并 unpublish 已有 mic track | 关闭 | 阻断 proactive `generate_reply` | App 保活、等待用户下一步，不让 GOSLO 说话 |
+| `VoiceOnlyNoVideo` | 保持连接 | 允许 | 关闭 | 允许 | 仅语音低带宽模式 |
+| `VoiceVideoNoActionMonitor` | 保持连接 | 允许 | Gemini only | 允许 | 观察/对话，但不进入全 AR companion |
+| `FullARCompanion` | 保持连接 | 允许 | 动态档位 | 允许 | 正常 AR companion |
+| 对话关闭且不保活 | 走 graceful shutdown | 先禁用并 unpublish | 关闭 | 阻断 | 结束会话或退后台 |
+
+结论：Session 保活不对话不能只靠堵麦克风。麦克风 publish gate 用来阻断输入，Brain 的 `session_policy.should_generate_reply` 用来阻断输出；两边同时存在，才能保证 GOSLO 不说话。对话不保活则不是“只阻断麦克风”，而是走 `LifecycleShutdownService` 的统一关闭路径。
+
+### §7.6.4 蓝牙与麦克风通道切换
+
+- 麦克风是 LiveKit `TrackSource.SourceMicrophone` 的输入 publish 轨道，受 `MicrophonePublisher.PublishIntentEnabled` 控制。
+- 蓝牙主要是设备/系统音频路由问题，不等价于 LiveKit room 生命周期。有蓝牙输入路由时 Unity 默认优先使用蓝牙设备；蓝牙 / 手机麦克风切换通过串行 mic unpublish → rebuild source/sample-rate → publish 完成，不能触发 room 重连。
+- 静默模式下路由变化只更新本地 route cache，不会重新发布 mic。
+- 未来若要做正式蓝牙选择 UI，应落在 `AudioRoutePolicy` producer 上，写入 `session/audio_route_policy`，而不是在启动流里复制 ParrotDev 的连通性脚本。
+
+### §7.6.5 LiveKit 安全策略
+
+- Unity 不持有 LiveKit API secret，只请求后端 mint 的短期 join token。
+- `/mint` 默认短 TTL；自托管环境无法即时撤销旧 token 时，短 TTL 是必要防线。
+- Unity 客户端 token 只授予 room join、publish、subscribe、data，不授予 room admin/list/create/record。
+- 生产环境必须使用 HTTPS/WSS 和可信证书；TURN/TLS 后续作为弱网/企业网络覆盖项处理。
+
+---
+
 ## §8 与 8 场景的关联（菜单 → 场景路径）
 
 > 每个菜单交互对应触发哪些 v0 §5 场景。
@@ -586,5 +650,6 @@ def apply_preset(preset: Preset) -> None:
 
 ## §12 变更日志
 
+- **2026-05-09 ChatA**：补充 LiveKit 启动切片。菜单从 4 类块运行态扩为 5 类块（新增 2DWorkspace），明确 2DWorkspace 与 IntentWorkspace 边界；启动问候延后到 `onGosloPlaced`；新增 `SessionOnlySilent` 静默保活、对话关闭、蓝牙/麦克风路由、安全 token 策略说明。画布菜单本轮保持最小实现，LiveKit 生命周期按最终路径实现。
 - **2026-05-07**：本文创建。三层菜单架构（启动页 + HUD/工具柜 + 节点画布）+ 4 类块定义（Model/Persona/Mode/Scene）+ 预设系统（NEED-P3-B/C）+ 默认 fallback（NEED-P3-E）+ 海盗主题换肤（P3）+ 像素画素材按菜单细分清单 + 与 8 场景关联表 + 实施推荐顺序 Phase A-E。
 - **2026-05-07 v0.1（增量）**：§4 加 2 占位节点类型（过滤器块灰 / 有效期预测模块橙）+ §4.3 边追加"过滤器 → 模块"+ §4.7 占位说明小节 + §7.5 素材 2 条（block_filter_gray / block_memory_validity_orange）+ §8 关联表 1 行；具体设计延后到 NEED-P3-FILTER / NEED-P3-VALIDITY；与 backend `memory/MemoryValidity 过滤器` PLANNED（`module_map_p2 §11.2`）对接，但 canvas 占位**不**强行绑定 backend schema。

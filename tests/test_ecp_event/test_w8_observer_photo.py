@@ -17,9 +17,21 @@ Coverage focus:
 from __future__ import annotations
 
 import pytest
+import py_trees
 
 from parrot.brain.event_ingest import EcpEventIngest, reset_ecp_event_ingest_for_tests
+from parrot.brain.intent_workspace import (
+    IntentWorkspace,
+    StagedRefKind,
+    set_intent_workspace_for_test,
+)
 from parrot.brain.observer import photo as photo_observer
+from parrot.brain.photo_awareness import (
+    PhotoAwarenessPolicy,
+    apply_photo_awareness_settings,
+    latest_photo_awareness_notice,
+)
+from parrot.dsg.l1_5 import L15Pool, RefKind, set_pool_for_test
 from parrot.dsg.l2b_graph import L2BGraph
 from parrot.dsg.l2b_types import NodeKind
 from parrot.shared.ecp_event import EcpEvent, EcpEventSource, EcpEventType
@@ -34,6 +46,10 @@ def _isolated(monkeypatch):
     """
     reset_ecp_event_ingest_for_tests()
     photo_observer.reset_metrics_for_tests()
+    py_trees.blackboard.Blackboard.storage = {}
+    py_trees.blackboard.Blackboard.metadata = {}
+    set_intent_workspace_for_test(IntentWorkspace())
+    set_pool_for_test(L15Pool())
 
     fresh_graph = L2BGraph()
     monkeypatch.setattr(
@@ -44,6 +60,8 @@ def _isolated(monkeypatch):
 
     reset_ecp_event_ingest_for_tests()
     photo_observer.reset_metrics_for_tests()
+    set_intent_workspace_for_test(None)
+    set_pool_for_test(None)
 
 
 def _preview_event(
@@ -73,6 +91,7 @@ def _preview_event(
 def _asset_uploaded_event(
     photo_id: str = "ph_test01",
     asset_ref: str = "/upload/photo/2026-04-30/ph_test01.jpg",
+    asset_path: str = "",
     asset_bytes: int = 12345,
     correlation_id: str = "",
 ) -> EcpEvent:
@@ -82,6 +101,7 @@ def _asset_uploaded_event(
         payload={
             "photo_id": photo_id,
             "asset_ref": asset_ref,
+            "asset_path": asset_path,
             "asset_bytes": asset_bytes,
         },
         correlation_id=correlation_id,
@@ -148,6 +168,34 @@ def test_preview_writes_bb_last_photo_event(_isolated):
     assert bb_payload["asset_ref"] == ""  # not yet uploaded
 
 
+def test_awareness_silent_stages_preview_ref_without_interrupt(_isolated):
+    from parrot.brain.intent_workspace import get_intent_workspace
+
+    apply_photo_awareness_settings(
+        PhotoAwarenessPolicy.AWARE_SILENT,
+        enabled=True,
+        preview_ttl_seconds=60,
+    )
+    ingest = EcpEventIngest()
+    photo_observer.register(ingest)
+
+    ingest.handle_raw(
+        "parrot.ecp.event",
+        _preview_event(photo_id="ph_aware", preview_jpeg_b64="QUJDRA==").to_wire_json().encode(
+            "utf-8"
+        ),
+    )
+
+    refs = get_intent_workspace().list_active(role="photo_preview_awareness")
+    notice = latest_photo_awareness_notice()
+    assert len(refs) == 1
+    assert refs[0].metadata.related_node_uuid == "ph_aware"
+    assert notice["notify_goslo"] is True
+    assert notice["allow_interrupt"] is False
+    assert notice["preview_ref_id"] == refs[0].ref_id
+    assert photo_observer.get_metrics_snapshot()["awareness_preview_refs_staged"] == 1
+
+
 # ─── asset_uploaded → PhotoNode update ──────────────────────────
 
 
@@ -176,6 +224,38 @@ def test_asset_uploaded_updates_existing_photo_node(_isolated):
     node_after = _isolated.get_node("ph_chain")
     assert node_after.reference_image_path == "/upload/photo/2026-04-30/ph_chain.jpg"
     assert photo_observer.get_metrics_snapshot()["photo_nodes_updated_with_asset"] == 1
+
+
+def test_asset_uploaded_with_asset_path_stages_photo_ref(_isolated, tmp_path):
+    from parrot.brain.intent_workspace import get_intent_workspace
+    from parrot.dsg.l1_5 import get_l1_5_pool
+
+    ingest = EcpEventIngest()
+    photo_observer.register(ingest)
+    ingest.handle_raw(
+        "parrot.ecp.event",
+        _preview_event(photo_id="ph_path").to_wire_json().encode("utf-8"),
+    )
+
+    saved = tmp_path / "2026-05-09" / "ph_path.jpg"
+    saved.parent.mkdir(parents=True)
+    saved.write_bytes(b"jpeg")
+    ingest.handle_raw(
+        "parrot.ecp.event",
+        _asset_uploaded_event(
+            photo_id="ph_path",
+            asset_ref="/upload/photo/2026-05-09/ph_path.jpg",
+            asset_path=str(saved),
+        ).to_wire_json().encode("utf-8"),
+    )
+
+    node_after = _isolated.get_node("ph_path")
+    assert node_after.reference_image_path == str(saved)
+    ws = get_intent_workspace()
+    refs = ws.list_active(kinds=frozenset({StagedRefKind.PHOTO}))
+    assert any(h.metadata.related_node_uuid == "ph_path" for h in refs)
+    pool = get_l1_5_pool()
+    assert pool.refs.lookup_by_ref(RefKind.PHOTO_PATH, str(saved)) == "ph_path"
 
 
 def test_asset_uploaded_for_unknown_photo_id_counted_no_crash(_isolated):
@@ -242,4 +322,7 @@ def test_metrics_snapshot_keys():
         "photo_nodes_updated_with_asset",
         "missing_photo_id",
         "asset_for_unknown_photo_id",
+        "awareness_decisions",
+        "awareness_preview_refs_staged",
+        "awareness_react_allowed",
     }

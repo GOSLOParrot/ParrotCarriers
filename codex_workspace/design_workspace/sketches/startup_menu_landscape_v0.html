@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GOSLO Parrot Startup Menu v0</title>
+  <style>
+    :root {
+      --ink: #101318;
+      --panel: #f6d28a;
+      --panel-dark: #b86f34;
+      --paper: #fff0c7;
+      --sky-1: #0d4588;
+      --sky-2: #28b7da;
+      --mint: #8ee6c8;
+      --red: #c83f4b;
+      --green: #72b55f;
+      --cream: #fff8df;
+      --shadow: #5b3522;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #232832;
+      font-family: "Courier New", monospace;
+      color: var(--ink);
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    .phone {
+      width: min(96vw, 1160px);
+      aspect-ratio: 20 / 9;
+      position: relative;
+      overflow: hidden;
+      border: 8px solid #0b0e13;
+      background:
+        linear-gradient(180deg, var(--sky-1) 0%, #0f75c9 46%, var(--sky-2) 100%);
+      image-rendering: pixelated;
+    }
+
+    .stars span,
+    .clouds span {
+      position: absolute;
+      display: block;
+      background: var(--cream);
+      opacity: 0.9;
+    }
+
+    .stars span { width: 4px; height: 4px; }
+    .stars span:nth-child(1) { left: 8%; top: 17%; }
+    .stars span:nth-child(2) { left: 27%; top: 10%; }
+    .stars span:nth-child(3) { left: 64%; top: 15%; }
+    .stars span:nth-child(4) { left: 84%; top: 28%; }
+    .stars span:nth-child(5) { left: 92%; top: 12%; }
+
+    .clouds span {
+      width: 120px;
+      height: 30px;
+      border-radius: 0;
+      box-shadow:
+        28px -16px 0 #d8f0ff,
+        58px -6px 0 #d8f0ff,
+        86px -18px 0 #d8f0ff,
+        118px 0 0 #d8f0ff;
+      opacity: 0.78;
+    }
+    .clouds span:nth-child(1) { left: 6%; top: 23%; }
+    .clouds span:nth-child(2) { left: 71%; top: 20%; transform: scale(1.15); }
+    .clouds span:nth-child(3) { left: 40%; top: 8%; transform: scale(0.8); }
+
+    .exit {
+      position: absolute;
+      right: 24px;
+      top: 22px;
+      width: 34px;
+      height: 34px;
+      border: 4px solid var(--cream);
+      background: #101318cc;
+      color: var(--cream);
+      font-size: 21px;
+      line-height: 24px;
+      display: grid;
+      place-items: center;
+      box-shadow: 4px 4px 0 #000;
+    }
+
+    .title-board {
+      position: absolute;
+      left: 50%;
+      top: 42px;
+      width: 470px;
+      transform: translateX(-50%);
+      padding: 14px 24px 18px 120px;
+      text-align: center;
+      background: var(--panel);
+      border: 5px solid var(--panel-dark);
+      box-shadow:
+        0 0 0 4px var(--paper) inset,
+        8px 8px 0 var(--shadow);
+    }
+
+    .title-board h1 {
+      margin: 0;
+      font-size: clamp(30px, 4.5vw, 52px);
+      line-height: 0.95;
+      letter-spacing: 0;
+      color: #7c3b20;
+      text-shadow: 3px 3px 0 #ffdca0;
+      word-spacing: 0;
+    }
+
+    .title-board p {
+      margin: 10px 0 0;
+      font-size: 13px;
+      font-weight: 700;
+      color: #5b3522;
+    }
+
+    .model-slot {
+      position: absolute;
+      left: 22px;
+      top: 24px;
+      width: 84px;
+      height: 84px;
+      background: #fff9e8;
+      border: 4px solid #7c3b20;
+      box-shadow: 4px 4px 0 var(--shadow);
+    }
+
+    .model-slot::before {
+      content: "";
+      position: absolute;
+      left: 24px;
+      top: 18px;
+      width: 34px;
+      height: 28px;
+      background: #e9f8f0;
+      border: 3px solid #1b1f26;
+      box-shadow:
+        -10px 22px 0 1px #9fd4ff,
+        10px 22px 0 1px #9fd4ff,
+        0 36px 0 8px #9fd4ff;
+    }
+
+    .model-slot::after {
+      content: "2D MODEL";
+      position: absolute;
+      left: 6px;
+      right: 6px;
+      bottom: 4px;
+      font-size: 8px;
+      font-weight: 900;
+      color: #7c3b20;
+      text-align: center;
+    }
+
+    .scene-panel,
+    .start-panel,
+    .settings {
+      position: absolute;
+      background: var(--paper);
+      border: 4px solid var(--panel-dark);
+      box-shadow: 6px 6px 0 var(--shadow);
+    }
+
+    .scene-panel {
+      left: 38px;
+      bottom: 52px;
+      width: 238px;
+      min-height: 92px;
+      padding: 12px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      border-bottom: 3px solid var(--panel-dark);
+      font-weight: 900;
+      font-size: 18px;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 4px 8px;
+      background: var(--ink);
+      color: var(--cream);
+      font-size: 10px;
+    }
+
+    .scene-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      height: 28px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .scene-pill {
+      min-width: 112px;
+      height: 22px;
+      padding: 2px 8px;
+      background: #fff9e8;
+      border: 2px solid #9e6b3d;
+      overflow: hidden;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .settings {
+      left: 38px;
+      bottom: 14px;
+      width: 112px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .start-panel {
+      right: 74px;
+      bottom: 48px;
+      width: 220px;
+      min-height: 136px;
+      padding: 14px;
+      background: #111720;
+      border-color: var(--cream);
+      color: var(--cream);
+      box-shadow: 6px 6px 0 #000;
+    }
+
+    .start-button {
+      width: 100%;
+      height: 54px;
+      display: grid;
+      place-items: center;
+      background: var(--green);
+      border: 5px solid #d8ffd1;
+      box-shadow: 0 0 0 4px #356f31 inset, 5px 5px 0 #000;
+      color: #10210f;
+      font-size: 25px;
+      font-weight: 900;
+    }
+
+    .mode-row {
+      display: grid;
+      grid-template-columns: 1fr 76px;
+      gap: 12px;
+      margin-top: 18px;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .lever {
+      height: 28px;
+      border: 3px solid var(--cream);
+      background: #2b3442;
+      position: relative;
+    }
+
+    .lever::after {
+      content: "";
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      left: 4px;
+      top: -3px;
+      background: var(--mint);
+      border: 3px solid var(--cream);
+      box-shadow: 3px 3px 0 #000;
+    }
+
+    .footer-hint {
+      position: absolute;
+      left: 50%;
+      bottom: 38px;
+      transform: translateX(-50%);
+      width: 300px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 900;
+      color: #fff9e8;
+      text-shadow: 2px 2px 0 #1e2228;
+    }
+  </style>
+</head>
+<body>
+  <main class="phone" aria-label="GOSLO Parrot startup menu sketch">
+    <div class="stars" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="clouds" aria-hidden="true">
+      <span></span><span></span><span></span>
+    </div>
+
+    <button class="exit" aria-label="Exit">x</button>
+
+    <section class="title-board">
+      <div class="model-slot" aria-label="Replaceable 2D parrot model slot"></div>
+      <h1>GOSLO<br>Parrot</h1>
+      <p>AR companion / 2D workspace</p>
+    </section>
+
+    <section class="scene-panel">
+      <div class="panel-head">
+        <span>SCENE</span>
+        <span class="tag">Room Setting ></span>
+      </div>
+      <div class="scene-summary">
+        <span>Current</span>
+        <span class="scene-pill">AR handheld</span>
+      </div>
+    </section>
+
+    <button class="settings">SETTINGS</button>
+
+    <section class="start-panel">
+      <button class="start-button">START</button>
+      <div class="mode-row">
+        <span>MODE<br><small>AR Scene / Voice</small></span>
+        <span class="lever" aria-label="Mode lever"></span>
+      </div>
+    </section>
+
+    <div class="footer-hint">select scene, choose mode, then start</div>
+  </main>
+</body>
+</html>

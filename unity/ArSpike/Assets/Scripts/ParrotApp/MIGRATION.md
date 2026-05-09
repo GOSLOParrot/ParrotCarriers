@@ -94,7 +94,31 @@ ECP 协议代码以 ArSpike 为新主仓位；ParrotDev 的同名脚本视为 Sp
 | `Vision/IFrameCapturer.cs` (XRCpuImage / AsyncGPUReadback 双实现) | `snapshot-identify` todo | spike S4 决出胜者后落地 |
 | `captureSnapshot` ECP 化 | `snapshot-identify` todo | 与 IFrameCapturer 一起做 |
 | Brain 侧 `connection.health.changed` / `intent.disconnect` event handler | ECP Phase 2 | 等 L0 event 入 EventEnvelope 后再加 |
-| `AudioRoutePolicy` producer | Phase 4+ | 蓝牙 OOS，候选 BB 键留 `# CANDIDATE` |
+| `AudioRoutePolicy` producer | Phase 4+ | 蓝牙设备切换已由 Unity 本地 route-aware republish 支持；协议 producer / UI 选择器仍留 `# CANDIDATE` |
+
+## ChatA LiveKit 启动流增量（2026-05-09）
+
+本轮只把菜单/画布做到能支撑启动和 LiveKit 生命周期协商的最小形态；LiveKit 连接、token mint、静默保活、切屏/切 workspace 的生命周期路径按正式 App 约束落地，不复制 ParrotDev 的连通性脚本。
+
+| 文件 | 状态 | 命名空间 | 操作 |
+|:--|:--|:--|:--|
+| `Config/AppStartupConfigDto.cs` | ✅ ChatA | `ParrotApp.Config` | 启动配置 DTO：区分 `scene_id`、`workspace_id`、`capability_mode`、LiveKit URL/token/identity；2DWorkspace 与 IntentWorkspace 的关系写在注释里。 |
+| `LiveKit/LiveKitTokenMintClient.cs` | ✅ ChatA | `ParrotApp.LiveKit` | Unity 只向后端请求短期 join token；API secret 不进客户端。非本地 endpoint 未配置 bearer secret 时输出 warning。 |
+| `Lifecycle/AppStartupFlowController.cs` | ✅ ChatA | `ParrotApp.Lifecycle` | START flow 中枢：权限快照 → token mint → lifecycle transition → LiveKit connect → `setAppCapabilityMode` → `onSceneReady` / `onGosloPlaced`。切 workspace 不断 room。 |
+| `LiveKit/MicrophonePublisher.cs` | ✅ ChatA | `ParrotApp.LiveKit` | 新增 publish intent gate：`SessionOnlySilent` 禁止麦克风发布并 unpublish 已有 track；蓝牙/系统路由变化不会绕过该 gate。 |
+
+### 静默保活与关闭边界
+
+- `SessionOnlySilent` 是保活模式：LiveKit room 保持连接，麦克风 publish intent 关闭，Brain 侧也阻断 proactive speech。不能只靠堵麦克风，因为 GOSLO 的输出也必须由 Brain policy gate 控制。
+- 对话不保活走 `LifecycleShutdownService.RequestShutdown`。流程是先停 mic publish intent，再进 graceful shutdown chokepoint；不要直接 `Room.Disconnect()`。
+- `VoiceOnlyNoVideo` 和 `VoiceVideoNoActionMonitor` 是降级能力模式，不是断线模式。
+
+### 蓝牙与麦克风
+
+- 麦克风是本地输入 track。`MicrophonePublisher` 负责发布/取消发布。
+- 蓝牙是设备音频路由，不等于 LiveKit 连接状态。有蓝牙输入路由时默认优先使用蓝牙设备。
+- 蓝牙 / 手机麦克风切换只重建 mic track：串行 unpublish → rebuild source/sample-rate → publish，不重连 room。
+- 后续正式蓝牙选择 UI 应接 `AudioRoutePolicy` producer 和 `session/audio_route_policy`，不应塞进启动脚本。
 
 ## 与 ParrotDev 的关系
 

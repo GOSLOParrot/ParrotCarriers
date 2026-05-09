@@ -37,7 +37,11 @@ related:
 
 > 「Google 日程的真连接（这个现在在 nanobot 是连接上了，不知道是通过 MCP 还是什么的，其实我还是更希望能不消耗 token，现在应该是靠 nanobot 通过指令拿到 Google 的一些日程信息？我还没研究格式 和怎么 一键转换格式成 Node 加到 Google 桶里 和 日程的增删改查 nanobot 要修改 Node 导出并回写给 Google，GOSLO 的语音播报和对话里改日程用 IntentWorkspace 同样是改 Node 再传回指令到 Google 吧？现在应该是这样设计的？总之还没具体实现，只有架构能力有部分核心接口，没有业务接口」
 
-**翻译**：双向 sync 数据流构想（待业务化）：
+**翻译**：双向 sync 数据流构想（待业务化。需要具体设计）：
+每天固定拿到整天的Google日程，重要的事件，紧急的事件，需要提醒等的内容（nanobot拿）到，
+日程的原格式数据（nanobot指令拿到的？）保存在哪里呢？日程是否冲突。怎么在Intent（菜单里模块连接了GOSLO和GoogleRef模块）和不Intent（模块未连接GOSLO）的情况下
+需要具体看nanobot和这个Google真连接的具体状况。
+
 - 读：Nanobot/MCP → Google 日程 → Nanobot 转 Node 格式 → 进 GOOGLE_CALENDAR 桶
 - 写：GOSLO 语音 / 对话 → IntentWorkspace 改 Node → Nanobot 把 Node 回写 Google
 - 关键约束：**低 token 成本** — 不能每次拿日程都灌进 LLM context

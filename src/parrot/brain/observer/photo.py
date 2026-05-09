@@ -2,7 +2,7 @@
 
 Authoritative spec:
     - ``architecture/sprint4_phase4_entry_20260430.md §8.1`` L7 (PhotoNode
-      vs ObjectNode) + L8 (双通道 preview / asset)
+      vs ObjectNode) + L8 (dual-channel preview / asset)
     - ``architecture/sprint4_phase4_entry_20260430.md §8.3`` event_type
       registry rows for ``photo.taken_preview`` + ``photo.asset_uploaded``
     - ``audit_identify_object_no_screenshot_20260420.md §5.1 B3`` for
@@ -33,7 +33,7 @@ Pipeline (Phase 4 W8 Brain side; Unity half is a separate chat)::
             • re-writes transient/last_photo_event BB with stage="asset_uploaded"
 
 Boundary contract (entry doc §3.7):
-    Observer only "记录". It writes:
+    Observer records evidence only. It writes:
         • PhotoNode to L2BGraph — analogous to identify_object._upsert_to_l2b
           for ObjectNode; PhotoNode is a NEW NodeKind, distinct from OBJECT,
           so the §8.1 L7 rule "PhotoEvent does NOT auto-create unknown
@@ -50,8 +50,10 @@ Boundary contract (entry doc §3.7):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from parrot.brain.event_ingest import EcpEventIngest
@@ -78,6 +80,9 @@ _metrics: dict[str, int] = {
     "photo_nodes_updated_with_asset": 0,
     "missing_photo_id": 0,
     "asset_for_unknown_photo_id": 0,
+    "awareness_decisions": 0,
+    "awareness_preview_refs_staged": 0,
+    "awareness_react_allowed": 0,
 }
 
 
@@ -143,6 +148,15 @@ def _on_photo_taken_preview(event: EcpEvent) -> None:
             photo_id, exc_info=True,
         )
 
+    # Awareness is a policy decision, not a camera-mode decision. It can stage
+    # a short-lived IntentWorkspace preview ref for GOSLO while still blocking
+    # speech interruption in App v1.
+    _apply_awareness_decision(
+        photo_id=photo_id,
+        payload=payload,
+        source_event_id=event.event_id,
+    )
+
 
 # ─── photo.asset_uploaded handler ───────────────────────────────
 
@@ -160,12 +174,14 @@ def _on_photo_asset_uploaded(event: EcpEvent) -> None:
         return
 
     asset_ref = str(payload.get("asset_ref", "") or "")
+    asset_path = str(payload.get("asset_path", "") or "")
     asset_bytes = int(payload.get("asset_bytes", 0) or 0)
+    storage_ref = asset_path or asset_ref
 
     # Find the existing PhotoNode created on preview.
     updated = _update_photo_node_asset(
         photo_id=photo_id,
-        asset_ref=asset_ref,
+        storage_ref=storage_ref,
     )
     if not updated:
         _metrics["asset_for_unknown_photo_id"] += 1
@@ -182,6 +198,7 @@ def _on_photo_asset_uploaded(event: EcpEvent) -> None:
         payload=payload,
     )
     bb_payload["asset_ref"] = asset_ref
+    bb_payload["asset_path"] = asset_path
     bb_payload["asset_bytes"] = asset_bytes
     try:
         bb = _ensure_bb()
@@ -190,6 +207,14 @@ def _on_photo_asset_uploaded(event: EcpEvent) -> None:
         logger.debug(
             "[observer.photo] BB write failed for asset_uploaded photo_id=%s",
             photo_id, exc_info=True,
+        )
+
+    if updated and storage_ref:
+        _stage_photo_asset_ref(
+            photo_id=photo_id,
+            storage_ref=storage_ref,
+            asset_ref=asset_ref,
+            asset_bytes=asset_bytes,
         )
 
 
@@ -262,9 +287,13 @@ def _upsert_photo_node(
     )
 
 
-def _update_photo_node_asset(*, photo_id: str, asset_ref: str) -> bool:
-    """Set reference_image_path on an existing PhotoNode. Returns True iff
-    the node existed (created on a prior photo.taken_preview)."""
+def _update_photo_node_asset(*, photo_id: str, storage_ref: str) -> bool:
+    """Set reference_image_path on an existing PhotoNode.
+
+    ``storage_ref`` should be a real disk path when available. The HTTP
+    ``asset_ref`` remains in the ECP payload for clients, but L2-B and RefTable
+    need a path that can be checked with Path.exists().
+    """
     try:
         from parrot.dsg.l2b_graph import get_l2b_graph
     except Exception:
@@ -281,14 +310,75 @@ def _update_photo_node_asset(*, photo_id: str, asset_ref: str) -> bool:
     existing = graph.get_node(photo_id)
     if existing is None:
         return False
-    existing.reference_image_path = asset_ref
+    existing.reference_image_path = storage_ref
     existing.last_seen_this_session = time.time()
     _metrics["photo_nodes_updated_with_asset"] += 1
     logger.info(
-        "[observer.photo] PhotoNode photo_id=%s asset_ref=%s",
-        photo_id, asset_ref,
+        "[observer.photo] PhotoNode photo_id=%s storage_ref=%s",
+        photo_id, storage_ref,
     )
     return True
+
+
+def _stage_photo_asset_ref(
+    *,
+    photo_id: str,
+    storage_ref: str,
+    asset_ref: str,
+    asset_bytes: int,
+) -> None:
+    """Stage the photo path in IntentWorkspace and bind it in L1.5 RefTable."""
+
+    async def _stage() -> None:
+        try:
+            from parrot.brain.intent_workspace import (
+                PayloadSource,
+                StagedRefKind,
+                StagedRefMetadata,
+                StagedRefRequest,
+                get_intent_workspace,
+            )
+            from parrot.dsg.l1_5 import get_l1_5_pool
+            from parrot.dsg.l1_5.ref_table import RefKind
+
+            path = Path(storage_ref)
+            ws = get_intent_workspace()
+            handle = await ws.stage(
+                StagedRefRequest(
+                    kind=StagedRefKind.PHOTO,
+                    payload_source=PayloadSource.DISK_PATH,
+                    payload_value=path,
+                    metadata=StagedRefMetadata(
+                        origin="observer.photo",
+                        kind=StagedRefKind.PHOTO,
+                        payload_source=PayloadSource.DISK_PATH,
+                        related_node_uuid=photo_id,
+                        size_bytes=asset_bytes,
+                        custom_meta={
+                            "photo_id": photo_id,
+                            "asset_ref": asset_ref,
+                            "asset_path": storage_ref,
+                            "role": "photo_capture",
+                        },
+                    ),
+                )
+            )
+            pool = get_l1_5_pool()
+            pool.bind_ref(
+                photo_id,
+                RefKind.PHOTO_PATH,
+                storage_ref,
+                intent_workspace_ref_id=handle.ref_id,
+            )
+        except Exception:
+            logger.debug("[observer.photo] photo asset staging failed", exc_info=True)
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_stage())
+    else:
+        loop.create_task(_stage())
 
 
 def _build_bb_payload(
@@ -313,9 +403,35 @@ def _build_bb_payload(
             if stage == "preview" else ""
         ),
         "asset_ref": str(payload.get("asset_ref", "") or "") if stage == "asset_uploaded" else "",
+        "asset_path": str(payload.get("asset_path", "") or "") if stage == "asset_uploaded" else "",
         "asset_bytes": int(payload.get("asset_bytes", 0) or 0) if stage == "asset_uploaded" else 0,
         "ts_ms": int(time.time() * 1000),
     }
+
+
+def _apply_awareness_decision(
+    *,
+    photo_id: str,
+    payload: dict[str, Any],
+    source_event_id: str,
+) -> None:
+    try:
+        from parrot.brain.photo_awareness import handle_photo_preview_awareness
+
+        decision = handle_photo_preview_awareness(
+            photo_id=photo_id,
+            payload=payload,
+            source_event_id=source_event_id,
+        )
+    except Exception:
+        logger.debug("[observer.photo] awareness decision failed", exc_info=True)
+        return
+
+    _metrics["awareness_decisions"] += 1
+    if decision.preview_ref_id:
+        _metrics["awareness_preview_refs_staged"] += 1
+    if decision.allow_react:
+        _metrics["awareness_react_allowed"] += 1
 
 
 # ─── registration ───────────────────────────────────────────────

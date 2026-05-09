@@ -67,3 +67,14 @@ FilePort/
 /Test/
 *.token.txt
 unity_join_token.txt
+
+# Local design asset staging.
+# Keep curated decisions/docs in git, but do not commit the raw downloaded
+# Pixel Asset packs or the bulk extracted workspace. Small production-ready
+# sprites should be copied into a dedicated Unity asset folder when selected.
+/Pixel Asset/
+/codex_workspace/design_workspace/asset_pipeline/pixel_asset_workspace/
+
+# Unity smoke screenshots are generated verification artifacts.
+/unity/*/Assets/Screenshots/
+/unity/*/Assets/Screenshots.meta

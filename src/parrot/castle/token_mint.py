@@ -5,7 +5,7 @@ Sprint 3 T-P4.
 Security model (decision D3):
     Bearer PARROT_MINT_SECRET header. Unity stores secret in
     Resources/parrot_config.json (compiled into APK, gitignored).
-    Failed auth → 401. Missing secret env → dev-mode warning and open mint.
+    Failed auth returns 401. Missing secret env logs a dev-mode warning and opens mint.
 
 Deployment:
     Castle docker-compose token-mint service on port 7888. The service is
@@ -17,13 +17,14 @@ Usage:
     Content-Type: application/json
     {"room": "parrot-main", "identity": "unity-<device-id>"}
 
-    → 200 {"token": "<livekit-jwt>", "url": "<LIVEKIT_URL>"}
-    → 401 {"error": "unauthorized"}
-    → 422 validation error
+    200 {"token": "<livekit-jwt>", "url": "<LIVEKIT_URL>"}
+    401 {"error": "unauthorized"}
+    422 validation error
 """
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import sys
@@ -69,8 +70,11 @@ _LIVEKIT_API_SECRET = os.getenv(
 )
 _DEFAULT_ROOM = os.getenv("LIVEKIT_ROOM", "parrot-main")
 
-# Token TTL: 24 hours (Unity caches in PlayerPrefs and reuses until expiry)
-_TOKEN_TTL_S = 86_400
+# Keep join tokens short-lived. LiveKit token expiry gates the initial
+# connection, while connected clients receive refresh tokens for reconnects.
+# For self-hosting this also reduces stale-token replay risk because Cloud-only
+# token revocation is not available.
+_TOKEN_TTL_S = int(os.getenv("PARROT_MINT_TTL_SECONDS", "600"))
 
 
 @app.on_event("startup")
@@ -112,7 +116,7 @@ def _check_auth(request: Request) -> None:
         )
         raise HTTPException(status_code=401, detail="unauthorized")
     token = auth[len("Bearer "):]
-    if token != _MINT_SECRET:
+    if not hmac.compare_digest(token, _MINT_SECRET):
         logger.warning(
             "Mint auth failed: bearer mismatch (bearer_length=%d expected_length=%d)",
             len(token),
@@ -133,13 +137,23 @@ def _generate_token(room: str, identity: str) -> str:
                 "livekit-server-sdk-python required: pip install livekit-api"
             ) from exc
 
-    # NOTE: with_ttl() requires a timedelta — NOT a plain int.
-    # (Active-context confirmed fact from generate_token.py fix, 2026-04-11)
+    # NOTE: with_ttl() requires a timedelta, not a plain int.
+    # Historical note: this was verified in the generate_token.py fix on 2026-04-11.
+    # Grant only the normal participant powers Unity needs. Do not mint room
+    # admin/list/create/record grants from the mobile app token endpoint.
     token = (
         AccessToken(api_key=_LIVEKIT_API_KEY, api_secret=_LIVEKIT_API_SECRET)
         .with_identity(identity)
         .with_name(identity)
-        .with_grants(VideoGrants(room_join=True, room=room))
+        .with_grants(
+            VideoGrants(
+                room_join=True,
+                room=room,
+                can_publish=True,
+                can_subscribe=True,
+                can_publish_data=True,
+            )
+        )
         .with_ttl(timedelta(seconds=_TOKEN_TTL_S))
     )
     return token.to_jwt()
@@ -165,7 +179,13 @@ async def mint_token(req: MintRequest, request: Request) -> MintResponse:
         raise HTTPException(status_code=500, detail="token generation failed") from exc
 
     expires_at = int(time.time()) + _TOKEN_TTL_S
-    logger.info("Minted token: room=%s identity=%s expires_at=%d", req.room, req.identity, expires_at)
+    logger.info(
+        "Minted token: room=%s identity_length=%d ttl_s=%d expires_at=%d",
+        req.room,
+        len(req.identity),
+        _TOKEN_TTL_S,
+        expires_at,
+    )
     return MintResponse(token=jwt, url=_LIVEKIT_URL, expires_at=expires_at)
 
 

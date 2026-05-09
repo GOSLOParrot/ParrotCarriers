@@ -16,7 +16,7 @@ description: Use when working with Unity AR app lifecycle / 防御性机制 — 
 1. 本 skill 描述 Unity 客户端 FSM；**不暴露给后端 BT / Scheduler**。后端通过 `EcpState.app_lifecycle_state` + `connection.health.changed` 事件感知。
 2. VideoTier 切换属于 Intent；**禁止**塞进 Reflex 做毫秒级反应。
 3. DSG L2-B 工作记忆**不接受**实时帧；本 skill 不新增 L2-B 写入路径。
-4. 蓝牙音频在 Sprint4 仍标 `unsupported_or_experimental`；候选 BB 键 `session/audio_route_policy` 保留 candidate 标记，无 producer。
+4. 2026-05-09 ChatA 修订：蓝牙音频进入正式 App 支持范围；有蓝牙输入路由时默认优先使用蓝牙，蓝牙 / 手机麦克风切换必须稳定重建 mic track 且不重连 room。候选 BB 键 `session/audio_route_policy` 仍保留 candidate 标记，无协议 producer。
 5. 测试束隔离：本 skill 描述的 `AppLifecycleManager` 在 `unity/ArSpike/Assets/Scripts/ParrotApp/`；不要把 `unity/ParrotDev/` 的 SelfTest / Runtime HUD 反向当生命周期源。
 
 ## 当 LLM 写代码时应当如何用

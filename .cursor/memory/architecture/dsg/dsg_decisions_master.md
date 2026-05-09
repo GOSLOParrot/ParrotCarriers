@@ -143,8 +143,8 @@ related:
 | 子类 | 用途 | UUID 绑定 | 永久权威 | 是否进 L1.5 池 | 是否进 L2-B 节点 | 桶 | Graphiti 分区 |
 |:--|:--|:--|:--|:--|:--|:--|:--|
 | **Obsidian-Ref-加强** | 加强既有节点的 Ref（不是节点本身）| 是 | — | ❌ 不进 | 作为其他节点的 `meta.obsidian_uuid` 引用 | — | 生活区 |
-| **Obsidian-设定-日常** | 介绍家里沙发 / 大家具 / 公用场景；可作其他节点引用 | 是（节点）| 是 | ✅ 进 | ✅ 是节点本身（NodeKind=OBJECT/SURFACE/PERSON 等）| Obsidian 设定桶 | 生活区 |
-| **Obsidian-设定-Roleplay** | Roleplay 模式自定义；人工维护；不日常使用；可把家设成中世纪 / 物品设成 XXX | 是 | 是 | ✅ 进（roleplay 模式时）| ✅ 是节点本身（roleplay 专属或通用 NodeKind 由 Chat 2 决定）| Roleplay 临时桶 | **roleplay 自定义区**（不污染生活区） |
+| **Obsidian-设定-日常** | 介绍家里沙发 / 大家具 / 公用场景；可作其他节点引用 | 不强制；path/title/note key 可作本地身份 | 是 | ✅ 进 | ✅ 是节点本身（NodeKind=OBJECT/SURFACE/PERSON 等）| Obsidian 设定桶 | 生活区 |
+| **Obsidian-设定-Roleplay** | Roleplay 模式自定义；人工维护；不日常使用；可把家设成中世纪 / 物品设成 XXX | 不强制；path/title/note key 可作本地身份 | 是 | ✅ 进（roleplay 模式时）| ✅ 是节点本身（roleplay 专属或通用 NodeKind 由 Chat 2 决定）| Roleplay 临时桶 | **roleplay 自定义区**（不污染生活区） |
 
 | 维度 | 决策 | status |
 |:--|:--|:--|

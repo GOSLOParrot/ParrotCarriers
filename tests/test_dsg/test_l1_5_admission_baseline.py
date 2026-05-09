@@ -11,8 +11,6 @@ Verifies the strategy-pattern admission decisions:
 
 from __future__ import annotations
 
-import pytest
-
 from parrot.dsg.ingest.base import Observation, ObservationSource
 from parrot.dsg.l1_5.admission import (
     AdmissionContext,
@@ -93,6 +91,14 @@ def test_goslo_autonomous_routing() -> None:
     decision = p.evaluate(obs, AdmissionContext())
     assert decision.admit is True
     assert decision.target_bucket == BucketKind.AUTONOMOUS_CURIOSITY
+
+
+def test_google_calendar_routing() -> None:
+    p = DesktopPolicy()
+    obs = _obs(ObservationSource.GOOGLE_CALENDAR, confidence=1.0)
+    decision = p.evaluate(obs, AdmissionContext())
+    assert decision.admit is True
+    assert decision.target_bucket == BucketKind.GOOGLE_CALENDAR
 
 
 def test_user_explicit_salience_promoted_to_foreground() -> None:

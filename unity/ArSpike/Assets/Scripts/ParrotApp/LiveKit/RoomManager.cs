@@ -201,9 +201,9 @@ namespace ParrotApp.LiveKit
             if (_connecting != null)
             {
                 Debug.LogWarning(
-                    $"[RoomManager] StartConnect({reason}): superseding in-flight ConnectToRoom (R1 reentrance guard)");
-                StopCoroutine(_connecting);
-                _connecting = null;
+                    $"[RoomManager] StartConnect({reason}) ignored: ConnectToRoom is already in flight. " +
+                    "Wait for OnConnected/OnDisconnected before starting another connection.");
+                return;
             }
             _connecting = StartCoroutine(ConnectToRoom());
         }
@@ -216,6 +216,24 @@ namespace ParrotApp.LiveKit
         public void MarkIntentDisconnecting()
         {
             IsDisconnecting = true;
+        }
+
+        /// <summary>
+        /// Finalizes the graceful shutdown chokepoint after Disconnect and Dispose.
+        ///
+        /// RoomManager owns the Room reference, so the shutdown service calls back
+        /// here once it has waited for Disconnected and disposed the SDK object.
+        /// This keeps the next START/reconnect from seeing a stale Room or a
+        /// permanently true <see cref="IsDisconnecting"/> flag.
+        /// </summary>
+        public void CompleteChokepointDisconnect(string reason)
+        {
+            ClearRemoteAudioStreams($"chokepoint_complete:{reason}");
+            Room = null;
+            IsConnected = false;
+            IsDisconnecting = false;
+            _connecting = null;
+            Debug.Log($"[RoomManager] chokepoint ownership cleared (reason={reason})");
         }
 
         /// <summary>
@@ -269,13 +287,25 @@ namespace ParrotApp.LiveKit
 
             if (Room != null)
             {
-                Debug.Log("[RoomManager] Replacing existing Room (disconnect previous)");
-                try { Room.Disconnect(); }
-                catch (Exception e) { Debug.LogWarning($"[RoomManager] Disconnect previous room: {e.Message}"); }
+                if (IsConnected)
+                {
+                    Debug.LogWarning(
+                        "[RoomManager] Connect rejected: an active Room already exists. " +
+                        "Use LifecycleShutdownService before joining a different room.");
+                    _connecting = null;
+                    yield break;
+                }
 
+                // The previous Room is already disconnected or failed to connect.
+                // Do not call Room.Disconnect here; active disconnects must pass
+                // through LifecycleShutdownService so unpublish, Disconnected wait,
+                // Dispose, and cooldown stay ordered.
+                Debug.Log("[RoomManager] Disposing stale disconnected Room before fresh connect");
+                ClearRemoteAudioStreams("dispose_stale_room");
+                try { (Room as IDisposable)?.Dispose(); }
+                catch (Exception e) { Debug.LogWarning($"[RoomManager] Dispose stale room: {e.Message}"); }
                 Room = null;
                 IsConnected = false;
-                ClearRemoteAudioStreams("replace_room");
                 yield return null;
             }
 
@@ -317,6 +347,11 @@ namespace ParrotApp.LiveKit
                 Debug.LogError(
                     "[RoomManager] Connection failed (check: LiveKit on :7880, token not expired, Brain worker registered).");
                 LastConnectDurationSeconds = null;
+                try { (Room as IDisposable)?.Dispose(); }
+                catch (Exception e) { Debug.LogWarning($"[RoomManager] Dispose failed Room: {e.Message}"); }
+                Room = null;
+                IsConnected = false;
+                _connecting = null;
                 yield break;
             }
 

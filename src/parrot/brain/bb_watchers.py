@@ -16,7 +16,8 @@ Architecture (Voyager twin-path Injector strategy, ar_feature_vision §3.6):
     * **turn-start snapshot** — Context Injector calls
       :func:`snapshot_turn_start_keys` to materialise the keys it wants to
       see at the top of an LLM turn (active_persona / active_model /
-      active_scene / active_mode / scene / visual_state / body_state).
+      active_scene / active_workspace / active_mode / scene / visual_state /
+      body_state).
     * **event-driven** — :func:`register_watcher` lets a callback fire when
       a specific BB key transitions. Used for persona swap → reload
       instructions; scene swap → switch L1.5 SceneRegistry; mode swap →
@@ -47,10 +48,12 @@ TURN_START_SNAPSHOT_KEYS: tuple[str, ...] = (
     "global/active_persona_id",
     "global/active_model_id",
     "global/active_scene_id",
+    "global/active_workspace_id",
     "global/active_mode",
     "global/attention_thresholds",
     "global/user_profile",
     "session/scene",
+    "session/app_capability_mode",
     "session/visual_state",
     "tick/body_state",
 )
@@ -232,6 +235,7 @@ def attach_standard_brain_watchers(
     on_mode_change: WatcherFn | None = None,
     on_scene_change: WatcherFn | None = None,
     on_model_change: WatcherFn | None = None,
+    on_workspace_change: WatcherFn | None = None,
     extras: Iterable[WatcherSpec] = (),
 ) -> None:
     """One-call attachment for the menu watchers Brain.agent needs.
@@ -254,6 +258,10 @@ def attach_standard_brain_watchers(
     if on_model_change is not None:
         register_watcher(
             "menu.model", "global/active_model_id", on_model_change,
+        )
+    if on_workspace_change is not None:
+        register_watcher(
+            "menu.workspace", "global/active_workspace_id", on_workspace_change,
         )
     for spec in extras:
         get_watcher_registry().register(spec)

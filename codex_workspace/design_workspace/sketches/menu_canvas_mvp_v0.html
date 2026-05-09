@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GOSLO Menu Canvas MVP v0</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #232832;
+      display: grid;
+      place-items: center;
+      font-family: "Courier New", monospace;
+      color: #101318;
+    }
+    .phone {
+      width: min(96vw, 1160px);
+      aspect-ratio: 20 / 9;
+      position: relative;
+      overflow: hidden;
+      border: 8px solid #101318;
+      background:
+        linear-gradient(180deg, #26313d 0%, #20242c 100%);
+      image-rendering: pixelated;
+    }
+    .title {
+      position: absolute;
+      left: 28px;
+      top: 20px;
+      color: #fff0c7;
+      font-size: 22px;
+      font-weight: 900;
+      text-shadow: 3px 3px 0 #000;
+    }
+    .canvas {
+      position: absolute;
+      left: 54px;
+      right: 54px;
+      top: 70px;
+      bottom: 48px;
+      border: 5px solid #b86f34;
+      background:
+        linear-gradient(90deg, #ffffff12 1px, transparent 1px),
+        linear-gradient(0deg, #ffffff12 1px, transparent 1px),
+        #1a1f27;
+      background-size: 32px 32px;
+      box-shadow: 8px 8px 0 #101318;
+    }
+    .block {
+      position: absolute;
+      width: 230px;
+      min-height: 128px;
+      padding: 12px;
+      border: 5px solid;
+      box-shadow: 6px 6px 0 #000;
+    }
+    .model {
+      left: 74px;
+      top: 54px;
+      background: #fff0c7;
+      border-color: #b86f34;
+    }
+    .persona {
+      left: 408px;
+      top: 42px;
+      background: #e8fff7;
+      border-color: #4bb99a;
+    }
+    .workspace {
+      right: 86px;
+      bottom: 54px;
+      width: 270px;
+      background: #f4c06f;
+      border-color: #9e5f2f;
+    }
+    .head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 8px;
+      border-bottom: 3px solid #101318;
+      font-size: 18px;
+      font-weight: 900;
+    }
+    .kind {
+      padding: 3px 7px;
+      background: #101318;
+      color: #fff0c7;
+      font-size: 10px;
+    }
+    .body {
+      margin-top: 10px;
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .port {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: #8ee6c8;
+      border: 3px solid #101318;
+    }
+    .port.out { right: -13px; top: 58px; }
+    .port.in { left: -13px; top: 58px; }
+    .wire {
+      position: absolute;
+      height: 6px;
+      background: #8ee6c8;
+      border-top: 2px solid #e8fff7;
+      border-bottom: 2px solid #101318;
+      transform-origin: left center;
+    }
+    .wire.model-persona {
+      left: 317px;
+      top: 174px;
+      width: 100px;
+      transform: rotate(-4deg);
+    }
+    .wire.persona-workspace {
+      left: 642px;
+      top: 174px;
+      width: 230px;
+      transform: rotate(26deg);
+    }
+    .wire.model-workspace {
+      left: 306px;
+      top: 214px;
+      width: 535px;
+      transform: rotate(16deg);
+      background: #ffcf5c;
+    }
+    .footer {
+      position: absolute;
+      left: 54px;
+      right: 54px;
+      bottom: 16px;
+      color: #fff0c7;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <main class="phone" aria-label="GOSLO menu canvas MVP">
+    <div class="title">MENU CANVAS / MVP</div>
+    <section class="canvas">
+      <div class="wire model-persona"></div>
+      <div class="wire persona-workspace"></div>
+      <div class="wire model-workspace"></div>
+
+      <article class="block model">
+        <div class="head"><span>Model</span><span class="kind">actor</span></div>
+        <div class="body">
+          <span>GOSLO_default</span>
+          <span>2D sprite: Parrot slot</span>
+          <span>cap: idle / perch / greet</span>
+        </div>
+        <span class="port out"></span>
+      </article>
+
+      <article class="block persona">
+        <span class="port in"></span>
+        <div class="head"><span>Persona</span><span class="kind">rules</span></div>
+        <div class="body">
+          <span>goslo_parrot_default</span>
+          <span>greeting gated</span>
+          <span>workspace tone enabled</span>
+        </div>
+        <span class="port out"></span>
+      </article>
+
+      <article class="block workspace">
+        <span class="port in"></span>
+        <div class="head"><span>2DWorkspace</span><span class="kind">surface</span></div>
+        <div class="body">
+          <span>mansion_hub</span>
+          <span>session: keep_session_silent</span>
+          <span>route: hub / workdesk / reports</span>
+        </div>
+      </article>
+    </section>
+    <div class="footer">
+      <span>Scene remains perception baseline: ar_handheld / desktop_webcam</span>
+      <span>Workspace is app interaction surface</span>
+    </div>
+  </main>
+</body>
+</html>
+

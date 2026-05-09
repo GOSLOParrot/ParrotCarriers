@@ -83,6 +83,9 @@ async def _is_nanobot_idle(min_idle_seconds: float) -> bool:
     try:
         from parrot.shared.redis_client import get_redis
         r = await get_redis()
+        busy_raw = await r.hget("parrot:nanobot_heartbeat", "main_worker_busy")
+        if str(busy_raw or "").lower() in {"1", "true", "yes"}:
+            return False
         last_ts_raw = await r.hget("parrot:nanobot_heartbeat", "main_worker")
         if last_ts_raw is None:
             return False

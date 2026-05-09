@@ -369,19 +369,75 @@ working.
 | Frontend action | Backend RPC method | Backend module | BB writes |
 |:--|:--|:--|:--|
 | Open menu | `listMenuBlocks` (RPC, JSON-out) | `MenuRegistry.list_blocks` | none |
-| Apply 4-block selection | `applyMenuSelection` | `MenuRegistry.apply_selection` → `PresetLoader.apply` | `global/active_*` (4) |
+| Apply 5-block selection | `applyMenuSelection` | `MenuRegistry.apply_selection` → `PresetLoader.apply` | `global/active_*` (5) |
 | Load preset by id | `applyPreset` | `MenuRegistry.apply_preset_id` | same as above |
 | Save current as preset | `saveAsPreset` | `PresetLoader.save` | none |
+| Switch 2DWorkspace only | `applyWorkspace` | `WorkspaceRegistry.apply_workspace` → `PresetLoader.apply_workspace_id` | `global/active_workspace_id` |
+| Set app capability / silence policy | `setAppCapabilityMode` | `session_policy.apply_capability_mode` + `PerceptionSupervisor.apply_capability_profile` | `session/app_capability_mode`, video/dsg tier keys |
 | Read active state at turn start | snapshot (no RPC) | `bb_watchers.snapshot_turn_start_keys` | none |
 | HUD `visual_state` icon | inline EcpEvent (existing) | `brain.vision.state` | `session/visual_state` |
 | HUD `behavior_mode` icon | inline EcpEvent (existing) | menu apply path | `global/active_mode` |
 
 How TODO:
-- **No new wire / EcpEventType.** All four menu actions piggyback on
+- **No new wire / EcpEventType.** Menu, 2DWorkspace, and session policy actions piggyback on
   existing RPC bridge (per `protocol_snapshot_p4 §1`).
 - **Frontend never writes Blackboard.** Always go through the menu RPC.
 - **Default boot preset = `default.json`** if no PlayerPrefs override
   exists.
+
+### §5.1 ChatA 2026-05-09 LiveKit + 2DWorkspace addendum
+
+This addendum is the implemented ChatA slice. It keeps the canvas menu small
+because the menu surface currently blocks LiveKit startup stability, while the
+LiveKit connection lifecycle itself is treated as final-path application
+behavior, not as a stub.
+
+**Menu registry is now 5-block for runtime selection.**
+
+- Existing four blocks remain `model`, `persona`, `mode`, and `scene`.
+- New block: `2DWorkspace`, backed by `parrot.brain.workspace_registry`.
+- `Preset` schema is v2 and writes `active_workspace_id` in addition to the
+  four existing active keys. v1 presets still load with default workspace
+  fallback.
+- `MenuRegistrySnapshot` includes `workspaces` and `active_workspace_id`.
+
+**2DWorkspace vs IntentWorkspace boundary.**
+
+- `2DWorkspace` is the user-visible app/canvas surface: mansion hub, workdesk,
+  report desk, or future 2D tools. It is switched through menu/startup RPC and
+  reflected in `global/active_workspace_id`.
+- `IntentWorkspace` remains the Brain-side resource staging layer for photos,
+  events, notes, plan refs, and large payload lifecycles. It is not a UI tab and
+  is not switched by user canvas selection.
+- Relationship: a `2DWorkspace` may carry lightweight metadata pointing to
+  IntentWorkspace refs later, but it must not own or duplicate those payloads.
+
+**Session capability policy.**
+
+- `session/app_capability_mode` is the central policy key. It gates Brain
+  proactive speech and clamps perception/video behavior.
+- `SessionOnlySilent` means LiveKit room stays connected, GOSLO does not
+  proactively call `generate_reply`, Unity disables mic publish intent, and
+  video is locally gated off.
+- "No dialogue and no keepalive" is a graceful shutdown request. Unity must
+  first stop mic publish intent, then route through `LifecycleShutdownService`;
+  direct room disconnects remain outside the normal path.
+- Mic blocking alone is not sufficient for silence. Brain-level speech
+  generation is also blocked through `session_policy.should_generate_reply`.
+
+**LiveKit security audit anchors.**
+
+- Token minting stays server-side because LiveKit access tokens are JWTs signed
+  with the API secret and include participant identity, room, capabilities, and
+  permissions: <https://docs.livekit.io/frontends/reference/tokens-grants/>.
+- Client grants are scoped to join/publish/subscribe/data. Admin/list/create/
+  record grants are intentionally not minted for Unity clients.
+- Self-hosted revocation cannot invalidate an existing token immediately, so
+  `/mint` now defaults to short TTL and avoids long-lived cached Unity
+  tokens.
+- Production LiveKit endpoints require WSS/HTTPS with trusted certificates, and
+  TURN/TLS should be planned for restrictive networks:
+  <https://docs.livekit.io/transport/self-hosting/deployment/>.
 
 ---
 
@@ -415,6 +471,11 @@ How TODO:
 
 ## §8 Change log
 
+- **2026-05-09 ChatA**: implemented the LiveKit startup/session slice:
+  5-block menu registry with `2DWorkspace`, preset schema v2, app capability
+  mode, silent keepalive speech gate, Unity startup token mint flow, and scoped
+  LiveKit security notes. Phase 4 DataChannel topics and EcpEventType remain
+  unchanged.
 - **2026-05-07**: doc created. Ratifies the menu / BB / IntentWorkspace /
   L2-B baseline interface contracts landed in the same commit. 222
   pytest pass; Phase 4 § 8 + cs_parity untouched.

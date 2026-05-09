@@ -43,8 +43,8 @@ parent_doc: "workspace_index.md"
 | 子类 | 用途 | UUID 绑定 | 永久权威 | 进 L1.5 池 | 进 L2-B 节点 | 桶 | Graphiti 分区 |
 |:--|:--|:--|:--|:--|:--|:--|:--|
 | **Obsidian-Ref-加强** | 加强既有节点的 Ref（不是节点本身）| 是 | — | ❌ 不进 | 作为其他节点的 `meta.obsidian_uuid` 引用 | — | 生活区 |
-| **Obsidian-设定-日常** | 介绍家里沙发 / 大家具 / 公用场景；可作其他节点引用 | 是（节点）| 是 | ✅ 进 | ✅ 是节点本身 | Obsidian 设定桶 | 生活区 |
-| **Obsidian-设定-Roleplay** | Roleplay 模式自定义；人工维护；不日常使用；可把家设成中世纪 | 是 | 是 | ✅ 进（roleplay 模式时）| ✅ 是节点本身 | Roleplay 临时桶 | **roleplay 自定义区**（不污染生活区）|
+| **Obsidian-设定-日常** | 介绍家里沙发 / 大家具 / 公用场景；可作其他节点引用 | 不强制；path/title/note key 可作本地身份 | 是 | ✅ 进 | ✅ 是节点本身 | Obsidian 设定桶 | 生活区 |
+| **Obsidian-设定-Roleplay** | Roleplay 模式自定义；人工维护；不日常使用；可把家设成中世纪 | 不强制；path/title/note key 可作本地身份 | 是 | ✅ 进（roleplay 模式时）| ✅ 是节点本身 | Roleplay 临时桶 | **roleplay 自定义区**（不污染生活区）|
 
 **3 子类共享的字段填法**：
 
@@ -58,7 +58,7 @@ parent_doc: "workspace_index.md"
 | `attention` | from_observation 默认 0.6（CONFIRMED）/ 0.35（其他）|
 | `evidence_score` | 默认 0；30s repeat-seen +0.25；Graphiti enrich +0.15 |
 | `provenance_stream_id` | 由 user_tag_filter 传入 |
-| `obsidian_uuid` | 必填（双向链 uuid）|
+| `obsidian_uuid` | 仅 `profile=ref` 必填；`daily` / `roleplay` 可为空并使用 `obsidian_note_key` / path / title |
 | `source_meta` | **Chat 2 实施**：装 `{obsidian_path, file_mtime, double_link_count, profile: "ref"\|"daily"\|"roleplay"}` |
 | GHOST 转换 | **无**（设定子类永远不 decay；Ref 子类不参与 lifecycle）|
 | TTL | **无**（永不过期）|

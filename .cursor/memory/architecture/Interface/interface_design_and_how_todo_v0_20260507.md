@@ -1008,7 +1008,7 @@ async def _register_tools(session, model_manifest_registry):
 
 **缺口接口**：
 - ⚠ 真机 spike 验证（P2.5 真机 spike chat）
-- ⚠ Bluetooth 是 unsupported_or_experimental（baseline 不变）
+- ⚠ 2026-05-09 ChatA 修订：Bluetooth 已进入正式 App 支持范围；仍需真机验证蓝牙 / 手机麦克风往返切换不导致 LiveKit room 崩溃。
 
 **TODO 注释草稿**：
 ```csharp

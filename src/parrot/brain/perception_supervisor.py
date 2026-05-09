@@ -32,7 +32,14 @@ from parrot.brain.obs_log import log_obs_event
 from parrot.scheduler.blackboard import open_bb_client
 from parrot.shared.constants import STREAM_EVENT_LOG
 from parrot.shared.event_log import EventEnvelope, EventLayer
-from parrot.shared.tiers import DEFAULT_COMBO, DsgMode, VideoTier, is_allowed_combo
+from parrot.shared.tiers import (
+    CAPABILITY_MODE_DEFAULTS,
+    DEFAULT_COMBO,
+    AppCapabilityMode,
+    DsgMode,
+    VideoTier,
+    is_allowed_combo,
+)
 from parrot.shared.vision_state import VisualState
 
 if TYPE_CHECKING:
@@ -160,9 +167,65 @@ class PerceptionSupervisor:
         return changed
 
     def initialize(self) -> None:
-        """Write the DEFAULT_COMBO to BB so downstream readers see a valid
-        baseline even before the first decision tick. Idempotent."""
-        self._write_combo(DEFAULT_COMBO, cause="startup")
+        """Write the initial combo so downstream readers see a valid baseline.
+
+        If Unity already selected an app capability mode before Supervisor
+        attaches, honour that business mode. Otherwise preserve the historical
+        DEFAULT_COMBO so console/dev sessions keep their old startup shape.
+        """
+        combo = self._combo_from_existing_capability_mode() or DEFAULT_COMBO
+        self._write_combo(combo, cause="startup")
+
+    def _combo_from_existing_capability_mode(self) -> tuple[VideoTier, DsgMode] | None:
+        """Return a startup combo only when the app mode key already exists."""
+        try:
+            raw = self._bb.get("session/app_capability_mode")
+        except KeyError:
+            return None
+        except Exception:
+            logger.debug("Supervisor could not read session/app_capability_mode", exc_info=True)
+            return None
+
+        from parrot.brain.session_policy import parse_capability_mode
+
+        mode = parse_capability_mode(raw)
+        return CAPABILITY_MODE_DEFAULTS[mode]
+
+    def _locked_combo_from_capability_mode(self) -> tuple[tuple[VideoTier, DsgMode], str] | None:
+        """Return a hard policy combo for non-full app capability modes.
+
+        reason: VoiceOnly and Silent modes are user-visible business choices,
+        not transient A10 health states. The Supervisor must not auto-upgrade
+        them back to FULL just because the A10 heartbeat looks healthy.
+        """
+        from parrot.brain.session_policy import current_capability_mode
+
+        mode = current_capability_mode(default=None)
+        if mode is None or mode == AppCapabilityMode.FULL_AR_COMPANION:
+            return None
+        return CAPABILITY_MODE_DEFAULTS[mode], f"capability_policy:{mode.value}"
+
+    async def apply_capability_profile(self, profile: Any, *, push_unity: bool = True) -> bool:
+        """Apply a user-visible app capability profile to tier/mode state.
+
+        The ``session/app_capability_mode`` key belongs to ``session_policy``;
+        this Supervisor remains the single writer for ``session/video_tier``
+        and ``session/dsg_mode``. Keeping that boundary avoids the old
+        multi-writer Blackboard drift while still making mode changes take
+        effect immediately.
+        """
+        combo = (profile.video_tier, profile.dsg_mode)
+        previous = self._current
+        cause = f"capability_policy:{profile.mode.value}"
+        if not self._write_combo(combo, cause=cause):
+            return combo == previous
+        await self._on_decision_committed(
+            previous=previous,
+            new=combo,
+            cause=cause,
+            push_unity=push_unity,
+        )
+        return True
 
     def set_manual_override(self, combo: tuple[VideoTier, DsgMode], hold_s: float = 300.0) -> bool:
         """Legacy/background path: commit then push Unity asynchronously.
@@ -512,6 +575,21 @@ class PerceptionSupervisor:
                     visual_state = None
 
                 self._update_timers(visual_state, a10_healthy, now)
+
+                locked = self._locked_combo_from_capability_mode()
+                if locked is not None:
+                    locked_combo, locked_cause = locked
+                    if locked_combo != self._current:
+                        previous_combo = self._current
+                        if self._write_combo(locked_combo, cause=locked_cause):
+                            await self._on_decision_committed(
+                                previous=previous_combo,
+                                new=locked_combo,
+                                cause=locked_cause,
+                            )
+                    await asyncio.sleep(LOOP_INTERVAL_S)
+                    continue
+
                 new_combo, cause = self.decide(
                     visual_state=visual_state,
                     a10_healthy=a10_healthy,

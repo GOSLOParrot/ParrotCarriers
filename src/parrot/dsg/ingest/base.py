@@ -62,6 +62,7 @@ class ObservationSource(str, Enum):
     CV_SENTINEL = "cv_sentinel"
     MOCK = "mock"
     GOSLO_AUTONOMOUS = "goslo_autonomous"
+    GOOGLE_CALENDAR = "google_calendar"
 
 
 class Observation(BaseModel):
@@ -168,6 +169,70 @@ class IngestFilter(ABC):
         """
         del text, source, provenance_stream_id, meta
         return IngestOutcome(filter_name=self.name, accepted=0, rejected=0)
+
+
+def _copy_obsidian_source_meta(obs: Observation) -> dict[str, Any]:
+    """Keep Obsidian-specific note metadata on the L2-B node.
+
+    Ref-profile notes use Obsidian UUID as a binding lookup key. Daily and
+    roleplay setting notes may not have a UUID, so their path/note key remains
+    operational provenance for status views, ref-health checks, and future
+    vault reconciliation. These fields are deliberately copied into
+    ``source_meta`` rather than becoming new top-level node fields.
+    """
+    keys = (
+        "profile",
+        "obsidian_path",
+        "obsidian_note_key",
+        "file_mtime",
+        "double_link_count",
+        "tags",
+    )
+    return {key: obs.meta[key] for key in keys if key in obs.meta}
+
+
+def _copy_google_calendar_source_meta(obs: Observation) -> dict[str, Any]:
+    """Keep Google Calendar identity/version data on the L2-B event node.
+
+    Calendar events are lightweight facts in L2-B. The heavy or editable
+    draft state belongs in IntentWorkspace later; here we only store the
+    stable API identity, time range, and version tokens needed for refresh
+    and write-back.
+    """
+    keys = (
+        "calendar_id",
+        "calendar_event_id",
+        "ical_uid",
+        "etag",
+        "html_link",
+        "status",
+        "start_time",
+        "end_time",
+        "timezone",
+        "location",
+        "updated",
+        "objects",
+        "is_urgent",
+    )
+    return {key: obs.meta[key] for key in keys if key in obs.meta}
+
+
+try:
+    from parrot.dsg.l2b_types import register_source_meta_factory
+
+    register_source_meta_factory(
+        ObservationSource.USER_TAG_OBSIDIAN.value,
+        _copy_obsidian_source_meta,
+    )
+    register_source_meta_factory(
+        ObservationSource.GOOGLE_CALENDAR.value,
+        _copy_google_calendar_source_meta,
+    )
+except Exception:
+    # Import-time factory registration is best-effort. If a test imports this
+    # module while l2b_types is being monkey-patched, SemanticNode will still
+    # fall back to an empty source_meta dict instead of failing ingestion.
+    pass
 
 
 __all__ = [

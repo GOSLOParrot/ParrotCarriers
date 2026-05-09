@@ -71,11 +71,14 @@ def test_observation_source_gemini_oral_value_unchanged() -> None:
 
 
 def test_observation_source_goslo_autonomous_added() -> None:
-    """DSG-POOL-V1: GOSLO_AUTONOMOUS is the only new entry from Chat 2."""
+    """DSG-POOL-V1: GOSLO_AUTONOMOUS stays present after later additions."""
     members = {m.name for m in ingest_base.ObservationSource}
     assert "GOSLO_AUTONOMOUS" in members
-    # Cardinality = legacy 7 + new 1
-    assert len(members) == 8
+
+
+def test_observation_source_google_calendar_added() -> None:
+    """Chat B: Google Calendar is a Python-only source addition."""
+    assert ingest_base.ObservationSource.GOOGLE_CALENDAR.value == "google_calendar"
 
 
 # ─── ADR-L1.5-001 § 4.1 三触发器 — must NOT be triggered by Chat 2 ──
@@ -159,6 +162,7 @@ def test_source_priority_full_table_unchanged() -> None:
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.USER_EXPLICIT] == 95
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.IDENTIFY_OBJECT] == 80
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.GOSLO_AUTONOMOUS] == 70
+    assert _SOURCE_PRIORITY[ingest_base.ObservationSource.GOOGLE_CALENDAR] == 65
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.CV_A10] == 60
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.CV_SENTINEL] == 40
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.GEMINI_ORAL] == 30
