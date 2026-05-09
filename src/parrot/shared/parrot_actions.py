@@ -79,6 +79,19 @@ class BehaviorMode(Flag):
 
     P1.5: only BASE + COMPANION are active.
     P2+: BUTLER, RESEARCHER, PLAYFUL added.
+    P2.5+: ROLEPLAY added (NEED-P3-MODE-ROLEPLAY).
+
+    ROLEPLAY semantics (menu_design_complete §3.3 + dsg_decisions_master §3.2):
+        When set, persona_loader applies the persona's ``mode.roleplay``
+        section, the ``OBSIDIAN_SETTING_ROLEPLAY`` bucket is included in
+        active context (already preserved across scene switches), and the
+        L2-B graph admits the ``ROLEPLAY_TEMP`` bucket. Frontend may key on
+        ROLEPLAY to swap themed sprites, but skin swap is independent of
+        this flag — see menu_design_complete §6.
+
+    Adding ROLEPLAY does **not** touch wire / cs_parity: BehaviorMode is
+    Python-only (Brain ↔ Redis Pub-Sub serialised by name), never crosses
+    the LiveKit DataChannel as a typed value.
     """
 
     BASE = auto()
@@ -86,3 +99,4 @@ class BehaviorMode(Flag):
     BUTLER = auto()
     RESEARCHER = auto()
     PLAYFUL = auto()
+    ROLEPLAY = auto()

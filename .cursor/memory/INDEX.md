@@ -37,6 +37,7 @@
 | 10 | ⭐ `.cursor/memory/architecture/app_completion_master_audit_20260507.md` | **App 完成度总 chat 主 doc** — 8 场景对账 + 像素画 UI 资产清单 |
 | 11 | `.cursor/memory/architecture/frontend_workspace_boundary.md` | 第二前端工作区（Codex+Unity MCP）边界条款 + 拓扑图（2026-05-09） |
 | 12 | `.cursor/memory/architecture/chat_launches/` | 三新 chat 待开 launch prompts（Obsidian / Web 控制台 / Figma UI 资产） |
+| 13 | ⭐ `.cursor/memory/architecture/user_ideas_and_backend_capability_brief_20260509.md` | **用户 idea 原话 + 后端能力清单 + L1.5→L2-B Ref 化总目标 + 三大真连接（Obsidian/照片/Google 日程）现状对账** — 给 Web/AR/2D 工作区设计 chat 当能力锚点 |
 | — | `docs/sprint_archive/INDEX.md` | Sprint 0-4 归档清单（**不读正文**，仅做考古追溯） |
 
 ---
@@ -70,7 +71,7 @@
 | `architecture/Interface/concept_dictionary_20260507.md` | **概念词典** — ≈100 项术语 + 设计文档路由指引 |
 | `architecture/Interface/legacy_issues_split_20260507.md` | **遗留问题二分**（含新 P2.5：2D 独立工作区）— P2.5 / P3 + grep 速查 + 修复 chat 派发表 |
 | `architecture/Interface/menu_design_complete_20260507.md` | **完整菜单设计 SSOT** — 三层架构 + 4 类块 + 预设 + 海盗换肤 + 像素画素材清单 |
-| `architecture/Interface/goslo_app_game_overview_asset_brief_20260507.md` | App 总览 + 美术资产 brief |
+| ~~`architecture/Interface/goslo_app_game_overview_asset_brief_20260507.md`~~ | （已被 `user_ideas_and_backend_capability_brief_20260509.md` 替代；user 自行删除原文件） |
 | `architecture/Interface/interface_design_and_how_todo_v0_20260507.md` | （已 superseded → Interface/INDEX.md）12 场景接口栈穷举主表，留作场景清单参考 |
 | `architecture/Interface/interface_design_supplement_20260507.md` | （已 superseded → Interface/INDEX.md）v0 之外 7 项新发现 |
 | `architecture/backend_interface_refinement_20260507.md` | **Brain Core 接口 SSOT** — Persona / Menu / Preset / IntentWorkspace / L2-B baseline 实测公开接口 |
@@ -78,6 +79,7 @@
 | `architecture/chat_launches/obsidian_realconnect_launch_20260509.md` | 待开 chat：后端 ↔ Obsidian 真连接 launch prompt |
 | `architecture/chat_launches/web_console_launch_20260509.md` | 待开 chat：Web 控制台 read-only 优先 launch prompt |
 | `architecture/chat_launches/figma_ui_assets_landing_launch_20260509.md` | 待开 chat：Figma UI 资产入工作区 launch prompt |
+| ⭐ `architecture/user_ideas_and_backend_capability_brief_20260509.md` | **用户 idea + 后端能力 + L1.5→L2-B Ref 化总目标 + 三大真连接现状**（2026-05-09 新建；替代被删的 asset_brief） |
 
 ### 1.2 reference — 当前稳定事实源 (status: ratified)
 
@@ -352,7 +354,7 @@ Castle 进程布局:
 | `architecture/ar_app_flow_ui_design.md` | App Flow / UI / 功能入口设计基线 |
 | `architecture/Interface/menu_design_complete_20260507.md` | 完整菜单设计 SSOT（4 类块 + 预设 + 海盗换肤） |
 | `architecture/Interface/concept_dictionary_20260507.md` | 概念词典（≈100 项术语 + 路由指引） |
-| `architecture/Interface/goslo_app_game_overview_asset_brief_20260507.md` | App 总览 + 美术资产 brief |
+| ⭐ `architecture/user_ideas_and_backend_capability_brief_20260509.md` | **用户 idea + 后端能力 + 三大真连接现状对账**（2026-05-09 新建；替代被删的 asset_brief） |
 | `architecture/dsg/workspace_index.md` | DSG 设计入场（含 dsg_decisions_master + Opus 蒸馏） |
 | `architecture/scene.md` | 家族拓扑（GOSLO / Maid / Parrot / Gemini 二重身） |
 

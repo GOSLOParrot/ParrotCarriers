@@ -178,7 +178,7 @@ related:
 |:--|:--|:--|:--|
 | 2.7.1 | **IntentWorkspace** | Brain 大文件常驻容器 | `brain/intent_workspace.py` |
 | 2.7.2 | **StagedRef** | IntentWorkspace 内单条引用 | `brain_protocol_intent_workspace_v1` |
-| 2.7.3 | **9 StagedRefKind** | PLAN_DRAFT / PLAN_AWAITING_USER / INTENT_THREAD / IDENTIFY_OBJECT_PENDING / MEMORY_RECALL_THREAD / BBOX_REFERENCE / FOCUS_REFERENCE / PHOTO_REFERENCE / CUSTOM | `protocol_snapshot_p4 §19` |
+| 2.7.3 | **9 StagedRefKind** (content-typed; 2026-05-07 drift fix) | PHOTO / DOC / URL / MERMAID / RICH_REPORT / VIDEO_SHORT / AUDIO_CLIP / PLAN / OTHER. Semantic role goes in `metadata.related_plan_id` / `related_intent_event_id` / `custom_meta["role"]` (e.g. `plan_draft` / `identify_object_pending`). | `src/parrot/brain/intent_workspace.py:StagedRefKind` ; `backend_interface_refinement_20260507 §3.5` |
 | 2.7.4 | **InMemoryBackend / DiskBackend** | 2 种 Backend strategy | DiskBackend.recover() = TODO(Chat4-disk-recover) |
 
 ### §2.8 Plan-and-Execute
@@ -610,9 +610,12 @@ ls -la .cursor/skills/
 | **Brain Agent** | ~~Brain~~（口语 OK；文档全称）| 同上 |
 | **Nanobot Worker** | ~~猫娘女仆~~（口语 OK）| 同上 |
 | **transcript_extractor** | gemini_transcript_extractor（旧名 alias 保留）| LineB §1.2 |
+| **MemoryValidity 过滤器**（backend canonical；`memory/` 子模块）| 有效期预测模块（UI 别名 / canvas 节点显示名）/ 有效期侦测模块 | `module_map_p2 §11.2 + §11.4`；`menu_design_complete §4.2 / §4.7` |
+| **canvas 过滤器块**（user-visible 节点抽象；NEED-P3-FILTER）| `dsg/ingest/` 5 filter（backend 实现；text_source / tool_result / cv_track / user_tag / 其它）| `menu_design_complete §4.2 / §4.7`；`sprint2_plan §5`；**注意：UI 抽象 vs backend 实现是否合并待 NEED-P3-FILTER 决定** |
 
 ---
 
 ## §11 变更日志
 
 - **2026-05-07**：本文创建。整合 protocol_snapshot_p4 / module_map_p4_snapshot / dsg_decisions_master / dsg_current_state_distilled / ar_feature_vision / goslo_model_manifest_protocol_v1 / lineb_implementation_completion / parrot_behavior_rules / lore/ideas 全源；≈100 概念分 7 类 + 设计文档路由指引 + grep 速查 + 同义词追溯。
+- **2026-05-07 backend build patch**：StagedRefKind §2.7.3 修 drift（旧 9 个语义角色名 → 真实 9 个 content-typed 名 + 角色用 metadata 字段）；新增菜单后端接口指南见 `backend_interface_refinement_20260507.md`。

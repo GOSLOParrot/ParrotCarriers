@@ -156,7 +156,7 @@ related:
 | `concept_dictionary_20260507.md` | active / Design | ≈100 项术语 + 路由指引 |
 | `legacy_issues_split_20260507.md` | active / Requirements | P2.5 / P3 NEED 二分 + grep 速查 + 修复 chat 派发表 |
 | `menu_design_complete_20260507.md` | active / Design | 完整菜单设计 SSOT（4 类块 + 预设 + 海盗换肤） |
-| `goslo_app_game_overview_asset_brief_20260507.md` | active / Design | App 总览 + 美术资产 brief |
+| ~~`goslo_app_game_overview_asset_brief_20260507.md`~~ | 已被 `../user_ideas_and_backend_capability_brief_20260509.md` 替代 | user 自行删除原文件 |
 | `interface_design_and_how_todo_v0_20260507.md` | superseded_by INDEX.md | 12 场景接口栈穷举主表（场景清单仍可参考） |
 | `interface_design_supplement_20260507.md` | superseded_by INDEX.md | v0 之外 7 项新发现 |
 | (已外迁 → docs/sprint_archive/sprint4/) | — | `app_flow_chat_launch_prompt_v2_20260507.md` + `backend_interface_chat_launch_prompt_v2_20260507.md` |

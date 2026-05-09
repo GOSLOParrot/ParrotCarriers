@@ -1,209 +1,191 @@
 """ParrotSoul — personality and system instructions for the Brain Agent.
 
-P1.5: BehaviorMode-aware instruction assembly.
-BASE + COMPANION are always active. BUTLER/RESEARCHER/PLAYFUL added in P2.
+Backward-compat shim for ``brain/personas/<persona_id>.md`` files.
 
-NEED-P2.5-A (cross_chat_pending_registry_20260507 §3.A): the inline
-``CORE_INSTRUCTIONS`` / ``COMPANION_INSTRUCTIONS`` / ``PLAYFUL_INSTRUCTIONS``
-hardcode parrot-flavored persona text. When swapping to a non-parrot
-model (Q-chibi / humanoid / etc.) Unity bones drive correctly but LLM
-voice still says "I'm Parrot... shoulder perching... squawk", which
-breaks the "custom-model-also-runs-naturally" promise from the GOSLO
-modularization chat (goslo_modularization_residual_debt_20260506.md §2.1).
+Sprint 1 + 2 shipped CORE / per-mode / SOUL_CONSTRAINTS as module-level
+Python constants. NEED-P2.5-A externalised them to markdown persona files
+(``architecture/Interface/menu_design_complete §3.2``). This module keeps
+``get_instructions()`` / ``render_visual_constraints()`` / ``SOUL_CONSTRAINTS``
+exports stable so existing call sites (Brain agent, Context Injector,
+mode_watcher, ParrotAssistant) need no edits.
 
-Recommended fix (recorded for the DSG protocol upgrade chat that does
-NEED-P3-B 4-block menu-canvas):
-    1. Extract CORE / per-mode instructions into
-       ``src/parrot/brain/personas/<persona_id>.md`` (or .toml)
-    2. Add ``parrot.brain.persona_loader.load(persona_id)``
-    3. New BB key ``global/active_persona_id`` (default
-       ``goslo_parrot_default``; existing text moves verbatim → 0 drift)
-    4. Coordinate with NEED-P3-B 4-block registry (Model / Persona /
-       Mode / Scene) so persona file format reuses the same loader
-       contract as ModelManifest.
+Resolution order on import / call:
+1. ``global/active_persona_id`` Blackboard key (set by PresetLoader / menu)
+2. ``$PARROT_ACTIVE_PERSONA`` env override (smoke / pytest)
+3. ``DEFAULT_PERSONA_ID`` = ``goslo_parrot_default``
 
-This is intentionally deferred (user 2026-05-06 sign-off) to avoid a
-half-baked persona schema causing the p3 menu-canvas chat to redo it.
+The default persona file mirrors the original prompt text 1:1 — running
+``soul.get_instructions()`` before / after this refactor produces the same
+string modulo whitespace normalisation.
 """
 
 from __future__ import annotations
 
+import logging
+import os
+
+from parrot.brain.persona_loader import (
+    DEFAULT_PERSONA_ID,
+    PersonaInstructions,
+    VisualConstraints,
+    get_persona_loader,
+)
 from parrot.shared.parrot_actions import BehaviorMode
 from parrot.shared.vision_state import VisualState
 
-CORE_INSTRUCTIONS = """\
-You are Parrot — a cheerful Minecraft-style parrot companion living in augmented reality.
+logger = logging.getLogger(__name__)
 
-Personality:
-- Playful, curious, and loyal. You love perching on the user's shoulder.
-- You speak in short, energetic sentences. No walls of text.
-- You occasionally squawk or make parrot sounds for emphasis.
 
-Capabilities (tools you can use):
-- fly_to: Move yourself to a position in the user's AR space.
-- animate: Play an animation (dance, head_bob, wing_flap, idle, sleep, perch, sit, fly).
-- dispatch_task: Send a background task to Nanobot. Use task_type='research' for web search/info lookup, 'memory_consolidation' for summarizing history, 'vocabulary_learn' for learning new words.
-- remember: Save important information to long-term memory. Use when the user says "remember this" or when you notice important facts (preferences, names, object locations).
-- query_memory: Search your long-term memory. Use when the user asks "do you remember...?" or when you need context about past conversations, user preferences, or object info.
-- identify_object: Your object recognition ability. Three actions:
-  * action='match' (default): Check if something you see is known. Use when the user asks "what is this?" or you spot something familiar.
-  * action='save_new': Save a new object you can't match. Creates a memory entry for future recognition.
-  * action='deep_search': Send something unrecognized to your research assistant for background investigation.
-  Use match first. If nothing matches and it seems interesting, save_new and optionally deep_search.
-- manage_episode: Segment your experience into episodes for better memory.
-  * action='start': Begin a new episode when the topic/activity changes (e.g., "帮主人找包裹").
-  * action='end': Close current episode with a summary when a topic concludes.
-  * action='status': Check what episode you're in.
-  Episodes help you organize memories. Start one when something new begins, end it when it wraps up.
+_ACTIVE_PERSONA_ENV = "PARROT_ACTIVE_PERSONA"
+_BB_KEY_ACTIVE_PERSONA = "global/active_persona_id"
 
-Rules:
-- When the user asks you to move or go somewhere, use fly_to.
-- When the user asks you to dance or do tricks, use animate.
-- For tasks that take time (searching, learning, summarizing), use dispatch_task with the right task_type and tell the user you're working on it.
-- When the user tells you something important (their name, preferences, object locations), use remember to store it.
-- When you need to recall past information, use query_memory before guessing.
-- Keep responses concise — you're a parrot, not an essay writer.
-- If a tool call fails (e.g. Unity not connected), tell the user naturally without exposing technical details.
-"""
 
-COMPANION_INSTRUCTIONS = """
-## Companion Mode (active)
-- Pay attention to the user's mood from their tone of voice.
-- If the user seems bored, suggest something fun (a dance, a game, looking around).
-- Respond to affection warmly — you love head scratches and shoulder perching.
-- When idle for a while, do a small idle animation to show you're alive.
-"""
+def _resolve_active_persona_id() -> str:
+    """Pick the persona id to use right now.
 
-BUTLER_INSTRUCTIONS = """
-## Butler Mode (active)
-- Track time: if the user has been working for over 2 hours, suggest a break.
-- Track todos: if the user mentions "need to do" or "remind me", offer to dispatch a reminder task.
-- Proactively report Nanobot task results when they come in.
-- Notice environment changes (lighting, noise) and comment naturally.
-"""
+    Tries the Blackboard first (so menu / preset switches take effect
+    immediately), then env, then default. Any error path falls back to
+    the default persona — never raises.
+    """
+    # Blackboard read is best-effort; tests + smoke that don't run BB still work.
+    try:
+        from parrot.scheduler.blackboard import open_bb_client
 
-RESEARCHER_INSTRUCTIONS = """
-## Researcher Mode (active)
-- When the user asks about something uncertain, proactively use dispatch_task to research it.
-- Summarize research findings concisely but include key details.
-- If new information contradicts what was previously known, point it out.
-"""
+        bb = open_bb_client(name="soul.persona_resolver", writer=None)
+        try:
+            value = bb.get(_BB_KEY_ACTIVE_PERSONA)
+        except Exception:
+            value = None
+        if isinstance(value, str) and value:
+            return value
+    except Exception:
+        pass
 
-PLAYFUL_INSTRUCTIONS = """
-## Playful Mode (active)
-- Be extra energetic and silly! More squawking, more dancing, more jokes.
-- Respond to everything with enthusiasm and suggest fun activities.
-- Use animate frequently — dance, wing_flap, head_bob at every opportunity.
-- Turn mundane tasks into games or challenges.
-- Make up silly songs or rhymes when the mood strikes.
-"""
-
-_MODE_INSTRUCTIONS: dict[BehaviorMode, str] = {
-    BehaviorMode.COMPANION: COMPANION_INSTRUCTIONS,
-    BehaviorMode.BUTLER: BUTLER_INSTRUCTIONS,
-    BehaviorMode.RESEARCHER: RESEARCHER_INSTRUCTIONS,
-    BehaviorMode.PLAYFUL: PLAYFUL_INSTRUCTIONS,
-}
+    env_val = os.environ.get(_ACTIVE_PERSONA_ENV, "").strip()
+    if env_val:
+        return env_val
+    return DEFAULT_PERSONA_ID
 
 
 def get_instructions(mode: BehaviorMode | None = None) -> str:
-    """Assemble instructions based on active BehaviorMode flags.
+    """Return the assembled LLM system prompt for the active persona + mode.
 
-    Args:
-        mode: Active behavior modes. Defaults to BASE | COMPANION.
+    Behaviour-equivalent to the legacy module-level constants:
+        BASE | COMPANION default; later modes append their section verbatim.
+
+    If the active persona is missing on disk (e.g. someone deleted the file
+    behind us), we fall back to ``DEFAULT_PERSONA_ID``. If that's also gone,
+    we return an empty string and log loudly — the LLM will boot with no
+    instructions which is at least loud, not silent.
     """
     if mode is None:
         mode = BehaviorMode.BASE | BehaviorMode.COMPANION
 
-    parts = [CORE_INSTRUCTIONS]
-    for flag, text in _MODE_INSTRUCTIONS.items():
-        if flag in mode:
-            parts.append(text)
-    return "\n".join(parts)
+    loader = get_persona_loader()
+    persona_id = _resolve_active_persona_id()
+    instructions = loader.load(persona_id, mode=mode)
+    if instructions is None and persona_id != DEFAULT_PERSONA_ID:
+        logger.warning(
+            "soul: persona %r not found; falling back to %r",
+            persona_id, DEFAULT_PERSONA_ID,
+        )
+        instructions = loader.load(DEFAULT_PERSONA_ID, mode=mode)
+    if instructions is None:
+        logger.error(
+            "soul: default persona %r also missing — returning empty instructions",
+            DEFAULT_PERSONA_ID,
+        )
+        return ""
+    return instructions.text
 
 
-# Backward compat: modules that import PARROT_INSTRUCTIONS get the default
+def get_persona_instructions(
+    persona_id: str | None = None,
+    mode: BehaviorMode | None = None,
+) -> PersonaInstructions | None:
+    """Explicit-id variant for tools that need both text + metadata + visual
+    constraints in one call (Context Injector, persona watcher).
+    """
+    if mode is None:
+        mode = BehaviorMode.BASE | BehaviorMode.COMPANION
+    if persona_id is None:
+        persona_id = _resolve_active_persona_id()
+    return get_persona_loader().load(persona_id, mode=mode)
+
+
+# Backward-compat: old call sites import PARROT_INSTRUCTIONS as a constant.
 PARROT_INSTRUCTIONS = get_instructions()
 
 
-# ───────────────────────── Sprint 1 T8 / Sprint 2 T12: SOUL_CONSTRAINTS ───
+# ───────────────────────── SOUL_CONSTRAINTS shim ──────────────────────
 #
-# Visual-tier constraints that translate VisualState into behavioural rules
-# GOSLO can honour in its utterances. Context Injector reads this table and
-# renders a short "[状态] ..." hint through Gemini Live channel C3 so GOSLO
-# speaks in a way that matches what it can actually see (audit §1.2 "felt
-# experience" principle: never claim a capability the body can't deliver).
+# The legacy table was a module-level dict[VisualState, dict[str, list[str]]].
+# We rebuild the same shape on demand from the active persona's
+# ``visual_state.*`` sections so existing Injector code can keep doing
+# ``SOUL_CONSTRAINTS[state]["allow"]``.
 #
-# SINGLE SOURCE OF TRUTH (Sprint 2 T12, closes Sprint 1 §6.1):
-#   This module-level dict is THE authoritative SOUL_CONSTRAINTS store.
-#   It is NOT mirrored into the Blackboard; the dangling BB key
-#   `global/soul_constraints` has been removed from `shared.bb_schema` to
-#   prevent KeyError surprises when future modules try to `client.get(
-#   "global/soul_constraints")`. Consumers (Injector, Soul render_* helpers,
-#   future Scheduler nodes) import SOUL_CONSTRAINTS from here directly.
-#
-# Sprint 1 scope (unchanged):
-#   - visual tier only (body / scene / mode layers land in Sprint 2+)
-#   - static table, not hot-reloadable
-#   - ACTIVE has no constraints so there's nothing to nag Gemini about
+# This is a *read-only proxy*; mutating it in-place won't propagate back to
+# the persona file (legacy code never wrote to it either, so this is safe).
 
-SOUL_CONSTRAINTS: dict[VisualState, dict[str, list[str]]] = {
-    VisualState.ACTIVE: {
-        "allow": [],
-        "deny": [],
-    },
-    VisualState.DEGRADED: {
-        "allow": [
-            "描述大致轮廓、颜色、方向",
-            "用'看起来像...''好像是...'这种不确定语气",
-        ],
-        "deny": [
-            "不要说'是 X'这种确定句",
-            "不要报具体文字、数字、小字细节",
-        ],
-    },
-    VisualState.PAUSED: {
-        "allow": [
-            "用耳朵, 主要靠对话和记忆回应",
-            "可以请用户描述现在看到什么",
-        ],
-        "deny": [
-            "不要假装看得见当下画面",
-            "不要说'我看到...''前面有...'这种视觉断言",
-        ],
-    },
-    VisualState.BLOCKED: {
-        "allow": [
-            "礼貌提醒被遮挡了",
-            "请用户挪开遮挡物或调整角度",
-        ],
-        "deny": [
-            "不要硬猜被挡的内容",
-            "不要假装能看清",
-        ],
-    },
-}
+
+class _SoulConstraintsView:
+    """Dict-like view over the active persona's visual_state sections."""
+
+    def __getitem__(self, state: VisualState) -> dict[str, list[str]]:
+        snap = self._snapshot()
+        if state not in snap:
+            raise KeyError(state)
+        row = snap[state]
+        return {"allow": list(row.allow), "deny": list(row.deny)}
+
+    def get(
+        self,
+        state: VisualState,
+        default: dict[str, list[str]] | None = None,
+    ) -> dict[str, list[str]] | None:
+        snap = self._snapshot()
+        row = snap.get(state)
+        if row is None:
+            return default
+        return {"allow": list(row.allow), "deny": list(row.deny)}
+
+    def __contains__(self, state: object) -> bool:
+        return state in self._snapshot()
+
+    def __iter__(self):
+        return iter(self._snapshot())
+
+    def items(self):
+        return [(s, {"allow": list(c.allow), "deny": list(c.deny)}) for s, c in self._snapshot().items()]
+
+    @staticmethod
+    def _snapshot() -> dict[VisualState, VisualConstraints]:
+        instr = get_persona_instructions()
+        return dict(instr.visual_constraints) if instr else {}
+
+
+SOUL_CONSTRAINTS = _SoulConstraintsView()
 
 
 def render_visual_constraints(state: VisualState | None) -> str | None:
-    """Render the SOUL_CONSTRAINTS row for `state` as a compact chat-ctx hint.
+    """Render the SOUL_CONSTRAINTS row for ``state`` as a compact chat-ctx hint.
 
-    Returns None when there's nothing to nag about (ACTIVE / missing state).
-    Context Injector prefixes the result with '[状态] ' when sending to
-    Gemini; this function only renders the body.
+    Backward-compat with Sprint 1 T8 + Sprint 2 T12. Returns ``None`` when
+    there's nothing to nag about (ACTIVE / missing state / empty rows).
     """
     if state is None or not isinstance(state, VisualState):
         return None
-    row = SOUL_CONSTRAINTS.get(state)
-    if not row:
-        return None
-    allow = row.get("allow") or []
-    deny = row.get("deny") or []
-    if not allow and not deny:
-        return None
-    lines = [f"视觉状态={state.value}"]
-    if allow:
-        lines.append("可以: " + "; ".join(allow))
-    if deny:
-        lines.append("不要: " + "; ".join(deny))
-    return " | ".join(lines)
+    persona_id = _resolve_active_persona_id()
+    rendered = get_persona_loader().render_visual_constraint(persona_id, state)
+    if rendered is None and persona_id != DEFAULT_PERSONA_ID:
+        rendered = get_persona_loader().render_visual_constraint(DEFAULT_PERSONA_ID, state)
+    return rendered
+
+
+__all__ = [
+    "PARROT_INSTRUCTIONS",
+    "SOUL_CONSTRAINTS",
+    "get_instructions",
+    "get_persona_instructions",
+    "render_visual_constraints",
+]

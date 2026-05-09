@@ -108,13 +108,40 @@ class L2BGraph:
         to_uuid: str,
         edge: SemanticEdge | None = None,
     ) -> bool:
-        """Add a directed edge between two nodes by UUID."""
+        """Add a directed edge between two nodes by UUID.
+
+        Phase 4 baseline: also stamps ``edge.meta["cross_compartment"]`` so
+        IterativeSpreadingActivation can downweight edges that span
+        IntentEvent / Bucket / Scene / Location boundaries (interface in
+        ``parrot.dsg.l2b.compartments`` + plan §Phase 4). Tag is best-effort
+        — never blocks edge creation.
+        """
         src = self._uuid_to_idx.get(from_uuid)
         dst = self._uuid_to_idx.get(to_uuid)
         if src is None or dst is None:
             return False
         if edge is None:
             edge = SemanticEdge()
+        try:
+            src_node: SemanticNode = self._graph[src]
+            dst_node: SemanticNode = self._graph[dst]
+            cross_axes: list[str] = []
+            if src_node.event_id and dst_node.event_id and src_node.event_id != dst_node.event_id:
+                cross_axes.append("event")
+            if src_node.bucket_id != dst_node.bucket_id:
+                cross_axes.append("bucket")
+            if src_node.scene_type and dst_node.scene_type and src_node.scene_type != dst_node.scene_type:
+                cross_axes.append("scene")
+            if src_node.location_tag and dst_node.location_tag and src_node.location_tag != dst_node.location_tag:
+                cross_axes.append("location")
+            if cross_axes:
+                # Use the first axis as the canonical tag value (so existing
+                # readers that check truthiness still work; full set in
+                # ``cross_compartment_axes`` for sophisticated consumers).
+                edge.meta.setdefault("cross_compartment", cross_axes[0])
+                edge.meta.setdefault("cross_compartment_axes", tuple(cross_axes))
+        except Exception:
+            pass
         self._graph.add_edge(src, dst, edge)
         return True
 

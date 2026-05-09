@@ -1,7 +1,7 @@
 ---
 status: ratified-design / pending-implementation
 category: menu-design
-status_note: "完整菜单设计 SSOT — 三层架构（启动页/HUD/工具柜/节点画布）+ 4 类块定义（Model/Persona/Mode/Scene）+ 预设系统 + 默认 fallback + 海盗换肤 + 像素画素材清单按菜单细分 + 与 8 场景关联 + 实施推荐顺序 Phase A-E。Sub-Chat A 用户视角主输入；AR 工作区独立菜单 UI chat 主输入。"
+status_note: "完整菜单设计 SSOT — 三层架构（启动页/HUD/工具柜/节点画布）+ 4 类块定义（Model/Persona/Mode/Scene）+ 预设系统 + 默认 fallback + 海盗换肤 + 像素画素材清单按菜单细分 + 与 8 场景关联 + 实施推荐顺序 Phase A-E。【2026-05-07 增量 v0.1】§4 节点画布加 2 占位（过滤器块 + 有效期预测模块 + §4.7 占位说明）+ §8 关联表 + §7.5 素材 2 条；具体设计延后到 NEED-P3-FILTER / NEED-P3-VALIDITY。Sub-Chat A 用户视角主输入；AR 工作区独立菜单 UI chat 主输入。"
 last_reviewed: 2026-05-07
 ai_priority: high
 ai_audience: "Sub-Chat A 用户视角 + AR 工作区独立菜单 UI chat + Sonnet 4.6 抄码 baseline"
@@ -282,6 +282,8 @@ related:
 | **Persona 块** | 粉 | `PersonaBlockSO`（含 persona_id 列表）|
 | **Mode 块** | 黄 | `ModeBlockSO`（含 mode flags）|
 | **Scene 块** | 绿 | `SceneBlockSO`（含 scene_type）|
+| **过滤器块**（占位）| 灰 | `FilterBlockSO`（placeholder；NEED-P3-FILTER；多实例可连入同一目标模块；具体过滤器子类待用户后续设计 / 调研）|
+| **有效期预测模块**（占位）| 橙 | `MemoryValidityModuleSO`（placeholder；NEED-P3-VALIDITY；引 `module_map_p2 §11.2` MemoryValidity 过滤器 PLANNED；具体规则 / Ebbinghaus 衰减 / 阈值 / 与 Graphiti 写入路径关系待用户独立设计 chat 调研）|
 
 ### §4.3 边（连接）
 
@@ -290,6 +292,7 @@ related:
 | Model ←→ Persona | 模型与设定的绑定关系（任意组合）|
 | Persona ←→ Mode | 设定与模式的覆盖关系 |
 | Model/Persona/Mode ←→ Scene | 场景内激活的组合 |
+| 过滤器 → 有效期预测模块 | 过滤器对模块生效（多对一：一个模块可被多个过滤器连入；具体过滤规则待后续设计）|
 
 ### §4.4 操作
 
@@ -334,7 +337,20 @@ def apply_preset(preset: Preset) -> None:
     mode_watcher 检测 BB 变化自动切
     SceneRegistry.switch(SceneType(preset.active_scene_id))
     ParrotRegistry / ModelDriver 检测 model_id 变化自动切
+    # 注：MemoryValidityModule 节点（NEED-P3-VALIDITY）对应的 preset 字段尚未定义；
+    #     待用户独立设计 chat 决定接口后再补入本函数。
 ```
+
+---
+
+### §4.7 占位说明（NEED-P3-FILTER / NEED-P3-VALIDITY）
+
+> 本小节登记 user-visible 菜单层 placeholder，**不做具体设计**。
+
+- **有效期预测模块**：源自 `module_map_p2 §11.2`（Graphiti 之前的有效期侦测 + Ebbinghaus 衰减，PLANNED）。canvas 上以单一节点呈现；具体内部规则、参数、衰减曲线、与 Graphiti / 对话混合层的关系**待用户独立设计 chat 调研后填充**。
+- **过滤器块**：通用过滤器节点抽象。可同时存在多个实例（"一堆"）连接到同一目标模块；每个实例的具体过滤逻辑（text_source / tool_result / cv_track / user_tag / 其它）待用户后续选型。
+- **不做的事**：本占位**不**实现 SO 字段、不引 `dsg/ingest/` 现成 5 filter 命名（避免把 backend ingest filter 与 canvas filter block 提前对绑——前者属于 DSG L1.5 入口数据流，后者属于 user-visible 配置层，是否合并由后续设计决定）。
+- **后续 chat 出口**：见 `cross_chat_pending_registry §4.I`（过滤器块）/ `§4.J`（有效期预测模块）。
 
 ---
 
@@ -477,6 +493,8 @@ def apply_preset(preset: Preset) -> None:
 | 7.1 | canvas_bg.png | 全屏 9-slice | P2 |
 | 7.2 | block_model_blue.png + block_persona_pink.png + block_mode_yellow.png + block_scene_green.png | 192×96 ×4 | P2 |
 | 7.3 | connection_port.png + connection_line.png | 16×16 + 9-slice | P2 |
+| 7.4 | block_filter_gray.png（过滤器块，占位）| 192×96（占位）| P3 |
+| 7.5 | block_memory_validity_orange.png（有效期预测模块，占位）| 192×96（占位）| P3 |
 
 ### §7.6 海盗换肤独立资产
 
@@ -516,6 +534,7 @@ def apply_preset(preset: Preset) -> None:
 | 工具柜 "节点画布入口" | S6 4 类块菜单（高级用户向）| NEED-P3-D |
 | 海盗主题切换 | 跨场景换肤；触发 Mode 块 ROLEPLAY + Persona 块切 | NEED-P3-PIRATE-SKIN + NEED-P3-MODE-ROLEPLAY |
 | 手势 perch_to_finger | S1.5（不通过菜单触发）| Reflex 层；不打扰菜单 |
+| 节点画布 §4.7 占位（过滤器块 + 有效期预测模块）| 后续 NEED-P3 设计 chat | NEED-P3-FILTER + NEED-P3-VALIDITY |
 
 ---
 
@@ -568,3 +587,4 @@ def apply_preset(preset: Preset) -> None:
 ## §12 变更日志
 
 - **2026-05-07**：本文创建。三层菜单架构（启动页 + HUD/工具柜 + 节点画布）+ 4 类块定义（Model/Persona/Mode/Scene）+ 预设系统（NEED-P3-B/C）+ 默认 fallback（NEED-P3-E）+ 海盗主题换肤（P3）+ 像素画素材按菜单细分清单 + 与 8 场景关联表 + 实施推荐顺序 Phase A-E。
+- **2026-05-07 v0.1（增量）**：§4 加 2 占位节点类型（过滤器块灰 / 有效期预测模块橙）+ §4.3 边追加"过滤器 → 模块"+ §4.7 占位说明小节 + §7.5 素材 2 条（block_filter_gray / block_memory_validity_orange）+ §8 关联表 1 行；具体设计延后到 NEED-P3-FILTER / NEED-P3-VALIDITY；与 backend `memory/MemoryValidity 过滤器` PLANNED（`module_map_p2 §11.2`）对接，但 canvas 占位**不**强行绑定 backend schema。

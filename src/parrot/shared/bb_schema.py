@@ -73,7 +73,44 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "global/behavior_mode",
         "BehaviorMode",
         "brain.tools.set_mode",
-        "BASE / COMPANION (see shared.parrot_actions).",
+        "BASE / COMPANION (see shared.parrot_actions). Legacy key.",
+        event_driven=True,
+    ),
+
+    # ───── 4 menu active keys (NEED-P2.5-A / NEED-P3-B / Phase 1 menu) ─────
+    # Single writer = brain.preset_loader. ``MenuRegistry.apply_selection``
+    # never writes BB directly; it routes through ``PresetLoader.apply()`` so
+    # only one module owns these slots.
+    BlackboardKey(
+        BbScope.GLOBAL,
+        "global/active_persona_id",
+        "str",
+        "brain.preset_loader",
+        "Active persona file id (PersonaLoader.load target).",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.GLOBAL,
+        "global/active_model_id",
+        "str",
+        "brain.preset_loader",
+        "Active GOSLO model id (ModelManifest.model_id).",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.GLOBAL,
+        "global/active_scene_id",
+        "str",
+        "brain.preset_loader",
+        "Active SceneType value (DESKTOP_WEBCAM / AR_HANDHELD).",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.GLOBAL,
+        "global/active_mode",
+        "list[str]",
+        "brain.preset_loader",
+        "Active BehaviorMode flag names (e.g. [BASE, COMPANION, ROLEPLAY]).",
         event_driven=True,
     ),
     # NOTE (Sprint 2 T12, closes Sprint 1 §6.1):

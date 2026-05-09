@@ -383,6 +383,7 @@ manage_episode    tool 直接 -> start_episode / close_current_episode
 
 - ✅ 单 RustworkX 实例（singleton via `get_l2b_graph()`）
 - ✅ 唯一 node container：`PyDiGraph`
+- ✅ **2026-05-07 baseline 真算法**：`dsg/l2b/clustering.ConnectedComponentsClusterStrategy` (rustworkx.connected_components 子图聚类 baseline) + `dsg/l2b/attention/mechanism.IterativeSpreadingActivation` (Collins-Loftus 迭代扩散，hop hard cap=4 AGCN 实证) + `L2BGraph.connect()` 自动标记 `edge.meta["cross_compartment"]` (event/bucket/scene/location 4 轴)。详见 `architecture/backend_interface_refinement_20260507.md §4`。
 - ❌ 没有"池"概念：没有 priority queue / TTL eviction / size cap
 - ❌ 没有按 source 分桶：所有节点同一个图
 - ❌ 没有按 lifecycle 状态分层：EXPECTED / CONFIRMED / GHOST 都在同一图，依靠字段过滤

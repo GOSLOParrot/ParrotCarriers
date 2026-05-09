@@ -263,6 +263,26 @@ related:
 
 **修复 chat**：P3 wire 升级 ADR chat（与 NEED-P3-A 同 ADR）
 
+### §4.I NEED-P3-FILTER：canvas 通用过滤器块（占位）🟢 low
+
+**真源**：[`Interface/menu_design_complete_20260507.md §4.2 / §4.7`](Interface/menu_design_complete_20260507.md)
+
+**问题**：节点画布需要"通用过滤器节点"抽象，可多实例连入同一目标模块（首个目标 = 有效期预测模块；未来可扩展到其它模块）。当前仅占位，未决定：(a) UI 过滤器与 backend `dsg/ingest/` 5 filter 是否合并 / (b) 过滤器子类清单 / (c) port 接口 schema。
+
+**修法**：用户独立设计 / 调研 chat（先调研 ComfyUI / n8n filter abstraction → 决定 schema → 写 ScriptableObject + 节点 palette item）。
+
+**修复 chat**：用户独立设计 chat（与 NEED-P3-VALIDITY / NEED-P3-D 同一陀螺）
+
+### §4.J NEED-P3-VALIDITY：有效期预测模块（占位）🟢 low
+
+**真源**：[`Interface/menu_design_complete_20260507.md §4.2 / §4.7`](Interface/menu_design_complete_20260507.md) + [`module_map_p2 §11.2 / §11.4`](module_map_p2.md)
+
+**问题**：backend `memory/MemoryValidity 过滤器`（PLANNED）对应的 canvas 节点占位。具体规则未决：(a) Ebbinghaus 衰减曲线参数 / (b) 与 Graphiti 写入路径的位置关系（前置 / 旁路 / 钩子）/ (c) 与对话混合层的接口（sprint0_preflight 2026-04-22 引用）/ (d) 过滤器输入端口的语义（事实流 / 节点流 / Episode 流）。
+
+**修法**：用户独立设计 / 调研 chat — 调研 Ebbinghaus + 工业界有效期管理 + 与 Graphiti 衔接 → 设计 SO + 接口 schema。
+
+**修复 chat**：用户独立设计 chat（与 NEED-P3-FILTER 同一陀螺；可与 DSG L3 Observer 联动设计）
+
 ### §4.H 其他 P3 占位（已落源码 TODO）
 
 | 标签 | 真源 | 代码触点 |
@@ -281,6 +301,7 @@ related:
 | **Chat 4（接口提炼实施）** | NEED-P2.5-PLAN-INTEGRATION（4 个 TODO(Chat4-plan-*)）+ NEED-P2.5-NANOBOT-HEARTBEAT + NEED-P2.5-ARCHIVE-LLM + TODO(Chat4-archive-llm) + TODO(Chat4-disk-recover) + 可选 NEED-P3-CAPABILITY-GATING（轻量增量）|
 | **DSG 协议升级 chat（菜单画布主线）** | NEED-P2.5-A（persona 外置）+ NEED-P3-B（4 类块注册表）+ NEED-P3-C（预设 schema）|
 | **AR 工作区独立 chat（菜单 UI）** | NEED-P2.5-B（DSG bucket/scene UI）+ NEED-P3-D（node-canvas UI）+ NEED-P3-E（默认 fallback）|
+| **用户独立设计 chat（有效期 + 过滤器画布）** | NEED-P3-FILTER + NEED-P3-VALIDITY |
 | **P3 wire 升级 ADR chat** | NEED-P3-A（body_state 解锁）+ TODO(P3-Wire-PlanUI)（Plan UI wire）— 建议同 ADR |
 | **P3 仿生升级 chat** | TODO(P3-fold-bionic) + TODO(P3-attention-spreading) + TODO(P3-RefHealth) |
 | **P3 / A10 接入 chat** | TODO(P3-multi-scene)（多 SceneType profile）|
@@ -335,3 +356,9 @@ rg "NEED-P3-" .cursor/memory/architecture/
 ## §10 变更日志
 
 - **2026-05-07**：本表创建。三大 chat（Sprint4 + DSG Chat 2 + GOSLO 模块化）完成后的统一 TODO + NEED 标签登记。覆盖 13 个标签（DSG Chat 2 落源码 9 + 跨 chat 新增 4），4 个 P2.5 NEED + 8 个 P3 NEED，6 条修复 chat 路径。
+- **2026-05-07 增量**：新增 §4.I NEED-P3-FILTER + §4.J NEED-P3-VALIDITY（canvas 占位；用户独立设计 chat 路径）；§5 加对应修复 chat 行。P3 NEED 增至 10 个，修复 chat 增至 7 条。
+- **2026-05-09 Google Calendar 真连接登记**（user 原话见 `user_ideas_and_backend_capability_brief_20260509.md` §1.2）：
+  - **NEED-BIZ-GCAL-FORMAT-MAPPING**（待开 chat / Obsidian + 真连接组）— 固化 Google event raw → L2-B Node 字段映射；当前 nanobot 通过 Google Calendar MCP 拿 raw event，但映射函数缺
+  - **NEED-BIZ-GCAL-CRUD-WRITEBACK** — 增 / 删 / 改 三向回写：GOSLO 语音 → IntentWorkspace 改 Node → nanobot dispatch_task → Google；当前查（拉日程）已通，写回链路缺
+  - **NEED-BIZ-GCAL-TOKEN-BUDGET** — Token 成本控制策略：calendar_trigger 在 BB 写聚合摘要（"今日 5 件事"）；详情按 IntentWorkspace pressure-aware 拉；不主动灌 LLM context
+  - **NEED-OPS-COMMIT-P25-BACKEND** — P2.5 后端实施代码（intent_workspace / persona / menu / preset / bb_watchers / l2b clustering / 等 ~16 个 src/ 改动 + 2 个 test）至今未 commit；建议拆 2-3 个原子 commit（详见 user_ideas_and_backend_capability_brief §5）

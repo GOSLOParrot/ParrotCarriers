@@ -31,9 +31,21 @@ from parrot.shared.tiers import DsgMode, VideoTier
 
 
 class SceneType(str, Enum):
-    """Preset scene categories. Desktop baseline only ships DESKTOP."""
+    """Preset scene categories.
 
-    DESKTOP = "desktop"
+    P2 baseline ships two profiles — DESKTOP_WEBCAM (Editor / no-AR) and
+    AR_HANDHELD (Android / iOS true AR). DESKTOP is kept as a backward-compat
+    alias for code paths that pre-date the rename (SceneRegistry still
+    auto-registers it pointing at the same desktop profile).
+
+    P3 entries (HOME_INDOOR / OUTDOOR / LIBRARY / KITCHEN / OTHER) remain
+    declared so future profile registration is non-breaking; they have no
+    profile until a Scene chat lands.
+    """
+
+    DESKTOP_WEBCAM = "desktop_webcam"
+    AR_HANDHELD = "ar_handheld"
+    DESKTOP = "desktop"  # backward-compat (Sprint 0-3 fixtures + tests)
     HOME_INDOOR = "home_indoor"
     OUTDOOR = "outdoor"
     LIBRARY = "library"
@@ -78,6 +90,47 @@ DESKTOP_PROFILE: SceneProfile = SceneProfile(
 )
 
 
+# 2 P2 baseline profiles (NEED-P2.5-SCENE-2BASELINE).
+# DESKTOP_WEBCAM mirrors DESKTOP_PROFILE today; only difference is the typed
+# scene_type field. AR_HANDHELD switches DSG mode to FULL (true AR + Mecha
+# A10 later) and bumps the video tier hint up so PerceptionSupervisor knows
+# we're on a real device, not a webcam.
+
+DESKTOP_WEBCAM_PROFILE: SceneProfile = SceneProfile(
+    scene_type=SceneType.DESKTOP_WEBCAM,
+    dsg_mode=DsgMode.DSG_GEMINI_VISION,
+    video_tier_hint=VideoTier.VIDEO_GEMINI_ONLY,
+    cv_flow_params={"enabled": False},
+    preserved_bucket_kinds=frozenset({
+        BucketKind.OBSIDIAN_SETTING_DAILY,
+        BucketKind.OBSIDIAN_SETTING_ROLEPLAY,
+        BucketKind.MAIN,
+    }),
+    fresh_bucket_kinds=frozenset({
+        BucketKind.GOOGLE_CALENDAR,
+        BucketKind.AUTONOMOUS_CURIOSITY,
+    }),
+    location_default="desk",
+)
+
+AR_HANDHELD_PROFILE: SceneProfile = SceneProfile(
+    scene_type=SceneType.AR_HANDHELD,
+    dsg_mode=DsgMode.DSG_FULL,
+    video_tier_hint=VideoTier.VIDEO_FULL,
+    cv_flow_params={"enabled": False},  # A10 接入 chat 才打开
+    preserved_bucket_kinds=frozenset({
+        BucketKind.OBSIDIAN_SETTING_DAILY,
+        BucketKind.OBSIDIAN_SETTING_ROLEPLAY,
+        BucketKind.MAIN,
+    }),
+    fresh_bucket_kinds=frozenset({
+        BucketKind.GOOGLE_CALENDAR,
+        BucketKind.AUTONOMOUS_CURIOSITY,
+    }),
+    location_default="hand",
+)
+
+
 @dataclass(frozen=True)
 class SceneSwitchOutcome:
     old_scene_type: SceneType
@@ -100,22 +153,26 @@ class SceneSwitchOutcome:
 class SceneRegistry:
     """SceneType ↔ SceneProfile registry + current-Scene tracking."""
 
-    def __init__(self) -> None:
-        # TODO(P3-multi-scene): SKELETON. Only DESKTOP profile is
-        #   pre-registered. P3 (multi-Scene + sensors + VPS chat) must
-        #   add HOME_INDOOR / OUTDOOR / LIBRARY / KITCHEN profiles via
-        #   ``self.register(SceneProfile(...))``. Each profile defines:
-        #     - dsg_mode (DsgMode enum)
-        #     - video_tier_hint (VideoTier enum)
-        #     - cv_flow_params (A10 model + threshold dict)
-        #     - preserved/fresh_bucket_kinds (which buckets cross / clear)
-        #     - priority_overrides (per-scene source priority tweaks)
-        #     - location_default (default LocationTag for new nodes)
-        #   See DSG-SCENE-V1 § 1.1 + § 8 for the full P3 list.
+    def __init__(self, default: SceneType | None = None) -> None:
+        # P2 baseline ships 3 pre-registered profiles:
+        #   DESKTOP        — backward-compat alias (Sprint 0-3 fixtures)
+        #   DESKTOP_WEBCAM — Editor / Webcam path (NEED-P2.5-SCENE-2BASELINE)
+        #   AR_HANDHELD    — true AR (Android / iOS)
+        # P3 entries (HOME_INDOOR / OUTDOOR / LIBRARY / KITCHEN) stay
+        # unregistered until a Scene chat lands them.
+        #
+        # ``default`` selects the boot SceneType; pass ``SceneType.AR_HANDHELD``
+        # in production builds, leave None for tests / Editor (DESKTOP).
         self._profiles: dict[SceneType, SceneProfile] = {
             SceneType.DESKTOP: DESKTOP_PROFILE,
+            SceneType.DESKTOP_WEBCAM: DESKTOP_WEBCAM_PROFILE,
+            SceneType.AR_HANDHELD: AR_HANDHELD_PROFILE,
         }
-        self._current: SceneType = SceneType.DESKTOP
+        if default is None:
+            default = SceneType.DESKTOP
+        if default not in self._profiles:
+            raise KeyError(f"SceneType {default!r} not pre-registered")
+        self._current: SceneType = default
         self._switched_at: float = time.time()
 
     def register(self, profile: SceneProfile) -> None:
@@ -142,7 +199,9 @@ class SceneRegistry:
 
 
 __all__ = [
+    "AR_HANDHELD_PROFILE",
     "DESKTOP_PROFILE",
+    "DESKTOP_WEBCAM_PROFILE",
     "SceneProfile",
     "SceneRegistry",
     "SceneSwitchOutcome",

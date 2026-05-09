@@ -21,6 +21,15 @@ this subpackage adds **new** view / boundary / attention logic on top.
 
 from __future__ import annotations
 
+from parrot.dsg.l2b.clustering import (
+    Cluster,
+    ClusterResult,
+    ClusterStrategy,
+    ConnectedComponentsClusterStrategy,
+    NoOpClusterStrategy,
+    get_cluster_strategy,
+    register_cluster_strategy,
+)
 from parrot.dsg.l2b.compartments import (
     Compartment,
     CompartmentKind,
@@ -49,18 +58,25 @@ from parrot.dsg.l2b.views import (
 
 __all__ = [
     "AttentionDecayStrategy",
+    "Cluster",
+    "ClusterResult",
+    "ClusterStrategy",
     "Compartment",
     "CompartmentKind",
+    "ConnectedComponentsClusterStrategy",
     "FoldResult",
     "FoldStrategy",
     "IntentEventBoundaryHandler",
     "IntentEventReason",
     "IntentEventState",
+    "NoOpClusterStrategy",
     "NoOpDecayStrategy",
     "NoOpFoldStrategy",
     "SimpleDecayStrategy",
+    "get_cluster_strategy",
     "get_intent_event_handler",
     "is_cross_compartment_edge",
+    "register_cluster_strategy",
     "set_intent_event_handler_for_test",
     "view_by_bucket",
     "view_by_event",

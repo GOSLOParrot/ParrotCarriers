@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "preset_id": "default",
+  "active_model_id": "GOSLO_default",
+  "active_persona_id": "goslo_parrot_default",
+  "active_mode": ["BASE", "COMPANION"],
+  "active_scene_id": "ar_handheld",
+  "metadata": {
+    "user_label": "Default GOSLO setup",
+    "theme_skin": "manor"
+  }
+}
