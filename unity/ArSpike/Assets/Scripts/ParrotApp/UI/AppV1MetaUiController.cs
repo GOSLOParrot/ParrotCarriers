@@ -47,6 +47,7 @@ namespace ParrotApp.UI
         private RectTransform _transitionSurface;
         private RectTransform _mainSurface;
         private RectTransform _toolDrawer;
+        private RectTransform _cameraOverlay;
         private RectTransform _workspace;
         private RectTransform _noteStack;
         private RectTransform _magnifierOverlay;
@@ -56,6 +57,7 @@ namespace ParrotApp.UI
         private Text _startupStatus;
         private Text _transitionText;
         private Text _hudText;
+        private Text _cameraLabel;
         private Text _workspaceText;
         private Text _noteText;
         private Text _magnifierLabel;
@@ -63,12 +65,15 @@ namespace ParrotApp.UI
         private Slider _magnifierSlider;
 
         private bool _drawerOpen;
+        private bool _cameraOpen;
         private bool _workspaceOpen;
         private bool _magnifierOpen;
         private bool _magnifierSettingsOpen;
         private bool _bboxOpen;
         private int _noteCount;
+        private int _photoRequestCount;
         private float _magnifierScale = 2f;
+        private string _cameraMode = "off";
         private string _activeFocusId = "";
         private string _activeBBoxId = "";
         private readonly List<string> _localDocuments = new();
@@ -209,6 +214,7 @@ namespace ParrotApp.UI
         {
             _hudText = BuildHud(root);
             _toolDrawer = BuildToolDrawer(root);
+            _cameraOverlay = BuildCameraOverlay(root);
             _workspace = BuildWorkspace(root);
             _noteStack = BuildNoteStack(root);
             _magnifierOverlay = BuildMagnifierOverlay(root);
@@ -266,6 +272,38 @@ namespace ParrotApp.UI
             var tab = AddToolButton(drawer, "<", 272, ToggleDrawer);
             Anchor(tab.GetComponent<RectTransform>(), LeftCenter(), LeftCenter(), LeftCenter(), new Vector2(-34, 0), new Vector2(34, 82));
             return drawer;
+        }
+
+        private RectTransform BuildCameraOverlay(RectTransform root)
+        {
+            var overlay = CreatePanel("CameraModeOverlay_Modern", root, new Color(0.035f, 0.04f, 0.05f, 0.88f));
+            Anchor(overlay, Center(), Center(), Center(), new Vector2(0, -120), new Vector2(540, 390));
+
+            CreateText("CameraModeTitle", overlay, "CAMERA", 24, TextAnchor.MiddleLeft)
+                .rectTransform.anchoredPosition = new Vector2(-202, 158);
+            _cameraLabel = CreateText("CameraModeLabel", overlay, "", 17, TextAnchor.MiddleRight);
+            Anchor(_cameraLabel.rectTransform, TopRight(), TopRight(), TopRight(), new Vector2(-78, -24), new Vector2(300, 52));
+
+            var frame = CreatePanel("CameraPreviewFrame", overlay, new Color(0.02f, 0.024f, 0.03f, 0.94f));
+            Anchor(frame, Center(), Center(), Center(), new Vector2(0, 28), new Vector2(468, 236));
+            var outline = frame.gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color(0.86f, 0.90f, 1f, 0.92f);
+            outline.effectDistance = new Vector2(3, 3);
+
+            AddFrameLine(frame, "CameraGridV1", new Vector2(0.33f, 0f), new Vector2(0.33f, 1f));
+            AddFrameLine(frame, "CameraGridV2", new Vector2(0.66f, 0f), new Vector2(0.66f, 1f));
+            AddFrameLine(frame, "CameraGridH1", new Vector2(0f, 0.33f), new Vector2(1f, 0.33f));
+            AddFrameLine(frame, "CameraGridH2", new Vector2(0f, 0.66f), new Vector2(1f, 0.66f));
+
+            AddCornerButton(overlay, "x", new Vector2(-28, -28), CloseCameraOverlay);
+            AddCameraModeButton(overlay, "Preview", new Vector2(-154, 32), () => SetCameraOverlayMode("preview"));
+            AddCameraModeButton(overlay, "Ready", new Vector2(0, 32), () => SetCameraOverlayMode("photo_ready"));
+            var shutter = AddCameraModeButton(overlay, "Capture", new Vector2(154, 32), CapturePhoto);
+            shutter.gameObject.name = "CameraModeShutterButton";
+
+            overlay.gameObject.SetActive(false);
+            RefreshCameraLabel();
+            return overlay;
         }
 
         private RectTransform BuildWorkspace(RectTransform root)
@@ -397,6 +435,26 @@ namespace ParrotApp.UI
             var button = AddToolButton(parent, label, 0, action);
             button.gameObject.name = parent.name + "_" + label;
             Anchor(button.GetComponent<RectTransform>(), TopRight(), TopRight(), TopRight(), anchoredPosition, new Vector2(52, 38));
+        }
+
+        private Button AddCameraModeButton(RectTransform parent, string label, Vector2 position, UnityEngine.Events.UnityAction action)
+        {
+            var button = AddToolButton(parent, label, 0, action);
+            Anchor(button.GetComponent<RectTransform>(), BottomCenter(), BottomCenter(), BottomCenter(), position, new Vector2(126, 42));
+            return button;
+        }
+
+        private void AddFrameLine(RectTransform parent, string name, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            var line = CreatePanel(name, parent, new Color(0.85f, 0.90f, 1f, 0.22f));
+            line.anchorMin = anchorMin;
+            line.anchorMax = anchorMax;
+            line.pivot = new Vector2(0.5f, 0.5f);
+            line.anchoredPosition = Vector2.zero;
+            bool vertical = Mathf.Approximately(anchorMin.x, anchorMax.x);
+            line.sizeDelta = vertical ? new Vector2(2, 0) : new Vector2(0, 2);
+            var image = line.GetComponent<Image>();
+            image.raycastTarget = false;
         }
 
         private RectTransform CreatePanel(string name, Transform parent, Color color, Sprite sprite = null)
@@ -591,13 +649,34 @@ namespace ParrotApp.UI
 
         private void ToggleCameraPreview()
         {
-            AddPaperNote("Camera mode", "Preview/photo_ready request belongs to App facade; pixels stay in PhotoController.");
+            _cameraOpen = !_cameraOpen;
+            if (_cameraOverlay != null) _cameraOverlay.gameObject.SetActive(_cameraOpen);
+            SetCameraOverlayMode(_cameraOpen ? "preview" : "off");
+            AddPaperNote("Camera mode", _cameraOpen ? "Preview panel opened." : "Preview panel closed.");
+            RefreshHud();
+        }
+
+        private void CloseCameraOverlay()
+        {
+            _cameraOpen = false;
+            if (_cameraOverlay != null) _cameraOverlay.gameObject.SetActive(false);
+            SetCameraOverlayMode("off");
+        }
+
+        private void SetCameraOverlayMode(string mode)
+        {
+            _cameraMode = mode;
+            RefreshCameraLabel();
             RefreshHud();
         }
 
         private void CapturePhoto()
         {
             ResolveDependencies();
+            _cameraOpen = true;
+            if (_cameraOverlay != null) _cameraOverlay.gameObject.SetActive(true);
+            _photoRequestCount++;
+            SetCameraOverlayMode("capture_locked");
             if (photoController != null)
             {
                 photoController.CapturePhoto();
@@ -797,8 +876,15 @@ namespace ParrotApp.UI
             _hudText.text =
                 "GOSLO\n" +
                 "Greeting: waits for placement\n" +
+                "Camera: " + _cameraMode + "\n" +
                 "Notes: " + _noteCount + "\n" +
                 "Focus " + focusCount + " / BBox " + bboxCount;
+        }
+
+        private void RefreshCameraLabel()
+        {
+            if (_cameraLabel == null) return;
+            _cameraLabel.text = _cameraMode + "\nshots " + _photoRequestCount;
         }
 
         private void RefreshWorkspace()

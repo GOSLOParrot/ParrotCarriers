@@ -1,9 +1,9 @@
-"""Read-only App v1 Web smoke monitor.
+"""App v1 Web smoke monitor and developer test console.
 
 This FastAPI app is intentionally small and local-first. It exposes the same
 facade read models that Unity should consume, plus a bounded L2-B snapshot for
-debug visualization. It does not edit Google, Obsidian, Graphiti, L2-B, or the
-IntentWorkspace payloads.
+debug visualization. Mutating test actions route through the App facade or the
+same EcpEvent observer path Unity uses; live-state views are read-only.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from parrot.brain.graphiti_console import (
     graphiti_status,
     search_graphiti,
 )
+from parrot.brain.app_live_state import build_app_live_state
 from parrot.brain.l2b_monitor import build_l2b_snapshot
 
 try:
@@ -70,6 +71,10 @@ def build_app():  # type: ignore[no-untyped-def]
     @app.get("/api/app/assets")
     async def app_assets():  # type: ignore[no-untyped-def]
         return AppFirstVersionFacade().asset_manifest()
+
+    @app.get("/api/app/live-state")
+    async def app_live_state(limit: int = 80):  # type: ignore[no-untyped-def]
+        return build_app_live_state(l2b_limit=max(1, min(limit, 200))).as_json()
 
     @app.post("/api/app/workspace/apply")
     async def apply_workspace(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
@@ -283,6 +288,14 @@ def _index_html() -> str:
       padding: 5px 8px;
       font-size: 12px;
     }
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+      user-select: none;
+    }
+    .toggle input { width: auto; }
     main {
       display: grid;
       grid-template-columns: 1.05fr .95fr;
@@ -308,11 +321,35 @@ def _index_html() -> str:
     }
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 10px; }
     .card { background: var(--panel-2); border: 1px solid #403d4d; border-radius: 5px; padding: 10px; min-height: 86px; }
+    .mini-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 10px; }
+    .metric { background: #1f1d27; border: 1px solid #403d4d; border-radius: 5px; padding: 9px; min-height: 58px; }
+    .metric strong { display: block; color: #fff; font-size: 17px; }
     .name { color: var(--accent); font-weight: 700; }
     .state { margin-top: 6px; color: var(--ok); }
     .warn { color: var(--warn); }
     .bad { color: var(--bad); }
     .muted { color: var(--muted); }
+    .changed { border-color: var(--warn) !important; box-shadow: inset 3px 0 0 var(--warn); }
+    .presence { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+    .dot {
+      display: inline-block;
+      min-width: 26px;
+      text-align: center;
+      border-radius: 999px;
+      border: 1px solid #4a4656;
+      color: var(--muted);
+      padding: 2px 6px;
+      font-size: 11px;
+    }
+    .dot.on { color: #101015; background: var(--ok); border-color: var(--ok); }
+    .dot.warn { color: #17130a; background: var(--warn); border-color: var(--warn); }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 7px 8px; vertical-align: top; text-align: left; }
+    th { color: #dcd4ff; background: #25232d; font-weight: 700; position: sticky; top: 0; }
+    td code { color: #d6d0e8; }
+    .tablewrap { max-height: 420px; overflow: auto; }
+    .graph { min-height: 280px; padding: 10px; background: #1b1a20; }
+    .graph svg { width: 100%; height: 280px; display: block; }
     pre {
       margin: 0;
       padding: 12px;
@@ -340,6 +377,7 @@ def _index_html() -> str:
   </header>
   <nav>
     <button class="active" onclick="showTab('overview', this)">Overview</button>
+    <button onclick="showTab('live', this)">Live State</button>
     <button onclick="showTab('tools', this)">Tool Flow</button>
     <button onclick="showTab('memory', this)">L2-B / Graphiti</button>
     <button onclick="showTab('assets', this)">Assets</button>
@@ -367,6 +405,43 @@ def _index_html() -> str:
       <pre id="l2b">loading...</pre>
     </section>
   </main>
+  <main id="live" class="tab">
+    <section class="wide">
+      <h2>Live Poll</h2>
+      <div class="form">
+        <div class="actions">
+          <label class="toggle"><input id="liveAuto" type="checkbox" checked onchange="setLivePoll(this.checked)" /> Auto poll</label>
+          <span class="pill" id="liveMeta">live: loading</span>
+          <button onclick="refreshLive()">Poll Now</button>
+        </div>
+      </div>
+      <div id="liveMetrics" class="mini-grid"></div>
+    </section>
+    <section class="wide">
+      <h2>Tool Artifacts</h2>
+      <div id="toolArtifacts" class="tablewrap"></div>
+    </section>
+    <section>
+      <h2>Blackboard Live</h2>
+      <div id="blackboardLive" class="tablewrap"></div>
+    </section>
+    <section>
+      <h2>IntentWorkspace Live</h2>
+      <div id="intentLive" class="tablewrap"></div>
+    </section>
+    <section class="wide">
+      <h2>L2-B Live Graph</h2>
+      <div id="l2bGraph" class="graph">loading...</div>
+    </section>
+    <section>
+      <h2>RefBinding Registry</h2>
+      <div id="refLive" class="tablewrap"></div>
+    </section>
+    <section>
+      <h2>Live JSON</h2>
+      <pre id="liveJson">loading...</pre>
+    </section>
+  </main>
   <main id="tools" class="tab">
     <section class="wide">
       <h2>Tool Cabinet</h2>
@@ -385,8 +460,8 @@ def _index_html() -> str:
         <label>candidate subject uuid</label>
         <input id="cameraCandidate" value="obj_web_console" />
         <div class="actions">
-          <button onclick="postJson('/api/app/camera/mode', {mode: value('cameraMode')})">Set Mode</button>
-          <button onclick="postJson('/api/app/camera/capture-request', {candidate_subject_uuid: value('cameraCandidate')})">Request Capture</button>
+          <button onclick="postJson('/api/app/camera/mode', {mode: fieldValue('cameraMode')})">Set Mode</button>
+          <button onclick="postJson('/api/app/camera/capture-request', {candidate_subject_uuid: fieldValue('cameraCandidate')})">Request Capture</button>
           <button onclick="postJson('/api/app/test/photo-preview', {photo_id: 'ph_web_console'})">Sim Preview</button>
         </div>
       </div>
@@ -399,10 +474,10 @@ def _index_html() -> str:
         <label>bbox id</label>
         <input id="bboxId" value="bb_web_console" />
         <div class="actions">
-          <button onclick="postJson('/api/app/test/focus', {focus_id: value('focusId'), action:'anchored'})">Anchor Focus</button>
-          <button onclick="postJson('/api/app/test/focus', {focus_id: value('focusId'), action:'released'})">Release Focus</button>
-          <button onclick="postJson('/api/app/test/bbox', {bbox_id: value('bboxId'), action:'placed'})">Place BBox</button>
-          <button onclick="postJson('/api/app/test/bbox', {bbox_id: value('bboxId'), action:'removed'})">Remove BBox</button>
+          <button onclick="postJson('/api/app/test/focus', {focus_id: fieldValue('focusId'), action:'anchored'})">Anchor Focus</button>
+          <button onclick="postJson('/api/app/test/focus', {focus_id: fieldValue('focusId'), action:'released'})">Release Focus</button>
+          <button onclick="postJson('/api/app/test/bbox', {bbox_id: fieldValue('bboxId'), action:'placed'})">Place BBox</button>
+          <button onclick="postJson('/api/app/test/bbox', {bbox_id: fieldValue('bboxId'), action:'removed'})">Remove BBox</button>
         </div>
       </div>
     </section>
@@ -414,8 +489,8 @@ def _index_html() -> str:
         <label>note body</label>
         <textarea id="noteBody">Nanobot fixture report for App V1 testing.</textarea>
         <div class="actions">
-          <button onclick="postJson('/api/app/nanobot/report', {title:value('noteTitle'), body:value('noteBody'), task_id:'web_console'})">Nanobot Note</button>
-          <button onclick="postJson('/api/app/calendar/draft', {title:value('noteTitle'), action:'create'})">Calendar Draft</button>
+          <button onclick="postJson('/api/app/nanobot/report', {title:fieldValue('noteTitle'), body:fieldValue('noteBody'), task_id:'web_console'})">Nanobot Note</button>
+          <button onclick="postJson('/api/app/calendar/draft', {title:fieldValue('noteTitle'), action:'create'})">Calendar Draft</button>
         </div>
       </div>
     </section>
@@ -441,9 +516,9 @@ def _index_html() -> str:
         <textarea id="episodeBody">App console dry-run episode.</textarea>
         <div class="actions">
           <button onclick="loadGraphitiStatus()">Status</button>
-          <button onclick="postJson('/api/graphiti/search', {query:value('graphitiQuery'), partition:value('graphitiPartition')})">Search</button>
-          <button onclick="postJson('/api/graphiti/episode/draft', {name:'app_console_episode', body:value('episodeBody'), partition:value('graphitiPartition')})">Draft Episode</button>
-          <button onclick="postJson('/api/graphiti/episode', {name:'app_console_episode', body:value('episodeBody'), partition:value('graphitiPartition'), dry_run:true})">Dry Run Write</button>
+          <button onclick="postJson('/api/graphiti/search', {query:fieldValue('graphitiQuery'), partition:fieldValue('graphitiPartition')})">Search</button>
+          <button onclick="postJson('/api/graphiti/episode/draft', {name:'app_console_episode', body:fieldValue('episodeBody'), partition:fieldValue('graphitiPartition')})">Draft Episode</button>
+          <button onclick="postJson('/api/graphiti/episode', {name:'app_console_episode', body:fieldValue('episodeBody'), partition:fieldValue('graphitiPartition'), dry_run:true})">Dry Run Write</button>
         </div>
       </div>
     </section>
@@ -475,6 +550,9 @@ def _index_html() -> str:
     </section>
   </main>
   <script>
+    let liveTimer = null;
+    let liveSignatures = {};
+
     async function getJson(url) {
       const res = await fetch(url, {cache: 'no-store'});
       if (!res.ok) throw new Error(`${url}: ${res.status}`);
@@ -489,9 +567,156 @@ def _index_html() -> str:
       const data = await res.json();
       document.getElementById('lastAction').textContent = JSON.stringify(data, null, 2);
       await refresh();
+      await refreshLive();
       return data;
     }
-    function value(id) { return document.getElementById(id).value; }
+    function fieldValue(id) { return document.getElementById(id).value; }
+    function esc(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[ch]));
+    }
+    function clip(value, maxLen = 180) {
+      const text = typeof value === 'string' ? value : JSON.stringify(value);
+      return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
+    }
+    function signature(value) { return JSON.stringify(value); }
+    function changed(key, value) {
+      const next = signature(value);
+      const prior = liveSignatures[key];
+      return prior !== undefined && prior !== next;
+    }
+    function collectLiveSignatures(state) {
+      const out = {};
+      (state.blackboard?.keys || []).forEach(row => out[`bb:${row.key}`] = signature(row.value));
+      (state.intent_workspace?.refs || []).forEach(row => out[`iw:${row.ref_id}`] = signature(row));
+      (state.refs?.refs || []).forEach(row => out[`ref:${row.ref_id}`] = signature(row));
+      (state.l2b?.nodes || []).forEach(row => out[`l2b:${row.uuid}`] = signature(row));
+      (state.tool_artifacts || []).forEach(row => out[`tool:${row.tool_id}`] = signature(row.locations));
+      return out;
+    }
+    function presenceDots(locations) {
+      const map = [
+        ['BB', locations.blackboard?.present],
+        ['IW', locations.intent_workspace?.present],
+        ['REF', locations.ref_registry?.present],
+        ['L2B', locations.l2b?.present],
+      ];
+      return `<span class="presence">${map.map(([label, on]) =>
+        `<span class="dot ${on ? 'on' : ''}">${label}</span>`).join('')}</span>`;
+    }
+    function renderMetrics(state) {
+      const metrics = [
+        ['BB keys', `${state.blackboard.present_count}/${state.blackboard.declared_count}`],
+        ['Intent refs', state.intent_workspace.ref_count],
+        ['RefBindings', state.refs.metrics.total_refs],
+        ['L2-B nodes', state.l2b.node_count],
+      ];
+      document.getElementById('liveMetrics').innerHTML = metrics.map(([label, value]) =>
+        `<div class="metric"><strong>${esc(value)}</strong><span class="muted">${esc(label)}</span></div>`
+      ).join('');
+    }
+    function renderToolArtifacts(rows) {
+      document.getElementById('toolArtifacts').innerHTML =
+        `<table><thead><tr><th>Tool</th><th>State</th><th>Surfaces</th><th>Expected Flow</th><th>Scenario Checks</th></tr></thead><tbody>` +
+        rows.map(row => {
+          const cls = changed(`tool:${row.tool_id}`, row.locations) ? 'changed' : '';
+          return `<tr class="${cls}"><td><code>${esc(row.tool_id)}</code><br>${esc(row.label)}</td>` +
+            `<td>${esc(row.status)}</td><td>${presenceDots(row.locations)}</td>` +
+            `<td>${esc(row.expectation)}</td>` +
+            `<td>${(row.scenario_checks || []).map(esc).join('<br>')}</td></tr>`;
+        }).join('') + `</tbody></table>`;
+    }
+    function renderBlackboard(bb) {
+      const rows = [...(bb.keys || [])].sort((a, b) => {
+        if (a.exists !== b.exists) return a.exists ? -1 : 1;
+        return a.key.localeCompare(b.key);
+      });
+      document.getElementById('blackboardLive').innerHTML =
+        `<table><thead><tr><th>Key</th><th>Writer</th><th>Present</th><th>Summary</th><th>Value</th></tr></thead><tbody>` +
+        rows.map(row => {
+          const cls = changed(`bb:${row.key}`, row.value) ? 'changed' : '';
+          return `<tr class="${cls}"><td><code>${esc(row.key)}</code><br><span class="muted">${esc(row.scope)} / ${esc(row.type_hint)}</span></td>` +
+            `<td>${esc(row.writer)}</td><td>${row.exists ? '<span class="dot on">yes</span>' : '<span class="dot">no</span>'}</td>` +
+            `<td>${esc(row.summary)}</td><td><code>${esc(clip(row.value, 220))}</code></td></tr>`;
+        }).join('') + `</tbody></table>`;
+    }
+    function renderIntentWorkspace(iw) {
+      const rows = iw.refs || [];
+      document.getElementById('intentLive').innerHTML =
+        `<table><thead><tr><th>Ref</th><th>Role</th><th>Origin</th><th>Workspace</th><th>Node/Photo</th><th>Expires</th></tr></thead><tbody>` +
+        rows.map(row => {
+          const cls = changed(`iw:${row.ref_id}`, row) ? 'changed' : '';
+          const expires = row.expires_in_seconds === null ? 'manual' : `${row.expires_in_seconds}s`;
+          return `<tr class="${cls}"><td><code>${esc(row.ref_id)}</code><br><span class="muted">${esc(row.kind)} / ${esc(row.payload_source)}</span></td>` +
+            `<td>${esc(row.role || row.ui_kind || '')}</td><td>${esc(row.origin)}</td>` +
+            `<td>${esc(row.workspace_id || row.owner_id || 'parent')}</td>` +
+            `<td>${esc(row.photo_id || row.related_node_uuid || '')}</td><td>${esc(expires)}</td></tr>`;
+        }).join('') + `</tbody></table>`;
+    }
+    function renderRefs(refs) {
+      const rows = refs.refs || [];
+      document.getElementById('refLive').innerHTML =
+        `<table><thead><tr><th>Ref</th><th>Kind</th><th>Target</th><th>Label</th><th>Source Event</th></tr></thead><tbody>` +
+        rows.map(row => {
+          const cls = changed(`ref:${row.ref_id}`, row) ? 'changed' : '';
+          return `<tr class="${cls}"><td><code>${esc(row.ref_id)}</code><br><span class="muted">rev ${esc(row.revision)}</span></td>` +
+            `<td>${esc(row.kind)}</td><td>${esc(row.target_kind)} ${esc(row.target_id || '')}</td>` +
+            `<td>${esc(row.label)}</td><td><code>${esc(row.source_event_id)}</code></td></tr>`;
+        }).join('') + `</tbody></table>`;
+    }
+    function renderL2bGraph(l2b) {
+      const nodes = l2b.nodes || [];
+      const edges = l2b.edges || [];
+      if (!nodes.length) {
+        document.getElementById('l2bGraph').innerHTML = '<div class="muted">No L2-B nodes yet. Sim Photo Preview will create a PHOTO node.</div>';
+        return;
+      }
+      const w = 900, h = 280, cx = w / 2, cy = h / 2, r = Math.min(310, 58 + nodes.length * 18);
+      const pos = {};
+      nodes.forEach((node, i) => {
+        const angle = (Math.PI * 2 * i) / Math.max(nodes.length, 1) - Math.PI / 2;
+        pos[node.uuid] = {
+          x: nodes.length === 1 ? cx : cx + Math.cos(angle) * r,
+          y: nodes.length === 1 ? cy : cy + Math.sin(angle) * Math.min(r, 105),
+        };
+      });
+      const color = kind => kind === 'photo' ? '#b9a7ff' : (kind === 'object' ? '#83e6b2' : '#ffd37a');
+      const edgeSvg = edges.map(edge => {
+        const a = pos[edge.source], b = pos[edge.target];
+        if (!a || !b) return '';
+        return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#5b4f80" stroke-width="1.5" opacity=".75" />`;
+      }).join('');
+      const nodeSvg = nodes.map(node => {
+        const p = pos[node.uuid];
+        const cls = changed(`l2b:${node.uuid}`, node) ? ' changed-node' : '';
+        const label = esc(node.label || node.uuid);
+        return `<g class="${cls}"><circle cx="${p.x}" cy="${p.y}" r="24" fill="${color(node.kind)}" opacity=".92" />` +
+          `<text x="${p.x}" y="${p.y + 4}" text-anchor="middle" font-size="10" fill="#101015">${esc(node.kind || 'node')}</text>` +
+          `<text x="${p.x}" y="${p.y + 40}" text-anchor="middle" font-size="11" fill="#dcddde">${label.slice(0, 34)}</text></g>`;
+      }).join('');
+      document.getElementById('l2bGraph').innerHTML =
+        `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="L2-B graph">${edgeSvg}${nodeSvg}</svg>`;
+    }
+    async function refreshLive() {
+      const state = await getJson('/api/app/live-state?limit=80');
+      document.getElementById('liveMeta').textContent =
+        `live: seq ${state.sequence} / ${new Date(state.generated_at * 1000).toLocaleTimeString()}`;
+      renderMetrics(state);
+      renderToolArtifacts(state.tool_artifacts || []);
+      renderBlackboard(state.blackboard || {});
+      renderIntentWorkspace(state.intent_workspace || {});
+      renderRefs(state.refs || {});
+      renderL2bGraph(state.l2b || {});
+      document.getElementById('liveJson').textContent = JSON.stringify(state, null, 2);
+      liveSignatures = collectLiveSignatures(state);
+      return state;
+    }
+    function setLivePoll(enabled) {
+      if (liveTimer) clearInterval(liveTimer);
+      liveTimer = null;
+      if (enabled) liveTimer = setInterval(() => refreshLive().catch(console.error), 1200);
+    }
     function showTab(id, btn) {
       document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
       document.getElementById(id).classList.add('active');
@@ -541,10 +766,13 @@ def _index_html() -> str:
       document.getElementById('selfcheckResult').textContent =
         JSON.stringify(await res.json(), null, 2);
     }
-    refresh().catch(err => {
-      document.getElementById('modules').innerHTML =
-        `<div class="card"><div class="name">error</div><div class="state warn">${err.message}</div></div>`;
-    });
+    refresh()
+      .then(() => refreshLive())
+      .then(() => setLivePoll(document.getElementById('liveAuto').checked))
+      .catch(err => {
+        document.getElementById('modules').innerHTML =
+          `<div class="card"><div class="name">error</div><div class="state warn">${err.message}</div></div>`;
+      });
   </script>
 </body>
 </html>"""
