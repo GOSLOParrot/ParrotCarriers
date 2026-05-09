@@ -31,6 +31,11 @@ namespace ParrotApp.EditorTools
         private const string GlbAssetPath = "Assets/Models/GOSLO.glb";
         private const string MenuPath = "Tools/Parrot/Build A2 Smoke Scene";
         private const string UpgradeMenuPath = "Tools/Parrot/Upgrade Current A2 Smoke Scene";
+        private const string ToolDrawerWoodSpritePath = "Assets/UI/ParrotApp/ToolCabinet/ToolDrawer_Wood_Menu1.png";
+        private const string ToolButtonWoodSpritePath = "Assets/UI/ParrotApp/ToolCabinet/ToolButton_Wood_Front.png";
+        private const string PaperNoteSmallSpritePath = "Assets/UI/ParrotApp/Notifications/PaperNote_Blank_New.png";
+        private const string PaperNoteFilledSpritePath = "Assets/UI/ParrotApp/Notifications/PaperNote_Filled_Old.png";
+        private const string NekoClawSpritePath = "Assets/UI/ParrotApp/Notifications/NekoClaw_Cutout.png";
 
         [MenuItem(MenuPath)]
         public static void BuildSmokeScene()
@@ -160,6 +165,11 @@ namespace ParrotApp.EditorTools
             uiSo.FindProperty("bboxController").objectReferenceValue =
                 attentionRootGo.GetComponent<BBoxController>();
             uiSo.FindProperty("handGestureSource").objectReferenceValue = handSource;
+            uiSo.FindProperty("woodDrawerSprite").objectReferenceValue = LoadSprite(ToolDrawerWoodSpritePath);
+            uiSo.FindProperty("woodButtonSprite").objectReferenceValue = LoadSprite(ToolButtonWoodSpritePath);
+            uiSo.FindProperty("smallPaperNoteSprite").objectReferenceValue = LoadSprite(PaperNoteSmallSpritePath);
+            uiSo.FindProperty("filledPaperNoteSprite").objectReferenceValue = LoadSprite(PaperNoteFilledSpritePath);
+            uiSo.FindProperty("nekoClawSprite").objectReferenceValue = LoadSprite(NekoClawSpritePath);
             uiSo.ApplyModifiedPropertiesWithoutUndo();
 
             // ── Save ───────────────────────────────────────────────────────
@@ -238,6 +248,7 @@ namespace ParrotApp.EditorTools
             SetObjectRef(appUi, "bboxController", bboxController);
             SetObjectRef(appUi, "handGestureSource", handSource);
             SetObjectRef(appUi, "parrotController", parrotController);
+            SetOptionalAppSprites(appUi);
 
             SetObjectRef(perch, "handTracker", handSource);
             SetObjectRef(perch, "animDriver", animDriver);
@@ -283,6 +294,20 @@ namespace ParrotApp.EditorTools
             if (prop == null) return;
             prop.objectReferenceValue = value;
             so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void SetOptionalAppSprites(AppV1MetaUiController appUi)
+        {
+            SetObjectRef(appUi, "woodDrawerSprite", LoadSprite(ToolDrawerWoodSpritePath));
+            SetObjectRef(appUi, "woodButtonSprite", LoadSprite(ToolButtonWoodSpritePath));
+            SetObjectRef(appUi, "smallPaperNoteSprite", LoadSprite(PaperNoteSmallSpritePath));
+            SetObjectRef(appUi, "filledPaperNoteSprite", LoadSprite(PaperNoteFilledSpritePath));
+            SetObjectRef(appUi, "nekoClawSprite", LoadSprite(NekoClawSpritePath));
+        }
+
+        private static Sprite LoadSprite(string path)
+        {
+            return AssetDatabase.LoadAssetAtPath<Sprite>(path);
         }
 
         /// <summary>

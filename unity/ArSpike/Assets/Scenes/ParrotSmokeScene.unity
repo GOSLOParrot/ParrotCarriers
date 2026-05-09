@@ -323,10 +323,11 @@ MonoBehaviour:
   bboxController: {fileID: 2500000004}
   handGestureSource: {fileID: 1921163389}
   parrotController: {fileID: 1024024292}
-  woodDrawerSprite: {fileID: 0}
-  woodButtonSprite: {fileID: 0}
-  smallPaperNoteSprite: {fileID: 0}
-  filledPaperNoteSprite: {fileID: 0}
+  woodDrawerSprite: {fileID: 21300000, guid: 1eaec80933191be49bb4191a38be3d49, type: 3}
+  woodButtonSprite: {fileID: 21300000, guid: d843827406bd04a4199f0c7fabbbd264, type: 3}
+  smallPaperNoteSprite: {fileID: 21300000, guid: 85da307821352d845887742a1827844e, type: 3}
+  filledPaperNoteSprite: {fileID: 21300000, guid: c5c5afd0371f61e4c9351f460ddf9733, type: 3}
+  nekoClawSprite: {fileID: 21300000, guid: 1b107538457241efbfe8bae6d34ebf64, type: 3}
 --- !u!4 &849041491
 Transform:
   m_ObjectHideFlags: 0

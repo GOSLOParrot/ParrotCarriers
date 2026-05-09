@@ -40,6 +40,7 @@ namespace ParrotApp.UI
         [SerializeField] private Sprite woodButtonSprite;
         [SerializeField] private Sprite smallPaperNoteSprite;
         [SerializeField] private Sprite filledPaperNoteSprite;
+        [SerializeField] private Sprite nekoClawSprite;
 
         private const float ReferenceWidth = 1080f;
         private const float ReferenceHeight = 1920f;
@@ -471,6 +472,15 @@ namespace ParrotApp.UI
             var stack = CreateTransparentRoot("NanobotNoteStack", root);
             Anchor(stack, RightCenter(), RightCenter(), RightCenter(), new Vector2(-18, 0), new Vector2(280, 150));
 
+            if (nekoClawSprite != null)
+            {
+                // The paw is a visual delivery prop only. Paper state stays in
+                // the note/workdesk flow, and Nanobot data stays facade-owned.
+                var paw = CreatePlainSprite("NekoClawReportPaw", stack, nekoClawSprite);
+                Anchor(paw, CenterTop(), CenterTop(), CenterTop(), new Vector2(-78, 74), new Vector2(94, 164));
+                paw.localRotation = Quaternion.Euler(0f, 0f, -8f);
+            }
+
             var note = CreatePanel("PaperNote_DraggableSelectable", stack, new Color(0.86f, 0.78f, 0.58f, 0.98f), smallPaperNoteSprite);
             Stretch(note, Vector2.zero, Vector2.zero);
             _activePaperNote = note;
@@ -740,6 +750,16 @@ namespace ParrotApp.UI
             image.raycastTarget = false;
             Stretch(root, Vector2.zero, Vector2.zero);
             return root;
+        }
+
+        private RectTransform CreatePlainSprite(string name, Transform parent, Sprite sprite)
+        {
+            var rt = CreatePanel(name, parent, Color.white, sprite);
+            var image = rt.GetComponent<Image>();
+            image.type = Image.Type.Simple;
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+            return rt;
         }
 
         private void CreateCrumpledPaperPlaceholder(RectTransform parent)

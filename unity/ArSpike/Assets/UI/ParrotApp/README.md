@@ -14,7 +14,7 @@ shell uses these files as stable visual slots:
 | NanobotReportPaper | warm tint of `PaperNoteSmall` | runtime placeholder |
 | CalendarReminderPaper | blue tint of `PaperNoteFilled` | runtime placeholder |
 | TrashCrumpledPaper | layered UGUI paper chips | runtime placeholder |
-| OrangeCatPaw | not imported yet | slot only |
+| OrangeCatPaw | `Assets/UI/ParrotApp/Notifications/NekoClaw_Cutout.png` | selected |
 | CameraIcon | `Assets/UI/ParrotApp/Icons/Items_16x16.png` | placeholder sheet |
 | FocusMagnifierIcon | `Assets/UI/ParrotApp/Icons/Adventure_Icons.png` | placeholder sheet |
 | BoundaryBoxIcon | `Assets/UI/ParrotApp/Icons/BoundaryBox_Frame.png` | placeholder |

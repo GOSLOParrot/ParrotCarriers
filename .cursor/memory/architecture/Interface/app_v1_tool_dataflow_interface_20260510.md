@@ -176,7 +176,7 @@ Different reminder kinds now have different runtime paper treatments:
 
 Asset placeholders:
 
-- Orange cat paw is still `slot_only`; no matching curated asset found. V1 falls back to paper slide/drag animation.
+- Orange cat paw now uses the user-provided AI image `D:/GOSLOParrot/Pixel Asset/NekoClaw.png`, imported as `Assets/UI/ParrotApp/Notifications/NekoClaw_Cutout.png` after transparent cutout processing. It is a visual delivery prop only, not a data owner.
 - Trash crumpled paper uses three layered UGUI paper chips named `TrashCrumpledPaperPlaceholder_*`.
 - `TrashCrumpledPaper`, `NanobotReportPaper`, `CalendarReminderPaper`, `ParrotJoystick`, and `OrangeCatPaw` are now explicit asset manifest slots.
 

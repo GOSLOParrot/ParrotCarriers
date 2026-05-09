@@ -54,10 +54,10 @@
     },
     {
       "slot": "OrangeCatPaw",
-      "status": "slot_only",
-      "source": "",
-      "unity": "",
-      "fallback": "not imported yet; paper slide-in animation is used instead"
+      "status": "selected",
+      "source": "D:/GOSLOParrot/Pixel Asset/NekoClaw.png",
+      "unity": "Notifications/NekoClaw_Cutout.png",
+      "fallback": "paper slide-in animation if the sprite is missing"
     },
     {
       "slot": "ParrotJoystick",

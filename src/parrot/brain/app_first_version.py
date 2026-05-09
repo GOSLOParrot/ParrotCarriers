@@ -464,10 +464,10 @@ class AppFirstVersionFacade:
                 },
                 {
                     "slot": "OrangeCatPaw",
-                    "status": "slot_only",
-                    "source": "",
-                    "unity": "",
-                    "fallback": "not imported yet; paper slide-in is the App V1 fallback",
+                    "status": "selected",
+                    "source": "D:/GOSLOParrot/Pixel Asset/NekoClaw.png",
+                    "unity": "Assets/UI/ParrotApp/Notifications/NekoClaw_Cutout.png",
+                    "fallback": "paper slide-in is the App V1 fallback if the sprite is missing",
                 },
                 {
                     "slot": "ParrotJoystick",

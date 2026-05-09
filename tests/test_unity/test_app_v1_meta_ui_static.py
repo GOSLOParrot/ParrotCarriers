@@ -40,6 +40,8 @@ def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
     assert "CameraModeShutterButton" in text
     assert "AppV1_2DWorkdesk" in text
     assert "NanobotNoteStack" in text
+    assert "NekoClawReportPaw" in text
+    assert "nekoClawSprite" in text
     assert "PaperNote_DraggableSelectable" in text
     assert "PaperNoteDropTargets_RightRail" in text
     assert "PaperDropTarget_Trash" in text
@@ -89,6 +91,8 @@ def test_smoke_scene_builder_mounts_meta_ui_and_wires_existing_tools() -> None:
     assert 'FindProperty("focusController")' in text
     assert 'FindProperty("bboxController")' in text
     assert 'FindProperty("handGestureSource")' in text
+    assert 'FindProperty("nekoClawSprite")' in text
+    assert "NekoClaw_Cutout.png" in text
     assert "LOCAL PREVIEW" in text
     assert "Magnifier creates a draggable Focus overlay" in text
     assert "Bottom-left joystick walks the parrot on the plane" in text

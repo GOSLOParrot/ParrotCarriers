@@ -48,7 +48,7 @@ Parrot movement:
 Asset slots:
 
 - Added explicit runtime slots for `NanobotReportPaper`, `CalendarReminderPaper`, `TrashCrumpledPaper`, `OrangeCatPaw`, and `ParrotJoystick`.
-- No orange cat paw asset was found in the curated subset; it remains `slot_only`.
+- `OrangeCatPaw` now uses the AI-generated source `D:/GOSLOParrot/Pixel Asset/NekoClaw.png`, imported as transparent Unity sprite `Assets/UI/ParrotApp/Notifications/NekoClaw_Cutout.png`.
 - Trash uses layered UGUI paper chips as the temporary crumpled-paper ball.
 
 Smoke-scene prep:
@@ -88,6 +88,20 @@ What is not yet real-device complete:
 - We still need a device pass to validate hand-joint coordinate transform, arrival distance, and finger-jitter smoothing.
 - No backend command is needed for this reflex; that is intentional per architecture.
 
+## 4.1 NekoClaw source audit
+
+- Source: user-provided AI-generated PNG at `D:/GOSLOParrot/Pixel Asset/NekoClaw.png`.
+- Original image is `2048x2048` and opaque (`alphaMin=255`, `alphaMax=255`), so it was not suitable for AR floating UI as-is.
+- Generated Unity cutout: `Assets/UI/ParrotApp/Notifications/NekoClaw_Cutout.png`, `1052x1846`, transparent background (`alphaMin=0`, `alphaMax=255`).
+- App use: `AppV1MetaUiController.nekoClawSprite` renders `NekoClawReportPaw` behind the nanobot paper stack as a delivery prop only. It does not own note data, write Blackboard, or bypass IntentWorkspace.
+
+## 4.2 Ner custom model audit
+
+- Existing state: `Assets/Scenes/ParrotSmokeScene.unity` contains a root `Ner` GameObject with `MeshFilter`, `MeshRenderer`, and Spine `SkeletonAnimation` using `Assets/Models/Ner/NerSkin2_*`.
+- Current gap: the `Ner` GameObject has no `ModelDriver`, no `IParrotController`, and no `Resources/parrot_models/Ner.json` manifest. Therefore it can display/play its local SkeletonAnimation, but Brain/Unity command routing cannot yet target it through `model_id="Ner"`.
+- Do not blindly attach `ModelDriver` to `Ner` in the current smoke scene: `ParrotRegistry` is still a P1 single-active registry, so the last registered model can become the default route for empty `model_id` commands.
+- To make Ner a real custom model: add a `NerController : IParrotController` that maps capability ids to Spine animation names, add `Resources/parrot_models/Ner.json`, attach `ModelDriver(modelId=Ner)`, and validate `ParrotRegistry.Resolve("Ner")` with `animate(..., model_id="Ner")`.
+
 ## 5. Verification record
 
 - Python static/tests:
@@ -97,4 +111,6 @@ What is not yet real-device complete:
   - Active project: `ArSpike`, Unity `2022.3.62f3`, platform `Android`.
   - Active scene before fix lacked `AppV1MetaUI`; this was fixed by the upgrader.
   - Play Mode smoke found `AppV1MetaCanvas`, `PaperNote_DraggableSelectable`, `PaperDropTarget_Trash`, `PaperDropTarget_Workdesk`, `ParrotJoystick_PlaneWalkPad`, `CameraModeOverlay_TransparentWysiwyg`, and `MagnifierFocusOverlay_Draggable`.
-  - Console after font fix: 0 error entries.
+  - 2026-05-10 NekoClaw smoke found `NekoClawReportPaw` and `PaperNote_DraggableSelectable` in Play Mode.
+  - Console compile/import errors: 0.
+  - Play Mode still reports expected LiveKit connection failure when local/server LiveKit is not reachable; this is an environment prerequisite, not a NekoClaw/UI compile failure.
