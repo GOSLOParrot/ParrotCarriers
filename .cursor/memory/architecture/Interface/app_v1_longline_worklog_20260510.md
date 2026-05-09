@@ -81,3 +81,13 @@ owner: Codex / App V1
 - 放大镜倍率目前是 overlay scale + Focus 数据流，不是真实屏幕采样 shader。
 - PNG 导入设置已由 Unity MCP 设置并生成 `.png.meta`；仍未做最终 9-slice 边界。
 - Smoke scene builder 新增 UI 挂载逻辑已编译通过，但没有自动执行菜单重建 scene，以免触发保存对话框。
+
+## 05:55-06:15 Camera UX 修正与真机准备审计
+
+- 外部调研对照 Apple Camera Control、iPhone Camera、Pixel Camera、Dovetail Photo Mode：默认拍照层应轻量贴边，专业参数放二级面板。
+- 用户反馈确认：相机模式需要所见即所得，不应默认画取景框。
+- Unity 已把 `CameraModeOverlay_Modern` 替换为 `CameraModeOverlay_TransparentWysiwyg`。
+- 默认相机层只保留薄黑边、关闭、齿轮、快门、zoom rail、exposure rail。
+- 齿轮展开 `CameraProSettingsPanel`，包含 filter / preview / ready / hide UI / pixel BBox stamp slot。
+- 新增 `app_v1_frontend_camera_ux_realdevice_audit_20260510.md`，记录多场景前端流程审计和真机测试准备。
+- 静态测试已改为防止重新引入 `CameraPreviewFrame`。

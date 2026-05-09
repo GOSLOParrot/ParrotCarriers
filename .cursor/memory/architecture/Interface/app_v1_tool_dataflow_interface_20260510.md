@@ -21,6 +21,14 @@ DSG/L2-B/Graphiti 负责记忆与图谱，不被 App UI 直接写入。
 - `protocol_snapshot_p4.md` § photo events
 - `PhotoController.cs`
 
+Unity 前端状态：
+
+- `CameraModeOverlay_TransparentWysiwyg`: 默认相机层是透明 WYSIWYG HUD，不画取景框。
+- `CameraGestureRail_Zoom` / `CameraExposureRail`: 默认只给轻量 zoom / EV 手滑调节。
+- `CameraProSettingsPanel`: 齿轮展开后才显示 filter、ready/preview、hide UI 等专业设置槽。
+- `CameraToolbox_PixelBBoxStamp`: 拍照工具箱里的像素 BBox / 印花素材 slot。
+- `CameraModeTransitionSlot`: 相机模式启动提示转为转场动画 slot。
+
 数据流：
 
 1. 用户在工具柜点 `Camera`：UI 展示 camera mode 说明。
@@ -141,4 +149,3 @@ Web 端职责：
 
 - Graphiti OSS 没有现成完整 dashboard；本轮做轻量管理壳。
 - L2-B 在控制台里 read-only，避免测试页变成新写入口。
-

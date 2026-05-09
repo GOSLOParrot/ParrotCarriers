@@ -23,8 +23,12 @@ def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
     assert "StartupSurface" in text
     assert "StartupTransitionSurface" in text
     assert "ToolCabinet_WoodDrawer" in text
-    assert "CameraModeOverlay_Modern" in text
-    assert "CameraPreviewFrame" in text
+    assert "CameraModeOverlay_TransparentWysiwyg" in text
+    assert "CameraModeTinyTopEdge" in text
+    assert "CameraGestureRail_Zoom" in text
+    assert "CameraExposureRail" in text
+    assert "CameraProSettingsPanel" in text
+    assert "CameraToolbox_PixelBBoxStamp" in text
     assert "CameraModeShutterButton" in text
     assert "AppV1_2DWorkdesk" in text
     assert "NanobotNoteStack" in text
@@ -36,6 +40,11 @@ def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
     assert "photoController.CapturePhoto()" in text
     assert 'SetCameraOverlayMode("preview")' in text
     assert 'SetCameraOverlayMode("capture_locked")' in text
+    assert "ToggleCameraProSettings" in text
+    assert "SetCameraZoom" in text
+    assert "SetCameraExposure" in text
+    assert "Camera mode is deliberately WYSIWYG" in text
+    assert "CameraPreviewFrame" not in text
     assert "focusController.AnchorFocus" in text
     assert "focusController.ReleaseFocus" in text
     assert "bboxController.PlaceBBox" in text

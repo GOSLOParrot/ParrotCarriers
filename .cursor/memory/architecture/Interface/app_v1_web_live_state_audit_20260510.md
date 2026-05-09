@@ -146,11 +146,14 @@ uv run pytest tests/test_brain/test_app_v1_monitor.py -q
 
 ## 9. App 前端补充审计
 
-Web 控制台通过后，复查 Unity `AppV1MetaUiController`，发现相机工具虽然已经在工具柜中，但只有 `Camera` / `Capture` 按钮和纸条反馈，缺少进入相机模式后的明确可见状态。已补：
+Web 控制台通过后，复查 Unity `AppV1MetaUiController`。用户反馈相机模式不应默认出现取景框，因为 AR Camera 本身就是所见即所得；专业参数应当放到展开设置里。已按新审计修正：
 
-- `CameraModeOverlay_Modern`: 现代相机模式 overlay。
-- `CameraPreviewFrame`: 深色取景框和 rule-of-thirds grid。
-- `CameraModeLabel`: 显示当前 `off / preview / photo_ready / capture_locked` 和本地 shots 计数。
+- `CameraModeOverlay_TransparentWysiwyg`: 全屏透明相机 HUD，不画取景框，不盖住 AR 画面。
+- `CameraModeTinyTopEdge` / `CameraModeTinyBottomEdge`: 仅保留很薄的黑边安全区，避免遮挡中心视野。
+- `CameraGestureRail_Zoom` / `CameraExposureRail`: 默认层只保留手滑动式 zoom / EV 调节。
+- `CameraProSettingsPanel`: 齿轮展开后才显示专业相机参数、filter slot、ready/preview/hide UI 等。
+- `CameraToolbox_PixelBBoxStamp`: 拍照工具箱里的像素 BBox / 印花素材占位。
+- `CameraModeTransitionSlot`: 启动相机模式时的转场动画插槽，避免用大提示框挡画面。
 - `CameraModeShutterButton`: overlay 内 capture 按钮，仍然只调用 `PhotoController.CapturePhoto()`。
 
-审计结论：相机前端现在能从工具柜进入 preview 面板，也能在 overlay 内触发 capture。UI 仍不拥有像素和后端状态；真实 capture 继续由 `PhotoController` 和 Brain observer 处理。
+审计结论：相机前端现在能从工具柜进入干净透明的 capture HUD，也能展开专业设置。UI 仍不拥有像素和后端状态；真实 capture 继续由 `PhotoController` 和 Brain observer 处理。
