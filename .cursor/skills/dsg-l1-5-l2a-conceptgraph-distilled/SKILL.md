@@ -58,8 +58,7 @@ ai_audience: "DSG L1.5 / L2-A 设计 chat（不替代 L2-B）"
 ## 0.5 仓库蒸馏产出对比（Gemini enhance vs 自建）
 
 > **蒸馏日期**：2026-05-04；skill-seekers 3.5.0 + Gemini enhance
-> **蒸馏产出路径**：`NewZone/distill_output/dsg/concept-graphs/SKILL.md`
-> **focus 文件**：`NewZone/skill_distill_bundle/09_conceptgraphs/skill_seeker_focus.md`
+> **蒸馏产出路径（archived）**：原 `NewZone/distill_output/dsg/concept-graphs/SKILL.md` + `NewZone/skill_distill_bundle/09_conceptgraphs/skill_seeker_focus.md` 2026-05-09 物理删除；精华已入本 SKILL §0.5 ~ §4。
 
 Gemini enhance 版相比本文**额外覆盖**的内容：
 

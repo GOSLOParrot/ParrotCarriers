@@ -14,9 +14,10 @@ distilled_from_classic_concepts:
   - "CLS Theory (McClelland, McNaughton, O'Reilly, 1995) — 快/慢双系统"
   - "Spreading Activation (Collins & Loftus, 1975) — 联想检索算法"
   - "Episodic vs Semantic Memory (Tulving, 1972) — 双类记忆理论基础"
-related_distill_raw:
-  - "NewZone/distill_output/dsg_l2b_org_raw/HippoRAG/SKILL.md"
-  - "NewZone/distill_output/dsg_l2b_org_raw/AriGraph/SKILL.md"
+related_distill_raw_archived:
+  # 2026-05-09 NewZone/ 物理删除；HippoRAG / AriGraph 蒸馏精华已入本 SKILL §1.5 / §6 / §8
+  - "HippoRAG (NeurIPS'24) → 本 SKILL §6 + §354 行索引"
+  - "AriGraph → 本 SKILL §6 + §355 行索引"
 related_skills:
   - "graphiti (已用 — Graphiti GraphRAG 接入)"
   - "dsg-rustworkx-master (路由总入口)"
@@ -141,7 +142,7 @@ Node
 
 ### 1.5 选项 E — SLM 风格多层池架构对比（**重要：架构相似性**）
 
-> 来自 `NewZone/distill_output/dsg/superlocalmemory/` Gemini 蒸馏
+> 来自 SLM 仓库 Gemini 蒸馏（原 `NewZone/distill_output/dsg/superlocalmemory/` 2026-05-09 物理删除；精华已入本节正文）
 
 SLM 与 ParrotCarriers DSG **高度结构相似**——两者都是中间层认知架构。**对照表**：
 
@@ -351,10 +352,10 @@ RustworkX 实现：
 
 | 我想看 | 去 |
 |:--|:--|
-| HippoRAG 完整蒸馏（PPR / OpenIE / 节点字段） | `NewZone/distill_output/dsg_l2b_org_raw/HippoRAG/SKILL.md` |
-| AriGraph 完整蒸馏（双类节点 / triplet / 工作集） | `NewZone/distill_output/dsg_l2b_org_raw/AriGraph/SKILL.md` |
+| HippoRAG 完整蒸馏（PPR / OpenIE / 节点字段） | 本 SKILL §6（原 `NewZone/distill_output/dsg_l2b_org_raw/HippoRAG/SKILL.md` 2026-05-09 删除） |
+| AriGraph 完整蒸馏（双类节点 / triplet / 工作集） | 本 SKILL §6（原 `NewZone/distill_output/dsg_l2b_org_raw/AriGraph/SKILL.md` 2026-05-09 删除） |
 | Graphiti 节点类型 / group_id / 时间有效性 | `.cursor/skills/graphiti/SKILL.md` |
 | 注意力算法摘要（GAT/DySAT/AGCN/G-HAM） | `.cursor/skills/dsg-attention-schema-papers/SKILL.md` §1 |
 | 经典记忆理论（Tulving/CLS/Hippocampal Indexing/Spreading Act） | 本 SKILL §0 索引 + dsg-attention-schema-papers §5（待加） |
 | RustworkX 实操技巧 | `.cursor/skills/dsg-rustworkx-master/SKILL.md` §2 |
-| 案例研究综述（仿生范式） | `NewZone/RustworkX 图模拟研究案例.md` §119–§122 |
+| 案例研究综述（仿生范式） | `.cursor/skills/dsg-rustworkx-master/SKILL.md` §3.5（原 `NewZone/RustworkX 图模拟研究案例.md` §119–§122 已蒸馏入该 skill） |

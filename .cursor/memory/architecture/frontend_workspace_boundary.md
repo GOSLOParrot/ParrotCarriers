@@ -1,140 +1,127 @@
 ---
 status: ratified
-category: workspace-boundary
-status_note: "Cursor 主工作区 vs Codex + Unity MCP 第二前端工作区的职责边界。允许 user 在 Codex 内同时控制 Unity Editor 与 LLM，不切换 IDE。本文是协议层约束：Codex 工作区只消费协议、不产生协议字段。"
+category: workspace-coordination
+status_note: "Cursor 主工作区 vs Codex + Unity MCP 第二前端工作区的分工建议。**单人项目，无硬边界**——两侧都可读写整个仓库；只在改核心接口 / 协议字段 / 锁定决策时要求说明理由。本文 2026-05-09 由原硬边界版改写。"
 last_reviewed: 2026-05-09
 ai_priority: high
-ai_audience: "Cursor + Codex 两侧 chat；任何动 Unity DTO / Editor / Asset 的 chat 必读"
+ai_audience: "Cursor + Codex 两侧 chat；任一侧动手前必读"
 parent_doc: "../INDEX.md"
 related:
   - "../../.cursor/rules/workspace.mdc (全局路由 alwaysApply)"
   - "ar_workspace_index.md (AR 工作区聚合)"
   - "Interface/INDEX.md (接口分类骨架)"
   - "protocol_snapshot_p4.md (协议 SSOT)"
-  - "cross_chat_pending_registry_20260507.md (双向写待办登记)"
+  - "../commit_guidelines.md (提交规范 + 漂移说明子句)"
 ---
 
-# 第二前端工作区边界（Cursor vs Codex + Unity MCP）
+# 第二前端工作区分工建议（Cursor vs Codex + Unity MCP）
 
-> **背景**：user 计划在 Cursor 之外新增一个 Codex IDE + Unity MCP 插件作为第二前端工作区，便于在 Codex 内同时控制 Unity Editor + LLM，不必频繁切回 Unity Editor。两个工作区**共享同一仓库**（`D:/GOSLOParrot/ParrotCarriers`）+ 同一 SSOT（`.cursor/memory/INDEX.md`）。
-> **本文用途**：明确两个前端工作区的**职责边界 + 跨工作区流程**，避免协议字段在 Codex 侧被反复创造。
-
----
-
-## 1. 拓扑图
-
-```mermaid
-flowchart LR
-    SSOT[".cursor/memory/INDEX.md<br/>(单一真相源)"]
-    Cursor["Cursor 工作区<br/>Python + 协议 + 架构"]
-    Codex["Codex IDE + Unity MCP<br/>Unity C# + Editor + Asset"]
-    Registry["cross_chat_pending_registry<br/>(双向写待办)"]
-    SrcPy["src/parrot/**<br/>(Python 后端)"]
-    Protocol["protocol_snapshot_p4 / bus_v4<br/>sprint4_protocol_v2_ecp"]
-    Memory[".cursor/memory/architecture/**"]
-    SrcCs["unity/ArSpike/Assets/Scripts/<br/>ParrotApp/**"]
-    Editor["Unity Editor<br/>(Scene / Prefab / Inspector)"]
-    Figma["Figma 资产 / 像素画 UI<br/>unity/ArSpike/Assets/UI/"]
-    Skills[".cursor/skills/**"]
-
-    SSOT --> Cursor
-    SSOT --> Codex
-    Cursor --> SrcPy
-    Cursor --> Protocol
-    Cursor --> Memory
-    Cursor --> Skills
-    Codex --> SrcCs
-    Codex --> Editor
-    Codex --> Figma
-    Cursor --> Registry
-    Codex --> Registry
-    Codex -.->|"只消费协议<br/>不产生协议字段"| Protocol
-```
+> **背景**：user 同时使用 Cursor 与 Codex IDE（带 Unity MCP 插件）作为两个 LLM 工作区。两个工作区**共享同一仓库**（`D:/GOSLOParrot/ParrotCarriers`）+ 同一 SSOT（`.cursor/memory/INDEX.md`）。
+> **现实**：本项目是**单人开发**。前端 / 后端 / 协议 / Unity / 文档全部一人维护。两个工作区不是两个团队，是同一个人在两台 IDE 之间切换。
+> **本文用途**：给"哪种活在哪个工作区做更顺手"提建议；给"改核心接口 / 协议字段时要做什么"立硬规则。**不强制**任何"必须先在 Cursor / 必须先在 Codex"的流程。
 
 ---
 
-## 2. 职责边界（5 条核心条款）
+## §1 总原则（2 条硬规则 + 其余皆建议）
 
-### 2.1 Cursor 工作区（既有，主仓）
+### 硬规则 H1：改核心接口 / 协议字段 / 决策锁须说明理由
 
-- **领域**：Python backend / 协议 / 架构 / 文档 / Skill
-- **写**：
-  - `src/parrot/**`（Bus / Brain / Scheduler / DSG / Memory / shared）
-  - `infra/**`（Docker / 部署）
-  - `tests/**`（pytest）
-  - `.cursor/memory/**`（架构 / INDEX / 决策 / ADR）
-  - `.cursor/rules/**`（路由规则）
-  - `.cursor/skills/**`（领域技能）
-  - `protocol_snapshot_p4.md` / `bus_v4.md` / `sprint4_protocol_v2_ecp.md` / 2 ADR
-  - `cross_chat_pending_registry_20260507.md`（双向写）
-- **读**：所有上述 + Codex 写过的 C# 文件（看 cs_parity）
+任一工作区改下列对象时，必须在**提交信息（commit message）或代码注释**里写一句"为什么"，并按需更新对应文档：
 
-### 2.2 Codex + Unity MCP 工作区（新增，第二前端）
+| 改动对象 | 必须做的事 |
+|:--|:--|
+| `src/parrot/**` 公开导出（class/function 签名、enum 项、公共字段） | commit msg 写一行理由；如改公开 API，更新 `Interface/INDEX.md §1` 对应条目 |
+| `unity/ArSpike/Assets/Scripts/ParrotApp/**` DTO 字段 | commit msg 写理由；如属新增协议字段，在 `protocol_snapshot_p4.md` cs_parity 表加 1 行 |
+| `protocol_snapshot_p4.md` / `bus_v4.md` / `sprint4_protocol_v2_ecp.md` | commit msg 写理由；同步检查 Python + C# 两侧实现是否对齐（cs_parity） |
+| `NodeKind` / `EdgeKind` / `EcpEventType` / `EcpEventSource` / topic 常量 | commit msg 写理由 + 引用对应 ADR；如越过 Phase 4 §8 锁，先开 ADR chat |
+| Phase 4 §8 13 决策锁 / ADR-L1.5-001 11 项 | commit msg 引用 ADR；新决策须新 ADR |
+| `commit_guidelines.md` "重大漂移说明子句" 触发条件 | 按 `commit_guidelines.md` 漂移子句格式写 |
 
-- **领域**：Unity C# / Editor / Asset / Prefab / Scene / UI 资产摆放
-- **写**：
-  - `unity/ArSpike/Assets/Scripts/ParrotApp/**`（C# DTO + RoomManager + ParrotController + 视频 / RPC handler）
-  - `unity/ArSpike/Assets/Scenes/**`（Scene wiring）
-  - `unity/ArSpike/Assets/Prefabs/**`（Prefab 配置）
-  - `unity/ArSpike/Assets/UI/**`（Figma 导入资产 / 像素画 UI）
-  - `cross_chat_pending_registry_20260507.md`（双向写——Codex 侧补充 Unity 端 NEED-* 标签）
-- **读**：所有 `.cursor/memory/INDEX.md` 链表 + `protocol_snapshot_p4.md` + `Interface/INDEX.md` + `frontend_workspace_boundary.md`（本文）+ `ar_workspace_index.md`
+> "理由" 不必长——一句话足够。例：`feat(ecp): + EcpEvent.audio_fade — Codex/Unity 端 lifecycle 切场景需要听觉提示，配合 §3.2 lifecycle 升级`。
 
-### 2.3 共享 SSOT
+### 硬规则 H2：SSOT 写入要登记
 
-- `.cursor/memory/INDEX.md`：两边都读，**只 Cursor 写**
-- `architecture/protocol_snapshot_p4.md`：两边都读，**只 Cursor 写**
-- `architecture/Interface/INDEX.md`：两边都读，**只 Cursor 写**
-- `architecture/cross_chat_pending_registry_20260507.md`：两边**都写**（Codex 加 Unity 侧 NEED 标签时直接 append）
+`.cursor/memory/INDEX.md` 是唯一真相源。任一工作区**新增** memory 文档（`architecture/**` 顶层文件）时，必须在 INDEX.md §1.1 加一行（路径 + 一句话作用）。改动既有文档不必登记。
 
-### 2.4 协议字段不外溢（关键）
+### 其余条款 = 建议，不强制
 
-- **Codex 工作区不能产生新协议字段**——所有 wire / ECP / RPC / DataChannel / topic / BB key 必须先在 Cursor 工作区改 `protocol_snapshot_p4` + 同步 cs_parity 表，Codex 才能动 `unity/ArSpike/Assets/Scripts/ParrotApp/Ecp/*.cs`
-- 流程：Codex 发现需要新字段 → 在 `cross_chat_pending_registry` 写 NEED-PROTOCOL-* → 切回 Cursor 开 protocol upgrade 子 chat → Cursor 落地 protocol_snapshot_p4 + cs_parity → 回 Codex 写 C# DTO
-
-### 2.5 跨工作区任务交接
-
-- 发起方在 `cross_chat_pending_registry` 加一行：`[源工作区] [目标工作区] [文件路径] [事项 1 句话] [严重度]`
-- 接收方读 registry → 完成后划掉
-- 两边**不直接对话**，全经由 registry + memory/INDEX
+下面 §2 / §3 是"在哪个工作区做更顺手"的建议，**不是硬约束**。Codex 可以自由读写整个仓库，包括 `src/parrot/**` 后端、协议文档、Skills；只要符合 H1 / H2 即可。
 
 ---
 
-## 3. 典型场景
+## §2 分工建议（默认偏好）
 
-### 3.1 user 在 Codex 摆放 Figma 导入的菜单 UI
+### §2.1 Cursor 工作区偏好场景
 
-1. Codex 读 `Interface/menu_design_complete_20260507.md`（菜单 SSOT）
-2. Codex 在 `unity/ArSpike/Assets/UI/Menu/` 摆放 Figma 资产
-3. Codex 在 Scene 内 wire 起来
-4. **不动 C# 协议 DTO**——已有 menu_registry RPC 协议早在 Cursor 侧落地（见 `backend_interface_refinement_20260507`）
+- 大段 Python 改动 + pytest 跑测（pytest skill stack 在这边）
+- DSG / Brain / Scheduler 后端协议设计 + ADR 起草
+- `.cursor/memory/architecture/**` 大块文档重写
+- skill / rule 维护
+- 长链跨模块 grep / 多文件 refactor
 
-### 3.2 Cursor 升级了 ECP 字段（新增 lifecycle.audio_fade）
+### §2.2 Codex + Unity MCP 工作区偏好场景
 
-1. Cursor 改 `protocol_snapshot_p4.md` + `sprint4_protocol_v2_ecp.md` + `src/parrot/shared/ecp_event.py`
-2. Cursor 在 `cross_chat_pending_registry` 写 `[Cursor → Codex] unity/ArSpike/.../Ecp/EcpEvent.cs 新增 audio_fade 字段；cs_parity 4/4 已锁`
-3. Codex 读 registry → 改 C# DTO → 划掉 registry 行
+- Unity Editor 内的 Scene wiring / Prefab 配置（MCP 直接看）
+- C# DTO + RoomManager + ParrotController + 视频 / RPC handler 改动（IDE 内编译反馈快）
+- Figma 资产导入 + UI 资产摆放 + 像素画落 `unity/ArSpike/Assets/UI/**`
+- Unity 端真机 / Editor smoke 调试
 
-### 3.3 Codex 发现 Unity 侧需要新增 RPC method
+### §2.3 两边都顺手
 
-1. Codex 写 `cross_chat_pending_registry`：`[Codex → Cursor] NEED-PROTOCOL-NEW-RPC: parrot.glance_at_object`
-2. **不动 C# RPC handler**
-3. user 切回 Cursor → 开 protocol upgrade 子 chat → Cursor 落地 → 回到 §3.2 流程
-
----
-
-## 4. 反模式（禁止）
-
-- ❌ Codex 直接在 C# 写新 enum / DTO 字段，等 Cursor 后补 Python
-- ❌ Cursor 在 `unity/ArSpike/Assets/Scripts/ParrotApp/**` 改 C# 业务逻辑（除非是 protocol upgrade 期间的 cs_parity 镜像同步）
-- ❌ 跨工作区直接读对方未发布的 working tree（必须经过 commit + memory 登记）
-- ❌ 在 Codex 工作区改 `.cursor/memory/INDEX.md` 或任何 `architecture/protocol_*` / `architecture/Interface/INDEX.md`
+- AR 业务设计文档（既动 C# 又看后端协议）
+- Obsidian / Google 日程真连接业务（既动 ingest filter / trigger 又可能动 Unity 提示 UI）
+- Web 控制台原型（如果走 Unity WebGL 或 Tauri；纯后端 API 设计偏 Cursor）
+- `cross_chat_pending_registry_20260507.md` 待办登记 / close
 
 ---
 
-## 5. 验收信号
+## §3 共享资源 + 自主探索
 
-- 任何下游 chat 在两个工作区任一侧动手前，能从 INDEX.md §〇 找到本文件
-- `.cursor/rules/workspace.mdc` 末尾含指向本文件的路由条目
-- `cross_chat_pending_registry` 内出现明确的 `[Cursor → Codex]` / `[Codex → Cursor]` 标签
-- `protocol_snapshot_p4` 的 cs_parity 行只由 Cursor 工作区编辑（Codex 侧检查不修改）
+### §3.1 共享 SSOT（两边都读）
+
+- `.cursor/memory/INDEX.md`：路由真相源
+- `.cursor/memory/architecture/protocol_snapshot_p4.md`：协议 SSOT
+- `.cursor/memory/architecture/Interface/INDEX.md`：接口分类骨架
+- `.cursor/memory/architecture/user_ideas_and_backend_capability_brief_20260509.md`：用户 idea + 后端能力 + 三大真连接现状
+- `.cursor/memory/architecture/cross_chat_pending_registry_20260507.md`：跨 chat 待办（双向写）
+- `.cursor/memory/lore/ideas.md`：user 自管设计灵感（AI **只读**，从不改）
+
+### §3.2 Codex 自主探索
+
+Codex 启动新任务时**不需要等 Cursor 喂资料**。建议自检流程：
+
+1. 读 `.cursor/memory/INDEX.md` 找入口
+2. 读 `architecture/user_ideas_and_backend_capability_brief_20260509.md` 摸 user 当前意图
+3. 按任务相关性回查 `Interface/INDEX.md` / `dsg/workspace_index.md` / `ar_workspace_index.md`
+4. 按需读 `.cursor/skills/**`（AR Foundation / LiveKit Unity / Graphiti / DSG / py-trees / nanobot 等）
+5. `rg` 关键字摸源码现状
+
+### §3.3 跨工作区协调（可选 / 异步）
+
+不强制走 registry。需要异步交接时可写 `cross_chat_pending_registry_20260507.md` 加一行（自由格式即可），方便另一侧 IDE 下次启动时看到。
+
+---
+
+## §4 反模式（仍然禁止）
+
+- ❌ 改 `src/parrot/**` 公开签名 / 协议字段 / Phase 4 §8 锁，**不写理由 commit msg**（违反 H1）
+- ❌ 在 `.cursor/memory/lore/ideas.md` 写任何东西（user 自管区）
+- ❌ 让 LLM 自动改 `.cursor/memory/INDEX.md` 的"四轴速查 / 关键约束"未经 user 确认
+- ❌ 凭空生造协议字段 / enum 项**不引用任何 ADR / 不写理由**（之前 BigIssue.md 协议污染复盘的根因）
+- ❌ 不通过 `Interface/INDEX.md §2` 4 字段业务模板就贴大量代码声称是"业务接口"（v0 教训）
+
+---
+
+## §5 验收信号
+
+- 两侧 chat 启动前都能从 INDEX.md §〇 找到本文
+- `.cursor/rules/workspace.mdc` §10 含本文链接
+- 改协议 / 核心接口的 commit 都能 grep 到一句以上"理由"
+- `cross_chat_pending_registry` 不再出现强制性的 `[必须先 Cursor]` / `[必须先 Codex]` 标签——只剩可选异步登记
+
+---
+
+## §6 历史
+
+- 2026-05-09 初版：硬边界版（"Codex 不能产生新协议字段"）
+- 2026-05-09 当日修订：改为软分工建议 + 2 条硬规则。原因：单人开发现实，硬边界拖慢同一人在两 IDE 之间切换的实际工作流；改协议须注明理由是更朴素也更可执行的纪律。

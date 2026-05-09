@@ -419,4 +419,4 @@ ai_audience: "DSG L2-A 注意力分配 / L2-B 衰减与抑制 / 全局拓扑管�
 - Naito 2009: https://www.researchgate.net/publication/26262587
 - Sickafus TRIZ Heuristics: 案例.md §[26]
 - ASD/MDD：案例.md §[29] §[30]
-- 案例总文件：`NewZone/RustworkX 图模拟研究案例.md`
+- 案例总文件：原 `NewZone/RustworkX 图模拟研究案例.md` 2026-05-09 删除；案例索引已入 `.cursor/skills/dsg-rustworkx-master/SKILL.md` §3.5

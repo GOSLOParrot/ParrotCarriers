@@ -19,7 +19,7 @@
 > **接口入场必读**: ⭐ `architecture/Interface/INDEX.md`（核心/业务分类骨架，避免"复印仓库"）+ `backend_interface_refinement_20260507.md`（Brain Core SSOT）
 > **DSG 系列设计 chat 入场必读**: `architecture/dsg/workspace_index.md` → `dsg_current_state_distilled.md`（与 AR 工作区对位）
 > **跨 chat master**: ⭐ `architecture/cross_chat_pending_registry_20260507.md`（统一 TODO + NEED 登记表）+ ⭐ `architecture/app_completion_master_audit_20260507.md`（8 场景对账 + 像素画 UI 资产清单）
-> **第二前端工作区**（Codex + Unity MCP）入场必读: `architecture/frontend_workspace_boundary.md`（与 Cursor 的边界条款 + mermaid 拓扑）
+> **第二前端工作区**（Codex + Unity MCP）入场必读: `architecture/frontend_workspace_boundary.md`（**单人项目无硬边界**：仅 2 条硬规则——改核心接口/协议须注明理由 + 新增 memory 文档须登记 INDEX）
 > **三新 chat 待开 launch prompt**: `architecture/chat_launches/{obsidian_realconnect, web_console, figma_ui_assets_landing}_launch_20260509.md`
 > **历史 Sprint 0-4 归档**: `docs/sprint_archive/INDEX.md`（按时间线 / 按 sprint / 按文件类型 三轴聚合，~48 份；不读正文）
 
@@ -35,7 +35,7 @@
 | 8 | `.cursor/memory/architecture/dsg/workspace_index.md` | **DSG 工作区入口** — DSG 系列设计 chat 单一入场点；与 AR 工作区对位 |
 | 9 | ⭐ `.cursor/memory/architecture/cross_chat_pending_registry_20260507.md` | **跨 chat 待办登记表（master）** — 任何下游 chat 入场前先读 §5 找自己的标签清单 |
 | 10 | ⭐ `.cursor/memory/architecture/app_completion_master_audit_20260507.md` | **App 完成度总 chat 主 doc** — 8 场景对账 + 像素画 UI 资产清单 |
-| 11 | `.cursor/memory/architecture/frontend_workspace_boundary.md` | 第二前端工作区（Codex+Unity MCP）边界条款 + 拓扑图（2026-05-09） |
+| 11 | `.cursor/memory/architecture/frontend_workspace_boundary.md` | 第二前端工作区（Codex+Unity MCP）分工建议 + 2 条硬规则（改协议须注明理由 / 新文档须登记）；2026-05-09 软化版 |
 | 12 | `.cursor/memory/architecture/chat_launches/` | 三新 chat 待开 launch prompts（Obsidian / Web 控制台 / Figma UI 资产） |
 | 13 | ⭐ `.cursor/memory/architecture/user_ideas_and_backend_capability_brief_20260509.md` | **用户 idea 原话 + 后端能力清单 + L1.5→L2-B Ref 化总目标 + 三大真连接（Obsidian/照片/Google 日程）现状对账** — 给 Web/AR/2D 工作区设计 chat 当能力锚点 |
 | — | `docs/sprint_archive/INDEX.md` | Sprint 0-4 归档清单（**不读正文**，仅做考古追溯） |
@@ -75,7 +75,7 @@
 | `architecture/Interface/interface_design_and_how_todo_v0_20260507.md` | （已 superseded → Interface/INDEX.md）12 场景接口栈穷举主表，留作场景清单参考 |
 | `architecture/Interface/interface_design_supplement_20260507.md` | （已 superseded → Interface/INDEX.md）v0 之外 7 项新发现 |
 | `architecture/backend_interface_refinement_20260507.md` | **Brain Core 接口 SSOT** — Persona / Menu / Preset / IntentWorkspace / L2-B baseline 实测公开接口 |
-| `architecture/frontend_workspace_boundary.md` | 第二前端工作区（Codex+Unity MCP）边界条款 + mermaid 拓扑（2026-05-09 新建） |
+| `architecture/frontend_workspace_boundary.md` | 第二前端工作区分工建议 + 2 条硬规则（2026-05-09 软化为单人项目协作备忘） |
 | `architecture/chat_launches/obsidian_realconnect_launch_20260509.md` | 待开 chat：后端 ↔ Obsidian 真连接 launch prompt |
 | `architecture/chat_launches/web_console_launch_20260509.md` | 待开 chat：Web 控制台 read-only 优先 launch prompt |
 | `architecture/chat_launches/figma_ui_assets_landing_launch_20260509.md` | 待开 chat：Figma UI 资产入工作区 launch prompt |
@@ -126,10 +126,7 @@
 | `docs/references/skill_seekers_output/` | SDK / 库的源文档蒸馏结果 (LiveKit / Graphiti / SVA / Nanobot). 供 skill 文件引用 |
 | `docs/sprint4_research/` | Phase 3 调研产物（task1-6 + result 1-5） |
 | `docs/test/p2_5/` | 人手验收矩阵 + Remote Cursor 提示词 |
-| `NewZone/distill_output/dsg/` | **DSG 蒸馏素材池**（2026-05-06 新增）— ConceptGraph / RustworkX docs+repo / SuperLocalMemory 4 份 Gemini 蒸馏。**不进 `.cursor/skills/`**（避免上下文污染）；按需 @ 引用 |
-| `NewZone/distill_output/dsg_l2b_org_raw/` | **DSG L2-B 组织专题素材池**（2026-05-06 新增）— HippoRAG / AriGraph 2 份 Gemini 蒸馏 |
-| `NewZone/skill_distill_bundle/` | 6 份 focus 配置（重新蒸馏用）|
-| `NewZone/RustworkX 图模拟研究案例.md` | RustworkX 仿生研究案例综述（§119-§122 仿生 4 范式）|
+| ~~`NewZone/`~~ | **2026-05-09 物理删除**：原蒸馏素材池（ConceptGraph / RustworkX / SLM / HippoRAG / AriGraph + 案例研究综述）已全部蒸馏入 `.cursor/skills/dsg-l1-5-l2a-conceptgraph-distilled/` + `dsg-rustworkx-master/` + `dsg-l2b-node-organization-options/` + `dsg-attention-schema-papers/` 4 份 SKILL，原始素材冗余移除 |
 
 ### 1.6 Skills（DSG 系列 — 2026-05-06 新增 4 个）
 
@@ -317,7 +314,7 @@ Castle 进程布局:
 | 接口分类骨架 | `architecture/Interface/INDEX.md` |
 | 功能需求 + 决策 | `requirements.md` |
 | 鹦鹉行为规则 | `parrot_behavior_rules.md` |
-| 第二前端工作区边界 | `architecture/frontend_workspace_boundary.md` |
+| 第二前端工作区分工 | `architecture/frontend_workspace_boundary.md` |
 | Sprint 0-4 历史归档 | `docs/sprint_archive/INDEX.md` |
 
 ---
@@ -374,7 +371,7 @@ Castle 进程布局:
 
 | 文件 | 角色 |
 |:--|:--|
-| `architecture/frontend_workspace_boundary.md` | Cursor vs Codex+Unity MCP 第二前端工作区边界 + 拓扑 |
+| `architecture/frontend_workspace_boundary.md` | Cursor vs Codex+Unity MCP 第二前端工作区分工建议（软规则） |
 | `.cursor/rules/workspace.mdc` | 全局路由 alwaysApply |
 | `architecture/ar_workspace_index.md` | AR 工作区聚合入口 |
 | `architecture/dsg/workspace_index.md` | DSG 工作区聚合入口 |

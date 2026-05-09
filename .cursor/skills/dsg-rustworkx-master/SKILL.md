@@ -10,15 +10,14 @@ related_skills:
   - "dsg-attention-schema-papers (注意力 / 图式 / 自动加工 / 临床脑图谱 / 记忆理论论文索引)"
   - "dsg-l2b-node-organization-options (L2-B Node 组织方式选项清单)"
   - "graphiti (已用 — Graphiti GraphRAG 接入)"
-related_distill_outputs:
-  - "NewZone/distill_output/dsg/concept-graphs (Gemini 蒸馏，ConceptGraph 仓库)"
-  - "NewZone/distill_output/dsg/rustworkx-docs (Gemini 蒸馏，rustworkx.org 官方文档子集)"
-  - "NewZone/distill_output/dsg/rustworkx-repo (Gemini 蒸馏，rustworkx 全仓库)"
-  - "NewZone/distill_output/dsg/superlocalmemory (Gemini 蒸馏，SLM 仓库)"
-  - "NewZone/distill_output/dsg_l2b_org_raw/HippoRAG (Gemini 蒸馏，海马索引 RAG)"
-  - "NewZone/distill_output/dsg_l2b_org_raw/AriGraph (Gemini 蒸馏，episodic+semantic 双类节点)"
-related_research_doc:
-  - "NewZone/RustworkX 图模拟研究案例.md (案例研究综述)"
+related_distill_outputs_archived:
+  # 2026-05-09 NewZone/ 原始蒸馏素材已物理删除；蒸馏精华已入本 SKILL 与同系列 dsg-* SKILL 正文
+  - "ConceptGraph 仓库 → .cursor/skills/dsg-l1-5-l2a-conceptgraph-distilled/SKILL.md"
+  - "rustworkx-docs / rustworkx-repo → 本 SKILL §3 / §4"
+  - "superlocalmemory → .cursor/skills/dsg-l2b-node-organization-options/SKILL.md §6"
+  - "HippoRAG / AriGraph → .cursor/skills/dsg-l2b-node-organization-options/SKILL.md §354-§355"
+related_research_doc_archived:
+  - "RustworkX 图模拟研究案例.md（§119-§122 仿生 4 范式）→ 本 SKILL §3.5 + §394 索引"
 related_papers:
   - "rustworkx: A High-Performance Graph Library for Python, arXiv:2110.15221"
   - "见 dsg-attention-schema-papers SKILL §1–§4 的完整论文索引"
@@ -64,7 +63,7 @@ related_papers:
 | 看 vf2_mapping 怎么用 | `rustworkx-repo` Gemini SKILL §5（含 node_matcher 例子） |
 | 看 PyO3 / GIL 释放细节 | `rustworkx-repo` Gemini SKILL §B + 本 SKILL §2.2 |
 | 看大厂仓库怎么用 RustworkX 做记忆图 | `superlocalmemory` Gemini SKILL（实战） |
-| 看图模拟仿生范式总结 | `NewZone/RustworkX 图模拟研究案例.md` §119–§122 |
+| 看图模拟仿生范式总结 | 本 SKILL §3.5（原 `NewZone/RustworkX 图模拟研究案例.md` §119–§122 已蒸馏入本 SKILL，原文 2026-05-09 删除） |
 
 ### 0.3 按问题域路由
 
@@ -391,4 +390,4 @@ DSG 含义：每帧的多个 detection 应**累积一帧后批量入图**，不�
 | GAT / DySAT 论文摘要 | `dsg-attention-schema-papers` §1 |
 | Schema Theory 摘要 | `dsg-attention-schema-papers` §2 |
 | SLM 实操命令 | `superlocalmemory` Gemini SKILL "Quick Reference" |
-| 案例.md 全文叙事 | `NewZone/RustworkX 图模拟研究案例.md` |
+| 案例.md 全文叙事 | 已蒸馏入本 SKILL §3.5（原文 `NewZone/RustworkX 图模拟研究案例.md` 2026-05-09 删除） |

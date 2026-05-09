@@ -39,7 +39,7 @@ related:
 
 ## §3 锁（不可动）
 
-- 资产摆放属于 Codex+Unity MCP 工作区职责（详见 `frontend_workspace_boundary.md` §2.2 + §2.4）
+- 资产摆放偏好放 Codex+Unity MCP 工作区做（IDE 内可直接看 Editor 渲染；详见 `frontend_workspace_boundary.md` §2.2）；如改协议字段须按 §1 H1 写理由
 - **不动**协议字段（资产入仓不涉及 wire；菜单 RPC 在 `backend_interface_refinement_20260507` 已 ratified）
 - 像素画资产清单的 9 大类 + 30+ 子项以 `app_completion_master_audit §6` 为准；新增类别**先在 user 确认下追加到该清单**再入仓
 
@@ -68,18 +68,17 @@ related:
 执行 Figma UI 资产入仓 + Scene wiring 任务（Codex+Unity MCP 工作区主导）。
 
 入场顺序：
-1. 读本 launch prompt 全文 + §2 三份输入（特别注意 frontend_workspace_boundary.md §2.2 §2.4 边界条款）
+1. 读本 launch prompt 全文 + §2 三份输入（含 frontend_workspace_boundary.md §1 硬规则 + §2 分工建议）
 2. 列已就绪资产 + 待补资产清单，与 user 确认
 3. 在 unity/ArSpike/Assets/UI/ 创建子目录树
 4. 写 README + 追加菜单 SSOT 资产路径约定
 5. 把第一批资产摆进 Scene + Inspector wire
-6. 全程不动 protocol_snapshot_p4 / Brain Core 接口；如发现 RPC 缺失，在 cross_chat_pending_registry 写 NEED 后切 Cursor 工作区处理
+6. 如需新增 RPC / 协议字段，按 frontend_workspace_boundary.md §1 H1 — 直接改也行，但 commit msg 要写清理由 + 同步 protocol_snapshot_p4 cs_parity 表（无须切回 Cursor 工作区）
 ```
 
-## §7 与 Cursor 工作区的协同
+## §7 与 Cursor 工作区的协同（可选 / 异步）
 
-按 [`../frontend_workspace_boundary.md`](../frontend_workspace_boundary.md) §3.1 流程：
+按 [`../frontend_workspace_boundary.md`](../frontend_workspace_boundary.md) §3.3 — 单人项目无强制交接流程。可选做法：
 
-- Codex 摆资产 + Scene wiring → 完成后在 `cross_chat_pending_registry` 加一行 `[Codex → Cursor] Interface/menu_design_complete §资产路径约定 已追加，请审核`
-- Cursor 审核 + 同步到 `Interface/menu_design_complete_20260507.md`
-- Cursor 在 INDEX.md §六 Design 列内出现新资产路径条目（如有需要）
+- Codex 完成资产摆放 + Scene wiring → 直接在同一 chat 内更新 `Interface/menu_design_complete_20260507.md` 资产路径约定 + 在 `INDEX.md §六 Design` 列加新条目；commit msg 注明改了 menu_design_complete
+- 异步协调时（下次切回 Cursor 想确认进度）：在 `cross_chat_pending_registry` 加一行 `[Codex → 全局] 资产路径约定已落 Interface/menu_design_complete §X，请审`

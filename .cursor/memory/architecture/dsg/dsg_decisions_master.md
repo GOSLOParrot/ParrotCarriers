@@ -328,15 +328,15 @@ nanobot 闲时 / 夜间空闲时:
 - [graphiti](../../../skills/graphiti/SKILL.md) — Graphiti 客户端
 - [py-trees](../../../skills/py-trees/SKILL.md) — 行为树（Scheduler 用）
 
-### 9.3 蒸馏素材池（不进 .cursor/skills/，避免上下文污染）
+### 9.3 ~~蒸馏素材池~~ → 已入 dsg-* skill（2026-05-09 物理删除）
 
-- `NewZone/distill_output/dsg/concept-graphs/` — ConceptGraph 仓库 Gemini 蒸馏
-- `NewZone/distill_output/dsg/rustworkx-docs/` — rustworkx.org 官方文档
-- `NewZone/distill_output/dsg/rustworkx-repo/` — rustworkx 全仓库
-- `NewZone/distill_output/dsg/superlocalmemory/` — SLM 9 层架构 + TWF 衰减
-- `NewZone/distill_output/dsg_l2b_org_raw/HippoRAG/` — 海马索引 RAG（NeurIPS'24）
-- `NewZone/distill_output/dsg_l2b_org_raw/AriGraph/` — episodic+semantic 双类节点
-- `NewZone/RustworkX 图模拟研究案例.md` — 案例研究综述（§119-§122 仿生 4 范式）
+> 原 NewZone/ 蒸馏素材池已**全部冗余删除**；蒸馏精华已入 4 个 dsg-* skill。
+
+- ConceptGraph 仓库 → [`.cursor/skills/dsg-l1-5-l2a-conceptgraph-distilled/SKILL.md`](../../../skills/dsg-l1-5-l2a-conceptgraph-distilled/SKILL.md)
+- rustworkx-docs / rustworkx-repo → [`.cursor/skills/dsg-rustworkx-master/SKILL.md`](../../../skills/dsg-rustworkx-master/SKILL.md)
+- superlocalmemory（SLM 9 层 + TWF 衰减）→ [`.cursor/skills/dsg-l2b-node-organization-options/SKILL.md`](../../../skills/dsg-l2b-node-organization-options/SKILL.md) §1.5 + §6
+- HippoRAG / AriGraph → [`.cursor/skills/dsg-l2b-node-organization-options/SKILL.md`](../../../skills/dsg-l2b-node-organization-options/SKILL.md) §6
+- RustworkX 图模拟研究案例（§119-§122 仿生 4 范式）→ [`.cursor/skills/dsg-rustworkx-master/SKILL.md`](../../../skills/dsg-rustworkx-master/SKILL.md) §3.5
 
 ### 9.4 行为契约 / 既有约束
 

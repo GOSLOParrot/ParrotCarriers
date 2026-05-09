@@ -1,7 +1,7 @@
 ---
 status: ratified
 category: workspace-snapshot
-status_note: "DSG 工作区聚合入口 — 把分散在 architecture/ / .cursor/skills/ / docs/InfoCollections/Opus / NewZone/distill_output / src/parrot/dsg/ 的 DSG 设计、决策、调研归到一处。新增 DSG 相关产物时，先在这里登记一行，再决定是否进 INDEX 主表。建立目的是给 DSG 系列设计 chat 当 SSOT 入口（参考 ar_workspace_index.md 模式）。2026-05-06 增补：决策总表 dsg_decisions_master.md + 4 新 DSG skill + NewZone 蒸馏素材池 + LineB 完成报告。"
+status_note: "DSG 工作区聚合入口 — 把分散在 architecture/ / .cursor/skills/ / docs/InfoCollections/Opus / src/parrot/dsg/ 的 DSG 设计、决策、调研归到一处。新增 DSG 相关产物时，先在这里登记一行，再决定是否进 INDEX 主表。建立目的是给 DSG 系列设计 chat 当 SSOT 入口（参考 ar_workspace_index.md 模式）。2026-05-06 增补：决策总表 dsg_decisions_master.md + 4 新 DSG skill + LineB 完成报告。2026-05-09 NewZone 蒸馏素材池物理删除（内容已入 4 个 dsg-* skill）。"
 last_reviewed: 2026-05-06
 ai_priority: high
 ai_audience: "DSG 系列设计 chat（L1.5 池设计 / 状态生命周期差异化 / L2-B 简单升级 / Phase 5+ A10 接入）入场必读"
@@ -106,20 +106,18 @@ open_questions_for_design_chat.md (回答 deferred-to-design 项)
 | `dsg-attention-schema-papers` | 13 篇论文索引（GAT / DySAT / AGCN / G-HAM / Schema / Hippocampal Indexing / Spreading Activation / CLS / Tulving / ASD/MDD 健康度）| [`.cursor/skills/dsg-attention-schema-papers/SKILL.md`](../../../skills/dsg-attention-schema-papers/SKILL.md) §0 路由表 |
 | `dsg-l1-5-l2a-conceptgraph-distilled` | A10 入口门控 + L2-A 语义抽象（A10 Phase 5+ 接入参考）| [`.cursor/skills/dsg-l1-5-l2a-conceptgraph-distilled/SKILL.md`](../../../skills/dsg-l1-5-l2a-conceptgraph-distilled/SKILL.md) §1-§4 |
 
-### 2.5 NewZone 蒸馏素材池（不进 .cursor/skills/，避免上下文污染）
+### 2.5 ~~NewZone 蒸馏素材池~~ → 已全部入 dsg-* skill（2026-05-09 物理删除）
 
-> 6 份 Gemini 蒸馏产出 + 1 份案例研究综述 + 1 份原始派出 spec。**深读**素材，按需 @ 引用，不自动加载。
+> 原 6 份 Gemini 蒸馏产出 + 1 份案例研究综述 + skill_distill_bundle focus 配置已**冗余删除**。蒸馏内容已完整入 4 个 dsg-* skill 的正文 / §0 路由表 / 案例索引中，下面是替代路径：
 
-| 路径 | 蒸馏对象 |
+| 原 NewZone 路径 | 现替代位置 |
 |:--|:--|
-| `NewZone/distill_output/dsg/concept-graphs/` | concept-graphs/concept-graphs 仓库（A10 入口 + L2-A）|
-| `NewZone/distill_output/dsg/rustworkx-docs/` | rustworkx.org 官方文档子集 |
-| `NewZone/distill_output/dsg/rustworkx-repo/` | Qiskit/rustworkx 全仓库（含 PyO3 / GIL） |
-| `NewZone/distill_output/dsg/superlocalmemory/` | qualixar/superlocalmemory（9 层 + TWF 衰减）|
-| `NewZone/distill_output/dsg_l2b_org_raw/HippoRAG/` | OSU-NLP-Group/HippoRAG（NeurIPS'24）|
-| `NewZone/distill_output/dsg_l2b_org_raw/AriGraph/` | AIRI-Institute/AriGraph |
-| `NewZone/RustworkX 图模拟研究案例.md` | 案例研究综述（§119-§122 仿生 4 范式）|
-| `NewZone/skill_distill_bundle/` | 6 份 focus 配置（重新蒸馏用）|
+| `NewZone/distill_output/dsg/concept-graphs/` | [`.cursor/skills/dsg-l1-5-l2a-conceptgraph-distilled/SKILL.md`](../../../skills/dsg-l1-5-l2a-conceptgraph-distilled/SKILL.md) |
+| `NewZone/distill_output/dsg/rustworkx-docs/` + `rustworkx-repo/` | [`.cursor/skills/dsg-rustworkx-master/SKILL.md`](../../../skills/dsg-rustworkx-master/SKILL.md) §3 / §4 |
+| `NewZone/distill_output/dsg/superlocalmemory/` | [`.cursor/skills/dsg-l2b-node-organization-options/SKILL.md`](../../../skills/dsg-l2b-node-organization-options/SKILL.md) §6 SLM E 选项 + §144 行 |
+| `NewZone/distill_output/dsg_l2b_org_raw/HippoRAG/` + `AriGraph/` | [`.cursor/skills/dsg-l2b-node-organization-options/SKILL.md`](../../../skills/dsg-l2b-node-organization-options/SKILL.md) §354–§355 |
+| `NewZone/RustworkX 图模拟研究案例.md`（§119–§122 仿生 4 范式） | [`.cursor/skills/dsg-rustworkx-master/SKILL.md`](../../../skills/dsg-rustworkx-master/SKILL.md) §3.5 + §394 行索引 |
+| `NewZone/skill_distill_bundle/` focus 配置 | 历史用途已过；如需重新蒸馏请新建 skill_seekers focus |
 
 ### 2.6 Sprint 4 Phase 5+ Line B 完成报告
 
@@ -200,7 +198,7 @@ open_questions_for_design_chat.md (回答 deferred-to-design 项)
 
 | 派发 chat | 入场必读 | 输出位置 |
 |:--|:--|:--|
-| **Chat 2** L1.5 预加载 Node 池 + 状态生命周期设计（除 A10 入口）+ L2-B 简单升级 + L1.5 ↔ L2 适配 | 本工作区 5 份（master 优先）+ 4 个新 DSG skill（按 dsg-rustworkx-master §0 路由）+ ADR-L1.5-001 + Phase 4 §8 + 按需 NewZone 蒸馏素材池 | `architecture/dsg/dsg_l1_5_pool_and_lifecycle_design_<date>.md`（建议进 dsg/ 子目录） |
+| **Chat 2** L1.5 预加载 Node 池 + 状态生命周期设计（除 A10 入口）+ L2-B 简单升级 + L1.5 ↔ L2 适配 | 本工作区 5 份（master 优先）+ 4 个新 DSG skill（按 dsg-rustworkx-master §0 路由）+ ADR-L1.5-001 + Phase 4 §8（原"按需 NewZone 蒸馏素材池"已蒸馏入 4 个 dsg-* skill） | `architecture/dsg/dsg_l1_5_pool_and_lifecycle_design_<date>.md`（建议进 dsg/ 子目录） |
 | **后续实施 chat** | Chat 2 设计稿 + 本工作区 §9 锁 | `src/parrot/dsg/` + `tests/test_dsg/` |
 | **独立审计 chat** | Chat 2 设计稿 + 实施 commit + 本工作区 + ADR-L1.5-001 §4.1 | `architecture/audit_dsg_l1_5_<date>.md` |
 

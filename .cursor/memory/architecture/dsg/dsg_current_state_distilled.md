@@ -534,15 +534,9 @@ A10 入口门控（视觉门控 / IoU / CLIP / ReID / 跨帧关联 / L2-A 节点
 - [.cursor/skills/dsg-attention-schema-papers/SKILL.md](../../../skills/dsg-attention-schema-papers/SKILL.md) — 13 篇论文索引（GAT/DySAT/AGCN/G-HAM/Schema/Hippocampal Indexing/Spreading Activation 等）
 - [.cursor/skills/dsg-l1-5-l2a-conceptgraph-distilled/SKILL.md](../../../skills/dsg-l1-5-l2a-conceptgraph-distilled/SKILL.md) — A10 入口 + L2-A 蒸馏
 
-### §10.4b 蒸馏素材池（不进 .cursor/skills/，避免上下文污染）
+### §10.4b ~~蒸馏素材池~~ → 已入 dsg-* skill（2026-05-09 物理删除）
 
-- `NewZone/distill_output/dsg/concept-graphs/` — ConceptGraph Gemini 蒸馏
-- `NewZone/distill_output/dsg/rustworkx-docs/` — rustworkx.org 官方文档子集
-- `NewZone/distill_output/dsg/rustworkx-repo/` — rustworkx 全仓库
-- `NewZone/distill_output/dsg/superlocalmemory/` — SLM 9 层 + TWF 衰减
-- `NewZone/distill_output/dsg_l2b_org_raw/HippoRAG/` — 海马索引 RAG（NeurIPS'24）
-- `NewZone/distill_output/dsg_l2b_org_raw/AriGraph/` — episodic + semantic 双类节点
-- `NewZone/RustworkX 图模拟研究案例.md` — 案例研究综述（§119-§122 仿生 4 范式）
+> 原 NewZone/ 蒸馏素材池已**全部冗余删除**；蒸馏精华已入 4 个 dsg-* skill（详见 `dsg_decisions_master.md §9.3` 替代路径表）。
 
 ### §10.5 行为契约
 
@@ -609,7 +603,7 @@ A10 入口门控（视觉门控 / IoU / CLIP / ReID / 跨帧关联 / L2-A 节点
 
 - Ingest 层是**唯一**让外部观察变成 L2-B SemanticNode 的关卡（preload 例外）
 - 三层门控**不允许跨层短路**（L1.5 不能直接调 L2-B 内部接口；A10 不能直接写 L2-B）
-- 跳数硬上界 4 跳（[dsg-rustworkx-master §3.5](../../../skills/dsg-rustworkx-master/SKILL.md)）；任何"全图遍历"反模式禁止（[案例.md §122](../../../../NewZone/RustworkX 图模拟研究案例.md)）
+- 跳数硬上界 4 跳（[dsg-rustworkx-master §3.5](../../../skills/dsg-rustworkx-master/SKILL.md)）；任何"全图遍历"反模式禁止（详见 [dsg-rustworkx-master §3.5](../../../skills/dsg-rustworkx-master/SKILL.md) — 原 `NewZone/RustworkX 图模拟研究案例.md §122` 已删除）
 
 ---
 
