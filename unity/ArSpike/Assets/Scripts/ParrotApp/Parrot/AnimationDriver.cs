@@ -56,7 +56,7 @@ namespace ParrotApp.Parrot
     {
         // ─── 枚举 ────────────────────────────────────────────────────────
 
-        public enum BodyState { Idle, HeadBob, Fly, Perch, PerchedOnHand, Dance, Sit }
+        public enum BodyState { Idle, HeadBob, Fly, Perch, PerchedOnHand, Dance, Sit, Walk }
         public enum HeadState { Forward, LookAt, Tilt, Nod }
 
         /// <summary>
@@ -260,6 +260,7 @@ namespace ParrotApp.Parrot
                 case BodyState.PerchedOnHand: UpdatePerchedOnHand(); break;
                 case BodyState.Dance:         UpdateDance();         break;
                 case BodyState.Sit:           UpdateSit();           break;
+                case BodyState.Walk:          UpdateWalk();          break;
             }
 
             // Head overlay 和 Dance 各自管头部，Dance 跳过 overlay
@@ -274,6 +275,41 @@ namespace ParrotApp.Parrot
             _flyTarget = target;
             _isFlying  = true;
             SetState(BodyState.Fly);
+        }
+
+        public void WalkOnPlane(Vector2 input, float deltaTime, float walkSpeed, float turnSpeed)
+        {
+            if (CurrentState == BodyState.Fly || CurrentState == BodyState.PerchedOnHand)
+                return;
+
+            Vector2 clamped = Vector2.ClampMagnitude(input, 1f);
+            if (clamped.sqrMagnitude < 0.01f)
+            {
+                EndPlaneWalk();
+                return;
+            }
+
+            if (CurrentState != BodyState.Walk)
+                SetState(BodyState.Walk);
+
+            Vector3 direction = new Vector3(clamped.x, 0f, clamped.y);
+            transform.position += direction * (walkSpeed * deltaTime);
+            _basePosition = transform.localPosition;
+
+            if (direction.sqrMagnitude > 0.0001f)
+            {
+                transform.rotation = Quaternion.Slerp(
+                    transform.rotation,
+                    Quaternion.LookRotation(direction, Vector3.up),
+                    turnSpeed * deltaTime);
+                _baseRotation = transform.localRotation;
+            }
+        }
+
+        public void EndPlaneWalk()
+        {
+            if (CurrentState == BodyState.Walk)
+                SetState(BodyState.Idle);
         }
 
         public void SetState(BodyState state)
@@ -328,6 +364,8 @@ namespace ParrotApp.Parrot
                 case "dancing":         SetState(BodyState.Dance);         break;
                 case "sit":
                 case "sitting":         SetState(BodyState.Sit);           break;
+                case "walk":
+                case "walking":         SetState(BodyState.Walk);          break;
                 default:
                     Debug.LogWarning($"[AnimationDriver] Unknown body_state: '{bodyState}' — staying {CurrentState}");
                     break;
@@ -366,6 +404,7 @@ namespace ParrotApp.Parrot
                 case BodyState.PerchedOnHand: return "perched_on_hand";
                 case BodyState.Dance:         return "dancing";
                 case BodyState.Sit:           return "idle";
+                case BodyState.Walk:          return "walking";
                 default:                      return "idle";
             }
         }
@@ -638,6 +677,46 @@ namespace ParrotApp.Parrot
                     5f * Time.deltaTime);
 
             ResetBodyToBase(4f);
+        }
+
+        private void UpdateWalk()
+        {
+            float phase = _stateTimer * Mathf.PI * 2.7f;
+            float bob = Mathf.Abs(Mathf.Sin(phase)) * 0.018f;
+            transform.localPosition = Vector3.Lerp(
+                transform.localPosition,
+                _basePosition + new Vector3(0f, bob, 0f),
+                10f * Time.deltaTime);
+
+            if (_bodyTransform != null)
+            {
+                float sway = Mathf.Sin(phase) * 4f;
+                _bodyTransform.localRotation = Quaternion.Slerp(
+                    _bodyTransform.localRotation,
+                    _bodyBaseRot * Quaternion.Euler(0f, 0f, sway),
+                    9f * Time.deltaTime);
+            }
+
+            if (_leftLegTransform != null && _rightLegTransform != null)
+            {
+                float step = Mathf.Sin(phase) * 18f;
+                _leftLegTransform.localRotation = Quaternion.Slerp(
+                    _leftLegTransform.localRotation,
+                    _leftLegBaseRot * Quaternion.Euler(step, 0f, 0f),
+                    12f * Time.deltaTime);
+                _rightLegTransform.localRotation = Quaternion.Slerp(
+                    _rightLegTransform.localRotation,
+                    _rightLegBaseRot * Quaternion.Euler(-step, 0f, 0f),
+                    12f * Time.deltaTime);
+            }
+
+            SetWings(-6f);
+
+            if (_tailTransform != null)
+            {
+                float tail = Mathf.Sin(phase * 0.5f) * 10f;
+                _tailTransform.localRotation = _tailBaseRot * Quaternion.Euler(0f, tail, 0f);
+            }
         }
 
         // ─── Head Overlay ────────────────────────────────────────────────

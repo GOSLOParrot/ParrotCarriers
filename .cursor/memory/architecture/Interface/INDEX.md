@@ -193,3 +193,6 @@ related:
 5. 写字段 D 完成判据
 6. 进入业务实施 / chat 内代码实现
 7. **如字段 C 非空** → 不在本 chat 动手；fork 子 chat 走 protocol upgrade 流程
+## 2026-05-10 App V1 Follow-up Audit Entry
+
+- [`app_v1_arspike_realdevice_nanobot_xrhand_audit_20260510.md`](app_v1_arspike_realdevice_nanobot_xrhand_audit_20260510.md): ArSpike real-device prep, Nanobot paper drag/drop/trash/workdesk state, parrot joystick walk, and XRHand package/define blockers.

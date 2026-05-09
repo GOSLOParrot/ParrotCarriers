@@ -32,6 +32,41 @@
       "fallback": "paper-colored workdesk"
     },
     {
+      "slot": "NanobotReportPaper",
+      "status": "runtime_placeholder",
+      "source": "02_ui_supplements_book_paper_wood/paper_ui/BlankNewspaper_New.png",
+      "unity": "",
+      "fallback": "PaperNote_Blank_New tinted warm gold by AppV1MetaUiController"
+    },
+    {
+      "slot": "CalendarReminderPaper",
+      "status": "runtime_placeholder",
+      "source": "02_ui_supplements_book_paper_wood/paper_ui/FilledNewspaper_Old.png",
+      "unity": "",
+      "fallback": "PaperNote_Filled_Old tinted pale blue by AppV1MetaUiController"
+    },
+    {
+      "slot": "TrashCrumpledPaper",
+      "status": "runtime_placeholder",
+      "source": "",
+      "unity": "",
+      "fallback": "three layered paper chips named TrashCrumpledPaperPlaceholder_*"
+    },
+    {
+      "slot": "OrangeCatPaw",
+      "status": "slot_only",
+      "source": "",
+      "unity": "",
+      "fallback": "not imported yet; paper slide-in animation is used instead"
+    },
+    {
+      "slot": "ParrotJoystick",
+      "status": "runtime_placeholder",
+      "source": "",
+      "unity": "",
+      "fallback": "UGUI ParrotJoystick_PlaneWalkPad and knob"
+    },
+    {
       "slot": "CameraIcon",
       "status": "placeholder",
       "source": "06_icons_and_misc/pixelwood_valley_icon_pack/Pixelwood Valley Icon Pack 1.0/1.0/Items 16x16.png",

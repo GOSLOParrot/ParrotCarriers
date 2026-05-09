@@ -15,6 +15,8 @@ namespace ParrotApp.Parrot
         [Header("Movement")]
         [SerializeField] private float moveSpeed = 3f;
         [SerializeField] private float arrivalThreshold = 0.05f;
+        [SerializeField] private float planeWalkSpeed = 0.45f;
+        [SerializeField] private float planeWalkTurnSpeed = 12f;
 
         [Header("Dev fallback (no Animator, no AnimationDriver)")]
         [SerializeField] private float devPulseScaleAmplitude = 0.35f;
@@ -27,6 +29,9 @@ namespace ParrotApp.Parrot
         private AnimationDriver _animDriver;
         private Renderer[] _renderers;
         private string _currentAnimation = "idle";
+        private bool _isPlaneWalking;
+        private Vector3 _planeWalkHomePosition;
+        private bool _hasPlaneWalkHome;
 
         private Vector3 _baseScale;
         private float _pulseTimer;
@@ -40,6 +45,8 @@ namespace ParrotApp.Parrot
             _renderers = GetComponentsInChildren<Renderer>();
             _targetPosition = transform.position;
             _baseScale = transform.localScale;
+            _planeWalkHomePosition = transform.position;
+            _hasPlaneWalkHome = true;
 
             if (_animDriver != null)
                 Debug.Log("[Parrot] AnimationDriver found — Sprint 3 procedural animation active");
@@ -144,6 +151,70 @@ namespace ParrotApp.Parrot
         public void PlayAnimation(string animationName)
         {
             PlayAnimation(animationName, modelId: "");
+        }
+
+        /// <summary>
+        /// Local App V1 joystick input for walking on a detected/assumed plane.
+        /// This remains a Unity-side reflex control: it does not create a Brain
+        /// command, does not switch Scene, and surrenders while the bird is
+        /// flying or perched on the user's hand.
+        /// </summary>
+        public void WalkOnPlane(Vector2 input, float deltaTime)
+        {
+            Vector2 clamped = Vector2.ClampMagnitude(input, 1f);
+            if (clamped.sqrMagnitude < 0.01f)
+            {
+                EndPlaneWalk();
+                return;
+            }
+
+            if (!_hasPlaneWalkHome)
+            {
+                _planeWalkHomePosition = transform.position;
+                _hasPlaneWalkHome = true;
+            }
+
+            if (_animDriver != null)
+            {
+                _animDriver.WalkOnPlane(clamped, deltaTime, planeWalkSpeed, planeWalkTurnSpeed);
+                _isPlaneWalking = _animDriver.CurrentState == AnimationDriver.BodyState.Walk;
+                return;
+            }
+
+            _isPlaneWalking = true;
+            Vector3 direction = new Vector3(clamped.x, 0f, clamped.y);
+            transform.position += direction * (planeWalkSpeed * deltaTime);
+            if (direction.sqrMagnitude > 0.0001f)
+            {
+                transform.rotation = Quaternion.Slerp(
+                    transform.rotation,
+                    Quaternion.LookRotation(direction, Vector3.up),
+                    planeWalkTurnSpeed * deltaTime);
+            }
+
+            if (_animator != null)
+            {
+                _animator.SetBool("isFlying", false);
+                _animator.SetBool("isWalking", true);
+            }
+        }
+
+        public void EndPlaneWalk()
+        {
+            if (!_isPlaneWalking && (_animDriver == null || _animDriver.CurrentState != AnimationDriver.BodyState.Walk)) return;
+            _isPlaneWalking = false;
+            if (_animDriver != null)
+            {
+                _animDriver.EndPlaneWalk();
+            }
+            if (_animator != null) _animator.SetBool("isWalking", false);
+        }
+
+        public void ReturnToPlaneWalkHome()
+        {
+            if (!_hasPlaneWalkHome) _planeWalkHomePosition = transform.position;
+            EndPlaneWalk();
+            FlyTo(_planeWalkHomePosition);
         }
 
         /// <summary>

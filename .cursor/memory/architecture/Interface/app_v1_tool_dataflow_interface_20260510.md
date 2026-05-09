@@ -149,3 +149,47 @@ Web 端职责：
 
 - Graphiti OSS 没有现成完整 dashboard；本轮做轻量管理壳。
 - L2-B 在控制台里 read-only，避免测试页变成新写入口。
+## 7. 2026-05-10 addendum: paper-note drag state and parrot plane-walk
+
+Startup research checked before implementation:
+
+- `.cursor/memory/lore/ideas.md`: mobile App keeps lightweight 2D paper-note interactions; complex memory/Graphiti management stays in the Web console.
+- `.cursor/memory/requirements.md`: C8/C9 cover XRHand reflex, C11 explicitly names plane walking.
+- `.cursor/memory/parrot_behavior_rules.md`: index-middle perch and return-to-default are local reflexes; body animation remains independent from Brain cognition.
+- Current code audit: `HandGestureSource`, `PerchOnHand`, `ParrotController`, `AnimationDriver`, and `AppV1MetaUiController`.
+
+Paper-note state machine:
+
+| State | Entry | Visual | Storage / data owner | Exit |
+|:--|:--|:--|:--|:--|
+| `inbox` | Nanobot/calendar/system creates a note | paper note stack, selectable white outline | Unity local list for smoke; real payload is IntentWorkspace ref via facade | drag to trash/workdesk, accept/dismiss/archive in workdesk |
+| `selected` | tap/drag/scroll on paper | white outline + right-side wiggling trash/workdesk targets | no new backend write | release over target or tap another tool |
+| `trash` | release over `PaperDropTarget_Trash` | crumpled-paper placeholder target; note state shows `trash` | Unity local `_trashDocuments`; real backend should mark paper ref `dismissed` or `trashed`, not delete payload | future restore/empty-trash UI slot |
+| `workdesk` | release over `PaperDropTarget_Workdesk` | workdesk opens and paper remains available for review | Unity local `_localDocuments`; real backend is IntentWorkspace `workspace_id=workdesk/report_desk` | accept/dismiss/archive |
+
+Different reminder kinds now have different runtime paper treatments:
+
+- `nanobot_report`: warm gold tint over `PaperNoteSmall`.
+- `calendar_draft`: pale blue tint over `PaperNoteFilled`.
+- `workdesk_alert`: pale purple tint.
+- `system_popup`: neutral paper tint.
+
+Asset placeholders:
+
+- Orange cat paw is still `slot_only`; no matching curated asset found. V1 falls back to paper slide/drag animation.
+- Trash crumpled paper uses three layered UGUI paper chips named `TrashCrumpledPaperPlaceholder_*`.
+- `TrashCrumpledPaper`, `NanobotReportPaper`, `CalendarReminderPaper`, `ParrotJoystick`, and `OrangeCatPaw` are now explicit asset manifest slots.
+
+Parrot joystick / plane walking:
+
+- UI entry: `ParrotJoystick_PlaneWalkPad`, bottom-left main App surface.
+- UI data flow: drag pad -> normalized `Vector2` -> `parrotController.WalkOnPlane(input, dt)` -> `AnimationDriver.WalkOnPlane(...)`.
+- Animation state: new `AnimationDriver.BodyState.Walk` with simple bob, leg alternation, tail sway, and folded wings.
+- Return flow: joystick `home` -> `ParrotController.ReturnToPlaneWalkHome()` -> existing `FlyTo(home)`.
+- Boundary: this is a Unity local front-end control. It does not create a Brain command, does not switch Scene, and surrenders while `BodyState.Fly` or `BodyState.PerchedOnHand` is active.
+
+XRHand audit result:
+
+- Implemented path exists: `DebugFireBranchGesture()` / real `index_finger_branch` -> `PerchOnHand.FLYING_TO_HAND` -> `PERCHED` -> fist/hand lost -> `RETURNING` -> `IDLE`.
+- Target uses `HandGestureSnapshot.IndexIntermediate`, matching the requested index-finger middle segment.
+- Remaining real-device blocker: `com.unity.xr.hands` is not in `Packages/manifest.json`, and `Assets/csc.rsp` only defines `UNITY_AR_FOUNDATION`, not `UNITY_XR_HANDS`. Real hand tracking therefore still needs package + scripting define validation; editor smoke uses the debug gesture.

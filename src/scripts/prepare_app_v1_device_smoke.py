@@ -71,7 +71,11 @@ def build_smoke_config(
             "Magnifier focus",
             "BoundaryBox place/resize/remove",
             "Nanobot paper note",
+            "Paper note select/drag/scale",
+            "Paper note drag to trash and workdesk targets",
             "Workdesk accept/dismiss/archive",
+            "Parrot joystick walk and return-to-desk",
+            "XRHand debug branch or real index-middle perch",
             "Silent/Voice/Full AR mode switch",
         ],
     }

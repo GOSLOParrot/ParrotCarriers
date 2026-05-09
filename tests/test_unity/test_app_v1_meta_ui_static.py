@@ -7,6 +7,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 UNITY_ROOT = ROOT / "unity" / "ArSpike" / "Assets"
 META_UI = UNITY_ROOT / "Scripts" / "ParrotApp" / "UI" / "AppV1MetaUiController.cs"
+PARROT_CONTROLLER = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "ParrotController.cs"
+)
+ANIMATION_DRIVER = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "AnimationDriver.cs"
+)
 SMOKE_BUILDER = (
     UNITY_ROOT
     / "Scripts"
@@ -34,6 +40,17 @@ def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
     assert "CameraModeShutterButton" in text
     assert "AppV1_2DWorkdesk" in text
     assert "NanobotNoteStack" in text
+    assert "PaperNote_DraggableSelectable" in text
+    assert "PaperNoteDropTargets_RightRail" in text
+    assert "PaperDropTarget_Trash" in text
+    assert "PaperDropTarget_Workdesk" in text
+    assert "TrashCrumpledPaperPlaceholder" in text
+    assert "MovePaperNoteToTrash" in text
+    assert "MovePaperNoteToWorkdesk" in text
+    assert "ParrotJoystick_PlaneWalkPad" in text
+    assert "parrotController.WalkOnPlane" in text
+    assert 'Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")' in text
+    assert "Arial.ttf" not in text
     assert "MagnifierFocusOverlay_Draggable" in text
     assert "BoundaryBoxOverlay_DraggableResizable" in text
     assert "MagnificationSlider" in text
@@ -64,12 +81,34 @@ def test_smoke_scene_builder_mounts_meta_ui_and_wires_existing_tools() -> None:
 
     assert "using ParrotApp.UI;" in text
     assert "AddComponent<AppV1MetaUiController>()" in text
+    assert "Upgrade Current A2 Smoke Scene" in text
+    assert "UpgradeCurrentSmokeScene" in text
+    assert "FindOrCreateRoot(\"AppV1MetaUI\")" in text
     assert 'FindProperty("photoController")' in text
+    assert 'FindProperty("parrotController")' in text
     assert 'FindProperty("focusController")' in text
     assert 'FindProperty("bboxController")' in text
     assert 'FindProperty("handGestureSource")' in text
     assert "LOCAL PREVIEW" in text
     assert "Magnifier creates a draggable Focus overlay" in text
+    assert "Bottom-left joystick walks the parrot on the plane" in text
+
+
+def test_parrot_joystick_uses_existing_parrot_controller_boundary() -> None:
+    controller = PARROT_CONTROLLER.read_text(encoding="utf-8")
+    animation = ANIMATION_DRIVER.read_text(encoding="utf-8")
+
+    assert "public void WalkOnPlane(Vector2 input, float deltaTime)" in controller
+    assert "public void EndPlaneWalk()" in controller
+    assert "public void ReturnToPlaneWalkHome()" in controller
+    assert "does not create a Brain" in controller
+    assert "BodyState.Walk" in controller
+
+    assert "WalkOnPlane(Vector2 input" in animation
+    assert "UpdateWalk()" in animation
+    assert "case BodyState.Walk" in animation
+    assert 'case "walking"' in animation
+    assert 'return "walking"' in animation
 
 
 def test_app_v1_curated_asset_slots_are_imported_to_unity() -> None:
@@ -85,12 +124,21 @@ def test_app_v1_curated_asset_slots_are_imported_to_unity() -> None:
         "ToolButtonWood",
         "PaperNoteSmall",
         "PaperNoteFilled",
+        "NanobotReportPaper",
+        "CalendarReminderPaper",
+        "TrashCrumpledPaper",
+        "OrangeCatPaw",
+        "ParrotJoystick",
         "CameraIcon",
         "FocusMagnifierIcon",
         "BoundaryBoxIcon",
     } <= set(slots)
 
     for slot in slots.values():
+        if not slot["unity"].endswith(".png"):
+            assert slot["status"] in {"runtime_placeholder", "slot_only"}
+            assert slot["fallback"]
+            continue
         asset = root / slot["unity"]
         assert asset.exists(), slot
         meta = asset.with_suffix(asset.suffix + ".meta")

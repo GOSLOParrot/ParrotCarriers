@@ -4,6 +4,7 @@ using ParrotApp.Attention;
 using ParrotApp.Config;
 using ParrotApp.Hands;
 using ParrotApp.Lifecycle;
+using ParrotApp.Parrot;
 using ParrotApp.Photo;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -32,6 +33,7 @@ namespace ParrotApp.UI
         [SerializeField] private FocusController focusController;
         [SerializeField] private BBoxController bboxController;
         [SerializeField] private HandGestureSource handGestureSource;
+        [SerializeField] private ParrotController parrotController;
 
         [Header("Optional sprites")]
         [SerializeField] private Sprite woodDrawerSprite;
@@ -53,6 +55,12 @@ namespace ParrotApp.UI
         private RectTransform _cameraTransitionSlot;
         private RectTransform _workspace;
         private RectTransform _noteStack;
+        private RectTransform _activePaperNote;
+        private RectTransform _paperDropTargets;
+        private RectTransform _trashDropTarget;
+        private RectTransform _workdeskDropTarget;
+        private RectTransform _parrotJoystickPad;
+        private RectTransform _parrotJoystickKnob;
         private RectTransform _magnifierOverlay;
         private RectTransform _magnifierSettings;
         private RectTransform _bboxOverlay;
@@ -68,9 +76,14 @@ namespace ParrotApp.UI
         private Text _cameraExposureLabel;
         private Text _workspaceText;
         private Text _noteText;
+        private Text _paperNoteStateText;
+        private Text _paperDropStatusText;
+        private Text _parrotWalkLabel;
         private Text _magnifierLabel;
         private Text _bboxLabel;
         private Slider _magnifierSlider;
+        private Image _activePaperNoteImage;
+        private Outline _paperNoteOutline;
 
         private bool _drawerOpen;
         private bool _settingsOpen;
@@ -81,20 +94,32 @@ namespace ParrotApp.UI
         private bool _magnifierSettingsOpen;
         private bool _bboxOpen;
         private bool _gosloPlaced;
+        private bool _paperNoteSelected;
+        private bool _parrotWalking;
         private int _noteCount;
+        private int _trashCount;
+        private int _workdeskDropCount;
         private int _photoRequestCount;
         private int _cameraFilterIndex;
+        private float _paperNoteScale = 1f;
         private float _cameraZoom = 1f;
         private float _cameraExposure;
         private float _magnifierScale = 2f;
+        private Vector2 _paperInboxPosition;
+        private Vector2 _parrotWalkInput;
         private string _capabilityMode = AppCapabilityModeNames.FullARCompanion;
         private string _dialogueState = "waiting_for_placement";
         private string _awarenessMode = "AWARE_SILENT";
         private string _cameraMode = "off";
         private string _activeFocusId = "";
         private string _activeBBoxId = "";
+        private string _activePaperTitle = "";
+        private string _activePaperBody = "";
+        private string _activePaperKind = "system_popup";
+        private string _activePaperState = "inbox";
         private readonly string[] _cameraFilters = { "Clear", "Warm", "Noir", "Soft" };
         private readonly List<string> _localDocuments = new();
+        private readonly List<string> _trashDocuments = new();
 
         void Awake()
         {
@@ -130,6 +155,12 @@ namespace ParrotApp.UI
             RefreshHud();
         }
 
+        void Update()
+        {
+            TickPaperDropTargetWiggle();
+            TickParrotJoystick();
+        }
+
         private void ResolveDependencies()
         {
             if (startupFlow == null) startupFlow = FindObjectOfType<AppStartupFlowController>();
@@ -141,6 +172,7 @@ namespace ParrotApp.UI
             if (photoController == null) photoController = FindObjectOfType<PhotoController>();
             if (focusController == null) focusController = FindObjectOfType<FocusController>();
             if (bboxController == null) bboxController = FindObjectOfType<BBoxController>();
+            if (parrotController == null) parrotController = FindObjectOfType<ParrotController>();
         }
 
         private void BuildUi()
@@ -236,6 +268,8 @@ namespace ParrotApp.UI
             _cameraOverlay = BuildCameraOverlay(root);
             _workspace = BuildWorkspace(root);
             _noteStack = BuildNoteStack(root);
+            _paperDropTargets = BuildPaperDropTargets(root);
+            _parrotJoystickPad = BuildParrotJoystick(root);
             _magnifierOverlay = BuildMagnifierOverlay(root);
             _bboxOverlay = BuildBBoxOverlay(root);
 
@@ -437,12 +471,80 @@ namespace ParrotApp.UI
             var stack = CreateTransparentRoot("NanobotNoteStack", root);
             Anchor(stack, RightCenter(), RightCenter(), RightCenter(), new Vector2(-18, 0), new Vector2(280, 150));
 
-            var note = CreatePanel("PaperNote_Small", stack, new Color(0.86f, 0.78f, 0.58f, 0.98f), smallPaperNoteSprite);
+            var note = CreatePanel("PaperNote_DraggableSelectable", stack, new Color(0.86f, 0.78f, 0.58f, 0.98f), smallPaperNoteSprite);
             Stretch(note, Vector2.zero, Vector2.zero);
-            AddEvent(note.gameObject, EventTriggerType.PointerClick, _ => ToggleWorkspace());
+            _activePaperNote = note;
+            _activePaperNoteImage = note.GetComponent<Image>();
+            _paperInboxPosition = note.anchoredPosition;
+            _paperNoteOutline = note.gameObject.AddComponent<Outline>();
+            _paperNoteOutline.effectColor = new Color(1f, 1f, 1f, 0f);
+            _paperNoteOutline.effectDistance = new Vector2(4, 4);
+            AddEvent(note.gameObject, EventTriggerType.PointerClick, _ => SelectPaperNote());
+            AddEvent(note.gameObject, EventTriggerType.Scroll, ev => ScalePaperNote(((PointerEventData)ev).scrollDelta.y * 0.08f));
+            AddDragHandlers(note, DragPaperNote, EndDragPaperNote);
             _noteText = CreateText("PaperNoteText", note, "", 16, TextAnchor.MiddleLeft);
-            Stretch(_noteText.rectTransform, new Vector2(18, 10), new Vector2(-18, -10));
+            Stretch(_noteText.rectTransform, new Vector2(18, 26), new Vector2(-18, -30));
+
+            _paperNoteStateText = CreateText("PaperNoteStateText", note, "", 12, TextAnchor.LowerLeft);
+            Stretch(_paperNoteStateText.rectTransform, new Vector2(18, 6), new Vector2(-18, -6));
+
+            AddPaperScaleButton(note, "PaperNoteScaleDown", "-", new Vector2(24, -18), () => ScalePaperNote(-0.12f));
+            AddPaperScaleButton(note, "PaperNoteScaleUp", "+", new Vector2(64, -18), () => ScalePaperNote(0.12f));
             return stack;
+        }
+
+        private RectTransform BuildPaperDropTargets(RectTransform root)
+        {
+            var rail = CreateTransparentRoot("PaperNoteDropTargets_RightRail", root);
+            Anchor(rail, RightCenter(), RightCenter(), RightCenter(), new Vector2(-18, 0), new Vector2(120, 420));
+
+            _trashDropTarget = CreatePanel("PaperDropTarget_Trash", rail, new Color(0.20f, 0.05f, 0.06f, 0.88f));
+            Anchor(_trashDropTarget, CenterTop(), CenterTop(), CenterTop(), new Vector2(0, -42), new Vector2(96, 96));
+            var trashOutline = _trashDropTarget.gameObject.AddComponent<Outline>();
+            trashOutline.effectColor = new Color(1f, 1f, 1f, 0.90f);
+            trashOutline.effectDistance = new Vector2(3, 3);
+            CreateCrumpledPaperPlaceholder(_trashDropTarget);
+            var trashText = CreateText("PaperDropTrashLabel", _trashDropTarget, "TRASH", 12, TextAnchor.LowerCenter);
+            Stretch(trashText.rectTransform, new Vector2(4, 4), new Vector2(-4, -6));
+
+            _workdeskDropTarget = CreatePanel("PaperDropTarget_Workdesk", rail, new Color(0.32f, 0.22f, 0.14f, 0.90f), woodButtonSprite);
+            Anchor(_workdeskDropTarget, CenterBottom(), CenterBottom(), CenterBottom(), new Vector2(0, 42), new Vector2(96, 96));
+            var deskOutline = _workdeskDropTarget.gameObject.AddComponent<Outline>();
+            deskOutline.effectColor = new Color(1f, 1f, 1f, 0.90f);
+            deskOutline.effectDistance = new Vector2(3, 3);
+            var deskPaper = CreatePanel("PaperDropWorkdeskPaperIcon", _workdeskDropTarget, new Color(0.86f, 0.78f, 0.58f, 0.95f), filledPaperNoteSprite);
+            Anchor(deskPaper, Center(), Center(), Center(), new Vector2(0, 6), new Vector2(48, 42));
+            var deskText = CreateText("PaperDropWorkdeskLabel", _workdeskDropTarget, "DESK", 12, TextAnchor.LowerCenter);
+            Stretch(deskText.rectTransform, new Vector2(4, 4), new Vector2(-4, -6));
+
+            _paperDropStatusText = CreateText("PaperDropStatusText", rail, "", 12, TextAnchor.MiddleCenter);
+            Anchor(_paperDropStatusText.rectTransform, Center(), Center(), Center(), Vector2.zero, new Vector2(110, 82));
+
+            rail.gameObject.SetActive(false);
+            return rail;
+        }
+
+        private RectTransform BuildParrotJoystick(RectTransform root)
+        {
+            var pad = CreatePanel("ParrotJoystick_PlaneWalkPad", root, new Color(0.035f, 0.04f, 0.055f, 0.58f));
+            Anchor(pad, BottomLeft(), BottomLeft(), BottomLeft(), new Vector2(28, 28), new Vector2(176, 176));
+            var outline = pad.gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color(1f, 1f, 1f, 0.52f);
+            outline.effectDistance = new Vector2(2, 2);
+            AddEvent(pad.gameObject, EventTriggerType.PointerDown, ev => DragParrotJoystick((PointerEventData)ev));
+            AddEvent(pad.gameObject, EventTriggerType.PointerUp, _ => ReleaseParrotJoystick());
+            AddDragHandlers(pad, DragParrotJoystick, _ => ReleaseParrotJoystick());
+
+            _parrotJoystickKnob = CreatePanel("ParrotJoystick_Knob", pad, new Color(0.78f, 0.66f, 0.42f, 0.94f));
+            Anchor(_parrotJoystickKnob, Center(), Center(), Center(), Vector2.zero, new Vector2(58, 58));
+            _parrotJoystickKnob.GetComponent<Image>().raycastTarget = false;
+
+            _parrotWalkLabel = CreateText("ParrotJoystickStatus", pad, "WALK\nidle", 13, TextAnchor.UpperCenter);
+            Stretch(_parrotWalkLabel.rectTransform, new Vector2(8, 8), new Vector2(-8, -108));
+
+            var home = AddCameraHudButton(pad, "home", "ParrotJoystickReturnHome", BottomCenter(), new Vector2(0, 8), new Vector2(72, 30), ReturnParrotToDesk);
+            home.gameObject.name = "ParrotJoystick_ReturnToDesk";
+            return pad;
         }
 
         private RectTransform BuildMagnifierOverlay(RectTransform root)
@@ -548,6 +650,17 @@ namespace ParrotApp.UI
             Anchor(button.GetComponent<RectTransform>(), TopRight(), TopRight(), TopRight(), anchoredPosition, new Vector2(52, 38));
         }
 
+        private void AddPaperScaleButton(
+            RectTransform parent,
+            string name,
+            string label,
+            Vector2 anchoredPosition,
+            UnityEngine.Events.UnityAction action)
+        {
+            var button = AddCameraHudButton(parent, label, name, TopLeft(), anchoredPosition, new Vector2(34, 28), action);
+            button.gameObject.name = name;
+        }
+
         private Button AddCameraModeButton(RectTransform parent, string label, Vector2 position, UnityEngine.Events.UnityAction action)
         {
             var button = AddToolButton(parent, label, 0, action);
@@ -629,13 +742,29 @@ namespace ParrotApp.UI
             return root;
         }
 
+        private void CreateCrumpledPaperPlaceholder(RectTransform parent)
+        {
+            // Placeholder until a real crumpled-paper sprite is selected. Three
+            // offset paper chips read as a waste-paper ball without adding a new
+            // asset dependency to the v1 smoke scene.
+            var a = CreatePanel("TrashCrumpledPaperPlaceholder_A", parent, new Color(0.76f, 0.68f, 0.48f, 0.95f), smallPaperNoteSprite);
+            Anchor(a, Center(), Center(), Center(), new Vector2(-8, 10), new Vector2(40, 32));
+            a.localRotation = Quaternion.Euler(0f, 0f, -16f);
+            var b = CreatePanel("TrashCrumpledPaperPlaceholder_B", parent, new Color(0.83f, 0.76f, 0.55f, 0.95f), smallPaperNoteSprite);
+            Anchor(b, Center(), Center(), Center(), new Vector2(8, 2), new Vector2(38, 34));
+            b.localRotation = Quaternion.Euler(0f, 0f, 18f);
+            var c = CreatePanel("TrashCrumpledPaperPlaceholder_C", parent, new Color(0.68f, 0.60f, 0.42f, 0.95f), smallPaperNoteSprite);
+            Anchor(c, Center(), Center(), Center(), new Vector2(0, -8), new Vector2(36, 26));
+            c.localRotation = Quaternion.Euler(0f, 0f, 4f);
+        }
+
         private Text CreateText(string name, Transform parent, string text, int fontSize, TextAnchor anchor)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             var label = go.AddComponent<Text>();
             label.text = text;
-            label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             label.fontSize = fontSize;
             label.alignment = anchor;
             label.color = new Color(0.94f, 0.90f, 0.80f, 1f);
@@ -694,6 +823,70 @@ namespace ParrotApp.UI
             rt.anchoredPosition += eventData.delta;
         }
 
+        private void DragPaperNote(PointerEventData eventData)
+        {
+            SelectPaperNote();
+            if (_activePaperNote == null) return;
+            _activePaperNote.anchoredPosition += eventData.delta;
+            RefreshPaperDropStatus(eventData);
+        }
+
+        private void EndDragPaperNote(PointerEventData eventData)
+        {
+            if (_activePaperNote == null) return;
+            if (PointerInside(_trashDropTarget, eventData))
+            {
+                MovePaperNoteToTrash();
+                return;
+            }
+            if (PointerInside(_workdeskDropTarget, eventData))
+            {
+                MovePaperNoteToWorkdesk();
+                return;
+            }
+            RefreshPaperDropStatus(eventData);
+        }
+
+        private void DragParrotJoystick(PointerEventData eventData)
+        {
+            if (_parrotJoystickPad == null || _parrotJoystickKnob == null) return;
+            RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                _parrotJoystickPad,
+                eventData.position,
+                null,
+                out Vector2 localPoint);
+            float radius = Mathf.Min(_parrotJoystickPad.rect.width, _parrotJoystickPad.rect.height) * 0.34f;
+            Vector2 clamped = Vector2.ClampMagnitude(localPoint, radius);
+            _parrotJoystickKnob.anchoredPosition = clamped;
+            _parrotWalkInput = radius > 0f ? clamped / radius : Vector2.zero;
+            _parrotWalking = _parrotWalkInput.sqrMagnitude > 0.01f;
+            RefreshParrotWalkLabel();
+        }
+
+        private void ReleaseParrotJoystick()
+        {
+            _parrotWalkInput = Vector2.zero;
+            _parrotWalking = false;
+            if (_parrotJoystickKnob != null) _parrotJoystickKnob.anchoredPosition = Vector2.zero;
+            if (parrotController != null) parrotController.EndPlaneWalk();
+            RefreshParrotWalkLabel();
+        }
+
+        private void ReturnParrotToDesk()
+        {
+            ResolveDependencies();
+            if (parrotController != null)
+            {
+                parrotController.ReturnToPlaneWalkHome();
+                AddPaperNote("Parrot movement", "Return-to-desk command sent through ParrotController.");
+            }
+            else
+            {
+                AddPaperNote("Parrot movement", "ParrotController missing; joystick remains a UI smoke control.");
+            }
+            RefreshParrotWalkLabel();
+        }
+
         private void ResizeBBox(PointerEventData eventData)
         {
             if (_bboxOverlay == null) return;
@@ -702,6 +895,143 @@ namespace ParrotApp.UI
             size.y = Mathf.Clamp(size.y - eventData.delta.y, 90f, 520f);
             _bboxOverlay.sizeDelta = size;
             RefreshBBoxLabel();
+        }
+
+        private static bool PointerInside(RectTransform target, PointerEventData eventData)
+        {
+            return target != null
+                && target.gameObject.activeInHierarchy
+                && RectTransformUtility.RectangleContainsScreenPoint(target, eventData.position, null);
+        }
+
+        private void SelectPaperNote()
+        {
+            _paperNoteSelected = true;
+            if (_paperDropTargets != null) _paperDropTargets.gameObject.SetActive(true);
+            if (_paperNoteOutline != null) _paperNoteOutline.effectColor = Color.white;
+            RefreshPaperNoteVisual();
+            RefreshPaperDropStatus();
+        }
+
+        private void DeselectPaperNote()
+        {
+            _paperNoteSelected = false;
+            if (_paperDropTargets != null) _paperDropTargets.gameObject.SetActive(false);
+            if (_paperNoteOutline != null) _paperNoteOutline.effectColor = new Color(1f, 1f, 1f, 0f);
+            RefreshPaperNoteVisual();
+        }
+
+        private void ScalePaperNote(float delta)
+        {
+            _paperNoteScale = Mathf.Clamp(_paperNoteScale + delta, 0.78f, 1.65f);
+            if (_activePaperNote != null) _activePaperNote.localScale = Vector3.one * _paperNoteScale;
+            SelectPaperNote();
+        }
+
+        private void MovePaperNoteToTrash()
+        {
+            if (string.IsNullOrEmpty(_activePaperTitle)) return;
+            _trashCount++;
+            _activePaperState = "trash";
+            string doc = _activePaperTitle + ": " + _activePaperBody;
+            _trashDocuments.Insert(0, doc);
+            _localDocuments.Remove(doc);
+            RestorePaperNoteInboxPosition();
+            DeselectPaperNote();
+            RefreshWorkspace();
+            RefreshHud();
+        }
+
+        private void MovePaperNoteToWorkdesk()
+        {
+            if (string.IsNullOrEmpty(_activePaperTitle)) return;
+            _workdeskDropCount++;
+            _activePaperState = "workdesk";
+            _workspaceOpen = true;
+            if (_workspace != null) _workspace.gameObject.SetActive(true);
+            RestorePaperNoteInboxPosition();
+            DeselectPaperNote();
+            RefreshWorkspace();
+            RefreshHud();
+        }
+
+        private void RestorePaperNoteInboxPosition()
+        {
+            if (_activePaperNote == null) return;
+            _activePaperNote.anchoredPosition = _paperInboxPosition;
+        }
+
+        private void RefreshPaperDropStatus(PointerEventData eventData = null)
+        {
+            if (_paperDropStatusText == null) return;
+            string hover = "";
+            if (eventData != null && PointerInside(_trashDropTarget, eventData)) hover = "\nrelease: trash";
+            if (eventData != null && PointerInside(_workdeskDropTarget, eventData)) hover = "\nrelease: desk";
+            _paperDropStatusText.text =
+                "paper\n" +
+                _activePaperState + "\n" +
+                "trash " + _trashCount + " / desk " + _workdeskDropCount +
+                hover;
+        }
+
+        private void RefreshPaperNoteVisual()
+        {
+            if (_activePaperNoteImage != null)
+            {
+                _activePaperNoteImage.sprite = SpriteForPaperKind(_activePaperKind);
+                _activePaperNoteImage.color = ColorForPaperKind(_activePaperKind);
+            }
+            if (_paperNoteStateText != null)
+            {
+                _paperNoteStateText.text =
+                    _activePaperKind + " / " + _activePaperState + " / " +
+                    _paperNoteScale.ToString("0.0") + "x";
+            }
+        }
+
+        private Sprite SpriteForPaperKind(string kind)
+        {
+            if (kind == "calendar_draft" || kind == "workdesk_alert") return filledPaperNoteSprite ?? smallPaperNoteSprite;
+            return smallPaperNoteSprite ?? filledPaperNoteSprite;
+        }
+
+        private static Color ColorForPaperKind(string kind)
+        {
+            switch (kind)
+            {
+                case "nanobot_report":
+                    return new Color(0.91f, 0.78f, 0.48f, 0.98f);
+                case "calendar_draft":
+                    return new Color(0.70f, 0.82f, 0.92f, 0.98f);
+                case "workdesk_alert":
+                    return new Color(0.88f, 0.72f, 0.88f, 0.98f);
+                default:
+                    return new Color(0.86f, 0.78f, 0.58f, 0.98f);
+            }
+        }
+
+        private void TickPaperDropTargetWiggle()
+        {
+            if (!_paperNoteSelected || _paperDropTargets == null || !_paperDropTargets.gameObject.activeSelf) return;
+            float angle = Mathf.Sin(Time.unscaledTime * 12f) * 2.4f;
+            if (_trashDropTarget != null) _trashDropTarget.localRotation = Quaternion.Euler(0f, 0f, angle);
+            if (_workdeskDropTarget != null) _workdeskDropTarget.localRotation = Quaternion.Euler(0f, 0f, -angle);
+        }
+
+        private void TickParrotJoystick()
+        {
+            if (!_parrotWalking || _parrotWalkInput.sqrMagnitude <= 0.01f) return;
+            if (parrotController != null)
+            {
+                parrotController.WalkOnPlane(_parrotWalkInput, Time.deltaTime);
+            }
+        }
+
+        private void RefreshParrotWalkLabel()
+        {
+            if (_parrotWalkLabel == null) return;
+            string state = _parrotWalking ? "walking" : "idle";
+            _parrotWalkLabel.text = "WALK\n" + state;
         }
 
         private void StartArFlow()
@@ -1063,7 +1393,7 @@ namespace ParrotApp.UI
 
         private void SpawnNanobotNote()
         {
-            AddPaperNote("Nanobot report", "A paper note can expand or move into the workdesk.");
+            AddPaperNote("Nanobot report", "Drag, scale, trash, or drop this paper into the workdesk.");
         }
 
         private void FireHandBranchGesture()
@@ -1085,12 +1415,30 @@ namespace ParrotApp.UI
             _noteCount++;
             string doc = title + ": " + body;
             _localDocuments.Insert(0, doc);
+            _activePaperTitle = title;
+            _activePaperBody = body;
+            _activePaperKind = InferPaperKind(title);
+            _activePaperState = "inbox";
+            _paperNoteScale = 1f;
+            RestorePaperNoteInboxPosition();
+            if (_activePaperNote != null) _activePaperNote.localScale = Vector3.one;
             if (_noteText != null)
             {
                 _noteText.text = title + "\n" + body;
             }
+            RefreshPaperNoteVisual();
+            RefreshPaperDropStatus();
             RefreshWorkspace();
             RefreshHud();
+        }
+
+        private static string InferPaperKind(string title)
+        {
+            string lower = (title ?? "").ToLowerInvariant();
+            if (lower.Contains("nanobot")) return "nanobot_report";
+            if (lower.Contains("calendar")) return "calendar_draft";
+            if (lower.Contains("workdesk") || lower.Contains("document")) return "workdesk_alert";
+            return "system_popup";
         }
 
         private void AcceptTopDocument() => FinishTopDocument("accepted");
@@ -1121,7 +1469,7 @@ namespace ParrotApp.UI
                 "Dialogue: " + ShortDialogueState() + "\n" +
                 "Camera: " + _cameraMode + " " + _cameraZoom.ToString("0.0") + "x\n" +
                 "Focus " + focusCount + " / BBox " + bboxCount + "\n" +
-                "Notes: " + _noteCount;
+                "Notes: " + _noteCount + " / Trash " + _trashCount;
         }
 
         private void RefreshSettingsPanel()
@@ -1185,11 +1533,15 @@ namespace ParrotApp.UI
             if (_workspaceText == null) return;
             if (_localDocuments.Count == 0)
             {
-                _workspaceText.text = "No paper on the desk yet.";
+                _workspaceText.text = _trashDocuments.Count == 0
+                    ? "No paper on the desk yet."
+                    : "No active paper on the desk.\n\nTrash holds " + _trashDocuments.Count + " paper note(s).";
                 return;
             }
             int count = Mathf.Min(6, _localDocuments.Count);
-            _workspaceText.text = string.Join("\n\n", _localDocuments.GetRange(0, count));
+            _workspaceText.text =
+                string.Join("\n\n", _localDocuments.GetRange(0, count)) +
+                "\n\nTrash: " + _trashDocuments.Count + " paper note(s).";
         }
 
         private void RefreshMagnifierLabel()
@@ -1245,6 +1597,7 @@ namespace ParrotApp.UI
 
         private static Vector2 TopLeft() => new Vector2(0, 1);
         private static Vector2 TopRight() => new Vector2(1, 1);
+        private static Vector2 BottomLeft() => new Vector2(0, 0);
         private static Vector2 BottomRight() => new Vector2(1, 0);
         private static Vector2 BottomCenter() => new Vector2(0.5f, 0);
         private static Vector2 CenterTop() => new Vector2(0.5f, 1);

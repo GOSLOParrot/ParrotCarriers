@@ -30,6 +30,7 @@ namespace ParrotApp.EditorTools
     {
         private const string GlbAssetPath = "Assets/Models/GOSLO.glb";
         private const string MenuPath = "Tools/Parrot/Build A2 Smoke Scene";
+        private const string UpgradeMenuPath = "Tools/Parrot/Upgrade Current A2 Smoke Scene";
 
         [MenuItem(MenuPath)]
         public static void BuildSmokeScene()
@@ -90,7 +91,7 @@ namespace ParrotApp.EditorTools
             glbInstance.transform.localScale = Vector3.one * 0.04f;
 
             var animDriver = parrotRoot.AddComponent<AnimationDriver>();
-            parrotRoot.AddComponent<ParrotController>();
+            var parrotController = parrotRoot.AddComponent<ParrotController>();
             var perch = parrotRoot.AddComponent<PerchOnHand>();
 
             // ── Hand source ────────────────────────────────────────────────
@@ -153,6 +154,7 @@ namespace ParrotApp.EditorTools
 
             var uiSo = new SerializedObject(appUi);
             uiSo.FindProperty("photoController").objectReferenceValue = photoController;
+            uiSo.FindProperty("parrotController").objectReferenceValue = parrotController;
             uiSo.FindProperty("focusController").objectReferenceValue =
                 attentionRootGo.GetComponent<FocusController>();
             uiSo.FindProperty("bboxController").objectReferenceValue =
@@ -193,13 +195,95 @@ namespace ParrotApp.EditorTools
                 "► HUD Tools opens a wood pull-out cabinet\n" +
                 "► Magnifier creates a draggable Focus overlay with x + gear\n" +
                 "► BoundaryBox creates a draggable/resizable BBox overlay with x + gear\n" +
-                "► Workdesk opens the 2D paper desk; Notes spawns Nanobot paper notes");
+                "► Notes spawns selectable paper notes; drag to TRASH or DESK targets\n" +
+                "► Bottom-left joystick walks the parrot on the plane; home flies back to desk");
         }
 
         [MenuItem(MenuPath, validate = true)]
         public static bool Validate() => File.Exists(GlbAssetPath);
 
+        [MenuItem(UpgradeMenuPath)]
+        public static void UpgradeCurrentSmokeScene()
+        {
+            var parrotRoot = GameObject.Find("Parrot");
+            var animDriver = parrotRoot != null
+                ? GetOrAdd<AnimationDriver>(parrotRoot)
+                : Object.FindObjectOfType<AnimationDriver>();
+            var parrotController = parrotRoot != null
+                ? GetOrAdd<ParrotController>(parrotRoot)
+                : Object.FindObjectOfType<ParrotController>();
+            var perch = parrotRoot != null
+                ? GetOrAdd<PerchOnHand>(parrotRoot)
+                : Object.FindObjectOfType<PerchOnHand>();
+
+            var handSource = Object.FindObjectOfType<HandGestureSource>();
+            if (handSource == null)
+                handSource = GetOrAdd<HandGestureSource>(FindOrCreateRoot("HandSource"));
+
+            var photoController = Object.FindObjectOfType<PhotoController>();
+            if (photoController == null)
+                photoController = GetOrAdd<PhotoController>(FindOrCreateRoot("Photo"));
+
+            var attentionRoot = FindOrCreateRoot("Attention");
+            GetOrAdd<EcpEventPublisher>(attentionRoot);
+            var bboxController = Object.FindObjectOfType<BBoxController>() ?? GetOrAdd<BBoxController>(attentionRoot);
+            var focusController = Object.FindObjectOfType<FocusController>() ?? GetOrAdd<FocusController>(attentionRoot);
+            GetOrAdd<AttentionConfigEchoPublisher>(attentionRoot);
+
+            var uiRoot = FindOrCreateRoot("AppV1MetaUI");
+            var appUi = GetOrAdd<AppV1MetaUiController>(uiRoot);
+
+            SetObjectRef(appUi, "photoController", photoController);
+            SetObjectRef(appUi, "focusController", focusController);
+            SetObjectRef(appUi, "bboxController", bboxController);
+            SetObjectRef(appUi, "handGestureSource", handSource);
+            SetObjectRef(appUi, "parrotController", parrotController);
+
+            SetObjectRef(perch, "handTracker", handSource);
+            SetObjectRef(perch, "animDriver", animDriver);
+
+            EditorUtility.SetDirty(uiRoot);
+            EditorUtility.SetDirty(attentionRoot);
+            if (parrotRoot != null) EditorUtility.SetDirty(parrotRoot);
+
+            var activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            EditorSceneManager.MarkSceneDirty(activeScene);
+            if (!string.IsNullOrEmpty(activeScene.path))
+                EditorSceneManager.SaveScene(activeScene);
+
+            Debug.Log(
+                "[ParrotSmokeSceneBuilder] Current scene upgraded for App V1: " +
+                "AppV1MetaUI, paper-note drag/drop UI, parrot joystick wiring, " +
+                "Photo/Focus/BBox/XRHand references.");
+        }
+
         // ─── helpers ──────────────────────────────────────────────────────
+
+        private static GameObject FindOrCreateRoot(string name)
+        {
+            var go = GameObject.Find(name);
+            if (go != null) return go;
+            go = new GameObject(name);
+            Undo.RegisterCreatedObjectUndo(go, "Create " + name);
+            return go;
+        }
+
+        private static T GetOrAdd<T>(GameObject go) where T : Component
+        {
+            var component = go.GetComponent<T>();
+            if (component != null) return component;
+            return Undo.AddComponent<T>(go);
+        }
+
+        private static void SetObjectRef(UnityEngine.Object target, string propertyName, UnityEngine.Object value)
+        {
+            if (target == null || value == null) return;
+            var so = new SerializedObject(target);
+            var prop = so.FindProperty(propertyName);
+            if (prop == null) return;
+            prop.objectReferenceValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
 
         /// <summary>
         /// 递归确保 AssetDatabase-recognized 资源目录存在。仅在 <c>Assets/</c> 下

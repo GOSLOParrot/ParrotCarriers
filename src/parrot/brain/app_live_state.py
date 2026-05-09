@@ -327,6 +327,9 @@ def _tool_artifacts(
             scenarios=(
                 "Nanobot report stages IntentWorkspace rich_report with role nanobot_report",
                 "Calendar action stages IntentWorkspace doc with role calendar_draft",
+                "Unity paper notes can be selected, dragged, scaled, and highlighted with a white outline",
+                "Trash target marks paper dismissed/trashed without deleting the underlying payload",
+                "Workdesk target opens the 2D workdesk and keeps accept/dismiss/archive as UI workflow",
                 "Workdesk switch writes global/active_workspace_id through facade/preset registry",
                 "accept/dismiss/archive remains a UI workflow, not direct Graphiti/L2-B write",
             ),
