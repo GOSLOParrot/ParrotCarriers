@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import py_trees
@@ -390,6 +391,22 @@ def test_lineb_audio_route_policy_updates_voice_pipeline_status() -> None:
     assert line_b["refs"]["audio_route_policy"]["output_route"] == "phone_speaker"
 
 
+def test_lineb_unity_isolated_route_names_are_low_echo_risk() -> None:
+    bb = open_bb_client(name="test.lineb.unity_routes.seed", writer="brain.preset_loader")
+    bb.set("global/active_line_id", "line_b")
+    facade = AppFirstVersionFacade()
+
+    for route in ("wired_headset", "bluetooth_sco", "bluetooth_a2dp", "earpiece"):
+        policy = facade.set_lineb_audio_route_policy(
+            input_route="phone_mic",
+            output_route=route,
+            voiceprint_enabled=True,
+        )
+
+        assert policy["echo"]["risk_level"] == "low"
+        assert policy["echo"]["handling_mode"] == "isolated_route"
+
+
 def test_lineb_tts_and_mic_decision_are_exposed() -> None:
     bb = open_bb_client(name="test.lineb.seed", writer="brain.preset_loader")
     bb.set("global/active_line_id", "line_b")
@@ -424,6 +441,27 @@ def test_lineb_tts_and_mic_decision_are_exposed() -> None:
     assert bb.get("session/lineb_voice_activity")["state"] == "agent_echo_suppressed"
     assert bb.get("session/lineb_recent_tts_segments")[0]["segment_id"] == segment["segment_id"]
     assert bb.get("transient/lineb_last_input_decision")["turn_decision"] == "agent_echo"
+
+
+def test_lineb_asr_text_similarity_suppresses_recent_tts_echo() -> None:
+    bb = open_bb_client(name="test.lineb.text_echo.seed", writer="brain.preset_loader")
+    bb.set("global/active_line_id", "line_b")
+    facade = AppFirstVersionFacade()
+
+    segment = facade.register_lineb_tts_segment(
+        text_summary="LineB says please do not repeat this",
+        duration_s=2.0,
+        started_at=200.0,
+    )
+    decision = facade.classify_lineb_mic_input(
+        observed_at=200.7,
+        duration_s=0.5,
+        asr_text="LineB says please do not repeat this",
+    )
+
+    assert decision["turn_decision"] == "agent_echo"
+    assert decision["matched_segment_id"] == segment["segment_id"]
+    assert decision["echo_score"] >= 0.82
 
 
 def test_lineb_user_turn_updates_voice_activity_for_unity_bridge() -> None:
@@ -467,7 +505,7 @@ def test_lineb_high_echo_score_without_recent_tts_is_uncertain() -> None:
     assert decision["reason"] == "high_echo_score_without_recent_tts"
     assert status.metrics["voice_activity_state"] == "listening_uncertain"
     assert line_b["refs"]["voice_activity"]["recommended_model_trigger"] == (
-        "lineb_uncertain_input"
+        "lineb_listening_uncertain"
     )
 
 
@@ -498,6 +536,143 @@ def test_lineb_malformed_echo_score_does_not_break_mic_classification() -> None:
 
     assert nan_decision["turn_decision"] == "user_turn"
     assert nan_decision["echo_score"] == 0.0
+
+
+def test_lineb_noise_decision_uses_declared_model_capability() -> None:
+    bb = open_bb_client(name="test.lineb.noise.seed", writer="brain.preset_loader")
+    bb.set("global/active_line_id", "line_b")
+    facade = AppFirstVersionFacade()
+
+    decision = facade.classify_lineb_mic_input(
+        observed_at=520.0,
+        duration_s=0.2,
+        asr_text="",
+        echo_score=0.0,
+    )
+    status = facade.module_status(ExternalModuleId.VOICE_PIPELINE)
+    line_b = next(line for line in status.refs["lines"] if line["line_id"] == "line_b")
+
+    assert decision["turn_decision"] == "noise"
+    assert status.metrics["voice_activity_state"] == "listening_noise"
+    assert line_b["refs"]["voice_activity"]["recommended_model_trigger"] == (
+        "lineb_listening_noise"
+    )
+
+
+def test_lineb_voiceprint_rejects_non_owner_speaker() -> None:
+    bb = open_bb_client(name="test.lineb.speaker_reject.seed", writer="brain.preset_loader")
+    bb.set("global/active_line_id", "line_b")
+    facade = AppFirstVersionFacade()
+
+    decision = facade.classify_lineb_mic_input(
+        observed_at=530.0,
+        duration_s=0.5,
+        asr_text="someone else is talking",
+        voiceprint_decision="other_speaker",
+        speaker_similarity=0.21,
+        voiceprint_profile_id="owner_test",
+    )
+    status = facade.module_status(ExternalModuleId.VOICE_PIPELINE)
+    line_b = next(line for line in status.refs["lines"] if line["line_id"] == "line_b")
+
+    assert decision["turn_decision"] == "speaker_rejected"
+    assert decision["speaker_role"] == "other"
+    assert decision["voiceprint_decision"] == "other_speaker"
+    assert decision["speaker_similarity"] == 0.21
+    assert status.metrics["voice_activity_state"] == "listening_uncertain"
+    assert line_b["refs"]["voice_activity"]["model_reaction_policy"] == (
+        "reject_non_owner_no_reply"
+    )
+
+
+def test_lineb_verified_owner_can_barge_in_over_tts_overlap(tmp_path: Path) -> None:
+    bb = open_bb_client(name="test.lineb.owner_barge.seed", writer="brain.preset_loader")
+    bb.set("global/active_line_id", "line_b")
+    manifest = tmp_path / "lineb_owner_barge_voiceprint.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "profile_id": "owner_test",
+                "model": {"provider": "external"},
+                "enrollment": {"centroid": [1.0, 0.0]},
+                "thresholds": {"accept_similarity": 0.75, "reject_similarity": 0.4},
+            }
+        ),
+        encoding="utf-8",
+    )
+    facade = AppFirstVersionFacade()
+
+    segment = facade.register_lineb_tts_segment(
+        text_summary="agent is still speaking",
+        duration_s=3.0,
+        started_at=600.0,
+    )
+    decision = facade.classify_lineb_mic_input(
+        observed_at=601.0,
+        duration_s=0.5,
+        asr_text="stop please",
+        speaker_similarity=0.91,
+        voiceprint_enabled=True,
+        voiceprint_provider="external",
+        voiceprint_manifest_path=str(manifest),
+    )
+
+    assert segment["segment_id"] == decision["matched_segment_id"]
+    assert decision["turn_decision"] == "user_turn"
+    assert decision["reason"] == "owner_voiceprint_overrides_tts_overlap"
+
+
+def test_lineb_unverified_owner_claim_is_not_trusted() -> None:
+    bb = open_bb_client(name="test.lineb.untrusted_owner.seed", writer="brain.preset_loader")
+    bb.set("global/active_line_id", "line_b")
+    facade = AppFirstVersionFacade()
+
+    decision = facade.classify_lineb_mic_input(
+        observed_at=610.0,
+        duration_s=0.3,
+        asr_text="I claim to be the owner",
+        voiceprint_decision="owner_user",
+    )
+
+    assert decision["turn_decision"] == "user_turn"
+    assert decision["voiceprint_decision"] == "untrusted_owner_claim"
+    assert decision["reason"] == "no_recent_tts_overlap"
+
+
+def test_lineb_mic_input_can_override_voiceprint_manifest_for_debug(
+    tmp_path: Path,
+) -> None:
+    bb = open_bb_client(name="test.lineb.override_voiceprint.seed", writer="brain.preset_loader")
+    bb.set("global/active_line_id", "line_b")
+    manifest = tmp_path / "voiceprint.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "profile_id": "owner_debug",
+                "model": {"provider": "external"},
+                "enrollment": {"centroid": [1.0, 0.0]},
+                "thresholds": {"accept_similarity": 0.75, "reject_similarity": 0.4},
+            }
+        ),
+        encoding="utf-8",
+    )
+    facade = AppFirstVersionFacade()
+
+    decision = facade.classify_lineb_mic_input(
+        observed_at=620.0,
+        duration_s=0.3,
+        asr_text="debug owner voice",
+        speaker_similarity=0.92,
+        voiceprint_enabled=True,
+        voiceprint_provider="external",
+        voiceprint_manifest_path=str(manifest),
+    )
+
+    assert decision["turn_decision"] == "user_turn"
+    assert decision["voiceprint_decision"] == "owner_user"
+    assert decision["voiceprint_profile_id"] == "owner_debug"
 
 
 def test_room_setting_snapshot_exposes_five_axes(tmp_path: Path) -> None:

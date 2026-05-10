@@ -16,6 +16,17 @@ namespace ParrotApp.Parrot
     public class NerSpineController : MonoBehaviour, IParrotController
     {
         [SerializeField] private float walkSpeedMetersPerSecond = 0.35f;
+        [SerializeField] private float cheekMaxPullUnits = 10.5f;
+        [SerializeField] private float cheekVerticalPullRatio = 0.28f;
+        [SerializeField] private float cheekScaleXAtFullPull = 0.055f;
+        [SerializeField] private float cheekScaleYAtFullPull = -0.025f;
+        [SerializeField] private float cheekHeadFollowStrength = 0.2f;
+        [SerializeField] private float cheekReleaseSeconds = 0.28f;
+        [SerializeField] private float cheekReleaseBounce = 0.22f;
+        [SerializeField] private float cheekReleaseSquash = 0.025f;
+        [SerializeField] private float touchSquash = 0.038f;
+        [SerializeField] private float squashBounceSeconds = 0.34f;
+        [SerializeField] private float squashBounceCycles = 2.35f;
 
         private ModelManifestDto _manifest;
         private HashSet<string> _supportedCaps = new HashSet<string>();
@@ -28,6 +39,17 @@ namespace ParrotApp.Parrot
         private MethodInfo _findBone;
         private MethodInfo _updateSkeletonWorldTransform;
         private float _reactiveTouchSuppressedUntil;
+        private string _currentAnimationName = "";
+        private bool _currentAnimationLoops;
+        private Vector3 _squashBaseScale;
+        private bool _squashBaseCaptured;
+        private bool _squashActive;
+        private float _squashStartedAt;
+        private float _squashAmount;
+        private CheekPinchJson _cheekReleaseStartPose;
+        private bool _cheekHasPose;
+        private bool _cheekReleaseActive;
+        private float _cheekReleaseStartedAt;
 
         public string ModelId => _manifest != null ? _manifest.model_id : "ner_skin2";
         public IReadOnlyCollection<string> SupportedCapabilities => _supportedCaps;
@@ -44,6 +66,12 @@ namespace ParrotApp.Parrot
             {
                 ConfigureFallbackCapabilities();
             }
+        }
+
+        void LateUpdate()
+        {
+            UpdateCheekRelease();
+            UpdateSquashBounce();
         }
 
         public void ConfigureFromManifest(ModelManifestDto manifest)
@@ -105,10 +133,20 @@ namespace ParrotApp.Parrot
                 return ApplyBodyInteractionCapability(capabilityId, parametersJson);
             }
 
+            if (capabilityId == "pat_idle"
+                || capabilityId == "pat_end"
+                || capabilityId == "touch_idle"
+                || capabilityId == "touch_end")
+            {
+                return ApplyDirectTouchCapability(capabilityId);
+            }
+
             if (capabilityId == "spine_walk")
             {
                 return ApplyWalk(parametersJson);
             }
+
+            ApplyTouchSquashIfNeeded(capabilityId);
 
             if (!_handlerByCapability.TryGetValue(capabilityId, out var handler)
                 || string.IsNullOrEmpty(handler))
@@ -141,9 +179,9 @@ namespace ParrotApp.Parrot
             AddFallback("cheek_pinch_warning", "Serious_1");
             AddFallback("cheek_pinch_release", "Touch_End");
             AddFallback("cheek_recover", "Idle_1");
-            AddFallback("body_pickup_start", "Surprise_1");
+            AddFallback("body_pickup_start", "Close_1");
             AddFallback("body_held_in_air", "Close_1");
-            AddFallback("body_dragging_in_air", "Panic_1");
+            AddFallback("body_dragging_in_air", "Close_1");
             AddFallback("body_place_preview", "Think_1");
             AddFallback("body_place_release", "Idle_1");
             AddFallback("body_place_cancel", "Worry_1");
@@ -241,7 +279,14 @@ namespace ParrotApp.Parrot
 
             try
             {
+                if (loop && _currentAnimationLoops && _currentAnimationName == animationName)
+                {
+                    return true;
+                }
+
                 _setAnimation.Invoke(_spineAnimationState, new object[] { 0, animationName, loop });
+                _currentAnimationName = animationName;
+                _currentAnimationLoops = loop;
                 return true;
             }
             catch (Exception ex)
@@ -259,6 +304,8 @@ namespace ParrotApp.Parrot
             try
             {
                 _setAnimation.Invoke(_spineAnimationState, new object[] { 0, "Idle_1", true });
+                _currentAnimationName = "Idle_1";
+                _currentAnimationLoops = true;
             }
             catch
             {
@@ -406,7 +453,8 @@ namespace ParrotApp.Parrot
             }
             if (capabilityId == "cheek_pinch_release")
             {
-                ResetCheekPose();
+                BeginCheekRelease();
+                BeginSquashBounce(cheekReleaseSquash);
                 TryPlaySpineAnimation("Touch_End", loop: false);
                 return true;
             }
@@ -426,16 +474,15 @@ namespace ParrotApp.Parrot
             if (capabilityId == "body_pickup_start")
             {
                 ResetCheekPose();
-                return TryPlaySpineAnimation("Surprise_1", loop: false) || TryPlaySpineAnimation("Idle_1", loop: true);
+                return PlayHeldBodyLoop();
             }
             if (capabilityId == "body_held_in_air")
             {
-                return TryPlaySpineAnimation("Close_1", loop: false) || TryPlaySpineAnimation("Idle_1", loop: true);
+                return PlayHeldBodyLoop();
             }
             if (capabilityId == "body_dragging_in_air")
             {
-                string animationName = p.drag_speed > 0.45f ? "Panic_1" : "Close_1";
-                return TryPlaySpineAnimation(animationName, loop: false) || TryPlaySpineAnimation("Idle_1", loop: true);
+                return PlayHeldBodyLoop();
             }
             if (capabilityId == "body_place_preview")
             {
@@ -452,6 +499,23 @@ namespace ParrotApp.Parrot
                 return TryPlaySpineAnimation("Worry_1", loop: false) || TryPlaySpineAnimation("Idle_1", loop: true);
             }
             return false;
+        }
+
+        private bool PlayHeldBodyLoop()
+        {
+            return TryPlaySpineAnimation("Close_1", loop: true) || TryPlaySpineAnimation("Idle_1", loop: true);
+        }
+
+        private bool ApplyDirectTouchCapability(string capabilityId)
+        {
+            BeginSquashBounce(touchSquash);
+            string animationName = "Touch_Idle";
+            if (capabilityId == "pat_idle") animationName = "Pat_Idle";
+            else if (capabilityId == "pat_end") animationName = "Pat_End";
+            else if (capabilityId == "touch_end") animationName = "Touch_End";
+
+            return TryPlaySpineAnimation(animationName, ShouldLoop(capabilityId))
+                || TryPlaySpineAnimation("Idle_1", loop: true);
         }
 
         private bool ApplyLineBVoiceActivity(string capabilityId, string parametersJson)
@@ -547,6 +611,11 @@ namespace ParrotApp.Parrot
 
         private void ApplyCheekPose(CheekPinchJson p)
         {
+            ApplyCheekPose(p, rememberPose: true);
+        }
+
+        private void ApplyCheekPose(CheekPinchJson p, bool rememberPose)
+        {
             if (_spineSkeleton == null || _findBone == null) CacheSpineHandles();
             if (_spineSkeleton == null || _findBone == null) return;
 
@@ -558,11 +627,21 @@ namespace ParrotApp.Parrot
                 dragX = p.side == "left" ? -1f : p.side == "right" ? 1f : 0f;
             }
 
+            if (rememberPose)
+            {
+                _cheekReleaseActive = false;
+                p.strength = strength;
+                p.drag_x = dragX;
+                p.drag_y = dragY;
+                _cheekReleaseStartPose = p;
+                _cheekHasPose = true;
+            }
+
             bool left = p.side != "right";
             bool right = p.side != "left";
             if (left) ApplyCheekBone("S1_F_Ball_L_CT", -Mathf.Abs(dragX), dragY, strength);
             if (right) ApplyCheekBone("S1_F_Ball_R_CT", Mathf.Abs(dragX), dragY, strength);
-            ApplyCheekBone("Character_Ball_Move", dragX * 0.3f, dragY * 0.2f, strength * 0.35f);
+            ApplyCheekBone("Character_Ball_Move", dragX * 0.3f, dragY * 0.2f, strength * cheekHeadFollowStrength);
             _updateSkeletonWorldTransform?.Invoke(_spineSkeleton, null);
         }
 
@@ -571,15 +650,101 @@ namespace ParrotApp.Parrot
             var pose = GetCheekPose(boneName);
             if (pose.Bone == null) return;
 
-            float pullUnits = 20f * strength;
+            float pullUnits = Mathf.Max(0f, cheekMaxPullUnits) * strength;
             SetFloatProperty(pose.Bone, "X", pose.X + xDirection * pullUnits);
-            SetFloatProperty(pose.Bone, "Y", pose.Y + yDirection * pullUnits * 0.45f);
-            SetFloatProperty(pose.Bone, "ScaleX", pose.ScaleX * (1f + 0.12f * strength));
-            SetFloatProperty(pose.Bone, "ScaleY", pose.ScaleY * (1f - 0.06f * strength));
+            SetFloatProperty(pose.Bone, "Y", pose.Y + yDirection * pullUnits * cheekVerticalPullRatio);
+            SetFloatProperty(pose.Bone, "ScaleX", pose.ScaleX * (1f + cheekScaleXAtFullPull * strength));
+            SetFloatProperty(pose.Bone, "ScaleY", pose.ScaleY * (1f + cheekScaleYAtFullPull * strength));
+        }
+
+        private void BeginCheekRelease()
+        {
+            if (!_cheekHasPose)
+            {
+                ResetCheekPose();
+                return;
+            }
+
+            _cheekReleaseStartedAt = Time.time;
+            _cheekReleaseActive = true;
+        }
+
+        private void UpdateCheekRelease()
+        {
+            if (!_cheekReleaseActive) return;
+
+            float duration = Mathf.Max(0.01f, cheekReleaseSeconds);
+            float t = Mathf.Clamp01((Time.time - _cheekReleaseStartedAt) / duration);
+            float easeOut = t * t * (3f - 2f * t);
+            float envelope = 1f - t;
+            float bounce = Mathf.Sin(t * Mathf.PI * 2.5f) * cheekReleaseBounce * envelope;
+
+            var pose = _cheekReleaseStartPose;
+            pose.strength = Mathf.Clamp01(_cheekReleaseStartPose.strength * Mathf.Max(0f, 1f - easeOut + bounce));
+            pose.drag_x = Mathf.Lerp(_cheekReleaseStartPose.drag_x, 0f, easeOut);
+            pose.drag_y = Mathf.Lerp(_cheekReleaseStartPose.drag_y, 0f, easeOut);
+            ApplyCheekPose(pose, rememberPose: false);
+
+            if (t >= 1f)
+            {
+                ResetCheekPose();
+            }
+        }
+
+        private void ApplyTouchSquashIfNeeded(string capabilityId)
+        {
+            if (capabilityId == "pat_idle"
+                || capabilityId == "pat_end"
+                || capabilityId == "touch_idle"
+                || capabilityId == "touch_end")
+            {
+                BeginSquashBounce(touchSquash);
+            }
+        }
+
+        private void BeginSquashBounce(float amount)
+        {
+            amount = Mathf.Max(0f, amount);
+            if (amount <= 0f) return;
+
+            if (!_squashBaseCaptured || !_squashActive)
+            {
+                _squashBaseScale = transform.localScale;
+                _squashBaseCaptured = true;
+            }
+
+            _squashAmount = Mathf.Max(_squashAmount, amount);
+            _squashStartedAt = Time.time;
+            _squashActive = true;
+        }
+
+        private void UpdateSquashBounce()
+        {
+            if (!_squashActive || !_squashBaseCaptured) return;
+
+            float duration = Mathf.Max(0.01f, squashBounceSeconds);
+            float t = Mathf.Clamp01((Time.time - _squashStartedAt) / duration);
+            float envelope = (1f - t) * (1f - t);
+            float wave = Mathf.Sin(t * Mathf.PI * squashBounceCycles);
+            float squash = wave * envelope * _squashAmount;
+
+            transform.localScale = new Vector3(
+                _squashBaseScale.x * (1f + squash),
+                _squashBaseScale.y * (1f - squash * 0.62f),
+                _squashBaseScale.z);
+
+            if (t >= 1f)
+            {
+                transform.localScale = _squashBaseScale;
+                _squashAmount = 0f;
+                _squashActive = false;
+            }
         }
 
         private void ResetCheekPose()
         {
+            _cheekReleaseActive = false;
+            _cheekHasPose = false;
             if (_spineSkeleton == null || _findBone == null) CacheSpineHandles();
             foreach (var item in _cheekBoneSetup)
             {
@@ -710,6 +875,9 @@ namespace ParrotApp.Parrot
             public string turn_decision;
             public string speaker_role;
             public float echo_score;
+            public string voiceprint_decision;
+            public string voiceprint_profile_id;
+            public float speaker_similarity;
             public string model_reaction_policy;
             public string recommended_model_trigger;
             public float suppression_duration_s;
@@ -723,6 +891,9 @@ namespace ParrotApp.Parrot
                 turn_decision = "",
                 speaker_role = "",
                 echo_score = 0f,
+                voiceprint_decision = "",
+                voiceprint_profile_id = "",
+                speaker_similarity = 0f,
                 model_reaction_policy = "",
                 recommended_model_trigger = "",
                 suppression_duration_s = 0f,

@@ -292,15 +292,15 @@ def test_ner_pickup_place_interactor_is_long_press_ar_placement_based() -> None:
     assert "QueryTriggerInteraction.Collide" in interactor
     assert "QueryTriggerInteraction.Ignore" in interactor
     assert "new Plane(Vector3.up" in interactor
-    assert "targetRoot.position = groundPoint + Vector3.up * pickupLiftMeters" in interactor
+    assert "targetRoot.position = LiftedGroundPoint(groundPoint)" in interactor
     assert "targetRoot.position = groundPoint" in interactor
     assert "DropToLastGroundPoint" in interactor
     assert "IsOwnModelCollider" in interactor
     assert "_lastScreenPosition = screenPosition" in interactor
-    assert "if (!SendBodyCapability(\"body_dragging_in_air\"" in interactor
-    assert "body_pickup_start" in interactor
+    assert "UpdatePickupLiftFromPointer" in interactor
+    assert "heightDragPixelsForFullRange" in interactor
+    assert "LiftedGroundPoint" in interactor
     assert "body_held_in_air" in interactor
-    assert "body_dragging_in_air" in interactor
     assert "body_place_release" in interactor
     assert "body_place_cancel" in interactor
     assert "EventSystem.current.IsPointerOverGameObject" in interactor

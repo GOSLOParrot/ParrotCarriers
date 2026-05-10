@@ -19,7 +19,10 @@
     "provider": "google.TTS",
     "language": "cmn-CN",
     "voice_name": "cmn-CN-Wavenet-D",
-    "style_note": "Default LineB test voice; configurable by RoomSetting."
+    "style_note": "Default LineB test voice; configurable by RoomSetting.",
+    "voice_asset_manifest_path": "",
+    "sample_audio_root": "",
+    "rights_mode": "provider_premade"
   },
   "voiceprint": {
     "voiceprint_profile_id": "voiceprint_monitor_default",
@@ -44,8 +47,13 @@
       "GOOGLE_TTS_LANGUAGE",
       "GOOGLE_TTS_VOICE",
       "PARROT_LINEB_VOICEPRINT_ENABLED",
+      "PARROT_LINEB_VOICEPRINT_PROFILE_ID",
+      "PARROT_LINEB_VOICEPRINT_PROVIDER",
+      "PARROT_LINEB_VOICEPRINT_MANIFEST",
       "PARROT_AUDIO_OUTPUT_ROUTE",
-      "PARROT_LINEB_ECHO_HANDLING_MODE"
+      "PARROT_LINEB_ECHO_HANDLING_MODE",
+      "NER_PRIVATE_VOICE_MANIFEST",
+      "NER_PRIVATE_VOICE_AUDIO_ROOT"
     ]
   }
 }

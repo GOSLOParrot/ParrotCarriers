@@ -166,6 +166,35 @@ def build_app():  # type: ignore[no-untyped-def]
             asr_text=str(body.get("asr_text") or body.get("text") or ""),
             voiceprint_hash=str(body.get("voiceprint_hash") or ""),
             echo_score=_body_float_or_none(body.get("echo_score")),
+            speaker_similarity=_body_float_or_none(body.get("speaker_similarity")),
+            voiceprint_decision=str(body.get("voiceprint_decision") or ""),
+            speaker_label=str(body.get("speaker_label") or ""),
+            voiceprint_profile_id=str(body.get("voiceprint_profile_id") or ""),
+            voiceprint_enabled=_body_bool_or_none(body.get("voiceprint_enabled")),
+            voiceprint_provider=str(body.get("voiceprint_provider") or ""),
+            voiceprint_manifest_path=str(body.get("voiceprint_manifest_path") or ""),
+            voiceprint_threshold_accept=_body_float_or_none(
+                body.get("voiceprint_threshold_accept")
+            ),
+            voiceprint_threshold_reject=_body_float_or_none(
+                body.get("voiceprint_threshold_reject")
+            ),
+        )
+
+    @app.post("/api/app/lineb/voiceprint/verify-embedding")
+    async def lineb_voiceprint_verify_embedding(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        embedding = body.get("embedding")
+        if not isinstance(embedding, list):
+            embedding = []
+        embedding_values: list[float] = []
+        for item in embedding:
+            parsed = _body_float_or_none(item)
+            if parsed is not None:
+                embedding_values.append(parsed)
+        return AppFirstVersionFacade().verify_lineb_voiceprint_embedding(
+            embedding_values,
+            observed_at=_body_float_or_none(body.get("observed_at")),
         )
 
     @app.get("/api/app/live-state")

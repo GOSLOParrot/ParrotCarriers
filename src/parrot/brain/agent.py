@@ -262,9 +262,9 @@ def _attach_transcript_listener_to_session(
 
                 decision = classify_mic_input(asr_text=ev.transcript)
                 _schedule_lineb_voice_activity_reaction("user_input_transcribed")
-                if decision.turn_decision == "agent_echo":
+                if decision.turn_decision != "user_turn":
                     logger.info(
-                        "LineB suppressed mic fragment as agent echo: %s",
+                        "LineB suppressed mic fragment before user turn: %s",
                         decision.as_json(),
                     )
                     return
@@ -521,6 +521,39 @@ def _attach_menu_rpc(room: "Any") -> None:
             asr_text=str(payload.get("asr_text") or payload.get("text") or ""),
             voiceprint_hash=str(payload.get("voiceprint_hash") or ""),
             echo_score=_payload_float_or_none(payload, "echo_score"),
+            speaker_similarity=_payload_float_or_none(payload, "speaker_similarity"),
+            voiceprint_decision=str(payload.get("voiceprint_decision") or ""),
+            speaker_label=str(payload.get("speaker_label") or ""),
+            voiceprint_profile_id=str(payload.get("voiceprint_profile_id") or ""),
+            voiceprint_enabled=_payload_bool_or_none(payload, "voiceprint_enabled"),
+            voiceprint_provider=str(payload.get("voiceprint_provider") or ""),
+            voiceprint_manifest_path=str(payload.get("voiceprint_manifest_path") or ""),
+            voiceprint_threshold_accept=_payload_float_or_none(
+                payload,
+                "voiceprint_threshold_accept",
+            ),
+            voiceprint_threshold_reject=_payload_float_or_none(
+                payload,
+                "voiceprint_threshold_reject",
+            ),
+        )
+        return _dump({"status": "ok", "decision": decision})
+
+    @room.local_participant.register_rpc_method("verifyLineBVoiceprintEmbedding")
+    async def _verify_lineb_voiceprint_embedding(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        embedding = payload.get("embedding")
+        values: list[float] = []
+        if isinstance(embedding, list):
+            for item in embedding:
+                parsed = _payload_float_or_none({"value": item}, "value")
+                if parsed is not None:
+                    values.append(parsed)
+        decision = AppFirstVersionFacade().verify_lineb_voiceprint_embedding(
+            values,
+            observed_at=_payload_float_or_none(payload, "observed_at"),
         )
         return _dump({"status": "ok", "decision": decision})
 

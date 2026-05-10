@@ -17,6 +17,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import asdict, dataclass, field
+from difflib import SequenceMatcher
 from typing import Any
 
 from parrot.scheduler.blackboard import open_bb_client
@@ -57,6 +58,9 @@ class MicInputDecision:
     reason: str = ""
     asr_text: str = ""
     voiceprint_hash: str = ""
+    voiceprint_decision: str = ""
+    voiceprint_profile_id: str = ""
+    speaker_similarity: float = 0.0
 
     def as_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -156,22 +160,56 @@ def classify_mic_input(
     asr_text: str = "",
     voiceprint_hash: str = "",
     echo_score: float | None = None,
+    speaker_similarity: float | None = None,
+    voiceprint_decision: str = "",
+    speaker_label: str = "",
+    voiceprint_profile_id: str = "",
+    voiceprint_enabled: bool | None = None,
+    voiceprint_provider: str = "",
+    voiceprint_manifest_path: str = "",
+    voiceprint_threshold_accept: float | None = None,
+    voiceprint_threshold_reject: float | None = None,
 ) -> MicInputDecision:
     """Classify a mic fragment as user input, agent echo, noise, or uncertain."""
     global _last_decision
 
     now = time.time() if observed_at is None else _float_or_default(observed_at, time.time())
     match = _matching_segment(now, max(0.0, _float_or_default(duration_s, 0.0)))
-    score = _score(match, voiceprint_hash, echo_score)
+    score = _score(match, voiceprint_hash, echo_score, asr_text)
+    voiceprint = _voiceprint_payload(
+        speaker_similarity=speaker_similarity,
+        voiceprint_decision=voiceprint_decision,
+        speaker_label=speaker_label,
+        voiceprint_profile_id=voiceprint_profile_id,
+        voiceprint_enabled=voiceprint_enabled,
+        voiceprint_provider=voiceprint_provider,
+        voiceprint_manifest_path=voiceprint_manifest_path,
+        voiceprint_threshold_accept=voiceprint_threshold_accept,
+        voiceprint_threshold_reject=voiceprint_threshold_reject,
+    )
+    owner_verified = _voiceprint_accepts(voiceprint)
+    speaker_rejected = _voiceprint_rejects(voiceprint)
 
     if match is not None and score >= DEFAULT_ECHO_SCORE_THRESHOLD:
         speaker_role = "agent"
         turn_decision = "agent_echo"
         reason = "matches_recent_tts_segment"
+    elif match is not None and owner_verified:
+        speaker_role = "user"
+        turn_decision = "user_turn"
+        reason = "owner_voiceprint_overrides_tts_overlap"
     elif match is None and echo_score is not None and score >= DEFAULT_ECHO_SCORE_THRESHOLD:
         speaker_role = "uncertain"
         turn_decision = "uncertain"
         reason = "high_echo_score_without_recent_tts"
+    elif speaker_rejected:
+        speaker_role = "other"
+        turn_decision = "speaker_rejected"
+        reason = "speaker_voiceprint_rejected"
+    elif owner_verified:
+        speaker_role = "user"
+        turn_decision = "user_turn"
+        reason = "speaker_voiceprint_accepted"
     elif not str(asr_text or "").strip() and score < 0.25:
         speaker_role = "unknown"
         turn_decision = "noise"
@@ -199,6 +237,9 @@ def classify_mic_input(
         reason=reason,
         asr_text=str(asr_text or ""),
         voiceprint_hash=str(voiceprint_hash or ""),
+        voiceprint_decision=str(voiceprint.get("decision") or ""),
+        voiceprint_profile_id=str(voiceprint.get("profile_id") or ""),
+        speaker_similarity=_float_or_default(voiceprint.get("similarity"), 0.0),
     )
     _last_decision = decision
     _write_bb("transient/lineb_last_input_decision", decision.as_json())
@@ -239,7 +280,7 @@ def _write_voice_activity_for_decision(decision: MicInputDecision) -> dict[str, 
             source="mic_input_classifier",
             decision=decision,
             model_reaction_policy="no_model_reaction",
-            recommended_model_trigger="lineb_noise",
+            recommended_model_trigger="lineb_listening_noise",
         )
     if decision.turn_decision == "uncertain":
         return _write_voice_activity(
@@ -247,7 +288,15 @@ def _write_voice_activity_for_decision(decision: MicInputDecision) -> dict[str, 
             source="mic_input_classifier",
             decision=decision,
             model_reaction_policy="subtle_listen_only",
-            recommended_model_trigger="lineb_uncertain_input",
+            recommended_model_trigger="lineb_listening_uncertain",
+        )
+    if decision.turn_decision == "speaker_rejected":
+        return _write_voice_activity(
+            state="listening_uncertain",
+            source="mic_input_classifier",
+            decision=decision,
+            model_reaction_policy="reject_non_owner_no_reply",
+            recommended_model_trigger="lineb_listening_uncertain",
         )
     return _write_voice_activity(
         state="listening",
@@ -279,6 +328,9 @@ def _write_voice_activity(
         "turn_decision": decision.turn_decision if decision else "",
         "speaker_role": decision.speaker_role if decision else "",
         "echo_score": decision.echo_score if decision else 0.0,
+        "voiceprint_decision": decision.voiceprint_decision if decision else "",
+        "voiceprint_profile_id": decision.voiceprint_profile_id if decision else "",
+        "speaker_similarity": decision.speaker_similarity if decision else 0.0,
         "started_at": segment.started_at if segment else 0.0,
         "expected_end_at": segment.expected_end_at if segment else 0.0,
         "suppression_duration_s": (
@@ -310,19 +362,137 @@ def _score(
     match: TtsSegment | None,
     voiceprint_hash: str,
     echo_score: float | None,
+    asr_text: str = "",
 ) -> float:
+    scores: list[float] = []
     if echo_score is not None:
-        return max(0.0, min(1.0, _float_or_default(echo_score, 0.0)))
+        scores.append(max(0.0, min(1.0, _float_or_default(echo_score, 0.0))))
     if (
         match is not None
         and voiceprint_hash
         and match.voiceprint_hash
         and voiceprint_hash == match.voiceprint_hash
     ):
-        return 1.0
+        scores.append(1.0)
     if match is not None:
-        return 0.5
-    return 0.0
+        text_score = _text_echo_score(match.text_summary, asr_text)
+        if text_score > 0.0:
+            scores.append(text_score)
+        scores.append(0.5)
+    return max(scores) if scores else 0.0
+
+
+def _text_echo_score(tts_text: str, asr_text: str) -> float:
+    expected = _normalize_echo_text(tts_text)
+    observed = _normalize_echo_text(asr_text)
+    if len(expected) < 4 or len(observed) < 4:
+        return 0.0
+    if expected in observed or observed in expected:
+        return 0.95
+    return SequenceMatcher(None, expected, observed).ratio()
+
+
+def _normalize_echo_text(text: str) -> str:
+    return "".join(ch.lower() for ch in str(text or "") if ch.isalnum())
+
+
+def _voiceprint_payload(
+    *,
+    speaker_similarity: float | None,
+    voiceprint_decision: str,
+    speaker_label: str,
+    voiceprint_profile_id: str,
+    voiceprint_enabled: bool | None,
+    voiceprint_provider: str,
+    voiceprint_manifest_path: str,
+    voiceprint_threshold_accept: float | None,
+    voiceprint_threshold_reject: float | None,
+) -> dict[str, Any]:
+    decision = str(voiceprint_decision or "").strip().lower()
+    label = str(speaker_label or "").strip().lower()
+    explicit = {
+        "decision": decision or _decision_from_label(label),
+        "speaker_role": _speaker_role_from_label(label, decision),
+        "similarity": _float_or_default(speaker_similarity, 0.0),
+        "profile_id": str(voiceprint_profile_id or ""),
+        "source": "explicit",
+    }
+    if _voiceprint_rejects(explicit):
+        return explicit
+    if speaker_similarity is not None:
+        try:
+            from parrot.brain.lineb_voiceprint import decision_payload_for_similarity
+
+            return decision_payload_for_similarity(
+                speaker_similarity,
+                enabled=voiceprint_enabled,
+                manifest_path=voiceprint_manifest_path or None,
+                provider=voiceprint_provider,
+                profile_id=voiceprint_profile_id,
+                threshold_accept=voiceprint_threshold_accept,
+                threshold_reject=voiceprint_threshold_reject,
+            )
+        except Exception:
+            return {
+                "decision": "not_configured",
+                "speaker_role": "unknown",
+                "similarity": _float_or_default(speaker_similarity, 0.0),
+                "profile_id": str(voiceprint_profile_id or ""),
+                "source": "speaker_similarity_fallback",
+            }
+    if _voiceprint_accepts(explicit):
+        return {
+            "decision": "untrusted_owner_claim",
+            "speaker_role": "unknown",
+            "similarity": 0.0,
+            "profile_id": str(voiceprint_profile_id or ""),
+            "source": "explicit_untrusted",
+        }
+    if decision:
+        return explicit
+    if label:
+        return {
+            "decision": _decision_from_label(label),
+            "speaker_role": _speaker_role_from_label(label, ""),
+            "similarity": _float_or_default(speaker_similarity, 0.0),
+            "profile_id": str(voiceprint_profile_id or ""),
+            "source": "speaker_label",
+        }
+    return {}
+
+
+def _voiceprint_accepts(payload: dict[str, Any]) -> bool:
+    decision = str(payload.get("decision") or "").strip().lower()
+    role = str(payload.get("speaker_role") or "").strip().lower()
+    return decision in {"owner_user", "accepted", "verified_user"} or role == "user"
+
+
+def _voiceprint_rejects(payload: dict[str, Any]) -> bool:
+    decision = str(payload.get("decision") or "").strip().lower()
+    role = str(payload.get("speaker_role") or "").strip().lower()
+    return decision in {"other_speaker", "rejected", "speaker_rejected"} or role == "other"
+
+
+def _decision_from_label(label: str) -> str:
+    if label in {"owner", "user", "enrolled_user"}:
+        return "owner_user"
+    if label in {"other", "unknown_speaker", "guest"}:
+        return "other_speaker"
+    return "uncertain"
+
+
+def _speaker_role_from_label(label: str, decision: str) -> str:
+    if label in {"owner", "user", "enrolled_user"}:
+        return "user"
+    if label in {"other", "unknown_speaker", "guest"}:
+        return "other"
+    if decision in {"owner_user", "accepted", "verified_user"}:
+        return "user"
+    if decision in {"other_speaker", "rejected", "speaker_rejected"}:
+        return "other"
+    if decision:
+        return "uncertain"
+    return ""
 
 
 def _risk_for_route(output_route: str, voiceprint_enabled: bool) -> str:
@@ -349,7 +519,16 @@ def _echo_summary(output_route: str, risk: str, handling: str) -> str:
 
 
 def _is_isolated_output(output_route: str) -> bool:
-    return output_route.lower() in {"headphones", "headset", "bluetooth", "bluetooth_headset"}
+    return output_route.lower() in {
+        "headphones",
+        "headset",
+        "wired_headset",
+        "bluetooth",
+        "bluetooth_headset",
+        "bluetooth_sco",
+        "bluetooth_a2dp",
+        "earpiece",
+    }
 
 
 def _is_speaker_output(output_route: str) -> bool:

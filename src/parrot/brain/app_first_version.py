@@ -346,16 +346,66 @@ class AppFirstVersionFacade:
         asr_text: str = "",
         voiceprint_hash: str = "",
         echo_score: float | None = None,
+        speaker_similarity: float | None = None,
+        voiceprint_decision: str = "",
+        speaker_label: str = "",
+        voiceprint_profile_id: str = "",
+        voiceprint_enabled: bool | None = None,
+        voiceprint_provider: str = "",
+        voiceprint_manifest_path: str = "",
+        voiceprint_threshold_accept: float | None = None,
+        voiceprint_threshold_reject: float | None = None,
     ) -> dict[str, Any]:
         """Classify a LineB mic fragment as user turn, echo, noise, or uncertain."""
         from parrot.brain.lineb_audio_guard import classify_mic_input
 
+        voiceprint = self._active_voiceprint_config()
         return classify_mic_input(
             observed_at=observed_at,
             duration_s=duration_s,
             asr_text=asr_text,
             voiceprint_hash=voiceprint_hash,
             echo_score=echo_score,
+            speaker_similarity=speaker_similarity,
+            voiceprint_decision=voiceprint_decision,
+            speaker_label=speaker_label,
+            voiceprint_profile_id=voiceprint_profile_id or voiceprint["profile_id"],
+            voiceprint_enabled=(
+                voiceprint["enabled"] if voiceprint_enabled is None else voiceprint_enabled
+            ),
+            voiceprint_provider=voiceprint_provider or voiceprint["provider"],
+            voiceprint_manifest_path=voiceprint_manifest_path or voiceprint["manifest_path"],
+            voiceprint_threshold_accept=(
+                voiceprint_threshold_accept
+                if voiceprint_threshold_accept is not None
+                else voiceprint["threshold_accept"]
+            ),
+            voiceprint_threshold_reject=(
+                voiceprint_threshold_reject
+                if voiceprint_threshold_reject is not None
+                else voiceprint["threshold_reject"]
+            ),
+        ).as_json()
+
+    def verify_lineb_voiceprint_embedding(
+        self,
+        embedding: list[float],
+        *,
+        observed_at: float | None = None,
+    ) -> dict[str, Any]:
+        """Verify a precomputed private speaker embedding against LineB enrollment."""
+        from parrot.brain.lineb_voiceprint import verify_embedding
+
+        voiceprint = self._active_voiceprint_config()
+        return verify_embedding(
+            embedding,
+            enabled=voiceprint["enabled"],
+            manifest_path=voiceprint["manifest_path"] or None,
+            provider=voiceprint["provider"],
+            profile_id=voiceprint["profile_id"],
+            threshold_accept=voiceprint["threshold_accept"],
+            threshold_reject=voiceprint["threshold_reject"],
+            observed_at=observed_at,
         ).as_json()
 
     def module_status(self, module_id: ExternalModuleId | str) -> AppModuleStatus:
@@ -788,6 +838,32 @@ class AppFirstVersionFacade:
                 "line_profiles": self.list_line_profiles(),
             },
         )
+
+    def _active_voiceprint_manifest_path(self) -> str:
+        return self._active_voiceprint_config()["manifest_path"]
+
+    def _active_voiceprint_config(self) -> dict[str, Any]:
+        try:
+            from parrot.brain.line_profile import get_line_profile_loader
+
+            profile = get_line_profile_loader().profile_for_line("line_b", apply_env=True)
+            return {
+                "enabled": profile.voiceprint.enabled,
+                "profile_id": profile.voiceprint.voiceprint_profile_id,
+                "provider": profile.voiceprint.provider,
+                "manifest_path": profile.voiceprint.manifest_path,
+                "threshold_accept": profile.voiceprint.threshold_accept,
+                "threshold_reject": profile.voiceprint.threshold_reject,
+            }
+        except Exception:
+            return {
+                "enabled": None,
+                "profile_id": "",
+                "provider": "",
+                "manifest_path": "",
+                "threshold_accept": None,
+                "threshold_reject": None,
+            }
 
     def _obsidian_status(self) -> AppModuleStatus:
         result = check_obsidian_vault(self._obsidian_vault_path)

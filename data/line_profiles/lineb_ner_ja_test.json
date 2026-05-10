@@ -19,13 +19,21 @@
     "provider": "google.TTS",
     "language": "ja-JP",
     "voice_name": "ja-JP-Neural2-B",
-    "style_note": "Ner-inspired Japanese baseline for private device tests. This is not an official character voice or CV clone; replace through GOOGLE_TTS_VOICE or an external licensed ECS voice when available."
+    "style_note": "Ner-inspired Japanese baseline for private device tests. This is not an official character voice or CV clone; replace through GOOGLE_TTS_VOICE or an external licensed ECS voice when available.",
+    "voice_asset_manifest_path": "/secure/ecs/parrot/voices/ner/voice_manifest.json",
+    "sample_audio_root": "/secure/ecs/parrot/voices/ner/audio",
+    "rights_mode": "premade_or_permissioned_only"
   },
   "voiceprint": {
     "voiceprint_profile_id": "voiceprint_monitor_ner_test",
     "enabled": true,
     "speaker_policy": "monitor_then_gate",
-    "speaker_state": "unknown"
+    "speaker_state": "unknown",
+    "provider": "speechbrain_ecapa",
+    "manifest_path": "/secure/ecs/parrot/voiceprint/user_owner_tokyo_v1/voiceprint_manifest.json",
+    "data_root": "/secure/ecs/parrot/voiceprint/user_owner_tokyo_v1",
+    "threshold_accept": 0.78,
+    "threshold_reject": 0.62
   },
   "echo": {
     "echo_policy_id": "echo_isolated_ner_test",
@@ -47,8 +55,16 @@
       "GOOGLE_TTS_LANGUAGE",
       "GOOGLE_TTS_VOICE",
       "PARROT_LINEB_VOICEPRINT_ENABLED",
+      "PARROT_LINEB_VOICEPRINT_PROFILE_ID",
+      "PARROT_LINEB_VOICEPRINT_PROVIDER",
+      "PARROT_LINEB_VOICEPRINT_MANIFEST",
+      "PARROT_LINEB_VOICEPRINT_THRESHOLD_ACCEPT",
+      "PARROT_LINEB_VOICEPRINT_THRESHOLD_REJECT",
       "PARROT_AUDIO_OUTPUT_ROUTE",
-      "PARROT_LINEB_ECHO_HANDLING_MODE"
+      "PARROT_LINEB_ECHO_HANDLING_MODE",
+      "NER_PRIVATE_VOICE_MANIFEST",
+      "NER_PRIVATE_VOICE_AUDIO_ROOT",
+      "PARROT_VOICEPRINT_AUDIO_ROOT"
     ]
   }
 }

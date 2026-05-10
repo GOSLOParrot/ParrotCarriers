@@ -40,6 +40,21 @@ line_b = [
     # Line B 默认不开 (PARROT_LLM_PIPELINE=line_a 默认); 装这一组即可 env-gate 切换.
     "livekit-plugins-silero>=1.5,<2.0",
 ]
+voiceprint = [
+    # Optional ECS/private owner-speaker verification for LineB.
+    # Raw audio and embeddings stay outside Git; this group only installs the
+    # local verifier runtime.
+    "speechbrain>=1.0,<2.0",
+    "torch>=2.1",
+    "torchaudio>=2.1",
+    "numpy>=1.26,<3.0",
+]
+voiceprint_fast = [
+    # Lightweight CPU fallback for quick local owner-speaker checks.
+    # Resemblyzer is fast and simple, but its own docs note English is its
+    # strongest language, so keep SpeechBrain ECAPA as the default for ja/zh.
+    "resemblyzer>=0.1.4,<0.2",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/parrot"]

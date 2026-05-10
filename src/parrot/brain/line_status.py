@@ -186,6 +186,7 @@ def active_line_id() -> str:
     profile_id = str(
         _bb_value("global/active_line_profile_id", "")
         or os.getenv("PARROT_LINE_PROFILE", "")
+        or os.getenv("PARROT_ACTIVE_LINE_PROFILE_ID", "")
     ).strip()
     if profile_id:
         return get_line_profile_loader().load(profile_id).line_id
@@ -262,7 +263,8 @@ def _line_b_components(profile: LineProfile) -> tuple[ComponentReadiness, ...]:
         "Silero VAD plugin is importable." if vad_ready else "Silero VAD plugin was not found.",
         {"provider": "silero.VAD"},
     )
-    return (api_key, adc, asr, tts, vad)
+    voiceprint_verifier = _voiceprint_verifier_component(profile)
+    return (api_key, adc, asr, tts, vad, voiceprint_verifier)
 
 
 def _line_b_overall(
@@ -273,6 +275,7 @@ def _line_b_overall(
     asr = _component_state(components, "asr")
     tts = _component_state(components, "tts")
     vad = _component_state(components, "vad")
+    voiceprint_verifier = _component_state(components, "voiceprint_verifier")
     if api_key == "blocked":
         return ("blocked", "error", "LineB needs GOOGLE_API_KEY for Gemini text LLM.")
     if tts == "blocked":
@@ -291,7 +294,67 @@ def _line_b_overall(
             "warning",
             "LineB credentials look ready, but Silero VAD import is not confirmed.",
         )
+    if voiceprint_verifier in {"pending_enrollment", "degraded", "not_configured"}:
+        return (
+            "degraded",
+            "warning",
+            "LineB is configured, but owner voiceprint verification still needs enrollment/runtime setup.",
+        )
     return ("ready", "ok", "LineB STT/LLM/TTS environment looks configured.")
+
+
+def _voiceprint_verifier_component(profile: LineProfile) -> ComponentReadiness:
+    if not profile.voiceprint.enabled:
+        return ComponentReadiness(
+            "voiceprint_verifier",
+            "disabled",
+            "warning",
+            "Owner voiceprint verification is disabled for this LineProfile.",
+            profile.voiceprint.as_json(),
+        )
+    try:
+        from parrot.brain.lineb_voiceprint import runtime_status
+
+        status = runtime_status(
+            enabled=profile.voiceprint.enabled,
+            manifest_path=profile.voiceprint.manifest_path or None,
+            provider=profile.voiceprint.provider,
+            profile_id=profile.voiceprint.voiceprint_profile_id,
+            threshold_accept=profile.voiceprint.threshold_accept,
+            threshold_reject=profile.voiceprint.threshold_reject,
+        )
+    except Exception as exc:  # noqa: BLE001 - status read should never break menus.
+        return ComponentReadiness(
+            "voiceprint_verifier",
+            "degraded",
+            "warning",
+            f"Voiceprint verifier status failed: {type(exc).__name__}: {exc}",
+            profile.voiceprint.as_json(),
+        )
+    if status.state == "disabled":
+        return ComponentReadiness(
+            "voiceprint_verifier",
+            "not_configured",
+            "warning",
+            (
+                "LineProfile enables voiceprint, but "
+                "PARROT_LINEB_VOICEPRINT_ENABLED is not active."
+            ),
+            {
+                **profile.voiceprint.as_json(),
+                "runtime": status.as_json(),
+            },
+        )
+    return ComponentReadiness(
+        "voiceprint_verifier",
+        status.state,
+        status.health,
+        status.summary,
+        {
+            **profile.voiceprint.as_json(),
+            "runtime": status.as_json(),
+        },
+    )
 
 
 def _adc_state() -> tuple[str, str, dict[str, Any]]:
@@ -380,7 +443,16 @@ def _echo_status(
         or profile.echo.handling_mode
     )
 
-    isolated = output_route in {"headphones", "headset", "bluetooth", "bluetooth_headset"}
+    isolated = output_route in {
+        "headphones",
+        "headset",
+        "wired_headset",
+        "bluetooth",
+        "bluetooth_headset",
+        "bluetooth_sco",
+        "bluetooth_a2dp",
+        "earpiece",
+    }
     speaker = output_route in {"speaker", "phone_speaker", "loudspeaker"}
 
     if line_id == LINE_A_ID:

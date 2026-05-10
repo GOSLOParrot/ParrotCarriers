@@ -17,6 +17,7 @@ related:
   - "app_v1_lineb_menu_readiness_interface_20260511.md (LineB menu readiness)"
   - "app_v1_model_capability_resolver_interface_20260511.md (model capability resolver)"
   - "app_v1_lineb_ner_realdevice_config_report_20260511.md (LineB + Ner device config)"
+  - "app_v1_lineb_voiceprint_verifier_upgrade_20260511.md (LineB owner voiceprint verifier)"
 ---
 
 # Interface Workspace Index
@@ -50,6 +51,7 @@ Blocking frontend tasks:
 Latest LineB + Ner validation route:
 
 - [`app_v1_lineb_ner_realdevice_config_report_20260511.md`](app_v1_lineb_ner_realdevice_config_report_20260511.md)
+- [`app_v1_lineb_voiceprint_verifier_upgrade_20260511.md`](app_v1_lineb_voiceprint_verifier_upgrade_20260511.md)
 
 ## Core Interface Rules
 

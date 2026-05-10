@@ -21,9 +21,15 @@ namespace ParrotApp.Parrot
         [SerializeField] private bool autoCreateBodyCollider = true;
         [SerializeField] private Vector3 bodyColliderCenter = new Vector3(0f, 0.12f, 0f);
         [SerializeField] private Vector3 bodyColliderSize = new Vector3(0.16f, 0.24f, 0.10f);
-        [SerializeField] private float longPressSeconds = 0.34f;
+        [SerializeField] private float longPressSeconds = 0.58f;
         [SerializeField] private float cancelBeforeHoldPixels = 22f;
+        [SerializeField] private float clickMaxPixels = 22f;
+        [SerializeField] private float clickEndDelaySeconds = 0.55f;
         [SerializeField] private float pickupLiftMeters = 0.08f;
+        [SerializeField] private float minPickupLiftMeters = 0.05f;
+        [SerializeField] private float maxPickupLiftMeters = 0.18f;
+        [SerializeField] private float heightDragPixelsForFullRange = 260f;
+        [SerializeField] private float pickupAscentSeconds = 0.16f;
         [SerializeField] private float maxRayDistanceMeters = 8f;
         [SerializeField] private LayerMask bodyRaycastMask = ~0;
         [SerializeField] private LayerMask placementRaycastMask = ~0;
@@ -37,6 +43,11 @@ namespace ParrotApp.Parrot
         private float _pressStartedAt;
         private float _heldStartedAt;
         private float _dragPlaneY;
+        private float _currentPickupLiftMeters;
+        private float _pickupBaseLiftMeters;
+        private Vector2 _pickupStartScreenPosition;
+        private string _queuedCapabilityId = "";
+        private float _queuedCapabilityAt = -1f;
 
         void Awake()
         {
@@ -51,6 +62,8 @@ namespace ParrotApp.Parrot
             if (targetCamera == null) targetCamera = Camera.main;
             if (targetCamera == null) return;
             if (targetRoot == null) targetRoot = transform;
+            UpdateQueuedCapability();
+            UpdateHeldLoopCapability();
 
             if (Input.touchCount > 0)
             {
@@ -78,6 +91,7 @@ namespace ParrotApp.Parrot
                 SendBodyCapability("body_place_cancel", _lastGroundPoint, 0f);
                 DropToLastGroundPoint();
             }
+            ClearQueuedCapability();
             ResetState();
         }
 
@@ -141,11 +155,6 @@ namespace ParrotApp.Parrot
             if (_state == PickupState.Pressing)
             {
                 _lastScreenPosition = screenPosition;
-                if ((screenPosition - _pressScreenPosition).magnitude > cancelBeforeHoldPixels)
-                {
-                    ResetState();
-                    return;
-                }
                 if (Time.time - _pressStartedAt >= longPressSeconds)
                 {
                     BeginPickup(screenPosition);
@@ -166,35 +175,29 @@ namespace ParrotApp.Parrot
 
             _state = PickupState.Held;
             _heldStartedAt = Time.time;
+            _currentPickupLiftMeters = ClampedPickupLift(pickupLiftMeters);
+            _pickupBaseLiftMeters = _currentPickupLiftMeters;
+            _pickupStartScreenPosition = screenPosition;
             _lastGroundPoint = groundPoint;
             _lastScreenPosition = screenPosition;
 
-            if (!SendBodyCapability("body_pickup_start", groundPoint, 0f))
+            if (!SendBodyCapability("body_held_in_air", groundPoint, 0f))
             {
                 ResetState();
                 return;
             }
 
-            targetRoot.position = groundPoint + Vector3.up * pickupLiftMeters;
-            SendBodyCapability("body_held_in_air", groundPoint, 0f);
+            targetRoot.position = LiftedGroundPoint(groundPoint);
         }
 
         private void DragHeldModel(Vector2 screenPosition)
         {
             if (!TryResolveGroundPoint(screenPosition, out var groundPoint)) return;
-
-            float dt = Mathf.Max(0.001f, Time.deltaTime);
-            float dragSpeed = Vector3.Distance(groundPoint, _lastGroundPoint) / dt;
-
-            if (!SendBodyCapability("body_dragging_in_air", groundPoint, dragSpeed))
-            {
-                CancelPickup();
-                return;
-            }
+            UpdatePickupLiftFromPointer(screenPosition);
 
             _lastGroundPoint = groundPoint;
             _lastScreenPosition = screenPosition;
-            targetRoot.position = groundPoint + Vector3.up * pickupLiftMeters;
+            targetRoot.position = LiftedGroundPoint(groundPoint);
         }
 
         private void ReleaseOrCancel()
@@ -212,6 +215,10 @@ namespace ParrotApp.Parrot
                     SendBodyCapability("body_place_cancel", _lastGroundPoint, 0f);
                     DropToLastGroundPoint();
                 }
+            }
+            else if (_state == PickupState.Pressing && IsClickGesture())
+            {
+                TriggerBodyClick();
             }
             ResetState();
         }
@@ -279,13 +286,72 @@ namespace ParrotApp.Parrot
             {
                 state = capabilityId,
                 held_seconds = _state == PickupState.Held ? Mathf.Max(0f, Time.time - _heldStartedAt) : 0f,
-                lift_m = pickupLiftMeters,
+                lift_m = _state == PickupState.Held ? _currentPickupLiftMeters : pickupLiftMeters,
                 drag_speed = Mathf.Max(0f, dragSpeed),
                 ground_x = groundPoint.x,
                 ground_y = groundPoint.y,
                 ground_z = groundPoint.z,
             };
             return controller.ApplyCapability(capabilityId, JsonUtility.ToJson(payload));
+        }
+
+        private void UpdateHeldLoopCapability()
+        {
+            if (_state != PickupState.Held) return;
+            targetRoot.position = LiftedGroundPoint(_lastGroundPoint);
+        }
+
+        private void UpdatePickupLiftFromPointer(Vector2 screenPosition)
+        {
+            float range = Mathf.Max(0.001f, maxPickupLiftMeters - minPickupLiftMeters);
+            float normalizedDelta = (screenPosition.y - _pickupStartScreenPosition.y) / Mathf.Max(1f, heightDragPixelsForFullRange);
+            _currentPickupLiftMeters = ClampedPickupLift(_pickupBaseLiftMeters + normalizedDelta * range);
+        }
+
+        private float ClampedPickupLift(float liftMeters)
+        {
+            float minLift = Mathf.Min(minPickupLiftMeters, maxPickupLiftMeters);
+            float maxLift = Mathf.Max(minPickupLiftMeters, maxPickupLiftMeters);
+            return Mathf.Clamp(liftMeters, minLift, maxLift);
+        }
+
+        private Vector3 LiftedGroundPoint(Vector3 groundPoint)
+        {
+            float ascent = pickupAscentSeconds <= 0f
+                ? 1f
+                : Mathf.Clamp01((Time.time - _heldStartedAt) / pickupAscentSeconds);
+            ascent = ascent * ascent * (3f - 2f * ascent);
+            return groundPoint + Vector3.up * (_currentPickupLiftMeters * ascent);
+        }
+
+        private void TriggerBodyClick()
+        {
+            if (controller == null) return;
+            controller.ApplyCapability("pat_idle", "{}");
+            QueueCapability("pat_end", clickEndDelaySeconds);
+        }
+
+        private void QueueCapability(string capabilityId, float delaySeconds)
+        {
+            _queuedCapabilityId = capabilityId;
+            _queuedCapabilityAt = Time.time + Mathf.Max(0f, delaySeconds);
+        }
+
+        private void UpdateQueuedCapability()
+        {
+            if (controller == null) return;
+            if (string.IsNullOrEmpty(_queuedCapabilityId)) return;
+            if (Time.time < _queuedCapabilityAt) return;
+
+            string capabilityId = _queuedCapabilityId;
+            ClearQueuedCapability();
+            controller.ApplyCapability(capabilityId, "{}");
+        }
+
+        private void ClearQueuedCapability()
+        {
+            _queuedCapabilityId = "";
+            _queuedCapabilityAt = -1f;
         }
 
         private void EnsureBodyCollider()
@@ -323,6 +389,12 @@ namespace ParrotApp.Parrot
             var hitTransform = collider.transform;
             return hitTransform.IsChildOf(transform)
                 || (targetRoot != null && hitTransform.IsChildOf(targetRoot));
+        }
+
+        private bool IsClickGesture()
+        {
+            float clickThreshold = Mathf.Min(Mathf.Max(1f, clickMaxPixels), Mathf.Max(1f, cancelBeforeHoldPixels));
+            return (_lastScreenPosition - _pressScreenPosition).magnitude <= clickThreshold;
         }
 
         private static bool IsPointerOverUi(int pointerId)

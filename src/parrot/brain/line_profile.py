@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import os
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
@@ -18,6 +19,8 @@ from parrot.scheduler.blackboard import open_bb_client
 
 
 LINE_PROFILES_DIR_ENV = "PARROT_LINE_PROFILES_DIR"
+ACTIVE_LINE_PROFILE_ENV = "PARROT_LINE_PROFILE"
+ACTIVE_LINE_PROFILE_ID_ENV = "PARROT_ACTIVE_LINE_PROFILE_ID"
 DEFAULT_LINEA_PROFILE_ID = "linea_gemini_realtime"
 DEFAULT_LINEB_PROFILE_ID = "lineb_google_default"
 DEFAULT_LINE_PROFILE_ID = DEFAULT_LINEA_PROFILE_ID
@@ -71,6 +74,9 @@ class TtsProfile:
     language: str = "cmn-CN"
     voice_name: str = "cmn-CN-Wavenet-D"
     style_note: str = ""
+    voice_asset_manifest_path: str = ""
+    sample_audio_root: str = ""
+    rights_mode: str = ""
 
     @classmethod
     def from_json(cls, raw: Mapping[str, Any] | None) -> "TtsProfile":
@@ -81,6 +87,9 @@ class TtsProfile:
             language=_clean_text(data.get("language"), "cmn-CN"),
             voice_name=_clean_text(data.get("voice_name"), ""),
             style_note=str(data.get("style_note") or ""),
+            voice_asset_manifest_path=str(data.get("voice_asset_manifest_path") or ""),
+            sample_audio_root=str(data.get("sample_audio_root") or ""),
+            rights_mode=str(data.get("rights_mode") or ""),
         )
 
     def as_json(self) -> dict[str, Any]:
@@ -93,6 +102,11 @@ class VoiceprintProfile:
     enabled: bool = False
     speaker_policy: str = "monitor_only"
     speaker_state: str = "unknown"
+    provider: str = ""
+    manifest_path: str = ""
+    data_root: str = ""
+    threshold_accept: float = 0.78
+    threshold_reject: float = 0.62
 
     @classmethod
     def from_json(cls, raw: Mapping[str, Any] | None) -> "VoiceprintProfile":
@@ -105,6 +119,11 @@ class VoiceprintProfile:
             enabled=_bool_from_raw(data.get("enabled"), False),
             speaker_policy=_clean_text(data.get("speaker_policy"), "monitor_only"),
             speaker_state=_clean_text(data.get("speaker_state"), "unknown"),
+            provider=str(data.get("provider") or ""),
+            manifest_path=str(data.get("manifest_path") or ""),
+            data_root=str(data.get("data_root") or ""),
+            threshold_accept=_float_from_raw(data.get("threshold_accept"), 0.78),
+            threshold_reject=_float_from_raw(data.get("threshold_reject"), 0.62),
         )
 
     def as_json(self) -> dict[str, Any]:
@@ -234,7 +253,15 @@ class LineProfile:
         stt_languages = _env_text(env, "GOOGLE_STT_LANGUAGES")
         tts_voice = _env_text(env, "GOOGLE_TTS_VOICE")
         tts_language = _env_text(env, "GOOGLE_TTS_LANGUAGE")
+        tts_manifest = _env_text(env, "NER_PRIVATE_VOICE_MANIFEST")
+        tts_audio_root = _env_text(env, "NER_PRIVATE_VOICE_AUDIO_ROOT")
         voiceprint_enabled = _env_text(env, "PARROT_LINEB_VOICEPRINT_ENABLED")
+        voiceprint_profile_id = _env_text(env, "PARROT_LINEB_VOICEPRINT_PROFILE_ID")
+        voiceprint_provider = _env_text(env, "PARROT_LINEB_VOICEPRINT_PROVIDER")
+        voiceprint_manifest = _env_text(env, "PARROT_LINEB_VOICEPRINT_MANIFEST")
+        voiceprint_data_root = _env_text(env, "PARROT_VOICEPRINT_AUDIO_ROOT")
+        voiceprint_accept = _env_text(env, "PARROT_LINEB_VOICEPRINT_THRESHOLD_ACCEPT")
+        voiceprint_reject = _env_text(env, "PARROT_LINEB_VOICEPRINT_THRESHOLD_REJECT")
         echo_output = _env_text(env, "PARROT_AUDIO_OUTPUT_ROUTE")
         echo_handling = _env_text(env, "PARROT_LINEB_ECHO_HANDLING_MODE")
 
@@ -250,6 +277,10 @@ class LineProfile:
                 self.tts,
                 language=tts_language or self.tts.language,
                 voice_name=tts_voice if tts_voice is not None else self.tts.voice_name,
+                voice_asset_manifest_path=(
+                    tts_manifest or self.tts.voice_asset_manifest_path
+                ),
+                sample_audio_root=tts_audio_root or self.tts.sample_audio_root,
             ),
             voiceprint=replace(
                 self.voiceprint,
@@ -257,6 +288,22 @@ class LineProfile:
                     _truthy(voiceprint_enabled)
                     if voiceprint_enabled is not None
                     else self.voiceprint.enabled
+                ),
+                provider=voiceprint_provider or self.voiceprint.provider,
+                voiceprint_profile_id=(
+                    voiceprint_profile_id or self.voiceprint.voiceprint_profile_id
+                ),
+                manifest_path=voiceprint_manifest or self.voiceprint.manifest_path,
+                data_root=voiceprint_data_root or self.voiceprint.data_root,
+                threshold_accept=(
+                    _float_from_raw(voiceprint_accept, self.voiceprint.threshold_accept)
+                    if voiceprint_accept is not None
+                    else self.voiceprint.threshold_accept
+                ),
+                threshold_reject=(
+                    _float_from_raw(voiceprint_reject, self.voiceprint.threshold_reject)
+                    if voiceprint_reject is not None
+                    else self.voiceprint.threshold_reject
                 ),
             ),
             echo=replace(
@@ -362,7 +409,10 @@ class LineProfileLoader:
         bb_value = _bb_value("global/active_line_profile_id", "")
         if isinstance(bb_value, str) and bb_value.strip():
             return bb_value.strip()
-        env_value = os.getenv("PARROT_LINE_PROFILE", "").strip()
+        env_value = (
+            os.getenv(ACTIVE_LINE_PROFILE_ENV, "").strip()
+            or os.getenv(ACTIVE_LINE_PROFILE_ID_ENV, "").strip()
+        )
         if env_value:
             return env_value
         active_line = _bb_value("global/active_line_id", "")
@@ -478,6 +528,9 @@ def evaluate_line_profile(profile: LineProfile) -> LineDeviceCheckResult:
     tts_voice_ready = bool(profile.tts.voice_name.strip())
     asr_ready = bool(profile.asr.model.strip() and profile.asr.languages)
     echo_risk = _echo_risk(profile.echo.output_route, profile.voiceprint.enabled)
+    voiceprint_state, voiceprint_health, voiceprint_summary, voiceprint_refs = (
+        _voiceprint_eval(profile)
+    )
 
     findings = (
         _finding(
@@ -521,12 +574,10 @@ def evaluate_line_profile(profile: LineProfile) -> LineDeviceCheckResult:
         ),
         _finding(
             "voiceprint",
-            "monitoring" if profile.voiceprint.enabled else "not_configured",
-            "ok" if profile.voiceprint.enabled else "warning",
-            "Voiceprint speaker policy is enabled."
-            if profile.voiceprint.enabled
-            else "Voiceprint/speaker gate is disabled for this profile.",
-            profile.voiceprint.as_json(),
+            voiceprint_state,
+            voiceprint_health,
+            voiceprint_summary,
+            voiceprint_refs,
         ),
         _finding(
             "echo",
@@ -542,7 +593,13 @@ def evaluate_line_profile(profile: LineProfile) -> LineDeviceCheckResult:
     if not api_key_ready or not tts_voice_ready or not asr_ready:
         state = "blocked"
         health = "error"
-    elif not adc_ready or not vad_ready or not profile.voiceprint.enabled or echo_risk == "high":
+    elif (
+        not adc_ready
+        or not vad_ready
+        or not profile.voiceprint.enabled
+        or voiceprint_health != "ok"
+        or echo_risk == "high"
+    ):
         state = "degraded"
         health = "warning"
     return LineDeviceCheckResult(
@@ -621,11 +678,61 @@ def _adc_state() -> tuple[bool, str, dict[str, Any]]:
 
 def _echo_risk(output_route: str, voiceprint_enabled: bool) -> str:
     route = output_route.lower()
-    if route in {"headphones", "headset", "bluetooth", "bluetooth_headset"}:
+    if route in {
+        "headphones",
+        "headset",
+        "wired_headset",
+        "bluetooth",
+        "bluetooth_headset",
+        "bluetooth_sco",
+        "bluetooth_a2dp",
+        "earpiece",
+    }:
         return "low"
     if route in {"speaker", "phone_speaker", "loudspeaker"}:
         return "medium" if voiceprint_enabled else "high"
     return "low" if voiceprint_enabled else "medium"
+
+
+def _voiceprint_eval(profile: LineProfile) -> tuple[str, str, str, dict[str, Any]]:
+    if not profile.voiceprint.enabled:
+        return (
+            "not_configured",
+            "warning",
+            "Voiceprint/speaker gate is disabled for this profile.",
+            profile.voiceprint.as_json(),
+        )
+    try:
+        from parrot.brain.lineb_voiceprint import runtime_status
+
+        status = runtime_status(
+            enabled=profile.voiceprint.enabled,
+            manifest_path=profile.voiceprint.manifest_path or None,
+            provider=profile.voiceprint.provider,
+            profile_id=profile.voiceprint.voiceprint_profile_id,
+            threshold_accept=profile.voiceprint.threshold_accept,
+            threshold_reject=profile.voiceprint.threshold_reject,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return (
+            "degraded",
+            "warning",
+            f"Voiceprint verifier status failed: {type(exc).__name__}: {exc}",
+            profile.voiceprint.as_json(),
+        )
+    if status.state == "disabled":
+        return (
+            "not_configured",
+            "warning",
+            "LineProfile enables voiceprint, but PARROT_LINEB_VOICEPRINT_ENABLED is not active.",
+            {**profile.voiceprint.as_json(), "runtime": status.as_json()},
+        )
+    return (
+        status.state,
+        status.health,
+        status.summary,
+        {**profile.voiceprint.as_json(), "runtime": status.as_json()},
+    )
 
 
 def _finding(
@@ -686,6 +793,14 @@ def _bool_from_raw(value: Any, fallback: bool) -> bool:
     if isinstance(value, bool):
         return value
     return _truthy(str(value))
+
+
+def _float_from_raw(value: Any, fallback: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return parsed if math.isfinite(parsed) else fallback
 
 
 __all__ = [
