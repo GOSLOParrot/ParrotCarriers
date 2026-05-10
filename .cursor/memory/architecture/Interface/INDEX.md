@@ -197,3 +197,4 @@ related:
 
 - [`app_v1_arspike_realdevice_nanobot_xrhand_audit_20260510.md`](app_v1_arspike_realdevice_nanobot_xrhand_audit_20260510.md): ArSpike real-device prep, Nanobot paper drag/drop/trash/workdesk state, parrot joystick walk, and XRHand package/define blockers.
 - 2026-05-10 follow-up in same file: ArSpike Mint now reads gitignored `Resources/parrot_config.json`, Web console live-state flow was re-tested against restarted backend, and photo upload `7889` remains the current real-device blocker.
+- 2026-05-10 ECS Castle smoke in same file: Mint auth, LiveKit join, Brain auto-dispatch, and session-scoped photo upload on `7889` were verified against `8.216.45.45`; remote `7892` HTTP monitor is not serving, so local Web console remains the ready visualization path.

@@ -89,6 +89,30 @@ Mint startup fix:
 - Mint probe: using the ArSpike local config, `POST /mint` returned HTTP 200 with a token and `ws://8.216.45.45:7880`.
 - Current port probe: LiveKit `7880`, Mint `7888`, Web console `7892`, and Redis `6379` are open. Photo upload `7889` is still not reachable, so original photo-file upload remains a real-device blocker unless that service moved to a different port.
 
+2026-05-10 ECS Castle smoke after latest code sync:
+
+- Local Windows build config: `unity/ArSpike/Assets/Resources/parrot_config.json` was updated to point at Castle public IP `8.216.45.45` for Mint and LiveKit. The secret value is intentionally not documented and the file remains gitignored.
+- TCP reachability from Windows to ECS:
+  - `7880` LiveKit signaling: open.
+  - `7881` LiveKit WebRTC TCP: open.
+  - `7888` token-mint: open.
+  - `7889` photo-upload: open at the TCP/security-group layer.
+  - `7892` web-console candidate port: open at TCP layer, but not serving HTTP.
+- Mint HTTP:
+  - `GET /health` => 200.
+  - `POST /mint` without bearer => 401, expected.
+  - `POST /mint` with local ArSpike bearer => 200, token present, response URL `ws://8.216.45.45:7880`.
+- LiveKit / Brain session:
+  - A minimal Python LiveKit client joined `parrot-main` with the minted token.
+  - Brain auto-dispatched as remote participant `agent-*` and published an audio track. This confirms Unity's Mint-token path should trigger the default unnamed Brain room job; no named `RoomAgentDispatch` is needed.
+- Photo upload:
+  - While the LiveKit room stayed connected, `GET http://8.216.45.45:7889/health` returned 200 within 2 seconds.
+  - `POST /upload/photo/{photo_id}` with small JPEG bytes returned 200 and `publish_ok=true`, proving the upload server can publish `photo.asset_uploaded` through the active Brain room.
+  - After disconnecting the last participant, `7889` stops responding to HTTP. This matches the design that `photo_upload_server` is session-scoped inside Brain Agent, not a permanent standalone service.
+- Web console:
+  - Local Windows `http://127.0.0.1:7892/health` and `/api/app/live-state` still work.
+  - ECS `http://8.216.45.45:7892/health` closes HTTP connections without a response. Remote Web console is therefore not part of the current ready path; use the local developer console for live-state visualization unless a separate ECS monitor service is started.
+
 ## 4. Current XRHand answer
 
 The code path for "gesture/command flies to the index-finger middle segment, plays perch animation, and flies back" is implemented for editor smoke and ready for real package activation:
@@ -140,3 +164,4 @@ What is not yet real-device complete:
   - Play Mode still reports expected LiveKit connection failure when local/server LiveKit is not reachable; this is an environment prerequisite, not a NekoClaw/UI compile failure.
   - 2026-05-10 Mint startup correction: Unity MCP found `AppStartupFlowController`, `LiveKitTokenMintClient`, and `RoomManager`; scene serialization shows `startupFlow` wired and `autoConnectOnStart=0`, `allowEditorTokenFile=0`.
   - 2026-05-10 follow-up: after script refresh, Unity MCP bridge stopped answering pings with WebSocket close warnings, but the Unity process remained responsive and Editor.log contained no `error CS` / compilation failed entries for `LiveKitTokenMintClient.cs`. Treat this as MCP transport instability, not a confirmed Unity compile failure.
+  - 2026-05-10 ECS smoke: Unity Editor is currently not running and MCP reports the local server stopped. Play Mode automation is unavailable until Unity / MCP is reopened. Static scene audit still shows `startupFlow` wired, `RoomManager.autoConnectOnStart=0`, and `allowEditorTokenFile=0`; the runtime `Resources/parrot_config.json` overrides the serialized `127.0.0.1` Mint default.
