@@ -67,6 +67,7 @@ fi
 echo ""
 echo "[2/5] Installing dependencies..."
 $SSH_CMD "cd $REMOTE_DIR && python3 -m venv .venv && .venv/bin/pip install --upgrade pip && .venv/bin/pip install -e '.[dev,memory]'"
+$SSH_CMD "cd $REMOTE_DIR && .venv/bin/pip install 'redis>=7.1,<9.0' --index-url https://pypi.org/simple/"
 $SSH_CMD "cd $REMOTE_DIR && .venv/bin/pip install -e '$REMOTE_NANOBOT[parrot]' 2>/dev/null || echo '  nanobot install skipped (sync first)'"
 # Node.js for GitHub MCP (npx)
 $SSH_CMD "which node > /dev/null 2>&1 || (apt-get update -qq && apt-get install -y nodejs npm > /dev/null 2>&1 && echo 'Node.js installed') || echo '  NOTE: install Node.js manually for GitHub MCP'"

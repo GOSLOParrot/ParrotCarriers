@@ -107,9 +107,9 @@ if ($codeChanged) {
     Write-Host "    检测到代码变更，重装依赖..." -ForegroundColor DarkGray
     Invoke-CastleSsh "cd $REMOTE_PC && .venv/bin/pip install -q -e '.[dev,memory]'" "pip install ParrotCarriers[dev,memory]"
     $nbEditable = $REMOTE_NB + "[parrot]"
-    Invoke-CastleSsh "cd $REMOTE_PC && .venv/bin/pip install -q -e '$nbEditable'" "pip install nanobot[parrot]"
     # 阿里云镜像缺少 redis>=7.1，从 PyPI 补装（falkordb 1.6.0 依赖）
     Invoke-CastleSsh "cd $REMOTE_PC && .venv/bin/pip install -q 'redis>=7.1,<9.0' --index-url https://pypi.org/simple/" "pip install redis>=7.1"
+    Invoke-CastleSsh "cd $REMOTE_PC && .venv/bin/pip install -q -e '$nbEditable'" "pip install nanobot[parrot]"
     OK "依赖安装完成"
 } else {
     Write-Host "    无代码变更，跳过" -ForegroundColor DarkGray
