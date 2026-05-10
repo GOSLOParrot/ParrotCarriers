@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "kind": "line_profile",
+  "line_profile_id": "lineb_ner_ja_test",
+  "display_name": "LineB Ner Japanese Test",
+  "line_id": "line_b",
+  "llm": {
+    "provider": "google.LLM",
+    "model": "gemini-2.5-flash"
+  },
+  "asr": {
+    "asr_profile_id": "google_stt_ja_cmn_en_ner",
+    "provider": "google.STT",
+    "model": "latest_long",
+    "languages": ["ja-JP", "cmn-CN", "en-US"]
+  },
+  "tts": {
+    "tts_profile_id": "google_tts_ja_ner_test",
+    "provider": "google.TTS",
+    "language": "ja-JP",
+    "voice_name": "ja-JP-Neural2-B",
+    "style_note": "Ner-inspired Japanese baseline for private device tests. This is not an official character voice or CV clone; replace through GOOGLE_TTS_VOICE or an external licensed ECS voice when available."
+  },
+  "voiceprint": {
+    "voiceprint_profile_id": "voiceprint_monitor_ner_test",
+    "enabled": true,
+    "speaker_policy": "monitor_then_gate",
+    "speaker_state": "unknown"
+  },
+  "echo": {
+    "echo_policy_id": "echo_isolated_ner_test",
+    "input_route": "phone_mic",
+    "output_route": "headphones",
+    "handling_mode": "isolated_route",
+    "microphone_enabled": true,
+    "speaker_output_enabled": false
+  },
+  "metadata": {
+    "purpose": "Selectable Ner LineB profile for RoomSetting real-device validation.",
+    "tts_selection_reason": "Google Cloud lists ja-JP-Neural2-B as a supported Japanese female Neural2 voice; Neural2 is the safer first baseline because it keeps SSML-compatible general-purpose synthesis.",
+    "voice_rights_policy": "Do not store cloned or extracted voice assets in Git. CV metadata is reference-only unless the user supplies licensed audio and consent in the external ECS test environment.",
+    "external_voice_asset_location": "ECS/private only; no audio samples in this repository.",
+    "env_overrides": [
+      "GEMINI_TEXT_MODEL",
+      "GOOGLE_STT_MODEL",
+      "GOOGLE_STT_LANGUAGES",
+      "GOOGLE_TTS_LANGUAGE",
+      "GOOGLE_TTS_VOICE",
+      "PARROT_LINEB_VOICEPRINT_ENABLED",
+      "PARROT_AUDIO_OUTPUT_ROUTE",
+      "PARROT_LINEB_ECHO_HANDLING_MODE"
+    ]
+  }
+}

@@ -185,11 +185,15 @@ namespace ParrotApp.RPC
                 var tcs = new TaskCompletionSource<bool>();
                 UnityMainThread.Enqueue(() =>
                 {
-                    _parrot.PlayAnimation(p.animation, modelId);
-                    tcs.SetResult(true);
+                    tcs.SetResult(_parrot.TryPlayAnimation(p.animation, modelId, p.parameters_json, p.strict_capability));
                 });
 
-                await tcs.Task;
+                bool played = await tcs.Task;
+                if (!played)
+                {
+                    return EcpAckJson.Failed(p._ecp, $"capability_unsupported:{p.animation}");
+                }
+
                 return EcpAckJson.Completed(
                     p._ecp,
                     EcpFrontendStateDto.ForBody(AnimationToBodyState(p.animation), p._ecp?.command_id, new[] { "body" })
@@ -236,6 +240,6 @@ namespace ParrotApp.RPC
             => (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
 
         [Serializable] private struct FlyToPayload { public float x, y, z; public EcpCommandDto _ecp; }
-        [Serializable] private struct AnimatePayload { public string animation; public EcpCommandDto _ecp; }
+        [Serializable] private struct AnimatePayload { public string animation; public string parameters_json; public bool strict_capability; public EcpCommandDto _ecp; }
     }
 }

@@ -29,6 +29,13 @@ from parrot.shared.constants import CH_NANOBOT_RESULTS, CH_SCHEDULER_TO_BRAIN  #
 from parrot.shared.redis_client import close_redis, get_redis  # noqa: E402
 
 
+async def _wait_for_task_message(queue: asyncio.Queue, task_id: str) -> dict:
+    while True:
+        data = await queue.get()
+        if data.get("task_id") == task_id:
+            return data
+
+
 def _make_parrot_bus_channel():
     """Create a ParrotBusChannel with a mock MessageBus."""
     from nanobot.bus.queue import MessageBus
@@ -111,25 +118,29 @@ async def parrot_bus(redis):
 @pytest.mark.asyncio
 async def test_parrot_bus_channel_consumes_and_replies(redis, scheduler, parrot_bus):
     """ParrotBusChannel reads from dispatch stream and publishes result to Pub/Sub."""
-    result_received = asyncio.Event()
-    result_data = {}
+    result_queue: asyncio.Queue = asyncio.Queue()
 
     async def listen_results():
         pubsub = redis.pubsub()
         await pubsub.subscribe(CH_NANOBOT_RESULTS)
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                result_data.update(json.loads(message["data"]))
-                result_received.set()
-                break
+        try:
+            async for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+                await result_queue.put(json.loads(message["data"]))
+        finally:
+            await pubsub.unsubscribe(CH_NANOBOT_RESULTS)
+            await pubsub.aclose()
 
     listener = asyncio.create_task(listen_results())
     await asyncio.sleep(0.2)
 
     task_id = await do_dispatch_task("research", {"query": "test parrot bus channel"})
-
     try:
-        await asyncio.wait_for(result_received.wait(), timeout=15.0)
+        result_data = await asyncio.wait_for(
+            _wait_for_task_message(result_queue, task_id),
+            timeout=15.0,
+        )
     except asyncio.TimeoutError:
         pytest.fail("Timed out waiting for ParrotBusChannel result")
     finally:
@@ -147,25 +158,29 @@ async def test_parrot_bus_channel_consumes_and_replies(redis, scheduler, parrot_
 @pytest.mark.asyncio
 async def test_parrot_bus_full_chain_to_brain(redis, scheduler, parrot_bus):
     """Full chain: dispatch → ParrotBusChannel → result → Scheduler → CH_SCHEDULER_TO_BRAIN."""
-    brain_received = asyncio.Event()
-    brain_data = {}
+    brain_queue: asyncio.Queue = asyncio.Queue()
 
     async def listen_brain():
         pubsub = redis.pubsub()
         await pubsub.subscribe(CH_SCHEDULER_TO_BRAIN)
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                brain_data.update(json.loads(message["data"]))
-                brain_received.set()
-                break
+        try:
+            async for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+                await brain_queue.put(json.loads(message["data"]))
+        finally:
+            await pubsub.unsubscribe(CH_SCHEDULER_TO_BRAIN)
+            await pubsub.aclose()
 
     listener = asyncio.create_task(listen_brain())
     await asyncio.sleep(0.5)
 
     task_id = await do_dispatch_task("summarize", {"text": "ParrotCarriers is an AR parrot companion."})
-
     try:
-        await asyncio.wait_for(brain_received.wait(), timeout=15.0)
+        brain_data = await asyncio.wait_for(
+            _wait_for_task_message(brain_queue, task_id),
+            timeout=15.0,
+        )
     except asyncio.TimeoutError:
         pytest.fail("Timed out waiting for Scheduler→Brain forwarded result from ParrotBusChannel")
     finally:

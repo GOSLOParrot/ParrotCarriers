@@ -1,8 +1,16 @@
 # App V1 设计交接索引与自检标准
 
-> 建立日期：2026-05-10  
-> 用途：给后续长线 Chat / Codex 任务直接接手第一版 App 设计、Unity 白膜、素材落位和自检。  
-> 原则：先完成 App 体验闭环，再反推 Web 控制台；先用白膜素材占住真实插槽，再替换最终美术。
+> 建立日期：2026-05-10
+> 路由状态：active / Design SSOT
+> 当前事实：正式 App 前端尚未完成；`ParrotSmokeScene`、Web monitor、longline self-check 都只能作为测试/接口验证证据，不能作为 App 完成证据。
+> 用途：给后续 App 前端 Chat 直接接手第一版 App 设计、Unity 正式场景、素材落位和自检。
+> 原则：页面设计以本 Design 工作区为主；Cursor memory 只作为后端、协议、接口约束。
+
+## -1. 当前阻塞原话
+
+1. App 要用 LineB 测试，作为 Room Setting，也就是启动页里 Scene 按钮跳转的菜单页面，选择预设保存的 Room、模型、设定等。
+2. 菜单需要完成 LineB 升级，增加声纹部分，并处理好回音。
+3. Ner 作为真机测试时可供选择的第二个自定义 Model；启动页需要能选择 LineA / LineB、模型、设定文件、场景和皮肤。
 
 ## 0. 任务目标
 
@@ -27,6 +35,7 @@
 |:--|:--|
 | `codex_workspace/design_workspace/INDEX.md` | 设计工作区总入口。 |
 | `codex_workspace/design_workspace/tasks/ACTIVE_CONTEXT.md` | 当前设计阶段和下一步。 |
+| `codex_workspace/design_workspace/tasks/lineb_ner_gameplay_longline_todo_20260511.md` | LineB 可配置、Ner 模型/游戏性升级、GOSLO 操控升级、统一道具交互的长线 TODO。 |
 | `codex_workspace/design_workspace/00_original_words/chat_original_20260509_startup_menu_assets.md` | 用户关于启动页、HUD、2D 工作区、像素风格的原话。 |
 | `codex_workspace/design_workspace/00_original_words/today_request_digest_20260509.md` | 本轮需求摘要。 |
 

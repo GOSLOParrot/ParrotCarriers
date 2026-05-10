@@ -72,6 +72,102 @@ def build_app():  # type: ignore[no-untyped-def]
     async def app_assets():  # type: ignore[no-untyped-def]
         return AppFirstVersionFacade().asset_manifest()
 
+    @app.get("/api/app/room-setting")
+    async def room_setting(room_profile_id: str = ""):  # type: ignore[no-untyped-def]
+        return AppFirstVersionFacade().room_setting_snapshot(
+            room_profile_id or None
+        ).as_json()
+
+    @app.post("/api/app/room-setting/preview")
+    async def room_setting_preview(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        draft = body.get("room_profile") if isinstance(body.get("room_profile"), dict) else body
+        return AppFirstVersionFacade().preview_room_profile(draft)
+
+    @app.post("/api/app/room-setting/new")
+    async def room_setting_new(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return AppFirstVersionFacade().new_room_profile(
+            base_id=str(body.get("base_id") or "") or None,
+            display_name=str(body.get("display_name") or "") or None,
+        )
+
+    @app.post("/api/app/room-setting/save")
+    async def room_setting_save(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        draft = body.get("room_profile") if isinstance(body.get("room_profile"), dict) else body
+        return AppFirstVersionFacade().save_room_profile(draft)
+
+    @app.post("/api/app/room-setting/apply")
+    async def room_setting_apply(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        draft_or_id = body.get("room_profile") or body.get("room_profile_id") or body
+        return AppFirstVersionFacade().apply_room_profile(
+            draft_or_id,
+            experience_mode=body.get("experience_mode"),
+        )
+
+    @app.get("/api/app/line-profiles")
+    async def line_profiles():  # type: ignore[no-untyped-def]
+        return list(AppFirstVersionFacade().list_line_profiles())
+
+    @app.post("/api/app/line-profiles/preview")
+    async def line_profile_preview(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        draft = body.get("line_profile") if isinstance(body.get("line_profile"), dict) else body
+        return AppFirstVersionFacade().preview_line_profile(draft)
+
+    @app.post("/api/app/line-profiles/save")
+    async def line_profile_save(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        draft = body.get("line_profile") if isinstance(body.get("line_profile"), dict) else body
+        return AppFirstVersionFacade().save_line_profile(draft)
+
+    @app.post("/api/app/line-profiles/apply")
+    async def line_profile_apply(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        draft_or_id = body.get("line_profile") or body.get("line_profile_id") or body
+        return AppFirstVersionFacade().apply_line_profile(draft_or_id)
+
+    @app.post("/api/app/lineb/audio-route")
+    async def lineb_audio_route(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return AppFirstVersionFacade().set_lineb_audio_route_policy(
+            input_route=str(body.get("input_route") or "unknown"),
+            output_route=str(body.get("output_route") or "unknown"),
+            microphone_enabled=_body_bool(body.get("microphone_enabled"), True),
+            speaker_output_enabled=_body_bool_or_none(body.get("speaker_output_enabled")),
+            echo_handling_mode=str(body.get("echo_handling_mode") or "") or None,
+            voiceprint_enabled=_body_bool(body.get("voiceprint_enabled"), False),
+            speaker_state=str(body.get("speaker_state") or "unknown"),
+            source=str(body.get("source") or "web_monitor"),
+        )
+
+    @app.post("/api/app/lineb/tts-segment")
+    async def lineb_tts_segment(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        acoustic_refs = body.get("acoustic_refs")
+        return AppFirstVersionFacade().register_lineb_tts_segment(
+            text_summary=str(body.get("text_summary") or body.get("text") or ""),
+            duration_s=_body_float(body.get("duration_s"), 0.5),
+            started_at=_body_float_or_none(body.get("started_at")),
+            tts_voice=str(body.get("tts_voice") or body.get("voice") or ""),
+            voiceprint_hash=str(body.get("voiceprint_hash") or ""),
+            conversation_turn_id=str(body.get("conversation_turn_id") or ""),
+            acoustic_refs=acoustic_refs if isinstance(acoustic_refs, dict) else None,
+        )
+
+    @app.post("/api/app/lineb/mic-input")
+    async def lineb_mic_input(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return AppFirstVersionFacade().classify_lineb_mic_input(
+            observed_at=_body_float_or_none(body.get("observed_at")),
+            duration_s=_body_float(body.get("duration_s"), 0.0),
+            asr_text=str(body.get("asr_text") or body.get("text") or ""),
+            voiceprint_hash=str(body.get("voiceprint_hash") or ""),
+            echo_score=_body_float_or_none(body.get("echo_score")),
+        )
+
     @app.get("/api/app/live-state")
     async def app_live_state(limit: int = 80):  # type: ignore[no-untyped-def]
         return build_app_live_state(l2b_limit=max(1, min(limit, 200))).as_json()
@@ -776,6 +872,38 @@ def _index_html() -> str:
   </script>
 </body>
 </html>"""
+
+
+def _body_bool(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def _body_bool_or_none(value: Any) -> bool | None:
+    if value is None:
+        return None
+    return _body_bool(value, False)
+
+
+def _body_float(value: Any, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _body_float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 create_app = build_app

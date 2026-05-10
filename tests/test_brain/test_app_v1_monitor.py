@@ -7,6 +7,7 @@ from parrot.brain import refs as refs_registry
 from parrot.brain.app_monitor_server import build_app
 from parrot.brain.app_v1_self_check import run_app_v1_self_check
 from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
+from parrot.brain.lineb_audio_guard import reset_lineb_audio_guard_for_test
 from parrot.brain.l2b_monitor import build_l2b_snapshot
 from parrot.brain.preset_loader import PresetLoader, set_preset_loader_for_test
 from parrot.brain.workspace_registry import WorkspaceRegistry, set_workspace_registry_for_test
@@ -19,12 +20,14 @@ from parrot.dsg.l2b_types import SemanticEdge, SemanticNode
 def _reset_state(tmp_path):
     py_trees.blackboard.Blackboard.storage = {}
     py_trees.blackboard.Blackboard.metadata = {}
+    reset_lineb_audio_guard_for_test()
     refs_registry.reset_refs_for_tests()
     set_intent_workspace_for_test(IntentWorkspace())
     l2b_graph_module._instance = L2BGraph()
     set_preset_loader_for_test(PresetLoader(search_paths=[tmp_path / "presets"]))
     set_workspace_registry_for_test(WorkspaceRegistry(search_paths=[tmp_path / "workspaces"]))
     yield
+    reset_lineb_audio_guard_for_test()
     refs_registry.reset_refs_for_tests()
     l2b_graph_module._instance = None
     set_intent_workspace_for_test(None)
@@ -74,7 +77,7 @@ def test_monitor_health_and_canvas_endpoints() -> None:
     assert health.json()["service"] == "app-v1-monitor"
     assert canvas.status_code == 200
     body = canvas.json()
-    assert len(body["module_statuses"]) == 7
+    assert len(body["module_statuses"]) == 8
     assert any(w["workspace_id"] == "workdesk" for w in body["workspaces"])
     assert len(body["tool_cabinet"]) >= 6
     assert body["asset_manifest"]["schema_version"] == 1
@@ -135,6 +138,87 @@ def test_console_action_endpoints_drive_app_tool_flows() -> None:
     assert artifacts["magnifier_focus"]["locations"]["ref_registry"]["present"] is True
     assert artifacts["boundary_box"]["locations"]["ref_registry"]["present"] is True
     assert artifacts["workdesk_notes"]["locations"]["intent_workspace"]["present"] is True
+
+
+def test_lineb_monitor_endpoints_update_voice_pipeline_refs() -> None:
+    from fastapi.testclient import TestClient
+
+    client = TestClient(build_app())
+
+    policy = client.post(
+        "/api/app/lineb/audio-route",
+        json={
+            "input_route": "phone_mic",
+            "output_route": "speaker",
+            "voiceprint_enabled": True,
+        },
+    )
+    segment = client.post(
+        "/api/app/lineb/tts-segment",
+        json={
+            "text_summary": "hello from LineB",
+            "duration_s": 2.0,
+            "started_at": 10.0,
+            "voiceprint_hash": "vp_agent",
+        },
+    )
+    decision = client.post(
+        "/api/app/lineb/mic-input",
+        json={
+            "observed_at": 10.5,
+            "duration_s": 0.2,
+            "asr_text": "hello from LineB",
+            "voiceprint_hash": "vp_agent",
+        },
+    )
+    modules = client.get("/api/app/modules")
+
+    assert policy.status_code == 200
+    assert policy.json()["echo"]["handling_mode"] == "voiceprint_gate"
+    assert segment.status_code == 200
+    assert decision.status_code == 200
+    assert decision.json()["turn_decision"] == "agent_echo"
+    voice = next(row for row in modules.json() if row["module_id"] == "voice_pipeline")
+    line_b = next(line for line in voice["refs"]["lines"] if line["line_id"] == "line_b")
+    assert line_b["readiness"]["recent_tts_segment_count"] == 1
+    assert line_b["readiness"]["last_input_decision"] == "agent_echo"
+
+
+def test_line_profile_monitor_endpoints_preview_and_apply() -> None:
+    from fastapi.testclient import TestClient
+
+    client = TestClient(build_app())
+
+    listed = client.get("/api/app/line-profiles")
+    preview = client.post(
+        "/api/app/line-profiles/preview",
+        json={
+            "line_profile_id": "lineb_web_preview",
+            "display_name": "LineB Web Preview",
+            "line_id": "line_b",
+            "tts": {
+                "tts_profile_id": "tts_preview",
+                "language": "ja-JP",
+                "voice_name": "",
+            },
+            "echo": {
+                "echo_policy_id": "echo_speaker",
+                "output_route": "speaker",
+                "handling_mode": "monitor_only",
+            },
+        },
+    )
+    applied = client.post(
+        "/api/app/line-profiles/apply",
+        json={"line_profile_id": "lineb_google_default"},
+    )
+
+    assert listed.status_code == 200
+    assert any(row["line_profile_id"] == "lineb_google_default" for row in listed.json())
+    assert preview.status_code == 200
+    assert preview.json()["device_check"]["line_profile_id"] == "lineb_web_preview"
+    assert applied.status_code == 200
+    assert applied.json()["line_profile"]["line_profile_id"] == "lineb_google_default"
 
 
 @pytest.mark.asyncio

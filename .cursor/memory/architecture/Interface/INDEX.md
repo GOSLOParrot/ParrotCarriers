@@ -1,200 +1,115 @@
 ---
 status: ratified
 category: interface-skeleton
-status_note: "P2.5 接口分类骨架（2026-05-09）。上一轮 v0 把 12 场景调用栈穷举 → 仓库复印；本目录用核心/业务二分 + 4 字段业务模板 + 失败教训前置 取代。任何接口提炼 / 命名审计 / Web 控制台 / Obsidian / Figma chat 入场必读。"
-last_reviewed: 2026-05-09
+status_note: "Cleaned 2026-05-10: Interface remains the backend/core-interface route. Formal App frontend design is in codex_workspace/design_workspace; smoke/self-check docs are not App completion evidence."
+last_reviewed: 2026-05-10
 ai_priority: high
-ai_audience: "所有动 src/parrot/** 公开表面或 unity/ArSpike/Assets/Scripts/ParrotApp/** DTO 的 chat"
+ai_audience: "Chats touching src/parrot/** public surfaces or unity/ArSpike/Assets/Scripts/ParrotApp/** DTOs"
 parent_doc: "../../INDEX.md"
 related:
   - "../backend_interface_refinement_20260507.md (Brain Core SSOT)"
-  - "../protocol_snapshot_p4.md (协议 SSOT)"
-  - "../bus_v4.md (Bus 拓扑)"
-  - "../dsg/workspace_index.md (DSG 工作区入口)"
-  - "../chat_launches/ (3 份待开 chat launch prompt)"
-  - "menu_design_complete_20260507.md (菜单设计 SSOT)"
-  - "concept_dictionary_20260507.md (术语)"
-  - "legacy_issues_split_20260507.md (P2.5/P3 NEED 登记)"
+  - "../protocol_snapshot_p4.md (Protocol SSOT)"
+  - "../bus_v4.md (Bus topology)"
+  - "../dsg/workspace_index.md (DSG workspace)"
+  - "menu_design_complete_20260507.md (menu design)"
+  - "app_v1_current_status_and_test_report_20260510.md (clean App V1 status)"
+  - "app_v1_room_setting_room_profile_interface_20260510.md (RoomSetting + RoomProfile contract)"
+  - "app_v1_lineb_menu_readiness_interface_20260511.md (LineB menu readiness)"
+  - "app_v1_model_capability_resolver_interface_20260511.md (model capability resolver)"
+  - "app_v1_lineb_ner_realdevice_config_report_20260511.md (LineB + Ner device config)"
 ---
 
-# Interface 工作区索引（核心 / 业务 二分 + 4 字段业务模板）
+# Interface Workspace Index
 
-> **本文用途**：接口提炼的**入口**与**纪律**。任何动 `src/parrot/**` 公开表面或 `unity/ArSpike/Assets/Scripts/ParrotApp/**` DTO 的 chat 入场前必读。
-> **不是**：把仓库再罗列一遍的"接口大全"。
+This directory is for **backend/core interface routing**. It is not the App frontend design route.
 
----
+For the next App frontend chat, start from:
 
-## §0 上一轮失败教训（必读，决定本目录所有取舍）
+1. `codex_workspace/design_workspace/tasks/ACTIVE_CONTEXT.md`
+2. `codex_workspace/design_workspace/unity_ar_app/startup_menu_design_v0_20260509.md`
+3. `codex_workspace/design_workspace/sketches/startup_menu_landscape_v0.html`
+4. `codex_workspace/design_workspace/unity_ar_app/main_hud_landscape_v0_20260509.md`
+5. `codex_workspace/design_workspace/sketches/main_hud_landscape_v0.html`
 
-2026-05-07 P2.5 接口提炼 v0（[`interface_design_and_how_todo_v0_20260507.md`](interface_design_and_how_todo_v0_20260507.md)）走了"自下而上 12 场景穷举"路线，把每条场景的调用栈逐层抄进文档，最终产物把仓库复印了半份，user 原话："效果非常糟糕"。
+Do **not** start App frontend work from `ParrotSmokeScene`, Web monitor smoke, longline self-checks, or this Interface index.
 
-**根因**：
-- 自下而上从场景出发 → 每条业务都把它路过的所有核心模块 API 抄一遍 → 同一个 API 在 N 份场景表里重复 N 次
-- 没有"核心 vs 业务"分层 → 文档里既有"该业务做什么"又有"该模块的稳定 public 表面是什么"，两者纠缠不清
-- 把"完成判据"写成"覆盖率"（接口都列上 = 完成），不是"业务能跑通"
+## App V1 Current Status
 
-**本目录后续严禁**：
-- 不在业务接口文档里抄核心接口签名（只写"用了哪些核心接口"）
-- 不在核心接口文档里枚举所有调用方（只写"这一层为什么稳定 / 不动"）
-- 不把"接口完整性"当目标 → 目标是"该业务跑通 + 核心层不被反复推翻"
+Formal App frontend status: **not complete**.
 
-**v0 + supplement 状态**：标 superseded_by 本文件，**不删**——12 场景清单本身仍是有用的"业务清单参考"，只是不再当作"接口设计产物"。后续业务接口写作时可拿来对照"我这条业务在 v0 第几场景"。
+Clean status report:
 
----
+- [`app_v1_current_status_and_test_report_20260510.md`](app_v1_current_status_and_test_report_20260510.md)
 
-## §1 核心接口（按协议模块；指针式，不抄签名）
+Blocking frontend tasks:
 
-> **核心接口** = 模块的稳定 public 表面，约束是"不动这层接口，业务怎么换都不破"。
-> **本节只放指针**——签名细节去对应 SSOT 看；新增核心接口必须先在 SSOT 落地，再回填本节加一行指针。
-> **补充候选**（如 RustworkX 节点 CRUD / DSG L2-B 注意力查询）必须先读模块职责 + 架构设计 + 对应 skill，再判断"是不是真的稳定到能进核心层"。
+1. Room Setting: the startup `SCENE` entry must open an App preset/config page for saved Room / RoomProfile, LineA/LineB, Model, Persona, and Scene. Here Room means App saved profile, not LiveKit Room. Do not use a bare startup field named `Mode`; use `experience_mode`, `behavior_mode`, `capability_mode`, or `line_id`.
+2. LineB menu upgrade: expose configurable LineProfile selection plus ASR/TTS readiness, Google ADC status, voiceprint/speaker state, echo risk, echo handling mode, recent TTS evidence, and last mic-input decision.
+3. Ner second model: move Ner from raw asset to selectable production model path; startup must be able to select Brain pipeline, model, setting, scene, and skin.
 
-### §1.1 Bus（传输 / 通道 / 拓扑）
+Latest LineB + Ner validation route:
 
-- 真源：[`../bus_v4.md`](../bus_v4.md) §三层协议 + §拓扑 + §East-West/North-South + [`../protocol_snapshot_p4.md`](../protocol_snapshot_p4.md) §channel/topic + §BB key + §13 决策锁
-- Skill：`.cursor/skills/client-sdk-unity/` / `.cursor/skills/livekit-agents/` / `.cursor/skills/parrot-bus-orchestration/`
-- 边界：DataChannel ≤ 8KB / RPC Reliable / Redis Stream 长任务 / Blackboard V2 跨模块状态
+- [`app_v1_lineb_ner_realdevice_config_report_20260511.md`](app_v1_lineb_ner_realdevice_config_report_20260511.md)
 
-### §1.2 Brain（云端大脑公开 API）
+## Core Interface Rules
 
-- ⭐ 真源：[`../backend_interface_refinement_20260507.md`](../backend_interface_refinement_20260507.md) — **已 ratified 的 Brain Core SSOT**，覆盖 Persona / 4-block Menu Registry / Preset Loader / IntentWorkspace / BB watcher registry / L2-B baseline algorithms 全部代码已落公开签名
-- 补充：`brain/tools/` 下 10 个 function_tool（Gemini 可调） — 已在 `protocol_snapshot_p4` §tool 段
-- Skill：`.cursor/skills/livekit-agents/` (Agent 框架) / `.cursor/skills/py-trees/` (BT 接口对位)
+Keep the split:
 
-### §1.3 DSG（感知耦合层 / L1.5 / L2-A / L2-B / Ingest / 触发器）
+- **Core interfaces**: stable public surfaces owned by Bus / Brain / DSG / Memory / Scheduler / Unity transport.
+- **Business flows**: user-visible workflows that compose core interfaces.
 
-- 真源：[`../dsg/workspace_index.md`](../dsg/workspace_index.md) §核心接口 + 13 份 dsg/dsg_protocol_*_v1 / dsg_decisions_master / dsg_current_state_distilled
-- 补充候选（动前必看）：节点 CRUD / 图查询 / 注意力扩散 / 子图激活 → 用 `.cursor/skills/dsg-rustworkx-master/` 决定走 RustworkX 哪条 API + `.cursor/skills/dsg-l2b-node-organization-options/` 看组织选项
-- ADR 锁：[`../adr_l1_5_source_dispatch_extension_space_20260504.md`](../adr_l1_5_source_dispatch_extension_space_20260504.md) — SemanticNode.source 字段边界 + Meta dict/factory hook 扩展空间 + chat 路径锁。**任何动 `src/parrot/dsg/**` 的 chat 必读**
+Business flow docs must not copy large code signatures. Use the A-D discipline:
 
-### §1.4 Memory（Graphiti 桥 + FalkorDB + 对话归档 + 三阶段工作记忆）
-
-- 真源：[`../dsg/dsg_protocol_archive_v1_20260506.md`](../dsg/dsg_protocol_archive_v1_20260506.md) + Graphiti skill 内的 `add_episode` / `search` / `group_id` 分区
-- Skill：`.cursor/skills/graphiti/` — Graphiti API 全量 + 自定义 entity types + MCP server
-- 边界：hot 内存（IntentWorkspace）→ cold 硬盘（disk recovery）→ nanobot 闲时归档；三阶段在 `dsg_current_state_distilled §12`
-
-### §1.5 Scheduler（py-trees BT + Blackboard V2 + Reflex/Intent/Task 三层）
-
-- 真源：[`../protocol_snapshot_p4.md`](../protocol_snapshot_p4.md) §BT topic + §BB key + §三层调度面（与 ECP 对齐）+ [`../sprint4_protocol_v2_ecp.md`](../sprint4_protocol_v2_ecp.md) §BT 对齐
-- Skill：`.cursor/skills/py-trees/` — Behaviour / Selector / Sequence / Parallel / Blackboard V2 / event-driven tick
-
-### §1.6 Bus 服务化外挂（Nanobot / SVA / LiveKit Agents）
-
-- Skill：`.cursor/skills/nanobot/` / `.cursor/skills/sva-vision-agents/` / `.cursor/skills/livekit-agents/`
-- 真源：[`../bus_v4.md`](../bus_v4.md) §九 外挂生态 + [`../module_map_p2.md`](../module_map_p2.md) §九
-
----
-
-## §2 业务接口模板（4 字段，不写签名）
-
-> 业务接口在**对应业务 chat 内**写，**不写在本目录**；本节只规定**写作纪律**。
-> 任何业务 chat 启动时，按字段 A→B→C→D 顺序填表。
-
-### 字段 A — 模块职责回读（必读 ≤ 3 个文档）
-
-写之前必须读：
-- 必读 1：本业务主要触及的核心模块的 §1.x 真源
-- 必读 2：[`../module_map_p2.md`](../module_map_p2.md) 对应模块的成熟度 + A10 依赖
-- 必读 3（条件性）：相关 Skill SKILL.md 头部 / 相关 ADR
-
-填表样式：`A = [doc_path §section, doc_path §section, ...]`（**3 项以内**；不抄正文，只列定位）
-
-### 字段 B — 用现有核心接口能否组合实现？
-
-二选一：
-- **yes** → 跳过字段 C，进字段 D 写完成判据；本业务**不补核心**
-- **no** → 进字段 C 设计补充
-
-**判据**：业务能否仅通过 §1 列出的指针 SSOT 中**已有**的签名 + 通过现有 channel / topic / BB key 跑通？如果需要新建 channel / topic / BB key / function_tool / RPC method，则 **no**。
-
-### 字段 C — 需要补哪些核心接口（仅在 B = no 时填）
-
-| 子字段 | 写什么 |
+| Field | Meaning |
 |:--|:--|
-| 命名 | 候选签名（不必精确，候选即可） |
-| 落点模块 | 哪个 §1.x 模块承载（Bus / Brain / DSG / Memory / Scheduler / 外挂） |
-| 是否进 protocol_snapshot_p4 | wire 字段必须；纯 Python 内部 API 不必 |
-| 是否需要 cs_parity | 有 Unity DTO 镜像必须；纯 Python 内部不必 |
+| A | Read back at most 3 relevant source docs. |
+| B | Decide whether existing core interfaces can compose the flow. |
+| C | If no, list missing core surfaces without implementing protocol changes in the business doc. |
+| D | Define the input and observable success/failure signal. |
 
-**写完字段 C 不等于动手**——补核心接口必须先开**子 chat**走 protocol upgrade 流程（参考 `../adr_protocol_upgrade_and_interface_refinement_background_20260504.md` §流程），不在业务 chat 内直接动协议。
+## Core Sources
 
-### 字段 D — 完成判据（业务能跑通，不是覆盖率）
+| Area | Source |
+|:--|:--|
+| Bus / topology / topics | `../bus_v4.md`, `../protocol_snapshot_p4.md` |
+| Brain public API | `../backend_interface_refinement_20260507.md` |
+| DSG L1.5 / L2-B / triggers | `../dsg/workspace_index.md` |
+| Memory / Graphiti | `../dsg/dsg_protocol_archive_v1_20260506.md` and Graphiti skill docs |
+| Scheduler / Blackboard / BT | `../protocol_snapshot_p4.md`, `../sprint4_protocol_v2_ecp.md` |
+| Menu / presets | `menu_design_complete_20260507.md`, `../backend_interface_refinement_20260507.md` |
 
-写"什么输入 → 什么可观测"两条：
-- **正向**：典型输入下，业务可观测的最小验证信号（例：用户在 Web 控制台点 "查看 DSG 节点 X 详情" → 收到 JSON 含 `id / kind / source / last_sighting_path`）
-- **失败**：若依赖的核心接口未补，业务的失败信号是什么（例：404 + log "intent_workspace 未注册 X scope"）
+## Active Interface Docs
 
----
-
-## §3 三个待开 chat 的业务接口占位
-
-> 占位仅放 chat 文件名 + 一行 scope；**不在本目录填字段 A-D**——字段 A-D 在 chat 启动时由该 chat 自己填进 [`../chat_launches/`](../chat_launches/) 对应 launch prompt 内。
-> 业务接口子目录（`Interface/business/`）**不在准备阶段创建**——避免空架子；第一个 chat 启动且产出第一份业务接口表时再建。
-
-### §3.1 Obsidian 真连接
-
-- Launch prompt：[`../chat_launches/obsidian_realconnect_launch_20260509.md`](../chat_launches/obsidian_realconnect_launch_20260509.md)
-- Scope：后端 ↔ Obsidian 三子类（Ref-加强 / 设定-日常 / 设定-Roleplay）真连接 ingest；Web 真连接显式 defer
-- Chat B 审计报告：[`chatB_obsidian_google_nanobot_realconnect_audit_20260509.md`](chatB_obsidian_google_nanobot_realconnect_audit_20260509.md) - Obsidian + Google Calendar + Nanobot 真连接能力、阻塞 bug、业务流/数据流/接口草案、监控点
-- Obsidian 指南：[`obsidian_true_connection_guide_20260509.md`](obsidian_true_connection_guide_20260509.md) - 三 profile、L1.5 入池、L2-B / RefTable / IntentWorkspace 写边界
-- Google 指南：[`google_calendar_nanobot_true_connection_guide_20260509.md`](google_calendar_nanobot_true_connection_guide_20260509.md) - Scheduler ↔ Nanobot ↔ Google ↔ L1.5 真实连接与 writeback draft 边界
-- Photo 指南：[`photo_memory_awareness_true_connection_guide_20260509.md`](photo_memory_awareness_true_connection_guide_20260509.md) - HTTP 落盘、IntentWorkspace staged ref、PhotoNode、GOSLO Awareness 开关与缺口
-- 完成记录：[`chatB_true_connection_completion_record_20260509.md`](chatB_true_connection_completion_record_20260509.md) - 本轮代码修复、验证、剩余缺口和下一步顺序
-- App V1 facade：[`app_v1_facade_core_business_interface_20260510.md`](app_v1_facade_core_business_interface_20260510.md) - 菜单画布外部模块、相机/Awareness、Google draft、Obsidian、XRHand、Nanobot 报告统一业务接口
-- App V1 自检完成记录：[`app_v1_longline_self_check_completion_20260510.md`](app_v1_longline_self_check_completion_20260510.md) - 长线自检目标、实现、浏览器/Unity/pytest 验证、剩余问题
-- App V1 前端相机与真机审计：[`app_v1_frontend_camera_ux_realdevice_audit_20260510.md`](app_v1_frontend_camera_ux_realdevice_audit_20260510.md) - 透明 WYSIWYG 相机模式、专业设置面板、工具场景覆盖、真机测试准备
-- App V1 前端流程/模式审计：[`app_v1_frontend_flow_modes_audit_20260510.md`](app_v1_frontend_flow_modes_audit_20260510.md) - 对话 gate、能力模式、菜单/工具场景覆盖、真机 smoke 配置脚本
-
-### §3.2 Web 控制台 read-only 优先
-
-- Launch prompt：[`../chat_launches/web_console_launch_20260509.md`](../chat_launches/web_console_launch_20260509.md)
-- Scope：DSG 可视化 + Ref 仓库 + 模块状态 + 菜单/画布管理；read+write 在第二轮
-
-### §3.3 Figma UI 资产入工作区
-
-- Launch prompt：[`../chat_launches/figma_ui_assets_landing_launch_20260509.md`](../chat_launches/figma_ui_assets_landing_launch_20260509.md)
-- Scope：Figma 设计稿 → `unity/ArSpike/Assets/UI/`（Codex+Unity MCP 工作区主导）+ Cursor 工作区设计参考目录
-- 备注：本条主要是**资产入仓**，不涉及 §2 4 字段业务接口
-
----
-
-## §4 本目录 12 份文件状态
-
-| 文件 | 状态 | 角色 |
+| File | Status | Role |
 |:--|:--|:--|
-| `INDEX.md`（本文） | active | 接口分类骨架（Core/Business 二分 + 4 字段模板） |
-| `concept_dictionary_20260507.md` | active / Design | ≈100 项术语 + 路由指引 |
-| `legacy_issues_split_20260507.md` | active / Requirements | P2.5 / P3 NEED 二分 + grep 速查 + 修复 chat 派发表 |
-| `menu_design_complete_20260507.md` | active / Design | 完整菜单设计 SSOT（4 类块 + 预设 + 海盗换肤） |
-| `chatB_obsidian_google_nanobot_realconnect_audit_20260509.md` | active / Business Audit | Obsidian + Google Calendar + Nanobot 真实连接审计与阻塞 bug |
-| `obsidian_true_connection_guide_20260509.md` | active / Business Guide | Obsidian 三 profile、L1.5、L2-B、IntentWorkspace 边界 |
-| `google_calendar_nanobot_true_connection_guide_20260509.md` | active / Business Guide | Google Calendar + Nanobot 真实连接、读写链路、状态监控 |
-| `photo_memory_awareness_true_connection_guide_20260509.md` | active / Business Guide | Photo 落盘、IntentWorkspace、PhotoNode、GOSLO Awareness 策略 |
-| `chatB_true_connection_completion_record_20260509.md` | completed / Record | 本轮真连接修复、验证与剩余缺口 |
-| `app_v1_facade_core_business_interface_20260510.md` | active / Business Interface | App V1 统一 facade、BB keys、IntentWorkspace roles、白膜设计落点 |
-| `app_v1_longline_self_check_completion_20260510.md` | completed / Record | App V1 长线自检、Awareness v1、Web monitor、Unity MCP smoke 验证 |
-| `app_v1_longline_expanded_execution_plan_20260510.md` | active / Implementation Plan | App V1 从启动页到工具柜/Web 控制台/自检的扩展执行计划 |
-| `app_v1_tool_dataflow_interface_20260510.md` | active / Business Interface | 相机、放大镜、BBox、XRHand、工作桌、Web 控制台数据流 |
-| `app_v1_longline_worklog_20260510.md` | active / Worklog | App V1 长线实现时间线、关键决策、阻塞与测试记录 |
-| `app_v1_frontend_camera_ux_realdevice_audit_20260510.md` | active / Frontend Audit | 透明相机 HUD、专业相机设置槽、工具多场景 UX 审计、真机测试准备 |
-| `app_v1_frontend_flow_modes_audit_20260510.md` | active / Frontend Audit | 对话 gate、能力模式、Settings 面板、工具菜单矩阵、真机 smoke 配置脚本 |
-| ~~`goslo_app_game_overview_asset_brief_20260507.md`~~ | 已被 `../user_ideas_and_backend_capability_brief_20260509.md` 替代 | user 自行删除原文件 |
-| `interface_design_and_how_todo_v0_20260507.md` | superseded_by INDEX.md | 12 场景接口栈穷举主表（场景清单仍可参考） |
-| `interface_design_supplement_20260507.md` | superseded_by INDEX.md | v0 之外 7 项新发现 |
-| (已外迁 → docs/sprint_archive/sprint4/) | — | `app_flow_chat_launch_prompt_v2_20260507.md` + `backend_interface_chat_launch_prompt_v2_20260507.md` |
+| `INDEX.md` | active | This clean interface route. |
+| `concept_dictionary_20260507.md` | active | Terminology and route hints. |
+| `legacy_issues_split_20260507.md` | active | P2.5/P3 issue split and dispatch hints. |
+| `menu_design_complete_20260507.md` | active / design | Menu design SSOT; frontend implementation must still follow Design workspace page flow. |
+| `obsidian_true_connection_guide_20260509.md` | active / business guide | Obsidian profiles, L1.5, L2-B, IntentWorkspace boundaries. |
+| `google_calendar_nanobot_true_connection_guide_20260509.md` | active / business guide | Google Calendar + Nanobot read/draft/writeback boundaries. |
+| `photo_memory_awareness_true_connection_guide_20260509.md` | active / business guide | Photo upload, PhotoNode, IntentWorkspace, awareness boundaries. |
+| `chatB_true_connection_completion_record_20260509.md` | completed / record | True-connection fixes and remaining gaps. |
+| `app_v1_facade_core_business_interface_20260510.md` | active / backend facade | App V1 facade and business-interface coverage; not frontend completion evidence. |
+| `app_v1_room_setting_room_profile_interface_20260510.md` | active / business interface | Startup RoomSetting, user-facing Room save/new/select, menu persistence, and capability compatibility contract. |
+| `app_v1_lineb_menu_readiness_interface_20260511.md` | active / business interface | LineA/LineB menu readiness, configurable LineProfile, ASR/TTS/ADC status, voiceprint/speaker state, echo risk, and runtime guard evidence. |
+| `app_v1_model_capability_resolver_interface_20260511.md` | active / business interface | Brain-side model manifest mirror, RoomSetting capability decisions, and custom capability tool gating. |
+| `app_v1_lineb_ner_realdevice_config_report_20260511.md` | active / config report | LineB real-device config, Ner RoomProfile/model/persona setup, and remaining production wiring plan. |
+| `app_v1_current_status_and_test_report_20260510.md` | active / status | Single clean status report for App V1 route cleanup. |
+| `minecraft_parrot_animation_worklog_20260510.md` | worklog | Animation correction record; unrelated to App frontend completion. |
 
----
+## Superseded Or Historical
 
-## §5 入场顺序（任何动 src/ 公开表面 / Unity DTO 的 chat）
+These may remain in git history or archive, but they should not guide new App frontend work:
 
-1. 读本文 §0（教训前置）
-2. 按业务方向找 §1.x 对应核心层指针 SSOT，**只读 SSOT 头部 + 章节目录**（不读全文）
-3. 按 §2 字段 A 列回读清单（3 项以内）
-4. 按 §2 字段 B 判定是否需补核心；若 yes 则字段 C 留空
-5. 写字段 D 完成判据
-6. 进入业务实施 / chat 内代码实现
-7. **如字段 C 非空** → 不在本 chat 动手；fork 子 chat 走 protocol upgrade 流程
-## 2026-05-10 App V1 Follow-up Audit Entry
+| File | Status | Reason |
+|:--|:--|:--|
+| `interface_design_and_how_todo_v0_20260507.md` | superseded | Copied too much call-stack detail; use this index and business A-D discipline instead. |
+| `interface_design_supplement_20260507.md` | superseded | Historical supplement to the failed v0 approach. |
+| App V1 longline/self-check/frontend-audit files | removed/superseded | They mixed smoke/test evidence with App frontend completion. Use the clean status report instead. |
 
-- [`app_v1_arspike_realdevice_nanobot_xrhand_audit_20260510.md`](app_v1_arspike_realdevice_nanobot_xrhand_audit_20260510.md): ArSpike real-device prep, Nanobot paper drag/drop/trash/workdesk state, parrot joystick walk, and XRHand package/define blockers.
-- 2026-05-10 follow-up in same file: ArSpike Mint now reads gitignored `Resources/parrot_config.json`, Web console live-state flow was re-tested against restarted backend, and photo upload `7889` remains the current real-device blocker.
-- 2026-05-10 ECS Castle smoke in same file: Mint auth, LiveKit join, Brain auto-dispatch, and session-scoped photo upload on `7889` were verified against `8.216.45.45`; remote `7892` HTTP monitor is not serving, so local Web console remains the ready visualization path.
+## Entry Discipline
+
+If the task is App page design or Unity frontend implementation, read the Design workspace first.
+
+If the task changes backend protocol, DTOs, BB keys, RPC methods, or public Python surfaces, use this Interface route and the core sources above.

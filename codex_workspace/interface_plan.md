@@ -106,3 +106,26 @@ Need to decide:
 Completion signal:
 
 - `web/console` shows live or fixture-backed state with clear empty/error states.
+
+## Business Slice 6: RoomSetting And Menu Persistence
+
+Goal: startup `SCENE` opens RoomSetting for user-facing Room save/new/select, and every menu surface has an explicit persistence owner.
+
+Existing core surfaces:
+
+- `PresetLoader` can load/save/apply named presets;
+- `MenuRegistry` can list and apply model/persona/mode/scene/workspace selections;
+- Unity `AppStartupConfigDto` already carries startup config fields;
+- `SessionPolicy` owns capability policy after startup.
+
+Need to define:
+
+- user-facing `Room` equals internal `RoomProfile`, not LiveKit room;
+- RoomSetting has five switching axes: Model, Room, Persona, Line, Scene;
+- startup quick `Mode` must be represented as `experience_mode`, while GOSLO `behavior_mode` remains runtime/Brain-owned;
+- runtime HUD/tool drawer/settings/canvas choices save through explicit menu preference or canvas preset stores;
+- compatibility resolver disables/degrades menu items when Model, Line, Persona, Scene, permissions, or assets conflict.
+
+Completion signal:
+
+- selecting a saved Room restores the five axes, START applies the effective profile, and incompatible actions such as fly-to-hand are visibly disabled and backend-enforced when the selected model cannot support them.

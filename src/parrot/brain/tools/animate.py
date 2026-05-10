@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from livekit.agents import RunContext, function_tool
 
+from parrot.brain.tools._capability_gate import supports_capability, unsupported_message
 from parrot.brain.tools._rpc_bridge import call_unity_rpc
 from parrot.brain.tools._state_context import attach_state_header
 from parrot.shared.ecp import EcpCommandKind, wrap_legacy_rpc_payload
@@ -45,6 +46,9 @@ async def animate(
     # rides on `EcpCommand.meta["model_id"]` (existing Phase 4 §8 wire slot,
     # 0 schema bump). Empty model_id stays out of meta so unrelated tooling
     # observing the wire sees the same shape it always did.
+    if not supports_capability(animation_name, model_id):
+        return unsupported_message(animation_name, model_id)
+
     meta_kwarg: dict[str, str] | None = {"model_id": model_id} if model_id else None
     payload, _command = wrap_legacy_rpc_payload(
         {"animation": animation_name},

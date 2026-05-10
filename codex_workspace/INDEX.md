@@ -14,6 +14,7 @@ Read these in order for a new Codex session:
 3. `workflows.md` — how Codex should work in this repo, including plugin and handoff rules.
 4. `interface_plan.md` — business interface slices we need before app UI feels complete.
 5. `design_workspace/INDEX.md` — user-facing design workspace for original wording, sketches, Figma/Unity assets, and App/Web flow planning.
+6. `thesis_lineb_voiceprint_echo_addendum.md` — thesis addendum for Line B voiceprint detection, Line A speaker echo limits, and echo-safe dialogue wording.
 
 Then load only the relevant skill route:
 

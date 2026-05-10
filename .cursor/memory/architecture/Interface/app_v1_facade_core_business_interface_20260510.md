@@ -107,7 +107,7 @@ passed: true
 
 新增 facade / monitor / observer 单测覆盖七模块状态、Obsidian 无 UUID 设定、相机/Awareness 写边界、preview ref、Google draft、Nanobot report、XRHand 不切 Scene、Web monitor 只读快照和 L2-B JSON export。
 
-Unity MCP 验证：
+Unity MCP 验证（测试场景证据，仅证明接口/组件能被 smoke scene 装配；不代表正式 App 前端完成）：
 
 - `ParrotSmokeScene` scene validate：0 issues，missing scripts 0，broken prefabs 0。
 - Unity Console：0 Error / 0 Warning。

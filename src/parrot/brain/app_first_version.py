@@ -35,6 +35,7 @@ from parrot.scheduler.blackboard import open_bb_client
 
 
 class ExternalModuleId(str, Enum):
+    VOICE_PIPELINE = "voice_pipeline"
     GOOGLE_CALENDAR = "google_calendar"
     OBSIDIAN = "obsidian"
     GOSLO_MODULE = "goslo_module"
@@ -208,9 +209,160 @@ class AppFirstVersionFacade:
             applied_keys=result.applied_keys,
         )
 
+    def room_setting_snapshot(self, room_profile_id: str | None = None):
+        """Return the startup RoomSetting read model."""
+        from parrot.brain.room_setting import get_room_setting_service
+
+        return get_room_setting_service().snapshot(room_profile_id)
+
+    def preview_room_profile(self, draft: dict[str, Any]) -> dict[str, Any]:
+        """Preview a RoomProfile draft without writing Blackboard state."""
+        from parrot.brain.room_setting import get_room_setting_service
+
+        return get_room_setting_service().preview(draft)
+
+    def new_room_profile(
+        self,
+        *,
+        base_id: str | None = None,
+        display_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Create an unsaved RoomProfile draft for startup RoomSetting."""
+        from parrot.brain.room_setting import get_room_setting_service
+
+        return get_room_setting_service().new(
+            base_id=base_id,
+            display_name=display_name,
+        )
+
+    def save_room_profile(self, draft: dict[str, Any]) -> dict[str, Any]:
+        """Persist a RoomProfile draft as a user-facing Room."""
+        from parrot.brain.room_setting import get_room_setting_service
+
+        return get_room_setting_service().save(draft)
+
+    def apply_room_profile(
+        self,
+        draft_or_id: dict[str, Any] | str,
+        *,
+        experience_mode: str | None = None,
+    ) -> dict[str, Any]:
+        """Apply a RoomProfile after compatibility checks."""
+        from parrot.brain.room_setting import get_room_setting_service
+
+        return get_room_setting_service().apply(
+            draft_or_id,
+            experience_mode=experience_mode,
+        )
+
+    def list_line_profiles(self) -> tuple[dict[str, Any], ...]:
+        """Return saved and builtin LineProfile options for RoomSetting."""
+        from parrot.brain.line_profile import get_line_profile_loader
+
+        return tuple(
+            profile.as_json() for profile in get_line_profile_loader().list_profiles()
+        )
+
+    def preview_line_profile(self, draft: dict[str, Any]) -> dict[str, Any]:
+        """Preview one LineProfile draft without writing Blackboard state."""
+        from parrot.brain.line_profile import get_line_profile_loader
+
+        return get_line_profile_loader().preview(draft)
+
+    def save_line_profile(self, draft: dict[str, Any]) -> dict[str, Any]:
+        """Persist a LineProfile draft."""
+        from parrot.brain.line_profile import LineProfile, get_line_profile_loader
+
+        profile = LineProfile.from_json(draft)
+        path = get_line_profile_loader().save(profile)
+        preview = get_line_profile_loader().preview(profile)
+        return {
+            "line_profile": profile.as_json(),
+            "path": str(path),
+            "device_check": preview["device_check"],
+        }
+
+    def apply_line_profile(self, draft_or_id: dict[str, Any] | str) -> dict[str, Any]:
+        """Apply a LineProfile and publish its audio-route policy."""
+        from parrot.brain.line_profile import get_line_profile_loader
+
+        return get_line_profile_loader().apply(draft_or_id)
+
+    def set_lineb_audio_route_policy(
+        self,
+        *,
+        input_route: str = "unknown",
+        output_route: str = "unknown",
+        microphone_enabled: bool = True,
+        speaker_output_enabled: bool | None = None,
+        echo_handling_mode: str | None = None,
+        voiceprint_enabled: bool = False,
+        speaker_state: str = "unknown",
+        source: str = "app_facade",
+    ) -> dict[str, Any]:
+        """Write the LineB audio-route policy used by echo risk menus."""
+        from parrot.brain.lineb_audio_guard import apply_audio_route_policy
+
+        return apply_audio_route_policy(
+            input_route=input_route,
+            output_route=output_route,
+            microphone_enabled=microphone_enabled,
+            speaker_output_enabled=speaker_output_enabled,
+            echo_handling_mode=echo_handling_mode,
+            voiceprint_enabled=voiceprint_enabled,
+            speaker_state=speaker_state,
+            source=source,
+        )
+
+    def register_lineb_tts_segment(
+        self,
+        *,
+        text_summary: str,
+        duration_s: float,
+        started_at: float | None = None,
+        tts_voice: str = "",
+        voiceprint_hash: str = "",
+        conversation_turn_id: str = "",
+        acoustic_refs: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Register an assistant TTS output window for LineB echo decisions."""
+        from parrot.brain.lineb_audio_guard import register_tts_segment
+
+        return register_tts_segment(
+            text_summary=text_summary,
+            duration_s=duration_s,
+            started_at=started_at,
+            tts_voice=tts_voice,
+            voiceprint_hash=voiceprint_hash,
+            conversation_turn_id=conversation_turn_id,
+            acoustic_refs=acoustic_refs,
+        ).as_json()
+
+    def classify_lineb_mic_input(
+        self,
+        *,
+        observed_at: float | None = None,
+        duration_s: float = 0.0,
+        asr_text: str = "",
+        voiceprint_hash: str = "",
+        echo_score: float | None = None,
+    ) -> dict[str, Any]:
+        """Classify a LineB mic fragment as user turn, echo, noise, or uncertain."""
+        from parrot.brain.lineb_audio_guard import classify_mic_input
+
+        return classify_mic_input(
+            observed_at=observed_at,
+            duration_s=duration_s,
+            asr_text=asr_text,
+            voiceprint_hash=voiceprint_hash,
+            echo_score=echo_score,
+        ).as_json()
+
     def module_status(self, module_id: ExternalModuleId | str) -> AppModuleStatus:
         """Read one module status without mutating runtime state."""
         mid = ExternalModuleId(module_id)
+        if mid == ExternalModuleId.VOICE_PIPELINE:
+            return self._voice_pipeline_status()
         if mid == ExternalModuleId.GOOGLE_CALENDAR:
             return self._google_status()
         if mid == ExternalModuleId.OBSIDIAN:
@@ -592,6 +744,49 @@ class AppFirstVersionFacade:
             summary="Google Calendar read path plus draft-gated write actions.",
             metrics={"pending_draft_count": len(drafts)},
             refs={"draft_ref_ids": [d.ref_id for d in drafts]},
+        )
+
+    def _voice_pipeline_status(self) -> AppModuleStatus:
+        from parrot.brain.line_status import active_line_status, list_lines
+
+        active = active_line_status()
+        lines = tuple(line.as_json() for line in list_lines())
+        return AppModuleStatus(
+            module_id=ExternalModuleId.VOICE_PIPELINE,
+            state=active.state,
+            health=active.health,
+            summary=active.summary,
+            metrics={
+                "active_line_id": active.line_id,
+                "active_line_profile_id": active.readiness.get("line_profile_id", ""),
+                "echo_risk": active.echo.risk_level if active.echo else "unknown",
+                "echo_handling_mode": active.echo.handling_mode if active.echo else "unknown",
+                "voiceprint_state": active.voiceprint.state if active.voiceprint else "unknown",
+                "speaker_state": (
+                    active.voiceprint.speaker_state if active.voiceprint else "unknown"
+                ),
+                "recent_tts_segment_count": active.readiness.get(
+                    "recent_tts_segment_count",
+                    0,
+                ),
+                "last_input_decision": active.readiness.get(
+                    "last_input_decision",
+                    "none",
+                ),
+                "last_speaker_role": active.readiness.get(
+                    "last_speaker_role",
+                    "unknown",
+                ),
+                "voice_activity_state": active.readiness.get(
+                    "voice_activity_state",
+                    "idle",
+                ),
+            },
+            refs={
+                "lines": lines,
+                "active_line": active.as_json(),
+                "line_profiles": self.list_line_profiles(),
+            },
         )
 
     def _obsidian_status(self) -> AppModuleStatus:

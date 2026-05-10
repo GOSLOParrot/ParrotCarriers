@@ -55,6 +55,13 @@ def test_animate_threads_model_id_into_meta():
     )
 
 
+def test_animate_checks_selected_model_capability_before_rpc():
+    src = _read("animate.py")
+
+    assert "supports_capability(animation_name" in src
+    assert "unsupported_message(animation_name" in src
+
+
 def test_fly_to_exposes_model_id_kwarg():
     src = _read("fly_to.py")
     assert 'model_id: str = ""' in src, (
@@ -98,3 +105,35 @@ def test_fly_to_empty_model_id_does_not_emit_meta_key():
         "fly_to.py must conditionally build the meta dict so empty model_id "
         "leaves the wire shape unchanged."
     )
+
+
+def test_play_capability_validates_manifest_and_threads_model_id():
+    src = _read("play_capability.py")
+
+    assert "capability_id: str" in src
+    assert "supports_capability" in src
+    assert "unsupported_message" in src
+    assert "wrap_legacy_rpc_payload" in src
+    assert "meta=" in src
+    assert '"model_id"' in src
+    assert '"strict_capability": True' in src
+    assert 'method="animate"' in src
+
+
+def test_lineb_model_reaction_uses_strict_capability_rpc():
+    src = (REPO_ROOT / "src" / "parrot" / "brain" / "lineb_model_reaction.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"speaking": "lineb_speaking"' in src
+    assert "supports_capability" in src
+    assert "wrap_legacy_rpc_payload" in src
+    assert '"strict_capability": True' in src
+    assert 'method="animate"' in src
+
+
+def test_fly_to_checks_capability_before_rpc():
+    src = _read("fly_to.py")
+
+    assert 'supports_capability("fly"' in src
+    assert 'unsupported_message("fly"' in src

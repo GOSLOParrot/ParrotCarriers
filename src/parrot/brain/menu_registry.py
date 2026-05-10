@@ -29,10 +29,10 @@ How TODO decisions:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import Sequence
 
+from parrot.brain.model_manifest_registry import get_model_manifest_registry
 from parrot.brain.persona_loader import (
     DEFAULT_PERSONA_ID,
     PersonaSummary,
@@ -49,8 +49,6 @@ from parrot.brain.preset_loader import (
 from parrot.brain.workspace_registry import WorkspaceSummary, get_workspace_registry
 from parrot.dsg.l1_5.scene_snapshot import SceneType
 from parrot.shared.parrot_actions import BehaviorMode
-
-logger = logging.getLogger(__name__)
 
 
 # ─── Block summaries ────────────────────────────────────────────────
@@ -69,6 +67,9 @@ class ModelBlockSummary:
     model_id: str
     display_name: str
     declared_capability_ids: tuple[str, ...] = ()
+    parrot_reflex_enabled: bool = False
+    asset_path: str = ""
+    controller_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,20 @@ _MODE_BLOCK_DESCRIPTORS: tuple[ModeBlockSummary, ...] = (
 
 _SCENE_BASELINES = frozenset({SceneType.DESKTOP_WEBCAM, SceneType.AR_HANDHELD, SceneType.DESKTOP})
 
+def _model_summaries_from_registry() -> tuple[ModelBlockSummary, ...]:
+    """Selector mirror from the Brain-side ModelManifestRegistry."""
+    return tuple(
+        ModelBlockSummary(
+            model_id=manifest.model_id,
+            display_name=manifest.display_name or manifest.model_id,
+            declared_capability_ids=tuple(sorted(manifest.declared_capability_ids)),
+            parrot_reflex_enabled=manifest.parrot_reflex_enabled,
+            asset_path=manifest.asset_path,
+            controller_type=manifest.controller_type,
+        )
+        for manifest in get_model_manifest_registry().list_manifests()
+    )
+
 
 def _scene_display_name(scene_type: SceneType) -> str:
     return {
@@ -239,13 +254,7 @@ class MenuRegistry:
                 is_baseline=st in _SCENE_BASELINES,
             ))
 
-        models = (ModelBlockSummary(
-            model_id=DEFAULT_MODEL_ID,
-            display_name="GOSLO Parrot (default)",
-            declared_capability_ids=(
-                "fly", "dance", "wing_flap", "head_bob", "perch", "sit", "sleep", "idle",
-            ),
-        ),)
+        models = _model_summaries_from_registry()
 
         active_persona_id = _read_active("global/active_persona_id") or DEFAULT_PERSONA_ID
         active_scene_id = _read_active("global/active_scene_id") or DEFAULT_SCENE_ID

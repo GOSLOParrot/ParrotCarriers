@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "kind": "line_profile",
+  "line_profile_id": "lineb_google_default",
+  "display_name": "LineB Google Default",
+  "line_id": "line_b",
+  "llm": {
+    "provider": "google.LLM",
+    "model": "gemini-2.5-flash"
+  },
+  "asr": {
+    "asr_profile_id": "google_stt_cmn_en_default",
+    "provider": "google.STT",
+    "model": "latest_long",
+    "languages": ["cmn-CN", "en-US"]
+  },
+  "tts": {
+    "tts_profile_id": "google_tts_cmn_default",
+    "provider": "google.TTS",
+    "language": "cmn-CN",
+    "voice_name": "cmn-CN-Wavenet-D",
+    "style_note": "Default LineB test voice; configurable by RoomSetting."
+  },
+  "voiceprint": {
+    "voiceprint_profile_id": "voiceprint_monitor_default",
+    "enabled": false,
+    "speaker_policy": "monitor_only",
+    "speaker_state": "unknown"
+  },
+  "echo": {
+    "echo_policy_id": "echo_isolated_default",
+    "input_route": "phone_mic",
+    "output_route": "headphones",
+    "handling_mode": "isolated_route",
+    "microphone_enabled": true,
+    "speaker_output_enabled": false
+  },
+  "metadata": {
+    "purpose": "Default configurable LineB profile for App RoomSetting.",
+    "env_overrides": [
+      "GEMINI_TEXT_MODEL",
+      "GOOGLE_STT_MODEL",
+      "GOOGLE_STT_LANGUAGES",
+      "GOOGLE_TTS_LANGUAGE",
+      "GOOGLE_TTS_VOICE",
+      "PARROT_LINEB_VOICEPRINT_ENABLED",
+      "PARROT_AUDIO_OUTPUT_ROUTE",
+      "PARROT_LINEB_ECHO_HANDLING_MODE"
+    ]
+  }
+}

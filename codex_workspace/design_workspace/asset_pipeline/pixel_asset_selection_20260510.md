@@ -44,4 +44,4 @@
 - 按 Unity 实际 UI prefab 需要，给核心面板挑 9-slice 候选图并记录 slice 边界。
 - 给 `2DModelPortrait`、鹦鹉桌宠、启动转场飞行动画单独建角色资产槽。
 - 素材进入正式工程前再次检查授权文本，尤其是 `moderninteriors-win` 和 `Craftland`。
-- 如果用户继续往 `D:\GOSLOParrot\Pixel Asset` 放 zip，新包先解压到 `extracted/`，再审图进入 `curated/`。
+- 如果用户继续往 `D:\GOSLOParrot\Pixel Asset` 放 zip，新包只做临时解压；审图后只保留进入 `curated/` 的子集，并清理临时解压区。

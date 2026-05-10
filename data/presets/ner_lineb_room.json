@@ -1,0 +1,35 @@
+{
+  "schema_version": 3,
+  "kind": "room_profile",
+  "room_profile_id": "ner_lineb_room",
+  "display_name": "Ner LineB Test Room",
+  "model_id": "ner_skin2",
+  "persona_id": "ner_companion",
+  "line_id": "line_b",
+  "line_profile_id": "lineb_ner_ja_test",
+  "asr_profile_id": "google_stt_ja_cmn_en_ner",
+  "tts_profile_id": "google_tts_ja_ner_test",
+  "voiceprint_profile_id": "voiceprint_monitor_ner_test",
+  "echo_policy_id": "echo_isolated_ner_test",
+  "scene_profile_id": "ar_handheld",
+  "experience_mode": "ar_companion",
+  "workspace_id": "mansion_hub",
+  "map_id": "mansion_hub",
+  "skin_id": "ner_mochi_room_v0",
+  "setting_file_refs": [
+    "src/parrot/brain/personas/ner_companion.md",
+    "codex_workspace/design_workspace/unity_ar_app/ner_roleplay_setting_obsidian_v0_20260511.md",
+    "codex_workspace/design_workspace/unity_ar_app/ner_mochi_scene_v0_20260511.md",
+    ".cursor/memory/architecture/Interface/app_v1_lineb_ner_realdevice_config_report_20260511.md"
+  ],
+  "livekit_room_id": "parrot-main",
+  "canvas_preset_id": "default_canvas",
+  "menu_preference_id": "default_menu",
+  "behavior_mode_defaults": ["BASE", "COMPANION"],
+  "metadata": {
+    "created_from": "lineb_ner_realdevice_validation",
+    "tts_style": "lineb_ner_ja_test_not_official_clone",
+    "startup_validation_axes": ["Model", "Room", "Persona", "Line", "Scene"],
+    "expected_compatibility": "LineB depends on Google API/ADC; ner_skin2 disables fly_to_hand until a fly/perch controller exists."
+  }
+}

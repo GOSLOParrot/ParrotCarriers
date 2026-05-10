@@ -65,6 +65,36 @@ namespace ParrotApp.Parrot
         /// </summary>
         public enum WingFlapAxisMode { PosZ = 0, NegZ = 1, PosX = 2, NegX = 3 }
 
+        private enum MinecraftParrotPose { Flying, Standing, Sitting, Party, OnShoulder }
+
+        private const float McRadToDeg = 57.29578f;
+        private const float McPi = 3.1415927f;
+        private const float McFeatherXRot = -0.2214f;
+        private const float McBodyXRot = 0.4937f;
+        private const float McWingXRot = -0.6981f;
+        private const float McWingYRot = -3.1415927f;
+        private const float McLegXRot = -0.0299f;
+        private const float McTailStandingXRot = 1.015f;
+        private const float McTailSittingXRot = 1.5388988f;
+        private const float McWingLeftZBase = -0.0873f;
+        private const float McWingRightZBase = 0.0873f;
+        private const float McLegFlyingAddX = 0.6981317f;
+        private const float McLegSittingAddX = 1.5707964f;
+        private const float McLegPartyLeftZ = -0.34906584f;
+        private const float McLegPartyRightZ = 0.34906584f;
+
+        private const float McHeadX = 0f;
+        private const float McBodyX = 0f;
+        private const float McTailX = 0f;
+        private const float McLeftWingX = 1.5f;
+        private const float McRightWingX = -1.5f;
+
+        private const float McHeadY = 15.69f;
+        private const float McBodyY = 16.5f;
+        private const float McTailY = 21.07f;
+        private const float McWingY = 16.94f;
+        private const float McLegY = 22f;
+
         // ─── Inspector：W3.A.2 baseline（不要删） ────────────────────────
 
         [Header("Movement")]
@@ -114,9 +144,24 @@ namespace ParrotApp.Parrot
         [SerializeField] private WingFlapAxisMode wingFlapAxisMode = WingFlapAxisMode.PosZ;
 
         [Header("其他骨骼节点")]
+        [SerializeField] private string featherNodeName  = "feather";
         [SerializeField] private string leftLegNodeName  = "left_leg";
         [SerializeField] private string rightLegNodeName = "right_leg";
         [SerializeField] private string tailNodeName     = "tail";
+
+        [Header("Minecraft Java 1.20.1 parrot pose")]
+        [SerializeField] private bool useMinecraftJavaParrotPose = true;
+        [Tooltip("Unity metres per Minecraft model pixel for animated part position offsets.")]
+        [SerializeField] private float minecraftUnitScale = 0.01f;
+        [Tooltip("Minecraft model X is mirrored by the glTF/Unity import path used by GOSLO.glb.")]
+        [SerializeField] private bool invertMinecraftXOffsets = true;
+        [Tooltip("Minecraft model Y is down; Unity local Y is up.")]
+        [SerializeField] private bool invertMinecraftYOffsets = true;
+        [Tooltip("GOSLO.glb bakes the wing mirror yaw into left_wing_rotation/right_wing_rotation, so the shoulder groups normally should not receive Minecraft's -PI wing yaw again.")]
+        [SerializeField] private bool applyMinecraftWingYaw = false;
+        [SerializeField] private float minecraftWalkLimbSwingSpeed = 6f;
+        [Range(0f, 1f)]
+        [SerializeField] private float minecraftWalkLimbSwingAmount = 0.65f;
 
         // ─── Inspector：Fly ──────────────────────────────────────────────
 
@@ -194,6 +239,7 @@ namespace ParrotApp.Parrot
 
         private Transform _headTransform;
         private Transform _bodyTransform;
+        private Transform _featherTransform;
         private Transform _leftWingTransform;
         private Transform _rightWingTransform;
         private Transform _leftLegTransform;
@@ -202,11 +248,28 @@ namespace ParrotApp.Parrot
 
         private Quaternion _headBaseRot;
         private Quaternion _bodyBaseRot;
+        private Quaternion _featherBaseRot;
         private Quaternion _leftWingBaseRot;
         private Quaternion _rightWingBaseRot;
         private Quaternion _leftLegBaseRot;
         private Quaternion _rightLegBaseRot;
         private Quaternion _tailBaseRot;
+
+        private Vector3 _headBasePos;
+        private Vector3 _bodyBasePos;
+        private Vector3 _featherBasePos;
+        private Vector3 _leftWingBasePos;
+        private Vector3 _rightWingBasePos;
+        private Vector3 _leftLegBasePos;
+        private Vector3 _rightLegBasePos;
+        private Vector3 _tailBasePos;
+
+        private float _minecraftTicks;
+        private float _mcFlap;
+        private float _mcFlapSpeed;
+        private float _mcOldFlapSpeed;
+        private float _mcOldFlap;
+        private float _mcFlapping;
 
         // ─── Awake ───────────────────────────────────────────────────────
 
@@ -221,17 +284,28 @@ namespace ParrotApp.Parrot
             if (_headTransform != null) _headBaseRot = _headTransform.localRotation;
             if (_bodyTransform != null) _bodyBaseRot = _bodyTransform.localRotation;
 
+            _featherTransform   = FindDeepLog(featherNodeName);
             _leftWingTransform  = FindDeepLog(driveWingsFromShoulderGroup ? leftWingGroupNodeName  : leftWingRotNodeName);
             _rightWingTransform = FindDeepLog(driveWingsFromShoulderGroup ? rightWingGroupNodeName : rightWingRotNodeName);
             _leftLegTransform   = FindDeepLog(leftLegNodeName);
             _rightLegTransform  = FindDeepLog(rightLegNodeName);
             _tailTransform      = FindDeepLog(tailNodeName);
 
+            if (_featherTransform   != null) _featherBaseRot   = _featherTransform.localRotation;
             if (_leftWingTransform  != null) _leftWingBaseRot  = _leftWingTransform.localRotation;
             if (_rightWingTransform != null) _rightWingBaseRot = _rightWingTransform.localRotation;
             if (_leftLegTransform   != null) _leftLegBaseRot   = _leftLegTransform.localRotation;
             if (_rightLegTransform  != null) _rightLegBaseRot  = _rightLegTransform.localRotation;
             if (_tailTransform      != null) _tailBaseRot      = _tailTransform.localRotation;
+
+            if (_headTransform      != null) _headBasePos      = _headTransform.localPosition;
+            if (_bodyTransform      != null) _bodyBasePos      = _bodyTransform.localPosition;
+            if (_featherTransform   != null) _featherBasePos   = _featherTransform.localPosition;
+            if (_leftWingTransform  != null) _leftWingBasePos  = _leftWingTransform.localPosition;
+            if (_rightWingTransform != null) _rightWingBasePos = _rightWingTransform.localPosition;
+            if (_leftLegTransform   != null) _leftLegBasePos   = _leftLegTransform.localPosition;
+            if (_rightLegTransform  != null) _rightLegBasePos  = _rightLegTransform.localPosition;
+            if (_tailTransform      != null) _tailBasePos      = _tailTransform.localPosition;
         }
 
         // ─── Update ──────────────────────────────────────────────────────
@@ -239,6 +313,7 @@ namespace ParrotApp.Parrot
         void Update()
         {
             _stateTimer += Time.deltaTime;
+            UpdateMinecraftFlapModel();
 
             // Manifest-driven reflex gate (Step 2, 2026-05-06).
             // When disabled we still honour Fly's actual translation (it's
@@ -472,6 +547,14 @@ namespace ParrotApp.Parrot
 
         private void UpdateIdle()
         {
+            if (useMinecraftJavaParrotPose)
+            {
+                transform.localPosition = _basePosition;
+                transform.localScale = _baseScale;
+                ApplyMinecraftPose(MinecraftParrotPose.Standing, 0f, 0f, 0f, 0f);
+                return;
+            }
+
             // 仅轻微上下浮动，不旋转整体（vanilla 站立鹦鹉不转）
             float bob = Mathf.Sin(_stateTimer * Mathf.PI * 2f) * 0.012f;
             transform.localPosition = _basePosition + new Vector3(0f, bob, 0f);
@@ -493,6 +576,20 @@ namespace ParrotApp.Parrot
 
         private void UpdateHeadBob()
         {
+            if (useMinecraftJavaParrotPose)
+            {
+                transform.localPosition = _basePosition;
+                transform.localScale = _baseScale;
+                ApplyMinecraftPose(MinecraftParrotPose.Standing, 0f, 0f, 0f, 0f);
+
+                if (_headTransform != null && CurrentHeadState == HeadState.Forward)
+                {
+                    float nodDeg = Mathf.Sin(_stateTimer * headBobFrequency * Mathf.PI * 2f) * headBobAmplitude * 80f;
+                    _headTransform.localRotation = _headBaseRot * MinecraftEuler(nodDeg * Mathf.Deg2Rad, 0f, 0f);
+                }
+                return;
+            }
+
             float bob = Mathf.Sin(_stateTimer * Mathf.PI * 2f) * 0.012f;
             transform.localPosition = _basePosition + new Vector3(0f, bob, 0f);
 
@@ -513,7 +610,15 @@ namespace ParrotApp.Parrot
         /// </summary>
         private void UpdateFly()
         {
-            if (!_isFlying) return;
+            if (!_isFlying)
+            {
+                if (useMinecraftJavaParrotPose)
+                {
+                    transform.localScale = _baseScale;
+                    ApplyMinecraftPose(MinecraftParrotPose.Flying, 0f, 0f, 0f, 0f);
+                }
+                return;
+            }
 
             float dist = Vector3.Distance(transform.position, _flyTarget);
             var   dir  = (_flyTarget - transform.position).normalized;
@@ -539,6 +644,22 @@ namespace ParrotApp.Parrot
             //   t=0.5/Hz → amp（最大展开）
             //   t=1/Hz  → 0（收拢，开始下一拍）
             //   值域 [0, amp]，翅膀永远向外，不会穿进身体
+            if (useMinecraftJavaParrotPose)
+            {
+                transform.localScale = _baseScale;
+                ApplyMinecraftPose(MinecraftParrotPose.Flying, 0f, 0f, 0f, 0f);
+
+                if (dist < flyArrivalThreshold)
+                {
+                    transform.position = _flyTarget;
+                    _isFlying     = false;
+                    _basePosition = _flyTarget;
+                    SetState(BodyState.Idle);
+                    Debug.Log($"[AnimationDriver] Arrived at {_flyTarget}");
+                }
+                return;
+            }
+
             float wingDeg = (1f - Mathf.Cos(_stateTimer * flyWingHz * Mathf.PI * 2f)) * 0.5f * flyWingAmpDegrees;
             SetWingsMirrored(wingDeg);
 
@@ -570,6 +691,13 @@ namespace ParrotApp.Parrot
 
         private void UpdatePerch()
         {
+            if (useMinecraftJavaParrotPose)
+            {
+                transform.localScale = _baseScale;
+                ApplyMinecraftPose(MinecraftParrotPose.Standing, 0f, 0f, 0f, 0f);
+                return;
+            }
+
             float breath = Mathf.Sin(_stateTimer * perchBreathFrequency * Mathf.PI * 2f) * perchBreathAmplitude;
             transform.localScale    = _baseScale * (1f + breath);
             transform.localRotation = Quaternion.Slerp(transform.localRotation, _baseRotation, 3f * Time.deltaTime);
@@ -583,6 +711,13 @@ namespace ParrotApp.Parrot
         /// </summary>
         private void UpdatePerchedOnHand()
         {
+            if (useMinecraftJavaParrotPose)
+            {
+                transform.localScale = _baseScale;
+                ApplyMinecraftPose(MinecraftParrotPose.OnShoulder, 0f, 0f, 0f, 0f, true, 0f);
+                return;
+            }
+
             float t = _stateTimer;
 
             // 呼吸缩放
@@ -620,6 +755,14 @@ namespace ParrotApp.Parrot
         /// </summary>
         private void UpdateDance()
         {
+            if (useMinecraftJavaParrotPose)
+            {
+                transform.localPosition = _basePosition;
+                transform.localScale = _baseScale;
+                ApplyMinecraftPose(MinecraftParrotPose.Party, 0f, 0f, 0f, 0f);
+                return;
+            }
+
             float t = _stateTimer;
             float phase = t * danceBobHz * Mathf.PI * 2f;
 
@@ -656,6 +799,14 @@ namespace ParrotApp.Parrot
 
         private void UpdateSit()
         {
+            if (useMinecraftJavaParrotPose)
+            {
+                transform.localPosition = _basePosition;
+                transform.localScale = _baseScale;
+                ApplyMinecraftPose(MinecraftParrotPose.Sitting, 0f, 0f, 0f, 0f);
+                return;
+            }
+
             transform.localPosition = Vector3.Lerp(
                 transform.localPosition,
                 _basePosition - new Vector3(0f, sitBodyLower, 0f),
@@ -681,6 +832,15 @@ namespace ParrotApp.Parrot
 
         private void UpdateWalk()
         {
+            if (useMinecraftJavaParrotPose)
+            {
+                transform.localPosition = _basePosition;
+                transform.localScale = _baseScale;
+                float limbSwing = _stateTimer * minecraftWalkLimbSwingSpeed;
+                ApplyMinecraftPose(MinecraftParrotPose.Standing, limbSwing, minecraftWalkLimbSwingAmount, 0f, 0f);
+                return;
+            }
+
             float phase = _stateTimer * Mathf.PI * 2.7f;
             float bob = Mathf.Abs(Mathf.Sin(phase)) * 0.018f;
             transform.localPosition = Vector3.Lerp(
@@ -733,6 +893,7 @@ namespace ParrotApp.Parrot
         private void UpdateHeadOverlay()
         {
             if (_headTransform == null) return;
+            if (useMinecraftJavaParrotPose && CurrentHeadState == HeadState.Forward) return;
 
             // HeadBob 自己驱动头部
             if (CurrentState == BodyState.HeadBob && CurrentHeadState == HeadState.Forward) return;
@@ -822,6 +983,217 @@ namespace ParrotApp.Parrot
         /// <summary>
         /// 对称翅膀：left = +deg，right = -deg（对折方向相反）。
         /// </summary>
+        private void UpdateMinecraftFlapModel()
+        {
+            float tickDelta = Time.deltaTime * 20f;
+            if (tickDelta <= 0f) return;
+
+            bool airborne = CurrentState == BodyState.Fly;
+            _minecraftTicks += tickDelta;
+            _mcOldFlap = _mcFlap;
+            _mcOldFlapSpeed = _mcFlapSpeed;
+
+            _mcFlapSpeed += (airborne ? 4f : -1f) * 0.3f * tickDelta;
+            _mcFlapSpeed = Mathf.Clamp01(_mcFlapSpeed);
+
+            if (airborne && _mcFlapping < 1f)
+                _mcFlapping = 1f;
+
+            _mcFlapping *= Mathf.Pow(0.9f, tickDelta);
+            _mcFlap += _mcFlapping * 2f * tickDelta;
+        }
+
+        private float GetMinecraftAnimationProgress()
+        {
+            float flap = Mathf.Lerp(_mcOldFlap, _mcFlap, 1f);
+            float flapSpeedValue = Mathf.Lerp(_mcOldFlapSpeed, _mcFlapSpeed, 1f);
+            return (Mathf.Sin(flap) + 1f) * flapSpeedValue;
+        }
+
+        private void ApplyMinecraftPose(
+            MinecraftParrotPose pose,
+            float limbSwing,
+            float limbSwingAmount,
+            float headYawDegrees,
+            float headPitchDegrees,
+            bool forceAnimationProgress = false,
+            float forcedAnimationProgress = 0f)
+        {
+            float animationProgress = forceAnimationProgress ? forcedAnimationProgress : GetMinecraftAnimationProgress();
+
+            PrepareMinecraftPose(pose);
+
+            SetMinecraftRotation(_headTransform, _headBaseRot,
+                headPitchDegrees * Mathf.Deg2Rad,
+                headYawDegrees * Mathf.Deg2Rad,
+                0f);
+
+            SetMinecraftPartXPosition(_headTransform, _headBasePos, McHeadX, McHeadX);
+            SetMinecraftPartXPosition(_bodyTransform, _bodyBasePos, McBodyX, McBodyX);
+            SetMinecraftPartXPosition(_tailTransform, _tailBasePos, McTailX, McTailX);
+            SetMinecraftPartXPosition(_leftWingTransform, _leftWingBasePos, McLeftWingX, McLeftWingX);
+            SetMinecraftPartXPosition(_rightWingTransform, _rightWingBasePos, McRightWingX, McRightWingX);
+
+            switch (pose)
+            {
+                case MinecraftParrotPose.Sitting:
+                    return;
+
+                case MinecraftParrotPose.Party:
+                {
+                    int tick = Mathf.FloorToInt(_minecraftTicks);
+                    float x = Mathf.Cos(tick);
+                    float y = Mathf.Sin(tick);
+
+                    SetMinecraftPartPosition(_headTransform, _headBasePos, McHeadX, McHeadY, x, McHeadY + y);
+                    SetMinecraftRotation(_headTransform, _headBaseRot, 0f, 0f, Mathf.Sin(tick) * 0.4f);
+
+                    SetMinecraftPartPosition(_bodyTransform, _bodyBasePos, McBodyX, McBodyY, x, McBodyY + y);
+                    SetWingMinecraftRotation(_leftWingTransform, _leftWingBaseRot, McWingXRot, McWingYRot, McWingLeftZBase - animationProgress);
+                    SetMinecraftPartPosition(_leftWingTransform, _leftWingBasePos, McLeftWingX, McWingY, McLeftWingX + x, McWingY + y);
+                    SetWingMinecraftRotation(_rightWingTransform, _rightWingBaseRot, McWingXRot, McWingYRot, McWingRightZBase + animationProgress);
+                    SetMinecraftPartPosition(_rightWingTransform, _rightWingBasePos, McRightWingX, McWingY, McRightWingX + x, McWingY + y);
+                    SetMinecraftPartPosition(_tailTransform, _tailBasePos, McTailX, McTailY, x, McTailY + y);
+                    return;
+                }
+
+                case MinecraftParrotPose.Standing:
+                {
+                    AddMinecraftRotation(_leftLegTransform, _leftLegBaseRot,
+                        McLegXRot + Mathf.Cos(limbSwing * 0.6662f) * 1.4f * limbSwingAmount,
+                        0f,
+                        0f);
+                    AddMinecraftRotation(_rightLegTransform, _rightLegBaseRot,
+                        McLegXRot + Mathf.Cos(limbSwing * 0.6662f + McPi) * 1.4f * limbSwingAmount,
+                        0f,
+                        0f);
+                    ApplyMinecraftCommonMotion(limbSwing, limbSwingAmount, animationProgress);
+                    return;
+                }
+
+                case MinecraftParrotPose.Flying:
+                case MinecraftParrotPose.OnShoulder:
+                default:
+                    ApplyMinecraftCommonMotion(limbSwing, limbSwingAmount, animationProgress);
+                    return;
+            }
+        }
+
+        private void PrepareMinecraftPose(MinecraftParrotPose pose)
+        {
+            SetMinecraftRotation(_featherTransform, _featherBaseRot, McFeatherXRot, 0f, 0f);
+            SetMinecraftRotation(_bodyTransform, _bodyBaseRot, McBodyXRot, 0f, 0f);
+            if (_tailTransform != null) _tailTransform.localRotation = _tailBaseRot;
+            SetWingMinecraftRotation(_leftWingTransform, _leftWingBaseRot, McWingXRot, McWingYRot, 0f);
+            SetWingMinecraftRotation(_rightWingTransform, _rightWingBaseRot, McWingXRot, McWingYRot, 0f);
+            SetMinecraftRotation(_leftLegTransform, _leftLegBaseRot, McLegXRot, 0f, 0f);
+            SetMinecraftRotation(_rightLegTransform, _rightLegBaseRot, McLegXRot, 0f, 0f);
+            SetMinecraftPartPosition(_leftLegTransform, _leftLegBasePos, 0f, McLegY, 0f, McLegY);
+            SetMinecraftPartPosition(_rightLegTransform, _rightLegBasePos, 0f, McLegY, 0f, McLegY);
+
+            switch (pose)
+            {
+                case MinecraftParrotPose.Flying:
+                    AddMinecraftRotation(_leftLegTransform, _leftLegBaseRot, McLegXRot + McLegFlyingAddX, 0f, 0f);
+                    AddMinecraftRotation(_rightLegTransform, _rightLegBaseRot, McLegXRot + McLegFlyingAddX, 0f, 0f);
+                    break;
+
+                case MinecraftParrotPose.Sitting:
+                    SetMinecraftPartPosition(_headTransform, _headBasePos, McHeadX, McHeadY, McHeadX, 17.59f);
+                    SetMinecraftRotation(_tailTransform, _tailBaseRot, McTailSittingXRot, 0f, 0f);
+                    SetMinecraftPartPosition(_tailTransform, _tailBasePos, McTailX, McTailY, McTailX, 22.97f);
+                    SetMinecraftPartPosition(_bodyTransform, _bodyBasePos, McBodyX, McBodyY, McBodyX, 18.4f);
+                    SetWingMinecraftRotation(_leftWingTransform, _leftWingBaseRot, McWingXRot, McWingYRot, McWingLeftZBase);
+                    SetMinecraftPartPosition(_leftWingTransform, _leftWingBasePos, McLeftWingX, McWingY, McLeftWingX, 18.84f);
+                    SetWingMinecraftRotation(_rightWingTransform, _rightWingBaseRot, McWingXRot, McWingYRot, McWingRightZBase);
+                    SetMinecraftPartPosition(_rightWingTransform, _rightWingBasePos, McRightWingX, McWingY, McRightWingX, 18.84f);
+                    SetMinecraftPartPosition(_leftLegTransform, _leftLegBasePos, 0f, McLegY, 0f, McLegY + 1.9f);
+                    SetMinecraftPartPosition(_rightLegTransform, _rightLegBasePos, 0f, McLegY, 0f, McLegY + 1.9f);
+                    AddMinecraftRotation(_leftLegTransform, _leftLegBaseRot, McLegXRot + McLegSittingAddX, 0f, 0f);
+                    AddMinecraftRotation(_rightLegTransform, _rightLegBaseRot, McLegXRot + McLegSittingAddX, 0f, 0f);
+                    break;
+
+                case MinecraftParrotPose.Party:
+                    SetMinecraftRotation(_leftLegTransform, _leftLegBaseRot, McLegXRot, 0f, McLegPartyLeftZ);
+                    SetMinecraftRotation(_rightLegTransform, _rightLegBaseRot, McLegXRot, 0f, McLegPartyRightZ);
+                    break;
+            }
+        }
+
+        private void ApplyMinecraftCommonMotion(float limbSwing, float limbSwingAmount, float animationProgress)
+        {
+            float bob = animationProgress * 0.3f;
+
+            SetMinecraftPartPosition(_headTransform, _headBasePos, McHeadX, McHeadY, McHeadX, McHeadY + bob);
+            SetMinecraftRotation(_tailTransform, _tailBaseRot,
+                McTailStandingXRot + Mathf.Cos(limbSwing * 0.6662f) * 0.3f * limbSwingAmount,
+                0f,
+                0f);
+            SetMinecraftPartPosition(_tailTransform, _tailBasePos, McTailX, McTailY, McTailX, McTailY + bob);
+            SetMinecraftPartPosition(_bodyTransform, _bodyBasePos, McBodyX, McBodyY, McBodyX, McBodyY + bob);
+            SetWingMinecraftRotation(_leftWingTransform, _leftWingBaseRot, McWingXRot, McWingYRot, McWingLeftZBase - animationProgress);
+            SetMinecraftPartPosition(_leftWingTransform, _leftWingBasePos, McLeftWingX, McWingY, McLeftWingX, McWingY + bob);
+            SetWingMinecraftRotation(_rightWingTransform, _rightWingBaseRot, McWingXRot, McWingYRot, McWingRightZBase + animationProgress);
+            SetMinecraftPartPosition(_rightWingTransform, _rightWingBasePos, McRightWingX, McWingY, McRightWingX, McWingY + bob);
+            SetMinecraftPartPosition(_leftLegTransform, _leftLegBasePos, 0f, McLegY, 0f, McLegY + bob);
+            SetMinecraftPartPosition(_rightLegTransform, _rightLegBasePos, 0f, McLegY, 0f, McLegY + bob);
+        }
+
+        private void SetWingMinecraftRotation(Transform part, Quaternion baseRotation, float xRot, float yRot, float zRot)
+        {
+            SetMinecraftRotation(part, baseRotation, xRot, applyMinecraftWingYaw ? yRot : 0f, zRot);
+        }
+
+        private void AddMinecraftRotation(Transform part, Quaternion baseRotation, float xRot, float yRot, float zRot)
+        {
+            SetMinecraftRotation(part, baseRotation, xRot, yRot, zRot);
+        }
+
+        private void SetMinecraftRotation(Transform part, Quaternion baseRotation, float xRot, float yRot, float zRot)
+        {
+            if (part == null) return;
+            part.localRotation = baseRotation * MinecraftEuler(xRot, yRot, zRot);
+        }
+
+        private Quaternion MinecraftEuler(float xRot, float yRot, float zRot)
+        {
+            return Quaternion.Euler(xRot * McRadToDeg, -yRot * McRadToDeg, -zRot * McRadToDeg);
+        }
+
+        private void SetMinecraftPartPosition(
+            Transform part,
+            Vector3 basePosition,
+            float sourceBaseX,
+            float sourceBaseY,
+            float sourceX,
+            float sourceY)
+        {
+            if (part == null) return;
+
+            float scale = Mathf.Max(0f, minecraftUnitScale);
+            float dx = (sourceX - sourceBaseX) * scale;
+            float dy = (sourceY - sourceBaseY) * scale;
+            if (invertMinecraftXOffsets) dx = -dx;
+            if (invertMinecraftYOffsets) dy = -dy;
+
+            part.localPosition = basePosition + new Vector3(dx, dy, 0f);
+        }
+
+        private void SetMinecraftPartXPosition(
+            Transform part,
+            Vector3 basePosition,
+            float sourceBaseX,
+            float sourceX)
+        {
+            if (part == null) return;
+
+            float dx = (sourceX - sourceBaseX) * Mathf.Max(0f, minecraftUnitScale);
+            if (invertMinecraftXOffsets) dx = -dx;
+
+            Vector3 current = part.localPosition;
+            part.localPosition = new Vector3(basePosition.x + dx, current.y, current.z);
+        }
+
         private void SetWingsMirrored(float leftDeg)
         {
             if (_leftWingTransform == null || _rightWingTransform == null) return;

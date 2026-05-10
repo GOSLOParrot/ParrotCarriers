@@ -8,17 +8,44 @@ from parrot.brain.tools.animate import animate
 from parrot.brain.tools.dispatch_task import dispatch_task
 from parrot.brain.tools.fly_to import fly_to
 from parrot.brain.tools.manage_episode import manage_episode
+from parrot.brain.tools.play_capability import play_capability
 from parrot.brain.tools.query_memory import query_memory
 from parrot.brain.tools.query_scene import query_scene
 from parrot.brain.tools.remember import remember
 from parrot.brain.tools.set_mode import set_mode
 from parrot.brain.tools.set_video_tier import set_video_tier
+from parrot.brain.tools._capability_gate import active_model_id
+from parrot.brain.model_manifest_registry import get_model_manifest_registry
 
 ALL_TOOLS = [
-    fly_to, animate, dispatch_task,
+    fly_to, animate, play_capability, dispatch_task,
     remember, query_memory, query_scene, set_mode,
     manage_episode, set_video_tier,
 ]
+
+
+def tools_for_active_model():
+    """Return Brain tools with model-specific unsafe verbs hidden."""
+    model_id = active_model_id()
+    registry = get_model_manifest_registry()
+    tools = [
+        dispatch_task,
+        remember,
+        query_memory,
+        query_scene,
+        set_mode,
+        manage_episode,
+        set_video_tier,
+        play_capability,
+    ]
+    if registry.supports(model_id, "fly"):
+        tools.insert(0, fly_to)
+    if registry.parrot_reflex_enabled(model_id):
+        insert_at = 1 if fly_to in tools else 0
+        tools.insert(insert_at, animate)
+    if "identify_object" in globals():
+        tools.append(identify_object)
+    return tools
 
 if os.getenv("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", "0").lower() in {"1", "true", "yes"}:
     # Sprint4 Phase 4 W4-5 (2026-04-30) rewrote identify_object as a staged
@@ -38,10 +65,10 @@ if os.getenv("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", "0").lower() in {"1", "true",
     ALL_TOOLS.append(identify_object)
 
 __all__ = [
-    "fly_to", "animate", "dispatch_task",
+    "fly_to", "animate", "play_capability", "dispatch_task",
     "remember", "query_memory", "query_scene", "set_mode",
     "manage_episode", "set_video_tier",
-    "ALL_TOOLS",
+    "ALL_TOOLS", "tools_for_active_model",
 ]
 
 if "identify_object" in globals():

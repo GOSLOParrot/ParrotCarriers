@@ -36,12 +36,27 @@
 - Obsidian / Google / PhotoNode 是外挂或外部源：先搞清楚“怎么连上、数据怎么进 L1.5 / L2-B、App 里怎么让用户感觉到”，再做漂亮页面。
 - Figma 是设计源，Unity 是运行预览源；设计区只放索引、草图说明、资产清单，不把大资源塞进 memory。
 
+## 2026-05-10 路由清理后阻塞任务
+
+正式 App 前端尚未完成。下一轮 App 前端工作必须从 `tasks/ACTIVE_CONTEXT.md` 开始，并先做调研，再从启动页进入长线实现。
+
+1. **Room Setting**：启动页 `SCENE` 入口进入 App preset/config 页面，管理 LineA/LineB、Model、setting file、Scene、skin、Persona/Mode 和保存的 Room preset。这里的 Room 是 App 菜单预设，不是 LiveKit Room。
+2. **LineB 菜单升级**：菜单必须显示 ASR/TTS readiness、Google ADC 状态、声纹/说话人状态、回音风险、处理模式、近期 TTS 与麦克风判定证据。
+3. **Ner 第二模型**：Ner 目前只是 raw asset，必须升级成可选择的生产模型路径；启动页要能选择 Brain 管线、模型、设定、场景和皮肤。
+
 ## 硬规则
 
 - 不改 `.cursor/memory/lore/ideas.md`；这里只放镜像副本和设计草稿。
 - 业务接口文档只写“业务如何跑通”，不复制半个代码仓库。
 - 改核心协议 / DTO / enum / topic / BB key 时，必须回到 `.cursor/memory/architecture/protocol_snapshot_p4.md` 和 `Interface/INDEX.md`。
 - 新增 `.cursor/memory/architecture/**` 才需要登记 `.cursor/memory/INDEX.md`；本设计区新增文件默认不需要。
+
+## 2026-05-11 LineB + Ner Longline Route
+
+- Current longline TODO: `tasks/lineb_ner_gameplay_longline_todo_20260511.md`.
+- This is the route for LineB configurable profiles, Ner model/gameplay upgrade, GOSLO joystick/gameplay upgrade, and unified prop/object interactions.
+- Start from `tasks/ACTIVE_CONTEXT.md`, then read the longline TODO before editing ECP, model manifest, Brain tools, RoomSetting, or Unity model controllers.
+- Current architecture decision: keep the existing ECP wire route and build profile, manifest, capability resolver, and `play_capability` layers on top.
 
 ## 2026-05-09 新增设计入口
 
@@ -62,5 +77,4 @@
 - `tasks/app_v1_design_handoff_index_20260510.md`：第一版 App 设计交接索引、自检标准、漂移检查和素材使用目标。
 - `web_console/monitoring_demo_scope_20260509.md`：只读 Web 监控小 demo 范围，用于 App 第一版连接层验证。
 - `sketches/menu_canvas_mvp_v0.html`：菜单画布 MVP HTML 草图。
-- `tasks/app_v1_autonomous_self_check_20260510.md`：App V1 长线自检目标、验证结果、剩余决策。
-- `.cursor/memory/architecture/Interface/app_v1_longline_self_check_completion_20260510.md`：本轮长线自检事实源完成记录。
+- `.cursor/memory/architecture/Interface/app_v1_current_status_and_test_report_20260510.md`：清理后的唯一 App V1 状态/测试报告；明确正式 App 前端尚未完成。

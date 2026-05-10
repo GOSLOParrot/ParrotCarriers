@@ -315,8 +315,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0497c55a6e4f49ac8dfbc4bfa18f9770, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   startupFlow: {fileID: 1783245723}
   photoController: {fileID: 2350000003}
   focusController: {fileID: 2500000005}
@@ -372,8 +372,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: efab43d0992a56a46afc84ba61d652ad, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   handTracker: {fileID: 1921163389}
   animDriver: {fileID: 1024024293}
   perchOffset: {x: 0, y: 0.02, z: 0}
@@ -393,8 +393,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d4e125d2e9ce0574596ea8afe11a99c2, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   moveSpeed: 3
   arrivalThreshold: 0.05
   planeWalkSpeed: 0.45
@@ -676,8 +676,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 214b017905774c59a71bd5f5394bfaed, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   roomManager: {fileID: 2400000003}
   lifecycleManager: {fileID: 1783245721}
   shutdownService: {fileID: 1783245725}
@@ -692,9 +692,9 @@ MonoBehaviour:
     pattern_id: default
     capability_mode: FullARCompanion
     workspace_id: mansion_hub
-    livekit_url:
-    join_token:
-    unity_identity:
+    livekit_url: 
+    join_token: 
+    unity_identity: 
   connectTimeoutSeconds: 20
   brainRpcReadyTimeoutSeconds: 8
   brainRpcRetryIntervalSeconds: 0.5
@@ -708,10 +708,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1ae2b69323534cbca1d1faf6edd0e7a6, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   mintEndpoint: http://127.0.0.1:7888/mint
-  bearerSecret:
+  bearerSecret: 
 --- !u!114 &1783245725
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -722,8 +722,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e5570cf1a0859a447bebefb035ac8042, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   roomManager: {fileID: 0}
   runOnApplicationQuit: 1
 --- !u!114 &1783245726
@@ -736,8 +736,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3ef9ff16439f63b418b6e7c8955e8e4d, type: 3}
-  m_Name:
-  m_EditorClassIdentifier:
+  m_Name: 
+  m_EditorClassIdentifier: 
   roomManager: {fileID: 0}
   brainIdentityPrefix: agent-
 --- !u!1 &1861972825

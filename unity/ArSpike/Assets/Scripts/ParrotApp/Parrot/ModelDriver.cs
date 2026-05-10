@@ -93,12 +93,45 @@ namespace ParrotApp.Parrot
                 return;
             }
 
+            ConfigureControllerFromManifest();
+
             if (Manifest.auto_scale_to_pet_height)
             {
                 ApplyAutoScale();
             }
 
             ParrotRegistry.Instance?.Register(Controller);
+        }
+
+        private void ConfigureControllerFromManifest()
+        {
+            var target = Controller as object;
+            if (target == null || Manifest == null) return;
+
+            var method = target.GetType().GetMethod(
+                "ConfigureFromManifest",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic,
+                null,
+                new[] { typeof(ModelManifestDto) },
+                null);
+
+            if (method == null)
+            {
+                if (verbose)
+                    Debug.Log($"[ModelDriver] Controller '{target.GetType().FullName}' has no ConfigureFromManifest hook.");
+                return;
+            }
+
+            try
+            {
+                method.Invoke(target, new object[] { Manifest });
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[ModelDriver] ConfigureFromManifest failed for '{target.GetType().FullName}': {ex.Message}");
+            }
         }
 
         private IParrotController ResolveOrAttachController(string controllerType)

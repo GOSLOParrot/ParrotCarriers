@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from livekit.agents import RunContext, function_tool
 
+from parrot.brain.tools._capability_gate import supports_capability, unsupported_message
 from parrot.brain.tools._rpc_bridge import call_unity_rpc
 from parrot.brain.tools._state_context import attach_state_header
 from parrot.shared.ecp import EcpCommandKind, wrap_legacy_rpc_payload
@@ -45,6 +46,9 @@ async def fly_to(
             named companion. Empty string routes to the currently active
             controller via the Unity-side ParrotRegistry.
     """
+    if not supports_capability("fly", model_id):
+        return unsupported_message("fly", model_id)
+
     # Phase 2 TODO (Sprint4 ECP-minimal, 2026-04-29):
     # `_command` is intentionally discarded here. The Sprint4 protocol design
     # (`sprint4_protocol_v2_ecp.md` §6) eventually wants every wrap to emit an

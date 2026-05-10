@@ -13,6 +13,24 @@ PARROT_CONTROLLER = (
 ANIMATION_DRIVER = (
     UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "AnimationDriver.cs"
 )
+MODEL_DRIVER = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "ModelDriver.cs"
+)
+NER_SPINE_CONTROLLER = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "NerSpineController.cs"
+)
+NER_CHEEK_PINCH_INTERACTOR = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "NerCheekPinchInteractor.cs"
+)
+NER_PICKUP_PLACE_INTERACTOR = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "NerPickupPlaceInteractor.cs"
+)
+NER_CHEEK_HIT_REGION = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "NerCheekHitRegion.cs"
+)
+NER_SPINE_AUDIT = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "Editor" / "NerSpineAnimationAudit.cs"
+)
 TOKEN_MINT_CLIENT = (
     UNITY_ROOT / "Scripts" / "ParrotApp" / "LiveKit" / "LiveKitTokenMintClient.cs"
 )
@@ -24,6 +42,7 @@ SMOKE_BUILDER = (
     / "ParrotSmokeSceneBuilder.cs"
 )
 ASSET_MANIFEST = UNITY_ROOT / "UI" / "ParrotApp" / "app_v1_asset_manifest.json"
+NER_MODEL_MANIFEST = UNITY_ROOT / "Resources" / "parrot_models" / "ner_skin2.json"
 
 
 def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
@@ -122,6 +141,170 @@ def test_parrot_joystick_uses_existing_parrot_controller_boundary() -> None:
     assert "case BodyState.Walk" in animation
     assert 'case "walking"' in animation
     assert 'return "walking"' in animation
+
+
+def test_custom_capability_parameters_reach_model_controller() -> None:
+    controller = PARROT_CONTROLLER.read_text(encoding="utf-8")
+    rpc = (UNITY_ROOT / "Scripts" / "ParrotApp" / "RPC" / "ParrotRpcHandler.cs").read_text(
+        encoding="utf-8"
+    )
+
+    assert "public void PlayAnimation(string animationName, string modelId, string parametersJson)" in controller
+    assert "public bool TryPlayAnimation(string animationName, string modelId, string parametersJson, bool strictCapability)" in controller
+    assert "controller.ApplyCapability(animationName, parametersJson ?? \"\")" in controller
+    assert "public string parameters_json" in rpc
+    assert "public bool strict_capability" in rpc
+    assert "_parrot.TryPlayAnimation(p.animation, modelId, p.parameters_json, p.strict_capability)" in rpc
+    assert "capability_unsupported" in controller
+    assert "capability_unsupported" in rpc
+
+
+def test_model_driver_configures_manifest_back_into_controllers() -> None:
+    driver = MODEL_DRIVER.read_text(encoding="utf-8")
+
+    assert "ConfigureControllerFromManifest();" in driver
+    assert '"ConfigureFromManifest"' in driver
+    assert "typeof(ModelManifestDto)" in driver
+    assert "method.Invoke" in driver
+
+
+def test_ner_spine_model_manifest_and_controller_probe_are_registered() -> None:
+    manifest = json.loads(NER_MODEL_MANIFEST.read_text(encoding="utf-8"))
+    controller = NER_SPINE_CONTROLLER.read_text(encoding="utf-8")
+
+    assert manifest["model_id"] == "ner_skin2"
+    assert manifest["controller_type"] == "ParrotApp.Parrot.NerSpineController"
+    capability_ids = {c["capability_id"] for c in manifest["capabilities"]}
+    assert {
+        "spine_idle",
+        "spine_walk",
+        "face_happy",
+        "face_angry",
+        "face_sad",
+        "face_serious",
+        "face_sulky",
+        "face_tired",
+        "cheek_pinch_start",
+        "cheek_pinch_hold",
+        "cheek_pinch_release",
+        "body_pickup_start",
+        "body_held_in_air",
+        "body_dragging_in_air",
+        "body_place_release",
+        "touch_idle",
+        "pat_idle",
+        "tickle_idle",
+        "lineb_speaking",
+        "lineb_listening",
+        "lineb_echo_suppressed",
+    } <= capability_ids
+    assert "fly" not in capability_ids
+    assert "perch" not in capability_ids
+
+    assert "class NerSpineController" in controller
+    assert "IParrotController" in controller
+    assert "ConfigureFromManifest(ModelManifestDto manifest)" in controller
+    assert '"Spine.Unity.SkeletonAnimation"' in controller
+    assert '"spine_walk"' in controller
+    assert "ResolveAnimationName" in controller
+    assert "public int variant" in controller
+    assert "TryPlayIdleFallback" in controller
+    assert "ApplyCheekCapability" in controller
+    assert "ApplyBodyInteractionCapability" in controller
+    assert "ApplyLineBVoiceActivity" in controller
+    assert "_reactiveTouchSuppressedUntil" in controller
+    assert "IsReactiveTouchSuppressed" in controller
+    assert '"body_pickup_start"' in controller
+    assert '"body_place_release"' in controller
+    assert "BodyInteractionJson" in controller
+    assert '"lineb_speaking"' in controller
+    assert '"lineb_echo_suppressed"' in controller
+    assert '"S1_F_Ball_L_CT"' in controller
+    assert '"S1_F_Ball_R_CT"' in controller
+    assert '"Character_Ball_Move"' in controller
+
+
+def test_ner_manifest_handlers_match_editor_verified_spine_names() -> None:
+    manifest = json.loads(NER_MODEL_MANIFEST.read_text(encoding="utf-8"))
+    audit = NER_SPINE_AUDIT.read_text(encoding="utf-8")
+
+    known = {
+        "Angry_1", "Angry_2", "Angry_3", "Angry_4", "Angry_5", "Angry_6", "Angry_7", "Angry_8",
+        "Blank_1", "Blank_2", "Close_1", "Eat_1", "Eat_2",
+        "Happy_1", "Happy_2", "Happy_3", "Happy_4", "Happy_5", "Happy_6",
+        "Idle_1", "Notmyfault_1", "Panic_1", "Panic_2", "Panic_3",
+        "Pat_End", "Pat_Idle", "Proud_1",
+        "Sad_1", "Sad_2", "Sad_3", "Sad_4", "Sad_5", "Sad_6", "Sad_7", "Sad_8",
+        "Serious_1", "Serious_2", "Serious_3", "Serious_4",
+        "Shame_1", "Shame_2", "Smash_End_1", "Smash_End_2",
+        "Sulky_1", "Sulky_2", "Sulky_3", "Surprise_1", "Think_1",
+        "Tickle_End", "Tickle_Idle_1", "Tickle_Idle_2",
+        "Tired_1", "Tired_2", "Tired_3", "Tired_4", "Tired_5",
+        "Touch_End", "Touch_Idle", "Worry_1", "Worry_2",
+    }
+    handlers = {c["handler"] for c in manifest["capabilities"] if c.get("handler")}
+    variants = {
+        v
+        for c in manifest["capabilities"]
+        for v in c.get("parameters", {}).get("variants", [])
+    }
+
+    assert manifest["author_meta"]["animation_count"] == "60"
+    assert handlers <= known
+    assert variants <= known
+    assert "ValidateManifestHandlers" in audit
+    assert "GetSkeletonData" in audit
+
+
+def test_ner_cheek_pinch_interactor_is_ar_camera_raycast_based() -> None:
+    interactor = NER_CHEEK_PINCH_INTERACTOR.read_text(encoding="utf-8")
+    hit_region = NER_CHEEK_HIT_REGION.read_text(encoding="utf-8")
+
+    assert "class NerCheekPinchInteractor" in interactor
+    assert "Camera.main" in interactor
+    assert "ScreenPointToRay" in interactor
+    assert "Physics.RaycastAll" in interactor
+    assert "QueryTriggerInteraction.Collide" in interactor
+    assert "Input.touchCount" in interactor
+    assert "Input.GetTouch" in interactor
+    assert "activeTouchSeen" in interactor
+    assert "void OnDisable()" in interactor
+    assert "cheek_recover" in interactor
+    assert "cheek_pinch_start" in interactor
+    assert "cheek_pinch_hold" in interactor
+    assert "cheek_pinch_warning" in interactor
+    assert "cheek_pinch_release" in interactor
+    assert "EventSystem.current.IsPointerOverGameObject" in interactor
+    assert "class NerCheekHitRegion" in hit_region
+    assert "NormalizeCheekSide" in NER_SPINE_CONTROLLER.read_text(encoding="utf-8")
+
+
+def test_ner_pickup_place_interactor_is_long_press_ar_placement_based() -> None:
+    interactor = NER_PICKUP_PLACE_INTERACTOR.read_text(encoding="utf-8")
+
+    assert "class NerPickupPlaceInteractor" in interactor
+    assert "longPressSeconds" in interactor
+    assert "cancelBeforeHoldPixels" in interactor
+    assert "autoCreateBodyCollider" in interactor
+    assert "BoxCollider" in interactor
+    assert "NerBodyPickupHit" in interactor
+    assert "Physics.RaycastAll" in interactor
+    assert "QueryTriggerInteraction.Collide" in interactor
+    assert "QueryTriggerInteraction.Ignore" in interactor
+    assert "new Plane(Vector3.up" in interactor
+    assert "targetRoot.position = groundPoint + Vector3.up * pickupLiftMeters" in interactor
+    assert "targetRoot.position = groundPoint" in interactor
+    assert "DropToLastGroundPoint" in interactor
+    assert "IsOwnModelCollider" in interactor
+    assert "_lastScreenPosition = screenPosition" in interactor
+    assert "if (!SendBodyCapability(\"body_dragging_in_air\"" in interactor
+    assert "body_pickup_start" in interactor
+    assert "body_held_in_air" in interactor
+    assert "body_dragging_in_air" in interactor
+    assert "body_place_release" in interactor
+    assert "body_place_cancel" in interactor
+    assert "EventSystem.current.IsPointerOverGameObject" in interactor
+    assert "NerCheekHitRegion" in interactor
 
 
 def test_app_v1_curated_asset_slots_are_imported_to_unity() -> None:

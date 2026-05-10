@@ -36,7 +36,7 @@ from livekit.plugins import google
 from parrot.brain.soul import get_instructions
 from parrot.brain.telemetry_receiver import attach_telemetry_receiver
 from parrot.brain.vision.state import attach_video_state_rpc
-from parrot.brain.tools import ALL_TOOLS
+from parrot.brain.tools import tools_for_active_model
 from parrot.bus.manifest import ModuleManifest
 from parrot.bus.mounting import ModuleMount
 from parrot.shared.config import ParrotConfig
@@ -78,7 +78,7 @@ class ParrotAssistant(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=get_instructions(),
-            tools=ALL_TOOLS,
+            tools=tools_for_active_model(),
         )
 
 
@@ -163,11 +163,14 @@ def _build_session(pipeline: str, config: ParrotConfig) -> AgentSession:
     # do not appear "connected but mute".
     from livekit.plugins import silero
 
-    text_model = os.getenv("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
-    stt_model = os.getenv("GOOGLE_STT_MODEL", "latest_long")
-    stt_lang = os.getenv("GOOGLE_STT_LANGUAGES", "cmn-CN,en-US")
-    tts_voice = os.getenv("GOOGLE_TTS_VOICE", "cmn-CN-Wavenet-D")
-    tts_lang = os.getenv("GOOGLE_TTS_LANGUAGE", "cmn-CN")
+    from parrot.brain.line_profile import active_lineb_runtime_settings
+
+    lineb_settings = active_lineb_runtime_settings()
+    text_model = lineb_settings.llm_model
+    stt_model = lineb_settings.stt_model
+    languages = list(lineb_settings.stt_languages) or ["cmn-CN"]
+    tts_voice = lineb_settings.tts_voice
+    tts_lang = lineb_settings.tts_language
 
     api_key = config.google_api_key or None
     if not api_key:
@@ -185,10 +188,9 @@ def _build_session(pipeline: str, config: ParrotConfig) -> AgentSession:
             "a service account JSON with Speech-to-Text + Text-to-Speech roles."
         )
 
-    languages = [s.strip() for s in stt_lang.split(",") if s.strip()] or ["cmn-CN"]
     logger.info(
-        "Brain pipeline=line_b (STT-LLM-TTS): llm=%s stt=%s lang=%s tts_voice=%s",
-        text_model, stt_model, languages, tts_voice,
+        "Brain pipeline=line_b (STT-LLM-TTS): profile=%s llm=%s stt=%s lang=%s tts_voice=%s",
+        lineb_settings.line_profile_id, text_model, stt_model, languages, tts_voice,
     )
     return AgentSession(
         vad=silero.VAD.load(),
@@ -216,7 +218,10 @@ async def _set_goslo_mode(mode: str, session_id: str = "") -> None:
     )
 
 
-def _attach_transcript_listener_to_session(session: AgentSession) -> None:
+def _attach_transcript_listener_to_session(
+    session: AgentSession,
+    pipeline: str = _PIPELINE_LINE_A,
+) -> None:
     """LLM 侧用户转写与助手文本: 打终端 + 喂 DSG Ingest.
 
     Sprint 2 T7 wiring. **Pipeline-agnostic** (Sprint 4 Phase 5+ Line B,
@@ -251,6 +256,20 @@ def _attach_transcript_listener_to_session(session: AgentSession) -> None:
     def _on_user_transcribed(ev: UserInputTranscribedEvent) -> None:
         if not ev.is_final:
             return
+        if pipeline == _PIPELINE_LINE_B:
+            try:
+                from parrot.brain.lineb_audio_guard import classify_mic_input
+
+                decision = classify_mic_input(asr_text=ev.transcript)
+                _schedule_lineb_voice_activity_reaction("user_input_transcribed")
+                if decision.turn_decision == "agent_echo":
+                    logger.info(
+                        "LineB suppressed mic fragment as agent echo: %s",
+                        decision.as_json(),
+                    )
+                    return
+            except Exception:
+                logger.exception("LineB mic input classification failed")
         line = f"[Gemini·用户] {ev.transcript}"
         logger.info("%s", line)
         print(f"\n{line}\n", flush=True)
@@ -270,6 +289,21 @@ def _attach_transcript_listener_to_session(session: AgentSession) -> None:
         text = item.text_content
         if not text:
             return
+        if pipeline == _PIPELINE_LINE_B:
+            try:
+                from parrot.brain.line_profile import active_lineb_runtime_settings
+                from parrot.brain.lineb_audio_guard import register_tts_segment
+
+                register_tts_segment(
+                    text_summary=text,
+                    duration_s=_estimate_tts_duration_s(text),
+                    tts_voice=active_lineb_runtime_settings().tts_voice,
+                    conversation_turn_id=str(getattr(item, "id", "") or ""),
+                    acoustic_refs={"source": "conversation_item_added"},
+                )
+                _schedule_lineb_voice_activity_reaction("conversation_item_added")
+            except Exception:
+                logger.exception("LineB TTS segment registration failed")
         line = f"[Gemini·鹦鹉] {text}"
         logger.info("%s", line)
         print(f"\n{line}\n", flush=True)
@@ -278,6 +312,28 @@ def _attach_transcript_listener_to_session(session: AgentSession) -> None:
                 extractor.feed_transcript(text, "assistant")
             except Exception:
                 logger.exception("extractor.feed_transcript(assistant) failed")
+
+
+def _estimate_tts_duration_s(text: str) -> float:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return 0.35
+    return max(0.35, min(24.0, len(stripped) / 7.5))
+
+
+def _schedule_lineb_voice_activity_reaction(reason: str) -> None:
+    try:
+        from parrot.brain.lineb_model_reaction import (
+            dispatch_latest_lineb_voice_activity_to_model,
+        )
+
+        asyncio.create_task(
+            dispatch_latest_lineb_voice_activity_to_model(reason=reason)
+        )
+    except RuntimeError:
+        logger.debug("LineB voice activity reaction skipped: no running event loop")
+    except Exception:
+        logger.exception("LineB voice activity reaction scheduling failed")
 
 
 async def _generate_reply_after_current_speech(
@@ -337,11 +393,136 @@ def _attach_menu_rpc(room: "Any") -> None:
             raw = {}
         return raw if isinstance(raw, dict) else {}
 
+    def _payload_bool(payload: dict, key: str, default: bool) -> bool:
+        value = payload.get(key)
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+    def _payload_bool_or_none(payload: dict, key: str) -> bool | None:
+        if payload.get(key) is None:
+            return None
+        return _payload_bool(payload, key, False)
+
+    def _payload_float(payload: dict, key: str, default: float) -> float:
+        try:
+            return float(payload.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    def _payload_float_or_none(payload: dict, key: str) -> float | None:
+        if payload.get(key) is None:
+            return None
+        try:
+            return float(payload.get(key))
+        except (TypeError, ValueError):
+            return None
+
     @room.local_participant.register_rpc_method("listMenuBlocks")
     async def _list_menu_blocks(data: "Any") -> str:
         from parrot.brain.menu_registry import get_menu_registry
 
         return _dump({"status": "ok", "snapshot": get_menu_registry().list_blocks()})
+
+    @room.local_participant.register_rpc_method("getRoomSettingSnapshot")
+    async def _get_room_setting_snapshot(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        snapshot = AppFirstVersionFacade().room_setting_snapshot(
+            str(payload.get("room_profile_id") or "") or None
+        )
+        return _dump({"status": "ok", "snapshot": snapshot.as_json()})
+
+    @room.local_participant.register_rpc_method("previewRoomProfile")
+    async def _preview_room_profile(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        draft = payload.get("room_profile") if isinstance(payload.get("room_profile"), dict) else payload
+        return _dump({"status": "ok", "preview": AppFirstVersionFacade().preview_room_profile(draft)})
+
+    @room.local_participant.register_rpc_method("newRoomProfile")
+    async def _new_room_profile(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        draft = AppFirstVersionFacade().new_room_profile(
+            base_id=str(payload.get("base_id") or "") or None,
+            display_name=str(payload.get("display_name") or "") or None,
+        )
+        return _dump({"status": "ok", "draft": draft})
+
+    @room.local_participant.register_rpc_method("saveRoomProfile")
+    async def _save_room_profile(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        draft = payload.get("room_profile") if isinstance(payload.get("room_profile"), dict) else payload
+        saved = AppFirstVersionFacade().save_room_profile(draft)
+        return _dump({"status": "ok", "saved": saved})
+
+    @room.local_participant.register_rpc_method("applyRoomProfile")
+    async def _apply_room_profile(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        draft_or_id = payload.get("room_profile") or payload.get("room_profile_id") or payload
+        applied = AppFirstVersionFacade().apply_room_profile(
+            draft_or_id,
+            experience_mode=payload.get("experience_mode"),
+        )
+        return _dump({"status": "ok" if applied.get("success") else "error", "result": applied})
+
+    @room.local_participant.register_rpc_method("setLineBAudioRoutePolicy")
+    async def _set_lineb_audio_route_policy(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        policy = AppFirstVersionFacade().set_lineb_audio_route_policy(
+            input_route=str(payload.get("input_route") or "unknown"),
+            output_route=str(payload.get("output_route") or "unknown"),
+            microphone_enabled=_payload_bool(payload, "microphone_enabled", True),
+            speaker_output_enabled=_payload_bool_or_none(payload, "speaker_output_enabled"),
+            echo_handling_mode=str(payload.get("echo_handling_mode") or "") or None,
+            voiceprint_enabled=_payload_bool(payload, "voiceprint_enabled", False),
+            speaker_state=str(payload.get("speaker_state") or "unknown"),
+            source=str(payload.get("source") or "livekit_rpc"),
+        )
+        return _dump({"status": "ok", "policy": policy})
+
+    @room.local_participant.register_rpc_method("registerLineBTtsSegment")
+    async def _register_lineb_tts_segment(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        acoustic_refs = payload.get("acoustic_refs")
+        segment = AppFirstVersionFacade().register_lineb_tts_segment(
+            text_summary=str(payload.get("text_summary") or payload.get("text") or ""),
+            duration_s=_payload_float(payload, "duration_s", 0.5),
+            started_at=_payload_float_or_none(payload, "started_at"),
+            tts_voice=str(payload.get("tts_voice") or payload.get("voice") or ""),
+            voiceprint_hash=str(payload.get("voiceprint_hash") or ""),
+            conversation_turn_id=str(payload.get("conversation_turn_id") or ""),
+            acoustic_refs=acoustic_refs if isinstance(acoustic_refs, dict) else None,
+        )
+        return _dump({"status": "ok", "segment": segment})
+
+    @room.local_participant.register_rpc_method("classifyLineBMicInput")
+    async def _classify_lineb_mic_input(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        decision = AppFirstVersionFacade().classify_lineb_mic_input(
+            observed_at=_payload_float_or_none(payload, "observed_at"),
+            duration_s=_payload_float(payload, "duration_s", 0.0),
+            asr_text=str(payload.get("asr_text") or payload.get("text") or ""),
+            voiceprint_hash=str(payload.get("voiceprint_hash") or ""),
+            echo_score=_payload_float_or_none(payload, "echo_score"),
+        )
+        return _dump({"status": "ok", "decision": decision})
 
     @room.local_participant.register_rpc_method("applyMenuSelection")
     async def _apply_menu_selection(data: "Any") -> str:
@@ -416,7 +597,10 @@ def _attach_menu_rpc(room: "Any") -> None:
 
     logger.info(
         "Menu RPC handlers registered: listMenuBlocks, applyMenuSelection, "
-        "applyPreset, saveAsPreset, applyWorkspace, setAppCapabilityMode"
+        "applyPreset, saveAsPreset, applyWorkspace, setAppCapabilityMode, "
+        "getRoomSettingSnapshot, previewRoomProfile, newRoomProfile, "
+        "saveRoomProfile, applyRoomProfile, setLineBAudioRoutePolicy, "
+        "registerLineBTtsSegment, classifyLineBMicInput"
     )
 
 
@@ -543,7 +727,7 @@ async def brain_entrypoint(ctx: agents.JobContext):
     assistant = ParrotAssistant()
     pipeline = _resolve_pipeline()
     session = _build_session(pipeline, config)
-    _attach_transcript_listener_to_session(session)
+    _attach_transcript_listener_to_session(session, pipeline=pipeline)
 
     # Sprint4 Phase 4 W3 (entry doc §8.1 L10 selection-C):
     # Mirror Gemini agent_state_changed → BB tick/cognitive_state so

@@ -40,7 +40,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +56,42 @@ DEFAULT_SCENE_ID = "ar_handheld"
 DEFAULT_WORKSPACE_ID = "mansion_hub"
 DEFAULT_PRESET_ID = "default"
 SCHEMA_VERSION = 2
+ROOM_PROFILE_SCHEMA_VERSION = 3
+DEFAULT_LINE_ID = "line_a"
+DEFAULT_LINE_PROFILE_ID = "linea_gemini_realtime"
+DEFAULT_LINEB_PROFILE_ID = "lineb_google_default"
+DEFAULT_ASR_PROFILE_ID = ""
+DEFAULT_TTS_PROFILE_ID = ""
+DEFAULT_VOICEPRINT_PROFILE_ID = ""
+DEFAULT_ECHO_POLICY_ID = ""
+DEFAULT_EXPERIENCE_MODE = "ar_companion"
+DEFAULT_LIVEKIT_ROOM_ID = "parrot-main"
+DEFAULT_SCENE_SKIN_ID = "goslo_default"
+DEFAULT_CANVAS_PRESET_ID = "default_canvas"
+DEFAULT_MENU_PREFERENCE_ID = "default_menu"
+
+
+def _clean_text(value: Any, fallback: str) -> str:
+    text = str(value or "").strip()
+    return text or fallback
+
+
+def _tuple_from_raw(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return tuple(s.strip() for s in value.split("|") if s.strip())
+    if isinstance(value, (list, tuple)):
+        return tuple(str(x).strip() for x in value if str(x).strip())
+    return ()
+
+
+def _default_line_profile_id(line_id: str) -> str:
+    return (
+        DEFAULT_LINEB_PROFILE_ID
+        if str(line_id or "").strip().lower() == "line_b"
+        else DEFAULT_LINE_PROFILE_ID
+    )
 
 
 # ─── Preset value object ─────────────────────────────────────────────
@@ -133,6 +169,280 @@ class Preset:
 
 
 @dataclass(frozen=True)
+class RoomProfile:
+    """App-level saved Room profile shown by startup RoomSetting.
+
+    ``Room`` is the user-facing name. ``RoomProfile`` is the internal schema.
+    It intentionally supersets the older v2 ``Preset`` so existing
+    ``data/presets/*.json`` files remain readable while RoomSetting gains Line,
+    ExperienceMode, skin, and menu/canvas persistence anchors.
+    """
+
+    room_profile_id: str
+    display_name: str
+    model_id: str = DEFAULT_MODEL_ID
+    persona_id: str = DEFAULT_PERSONA_ID
+    line_id: str = DEFAULT_LINE_ID
+    line_profile_id: str = DEFAULT_LINE_PROFILE_ID
+    asr_profile_id: str = DEFAULT_ASR_PROFILE_ID
+    tts_profile_id: str = DEFAULT_TTS_PROFILE_ID
+    voiceprint_profile_id: str = DEFAULT_VOICEPRINT_PROFILE_ID
+    echo_policy_id: str = DEFAULT_ECHO_POLICY_ID
+    scene_profile_id: str = DEFAULT_SCENE_ID
+    experience_mode: str = DEFAULT_EXPERIENCE_MODE
+    workspace_id: str = DEFAULT_WORKSPACE_ID
+    map_id: str = DEFAULT_WORKSPACE_ID
+    skin_id: str = DEFAULT_SCENE_SKIN_ID
+    setting_file_refs: tuple[str, ...] = ()
+    livekit_room_id: str = DEFAULT_LIVEKIT_ROOM_ID
+    canvas_preset_id: str = DEFAULT_CANVAS_PRESET_ID
+    menu_preference_id: str = DEFAULT_MENU_PREFERENCE_ID
+    behavior_mode_defaults: tuple[str, ...] = ("BASE", "COMPANION")
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def builtin_default(cls) -> "RoomProfile":
+        return cls(
+            room_profile_id=DEFAULT_PRESET_ID,
+            display_name="Default GOSLO Room",
+        )
+
+    @classmethod
+    def from_preset(cls, preset: Preset) -> "RoomProfile":
+        metadata = dict(preset.metadata)
+        display_name = _clean_text(
+            metadata.get("display_name") or metadata.get("user_label"),
+            preset.preset_id,
+        )
+        line_id = _clean_text(
+            metadata.get("line_id") or metadata.get("pipeline_id"),
+            DEFAULT_LINE_ID,
+        )
+        line_profile_id = _clean_text(
+            metadata.get("line_profile_id"),
+            _default_line_profile_id(line_id),
+        )
+        experience_mode = _clean_text(
+            metadata.get("experience_mode"),
+            DEFAULT_EXPERIENCE_MODE,
+        )
+        skin_id = _clean_text(
+            metadata.get("skin_id") or metadata.get("theme_skin"),
+            DEFAULT_SCENE_SKIN_ID,
+        )
+        return cls(
+            room_profile_id=preset.preset_id,
+            display_name=display_name,
+            model_id=preset.active_model_id,
+            persona_id=preset.active_persona_id,
+            line_id=line_id,
+            line_profile_id=line_profile_id,
+            asr_profile_id=_clean_text(
+                metadata.get("asr_profile_id"),
+                DEFAULT_ASR_PROFILE_ID,
+            ),
+            tts_profile_id=_clean_text(
+                metadata.get("tts_profile_id"),
+                DEFAULT_TTS_PROFILE_ID,
+            ),
+            voiceprint_profile_id=_clean_text(
+                metadata.get("voiceprint_profile_id"),
+                DEFAULT_VOICEPRINT_PROFILE_ID,
+            ),
+            echo_policy_id=_clean_text(
+                metadata.get("echo_policy_id"),
+                DEFAULT_ECHO_POLICY_ID,
+            ),
+            scene_profile_id=preset.active_scene_id,
+            experience_mode=experience_mode,
+            workspace_id=preset.active_workspace_id,
+            map_id=_clean_text(metadata.get("map_id"), preset.active_workspace_id),
+            skin_id=skin_id,
+            setting_file_refs=_tuple_from_raw(metadata.get("setting_file_refs")),
+            livekit_room_id=_clean_text(
+                metadata.get("livekit_room_id"),
+                DEFAULT_LIVEKIT_ROOM_ID,
+            ),
+            canvas_preset_id=_clean_text(
+                metadata.get("canvas_preset_id"),
+                DEFAULT_CANVAS_PRESET_ID,
+            ),
+            menu_preference_id=_clean_text(
+                metadata.get("menu_preference_id"),
+                DEFAULT_MENU_PREFERENCE_ID,
+            ),
+            behavior_mode_defaults=preset.active_mode or ("BASE", "COMPANION"),
+            metadata=metadata,
+        )
+
+    @classmethod
+    def from_json(cls, raw: dict[str, Any]) -> "RoomProfile":
+        if not isinstance(raw, dict):
+            raise ValueError("room profile payload must be a JSON object")
+        is_room_profile = (
+            raw.get("kind") == "room_profile"
+            or int(raw.get("schema_version") or 0) >= ROOM_PROFILE_SCHEMA_VERSION
+            or "room_profile_id" in raw
+        )
+        if not is_room_profile:
+            return cls.from_preset(Preset.from_json(raw))
+
+        metadata = dict(raw.get("metadata") or {})
+        room_profile_id = _clean_text(
+            raw.get("room_profile_id") or raw.get("preset_id"),
+            DEFAULT_PRESET_ID,
+        )
+        workspace_id = _clean_text(
+            raw.get("workspace_id") or raw.get("active_workspace_id"),
+            DEFAULT_WORKSPACE_ID,
+        )
+        behavior_defaults = (
+            _tuple_from_raw(raw.get("behavior_mode_defaults"))
+            or _tuple_from_raw(raw.get("active_mode"))
+            or _tuple_from_raw(metadata.get("behavior_mode_defaults"))
+            or ("BASE", "COMPANION")
+        )
+        line_id = _clean_text(
+            raw.get("line_id")
+            or raw.get("pipeline_id")
+            or raw.get("brain_pipeline")
+            or metadata.get("line_id"),
+            DEFAULT_LINE_ID,
+        )
+        return cls(
+            room_profile_id=room_profile_id,
+            display_name=_clean_text(raw.get("display_name"), room_profile_id),
+            model_id=_clean_text(
+                raw.get("model_id") or raw.get("active_model_id"),
+                DEFAULT_MODEL_ID,
+            ),
+            persona_id=_clean_text(
+                raw.get("persona_id") or raw.get("active_persona_id"),
+                DEFAULT_PERSONA_ID,
+            ),
+            line_id=line_id,
+            line_profile_id=_clean_text(
+                raw.get("line_profile_id") or metadata.get("line_profile_id"),
+                _default_line_profile_id(line_id),
+            ),
+            asr_profile_id=_clean_text(
+                raw.get("asr_profile_id") or metadata.get("asr_profile_id"),
+                DEFAULT_ASR_PROFILE_ID,
+            ),
+            tts_profile_id=_clean_text(
+                raw.get("tts_profile_id") or metadata.get("tts_profile_id"),
+                DEFAULT_TTS_PROFILE_ID,
+            ),
+            voiceprint_profile_id=_clean_text(
+                raw.get("voiceprint_profile_id") or metadata.get("voiceprint_profile_id"),
+                DEFAULT_VOICEPRINT_PROFILE_ID,
+            ),
+            echo_policy_id=_clean_text(
+                raw.get("echo_policy_id") or metadata.get("echo_policy_id"),
+                DEFAULT_ECHO_POLICY_ID,
+            ),
+            scene_profile_id=_clean_text(
+                raw.get("scene_profile_id") or raw.get("active_scene_id"),
+                DEFAULT_SCENE_ID,
+            ),
+            experience_mode=_clean_text(
+                raw.get("experience_mode") or metadata.get("experience_mode"),
+                DEFAULT_EXPERIENCE_MODE,
+            ),
+            workspace_id=workspace_id,
+            map_id=_clean_text(raw.get("map_id"), workspace_id),
+            skin_id=_clean_text(
+                raw.get("skin_id") or metadata.get("skin_id") or metadata.get("theme_skin"),
+                DEFAULT_SCENE_SKIN_ID,
+            ),
+            setting_file_refs=_tuple_from_raw(raw.get("setting_file_refs")),
+            livekit_room_id=_clean_text(
+                raw.get("livekit_room_id") or metadata.get("livekit_room_id"),
+                DEFAULT_LIVEKIT_ROOM_ID,
+            ),
+            canvas_preset_id=_clean_text(
+                raw.get("canvas_preset_id") or metadata.get("canvas_preset_id"),
+                DEFAULT_CANVAS_PRESET_ID,
+            ),
+            menu_preference_id=_clean_text(
+                raw.get("menu_preference_id") or metadata.get("menu_preference_id"),
+                DEFAULT_MENU_PREFERENCE_ID,
+            ),
+            behavior_mode_defaults=tuple(s.upper() for s in behavior_defaults),
+            metadata=metadata,
+        )
+
+    def as_json(self) -> dict[str, Any]:
+        return {
+            "schema_version": ROOM_PROFILE_SCHEMA_VERSION,
+            "kind": "room_profile",
+            "room_profile_id": self.room_profile_id,
+            "display_name": self.display_name,
+            "model_id": self.model_id,
+            "persona_id": self.persona_id,
+            "line_id": self.line_id,
+            "line_profile_id": self.line_profile_id,
+            "asr_profile_id": self.asr_profile_id,
+            "tts_profile_id": self.tts_profile_id,
+            "voiceprint_profile_id": self.voiceprint_profile_id,
+            "echo_policy_id": self.echo_policy_id,
+            "scene_profile_id": self.scene_profile_id,
+            "experience_mode": self.experience_mode,
+            "workspace_id": self.workspace_id,
+            "map_id": self.map_id,
+            "skin_id": self.skin_id,
+            "setting_file_refs": list(self.setting_file_refs),
+            "livekit_room_id": self.livekit_room_id,
+            "canvas_preset_id": self.canvas_preset_id,
+            "menu_preference_id": self.menu_preference_id,
+            "behavior_mode_defaults": list(self.behavior_mode_defaults),
+            "metadata": dict(self.metadata),
+        }
+
+    def to_preset(self) -> Preset:
+        metadata = dict(self.metadata)
+        metadata.update(
+            {
+                "room_profile_id": self.room_profile_id,
+                "display_name": self.display_name,
+                "line_id": self.line_id,
+                "line_profile_id": self.line_profile_id,
+                "asr_profile_id": self.asr_profile_id,
+                "tts_profile_id": self.tts_profile_id,
+                "voiceprint_profile_id": self.voiceprint_profile_id,
+                "echo_policy_id": self.echo_policy_id,
+                "experience_mode": self.experience_mode,
+                "map_id": self.map_id,
+                "skin_id": self.skin_id,
+                "livekit_room_id": self.livekit_room_id,
+                "canvas_preset_id": self.canvas_preset_id,
+                "menu_preference_id": self.menu_preference_id,
+                "setting_file_refs": list(self.setting_file_refs),
+            }
+        )
+        return Preset(
+            preset_id=self.room_profile_id,
+            active_model_id=self.model_id,
+            active_persona_id=self.persona_id,
+            active_mode=tuple(s.upper() for s in self.behavior_mode_defaults),
+            active_scene_id=self.scene_profile_id,
+            active_workspace_id=self.workspace_id,
+            metadata=metadata,
+        )
+
+    def behavior_mode(self) -> BehaviorMode:
+        return self.to_preset().behavior_mode()
+
+    def with_experience_mode(self, experience_mode: str | None) -> "RoomProfile":
+        if not experience_mode:
+            return self
+        return replace(
+            self,
+            experience_mode=str(experience_mode).strip() or self.experience_mode,
+        )
+
+
+@dataclass(frozen=True)
 class PresetApplyResult:
     """Outcome of :meth:`PresetLoader.apply`."""
 
@@ -178,6 +488,34 @@ class PresetLoader:
                 continue
         return sorted(seen)
 
+    def list_room_profiles(self) -> tuple[RoomProfile, ...]:
+        """List every saved RoomProfile, migrating v1/v2 presets on read."""
+        seen: dict[str, RoomProfile] = {}
+        for d in self._search_paths:
+            try:
+                if not d.is_dir():
+                    continue
+                for f in sorted(d.glob("*.json")):
+                    try:
+                        profile = RoomProfile.from_json(
+                            json.loads(f.read_text(encoding="utf-8"))
+                        )
+                    except (OSError, ValueError, json.JSONDecodeError):
+                        logger.exception("preset_loader: failed to parse room profile %s", f)
+                        continue
+                    seen[profile.room_profile_id] = profile
+            except OSError:
+                continue
+        if not seen:
+            default = self.load_room_profile(DEFAULT_PRESET_ID)
+            seen[default.room_profile_id] = default
+        return tuple(
+            sorted(
+                seen.values(),
+                key=lambda p: (p.display_name.lower(), p.room_profile_id),
+            )
+        )
+
     def load(self, preset_id: str) -> Preset:
         """Return ``Preset`` for ``preset_id``; falls back to builtin default."""
         path = self._find(preset_id)
@@ -197,6 +535,31 @@ class PresetLoader:
             logger.exception("preset_loader: failed to parse %s — using builtin default", path)
             return Preset.builtin_default()
 
+    def load_room_profile(self, room_profile_id: str) -> RoomProfile:
+        """Return a RoomProfile; v1/v2 preset files migrate on read."""
+        path = self._find(room_profile_id)
+        if path is None:
+            if room_profile_id == DEFAULT_PRESET_ID:
+                logger.info(
+                    "preset_loader: %s not found on disk - using builtin room profile",
+                    room_profile_id,
+                )
+                return RoomProfile.builtin_default()
+            logger.warning(
+                "preset_loader: room profile %s not found - falling back to default",
+                room_profile_id,
+            )
+            return self.load_room_profile(DEFAULT_PRESET_ID)
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            return RoomProfile.from_json(raw)
+        except (OSError, ValueError, json.JSONDecodeError):
+            logger.exception(
+                "preset_loader: failed to parse room profile %s - using builtin default",
+                path,
+            )
+            return RoomProfile.builtin_default()
+
     def save(self, preset: Preset) -> Path:
         """Write ``preset`` to the first writable directory in search paths.
 
@@ -207,6 +570,17 @@ class PresetLoader:
         path = target_dir / f"{preset.preset_id}.json"
         path.write_text(
             json.dumps(preset.as_json(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return path
+
+    def save_room_profile(self, profile: RoomProfile) -> Path:
+        """Persist ``profile`` as the user-facing Room save file."""
+        target_dir = self._writable_dir()
+        target_dir.mkdir(parents=True, exist_ok=True)
+        path = target_dir / f"{profile.room_profile_id}.json"
+        path.write_text(
+            json.dumps(profile.as_json(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         return path
@@ -227,6 +601,35 @@ class PresetLoader:
                 "global/active_scene_id": preset.active_scene_id,
                 "global/active_mode": list(preset.active_mode),
                 "global/active_workspace_id": preset.active_workspace_id,
+            },
+        )
+
+    def apply_room_profile(
+        self,
+        profile: RoomProfile,
+        *,
+        experience_mode: str | None = None,
+    ) -> PresetApplyResult:
+        """Apply one RoomProfile through the same single-writer path."""
+        selected = profile.with_experience_mode(experience_mode)
+        return self._apply_values(
+            preset_id=selected.room_profile_id,
+            behavior_mode=selected.behavior_mode(),
+            values={
+                "global/active_room_profile_id": selected.room_profile_id,
+                "global/active_persona_id": selected.persona_id,
+                "global/active_model_id": selected.model_id,
+                "global/active_scene_id": selected.scene_profile_id,
+                "global/active_mode": list(selected.behavior_mode_defaults),
+                "global/active_workspace_id": selected.workspace_id,
+                "global/active_line_id": selected.line_id,
+                "global/active_line_profile_id": selected.line_profile_id,
+                "global/active_asr_profile_id": selected.asr_profile_id,
+                "global/active_tts_profile_id": selected.tts_profile_id,
+                "global/active_voiceprint_profile_id": selected.voiceprint_profile_id,
+                "global/active_echo_policy_id": selected.echo_policy_id,
+                "global/active_experience_mode": selected.experience_mode,
+                "global/active_scene_skin_id": selected.skin_id,
             },
         )
 
@@ -356,13 +759,26 @@ def set_preset_loader_for_test(loader: PresetLoader | None) -> None:
 
 __all__ = [
     "DEFAULT_MODEL_ID",
+    "DEFAULT_EXPERIENCE_MODE",
+    "DEFAULT_ASR_PROFILE_ID",
+    "DEFAULT_ECHO_POLICY_ID",
+    "DEFAULT_LINE_ID",
+    "DEFAULT_LINE_PROFILE_ID",
+    "DEFAULT_LINEB_PROFILE_ID",
+    "DEFAULT_LIVEKIT_ROOM_ID",
+    "DEFAULT_MENU_PREFERENCE_ID",
     "DEFAULT_PRESET_ID",
     "DEFAULT_SCENE_ID",
+    "DEFAULT_SCENE_SKIN_ID",
+    "DEFAULT_TTS_PROFILE_ID",
+    "DEFAULT_VOICEPRINT_PROFILE_ID",
     "DEFAULT_WORKSPACE_ID",
     "PRESETS_DIR_ENV",
     "Preset",
     "PresetApplyResult",
     "PresetLoader",
+    "ROOM_PROFILE_SCHEMA_VERSION",
+    "RoomProfile",
     "get_preset_loader",
     "set_preset_loader_for_test",
 ]

@@ -77,8 +77,9 @@
 | `architecture/Interface/photo_memory_awareness_true_connection_guide_20260509.md` | **Photo 记忆与 Awareness 真连接指南** — HTTP 落盘、IntentWorkspace staged ref、PhotoNode、GOSLO Awareness 缺口 |
 | `architecture/Interface/chatB_true_connection_completion_record_20260509.md` | **Chat B 真连接完成记录** — 代码修复、验证、剩余缺口、下一步顺序 |
 | `architecture/Interface/app_v1_facade_core_business_interface_20260510.md` | **App V1 facade 核心/业务接口** — 菜单画布外部模块、相机/Awareness、Google draft、Obsidian、XRHand、Nanobot 报告 |
-| `architecture/Interface/app_v1_web_live_state_audit_20260510.md` | **App V1 Web Live State 审计** — Blackboard / IntentWorkspace / RefBinding / L2-B 实时可视化、工具流程审计、浏览器验证 |
-| `architecture/Interface/app_v1_longline_self_check_completion_20260510.md` | **App V1 长线自检完成记录** — Awareness v1、Web monitor、Unity MCP、pytest/ruff/browser 验证与剩余问题 |
+| `architecture/Interface/app_v1_room_setting_room_profile_interface_20260510.md` | **App V1 RoomSetting / RoomProfile 接口** — 启动页 Room 保存/新建/选择、五轴切换、菜单持久化、能力兼容规则 |
+| `architecture/Interface/app_v1_lineb_menu_readiness_interface_20260511.md` | **App V1 LineB 菜单 readiness 接口** — ASR/TTS、Google ADC、声纹/说话人状态、回音风险、处理模式、TTS/麦克风判定证据 |
+| `architecture/Interface/app_v1_current_status_and_test_report_20260510.md` | **App V1 当前状态/测试报告** — 清理后的唯一 App V1 状态报告；明确正式 App 前端尚未完成，smoke/self-check 仅作测试证据 |
 | ~~`architecture/Interface/goslo_app_game_overview_asset_brief_20260507.md`~~ | （已被 `user_ideas_and_backend_capability_brief_20260509.md` 替代；user 自行删除原文件） |
 | `architecture/Interface/interface_design_and_how_todo_v0_20260507.md` | （已 superseded → Interface/INDEX.md）12 场景接口栈穷举主表，留作场景清单参考 |
 | `architecture/Interface/interface_design_supplement_20260507.md` | （已 superseded → Interface/INDEX.md）v0 之外 7 项新发现 |
@@ -354,7 +355,7 @@ Castle 进程布局:
 | `architecture/Interface/google_calendar_nanobot_true_connection_guide_20260509.md` | Google Calendar + Nanobot 真连接业务接口与监控点 |
 | `architecture/Interface/photo_memory_awareness_true_connection_guide_20260509.md` | Photo + IntentWorkspace + GOSLO Awareness 业务接口与缺口 |
 | `architecture/Interface/app_v1_facade_core_business_interface_20260510.md` | App V1 facade 业务接口与白膜状态 DTO |
-| `architecture/Interface/app_v1_longline_self_check_completion_20260510.md` | App V1 长线自检完成记录与剩余决策 |
+| `architecture/Interface/app_v1_current_status_and_test_report_20260510.md` | App V1 当前状态/测试报告；正式 App 前端未完成 |
 
 ### 6.3 Design — 设计层（"用户视角与场景如何编织"）
 

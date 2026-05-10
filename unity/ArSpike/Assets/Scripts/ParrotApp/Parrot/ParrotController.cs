@@ -224,6 +224,16 @@ namespace ParrotApp.Parrot
         /// </summary>
         public void PlayAnimation(string animationName, string modelId)
         {
+            PlayAnimation(animationName, modelId, parametersJson: "");
+        }
+
+        /// <summary>
+        /// Model-aware animation/capability route. <paramref name="parametersJson"/>
+        /// is used by custom controllers such as Ner's Spine walk capability.
+        /// Legacy GOSLO AnimationDriver/Animator paths ignore it.
+        /// </summary>
+        public void PlayAnimation(string animationName, string modelId, string parametersJson)
+        {
             _currentAnimation = animationName;
             Debug.Log($"[Parrot] PlayAnimation -> {animationName} (model_id='{modelId ?? ""}')");
 
@@ -231,7 +241,7 @@ namespace ParrotApp.Parrot
             var controller = ResolveControllerOrFallback(modelId);
             if (controller != null)
             {
-                if (controller.ApplyCapability(animationName, "")) return;
+                if (controller.ApplyCapability(animationName, parametersJson ?? "")) return;
                 Debug.LogWarning(
                     $"[Parrot] controller '{controller.GetType().Name}' did not declare " +
                     $"capability_id='{animationName}' — falling back to legacy AnimationDriver.");
@@ -259,9 +269,39 @@ namespace ParrotApp.Parrot
             }
         }
 
-        // Local payload helper — kept private to avoid leaking a typed
-        // payload to other modules. Mirrors the FlyToPayload x/y/z subset
-        // GosloLegacyController already deserialises.
+        /// <summary>
+        /// Strict capability route for manifest-declared model actions.
+        /// Used by RPC callers that need an explicit failure when the active
+        /// model cannot play a capability, instead of legacy animation fallback.
+        /// </summary>
+        public bool TryPlayAnimation(string animationName, string modelId, string parametersJson, bool strictCapability)
+        {
+            if (!strictCapability)
+            {
+                PlayAnimation(animationName, modelId, parametersJson);
+                return true;
+            }
+
+            _currentAnimation = animationName;
+            Debug.Log($"[Parrot] TryPlayAnimation -> {animationName} (model_id='{modelId ?? ""}', strict=true)");
+
+            var controller = ResolveControllerOrFallback(modelId);
+            if (controller == null)
+            {
+                Debug.LogWarning($"[Parrot] capability_unsupported:{animationName} (no controller for model_id='{modelId ?? ""}')");
+                return false;
+            }
+
+            if (controller.ApplyCapability(animationName, parametersJson ?? "")) return true;
+
+            Debug.LogWarning(
+                $"[Parrot] capability_unsupported:{animationName} " +
+                $"(controller='{controller.GetType().Name}', model_id='{modelId ?? ""}')");
+            return false;
+        }
+
+        // Local payload helper kept private to avoid leaking a typed payload
+        // to other modules. Mirrors the FlyToPayload x/y/z subset.
         [System.Serializable] private struct Vec3JsonPayload { public float x, y, z; }
     }
 }
