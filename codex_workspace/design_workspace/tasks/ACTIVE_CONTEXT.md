@@ -131,6 +131,14 @@ These are useful test evidence only. They must not be used as App completion evi
   loaded by `PersonaLoader`; roleplay/world/scene/action-manual files are Room
   session context. Contract:
   `.cursor/memory/architecture/Interface/app_v1_session_context_pack_upgrade_20260511.md`.
+- 2026-05-11 Brain cold-start Line contract: startup RoomSetting can select
+  `Line` via `RoomProfile.line_id` / `line_profile_id` and
+  `selectors.lines` / `selectors.line_profiles`, but LineA/LineB is
+  **cold-start only** because `brain.agent` builds one `AgentSession` from
+  `PARROT_LLM_PIPELINE`. Runtime `applyRoomProfile` now blocks a mismatched
+  Line with `line.cold_start = requires_brain_cold_restart`. Brain room-scoped
+  DSG/Scheduler/listener/upload tasks now clean up on disconnect. Contract:
+  `.cursor/memory/architecture/Interface/app_v1_brain_cold_start_line_lifecycle_audit_20260511.md`.
 - 2026-05-11 LineB bugfix/bridge: missing `tts.voice_name` now blocks even
   when ADC is also missing. `lineb_audio_guard` now writes
   `session/lineb_voice_activity` for `speaking`, `listening`,
@@ -163,7 +171,10 @@ These are useful test evidence only. They must not be used as App completion evi
 - Next blockers:
   1. Phase 4 remaining: create/verify the production Ner prefab with Spine component, `ModelDriver(modelId=ner_skin2)`, `NerSpineController`, cheek/touch hit regions, and camera-safe scale.
   2. Phase 5+: Unity/device tuning for LineB voice-trigger reactions, Ner gameplay, GOSLO joystick/gameplay upgrade, unified prop/object interaction.
-  3. Startup/RoomSetting Unity binding for saved RoomProfile, Line, Model, Persona, and Scene selectors.
+  3. External Brain cold-start supervisor for RoomSetting Line selection
+     (`PARROT_LLM_PIPELINE` + `PARROT_ACTIVE_LINE_PROFILE_ID`) before Unity
+     START can switch LineB without manual restart.
+  4. Startup/RoomSetting Unity binding for saved RoomProfile, Line, Model, Persona, and Scene selectors.
 
 ## App Frontend Longline
 

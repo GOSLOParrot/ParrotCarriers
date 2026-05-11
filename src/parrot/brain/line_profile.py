@@ -499,6 +499,7 @@ class LineProfileLoader:
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"audio route policy failed: {exc!r}")
 
+        process_line = _process_line_id()
         return {
             "success": not errors,
             "line_profile": profile.as_json(),
@@ -507,6 +508,9 @@ class LineProfileLoader:
             "applied_keys": applied,
             "errors": errors,
             "audio_route_policy": audio_policy,
+            "selection_scope": "cold_start_only",
+            "process_line_id": process_line,
+            "requires_brain_restart": resolved.line_id != process_line,
         }
 
     def _writable_dir(self) -> Path:
@@ -659,6 +663,11 @@ def active_lineb_runtime_settings() -> LineBRuntimeSettings:
 
 def default_line_profile_id(line_id: str) -> str:
     return DEFAULT_LINEB_PROFILE_ID if str(line_id).strip().lower() == "line_b" else DEFAULT_LINEA_PROFILE_ID
+
+
+def _process_line_id() -> str:
+    raw = os.getenv("PARROT_LLM_PIPELINE", "line_a").strip().lower()
+    return raw if raw in {"line_a", "line_b"} else "line_a"
 
 
 _loader: LineProfileLoader | None = None

@@ -9,6 +9,7 @@ Runs as a background task in the Brain process. When DSG events arrive
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 
@@ -22,6 +23,7 @@ async def start_trigger_listener() -> asyncio.Task:
     """Start background listener for DSG events. Returns the task handle."""
 
     async def _listen():
+        pubsub = None
         try:
             r = await get_redis()
             pubsub = r.pubsub()
@@ -44,6 +46,12 @@ async def start_trigger_listener() -> asyncio.Task:
             pass
         except Exception:
             logger.exception("dsg_trigger_listener: error")
+        finally:
+            if pubsub is not None:
+                with contextlib.suppress(Exception):
+                    await pubsub.unsubscribe(CH_DSG_EVENTS, CH_DSG_SCENE_UPDATE)
+                with contextlib.suppress(Exception):
+                    await pubsub.close()
 
     return asyncio.create_task(_listen())
 

@@ -49,7 +49,24 @@ def _repo_root() -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _reset_state():
+def _reset_state(monkeypatch: pytest.MonkeyPatch):
+    for key in (
+        "PARROT_LLM_PIPELINE",
+        "PARROT_LINE_PROFILE",
+        "PARROT_ACTIVE_LINE_PROFILE_ID",
+        "PARROT_LINEB_TTS_PROVIDER",
+        "PARROT_LINEB_CARTESIA_VOICE_ID",
+        "PARROT_LINEB_VOICEPRINT_ENABLED",
+        "PARROT_LINEB_VOICEPRINT_PROFILE_ID",
+        "PARROT_LINEB_VOICEPRINT_PROVIDER",
+        "PARROT_LINEB_VOICEPRINT_MANIFEST",
+        "PARROT_VOICEPRINT_AUDIO_ROOT",
+        "PARROT_AUDIO_OUTPUT_ROUTE",
+        "PARROT_LINEB_ECHO_HANDLING_MODE",
+        "GOOGLE_TTS_VOICE",
+        "GOOGLE_TTS_LANGUAGE",
+    ):
+        monkeypatch.delenv(key, raising=False)
     py_trees.blackboard.Blackboard.storage = {}
     py_trees.blackboard.Blackboard.metadata = {}
     set_preset_loader_for_test(None)

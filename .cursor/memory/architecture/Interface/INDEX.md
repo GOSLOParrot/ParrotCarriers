@@ -19,6 +19,7 @@ related:
   - "app_v1_lineb_ner_realdevice_config_report_20260511.md (LineB + Ner device config)"
   - "app_v1_lineb_voiceprint_verifier_upgrade_20260511.md (LineB owner voiceprint verifier)"
   - "app_v1_session_context_pack_upgrade_20260511.md (Room setting files -> LLM/L1.5 session context)"
+  - "app_v1_brain_cold_start_line_lifecycle_audit_20260511.md (RoomSetting Line is cold-start only + Brain room-task lifecycle cleanup)"
   - "app_v1_session_context_pack_audit_20260511.md (Cursor audit + bugfix on update_instructions / env-vs-BB / prompt_target)"
   - "app_v1_core_interface_audit_round2_20260511.md (Round 2: RoomProfile draft BB JSON / LineB cross-session reset / cosine dim guard / applyRoomProfile fallback warning)"
   - "app_v1_ecp_disconnect_audit_round3_20260511.md (Round 3: ecp_state_ingest disconnect cleanup — clear_bb_ecp_state dead-code + _last_seq cross-session carry-over, both empirically verified)"
@@ -59,6 +60,7 @@ Latest LineB + Ner validation route:
 - [`app_v1_lineb_ner_realdevice_config_report_20260511.md`](app_v1_lineb_ner_realdevice_config_report_20260511.md)
 - [`app_v1_lineb_voiceprint_verifier_upgrade_20260511.md`](app_v1_lineb_voiceprint_verifier_upgrade_20260511.md)
 - [`app_v1_session_context_pack_upgrade_20260511.md`](app_v1_session_context_pack_upgrade_20260511.md)
+- [`app_v1_brain_cold_start_line_lifecycle_audit_20260511.md`](app_v1_brain_cold_start_line_lifecycle_audit_20260511.md)
 - [`app_v1_session_context_pack_audit_20260511.md`](app_v1_session_context_pack_audit_20260511.md)
 - [`app_v1_core_interface_audit_round2_20260511.md`](app_v1_core_interface_audit_round2_20260511.md)
 - [`app_v1_ecp_disconnect_audit_round3_20260511.md`](app_v1_ecp_disconnect_audit_round3_20260511.md)
@@ -110,6 +112,7 @@ Business flow docs must not copy large code signatures. Use the A-D discipline:
 | `app_v1_model_capability_resolver_interface_20260511.md` | active / business interface | Brain-side model manifest mirror, RoomSetting capability decisions, and custom capability tool gating. |
 | `app_v1_lineb_ner_realdevice_config_report_20260511.md` | active / config report | LineB real-device config, Ner RoomProfile/model/persona setup, and remaining production wiring plan. |
 | `app_v1_session_context_pack_upgrade_20260511.md` | active / backend interface | Room setting files now flow into LLM session context and UUID-free Obsidian roleplay L1.5 payloads. |
+| `app_v1_brain_cold_start_line_lifecycle_audit_20260511.md` | active / lifecycle contract | RoomSetting Line selector is cold-start only; Brain room-scoped Redis/listener/upload tasks now clean up on disconnect. |
 | `app_v1_current_status_and_test_report_20260510.md` | active / status | Single clean status report for App V1 route cleanup. |
 | `minecraft_parrot_animation_worklog_20260510.md` | worklog | Animation correction record; unrelated to App frontend completion. |
 

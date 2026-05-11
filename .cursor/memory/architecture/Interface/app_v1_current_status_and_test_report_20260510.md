@@ -29,6 +29,7 @@ The production frontend must be validated from the startup page through the real
 | Photo upload | completed smoke | Session-scoped `7889` upload path accepted photo POST during live session. |
 | Backend facade | completed interface layer | `app_v1_facade_core_business_interface_20260510.md` and tests cover App-facing facade concepts. |
 | RoomSetting backend contract | partial interface layer | `app_v1_room_setting_room_profile_interface_20260510.md`, `RoomProfile`, `RoomSettingService`, facade/Web/RPC entrypoints, and focused tests exist. Unity startup page is not wired yet. |
+| RoomSetting Line cold-start contract | partial lifecycle layer | `app_v1_brain_cold_start_line_lifecycle_audit_20260511.md`; RoomSetting exposes `selectors.lines` / `selectors.line_profiles`, marks Line as `cold_start_only`, blocks mismatched runtime Line apply, and Brain room-scoped Redis/listener/upload tasks now clean up on disconnect. External process restart/supervisor is still pending. |
 | LineB menu readiness | partial interface layer | `app_v1_lineb_menu_readiness_interface_20260511.md`, `line_profile.py`, `line_status.py`, `lineb_audio_guard.py`, `lineb_model_reaction.py`, RoomSetting `selectors.lines` / `selectors.line_profiles`, `lineb_google_default`, and `lineb_ner_ja_test` expose ASR/TTS/ADC/voiceprint/echo plus runtime audio-route/TTS/mic-decision/voice-activity evidence. Missing TTS voice now blocks even when ADC is also missing. LineB voice activity can now dispatch strict model capabilities for Ner, but real DSP/voiceprint echo suppression, Unity Editor/device verification, and device smoke are not complete. |
 | Model capability resolver | partial interface layer | `app_v1_model_capability_resolver_interface_20260511.md`, `ModelManifestRegistry`, RoomSetting capability decisions, `play_capability`, and model-aware tool hiding now distinguish GOSLO parrot actions from Ner custom face/touch capabilities. Strict custom capability calls now preserve Unity parameters and return `capability_unsupported:<id>` when rejected. |
 | Web monitor | test tool only | Useful for BB/IW/L2-B visibility, not formal App UI. |
@@ -41,7 +42,7 @@ The production frontend must be validated from the startup page through the real
 |:--|:--|
 | Formal App scene | not complete; Android Build Settings still need a real App entry, not smoke validation. |
 | Startup page implementation | not complete; design exists in `codex_workspace/design_workspace`. |
-| Room Setting page | backend partial; Unity startup page not complete. Room means saved App `RoomProfile`, not LiveKit room. |
+| Room Setting page | backend partial; Unity startup page not complete. Room means saved App `RoomProfile`, not LiveKit room. Line is startup/cold-start only and requires Brain restart when changing LineA/LineB. |
 | LineB menu upgrade | backend configurable-profile layer exists; menu can read/save/apply LineProfile, ADC/ASR/TTS/voiceprint/echo state, and runtime guard evidence. Unity rendering, real-device LineB smoke, and actual DSP/voiceprint suppression remain pending. |
 | Ner selectable model | backend/menu selectable candidate; manifest and controller probes exist, Brain can expose custom capability ids, and Unity Editor has verified imported Spine animations / primary manifest handlers. First-pass cheek pinch, body pickup/place, Ner persona trigger rules, a roleplay Obsidian setting source, and a Ner LineB TTS profile exist. Final audit fixed pickup cancel/lost-touch suspension and targetRoot raycast handling. Production prefab/startup UI/real-device animation verification are not complete. |
 | Asset-matched production UI | not complete; selected assets are not yet proven inside the formal App scene. |
@@ -64,7 +65,8 @@ The production frontend must be validated from the startup page through the real
 2. **Room Setting**: wire startup `SCENE` menu to the new `RoomProfile` backend: Room select/new/save plus Model, Room, Persona, Line, and Scene selectors.
 3. **LineB productization**: render the new LineProfile/readiness state in Unity menus, then add real-device LineB smoke and actual TTS echo/voiceprint suppression.
 4. **Ner model path**: add model manifest/controller/prefab/preview status and only enable selection when complete.
-5. **Design route cleanup**: new App frontend chats must start from `codex_workspace/design_workspace/tasks/ACTIVE_CONTEXT.md` and the HTML/page design docs before backend interfaces.
+5. **Brain cold-start supervisor**: add a RemoteSSH/ECS/manual launcher path that restarts Brain with `PARROT_LLM_PIPELINE` and `PARROT_ACTIVE_LINE_PROFILE_ID` from the selected RoomProfile.
+6. **Design route cleanup**: new App frontend chats must start from `codex_workspace/design_workspace/tasks/ACTIVE_CONTEXT.md` and the HTML/page design docs before backend interfaces.
 
 ## 6. Next Chat Entry Rule
 
@@ -200,3 +202,12 @@ Ner pickup/place final audit bugfix on 2026-05-11:
   ground point instead of leaving the model suspended.
 - Body and placement raycasts now handle prefab variants where the interactor
   transform and `targetRoot` are different.
+
+RoomSetting Line cold-start + Brain lifecycle regression on 2026-05-11:
+
+```text
+.\.venv\Scripts\python.exe -m pytest tests\test_brain\test_app_first_version_facade.py tests\test_brain\test_menu_workspace.py tests\test_brain\test_session_context_pack.py tests\test_brain\test_brain_lifecycle_static.py tests\test_unity\test_app_v1_meta_ui_static.py
+71 passed
+.\.venv\Scripts\python.exe -m py_compile src\parrot\brain\agent.py src\parrot\brain\room_setting.py src\parrot\brain\photo_upload_server.py src\parrot\dsg\trigger_listener.py src\parrot\brain\line_profile.py src\parrot\brain\line_status.py
+passed
+```

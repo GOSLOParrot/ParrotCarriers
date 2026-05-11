@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 import uuid
+import os
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from typing import Any
 
@@ -324,6 +325,7 @@ class RoomSettingService:
                 )
             )
         else:
+            process_line = _process_line_id()
             state = "enabled"
             if line.state == "blocked":
                 state = "blocked"
@@ -337,6 +339,28 @@ class RoomSettingService:
                     source=f"line:{profile.line_id}",
                 )
             )
+            if profile.line_id != process_line:
+                decisions.append(
+                    CapabilityDecision(
+                        "line.cold_start",
+                        "blocked",
+                        "requires_brain_cold_restart",
+                        source=f"process_line:{process_line}",
+                        fallback_action=(
+                            "restart_brain_with_PARROT_LLM_PIPELINE="
+                            + profile.line_id
+                        ),
+                    )
+                )
+            else:
+                decisions.append(
+                    CapabilityDecision(
+                        "line.cold_start",
+                        "enabled",
+                        "process_line_matches_selected_line",
+                        source=f"process_line:{process_line}",
+                    )
+                )
 
         line_profile = get_line_profile_loader().load(
             profile.line_profile_id,
@@ -418,7 +442,7 @@ def _selectors(menu: MenuRegistrySnapshot) -> dict[str, Any]:
         "models": _to_wire(menu.models),
         "rooms": tuple(profile.as_json() for profile in get_preset_loader().list_room_profiles()),
         "personas": _to_wire(menu.personas),
-        "lines": tuple(line.as_json() for line in list_lines()),
+        "lines": tuple(_line_selector(line) for line in list_lines()),
         "line_profiles": tuple(
             profile.as_json() for profile in get_line_profile_loader().list_profiles()
         ),
@@ -435,6 +459,23 @@ def _selectors(menu: MenuRegistrySnapshot) -> dict[str, Any]:
             "skin_id": DEFAULT_SCENE_SKIN_ID,
         },
     }
+
+
+def _line_selector(line: LineSummary) -> dict[str, Any]:
+    data = line.as_json()
+    process_line = _process_line_id()
+    data["selection_policy"] = {
+        "scope": "cold_start_only",
+        "requires_brain_restart": line.line_id != process_line,
+        "current_process_line_id": process_line,
+        "env_key": "PARROT_LLM_PIPELINE",
+    }
+    return data
+
+
+def _process_line_id() -> str:
+    raw = os.getenv("PARROT_LLM_PIPELINE", DEFAULT_LINE_ID).strip().lower()
+    return raw if raw in {"line_a", "line_b"} else DEFAULT_LINE_ID
 
 
 def _line_lookup() -> dict[str, LineSummary]:

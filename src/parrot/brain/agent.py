@@ -20,6 +20,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -1062,6 +1063,52 @@ async def brain_entrypoint(ctx: agents.JobContext):
     assistant = ParrotAssistant()
     pipeline = _resolve_pipeline()
     session = _build_session(pipeline, config)
+    background_tasks: list[asyncio.Task[Any]] = []
+    photo_upload_server: Any | None = None
+
+    def _track_background_task(task: asyncio.Task[Any], name: str) -> asyncio.Task[Any]:
+        """Keep room-scoped background work cancellable on disconnect/restart."""
+        background_tasks.append(task)
+
+        def _log_task_done(done: asyncio.Task[Any]) -> None:
+            with contextlib.suppress(asyncio.CancelledError):
+                exc = done.exception()
+                if exc is not None:
+                    logger.error(
+                        "Brain background task %s failed",
+                        name,
+                        exc_info=(type(exc), exc, exc.__traceback__),
+                    )
+
+        task.add_done_callback(_log_task_done)
+        return task
+
+    async def _stop_room_scoped_background(reason: str) -> None:
+        """Drain listeners spawned for this LiveKit room job.
+
+        Line changes are cold-start only; when the Brain process is restarted
+        or the room disconnects, no Redis listener, TriggerRunner loop, or
+        photo upload server from the old room should keep running.
+        """
+        nonlocal photo_upload_server
+        if photo_upload_server is not None:
+            try:
+                from parrot.brain.photo_upload_server import stop_photo_upload_server
+
+                await stop_photo_upload_server(photo_upload_server)
+            except Exception:
+                logger.exception("photo_upload_server stop failed (%s)", reason)
+            finally:
+                photo_upload_server = None
+
+        current = asyncio.current_task()
+        pending = [task for task in background_tasks if task is not current and not task.done()]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        background_tasks[:] = [task for task in background_tasks if not task.done()]
+
     _attach_transcript_listener_to_session(session, pipeline=pipeline)
 
     # Sprint4 Phase 4 W3 (entry doc §8.1 L10 selection-C):
@@ -1170,7 +1217,7 @@ async def brain_entrypoint(ctx: agents.JobContext):
     if os.getenv("PARROT_DISABLE_PHOTO_UPLOAD", "0").lower() not in {"1", "true", "yes"}:
         try:
             from parrot.brain.photo_upload_server import start_photo_upload_server
-            await start_photo_upload_server()
+            photo_upload_server = await start_photo_upload_server()
         except Exception:
             logger.exception("Sprint4 Phase 4 W8: photo_upload_server start failed")
 
@@ -1207,8 +1254,15 @@ async def brain_entrypoint(ctx: agents.JobContext):
     except Exception:
         logger.exception("Sprint 2: ModeController attach failed")
 
-    from parrot.dsg.trigger_listener import start_trigger_listener
-    asyncio.create_task(start_trigger_listener())
+    try:
+        from parrot.dsg.trigger_listener import start_trigger_listener
+
+        _track_background_task(
+            await start_trigger_listener(),
+            "dsg_trigger_listener",
+        )
+    except Exception:
+        logger.exception("DSG trigger listener boot failed")
 
     async def _boot_l2b_and_triggers() -> None:
         """Preload L2-B from Graphiti and start all DSG triggers."""
@@ -1239,58 +1293,70 @@ async def brain_entrypoint(ctx: agents.JobContext):
         except Exception:
             logger.warning("L2-B / TriggerRunner boot failed — continuing without triggers")
 
-    asyncio.create_task(_boot_l2b_and_triggers())
+    _track_background_task(
+        asyncio.create_task(_boot_l2b_and_triggers(), name="l2b_trigger_boot"),
+        "l2b_trigger_boot",
+    )
 
     async def _listen_scheduler_results() -> None:
         """Background task: listen for aggregated results from Scheduler and notify user."""
         try:
             r = await get_redis()
             pubsub = r.pubsub()
-            await pubsub.subscribe(CH_SCHEDULER_TO_BRAIN)
-            logger.info("Brain: listening for Scheduler results on %s", CH_SCHEDULER_TO_BRAIN)
-            async for message in pubsub.listen():
-                if message["type"] != "message":
-                    continue
-                result = json.loads(message["data"])
-                task_id = result.get("task_id", "?")
-                task_type = result.get("type", "unknown")
-                status = result.get("status", "unknown")
-                source = result.get("source_worker", "unknown")
-                summary = result.get("result_summary", "")
-                logger.info(
-                    "Brain got result via Scheduler: task=%s type=%s status=%s source=%s",
-                    task_id, task_type, status, source,
-                )
-                if status == "timeout":
-                    instructions = (
-                        f"A background task timed out. "
-                        f"Task type: {task_type}, id: {task_id}. "
-                        f"Apologize briefly and suggest trying again later."
+            try:
+                await pubsub.subscribe(CH_SCHEDULER_TO_BRAIN)
+                logger.info("Brain: listening for Scheduler results on %s", CH_SCHEDULER_TO_BRAIN)
+                async for message in pubsub.listen():
+                    if message["type"] != "message":
+                        continue
+                    result = json.loads(message["data"])
+                    task_id = result.get("task_id", "?")
+                    task_type = result.get("type", "unknown")
+                    status = result.get("status", "unknown")
+                    source = result.get("source_worker", "unknown")
+                    summary = result.get("result_summary", "")
+                    logger.info(
+                        "Brain got result via Scheduler: task=%s type=%s status=%s source=%s",
+                        task_id, task_type, status, source,
                     )
-                elif status == "completed" and summary:
-                    instructions = (
-                        f"A background task just completed! "
-                        f"Task type: {task_type}, result: {summary}. "
-                        f"Briefly tell the user the result in a cheerful parrot way."
+                    if status == "timeout":
+                        instructions = (
+                            f"A background task timed out. "
+                            f"Task type: {task_type}, id: {task_id}. "
+                            f"Apologize briefly and suggest trying again later."
+                        )
+                    elif status == "completed" and summary:
+                        instructions = (
+                            f"A background task just completed! "
+                            f"Task type: {task_type}, result: {summary}. "
+                            f"Briefly tell the user the result in a cheerful parrot way."
+                        )
+                    else:
+                        instructions = (
+                            f"A background task finished with status: {status}. "
+                            f"Task type: {task_type}, id: {task_id}. "
+                            f"Summary: {summary}. "
+                            f"Briefly tell the user about it."
+                        )
+                    await _generate_reply_after_current_speech(
+                        session,
+                        instructions,
+                        "scheduler_result",
                     )
-                else:
-                    instructions = (
-                        f"A background task finished with status: {status}. "
-                        f"Task type: {task_type}, id: {task_id}. "
-                        f"Summary: {summary}. "
-                        f"Briefly tell the user about it."
-                    )
-                await _generate_reply_after_current_speech(
-                    session,
-                    instructions,
-                    "scheduler_result",
-                )
+            finally:
+                with contextlib.suppress(Exception):
+                    await pubsub.unsubscribe(CH_SCHEDULER_TO_BRAIN)
+                with contextlib.suppress(Exception):
+                    await pubsub.close()
         except asyncio.CancelledError:
             pass
         except Exception:
             logger.exception("Error in scheduler result listener")
 
-    asyncio.create_task(_listen_scheduler_results())
+    _track_background_task(
+        asyncio.create_task(_listen_scheduler_results(), name="scheduler_result_listener"),
+        "scheduler_result_listener",
+    )
 
     # ChatA startup policy (2026-05-09): do not auto-greet on LiveKit connect.
     # Greeting is explicitly gated by Unity RPC ``onGosloPlaced`` after AR plane
@@ -1309,6 +1375,7 @@ async def brain_entrypoint(ctx: agents.JobContext):
         # Three rounds of audit have all surfaced bugs of this exact shape
         # (Bugs B / E / F + the older RefBinding fix); treat it as a class
         # of bug, not three accidents.
+        asyncio.ensure_future(_stop_room_scoped_background("room_disconnected"))
         asyncio.ensure_future(_set_goslo_mode("chat"))
         try:
             from parrot.dsg.triggers.runner import get_trigger_runner

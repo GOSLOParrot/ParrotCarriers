@@ -23,7 +23,24 @@ from parrot.scheduler.blackboard import open_bb_client
 
 
 @pytest.fixture(autouse=True)
-def _reset_state():
+def _reset_state(monkeypatch: pytest.MonkeyPatch):
+    for key in (
+        "PARROT_LLM_PIPELINE",
+        "PARROT_LINE_PROFILE",
+        "PARROT_ACTIVE_LINE_PROFILE_ID",
+        "PARROT_LINEB_TTS_PROVIDER",
+        "PARROT_LINEB_CARTESIA_VOICE_ID",
+        "PARROT_LINEB_VOICEPRINT_ENABLED",
+        "PARROT_LINEB_VOICEPRINT_PROFILE_ID",
+        "PARROT_LINEB_VOICEPRINT_PROVIDER",
+        "PARROT_LINEB_VOICEPRINT_MANIFEST",
+        "PARROT_VOICEPRINT_AUDIO_ROOT",
+        "PARROT_AUDIO_OUTPUT_ROUTE",
+        "PARROT_LINEB_ECHO_HANDLING_MODE",
+        "GOOGLE_TTS_VOICE",
+        "GOOGLE_TTS_LANGUAGE",
+    ):
+        monkeypatch.delenv(key, raising=False)
     py_trees.blackboard.Blackboard.storage = {}
     py_trees.blackboard.Blackboard.metadata = {}
     reset_lineb_audio_guard_for_test()
@@ -357,6 +374,9 @@ def test_apply_line_profile_updates_active_profile_and_audio_policy(
     bb = open_bb_client(name="test.line_profile.read", writer=None)
     line_b = next(line for line in status.refs["lines"] if line["line_id"] == "line_b")
     assert result["success"] is True
+    assert result["selection_scope"] == "cold_start_only"
+    assert result["process_line_id"] == "line_a"
+    assert result["requires_brain_restart"] is True
     assert bb.get("global/active_line_profile_id") == "lineb_ner_voice"
     assert bb.get("global/active_tts_profile_id") == "tts_ner"
     assert status.metrics["active_line_id"] == "line_b"
@@ -690,6 +710,9 @@ def test_room_setting_snapshot_exposes_five_axes(tmp_path: Path) -> None:
     line_b = next(line for line in snapshot["selectors"]["lines"] if line["line_id"] == "line_b")
     assert "voiceprint" in line_b
     assert "echo" in line_b
+    assert line_b["selection_policy"]["scope"] == "cold_start_only"
+    assert line_b["selection_policy"]["env_key"] == "PARROT_LLM_PIPELINE"
+    assert line_b["selection_policy"]["requires_brain_restart"] is True
     assert {mode["experience_mode"] for mode in snapshot["selectors"]["experience_modes"]} >= {
         "ar_companion",
         "2d_hall",
@@ -700,6 +723,65 @@ def test_room_setting_snapshot_exposes_five_axes(tmp_path: Path) -> None:
         "ner_skin2",
     }
     assert snapshot["compatibility"]["state"] == "ready"
+
+
+def test_room_setting_blocks_hot_line_switch_until_brain_cold_restart(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("PARROT_LLM_PIPELINE", raising=False)
+    set_preset_loader_for_test(PresetLoader(search_paths=[tmp_path / "presets"]))
+    facade = AppFirstVersionFacade()
+
+    preview = facade.preview_room_profile(
+        {
+            "schema_version": 3,
+            "kind": "room_profile",
+            "room_profile_id": "lineb_runtime_switch",
+            "display_name": "LineB Runtime Switch",
+            "model_id": "GOSLO_default",
+            "persona_id": "goslo_parrot_default",
+            "line_id": "line_b",
+            "line_profile_id": "lineb_google_default",
+            "scene_profile_id": "ar_handheld",
+            "experience_mode": "ar_companion",
+            "workspace_id": "mansion_hub",
+        }
+    )
+
+    decisions = preview["compatibility"]["decisions"]
+    assert preview["compatibility"]["state"] == "blocked"
+    assert any(
+        d["capability_id"] == "line.cold_start"
+        and d["state"] == "blocked"
+        and d["reason"] == "requires_brain_cold_restart"
+        and "PARROT_LLM_PIPELINE=line_b" in d["fallback_action"]
+        for d in decisions
+    )
+
+    monkeypatch.setenv("PARROT_LLM_PIPELINE", "line_b")
+    preview = facade.preview_room_profile(
+        {
+            "schema_version": 3,
+            "kind": "room_profile",
+            "room_profile_id": "lineb_cold_start",
+            "display_name": "LineB Cold Start",
+            "model_id": "GOSLO_default",
+            "persona_id": "goslo_parrot_default",
+            "line_id": "line_b",
+            "line_profile_id": "lineb_google_default",
+            "scene_profile_id": "ar_handheld",
+            "experience_mode": "ar_companion",
+            "workspace_id": "mansion_hub",
+        }
+    )
+
+    assert any(
+        d["capability_id"] == "line.cold_start"
+        and d["state"] == "enabled"
+        and d["reason"] == "process_line_matches_selected_line"
+        for d in preview["compatibility"]["decisions"]
+    )
 
 
 def test_room_profile_preview_enables_ner_and_disables_fly_to_hand(tmp_path: Path) -> None:

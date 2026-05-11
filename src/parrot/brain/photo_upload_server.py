@@ -39,6 +39,7 @@ What this server does NOT do (Phase 4 scope):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import logging
 import os
@@ -282,12 +283,29 @@ async def start_photo_upload_server(
 
     # Run in the same loop as the agent; the Server object exposes
     # `should_exit` for cooperative shutdown.
-    asyncio.create_task(server.serve(), name="photo_upload_server")
+    task = asyncio.create_task(server.serve(), name="photo_upload_server")
+    setattr(server, "_parrot_task", task)
     logger.info(
         "[photo_upload] server started host=%s port=%d cache_root=%s",
         host, port, get_cache_root(),
     )
     return server
+
+
+async def stop_photo_upload_server(
+    server: "uvicorn.Server | None",
+    *,
+    timeout_s: float = 3.0,
+) -> None:
+    """Request cooperative shutdown for the in-process upload server."""
+    if server is None:
+        return
+    server.should_exit = True
+    task = getattr(server, "_parrot_task", None)
+    if task is None:
+        return
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(asyncio.shield(task), timeout=timeout_s)
 
 
 __all__ = [
@@ -297,4 +315,5 @@ __all__ = [
     "get_cache_root",
     "is_safe_photo_id",
     "start_photo_upload_server",
+    "stop_photo_upload_server",
 ]
