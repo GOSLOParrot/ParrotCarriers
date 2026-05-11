@@ -60,6 +60,11 @@ agent-transcripts/
 # Nanobot local workspace (persona/session data)
 .nanobot/
 
+# Google Cloud 服务账号 JSON（含私钥，绝不提交）
+*service-account*.json
+*-sa-key.json
+*-adc.json
+
 # Temporary transfer files / build artifacts
 FilePort/
 FilePort2/
