@@ -125,6 +125,9 @@ class EcpEventPublisher:
                 event.event_type, event.event_id,
             )
             return
+        # TODO (audit Round 3 §E, 2026-05-11): pass ``name=`` so this task
+        # is debuggable in ``asyncio.all_tasks()`` traces. Cheap improvement,
+        # zero behaviour change.
         loop.create_task(self.publish(event))
 
     # ─── helpers ───────────────────────────────────────────────────────
@@ -190,7 +193,15 @@ def attach_ecp_event_publisher(room: Room) -> EcpEventPublisher:
 
 
 def reset_ecp_event_publisher_for_tests() -> None:
-    """Drop the singleton — tests only."""
+    """Drop the singleton — tests only.
+
+    TODO (audit Round 3 §B, 2026-05-11): production code should also drop
+    the singleton on ``brain.agent._on_room_disconnected`` so any
+    ``publish_nowait`` racing the disconnect doesn't fire against a dead
+    Room reference (only inflates ``failed_count``, no correctness bug,
+    but spams logs). Add a sibling ``reset_ecp_event_publisher_on_session_end``
+    when this becomes a noise problem on real-device smoke.
+    """
     global _publisher_singleton
     _publisher_singleton = None
 

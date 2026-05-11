@@ -126,6 +126,11 @@ These are useful test evidence only. They must not be used as App completion evi
   for Ner custom actions, carries LineB-aware voice/animation trigger rules,
   and `ner_lineb_room` now defaults to `lineb_ner_ja_test`. The roleplay
   Obsidian setting source uses `obsidian_note_key` instead of UUID binding.
+- 2026-05-11 Session Context Pack: selected Room setting files now feed runtime
+  instructions and UUID-free Obsidian roleplay L1.5 payloads. Persona remains
+  loaded by `PersonaLoader`; roleplay/world/scene/action-manual files are Room
+  session context. Contract:
+  `.cursor/memory/architecture/Interface/app_v1_session_context_pack_upgrade_20260511.md`.
 - 2026-05-11 LineB bugfix/bridge: missing `tts.voice_name` now blocks even
   when ADC is also missing. `lineb_audio_guard` now writes
   `session/lineb_voice_activity` for `speaking`, `listening`,

@@ -21,6 +21,22 @@ Cursor docs are still valuable, but Codex should not follow every launch prompt 
 
 Avoid copying Cursor's chat-launch structure into new work. Codex tasks should end in runnable app code, concrete interface tables, or a small design artifact.
 
+## Audit Log Awareness (2026-05-11)
+
+Cursor 已经做完 3 轮接口审计（10 个 bug 全部修复 + 共性纪律总结），SSOT 在
+`.cursor/memory/architecture/Interface/audit_log_index_20260511.md`。
+
+**触发条件**：碰 RoomSetting / LineB / ECP / disconnect 路径前必读，避免重复
+踩同型坑。源码里所有未尽事项都已加 `# TODO (audit Round X §Y)` 注释，grep
+`audit Round` 可直接定位到行。
+
+最重要的一条共性纪律：
+
+> 任何在 `parrot/brain/**` 里声明的 module-level mutable state（`_dict` /
+> `_list` / `_set` / `OrderedDict`）必须在同一 PR 里同时：
+> 1. 添加 `reset_*_on_session_end()` 函数
+> 2. 在 `agent.py::_on_room_disconnected` 完成 wire-up
+
 ## Plugin Setup Notes
 
 Useful Codex-side plugins/connectors:

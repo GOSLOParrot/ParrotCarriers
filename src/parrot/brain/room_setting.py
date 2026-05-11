@@ -21,6 +21,7 @@ from parrot.brain.preset_loader import (
     DEFAULT_LINE_ID,
     DEFAULT_PRESET_ID,
     DEFAULT_SCENE_SKIN_ID,
+    ReservedRoomProfileIdError,
     RoomProfile,
     get_preset_loader,
 )
@@ -97,6 +98,13 @@ class RoomSettingService:
     """Read/preview/apply service for startup RoomSetting."""
 
     def snapshot(self, room_profile_id: str | None = None) -> RoomSettingSnapshot:
+        # TODO (audit Round 2 §E, 2026-05-11): ``rooms`` is a flat list of
+        # JSON-serialised RoomProfiles with no per-room compatibility result.
+        # Frontend has to call ``preview`` for each Room to discover which
+        # ones are blocked / degraded. Cheaper for the UI if the snapshot
+        # carries a thin ``compatibility_states: dict[room_id, state]`` map
+        # alongside ``rooms``. Defer until a profiling pass shows the per-row
+        # compatibility() call is actually slow (5 dim resolve x N rooms).
         loader = get_preset_loader()
         menu = get_menu_registry().list_blocks()
         active_id = (
@@ -139,9 +147,28 @@ class RoomSettingService:
         }
 
     def save(self, draft: dict[str, Any] | RoomProfile) -> dict[str, Any]:
+        # FIX (2026-05-11 audit Round 4, Bug G): translate the typed
+        # ``ReservedRoomProfileIdError`` from ``PresetLoader.save_room_profile``
+        # into a structured ``status="error"`` response instead of raising up
+        # to the LiveKit RPC layer (which would surface as a generic
+        # IsError on the Unity side without the actionable reason). Returning
+        # the offending id + reserved set lets the menu UI explain "pick a
+        # different name" to the user.
         profile = draft if isinstance(draft, RoomProfile) else RoomProfile.from_json(draft)
-        path = get_preset_loader().save_room_profile(profile)
+        try:
+            path = get_preset_loader().save_room_profile(profile)
+        except ReservedRoomProfileIdError as exc:
+            from parrot.brain.preset_loader import RESERVED_ROOM_PROFILE_IDS
+
+            return {
+                "status": "error",
+                "reason": "reserved_room_profile_id",
+                "room_profile_id": exc.profile_id,
+                "reserved_ids": sorted(RESERVED_ROOM_PROFILE_IDS),
+                "room_profile": profile.as_json(),
+            }
         return {
+            "status": "ok",
             "room_profile": profile.as_json(),
             "path": str(path),
             "compatibility": self.compatibility(profile).as_json(),
@@ -165,6 +192,7 @@ class RoomSettingService:
         if compatibility.state == "blocked":
             return {
                 "success": False,
+                "room_profile_id": profile.room_profile_id,
                 "room_profile": profile.as_json(),
                 "applied_keys": [],
                 "errors": ["compatibility_blocked"],
@@ -173,6 +201,7 @@ class RoomSettingService:
         result = get_preset_loader().apply_room_profile(profile)
         return {
             "success": result.success,
+            "room_profile_id": profile.room_profile_id,
             "room_profile": profile.as_json(),
             "applied_keys": list(result.applied_keys),
             "errors": list(result.errors),

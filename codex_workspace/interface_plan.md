@@ -2,6 +2,11 @@
 
 This is the Codex-facing business-interface backlog. It intentionally avoids copying core signatures.
 
+> 🟢 **2026-05-11 — 接口审计 SSOT**：3 轮 10 bug 已修，详见
+> [`.cursor/memory/architecture/Interface/audit_log_index_20260511.md`](../.cursor/memory/architecture/Interface/audit_log_index_20260511.md)。
+> 改任何 RoomSetting / LineB / ECP / disconnect 路径前先扫一眼。
+> 源码里 `# TODO (audit Round X §Y)` 注释都对应该索引的"不动事项"列表。
+
 ## Business Slice 1: App Startup And Connection
 
 Goal: Unity boots into AR, obtains/uses token config, joins LiveKit, and exposes state to HUD.

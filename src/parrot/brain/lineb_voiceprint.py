@@ -250,7 +250,24 @@ def verify_embedding(
     if centroid_error:
         return _verification_error(status, "not_enrolled", centroid_error, observed)
 
-    similarity = _cosine_similarity(_vector(embedding), centroid)
+    embedding_vector = _vector(embedding)
+    # FIX (2026-05-11 audit, Bug C): refuse to silently truncate when the
+    # caller's embedding and the enrolled centroid disagree on dim. ECAPA
+    # (192) and Resemblyzer (256) used to be compared by truncating to the
+    # shorter side, producing a meaningless "similarity" that could fall
+    # anywhere on [0, 1] and either accept an impostor or reject the owner.
+    if len(embedding_vector) == 0 or len(embedding_vector) != len(centroid):
+        return _verification_error(
+            status,
+            "embedding_dim_mismatch",
+            (
+                f"embedding dim {len(embedding_vector)} does not match "
+                f"owner centroid dim {len(centroid)}; verifier provider "
+                f"may have changed since enrollment."
+            ),
+            observed,
+        )
+    similarity = _cosine_similarity(embedding_vector, centroid)
     if similarity >= status.threshold_accept:
         decision = "owner_user"
         speaker_role = "user"
@@ -277,7 +294,7 @@ def verify_embedding(
         refs={
             "manifest_path": status.manifest_path,
             "centroid_dim": len(centroid),
-            "embedding_dim": len(_vector(embedding)),
+            "embedding_dim": len(embedding_vector),
         },
     )
 
@@ -382,6 +399,13 @@ def enroll_from_audio_files(
     updated.setdefault("enrollment", {})["positive_sample_count"] = len(embeddings)
     updated["enrollment"]["centroid_path"] = str(centroid_path)
     updated["enrollment"]["embedding_index_path"] = str(embedding_index_path)
+    # TODO (audit Round 2 §G, 2026-05-11): persist ``embedding_dim`` in the
+    # manifest so ``verify_embedding`` can fail-fast against a provider /
+    # model swap (currently we only catch the mismatch at compare time via
+    # the Bug C guard). Cheap to add when the next enrollment chat lands;
+    # leave out for now to avoid churning the manifest schema mid-LineB
+    # validation.
+    updated["enrollment"]["embedding_dim"] = len(centroid)
     updated.setdefault("thresholds", {})["accept_similarity"] = _float_or_default(
         _nested(updated, "thresholds", "accept_similarity"),
         DEFAULT_ACCEPT_THRESHOLD,
@@ -644,6 +668,12 @@ def _extract_resemblyzer_embedding(audio_path: str | Path) -> list[float]:
 
 
 def _cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
+    """Cosine similarity over equal-length vectors.
+
+    Callers in ``verify_embedding`` already screen for ``len(left) ==
+    len(right)`` and surface a typed error for mismatched dims (audit Bug C),
+    so this helper just guards against zero-length / zero-norm inputs.
+    """
     size = min(len(left), len(right))
     if size <= 0:
         return 0.0

@@ -238,6 +238,13 @@ class EcpEventIngest:
 
         Eviction runs on every check so the dict size is bounded by
         ``window × inbound_rate`` regardless of subscriber behaviour.
+
+        TODO (audit Round 3 §A, 2026-05-11): switch ``time.time()`` to
+        ``time.monotonic()``. ``time.time()`` can jump backward on system
+        clock changes; the OrderedDict eviction relies on insertion order ≈
+        chronological order. Effect of clock-backward is delayed eviction
+        (capped by ``DEDUP_MAX_ENTRIES``), not duplicate-misclassification.
+        Cheap fix, deferred to keep this audit pass schema-stable.
         """
         now = time.time()
         cutoff = now - self._dedup_window_s

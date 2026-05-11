@@ -62,6 +62,8 @@ agent-transcripts/
 
 # Temporary transfer files / build artifacts
 FilePort/
+FilePort2/
+FilePort3/
 *.tar.gz
 *.tar.bz2
 *.zip

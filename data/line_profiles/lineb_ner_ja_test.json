@@ -15,11 +15,11 @@
     "languages": ["ja-JP", "cmn-CN", "en-US"]
   },
   "tts": {
-    "tts_profile_id": "google_tts_ja_ner_test",
-    "provider": "google.TTS",
+    "tts_profile_id": "cartesia_tts_ja_ner_companion_v1",
+    "provider": "cartesia.TTS",
     "language": "ja-JP",
-    "voice_name": "ja-JP-Neural2-B",
-    "style_note": "Ner-inspired Japanese baseline for private device tests. This is not an official character voice or CV clone; replace through GOOGLE_TTS_VOICE or an external licensed ECS voice when available.",
+    "voice_name": "bfd1cc5a-5c3b-4e88-b7be-df9f3ec7e9a5",
+    "style_note": "Cartesia IVC test voice from ECS/private samples; not an official character voice or CV clone. Voice roster: sister_v2=bfd1cc5a (active), older_sister_v1=503f243f, ner_v4_raw=5f44efc0. Switch voice by changing PARROT_LINEB_CARTESIA_VOICE_ID in ECS .env.",
     "voice_asset_manifest_path": "/secure/ecs/parrot/voices/ner/voice_manifest.json",
     "sample_audio_root": "/secure/ecs/parrot/voices/ner/audio",
     "rights_mode": "premade_or_permissioned_only"
@@ -45,7 +45,7 @@
   },
   "metadata": {
     "purpose": "Selectable Ner LineB profile for RoomSetting real-device validation.",
-    "tts_selection_reason": "Google Cloud lists ja-JP-Neural2-B as a supported Japanese female Neural2 voice; Neural2 is the safer first baseline because it keeps SSML-compatible general-purpose synthesis.",
+    "tts_selection_reason": "Current Ner validation selects Cartesia because Google Cloud TTS does not provide user-owned voice design. Keep audio and consent material in ECS/private storage; this repository stores only the selectable profile id.",
     "voice_rights_policy": "Do not store cloned or extracted voice assets in Git. CV metadata is reference-only unless the user supplies licensed audio and consent in the external ECS test environment.",
     "external_voice_asset_location": "ECS/private only; no audio samples in this repository.",
     "env_overrides": [

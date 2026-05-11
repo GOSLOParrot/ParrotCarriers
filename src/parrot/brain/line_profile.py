@@ -253,6 +253,8 @@ class LineProfile:
         stt_languages = _env_text(env, "GOOGLE_STT_LANGUAGES")
         tts_voice = _env_text(env, "GOOGLE_TTS_VOICE")
         tts_language = _env_text(env, "GOOGLE_TTS_LANGUAGE")
+        tts_provider = _env_text(env, "PARROT_LINEB_TTS_PROVIDER")
+        cartesia_voice = _env_text(env, "PARROT_LINEB_CARTESIA_VOICE_ID")
         tts_manifest = _env_text(env, "NER_PRIVATE_VOICE_MANIFEST")
         tts_audio_root = _env_text(env, "NER_PRIVATE_VOICE_AUDIO_ROOT")
         voiceprint_enabled = _env_text(env, "PARROT_LINEB_VOICEPRINT_ENABLED")
@@ -264,6 +266,11 @@ class LineProfile:
         voiceprint_reject = _env_text(env, "PARROT_LINEB_VOICEPRINT_THRESHOLD_REJECT")
         echo_output = _env_text(env, "PARROT_AUDIO_OUTPUT_ROUTE")
         echo_handling = _env_text(env, "PARROT_LINEB_ECHO_HANDLING_MODE")
+        next_tts_provider = tts_provider or self.tts.provider
+        if _is_cartesia_tts(next_tts_provider):
+            next_tts_voice = cartesia_voice if cartesia_voice is not None else self.tts.voice_name
+        else:
+            next_tts_voice = tts_voice if tts_voice is not None else self.tts.voice_name
 
         return replace(
             self,
@@ -275,8 +282,9 @@ class LineProfile:
             ),
             tts=replace(
                 self.tts,
+                provider=next_tts_provider,
                 language=tts_language or self.tts.language,
-                voice_name=tts_voice if tts_voice is not None else self.tts.voice_name,
+                voice_name=next_tts_voice,
                 voice_asset_manifest_path=(
                     tts_manifest or self.tts.voice_asset_manifest_path
                 ),
@@ -406,15 +414,15 @@ class LineProfileLoader:
         return self.load(default_id, apply_env=apply_env)
 
     def active_profile_id(self) -> str:
-        bb_value = _bb_value("global/active_line_profile_id", "")
-        if isinstance(bb_value, str) and bb_value.strip():
-            return bb_value.strip()
         env_value = (
             os.getenv(ACTIVE_LINE_PROFILE_ENV, "").strip()
             or os.getenv(ACTIVE_LINE_PROFILE_ID_ENV, "").strip()
         )
         if env_value:
             return env_value
+        bb_value = _bb_value("global/active_line_profile_id", "")
+        if isinstance(bb_value, str) and bb_value.strip():
+            return bb_value.strip()
         active_line = _bb_value("global/active_line_id", "")
         if isinstance(active_line, str) and active_line.strip():
             return default_line_profile_id(active_line)
@@ -525,8 +533,17 @@ def evaluate_line_profile(profile: LineProfile) -> LineDeviceCheckResult:
     api_key_ready = bool(os.getenv("GOOGLE_API_KEY"))
     adc_ready, adc_summary, adc_refs = _adc_state()
     vad_ready = importlib.util.find_spec("livekit.plugins.silero") is not None
+    cartesia_tts = _is_cartesia_tts(profile.tts.provider)
+    cartesia_key_ready = bool(os.getenv("CARTESIA_API_KEY"))
+    cartesia_plugin_ready = (
+        importlib.util.find_spec("livekit.plugins.cartesia") is not None
+        if cartesia_tts
+        else True
+    )
     tts_voice_ready = bool(profile.tts.voice_name.strip())
     asr_ready = bool(profile.asr.model.strip() and profile.asr.languages)
+    tts_auth_ready = cartesia_key_ready if cartesia_tts else adc_ready
+    tts_ready = tts_voice_ready and tts_auth_ready and cartesia_plugin_ready
     echo_risk = _echo_risk(profile.echo.output_route, profile.voiceprint.enabled)
     voiceprint_state, voiceprint_health, voiceprint_summary, voiceprint_refs = (
         _voiceprint_eval(profile)
@@ -558,12 +575,14 @@ def evaluate_line_profile(profile: LineProfile) -> LineDeviceCheckResult:
         ),
         _finding(
             "tts",
-            "ready" if tts_voice_ready and adc_ready else "blocked",
-            "ok" if tts_voice_ready and adc_ready else "error",
-            "TTS profile and ADC are configured."
-            if tts_voice_ready and adc_ready
-            else "TTS needs voice_name/language and Google ADC.",
-            profile.tts.as_json(),
+            "ready" if tts_ready else "blocked",
+            "ok" if tts_ready else "error",
+            _tts_summary(profile, tts_voice_ready, tts_auth_ready, cartesia_plugin_ready),
+            {
+                **profile.tts.as_json(),
+                "cartesia_api_key": "ready" if cartesia_key_ready else "missing",
+                "cartesia_plugin": "ready" if cartesia_plugin_ready else "missing",
+            },
         ),
         _finding(
             "vad",
@@ -590,7 +609,7 @@ def evaluate_line_profile(profile: LineProfile) -> LineDeviceCheckResult:
 
     state = "ready"
     health = "ok"
-    if not api_key_ready or not tts_voice_ready or not asr_ready:
+    if not api_key_ready or not tts_ready or not asr_ready:
         state = "blocked"
         health = "error"
     elif (
@@ -615,6 +634,7 @@ class LineBRuntimeSettings:
     llm_model: str
     stt_model: str
     stt_languages: tuple[str, ...]
+    tts_provider: str
     tts_language: str
     tts_voice: str
     line_profile_id: str
@@ -630,6 +650,7 @@ def active_lineb_runtime_settings() -> LineBRuntimeSettings:
         llm_model=profile.llm.model,
         stt_model=profile.asr.model,
         stt_languages=profile.asr.languages,
+        tts_provider=profile.tts.provider,
         tts_language=profile.tts.language,
         tts_voice=profile.tts.voice_name,
         line_profile_id=profile.line_profile_id,
@@ -749,6 +770,33 @@ def _finding(
         "summary": summary,
         "refs": dict(refs or {}),
     }
+
+
+def _is_cartesia_tts(provider: str) -> bool:
+    text = str(provider or "").strip().lower()
+    return text == "cartesia" or text.startswith("cartesia.")
+
+
+def _tts_summary(
+    profile: LineProfile,
+    voice_ready: bool,
+    auth_ready: bool,
+    plugin_ready: bool,
+) -> str:
+    if _is_cartesia_tts(profile.tts.provider):
+        if voice_ready and auth_ready and plugin_ready:
+            return "Cartesia TTS voice, API key, and plugin are configured."
+        missing = []
+        if not voice_ready:
+            missing.append("voice_name")
+        if not auth_ready:
+            missing.append("CARTESIA_API_KEY")
+        if not plugin_ready:
+            missing.append("livekit.plugins.cartesia")
+        return "Cartesia TTS needs " + ", ".join(missing) + "."
+    if voice_ready and auth_ready:
+        return "Google TTS voice and ADC are configured."
+    return "Google TTS needs voice_name/language and Google ADC."
 
 
 def _bb_value(key: str, default: Any) -> Any:

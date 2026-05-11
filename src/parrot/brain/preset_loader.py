@@ -55,6 +55,34 @@ DEFAULT_MODEL_ID = "GOSLO_default"
 DEFAULT_SCENE_ID = "ar_handheld"
 DEFAULT_WORKSPACE_ID = "mansion_hub"
 DEFAULT_PRESET_ID = "default"
+
+# FIX (2026-05-11 audit Round 4, Bug G): RoomProfile / Preset ids that
+# RoomSetting / MenuRegistry treat as system reserved. Saving a draft with
+# any of these ids would overwrite a builtin or sentinel and silently
+# rebrand the system default — verified empirically that ``RoomProfile(
+# room_profile_id='default', model_id='evil')`` written via
+# ``save_room_profile`` overwrote ``data/presets/default.json`` without any
+# guard. ``ephemeral`` and ``workspace_only`` are sentinel preset ids used
+# internally by ``MenuRegistry.apply_selection`` /
+# ``apply_workspace_id``; user-saved drafts must not collide.
+RESERVED_ROOM_PROFILE_IDS: frozenset[str] = frozenset({
+    "default",
+    "ephemeral",
+    "workspace_only",
+})
+
+
+class ReservedRoomProfileIdError(ValueError):
+    """Raised when a save tries to write to a reserved RoomProfile id."""
+
+    def __init__(self, profile_id: str) -> None:
+        super().__init__(
+            f"room_profile_id={profile_id!r} is reserved by the system "
+            f"(reserved set: {sorted(RESERVED_ROOM_PROFILE_IDS)}); "
+            f"pick a different id (drafts created via newRoomProfile get "
+            f"a fresh ``room_<hex>`` id automatically)."
+        )
+        self.profile_id = profile_id
 SCHEMA_VERSION = 2
 ROOM_PROFILE_SCHEMA_VERSION = 3
 DEFAULT_LINE_ID = "line_a"
@@ -444,13 +472,22 @@ class RoomProfile:
 
 @dataclass(frozen=True)
 class PresetApplyResult:
-    """Outcome of :meth:`PresetLoader.apply`."""
+    """Outcome of :meth:`PresetLoader.apply`.
+
+    ``warnings`` (added 2026-05-11 audit Round 4, Bug I) carries non-fatal
+    notices the apply path produced — currently used by
+    ``MenuRegistry.apply_selection`` to surface "your requested workspace
+    didn't exist; substituted to <fallback_id>" so the Unity menu canvas
+    can show a toast / re-sync state instead of believing its requested
+    workspace is now active.
+    """
 
     preset_id: str
     applied_keys: tuple[str, ...]
     behavior_mode: BehaviorMode
     success: bool = True
     errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
 
 # ─── Loader ──────────────────────────────────────────────────────────
@@ -575,7 +612,17 @@ class PresetLoader:
         return path
 
     def save_room_profile(self, profile: RoomProfile) -> Path:
-        """Persist ``profile`` as the user-facing Room save file."""
+        """Persist ``profile`` as the user-facing Room save file.
+
+        FIX (2026-05-11 audit Round 4, Bug G): refuse to overwrite system
+        reserved ids (``default`` / ``ephemeral`` / ``workspace_only``). A
+        ``RoomProfile`` draft with one of those ids would silently rewrite
+        the builtin default preset or step on a menu sentinel; raise a
+        typed error so the caller (RoomSetting RPC layer) can return a
+        proper status to Unity / Web instead of corrupting state.
+        """
+        if profile.room_profile_id in RESERVED_ROOM_PROFILE_IDS:
+            raise ReservedRoomProfileIdError(profile.room_profile_id)
         target_dir = self._writable_dir()
         target_dir.mkdir(parents=True, exist_ok=True)
         path = target_dir / f"{profile.room_profile_id}.json"
@@ -610,13 +657,23 @@ class PresetLoader:
         *,
         experience_mode: str | None = None,
     ) -> PresetApplyResult:
-        """Apply one RoomProfile through the same single-writer path."""
+        """Apply one RoomProfile through the same single-writer path.
+
+        FIX (2026-05-11 audit): also write the full ``RoomProfile`` JSON to
+        ``global/active_room_profile`` so consumers like
+        :func:`session_context_pack.load_active_session_context_bundle` can
+        honour an unsaved draft's ``setting_file_refs`` / ``line_profile_id``
+        / ``skin_id`` without falling back to the on-disk default. This
+        mirrors the existing ``global/active_line_profile`` contract that
+        ``line_profile.LineProfileLoader.apply`` already publishes.
+        """
         selected = profile.with_experience_mode(experience_mode)
         return self._apply_values(
             preset_id=selected.room_profile_id,
             behavior_mode=selected.behavior_mode(),
             values={
                 "global/active_room_profile_id": selected.room_profile_id,
+                "global/active_room_profile": selected.as_json(),
                 "global/active_persona_id": selected.persona_id,
                 "global/active_model_id": selected.model_id,
                 "global/active_scene_id": selected.scene_profile_id,
@@ -659,6 +716,7 @@ class PresetLoader:
         preset_id: str,
         behavior_mode: BehaviorMode,
         values: dict[str, Any],
+        warnings: tuple[str, ...] = (),
     ) -> PresetApplyResult:
         try:
             from parrot.scheduler.blackboard import open_bb_client
@@ -669,6 +727,7 @@ class PresetLoader:
                 behavior_mode=behavior_mode,
                 success=False,
                 errors=("blackboard module unavailable",),
+                warnings=warnings,
             )
 
         try:
@@ -680,6 +739,7 @@ class PresetLoader:
                 behavior_mode=behavior_mode,
                 success=False,
                 errors=(f"open_bb_client failed: {exc!r}",),
+                warnings=warnings,
             )
 
         applied: list[str] = []
@@ -715,6 +775,7 @@ class PresetLoader:
             behavior_mode=behavior_mode,
             success=not errors,
             errors=tuple(errors),
+            warnings=warnings,
         )
 
     # ─── Internals ───────────────────────────────────────────────
@@ -778,6 +839,8 @@ __all__ = [
     "PresetApplyResult",
     "PresetLoader",
     "ROOM_PROFILE_SCHEMA_VERSION",
+    "RESERVED_ROOM_PROFILE_IDS",
+    "ReservedRoomProfileIdError",
     "RoomProfile",
     "get_preset_loader",
     "set_preset_loader_for_test",

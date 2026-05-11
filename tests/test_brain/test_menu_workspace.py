@@ -10,6 +10,7 @@ from parrot.brain.menu_registry import MenuRegistry, MenuSelection
 from parrot.brain.line_profile import (
     DEFAULT_LINEB_PROFILE_ID,
     LineProfileLoader,
+    active_lineb_runtime_settings,
     set_line_profile_loader_for_test,
 )
 from parrot.brain.model_manifest_registry import (
@@ -60,6 +61,133 @@ def _reset_state():
     set_line_profile_loader_for_test(None)
     set_model_manifest_registry_for_test(None)
     set_workspace_registry_for_test(None)
+
+
+class TestAuditRound4MenuCanvasGuards:
+    """Audit Round 4 (2026-05-11) regressions — Bugs G + I + J.
+
+    Bug G: ``saveRoomProfile`` could overwrite the builtin ``default``
+    preset (and other reserved sentinel ids) without any guard, silently
+    rebranding the system default.
+
+    Bug I: ``MenuRegistry.apply_selection`` silently substituted the
+    fallback workspace when an unknown ``workspace_id`` was passed,
+    returning ``success=True`` with no signal that a substitution
+    happened. Menu canvas could believe its requested workspace was
+    active when actually mansion_hub was applied.
+
+    Bug J: ``parse_capability_mode`` silently returned ``FULL_AR_COMPANION``
+    on unknown non-empty inputs. Now logs a warning so misconfigured
+    Unity payloads / typos in env vars are visible in operator logs.
+    """
+
+    def test_save_reserved_room_profile_id_raises(self, tmp_path: Path) -> None:
+        from parrot.brain.preset_loader import (
+            RESERVED_ROOM_PROFILE_IDS,
+            ReservedRoomProfileIdError,
+        )
+
+        loader = PresetLoader(search_paths=[tmp_path / "presets"])
+        for reserved_id in RESERVED_ROOM_PROFILE_IDS:
+            with pytest.raises(ReservedRoomProfileIdError):
+                loader.save_room_profile(
+                    RoomProfile(
+                        room_profile_id=reserved_id,
+                        display_name=f"Hijack {reserved_id}",
+                        model_id="evil_model",
+                    )
+                )
+        # Sanity: a fresh non-reserved id still saves successfully
+        non_reserved_path = loader.save_room_profile(
+            RoomProfile(
+                room_profile_id="audit_round4_test",
+                display_name="Audit Round 4 Test",
+            )
+        )
+        assert non_reserved_path.exists()
+
+    def test_save_reserved_id_via_facade_returns_structured_error(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+        from parrot.brain.preset_loader import RESERVED_ROOM_PROFILE_IDS
+
+        set_preset_loader_for_test(PresetLoader(search_paths=[tmp_path / "presets"]))
+        facade = AppFirstVersionFacade()
+        result = facade.save_room_profile(
+            {
+                "schema_version": ROOM_PROFILE_SCHEMA_VERSION,
+                "kind": "room_profile",
+                "room_profile_id": "default",
+                "display_name": "Hijacked Default",
+            }
+        )
+        assert result["status"] == "error"
+        assert result["reason"] == "reserved_room_profile_id"
+        assert result["room_profile_id"] == "default"
+        assert set(result["reserved_ids"]) == RESERVED_ROOM_PROFILE_IDS
+
+    def test_apply_menu_selection_surfaces_workspace_fallback_warning(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        set_preset_loader_for_test(PresetLoader(search_paths=[tmp_path / "presets"]))
+        registry = MenuRegistry()
+        result = registry.apply_selection(
+            MenuSelection(
+                persona_id="goslo_parrot_default",
+                mode_flags=("BASE", "COMPANION"),
+                scene_id="ar_handheld",
+                model_id="GOSLO_default",
+                workspace_id="nonexistent_xyz",
+            )
+        )
+        assert result.success
+        assert any(
+            "nonexistent_xyz" in w and "substituted" in w for w in result.warnings
+        ), f"expected substitution warning, got warnings={result.warnings}"
+
+    def test_apply_menu_selection_known_workspace_no_warning(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        set_preset_loader_for_test(PresetLoader(search_paths=[tmp_path / "presets"]))
+        registry = MenuRegistry()
+        result = registry.apply_selection(
+            MenuSelection(
+                persona_id="goslo_parrot_default",
+                mode_flags=("BASE", "COMPANION"),
+                scene_id="ar_handheld",
+                model_id="GOSLO_default",
+                workspace_id=DEFAULT_WORKSPACE_ID,
+            )
+        )
+        assert result.success
+        assert result.warnings == ()
+
+    def test_capability_mode_unknown_input_logs_warning(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        with caplog.at_level("WARNING", logger="parrot.brain.session_policy"):
+            profile = apply_capability_mode("totally_bogus_mode")
+        assert profile.mode == AppCapabilityMode.FULL_AR_COMPANION
+        assert any(
+            "totally_bogus_mode" in record.message for record in caplog.records
+        ), f"expected warning about bogus mode, got records={caplog.records}"
+
+    def test_capability_mode_empty_input_no_warning(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Empty / None is the legitimate "no preference" case; no spam.
+        with caplog.at_level("WARNING", logger="parrot.brain.session_policy"):
+            apply_capability_mode("")
+            apply_capability_mode(None)
+        assert not any(
+            "unknown capability mode" in record.message for record in caplog.records
+        )
 
 
 def test_preset_v1_defaults_workspace() -> None:
@@ -192,6 +320,49 @@ def test_line_profile_empty_env_does_not_clear_saved_voice(
     assert profile.tts.voice_name == "ja-JP-Neural2-B"
 
 
+def test_line_profile_cartesia_env_uses_profile_as_source_of_truth(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "line_profiles"
+    config_dir.mkdir()
+    (config_dir / "lineb_cartesia.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "line_profile",
+                "line_profile_id": "lineb_cartesia",
+                "display_name": "LineB Cartesia",
+                "line_id": "line_b",
+                "tts": {
+                    "provider": "cartesia.TTS",
+                    "language": "ja-JP",
+                    "voice_name": "profile-voice-id",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("PARROT_LINEB_TTS_PROVIDER", raising=False)
+    monkeypatch.delenv("PARROT_LINEB_CARTESIA_VOICE_ID", raising=False)
+    loader = LineProfileLoader(search_paths=[config_dir])
+
+    profile = loader.load("lineb_cartesia", apply_env=True)
+
+    assert profile.tts.provider == "cartesia.TTS"
+    assert profile.tts.voice_name == "profile-voice-id"
+    set_line_profile_loader_for_test(loader)
+    monkeypatch.setenv("PARROT_ACTIVE_LINE_PROFILE_ID", "lineb_cartesia")
+    runtime = active_lineb_runtime_settings()
+    assert runtime.tts_provider == "cartesia.TTS"
+    assert runtime.tts_voice == "profile-voice-id"
+
+    monkeypatch.setenv("PARROT_LINEB_CARTESIA_VOICE_ID", "env-voice-id")
+    profile = loader.load("lineb_cartesia", apply_env=True)
+
+    assert profile.tts.voice_name == "env-voice-id"
+
+
 def test_repo_ner_line_profile_and_room_setting_are_selectable() -> None:
     root = _repo_root()
     line_loader = LineProfileLoader(search_paths=[root / "data" / "line_profiles"])
@@ -203,7 +374,8 @@ def test_repo_ner_line_profile_and_room_setting_are_selectable() -> None:
     assert line_profile.line_id == "line_b"
     assert line_profile.asr.languages == ("ja-JP", "cmn-CN", "en-US")
     assert line_profile.tts.language == "ja-JP"
-    assert line_profile.tts.voice_name == "ja-JP-Neural2-B"
+    assert line_profile.tts.provider == "cartesia.TTS"
+    assert line_profile.tts.voice_name == "bfd1cc5a-5c3b-4e88-b7be-df9f3ec7e9a5"
     assert line_profile.voiceprint.enabled is True
     assert "not an official character voice" in line_profile.tts.style_note
     assert room_profile.model_id == "ner_skin2"

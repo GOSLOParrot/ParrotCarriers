@@ -247,7 +247,12 @@ class AppFirstVersionFacade:
         *,
         experience_mode: str | None = None,
     ) -> dict[str, Any]:
-        """Apply a RoomProfile after compatibility checks."""
+        """Apply a RoomProfile after compatibility checks.
+
+        The response includes top-level ``room_profile_id`` so Unity START and
+        Web monitor callers can log the selected Room without parsing
+        ``applied_keys`` or nested payloads.
+        """
         from parrot.brain.room_setting import get_room_setting_service
 
         return get_room_setting_service().apply(

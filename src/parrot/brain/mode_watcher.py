@@ -5,7 +5,9 @@ Flow:
     → Redis Pub/Sub CH_BEHAVIOR_MODE
     → Brain picks up new mode
     → ParrotSoul regenerates instructions
-    → session.update_instructions()
+    → ``session.current_agent.update_instructions()`` (livekit-agents 1.5+;
+      ``update_instructions`` lives on Agent, not AgentSession — see
+      ``app_v1_session_context_pack_audit_20260511.md`` §1)
 
 Also provides set_behavior_mode() for programmatic mode changes.
 """
@@ -78,16 +80,34 @@ def attach_mode_watcher(session: AgentSession) -> asyncio.Task:
     """
     current_mode = BehaviorMode.BASE | BehaviorMode.COMPANION
 
-    def _try_update_instructions(new_instructions: str, reason: str) -> None:
-        updater = getattr(session, "update_instructions", None)
-        if callable(updater):
-            updater(new_instructions)
+    async def _try_update_instructions(new_instructions: str, reason: str) -> None:
+        # FIX (2026-05-11 audit): `update_instructions` is an async method on
+        # ``Agent`` (livekit-agents 1.5+), not on ``AgentSession``. Reaching
+        # for it on ``session`` always returned None and silently degraded the
+        # mode-switch refresh into "log warning + no-op". Resolve via the live
+        # agent and await the coroutine.
+        try:
+            agent = session.current_agent
+        except RuntimeError:
+            logger.debug(
+                "mode_watcher: session not running yet, skipping refresh (%s)",
+                reason,
+            )
             return
-        logger.warning(
-            "mode_watcher: AgentSession.update_instructions unavailable; "
-            "mode context updated locally only (%s)",
-            reason,
-        )
+        updater = getattr(agent, "update_instructions", None)
+        if updater is None:
+            logger.warning(
+                "mode_watcher: Agent.update_instructions unavailable; "
+                "mode context updated locally only (%s)",
+                reason,
+            )
+            return
+        try:
+            await updater(new_instructions)
+        except Exception:
+            logger.exception(
+                "mode_watcher: update_instructions failed (%s)", reason,
+            )
 
     async def _watch() -> None:
         nonlocal current_mode
@@ -99,7 +119,7 @@ def attach_mode_watcher(session: AgentSession) -> asyncio.Task:
                 current_mode = _parse_mode(stored)
                 _sync_injector_mode(current_mode)
                 new_instructions = get_instructions(current_mode)
-                _try_update_instructions(new_instructions, "init")
+                await _try_update_instructions(new_instructions, "init")
                 logger.info("mode_watcher: initialized with %s", current_mode)
 
             pubsub = r.pubsub()
@@ -116,7 +136,7 @@ def attach_mode_watcher(session: AgentSession) -> asyncio.Task:
                 current_mode = new_mode
                 _sync_injector_mode(current_mode)
                 new_instructions = get_instructions(current_mode)
-                _try_update_instructions(new_instructions, "switch")
+                await _try_update_instructions(new_instructions, "switch")
                 logger.info("mode_watcher: switched to %s", current_mode)
 
         except asyncio.CancelledError:

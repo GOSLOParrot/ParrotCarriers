@@ -809,6 +809,7 @@ def test_apply_room_profile_enforces_valid_profile_and_writes_keys(tmp_path: Pat
 
     bb = open_bb_client(name="test.room_setting.read", writer=None)
     assert result["success"] is True
+    assert result["room_profile_id"] == "launch_room"
     assert "global/active_room_profile_id" in result["applied_keys"]
     assert bb.get("global/active_room_profile_id") == "launch_room"
     assert bb.get("global/active_experience_mode") == "2d_hall"

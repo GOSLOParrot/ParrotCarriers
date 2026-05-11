@@ -148,6 +148,11 @@ def build_app():  # type: ignore[no-untyped-def]
         if not is_safe_photo_id(photo_id):
             raise HTTPException(status_code=400, detail="invalid photo_id")
 
+        # TODO (audit Round 3 §D, 2026-05-11): enforce a hard size cap (e.g.
+        # 10 MB) before reading the full body into memory. Phase 4 spike
+        # explicitly trusts the Unity client; Phase 5+ should add the cap +
+        # 413 PAYLOAD_TOO_LARGE response so a buggy / malicious client can't
+        # OOM the agent process.
         body = await request.body()
         if not body:
             raise HTTPException(status_code=400, detail="empty body")

@@ -56,13 +56,29 @@ class SessionCapabilityProfile:
 
 
 def parse_capability_mode(raw: str | AppCapabilityMode | None) -> AppCapabilityMode:
-    """Parse wire/UI value into :class:`AppCapabilityMode` with safe fallback."""
+    """Parse wire/UI value into :class:`AppCapabilityMode` with safe fallback.
+
+    FIX (2026-05-11 audit Round 4, Bug J): when ``raw`` is a *non-empty*
+    string that doesn't match any enum value, log a warning instead of
+    silently falling back to FULL_AR_COMPANION. Verified empirically
+    (audit Round 4 §J): ``apply_capability_mode("totally_bogus_mode")``
+    used to silently set FullARCompanion. Empty / None input still falls
+    through quietly because that's the legitimate "no preference" case.
+    """
     if isinstance(raw, AppCapabilityMode):
         return raw
     text = str(raw or "").strip()
     for mode in AppCapabilityMode:
         if text == mode.value or text.upper() == mode.name:
             return mode
+    if text:
+        logger.warning(
+            "session_policy: unknown capability mode %r; falling back to %s "
+            "(accepted: %s)",
+            text,
+            AppCapabilityMode.FULL_AR_COMPANION.value,
+            sorted(m.value for m in AppCapabilityMode),
+        )
     return AppCapabilityMode.FULL_AR_COMPANION
 
 

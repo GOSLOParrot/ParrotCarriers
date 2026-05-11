@@ -212,6 +212,18 @@ namespace ParrotApp.Lifecycle
                     yield break;
                 }
 
+                bool reusedRoomSynced = false;
+                yield return SyncStartupRoomProfile(
+                    "startup_reuse_room_profile",
+                    ok => reusedRoomSynced = ok);
+                if (!reusedRoomSynced)
+                {
+                    lifecycleManager?.ReportDegraded("brain_rpc_room_profile_sync_timeout");
+                    Fail("brain_rpc_room_profile_sync_timeout");
+                    StartupInProgress = false;
+                    yield break;
+                }
+
                 bool reusedPolicySynced = false;
                 yield return CallBrainRpc(
                     "setAppCapabilityMode",
@@ -264,6 +276,18 @@ namespace ParrotApp.Lifecycle
             if (roomManager == null || !roomManager.IsConnected)
             {
                 Fail("livekit_connect_timeout");
+                StartupInProgress = false;
+                yield break;
+            }
+
+            bool roomSynced = false;
+            yield return SyncStartupRoomProfile(
+                "startup_room_profile",
+                ok => roomSynced = ok);
+            if (!roomSynced)
+            {
+                lifecycleManager?.ReportDegraded("brain_rpc_room_profile_sync_timeout");
+                Fail("brain_rpc_room_profile_sync_timeout");
                 StartupInProgress = false;
                 yield break;
             }
@@ -367,6 +391,21 @@ namespace ParrotApp.Lifecycle
             onComplete?.Invoke(true);
         }
 
+        private IEnumerator SyncStartupRoomProfile(string reason, Action<bool> onComplete)
+        {
+            if (ActiveConfig == null) ActiveConfig = AppStartupConfigDto.Default();
+
+            // RoomProfile is the owner of Model / Persona / Line / Scene /
+            // Skin defaults. Sync it before capability mode so Brain loads the
+            // right persona/context pack before the first AR placement event.
+            yield return CallBrainRpc(
+                "applyRoomProfile",
+                BuildRoomProfilePayload(),
+                reason,
+                waitForBrain: true,
+                onComplete: onComplete);
+        }
+
         private string BuildPlacementPayload()
         {
             string timeOfDay = DateTime.Now.Hour < 12
@@ -376,7 +415,22 @@ namespace ParrotApp.Lifecycle
                    + "\"time_of_day\":" + Quote(timeOfDay) + ","
                    + "\"scene_id\":" + Quote(ActiveConfig.scene_id) + ","
                    + "\"workspace_id\":" + Quote(ActiveConfig.workspace_id) + ","
+                   + "\"room_profile_id\":" + Quote(ActiveConfig.room_profile_id) + ","
+                   + "\"model_id\":" + Quote(ActiveConfig.model_id) + ","
+                   + "\"persona_id\":" + Quote(ActiveConfig.persona_id) + ","
+                   + "\"line_id\":" + Quote(ActiveConfig.line_id) + ","
+                   + "\"line_profile_id\":" + Quote(ActiveConfig.line_profile_id) + ","
+                   + "\"experience_mode\":" + Quote(ActiveConfig.experience_mode) + ","
+                   + "\"skin_id\":" + Quote(ActiveConfig.skin_id) + ","
                    + "\"capability_mode\":" + Quote(ActiveConfig.capability_mode)
+                   + "}";
+        }
+
+        private string BuildRoomProfilePayload()
+        {
+            return "{"
+                   + "\"room_profile_id\":" + Quote(ActiveConfig.room_profile_id) + ","
+                   + "\"experience_mode\":" + Quote(ActiveConfig.experience_mode)
                    + "}";
         }
 

@@ -94,7 +94,8 @@ Ner LineB baseline:
 
 - ASR languages: `ja-JP`, `cmn-CN`, `en-US`.
 - TTS language: `ja-JP`.
-- TTS voice: `ja-JP-Neural2-B`.
+- TTS provider/voice: `cartesia.TTS` /
+  `bfd1cc5a-5c3b-4e88-b7be-df9f3ec7e9a5`.
 - Voiceprint policy: `monitor_then_gate`.
 - Echo policy: headphones / isolated route first.
 - Voice-source policy: Ner-inspired test voice only; no official character
@@ -109,8 +110,9 @@ $env:GOOGLE_APPLICATION_CREDENTIALS = "D:\path\to\google-adc-service-account.jso
 $env:GEMINI_TEXT_MODEL = "gemini-2.5-flash"
 $env:GOOGLE_STT_MODEL = "latest_long"
 $env:GOOGLE_STT_LANGUAGES = "cmn-CN,ja-JP,en-US"
-$env:GOOGLE_TTS_LANGUAGE = "ja-JP"
-$env:GOOGLE_TTS_VOICE = "<choose-supported-google-voice>"
+$env:PARROT_LINEB_TTS_PROVIDER = "cartesia"
+$env:CARTESIA_API_KEY = "<cartesia-api-key>"
+$env:PARROT_LINEB_CARTESIA_VOICE_ID = "bfd1cc5a-5c3b-4e88-b7be-df9f3ec7e9a5"
 $env:PARROT_AUDIO_OUTPUT_ROUTE = "headphones"
 $env:PARROT_LINEB_ECHO_HANDLING_MODE = "isolated_route"
 $env:PARROT_LINEB_VOICEPRINT_ENABLED = "1"
@@ -126,9 +128,10 @@ $env:PARROT_LINEB_ECHO_HANDLING_MODE = "voiceprint_gate"
 Notes:
 
 - `GOOGLE_API_KEY` gates the Gemini text LLM.
-- Google ADC gates STT/TTS.
-- `GOOGLE_TTS_VOICE` must be selected from a supported Google Cloud TTS voice
-  list before final device validation.
+- Google ADC gates STT. Cartesia TTS gates on `CARTESIA_API_KEY` and the
+  selected LineProfile voice id.
+- `PARROT_LINEB_CARTESIA_VOICE_ID` overrides the saved profile voice only in
+  the external/private device environment.
 - The current Ner persona is a test persona and must not be treated as an
   official script or voice clone.
 
@@ -417,11 +420,9 @@ Research / implementation decision:
 - Public/community Ner details are sufficient for a test persona direction:
   high-priest, responsible caretaker, gentle surface, strict/perfectionist
   pressure response, and World Tree motif.
-- Google Cloud lists `ja-JP-Neural2-B` as a supported Japanese female Neural2
-  voice. Use it as the first stable LineB baseline because Neural2 is a
-  general-purpose SSML-compatible tier. Chirp3 Japanese voices can be tested
-  later for lower-latency or more expressive conversation once the pipeline
-  handles their control limits.
+- Current Ner validation uses Cartesia as the selectable TTS provider because
+  the user-owned/private voice-design material lives outside Git on ECS.
+  Google TTS remains a fallback baseline through `lineb_google_default`.
 - Do not ingest public voice clips into Git and do not clone a real CV by
   default. Any licensed/custom voice assets must stay in external private test
   storage and be selected by environment/config only.
@@ -567,16 +568,17 @@ Still not complete:
 - Production Ner prefab still needs hands-on Unity assembly and device feel
   tuning.
 - Real ASR/TTS/voiceprint/echo validation still needs user-provided Google
-  credentials, audio route choice, and a device run.
+  STT/Gemini credentials, Cartesia credentials, audio route choice, and a
+  device run.
 - UI asset audit and formal startup/core page implementation are the next
   frontend line after this configuration pass.
 
 User configuration still required before true device validation:
 
 - Google Gemini API key for LineB text generation.
-- Google ADC/service-account credentials for STT/TTS.
-- A supported Google TTS voice, starting from `ja-JP-Neural2-B` unless the
-  user selects another licensed/private voice pipeline.
+- Google ADC/service-account credentials for STT.
+- Cartesia API key and private voice id for the current Ner TTS path; Google
+  TTS can still be tested by selecting `lineb_google_default`.
 - Audio route decision: headphones first, phone speaker only for stress test.
 - Unity runtime config for Castle mint/LiveKit if not already present in
   `Assets/Resources/parrot_config.json`.

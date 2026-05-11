@@ -58,9 +58,15 @@ namespace ParrotApp.Config
         // Room and identity feed token minting. Tokens are fetched at START
         // time instead of being persisted as long-lived app settings.
         public string room_id = "parrot-main";
+        public string room_profile_id = "default";
         public string model_id = "GOSLO_default";
         public string persona_id = "goslo_parrot_default";
         public string pattern_id = "default";
+        public string line_id = "line_a";
+        public string line_profile_id = "linea_gemini_realtime";
+        public string experience_mode = "ar_companion";
+        public string skin_id = "manor";
+        public string[] setting_file_refs = new string[0];
 
         // Capability mode gates microphone publishing, camera publishing,
         // greeting, and action-monitor semantics as one business bundle.
@@ -79,9 +85,17 @@ namespace ParrotApp.Config
         {
             if (string.IsNullOrWhiteSpace(scene_id)) scene_id = "ar_handheld";
             if (string.IsNullOrWhiteSpace(room_id)) room_id = "parrot-main";
+            if (string.IsNullOrWhiteSpace(room_profile_id)) room_profile_id = pattern_id;
+            if (string.IsNullOrWhiteSpace(room_profile_id)) room_profile_id = "default";
             if (string.IsNullOrWhiteSpace(model_id)) model_id = "GOSLO_default";
             if (string.IsNullOrWhiteSpace(persona_id)) persona_id = "goslo_parrot_default";
             if (string.IsNullOrWhiteSpace(pattern_id)) pattern_id = "default";
+            if (string.IsNullOrWhiteSpace(line_id)) line_id = "line_a";
+            if (string.IsNullOrWhiteSpace(line_profile_id))
+                line_profile_id = line_id == "line_b" ? "lineb_google_default" : "linea_gemini_realtime";
+            if (string.IsNullOrWhiteSpace(experience_mode)) experience_mode = "ar_companion";
+            if (string.IsNullOrWhiteSpace(skin_id)) skin_id = "manor";
+            if (setting_file_refs == null) setting_file_refs = new string[0];
             if (string.IsNullOrWhiteSpace(workspace_id)) workspace_id = "mansion_hub";
             capability_mode = AppCapabilityModeNames.Normalize(capability_mode);
         }

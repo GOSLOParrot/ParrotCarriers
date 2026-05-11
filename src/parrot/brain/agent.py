@@ -154,13 +154,10 @@ def _build_session(pipeline: str, config: ParrotConfig) -> AgentSession:
     #
     # Auth note (FINDING-LB-AUTH, Sprint 4 Phase 5+ Line B 2026-05-04):
     #   * google.LLM (Gemini text API)   → uses ``api_key`` (GOOGLE_API_KEY env)
-    #   * google.STT / google.TTS        → use Google Cloud ADC; require
-    #     ``GOOGLE_APPLICATION_CREDENTIALS`` to point at a service account
-    #     JSON with Speech-to-Text + Text-to-Speech roles.
-    # If ADC is unset, livekit-plugins-google will surface the credentials
-    # error at first STT/TTS invocation (after Room connect), not at Session
-    # construction. Surface this fast at boot so misconfigured deployments
-    # do not appear "connected but mute".
+    #   * google.STT                     → uses Google Cloud ADC
+    #   * TTS provider is selected by PARROT_LINEB_TTS_PROVIDER env:
+    #       - "cartesia" → cartesia.TTS (CARTESIA_API_KEY + PARROT_LINEB_CARTESIA_VOICE_ID)
+    #       - default    → google.TTS   (GOOGLE_APPLICATION_CREDENTIALS)
     from livekit.plugins import silero
 
     from parrot.brain.line_profile import active_lineb_runtime_settings
@@ -171,6 +168,11 @@ def _build_session(pipeline: str, config: ParrotConfig) -> AgentSession:
     languages = list(lineb_settings.stt_languages) or ["cmn-CN"]
     tts_voice = lineb_settings.tts_voice
     tts_lang = lineb_settings.tts_language
+    tts_provider = (
+        os.getenv("PARROT_LINEB_TTS_PROVIDER", "").strip()
+        or lineb_settings.tts_provider
+        or "google.TTS"
+    ).lower()
 
     api_key = config.google_api_key or None
     if not api_key:
@@ -178,26 +180,74 @@ def _build_session(pipeline: str, config: ParrotConfig) -> AgentSession:
             "PARROT_LLM_PIPELINE=line_b requires GOOGLE_API_KEY for google.LLM "
             "(Gemini text API)."
         )
-    if not (
-        os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        or os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-    ):
-        logger.warning(
-            "PARROT_LLM_PIPELINE=line_b: GOOGLE_APPLICATION_CREDENTIALS not set — "
-            "google.STT / google.TTS will fail at first invocation. Set ADC to "
-            "a service account JSON with Speech-to-Text + Text-to-Speech roles."
-        )
+
+    if tts_provider == "cartesia" or tts_provider.startswith("cartesia."):
+        tts_plugin = _build_cartesia_tts(tts_lang, profile_voice_id=tts_voice)
+    else:
+        if not (
+            os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            or os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        ):
+            logger.warning(
+                "PARROT_LLM_PIPELINE=line_b: GOOGLE_APPLICATION_CREDENTIALS not set — "
+                "google.STT / google.TTS will fail at first invocation. Set ADC to "
+                "a service account JSON with Speech-to-Text + Text-to-Speech roles."
+            )
+        tts_plugin = google.TTS(language=tts_lang, voice_name=tts_voice)
 
     logger.info(
-        "Brain pipeline=line_b (STT-LLM-TTS): profile=%s llm=%s stt=%s lang=%s tts_voice=%s",
-        lineb_settings.line_profile_id, text_model, stt_model, languages, tts_voice,
+        "Brain pipeline=line_b (STT-LLM-TTS): profile=%s llm=%s stt=%s lang=%s tts=%s",
+        lineb_settings.line_profile_id, text_model, stt_model, languages, tts_provider or "google",
     )
     return AgentSession(
         vad=silero.VAD.load(),
         stt=google.STT(model=stt_model, languages=languages),
         llm=google.LLM(model=text_model, api_key=api_key),
-        tts=google.TTS(language=tts_lang, voice_name=tts_voice),
+        tts=tts_plugin,
     )
+
+
+def _build_cartesia_tts(language: str, profile_voice_id: str = "") -> "Any":
+    """Build a Cartesia TTS plugin for LineB.
+
+    Requires:
+        CARTESIA_API_KEY            — from cartesia.ai dashboard
+        PARROT_LINEB_CARTESIA_VOICE_ID  — voice id returned by Voice Design upload script
+
+    Language hint: Cartesia infers language from text; ``language`` is used for logging only.
+    If PARROT_LINEB_CARTESIA_VOICE_ID is unset, the active LineProfile voice id
+    is used. This keeps RoomSetting as the source of truth for selectable TTS.
+    """
+    try:
+        from livekit.plugins import cartesia as _cartesia  # type: ignore[import]
+    except ImportError as exc:
+        raise RuntimeError(
+            "Cartesia TTS requires: pip install -e '.[line_b_cartesia]'"
+        ) from exc
+
+    cartesia_api_key = os.getenv("CARTESIA_API_KEY", "").strip()
+    if not cartesia_api_key:
+        raise RuntimeError(
+            "PARROT_LINEB_TTS_PROVIDER=cartesia requires CARTESIA_API_KEY. "
+            "Get one from https://cartesia.ai/dashboard."
+        )
+
+    voice_id = os.getenv("PARROT_LINEB_CARTESIA_VOICE_ID", "").strip() or str(profile_voice_id or "").strip()
+    if not voice_id:
+        logger.warning(
+            "PARROT_LINEB_CARTESIA_VOICE_ID is not set — "
+            "Cartesia will use its default voice. "
+            "Run scripts/upload_cartesia_voice.py to upload your samples and get a voice id."
+        )
+
+    logger.info(
+        "LineB Cartesia TTS: voice_id=%s language=%s",
+        voice_id or "(default)", language,
+    )
+    kwargs: dict[str, Any] = {"api_key": cartesia_api_key}
+    if voice_id:
+        kwargs["voice"] = voice_id
+    return _cartesia.TTS(**kwargs)
 
 
 # endregion
@@ -441,7 +491,20 @@ def _attach_menu_rpc(room: "Any") -> None:
         from parrot.brain.app_first_version import AppFirstVersionFacade
 
         payload = _payload(data)
-        draft = payload.get("room_profile") if isinstance(payload.get("room_profile"), dict) else payload
+        # FIX (2026-05-11 audit Round 4, Bug H): same payload-shape warning
+        # as ``applyRoomProfile`` (Round 2 Bug D) and ``saveRoomProfile``.
+        # A typo in the ``room_profile`` wrapper used to silently fall back
+        # to the whole payload, which then ran through RoomProfile.from_json
+        # with all defaults — preview looked plausible but was for an empty
+        # profile, masking real frontend bugs.
+        room_profile = payload.get("room_profile")
+        if not isinstance(room_profile, dict):
+            logger.warning(
+                "previewRoomProfile: payload missing 'room_profile' wrapper; "
+                "treating top-level keys as draft. payload_keys=%s",
+                sorted(payload.keys()),
+            )
+        draft = room_profile if isinstance(room_profile, dict) else payload
         return _dump({"status": "ok", "preview": AppFirstVersionFacade().preview_room_profile(draft)})
 
     @room.local_participant.register_rpc_method("newRoomProfile")
@@ -460,16 +523,46 @@ def _attach_menu_rpc(room: "Any") -> None:
         from parrot.brain.app_first_version import AppFirstVersionFacade
 
         payload = _payload(data)
-        draft = payload.get("room_profile") if isinstance(payload.get("room_profile"), dict) else payload
+        # FIX (2026-05-11 audit Round 4, Bug H): same payload-shape warning
+        # as ``applyRoomProfile`` (Round 2 Bug D). A typo in the wrapper key
+        # used to silently treat the whole payload as a draft, which combined
+        # with the now-fixed Bug G (reserved id guard) could either overwrite
+        # the default preset or save under an unintended id.
+        room_profile = payload.get("room_profile")
+        if not isinstance(room_profile, dict):
+            logger.warning(
+                "saveRoomProfile: payload missing 'room_profile' wrapper; "
+                "treating top-level keys as draft. payload_keys=%s",
+                sorted(payload.keys()),
+            )
+        draft = room_profile if isinstance(room_profile, dict) else payload
         saved = AppFirstVersionFacade().save_room_profile(draft)
-        return _dump({"status": "ok", "saved": saved})
+        # FIX (Bug G): if save_room_profile rejected the id (reserved), the
+        # facade now returns ``status="error"``; mirror that into the RPC
+        # response so Unity sees the failure instead of a generic "ok".
+        rpc_status = "error" if saved.get("status") == "error" else "ok"
+        return _dump({"status": rpc_status, "saved": saved})
 
     @room.local_participant.register_rpc_method("applyRoomProfile")
     async def _apply_room_profile(data: "Any") -> str:
         from parrot.brain.app_first_version import AppFirstVersionFacade
 
         payload = _payload(data)
-        draft_or_id = payload.get("room_profile") or payload.get("room_profile_id") or payload
+        # FIX (2026-05-11 audit, Bug D): tolerate the legacy "send everything
+        # at top level" call shape, but log a warning if the caller didn't
+        # name `room_profile` / `room_profile_id`. Otherwise a typo (e.g.
+        # `roomProfileId` camelCase) silently re-applies DEFAULT_PRESET_ID
+        # and Brain reverts to the default Room while Unity thinks it
+        # applied a new one.
+        room_profile = payload.get("room_profile")
+        room_profile_id = payload.get("room_profile_id")
+        if room_profile is None and not room_profile_id:
+            logger.warning(
+                "applyRoomProfile: payload missing both 'room_profile' and "
+                "'room_profile_id'; falling back to default. payload_keys=%s",
+                sorted(payload.keys()),
+            )
+        draft_or_id = room_profile or room_profile_id or payload
         applied = AppFirstVersionFacade().apply_room_profile(
             draft_or_id,
             experience_mode=payload.get("experience_mode"),
@@ -605,6 +698,92 @@ def _attach_menu_rpc(room: "Any") -> None:
         result = get_workspace_registry().apply_workspace(workspace_id)
         return _dump({"status": "ok" if result.success else "error", "result": result})
 
+    # FIX (2026-05-11 audit Round 4, Gap K): mirror the GOSLO Module canvas
+    # controls (Photo Awareness / Camera mode / XRHand mode) as LiveKit RPC
+    # in addition to the existing HTTP /api/app/awareness, /api/app/camera/mode
+    # and (no http for) xrhand. Menu canvas design (codex_workspace
+    # /design_workspace/unity_ar_app/menu_canvas_external_modules_20260509.md
+    # §6 GOSLO Module) requires backend-owned RPC for these toggles; HTTP
+    # alone is the Web monitor surface, not the production Unity in-band
+    # channel. See ``audit_log_index_20260511.md`` Round 4 §K.
+
+    @room.local_participant.register_rpc_method("setPhotoAwareness")
+    async def _set_photo_awareness(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        policy = str(payload.get("policy") or payload.get("photo_awareness_policy") or "")
+        if not policy:
+            return _dump({
+                "status": "error",
+                "reason": "missing_policy",
+                "accepted_keys": ["policy", "photo_awareness_policy"],
+            })
+        try:
+            ttl = int(payload.get("preview_ttl_seconds", 15 * 60))
+        except (TypeError, ValueError):
+            ttl = 15 * 60
+        try:
+            result = AppFirstVersionFacade().set_photo_awareness(
+                policy,
+                enabled=_payload_bool(payload, "enabled", True),
+                preview_ttl_seconds=ttl,
+            )
+        except ValueError as exc:
+            return _dump({
+                "status": "error",
+                "reason": "invalid_policy",
+                "policy": policy,
+                "detail": str(exc),
+            })
+        return _dump({"status": "ok", "result": result})
+
+    @room.local_participant.register_rpc_method("setCameraMode")
+    async def _set_camera_mode(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        mode = str(payload.get("mode") or payload.get("camera_mode") or "")
+        if not mode:
+            return _dump({
+                "status": "error",
+                "reason": "missing_mode",
+                "accepted_keys": ["mode", "camera_mode"],
+            })
+        try:
+            result = AppFirstVersionFacade().set_camera_mode(mode)
+        except ValueError as exc:
+            return _dump({
+                "status": "error",
+                "reason": "invalid_camera_mode",
+                "mode": mode,
+                "detail": str(exc),
+            })
+        return _dump({"status": "ok", "result": result})
+
+    @room.local_participant.register_rpc_method("setXrHandMode")
+    async def _set_xrhand_mode(data: "Any") -> str:
+        from parrot.brain.app_first_version import AppFirstVersionFacade
+
+        payload = _payload(data)
+        mode = str(payload.get("mode") or payload.get("xrhand_mode") or "")
+        if not mode:
+            return _dump({
+                "status": "error",
+                "reason": "missing_mode",
+                "accepted_keys": ["mode", "xrhand_mode"],
+            })
+        try:
+            result = AppFirstVersionFacade().set_xrhand_mode(mode)
+        except ValueError as exc:
+            return _dump({
+                "status": "error",
+                "reason": "invalid_xrhand_mode",
+                "mode": mode,
+                "detail": str(exc),
+            })
+        return _dump({"status": "ok", "result": result})
+
     @room.local_participant.register_rpc_method("setAppCapabilityMode")
     async def _set_app_capability_mode(data: "Any") -> str:
         from parrot.brain.session_policy import apply_capability_mode
@@ -631,6 +810,7 @@ def _attach_menu_rpc(room: "Any") -> None:
     logger.info(
         "Menu RPC handlers registered: listMenuBlocks, applyMenuSelection, "
         "applyPreset, saveAsPreset, applyWorkspace, setAppCapabilityMode, "
+        "setPhotoAwareness, setCameraMode, setXrHandMode, "
         "getRoomSettingSnapshot, previewRoomProfile, newRoomProfile, "
         "saveRoomProfile, applyRoomProfile, setLineBAudioRoutePolicy, "
         "registerLineBTtsSegment, classifyLineBMicInput"
@@ -730,6 +910,128 @@ def _attach_scene_ready_rpc(
         return _json.dumps({"status": "ok", "scene": scene.value})
 
     logger.info("onSceneReady + onGosloPlaced + setScene RPC handlers registered")
+
+
+def _attach_session_context_watchers(session: AgentSession) -> None:
+    """Refresh system instructions when RoomSetting changes selected context."""
+    from parrot.brain.bb_watchers import WatcherSpec, get_watcher_registry
+    from parrot.shared.parrot_actions import BehaviorMode
+
+    watcher_names = (
+        "session_context.persona",
+        "session_context.mode",
+        "session_context.scene",
+        "session_context.room",
+    )
+    registry = get_watcher_registry()
+    for name in watcher_names:
+        registry.unregister_by_name(name)
+
+    def _read_mode() -> BehaviorMode:
+        try:
+            from parrot.scheduler.blackboard import open_bb_client
+
+            bb = open_bb_client(name="session_context.mode", writer=None)
+            raw = bb.get("global/active_mode")
+        except Exception:
+            raw = None
+        if isinstance(raw, (list, tuple)):
+            mode = BehaviorMode(0)
+            for item in raw:
+                try:
+                    mode |= BehaviorMode[str(item).upper()]
+                except KeyError:
+                    continue
+            return mode or (BehaviorMode.BASE | BehaviorMode.COMPANION)
+        if isinstance(raw, str):
+            mode = BehaviorMode(0)
+            for item in raw.replace(",", "|").split("|"):
+                try:
+                    mode |= BehaviorMode[item.strip().upper()]
+                except KeyError:
+                    continue
+            return mode or (BehaviorMode.BASE | BehaviorMode.COMPANION)
+        return BehaviorMode.BASE | BehaviorMode.COMPANION
+
+    async def _refresh_instructions_async(reason: str) -> None:
+        # FIX (2026-05-11 audit): `update_instructions` lives on ``Agent``
+        # (livekit-agents 1.5+), not on ``AgentSession``. Reach the live agent
+        # via ``session.current_agent`` and ``await`` the coroutine.
+        try:
+            agent = session.current_agent
+        except RuntimeError:
+            logger.debug(
+                "session_context: session not running yet, skipping refresh (%s)",
+                reason,
+            )
+            return
+        updater = getattr(agent, "update_instructions", None)
+        if updater is None:
+            logger.warning(
+                "session_context: Agent.update_instructions unavailable (%s)",
+                reason,
+            )
+            return
+        try:
+            # `update_instructions` is a full-replacement coroutine, so rebuild
+            # the persona + active Room context every time instead of trying
+            # to patch only the changed block.
+            await updater(get_instructions(_read_mode()))
+            logger.info("session_context: refreshed instructions (%s)", reason)
+        except Exception:
+            logger.exception(
+                "session_context: update_instructions failed (%s)", reason,
+            )
+
+    def _refresh_instructions(reason: str) -> None:
+        # Watchers fire on the BB write path (sync). Hop to the event loop so
+        # we can await the async `Agent.update_instructions` without blocking
+        # the Blackboard writer.
+        try:
+            asyncio.create_task(_refresh_instructions_async(reason))
+        except RuntimeError:
+            logger.debug(
+                "session_context: no running loop for instructions refresh (%s)",
+                reason,
+            )
+
+    def _schedule_l15_bootstrap(reason: str) -> None:
+        async def _run() -> None:
+            try:
+                from parrot.brain.session_context_pack import (
+                    bootstrap_active_session_context_to_l15,
+                )
+
+                count = await bootstrap_active_session_context_to_l15()
+                if count:
+                    logger.info(
+                        "session_context: bootstrapped %d setting source(s) to L1.5 (%s)",
+                        count,
+                        reason,
+                    )
+            except Exception:
+                logger.exception("session_context: L1.5 bootstrap failed (%s)", reason)
+
+        try:
+            asyncio.create_task(_run())
+        except RuntimeError:
+            logger.debug("session_context: no running loop for L1.5 bootstrap")
+
+    def _on_context_change(bb_key: str, old: Any, new: Any) -> None:
+        del old, new
+        _refresh_instructions(bb_key)
+        if bb_key == "global/active_room_profile_id":
+            _schedule_l15_bootstrap(bb_key)
+
+    for name, key in (
+        ("session_context.persona", "global/active_persona_id"),
+        ("session_context.mode", "global/active_mode"),
+        ("session_context.scene", "global/active_scene_id"),
+        ("session_context.room", "global/active_room_profile_id"),
+    ):
+        registry.register(WatcherSpec(name=name, bb_key=key, callback=_on_context_change))
+
+    logger.info("session_context: Room/persona/mode/scene watchers attached")
 
 
 @server.rtc_session()
@@ -883,6 +1185,7 @@ async def brain_entrypoint(ctx: agents.JobContext):
 
     from parrot.brain.context_injector import attach_context_injector
     attach_context_injector(session)
+    _attach_session_context_watchers(session)
 
     # Sprint 2 T1+T10: PerceptionSupervisor (Intent-layer autonomous controller)
     # and ModeController (DsgMode → filter enablement cache). Supervisor must
@@ -920,6 +1223,19 @@ async def brain_entrypoint(ctx: agents.JobContext):
             runner._session = session
             await runner.start()
             logger.info("TriggerRunner started with %d triggers", len(runner._triggers))
+            try:
+                from parrot.brain.session_context_pack import (
+                    bootstrap_active_session_context_to_l15,
+                )
+
+                count = await bootstrap_active_session_context_to_l15()
+                if count:
+                    logger.info(
+                        "Session context bootstrap: %d setting source(s) sent to L1.5",
+                        count,
+                    )
+            except Exception:
+                logger.exception("Session context bootstrap failed")
         except Exception:
             logger.warning("L2-B / TriggerRunner boot failed — continuing without triggers")
 
@@ -983,6 +1299,16 @@ async def brain_entrypoint(ctx: agents.JobContext):
 
     @ctx.room.on("disconnected")
     def _on_room_disconnected(*_args) -> None:
+        # TODO (audit 2026-05-11): any new module-level mutable state
+        # (`_dict` / `_list` / `_set` / OrderedDict) declared under
+        # `parrot/brain/**` must add a `reset_*_on_session_end()` helper and
+        # wire it here, alongside the existing reset_refs / lineb_audio_guard
+        # / ecp_state_ingest cleanup. See
+        # `.cursor/memory/architecture/Interface/audit_log_index_20260511.md`
+        # §"Common pattern: module-state needs explicit session-end reset".
+        # Three rounds of audit have all surfaced bugs of this exact shape
+        # (Bugs B / E / F + the older RefBinding fix); treat it as a class
+        # of bug, not three accidents.
         asyncio.ensure_future(_set_goslo_mode("chat"))
         try:
             from parrot.dsg.triggers.runner import get_trigger_runner
@@ -1013,6 +1339,31 @@ async def brain_entrypoint(ctx: agents.JobContext):
                 )
         except Exception:
             logger.exception("RefBinding registry cleanup failed on disconnect")
+        # FIX (2026-05-11 audit, Bug B): drop carry-over LineB TTS segments +
+        # last mic decision so the next session's first user turn can't be
+        # mis-classified as `agent_echo` against the previous session's tail.
+        try:
+            from parrot.brain.lineb_audio_guard import (
+                reset_lineb_audio_guard_on_session_end,
+            )
+            reset_lineb_audio_guard_on_session_end()
+        except Exception:
+            logger.exception("LineB audio guard reset failed on disconnect")
+        # FIX (2026-05-11 audit, Round 3, Bugs E + F):
+        #   E — clear_bb_ecp_state was documented as "called on disconnect"
+        #       but the wire-up was missing; session/ecp_state stayed stale
+        #       across reconnects.
+        #   F — ecp_state_ingest._last_seq carried per-identity sequence
+        #       cursors across sessions; a Publisher restart starting from
+        #       seq=1 made the first _DEDUP_WINDOW (10) packets of the new
+        #       session look like duplicates and they were silently dropped.
+        try:
+            from parrot.brain.ecp_state_ingest import (
+                reset_ecp_state_ingest_on_session_end,
+            )
+            reset_ecp_state_ingest_on_session_end()
+        except Exception:
+            logger.exception("EcpState ingest reset failed on disconnect")
         logger.info("GOSLO mode → chat (room disconnected)")
 
     logger.info("Brain Agent session active in room '%s'", ctx.room.name)

@@ -40,6 +40,14 @@ line_b = [
     # Line B 默认不开 (PARROT_LLM_PIPELINE=line_a 默认); 装这一组即可 env-gate 切换.
     "livekit-plugins-silero>=1.5,<2.0",
 ]
+line_b_cartesia = [
+    # Cartesia TTS alternative for LineB — supports Japanese + Voice Design API.
+    # Use with PARROT_LINEB_TTS_PROVIDER=cartesia and CARTESIA_API_KEY.
+    # Does not require GOOGLE_APPLICATION_CREDENTIALS for TTS.
+    # STT still uses google.STT (keep GOOGLE_APPLICATION_CREDENTIALS for STT).
+    "livekit-plugins-silero>=1.5,<2.0",
+    "livekit-agents[cartesia]>=1.5,<2.0",
+]
 voiceprint = [
     # Optional ECS/private owner-speaker verification for LineB.
     # Raw audio and embeddings stay outside Git; this group only installs the

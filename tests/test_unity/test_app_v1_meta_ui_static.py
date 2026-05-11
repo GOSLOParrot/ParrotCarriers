@@ -7,6 +7,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 UNITY_ROOT = ROOT / "unity" / "ArSpike" / "Assets"
 META_UI = UNITY_ROOT / "Scripts" / "ParrotApp" / "UI" / "AppV1MetaUiController.cs"
+STARTUP_CONFIG = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "Config" / "AppStartupConfigDto.cs"
+)
+STARTUP_FLOW = (
+    UNITY_ROOT / "Scripts" / "ParrotApp" / "Lifecycle" / "AppStartupFlowController.cs"
+)
 PARROT_CONTROLLER = (
     UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "ParrotController.cs"
 )
@@ -49,6 +55,16 @@ def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
     text = META_UI.read_text(encoding="utf-8")
 
     assert "StartupSurface" in text
+    assert "StartupTitleBoard_GosloParrot" in text
+    assert "StartupScenePanel_RoomSettingEntry" in text
+    assert "RoomSettingPanel_StartupProfileEditor" in text
+    assert "StartupModeLever" in text
+    assert "StartupModelSlot_SelectedModel" in text
+    assert "BuildSelectedStartupConfig" in text
+    assert "SelectNerLineBRoomProfile" in text
+    assert "ner_lineb_room" in text
+    assert "lineb_ner_ja_test" in text
+    assert "startupFlow.StartFromConfig(config)" in text
     assert "StartupTransitionSurface" in text
     assert "ToolCabinet_WoodDrawer" in text
     assert "AppV1SettingsDialoguePanel" in text
@@ -98,6 +114,34 @@ def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
     assert "bboxController.PlaceBBox" in text
     assert "bboxController.RemoveBBox" in text
     assert "startupFlow.ReportGosloPlaced()" in text
+
+
+def test_startup_room_setting_selection_syncs_to_brain_before_capability() -> None:
+    config = STARTUP_CONFIG.read_text(encoding="utf-8")
+    flow = STARTUP_FLOW.read_text(encoding="utf-8")
+
+    for field in [
+        "room_profile_id",
+        "line_id",
+        "line_profile_id",
+        "experience_mode",
+        "skin_id",
+        "setting_file_refs",
+    ]:
+        assert f"public string {field}" in config or f"public string[] {field}" in config
+
+    assert "SyncStartupRoomProfile" in flow
+    assert '"applyRoomProfile"' in flow
+    assert "BuildRoomProfilePayload" in flow
+    assert "startup_room_profile" in flow
+    assert "startup_reuse_room_profile" in flow
+    assert "brain_rpc_room_profile_sync_timeout" in flow
+    assert '\\"room_profile_id\\"' in flow
+    assert '\\"line_profile_id\\"' in flow
+    assert '\\"experience_mode\\"' in flow
+    assert '\\"skin_id\\"' in flow
+    assert flow.index('"startup_reuse_room_profile"') < flow.index('"startup_reuse_capability_mode"')
+    assert flow.index('"startup_room_profile"') < flow.index('"startup_capability_mode"')
 
 
 def test_smoke_scene_builder_mounts_meta_ui_and_wires_existing_tools() -> None:

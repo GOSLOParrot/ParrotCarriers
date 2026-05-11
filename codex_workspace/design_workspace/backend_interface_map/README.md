@@ -10,6 +10,7 @@
 | 当前协议字段 / topic / BB key | `.cursor/memory/architecture/protocol_snapshot_p4.md` |
 | Bus 三层通信拓扑 | `.cursor/memory/architecture/bus_v4.md` |
 | 核心接口纪律 | `.cursor/memory/architecture/Interface/INDEX.md` |
+| **接口 bug + 修复 SSOT（3 轮 10 bug）** | **`.cursor/memory/architecture/Interface/audit_log_index_20260511.md`** ← 改 RoomSetting / LineB / ECP / disconnect 前先扫一眼，避免重复踩同型坑 |
 | Brain / Menu / Preset / IntentWorkspace 核心接口 | `.cursor/memory/architecture/backend_interface_refinement_20260507.md` |
 | 用户 idea + 三大真连接现状 | `.cursor/memory/architecture/user_ideas_and_backend_capability_brief_20260509.md` |
 
@@ -20,8 +21,20 @@
 3. 涉及菜单画布 / Persona / Preset / IntentWorkspace 时，看 `backend_interface_refinement_20260507.md`。
 4. 涉及 Obsidian / Google / PhotoNode / L1.5 桶时，看 `user_ideas_and_backend_capability_brief_20260509.md` 和 `dsg/workspace_index.md`。
 5. 需要写业务接口时，用 `business_interface_workflow.md` 的 A-D 模板。
+6. **改 RoomSetting / LineB / ECP / disconnect 路径前先扫 `audit_log_index_20260511.md`**：3 轮 10 bug 已修复 + 共性模式（module-level mutable state 必须在 `_on_room_disconnected` 里 reset）已总结，避免重复踩坑。
 - 菜单画布外部模块入口：`menu_canvas_external_modules_business_flow.md`。
 - 第一版 App 统一业务 facade：`app_v1_core_business_interface_coverage_20260510.md`。
+
+## 共性纪律（2026-05-11 audit 三轮总结）
+
+> **任何在 `parrot/brain/**` 里声明的 module-level mutable state（`_dict` /
+> `_list` / `_set` / `OrderedDict`）必须在同一 PR 里同时：**
+> 1. 添加 `reset_*_on_session_end()` 函数
+> 2. 在 `agent.py::_on_room_disconnected` 完成 wire-up
+>
+> 否则就是潜伏 dead code，下次 disconnect 时旧 session 的尾巴污染下一个
+> session 的开头。本仓库已经在 RefBinding / LineB audio guard / EcpState
+> ingest 三处踩过这个坑（详见 `audit_log_index_20260511.md` §3）。
 
 ## 代码入口速查
 

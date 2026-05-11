@@ -143,6 +143,7 @@ def list_lines() -> tuple[LineSummary, ...]:
             "line_profile_id": line_b_profile.line_profile_id,
             "asr_profile_id": line_b_profile.asr.asr_profile_id,
             "tts_profile_id": line_b_profile.tts.tts_profile_id,
+            "tts_provider": line_b_profile.tts.provider,
             "voiceprint_profile_id": line_b_profile.voiceprint.voiceprint_profile_id,
             "echo_policy_id": line_b_profile.echo.echo_policy_id,
             "llm_model": line_b_profile.llm.model,
@@ -204,10 +205,20 @@ def _line_b_components(profile: LineProfile) -> tuple[ComponentReadiness, ...]:
     stt_languages = ",".join(profile.asr.languages)
     tts_voice = profile.tts.voice_name
     tts_language = profile.tts.language
+    tts_provider = profile.tts.provider
     text_model = profile.llm.model
     vad_ready = importlib.util.find_spec("livekit.plugins.silero") is not None
     asr_profile_ready = bool(stt_model and profile.asr.languages)
     tts_profile_ready = bool(tts_voice and tts_language)
+    cartesia_tts = _is_cartesia_tts(tts_provider)
+    cartesia_key_ready = bool(os.getenv("CARTESIA_API_KEY"))
+    cartesia_plugin_ready = (
+        importlib.util.find_spec("livekit.plugins.cartesia") is not None
+        if cartesia_tts
+        else True
+    )
+    tts_auth_ready = cartesia_key_ready if cartesia_tts else adc_state == "ready"
+    tts_ready = tts_profile_ready and tts_auth_ready and cartesia_plugin_ready
 
     api_key = ComponentReadiness(
         "google_api_key",
@@ -243,17 +254,17 @@ def _line_b_components(profile: LineProfile) -> tuple[ComponentReadiness, ...]:
     )
     tts = ComponentReadiness(
         "tts",
-        "ready" if adc_state == "ready" and tts_profile_ready else "blocked",
-        "ok" if adc_state == "ready" and tts_profile_ready else "error",
-        "Google TTS can use ADC and selected TTS voice."
-        if adc_state == "ready" and tts_profile_ready
-        else "Google TTS needs ADC plus tts.voice_name/language.",
+        "ready" if tts_ready else "blocked",
+        "ok" if tts_ready else "error",
+        _tts_summary(profile, tts_profile_ready, tts_auth_ready, cartesia_plugin_ready),
         {
-            "provider": profile.tts.provider,
+            "provider": tts_provider,
             "voice": tts_voice,
             "language": tts_language,
             "tts_profile_id": profile.tts.tts_profile_id,
             "style_note": profile.tts.style_note,
+            "cartesia_api_key": "ready" if cartesia_key_ready else "missing",
+            "cartesia_plugin": "ready" if cartesia_plugin_ready else "missing",
         },
     )
     vad = ComponentReadiness(
@@ -301,6 +312,33 @@ def _line_b_overall(
             "LineB is configured, but owner voiceprint verification still needs enrollment/runtime setup.",
         )
     return ("ready", "ok", "LineB STT/LLM/TTS environment looks configured.")
+
+
+def _is_cartesia_tts(provider: str) -> bool:
+    text = str(provider or "").strip().lower()
+    return text == "cartesia" or text.startswith("cartesia.")
+
+
+def _tts_summary(
+    profile: LineProfile,
+    profile_ready: bool,
+    auth_ready: bool,
+    plugin_ready: bool,
+) -> str:
+    if _is_cartesia_tts(profile.tts.provider):
+        if profile_ready and auth_ready and plugin_ready:
+            return "Cartesia TTS can use the selected voice."
+        missing = []
+        if not profile_ready:
+            missing.append("tts.voice_name/language")
+        if not auth_ready:
+            missing.append("CARTESIA_API_KEY")
+        if not plugin_ready:
+            missing.append("livekit.plugins.cartesia")
+        return "Cartesia TTS needs " + ", ".join(missing) + "."
+    if profile_ready and auth_ready:
+        return "Google TTS can use ADC and selected TTS voice."
+    return "Google TTS needs ADC plus tts.voice_name/language."
 
 
 def _voiceprint_verifier_component(profile: LineProfile) -> ComponentReadiness:

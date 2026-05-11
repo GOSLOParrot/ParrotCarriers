@@ -51,6 +51,7 @@ Keep these as reference, not as a maze:
 | `.cursor/memory/architecture/ar_app_flow_ui_design.md` | App flow and UI baseline, including the original user wording. |
 | `.cursor/memory/architecture/frontend_workspace_boundary.md` | Two hard rules for shared Cursor/Codex work. |
 | `.cursor/memory/architecture/Interface/INDEX.md` | Interface discipline: core vs business, A-D template. |
+| **`.cursor/memory/architecture/Interface/audit_log_index_20260511.md`** | **3 轮 10 bug 审计/修复 SSOT — 改 RoomSetting/LineB/ECP/disconnect 路径前必读** |
 | `.cursor/memory/architecture/app_completion_master_audit_20260507.md` | 8 scenario audit and pixel UI asset inventory. |
 | `unity/ArSpike/Assets/Scripts/ParrotApp/MIGRATION.md` | Unity implementation status and ParrotDev vs ArSpike boundary. |
 | `src/scripts/start_nanobot_worker.py` | Current Nanobot gateway setup path. |

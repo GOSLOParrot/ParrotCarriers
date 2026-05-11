@@ -29,7 +29,7 @@ How TODO decisions:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Sequence
 
 from parrot.brain.model_manifest_registry import get_model_manifest_registry
@@ -290,10 +290,27 @@ class MenuRegistry:
 
         Synthesises an ad-hoc Preset (preset_id="ephemeral") and routes
         through PresetLoader.apply so the BB single-writer contract holds.
+
+        FIX (2026-05-11 audit Round 4, Bug I): when the requested
+        ``workspace_id`` is unknown to ``WorkspaceRegistry``, we still fall
+        back to the default workspace (existing UX choice), but the
+        substitution is now surfaced through ``PresetApplyResult.warnings``
+        so the menu canvas can show "your workspace was substituted to X"
+        instead of believing its requested workspace is now active.
+        Verified empirically (audit Round 4 §I): requesting
+        ``workspace_id="nonexistent_xyz"`` used to return ``success=True``
+        with ``mansion_hub`` silently stored to BB.
         """
-        workspace_id = selection.workspace_id or DEFAULT_WORKSPACE_ID
+        requested_workspace_id = selection.workspace_id or DEFAULT_WORKSPACE_ID
+        workspace_id = requested_workspace_id
+        warnings: tuple[str, ...] = ()
         if get_workspace_registry().get(workspace_id) is None:
-            workspace_id = get_workspace_registry().fallback_workspace().workspace_id
+            fallback = get_workspace_registry().fallback_workspace().workspace_id
+            warnings = (
+                f"workspace_id={requested_workspace_id!r} not registered; "
+                f"substituted to fallback {fallback!r}",
+            )
+            workspace_id = fallback
 
         preset = Preset(
             preset_id="ephemeral",
@@ -304,7 +321,10 @@ class MenuRegistry:
             active_workspace_id=workspace_id,
             metadata=dict(selection.metadata),
         )
-        return get_preset_loader().apply(preset)
+        result = get_preset_loader().apply(preset)
+        if warnings:
+            result = replace(result, warnings=warnings + result.warnings)
+        return result
 
     def apply_preset_id(self, preset_id: str) -> PresetApplyResult:
         """Convenience: load by id then apply."""

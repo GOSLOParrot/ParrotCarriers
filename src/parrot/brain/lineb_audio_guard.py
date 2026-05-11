@@ -256,6 +256,26 @@ def latest_mic_decision() -> MicInputDecision | None:
 
 
 def reset_lineb_audio_guard_for_test() -> None:
+    """Test hook — clear all process-global LineB audio-guard state."""
+    global _last_decision
+    _recent_segments.clear()
+    _last_decision = None
+
+
+def reset_lineb_audio_guard_on_session_end() -> None:
+    """Drop carry-over TTS segments + last decision when a Room disconnects.
+
+    FIX (2026-05-11 audit, Bug B): ``_recent_segments`` and ``_last_decision``
+    are module-level mutable state. Without this hook, on a quick
+    disconnect→reconnect cycle (or a back-to-back room job in the same Brain
+    process) the previous session's TTS segment can still be inside the
+    ``DEFAULT_ECHO_WINDOW_S`` window when the next user speaks, and
+    ``classify_mic_input`` would tag the very first user turn of the new
+    session as ``agent_echo`` / ``uncertain``.
+
+    Distinct name from the test-only reset so callers can grep for the
+    runtime invariant.
+    """
     global _last_decision
     _recent_segments.clear()
     _last_decision = None
@@ -349,6 +369,12 @@ def _write_bb(key: str, value: Any) -> None:
 
 
 def _matching_segment(observed_at: float, duration_s: float) -> TtsSegment | None:
+    # TODO (audit Round 2 §B, 2026-05-11): prune deque entries whose
+    # ``expected_end_at + DEFAULT_ECHO_WINDOW_S`` is older than ``observed_at``
+    # at the head of the loop instead of just iterating past them. Pure
+    # optimisation — current behaviour is correct, only inefficient when the
+    # 32-slot deque is mostly stale TTS segments. Defer until profiling shows
+    # it on a hot path.
     end = observed_at + max(0.0, duration_s)
     for segment in reversed(_recent_segments):
         window_start = segment.started_at - DEFAULT_ECHO_WINDOW_S
@@ -364,6 +390,15 @@ def _score(
     echo_score: float | None,
     asr_text: str = "",
 ) -> float:
+    # TODO (audit Round 2 §A, 2026-05-11): the unconditional ``scores.append(0.5)``
+    # below ensures any mic input overlapping a recent TTS segment scores >= 0.5,
+    # which keeps it out of the ``noise`` branch but routes it to ``uncertain``
+    # when voiceprint is OFF — agent.py then drops the user turn for the rest
+    # of the ``DEFAULT_ECHO_WINDOW_S`` (1.25s) tail. Without owner voiceprint
+    # there's no clean way to distinguish user-during-TTS from echo.
+    # Action when this becomes painful: surface an explicit
+    # ``cooldown_until_ts`` in ``session/lineb_voice_activity`` so Unity can
+    # grey-out the mic button instead of silently swallowing the input.
     scores: list[float] = []
     if echo_score is not None:
         scores.append(max(0.0, min(1.0, _float_or_default(echo_score, 0.0))))
@@ -557,4 +592,5 @@ __all__ = [
     "recent_tts_segments",
     "register_tts_segment",
     "reset_lineb_audio_guard_for_test",
+    "reset_lineb_audio_guard_on_session_end",
 ]

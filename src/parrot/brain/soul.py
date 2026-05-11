@@ -96,7 +96,21 @@ def get_instructions(mode: BehaviorMode | None = None) -> str:
             DEFAULT_PERSONA_ID,
         )
         return ""
-    return instructions.text
+    parts = [instructions.text]
+    try:
+        from parrot.brain.session_context_pack import (
+            load_active_session_context_bundle,
+        )
+
+        # Room session context is appended after persona instructions. That
+        # order is deliberate: persona stays the behavioral contract, while
+        # Room files supply selected world/scene/action-manual context.
+        bundle = load_active_session_context_bundle()
+        if bundle.llm_prompt_block:
+            parts.append(bundle.llm_prompt_block)
+    except Exception:
+        logger.exception("soul: failed to append session context pack")
+    return "\n\n".join(part for part in parts if part)
 
 
 def get_persona_instructions(

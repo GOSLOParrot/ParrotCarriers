@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
 using ParrotApp.Parrot;
@@ -651,3 +652,4 @@ namespace ParrotApp.NerTuning
         }
     }
 }
+#endif

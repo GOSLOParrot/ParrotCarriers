@@ -42,11 +42,12 @@ namespace ParrotApp.UI
         [SerializeField] private Sprite filledPaperNoteSprite;
         [SerializeField] private Sprite nekoClawSprite;
 
-        private const float ReferenceWidth = 1080f;
-        private const float ReferenceHeight = 1920f;
+        private const float ReferenceWidth = 1920f;
+        private const float ReferenceHeight = 864f;
 
         private Canvas _canvas;
         private RectTransform _startupSurface;
+        private RectTransform _roomSettingPanel;
         private RectTransform _transitionSurface;
         private RectTransform _mainSurface;
         private RectTransform _toolDrawer;
@@ -67,6 +68,10 @@ namespace ParrotApp.UI
         private RectTransform _bboxOverlay;
         private RectTransform _bboxResizeHandle;
         private Text _startupStatus;
+        private Text _startupRoomText;
+        private Text _startupSelectionText;
+        private Text _startupModeText;
+        private Text _roomSettingStatus;
         private Text _transitionText;
         private Text _hudText;
         private Text _settingsStatus;
@@ -94,6 +99,7 @@ namespace ParrotApp.UI
         private bool _magnifierOpen;
         private bool _magnifierSettingsOpen;
         private bool _bboxOpen;
+        private bool _roomSettingOpen;
         private bool _gosloPlaced;
         private bool _paperNoteSelected;
         private bool _parrotWalking;
@@ -109,6 +115,17 @@ namespace ParrotApp.UI
         private Vector2 _paperInboxPosition;
         private Vector2 _parrotWalkInput;
         private string _capabilityMode = AppCapabilityModeNames.FullARCompanion;
+        private string _activeRoomProfileId = "default";
+        private string _activeRoomDisplayName = "Default GOSLO Room";
+        private string _activeModelId = "GOSLO_default";
+        private string _activePersonaId = "goslo_parrot_default";
+        private string _activeLineId = "line_a";
+        private string _activeLineProfileId = "linea_gemini_realtime";
+        private string _activeSceneId = "ar_handheld";
+        private string _activeSkinId = "manor";
+        private string _activeWorkspaceId = "mansion_hub";
+        private string _activeLiveKitRoomId = "parrot-main";
+        private string _activeExperienceMode = "ar_companion";
         private string _dialogueState = "waiting_for_placement";
         private string _awarenessMode = "AWARE_SILENT";
         private string _cameraMode = "off";
@@ -119,6 +136,7 @@ namespace ParrotApp.UI
         private string _activePaperKind = "system_popup";
         private string _activePaperState = "inbox";
         private readonly string[] _cameraFilters = { "Clear", "Warm", "Noir", "Soft" };
+        private readonly string[] _startupExperienceModes = { "ar_companion", "2d_hall", "room_only" };
         private readonly List<string> _localDocuments = new();
         private readonly List<string> _trashDocuments = new();
 
@@ -198,19 +216,86 @@ namespace ParrotApp.UI
             var surface = CreatePanel(
                 "StartupSurface",
                 _canvas.transform,
-                new Color(0.04f, 0.045f, 0.06f, 0.96f));
+                new Color(0.055f, 0.049f, 0.036f, 0.97f));
             Stretch(surface, Vector2.zero, Vector2.zero);
 
-            var title = CreateText("StartupTitle", surface, "GOSLO PARROT", 44, TextAnchor.MiddleCenter);
-            Anchor(title.rectTransform, CenterTop(), CenterTop(), CenterTop(), new Vector2(0, -220), new Vector2(620, 90));
+            var modelSlot = CreatePanel("StartupModelSlot_SelectedModel", surface, new Color(0.12f, 0.10f, 0.075f, 0.88f));
+            Anchor(modelSlot, Center(), Center(), Center(), new Vector2(-410, 18), new Vector2(520, 610));
+            var modelOutline = modelSlot.gameObject.AddComponent<Outline>();
+            modelOutline.effectColor = new Color(0.94f, 0.78f, 0.42f, 0.55f);
+            modelOutline.effectDistance = new Vector2(3, 3);
+            var modelLabel = CreateText("StartupModelSlotLabel", modelSlot, "MODEL\nGOSLO", 42, TextAnchor.MiddleCenter);
+            Stretch(modelLabel.rectTransform, new Vector2(24, 24), new Vector2(-24, -24));
+
+            var titlePanel = CreatePanel("StartupTitleBoard_GosloParrot", surface, new Color(0.18f, 0.13f, 0.075f, 0.92f), woodDrawerSprite);
+            Anchor(titlePanel, CenterTop(), CenterTop(), CenterTop(), new Vector2(0, -34), new Vector2(540, 154));
+            var title = CreateText("StartupTitle", titlePanel, "GOSLO\nParrot", 44, TextAnchor.MiddleCenter);
+            Stretch(title.rectTransform, new Vector2(18, 12), new Vector2(-18, -12));
 
             var subtitle = CreateText(
                 "StartupSubtitle",
                 surface,
-                "Mansion AR / App V1",
+                "App V1 / selectable RoomProfile startup",
                 22,
                 TextAnchor.MiddleCenter);
-            Anchor(subtitle.rectTransform, CenterTop(), CenterTop(), CenterTop(), new Vector2(0, -294), new Vector2(520, 48));
+            Anchor(subtitle.rectTransform, CenterTop(), CenterTop(), CenterTop(), new Vector2(0, -188), new Vector2(760, 44));
+
+            var scenePanel = CreatePanel("StartupScenePanel_RoomSettingEntry", surface, new Color(0.15f, 0.105f, 0.07f, 0.94f), woodDrawerSprite);
+            Anchor(scenePanel, BottomLeft(), BottomLeft(), BottomLeft(), new Vector2(42, 44), new Vector2(396, 176));
+            var sceneTitle = CreateText("StartupSceneTitle", scenePanel, "SCENE", 28, TextAnchor.MiddleCenter);
+            Anchor(sceneTitle.rectTransform, CenterTop(), CenterTop(), CenterTop(), new Vector2(0, -26), new Vector2(340, 48));
+            var roomButton = AddCameraHudButton(
+                scenePanel,
+                "Room Setting >",
+                "StartupRoomSettingButton",
+                CenterTop(),
+                new Vector2(0, -86),
+                new Vector2(248, 42),
+                ToggleRoomSetting);
+            roomButton.gameObject.name = "StartupRoomSettingButton";
+
+            var startPanel = CreatePanel("StartupStartPanel", surface, new Color(0.17f, 0.12f, 0.075f, 0.94f), woodDrawerSprite);
+            Anchor(startPanel, BottomRight(), BottomRight(), BottomRight(), new Vector2(-46, 44), new Vector2(358, 206));
+            var startButton = AddCameraHudButton(
+                startPanel,
+                "START",
+                "StartupStartButton",
+                CenterTop(),
+                new Vector2(0, -38),
+                new Vector2(220, 70),
+                StartArFlow);
+            startButton.gameObject.name = "StartupStartButton";
+            var localPreviewButton = AddCameraHudButton(
+                startPanel,
+                "LOCAL PREVIEW",
+                "StartupLocalPreviewButton",
+                CenterTop(),
+                new Vector2(0, -112),
+                new Vector2(220, 34),
+                StartLocalPreview);
+            localPreviewButton.gameObject.name = "StartupLocalPreviewButton";
+
+            var modeLever = CreatePanel("StartupModeLever", startPanel, new Color(0.035f, 0.034f, 0.03f, 0.88f));
+            Anchor(modeLever, CenterBottom(), CenterBottom(), CenterBottom(), new Vector2(0, 20), new Vector2(268, 38));
+            _startupModeText = CreateText("StartupModeLeverLabel", modeLever, "", 15, TextAnchor.MiddleCenter);
+            Stretch(_startupModeText.rectTransform, new Vector2(8, 4), new Vector2(-8, -4));
+            AddEvent(modeLever.gameObject, EventTriggerType.PointerClick, _ => CycleStartupExperienceMode());
+
+            _startupSelectionText = CreateText(
+                "StartupSelectionSummary",
+                surface,
+                "",
+                18,
+                TextAnchor.UpperLeft);
+            Anchor(_startupSelectionText.rectTransform, TopRight(), TopRight(), TopRight(), new Vector2(-42, -262), new Vector2(520, 236));
+
+            _startupRoomText = CreateText(
+                "StartupRoomSummary",
+                surface,
+                "",
+                17,
+                TextAnchor.UpperCenter);
+            Anchor(_startupRoomText.rectTransform, CenterBottom(), CenterBottom(), CenterBottom(), new Vector2(0, 54), new Vector2(760, 96));
 
             _startupStatus = CreateText(
                 "StartupStatus",
@@ -218,13 +303,12 @@ namespace ParrotApp.UI
                 "",
                 18,
                 TextAnchor.MiddleCenter);
-            Anchor(_startupStatus.rectTransform, CenterTop(), CenterTop(), CenterTop(), new Vector2(0, -388), new Vector2(720, 96));
+            Anchor(_startupStatus.rectTransform, CenterTop(), CenterTop(), CenterTop(), new Vector2(0, -244), new Vector2(720, 70));
 
-            AddSurfaceButton(surface, "START AR", new Vector2(0, -520), StartArFlow);
-            AddSurfaceButton(surface, "LOCAL PREVIEW", new Vector2(0, -590), StartLocalPreview);
-            AddSurfaceButton(surface, "SILENT SESSION", new Vector2(-170, -676), () => ApplyCapability("SessionOnlySilent"));
-            AddSurfaceButton(surface, "VOICE ONLY", new Vector2(0, -676), () => ApplyCapability("VoiceOnlyNoVideo"));
-            AddSurfaceButton(surface, "FULL AR", new Vector2(170, -676), () => ApplyCapability("FullARCompanion"));
+            AddSurfaceButton(surface, "START AR", new Vector2(0, -520), StartArFlow).gameObject.SetActive(false);
+            AddSurfaceButton(surface, "SILENT SESSION", new Vector2(-170, -676), () => ApplyCapability("SessionOnlySilent")).gameObject.SetActive(false);
+            AddSurfaceButton(surface, "VOICE ONLY", new Vector2(0, -676), () => ApplyCapability("VoiceOnlyNoVideo")).gameObject.SetActive(false);
+            AddSurfaceButton(surface, "FULL AR", new Vector2(170, -676), () => ApplyCapability("FullARCompanion")).gameObject.SetActive(false);
 
             var footer = CreateText(
                 "StartupFooter",
@@ -232,8 +316,74 @@ namespace ParrotApp.UI
                 "Connection, permissions, token mint, and AR readiness stay visible here.",
                 16,
                 TextAnchor.MiddleCenter);
-            Anchor(footer.rectTransform, CenterBottom(), CenterBottom(), CenterBottom(), new Vector2(0, 118), new Vector2(760, 60));
+            Anchor(footer.rectTransform, CenterBottom(), CenterBottom(), CenterBottom(), new Vector2(0, 20), new Vector2(760, 36));
+
+            _roomSettingPanel = BuildStartupRoomSettingPanel(surface);
+            _roomSettingPanel.gameObject.SetActive(false);
+            RefreshStartupSelections();
             return surface;
+        }
+
+        private RectTransform BuildStartupRoomSettingPanel(RectTransform parent)
+        {
+            var panel = CreatePanel("RoomSettingPanel_StartupProfileEditor", parent, new Color(0.055f, 0.052f, 0.044f, 0.96f));
+            Anchor(panel, Center(), Center(), Center(), new Vector2(430, 12), new Vector2(760, 520));
+            var outline = panel.gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color(0.94f, 0.78f, 0.42f, 0.62f);
+            outline.effectDistance = new Vector2(3, 3);
+
+            var title = CreateText("RoomSettingTitle", panel, "Room Setting", 30, TextAnchor.MiddleLeft);
+            Anchor(title.rectTransform, TopLeft(), TopLeft(), TopLeft(), new Vector2(34, -30), new Vector2(360, 48));
+            AddCornerButton(panel, "x", new Vector2(-28, -26), ToggleRoomSetting);
+
+            var saveNew = AddCameraHudButton(
+                panel,
+                "New",
+                "RoomSettingNewRoomButton",
+                TopRight(),
+                new Vector2(-176, -28),
+                new Vector2(86, 34),
+                () => ShowStartup("New Room draft placeholder. Backend save/new RPC is already exposed."));
+            saveNew.gameObject.name = "RoomSettingNewRoomButton";
+            var save = AddCameraHudButton(
+                panel,
+                "Save",
+                "RoomSettingSaveRoomButton",
+                TopRight(),
+                new Vector2(-84, -28),
+                new Vector2(86, 34),
+                () => ShowStartup("Save Room placeholder. Current selection will START through applyRoomProfile."));
+            save.gameObject.name = "RoomSettingSaveRoomButton";
+
+            var presetLabel = CreateText("RoomSettingPresetLabel", panel, "Preset", 18, TextAnchor.MiddleLeft);
+            Anchor(presetLabel.rectTransform, TopLeft(), TopLeft(), TopLeft(), new Vector2(36, -72), new Vector2(220, 30));
+            var defaultButton = AddCameraHudButton(panel, "GOSLO", "RoomSettingPresetDefault", TopLeft(), new Vector2(36, -104), new Vector2(132, 40), SelectDefaultRoomProfile);
+            defaultButton.gameObject.name = "RoomSettingPresetDefault";
+            var nerButton = AddCameraHudButton(panel, "Ner LineB", "RoomSettingPresetNerLineB", TopLeft(), new Vector2(178, -104), new Vector2(156, 40), SelectNerLineBRoomProfile);
+            nerButton.gameObject.name = "RoomSettingPresetNerLineB";
+
+            AddCameraHudButton(panel, "Model", "RoomSettingAxisModel", TopLeft(), new Vector2(36, -176), new Vector2(104, 38), ToggleStartupModel);
+            AddCameraHudButton(panel, "Room", "RoomSettingAxisRoom", TopLeft(), new Vector2(150, -176), new Vector2(104, 38), ToggleStartupRoomProfile);
+            AddCameraHudButton(panel, "Persona", "RoomSettingAxisPersona", TopLeft(), new Vector2(264, -176), new Vector2(122, 38), ToggleStartupPersona);
+            AddCameraHudButton(panel, "Line", "RoomSettingAxisLine", TopLeft(), new Vector2(396, -176), new Vector2(104, 38), ToggleStartupLine);
+            AddCameraHudButton(panel, "Scene", "RoomSettingAxisScene", TopLeft(), new Vector2(510, -176), new Vector2(104, 38), ToggleStartupScene);
+
+            AddCameraHudButton(panel, "Silent", "RoomSettingCapabilitySilent", TopLeft(), new Vector2(36, -242), new Vector2(106, 36), () => ApplyCapability(AppCapabilityModeNames.SessionOnlySilent));
+            AddCameraHudButton(panel, "Voice", "RoomSettingCapabilityVoice", TopLeft(), new Vector2(152, -242), new Vector2(106, 36), () => ApplyCapability(AppCapabilityModeNames.VoiceOnlyNoVideo));
+            AddCameraHudButton(panel, "Full AR", "RoomSettingCapabilityFullAR", TopLeft(), new Vector2(268, -242), new Vector2(118, 36), () => ApplyCapability(AppCapabilityModeNames.FullARCompanion));
+            AddCameraHudButton(panel, "Mode", "RoomSettingExperienceModeLever", TopLeft(), new Vector2(396, -242), new Vector2(118, 36), CycleStartupExperienceMode);
+
+            _roomSettingStatus = CreateText("RoomSettingStatus", panel, "", 16, TextAnchor.UpperLeft);
+            Anchor(_roomSettingStatus.rectTransform, TopLeft(), TopLeft(), TopLeft(), new Vector2(36, -310), new Vector2(672, 166));
+
+            var hint = CreateText(
+                "RoomSettingConflictHint",
+                panel,
+                "Model-specific abilities are gated by manifest capabilities. Ner disables fly/perch until its controller declares them.",
+                14,
+                TextAnchor.LowerLeft);
+            Anchor(hint.rectTransform, BottomLeft(), BottomLeft(), BottomLeft(), new Vector2(36, 18), new Vector2(680, 58));
+            return panel;
         }
 
         private RectTransform BuildTransitionSurface()
@@ -1054,6 +1204,188 @@ namespace ParrotApp.UI
             _parrotWalkLabel.text = "WALK\n" + state;
         }
 
+        private void ToggleRoomSetting()
+        {
+            _roomSettingOpen = !_roomSettingOpen;
+            if (_roomSettingPanel != null) _roomSettingPanel.gameObject.SetActive(_roomSettingOpen);
+            RefreshStartupSelections();
+        }
+
+        private void SelectDefaultRoomProfile()
+        {
+            _activeRoomProfileId = "default";
+            _activeRoomDisplayName = "Default GOSLO Room";
+            _activeModelId = "GOSLO_default";
+            _activePersonaId = "goslo_parrot_default";
+            _activeLineId = "line_a";
+            _activeLineProfileId = "linea_gemini_realtime";
+            _activeSceneId = "ar_handheld";
+            _activeSkinId = "manor";
+            _activeWorkspaceId = "mansion_hub";
+            _activeLiveKitRoomId = "parrot-main";
+            _activeExperienceMode = "ar_companion";
+            RefreshStartupSelections();
+        }
+
+        private void SelectNerLineBRoomProfile()
+        {
+            _activeRoomProfileId = "ner_lineb_room";
+            _activeRoomDisplayName = "Ner LineB Test Room";
+            _activeModelId = "ner_skin2";
+            _activePersonaId = "ner_companion";
+            _activeLineId = "line_b";
+            _activeLineProfileId = "lineb_ner_ja_test";
+            _activeSceneId = "ar_handheld";
+            _activeSkinId = "ner_mochi_room_v0";
+            _activeWorkspaceId = "mansion_hub";
+            _activeLiveKitRoomId = "parrot-main";
+            _activeExperienceMode = "ar_companion";
+            RefreshStartupSelections();
+        }
+
+        private void ToggleStartupModel()
+        {
+            if (_activeModelId == "ner_skin2")
+            {
+                _activeModelId = "GOSLO_default";
+                if (_activePersonaId == "ner_companion") _activePersonaId = "goslo_parrot_default";
+            }
+            else
+            {
+                _activeModelId = "ner_skin2";
+                _activePersonaId = "ner_companion";
+                _activeSkinId = "ner_mochi_room_v0";
+            }
+            _activeRoomProfileId = _activeModelId == "ner_skin2" ? "ner_lineb_room" : "default";
+            _activeRoomDisplayName = _activeModelId == "ner_skin2" ? "Ner LineB Test Room" : "Default GOSLO Room";
+            RefreshStartupSelections();
+        }
+
+        private void ToggleStartupRoomProfile()
+        {
+            if (_activeRoomProfileId == "ner_lineb_room") SelectDefaultRoomProfile();
+            else SelectNerLineBRoomProfile();
+        }
+
+        private void ToggleStartupPersona()
+        {
+            _activePersonaId = _activePersonaId == "ner_companion"
+                ? "goslo_parrot_default"
+                : "ner_companion";
+            if (_activePersonaId == "ner_companion")
+            {
+                _activeModelId = "ner_skin2";
+                _activeRoomProfileId = "ner_lineb_room";
+                _activeRoomDisplayName = "Ner LineB Test Room";
+                _activeSkinId = "ner_mochi_room_v0";
+            }
+            RefreshStartupSelections();
+        }
+
+        private void ToggleStartupLine()
+        {
+            if (_activeLineId == "line_b")
+            {
+                _activeLineId = "line_a";
+                _activeLineProfileId = "linea_gemini_realtime";
+            }
+            else
+            {
+                _activeLineId = "line_b";
+                _activeLineProfileId = _activeModelId == "ner_skin2"
+                    ? "lineb_ner_ja_test"
+                    : "lineb_google_default";
+            }
+            RefreshStartupSelections();
+        }
+
+        private void ToggleStartupScene()
+        {
+            _activeSceneId = _activeSceneId == "ar_handheld" ? "desktop_preview" : "ar_handheld";
+            if (_activeSceneId == "desktop_preview" && _activeExperienceMode == "ar_companion")
+                _activeExperienceMode = "2d_hall";
+            RefreshStartupSelections();
+        }
+
+        private void CycleStartupExperienceMode()
+        {
+            int index = 0;
+            for (int i = 0; i < _startupExperienceModes.Length; i++)
+            {
+                if (_startupExperienceModes[i] == _activeExperienceMode)
+                {
+                    index = i;
+                    break;
+                }
+            }
+            _activeExperienceMode = _startupExperienceModes[(index + 1) % _startupExperienceModes.Length];
+            _activeWorkspaceId = _activeExperienceMode == "2d_hall" ? "mansion_hub" : "mansion_hub";
+            RefreshStartupSelections();
+        }
+
+        private AppStartupConfigDto BuildSelectedStartupConfig()
+        {
+            var dto = AppStartupConfigDto.Default();
+            dto.room_profile_id = _activeRoomProfileId;
+            dto.pattern_id = _activeRoomProfileId;
+            dto.room_id = _activeLiveKitRoomId;
+            dto.model_id = _activeModelId;
+            dto.persona_id = _activePersonaId;
+            dto.line_id = _activeLineId;
+            dto.line_profile_id = _activeLineProfileId;
+            dto.scene_id = _activeSceneId;
+            dto.skin_id = _activeSkinId;
+            dto.experience_mode = _activeExperienceMode;
+            dto.workspace_id = _activeWorkspaceId;
+            dto.capability_mode = _capabilityMode;
+            if (_activeRoomProfileId == "ner_lineb_room")
+            {
+                dto.setting_file_refs = new[]
+                {
+                    "src/parrot/brain/personas/ner_companion.md",
+                    "codex_workspace/design_workspace/unity_ar_app/ner_roleplay_setting_obsidian_v0_20260511.md",
+                    "codex_workspace/design_workspace/unity_ar_app/ner_mochi_scene_v0_20260511.md",
+                    ".cursor/memory/architecture/Interface/app_v1_lineb_ner_realdevice_config_report_20260511.md",
+                };
+            }
+            dto.Normalize();
+            return dto;
+        }
+
+        private void RefreshStartupSelections()
+        {
+            if (_startupModeText != null)
+                _startupModeText.text = "Mode: " + _activeExperienceMode;
+            if (_startupSelectionText != null)
+            {
+                _startupSelectionText.text =
+                    "Room: " + _activeRoomProfileId + "\n" +
+                    "Model: " + _activeModelId + "\n" +
+                    "Persona: " + _activePersonaId + "\n" +
+                    "Line: " + _activeLineId + " / " + _activeLineProfileId + "\n" +
+                    "Scene: " + _activeSceneId + "\n" +
+                    "Skin: " + _activeSkinId + "\n" +
+                    "Capability: " + _capabilityMode;
+            }
+            if (_startupRoomText != null)
+            {
+                _startupRoomText.text =
+                    _activeRoomDisplayName + " | " + _activeExperienceMode + " | " +
+                    _activeWorkspaceId + " | LiveKit " + _activeLiveKitRoomId;
+            }
+            if (_roomSettingStatus != null)
+            {
+                _roomSettingStatus.text =
+                    "Selected\n" +
+                    "RoomProfile: " + _activeRoomProfileId + "\n" +
+                    "Model: " + _activeModelId + "\n" +
+                    "Persona: " + _activePersonaId + "\n" +
+                    "LineProfile: " + _activeLineProfileId + "\n" +
+                    "Scene/Skin: " + _activeSceneId + " / " + _activeSkinId + "\n" +
+                    "START syncs applyRoomProfile before capability mode.";
+            }
+        }
+
         private void StartArFlow()
         {
             ResolveDependencies();
@@ -1062,8 +1394,11 @@ namespace ParrotApp.UI
                 StartLocalPreview();
                 return;
             }
-            ShowTransition("Permission gate -> token mint -> LiveKit connect.");
-            startupFlow.StartDefault();
+            var config = BuildSelectedStartupConfig();
+            ShowTransition(
+                "Permission gate -> token mint -> LiveKit connect -> applyRoomProfile(" +
+                config.room_profile_id + ").");
+            startupFlow.StartFromConfig(config);
         }
 
         private void StartLocalPreview()
@@ -1105,6 +1440,7 @@ namespace ParrotApp.UI
                     ShowStartup("Capability mode placeholder: " + _capabilityMode);
             }
             RefreshSettingsPanel();
+            RefreshStartupSelections();
             RefreshHud();
         }
 

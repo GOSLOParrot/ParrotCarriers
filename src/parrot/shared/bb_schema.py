@@ -136,6 +136,16 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
     ),
     BlackboardKey(
         BbScope.GLOBAL,
+        "global/active_room_profile",
+        "dict[str, Any]",
+        "brain.preset_loader",
+        "Resolved active RoomProfile payload (full JSON) so unsaved drafts "
+        "applied via menu RPC keep their setting_file_refs / line_profile / "
+        "skin without forcing a disk save.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.GLOBAL,
         "global/active_line_id",
         "str",
         "brain.preset_loader",

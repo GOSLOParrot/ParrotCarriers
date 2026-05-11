@@ -223,6 +223,65 @@ class TestMalformedJsonSkippedNoCrash:
         assert snap["dispatched_count"] == 0
 
 
+class TestSessionEndResetClearsBBAndDedup:
+    """Audit Round 3 (2026-05-11) regression — Bugs E + F.
+
+    Bug E: ``clear_bb_ecp_state`` was documented as "called from
+    ``brain.agent._on_room_disconnected``" but the wire-up was missing —
+    ``session/ecp_state`` therefore carried stale state across reconnects.
+
+    Bug F: ``_last_seq`` (per-identity sequence dedup) was process-global
+    and never reset on session end. After a Publisher restart starting
+    seq=1, the next ``_DEDUP_WINDOW`` (10) packets were silently dropped
+    because ``last - seq`` fell in the duplicate window.
+
+    The fix introduces ``reset_ecp_state_ingest_on_session_end`` and wires
+    it into ``brain.agent._on_room_disconnected``.
+    """
+
+    def test_session_end_reset_clears_bb_and_dedup_state(self):
+        room = FakeRoom()
+        ecp_state_ingest.attach_ecp_state_ingest(room)
+
+        # Session 1 — push 5 packets seq=1..5, identity=unity_x
+        for s in range(1, 6):
+            room.emit("data_received", FakeDataPacket(
+                data=_make_ecp_state_bytes(unity_identity="unity_x", sequence_id=s)
+            ))
+        snap = ecp_state_ingest.get_metrics_snapshot()
+        assert snap["dispatched_count"] == 5
+        assert snap["duplicate_skipped"] == 0
+        assert ecp_state_ingest._last_seq.get("unity_x") == 5
+
+        bb = open_bb_client(name="test_reader_session_reset")
+        assert bb.get(_BB_KEY)["sequence_id"] == 5
+
+        ecp_state_ingest.reset_ecp_state_ingest_on_session_end()
+
+        assert bb.get(_BB_KEY) is None  # Bug E: BB cleared
+        assert ecp_state_ingest._last_seq == {}  # Bug F: dedup cleared
+
+        # Session 2 — same identity, fresh seq=1..5 (Publisher restart)
+        for s in range(1, 6):
+            room.emit("data_received", FakeDataPacket(
+                data=_make_ecp_state_bytes(unity_identity="unity_x", sequence_id=s)
+            ))
+        snap2 = ecp_state_ingest.get_metrics_snapshot()
+        # Without the Bug F fix, all 5 of session 2's packets would have been
+        # dropped as "duplicate"; with the fix they all dispatch normally.
+        assert snap2["duplicate_skipped"] == 0, (
+            "session 2 packets must NOT be misclassified as duplicates "
+            f"after session reset; got duplicate_skipped={snap2['duplicate_skipped']}"
+        )
+        assert snap2["dispatched_count"] == 10  # 5 from session 1 + 5 from session 2
+        assert bb.get(_BB_KEY)["sequence_id"] == 5  # session 2's last write
+
+    def test_session_end_reset_without_dedup_state_is_safe(self):
+        """Reset should be a no-op when no per-identity tracking has happened."""
+        ecp_state_ingest.reset_ecp_state_ingest_on_session_end()  # must not raise
+        assert ecp_state_ingest._last_seq == {}
+
+
 class TestMetricsSnapshotKeys:
     """get_metrics_snapshot returns all expected keys."""
 

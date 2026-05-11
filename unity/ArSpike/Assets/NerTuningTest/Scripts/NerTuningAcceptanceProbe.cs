@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System.Text;
 using ParrotApp.Parrot;
 using UnityEngine;
@@ -188,3 +189,4 @@ namespace ParrotApp.NerTuning
         }
     }
 }
+#endif

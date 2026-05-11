@@ -18,6 +18,12 @@ related:
   - "app_v1_model_capability_resolver_interface_20260511.md (model capability resolver)"
   - "app_v1_lineb_ner_realdevice_config_report_20260511.md (LineB + Ner device config)"
   - "app_v1_lineb_voiceprint_verifier_upgrade_20260511.md (LineB owner voiceprint verifier)"
+  - "app_v1_session_context_pack_upgrade_20260511.md (Room setting files -> LLM/L1.5 session context)"
+  - "app_v1_session_context_pack_audit_20260511.md (Cursor audit + bugfix on update_instructions / env-vs-BB / prompt_target)"
+  - "app_v1_core_interface_audit_round2_20260511.md (Round 2: RoomProfile draft BB JSON / LineB cross-session reset / cosine dim guard / applyRoomProfile fallback warning)"
+  - "app_v1_ecp_disconnect_audit_round3_20260511.md (Round 3: ecp_state_ingest disconnect cleanup — clear_bb_ecp_state dead-code + _last_seq cross-session carry-over, both empirically verified)"
+  - "app_v1_menu_canvas_audit_round4_20260511.md (Round 4: 菜单画布 + 启动页 RPC — saveRoomProfile reserved id guard / payload typo warning / applyMenuSelection workspace fallback warnings / setAppCapabilityMode unknown-mode warning / 3 新 LiveKit RPC mirror)"
+  - "audit_log_index_20260511.md (单页索引：4 轮共 14 bug + 1 gap + Codex 同步要点 + 跨工作区入口；此为 Cursor/Codex 共享 SSOT)"
 ---
 
 # Interface Workspace Index
@@ -52,6 +58,12 @@ Latest LineB + Ner validation route:
 
 - [`app_v1_lineb_ner_realdevice_config_report_20260511.md`](app_v1_lineb_ner_realdevice_config_report_20260511.md)
 - [`app_v1_lineb_voiceprint_verifier_upgrade_20260511.md`](app_v1_lineb_voiceprint_verifier_upgrade_20260511.md)
+- [`app_v1_session_context_pack_upgrade_20260511.md`](app_v1_session_context_pack_upgrade_20260511.md)
+- [`app_v1_session_context_pack_audit_20260511.md`](app_v1_session_context_pack_audit_20260511.md)
+- [`app_v1_core_interface_audit_round2_20260511.md`](app_v1_core_interface_audit_round2_20260511.md)
+- [`app_v1_ecp_disconnect_audit_round3_20260511.md`](app_v1_ecp_disconnect_audit_round3_20260511.md)
+- [`app_v1_menu_canvas_audit_round4_20260511.md`](app_v1_menu_canvas_audit_round4_20260511.md)
+- **🟢 [`audit_log_index_20260511.md`](audit_log_index_20260511.md)** ← 四轮审计单页索引；Cursor + Codex 共享 SSOT，先读这份再深入哪一轮
 
 ## Core Interface Rules
 
@@ -97,6 +109,7 @@ Business flow docs must not copy large code signatures. Use the A-D discipline:
 | `app_v1_lineb_menu_readiness_interface_20260511.md` | active / business interface | LineA/LineB menu readiness, configurable LineProfile, ASR/TTS/ADC status, voiceprint/speaker state, echo risk, and runtime guard evidence. |
 | `app_v1_model_capability_resolver_interface_20260511.md` | active / business interface | Brain-side model manifest mirror, RoomSetting capability decisions, and custom capability tool gating. |
 | `app_v1_lineb_ner_realdevice_config_report_20260511.md` | active / config report | LineB real-device config, Ner RoomProfile/model/persona setup, and remaining production wiring plan. |
+| `app_v1_session_context_pack_upgrade_20260511.md` | active / backend interface | Room setting files now flow into LLM session context and UUID-free Obsidian roleplay L1.5 payloads. |
 | `app_v1_current_status_and_test_report_20260510.md` | active / status | Single clean status report for App V1 route cleanup. |
 | `minecraft_parrot_animation_worklog_20260510.md` | worklog | Animation correction record; unrelated to App frontend completion. |
 

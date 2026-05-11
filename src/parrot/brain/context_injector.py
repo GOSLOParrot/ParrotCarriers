@@ -124,17 +124,33 @@ class ContextInjector:
         return "\n".join(parts)
 
     async def _try_update_instructions(self, rebuilt: str, reason: str) -> None:
-        updater = getattr(self._session, "update_instructions", None)
-        if callable(updater):
-            updater(rebuilt)
-            logger.debug("context_injector: update_instructions (%s)", reason)
+        # FIX (2026-05-11 audit): `update_instructions` is an async method on
+        # ``Agent`` (livekit-agents 1.5+), not on ``AgentSession``. The previous
+        # `getattr(self._session, ...)` always returned None, so every C2
+        # rebuild (memory / scene / VIDEO_OFF boundary) silently degraded.
+        try:
+            agent = self._session.current_agent
+        except RuntimeError:
+            logger.debug(
+                "context_injector: session not running yet, skipping C2 (%s)",
+                reason,
+            )
             return
-
-        logger.warning(
-            "context_injector: AgentSession.update_instructions unavailable; "
-            "skipping C2 rebuild (%s)",
-            reason,
-        )
+        updater = getattr(agent, "update_instructions", None)
+        if updater is None:
+            logger.warning(
+                "context_injector: Agent.update_instructions unavailable; "
+                "skipping C2 rebuild (%s)",
+                reason,
+            )
+            return
+        try:
+            await updater(rebuilt)
+            logger.debug("context_injector: update_instructions (%s)", reason)
+        except Exception:
+            logger.exception(
+                "context_injector: update_instructions failed (%s)", reason,
+            )
 
     async def inject_memory(self, query: str = "recent important facts") -> None:
         """Pull relevant memories from Graphiti and inject into instructions."""

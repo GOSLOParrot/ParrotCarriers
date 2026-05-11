@@ -269,14 +269,14 @@ def attach_ecp_state_ingest(room: Room) -> None:
 
 
 def clear_bb_ecp_state() -> None:
-    """Write None to BB session/ecp_state on room disconnect.
+    """Write None to BB session/ecp_state.
 
-    Called from ``brain.agent._on_room_disconnected`` (BUG-P4 fix) so that
-    ``_state_context.get_state_snapshot()`` cannot serve stale EcpState data
-    from the previous session during the reconnect gap.
-
-    The next ``_on_ecp_state_packet`` call (within 1 s of reconnect, per L1
-    1Hz lock) will overwrite this with fresh Unity-side data.
+    Originally written for BUG-P4 (2026-05-04) intending to be called from
+    ``brain.agent._on_room_disconnected``. **The wire-up was forgotten** —
+    audit (2026-05-11 Round 3, Bug E) found this function had zero callers
+    in production code. Use :func:`reset_ecp_state_ingest_on_session_end`
+    instead for full session-end cleanup; this function is kept as the
+    narrower BB-only primitive for tests / debug scripts.
 
     Design note: we intentionally write None rather than {} so that
     ``_state_context`` path that reads ``session/ecp_state`` can distinguish
@@ -292,9 +292,43 @@ def clear_bb_ecp_state() -> None:
         logger.debug("[ecp_state_ingest] clear_bb_ecp_state failed", exc_info=True)
 
 
+def reset_ecp_state_ingest_on_session_end() -> None:
+    """Full session-end cleanup: BB clear + per-identity sequence dedup reset.
+
+    FIX (2026-05-11 audit, Round 3, Bugs E + F):
+      * **Bug E** — :func:`clear_bb_ecp_state` was declared in its own
+        docstring as "called from ``brain.agent._on_room_disconnected``"
+        but the call site never landed. ``session/ecp_state`` therefore
+        carried stale ECP state from the previous session into the next
+        room until the first new packet arrived.
+      * **Bug F** — :data:`_last_seq` is a process-global dict keyed by
+        ``unity_identity``. Sequence dedup uses ``last - seq < _DEDUP_WINDOW``
+        as a duplicate heuristic. After a Unity reconnect with the same
+        identity but a fresh sequence (Publisher restart starting at seq=1),
+        the next ``_DEDUP_WINDOW`` packets are silently dropped because
+        ``last - seq`` falls in the duplicate window. Empirical repro
+        (audit Round 3 §F): session 1 ends at seq=5, session 2 publishes
+        seq=1..5 → all 5 dropped.
+
+    Called from ``brain.agent._on_room_disconnected`` so the **next** room
+    starts with a clean slate without waiting for the BUG-U2 boot_id field
+    to land in EcpStateDto.
+    """
+    clear_bb_ecp_state()
+    if _last_seq:
+        cleared = len(_last_seq)
+        _last_seq.clear()
+        logger.info(
+            "[ecp_state_ingest] cleared %d per-identity sequence dedup entries "
+            "on session end (Bug F fix)",
+            cleared,
+        )
+
+
 __all__ = [
     "attach_ecp_state_ingest",
     "clear_bb_ecp_state",
     "get_metrics_snapshot",
+    "reset_ecp_state_ingest_on_session_end",
     "reset_metrics_for_tests",
 ]
