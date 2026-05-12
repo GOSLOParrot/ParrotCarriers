@@ -15,6 +15,7 @@ Read these in order for a new Codex session:
 4. `interface_plan.md` — business interface slices we need before app UI feels complete.
 5. `design_workspace/INDEX.md` — user-facing design workspace for original wording, sketches, Figma/Unity assets, and App/Web flow planning.
 6. `thesis_lineb_voiceprint_echo_addendum.md` — thesis addendum for Line B voiceprint detection, Line A speaker echo limits, and echo-safe dialogue wording.
+7. `app_frontend_startup_prep_20260512.md` plus `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md` for App/Web parallel routes and Maid Team boundary.
 
 Then load only the relevant skill route:
 
@@ -30,6 +31,7 @@ Then load only the relevant skill route:
 ## Current Prep Addendum
 
 - `app_frontend_startup_prep_20260512.md` — ECS Orchestrator handoff for App/Web frontend startup work: core interface inventory, route split, confirmation gaps, and parallel worktree plan.
+- `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md` — ratified App/Web parallel route split, AgentTeam vs nanobot instance boundary, and RoomSetting Maid Team selector.
 
 ## Current Decision
 

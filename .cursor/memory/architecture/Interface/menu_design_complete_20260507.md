@@ -651,6 +651,17 @@ C# 镜像：`unity/ArSpike/Assets/Scripts/ParrotApp/UI/SettingChangeTierDto.cs`�
 注意：控制面属于 App/Web 复用核心接口；具体按钮、弹窗文案、HUD badge
 属于业务 UI，不写回核心接口 SSOT。
 
+2026-05-13 决策：当前个人自用 App 可以使用开发期本地 secret 完成 Tier 1
+Line / RoomProfile 切换；生产/分发版本不把 `PARROT_ORCH_SECRET` 放进 APK，
+改走短期 scoped control token 或 server-side BFF。Tier 2 进入调试折叠并需
+更强确认；Tier 3 仍 operator-only。
+
+2026-05-13 App/Web 路由决策：RoomSetting 增加 `Maid Team` 选择项。
+Unity App 只渲染启动页/运行态菜单里的轻量选择和状态；Web Console 负责
+AgentTeam / MCP / Nanobot 实例组的密集管理与可视化。两边仍复用同一套
+menu registry、tier registry、RoomSetting compatibility 和 orchestrator
+status，不各自 fork 核心接口。
+
 ---
 
 ## §12 引用源
@@ -671,6 +682,9 @@ C# 镜像：`unity/ArSpike/Assets/Scripts/ParrotApp/UI/SettingChangeTierDto.cs`�
 
 - **2026-05-12 ECS Orchestrator 增量**：新增 §11 Setting Change Tier
   渲染规范；启动页和主菜单按 tier 统一处理静默应用、重连确认、进程重启确认和运维阻断。
+- **2026-05-13 App/Web route 增量**：RoomSetting 新增 `Maid Team` 选择项；
+  Unity App 和 Web Console 分别渲染同一核心菜单/控制面，Web 侧承接
+  AgentTeam / MCP / Nanobot 实例组管理。
 - **2026-05-09 ChatA**：补充 LiveKit 启动切片。菜单从 4 类块运行态扩为 5 类块（新增 2DWorkspace），明确 2DWorkspace 与 IntentWorkspace 边界；启动问候延后到 `onGosloPlaced`；新增 `SessionOnlySilent` 静默保活、对话关闭、蓝牙/麦克风路由、安全 token 策略说明。画布菜单本轮保持最小实现，LiveKit 生命周期按最终路径实现。
 - **2026-05-07**：本文创建。三层菜单架构（启动页 + HUD/工具柜 + 节点画布）+ 4 类块定义（Model/Persona/Mode/Scene）+ 预设系统（NEED-P3-B/C）+ 默认 fallback（NEED-P3-E）+ 海盗主题换肤（P3）+ 像素画素材按菜单细分清单 + 与 8 场景关联表 + 实施推荐顺序 Phase A-E。
 - **2026-05-07 v0.1（增量）**：§4 加 2 占位节点类型（过滤器块灰 / 有效期预测模块橙）+ §4.3 边追加"过滤器 → 模块"+ §4.7 占位说明小节 + §7.5 素材 2 条（block_filter_gray / block_memory_validity_orange）+ §8 关联表 1 行；具体设计延后到 NEED-P3-FILTER / NEED-P3-VALIDITY；与 backend `memory/MemoryValidity 过滤器` PLANNED（`module_map_p2 §11.2`）对接，但 canvas 占位**不**强行绑定 backend schema。

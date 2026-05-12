@@ -1,8 +1,8 @@
 ---
 status: ratified
 category: backend-interface
-status_note: "Phase 1-4 menu modularisation + BB upgrade + IntentWorkspace + L2-B baseline algorithm interface contract. Frontend (Sub-Chat A) consumes this doc to wire menu canvas / HUD without touching Python."
-last_reviewed: 2026-05-12
+status_note: "Phase 1-4 menu modularisation + BB upgrade + IntentWorkspace + L2-B baseline algorithm interface contract. 2026-05-13 adds App/Web route and AgentTeam boundary pointer."
+last_reviewed: 2026-05-13
 ai_priority: high
 ai_audience: "Sub-Chat A (frontend) + Chat 4 4-A (backend implementation) + DSG protocol upgrade chat"
 parent_doc: "Interface/backend_interface_chat_launch_prompt_v2_20260507.md"
@@ -14,6 +14,7 @@ related:
   - "protocol_snapshot_p4.md (wire SSOT — unchanged)"
   - "sprint4_phase4_entry_20260430.md §8 (Phase 4 13 locks — unchanged)"
   - "ecs_orchestrator_lifecycle_completion_20260512.md (ECS Orchestrator + Lifecycle control-plane completion)"
+  - "Interface/app_web_parallel_routes_agent_team_20260513.md (App/Web route split + AgentTeam boundary)"
 ---
 
 # Backend Interface Refinement — Menu / BB / IntentWorkspace / L2-B (2026-05-07)
@@ -522,6 +523,12 @@ same decision with `SettingChangeTierDto`.
 | `/clear_runtime_config` | POST | Bearer when secret set | operator | remove runtime_config override |
 | `/rolling_restart_brain` | POST | Bearer when secret set | operator | current light-downtime rolling path |
 
+Security decision (2026-05-13): for the self-use App V1, Unity may use a
+dev-local orchestrator secret to exercise Tier 1 line/profile switching. A
+production/distributed build must not embed `PARROT_ORCH_SECRET`; use a
+short-lived scoped control token or server-side BFF for Tier 1, and keep Tier 2
+/ Tier 3 behind stronger operator confirmation.
+
 Python client:
 
 ```python
@@ -562,11 +569,16 @@ status = client.status()
 | Multi-Scene profiles (HOME / OUTDOOR / LIBRARY / KITCHEN) | P3 / A10 chat |
 | L2-B Leiden / Louvain / VF2++ fold / GAT-like / PPR | P3 仿生 chat |
 | `brain.state.loader` for `global/user_profile` | Chat 4 4-A or P3 |
+| AgentTeam / Maid Team core field, registry, status, and Scheduler routing | Candidate core additions; see `Interface/app_web_parallel_routes_agent_team_20260513.md` and ask before implementation |
 
 ---
 
 ## §9 Change log
 
+- **2026-05-13 App/Web parallel route addendum**: AgentTeam/Maid Team is now
+  a logical Parrot layer above nanobot instances. RoomSetting should expose a
+  `Maid Team` selector, but dynamic team registry/status/routing remains a
+  candidate core addition requiring approval before implementation.
 - **2026-05-12 ECS Orchestrator addendum**: added §6 Brain control-plane API:
   runtime_config hierarchy, `forceUnityReconnect`, tier registry, new BB keys,
   and Castle Orchestrator HTTP API. Phase 4 wire and cs_parity unchanged.

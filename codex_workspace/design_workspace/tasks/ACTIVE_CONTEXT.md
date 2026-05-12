@@ -77,7 +77,7 @@ These are useful test evidence only. They must not be used as App completion evi
 
 ## Blocking Original Requirements
 
-1. Room Setting: the startup `SCENE` entry opens an App preset/config page for saved Room preset, LineA/LineB, Model, setting file, Scene, skin, Persona, and Mode. Here `Room` means App menu preset, not LiveKit Room.
+1. Room Setting: the startup `SCENE` entry opens an App preset/config page for saved Room preset, LineA/LineB, Model, setting file, Scene, skin, Persona, Maid Team, and Mode. Here `Room` means App menu preset, not LiveKit Room.
 2. LineB menu upgrade: the menu must show ASR/TTS readiness, Google ADC status, voiceprint/speaker state, echo risk, and echo handling mode.
 3. Ner second model: Ner must move from raw asset to selectable production model path. Startup must be able to choose Brain pipeline, model, setting, scene, and skin.
 
@@ -85,7 +85,7 @@ These are useful test evidence only. They must not be used as App completion evi
 
 - User-facing saved preset name: `Room`.
 - Internal/professional term: `RoomProfile`.
-- Startup RoomSetting exposes Room select/new/save plus five selectors only: `Model`, `Room`, `Persona`, `Line`, `Scene`.
+- Startup RoomSetting exposes Room select/new/save plus six selectors: `Model`, `Room`, `Persona`, `Line`, `Scene`, `Maid Team`.
 - Do not use a bare startup field named `Mode`. The startup-page right-side lever is `experience_mode`; GOSLO behavior flags are `behavior_mode` and belong to runtime Brain/persona menus.
 - New interface contract: `.cursor/memory/architecture/Interface/app_v1_room_setting_room_profile_interface_20260510.md`.
 
@@ -174,13 +174,13 @@ These are useful test evidence only. They must not be used as App completion evi
   3. External Brain cold-start supervisor for RoomSetting Line selection
      (`PARROT_LLM_PIPELINE` + `PARROT_ACTIVE_LINE_PROFILE_ID`) before Unity
      START can switch LineB without manual restart.
-  4. Startup/RoomSetting Unity binding for saved RoomProfile, Line, Model, Persona, and Scene selectors.
+  4. Startup/RoomSetting Unity binding for saved RoomProfile, Line, Model, Persona, Scene, and Maid Team selectors.
 
 ## App Frontend Longline
 
 1. **调研**：read the source design docs, HTML sketches, interface docs, Unity Build Settings, existing scenes, assets, and App scripts before implementation.
 2. **启动页**：implement the landscape startup page with `GOSLO Parrot`, `SCENE`, `START`, Mode lever, and model portrait slot.
-3. **Room Setting**：complete the preset/config page with saved Room/RoomProfile, Model, Room, Persona, Line, and Scene selectors. The startup lever is `experience_mode`; GOSLO behavior flags stay runtime-owned.
+3. **Room Setting**：complete the preset/config page with saved Room/RoomProfile, Model, Room, Persona, Line, Scene, and Maid Team selectors. The startup lever is `experience_mode`; GOSLO behavior flags stay runtime-owned.
 4. **启动转场**：create an independent IPoAC progress page; permission checks, Mint, and LiveKit connect run during this transition. Successful connect must stay silent.
 5. **AR 主界面**：add a formal App scene to Build Settings and stop treating the smoke scene as the App entry.
 6. **放置与问候**：after AR plane ready, wait for user placement. Only after placement should GOSLO wake/question and greet.

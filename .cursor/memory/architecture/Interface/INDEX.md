@@ -1,8 +1,8 @@
 ---
 status: ratified
 category: interface-skeleton
-status_note: "Cleaned 2026-05-10: Interface remains the backend/core-interface route. Formal App frontend design is in codex_workspace/design_workspace; smoke/self-check docs are not App completion evidence."
-last_reviewed: 2026-05-10
+status_note: "Cleaned 2026-05-10; updated 2026-05-13 with App/Web parallel route split and AgentTeam boundary. Interface remains the backend/core-interface route."
+last_reviewed: 2026-05-13
 ai_priority: high
 ai_audience: "Chats touching src/parrot/** public surfaces or unity/ArSpike/Assets/Scripts/ParrotApp/** DTOs"
 parent_doc: "../../INDEX.md"
@@ -38,6 +38,7 @@ For the next App frontend chat, start from:
 3. `codex_workspace/design_workspace/sketches/startup_menu_landscape_v0.html`
 4. `codex_workspace/design_workspace/unity_ar_app/main_hud_landscape_v0_20260509.md`
 5. `codex_workspace/design_workspace/sketches/main_hud_landscape_v0.html`
+6. `app_web_parallel_routes_agent_team_20260513.md` if the work touches Maid Team, Web console, Scheduler/Nanobot, or shared route decisions.
 
 Do **not** start App frontend work from `ParrotSmokeScene`, Web monitor smoke, longline self-checks, or this Interface index.
 
@@ -51,7 +52,7 @@ Clean status report:
 
 Blocking frontend tasks:
 
-1. Room Setting: the startup `SCENE` entry must open an App preset/config page for saved Room / RoomProfile, LineA/LineB, Model, Persona, and Scene. Here Room means App saved profile, not LiveKit Room. Do not use a bare startup field named `Mode`; use `experience_mode`, `behavior_mode`, `capability_mode`, or `line_id`.
+1. Room Setting: the startup `SCENE` entry must open an App preset/config page for saved Room / RoomProfile, LineA/LineB, Model, Persona, Scene, and Maid Team. Here Room means App saved profile, not LiveKit Room. Do not use a bare startup field named `Mode`; use `experience_mode`, `behavior_mode`, `capability_mode`, or `line_id`.
 2. LineB menu upgrade: expose configurable LineProfile selection plus ASR/TTS readiness, Google ADC status, voiceprint/speaker state, echo risk, echo handling mode, recent TTS evidence, and last mic-input decision.
 3. Ner second model: move Ner from raw asset to selectable production model path; startup must be able to select Brain pipeline, model, setting, scene, and skin.
 
@@ -93,12 +94,14 @@ Business flow docs must not copy large code signatures. Use the A-D discipline:
 | Memory / Graphiti | `../dsg/dsg_protocol_archive_v1_20260506.md` and Graphiti skill docs |
 | Scheduler / Blackboard / BT | `../protocol_snapshot_p4.md`, `../sprint4_protocol_v2_ecp.md` |
 | Menu / presets | `menu_design_complete_20260507.md`, `../backend_interface_refinement_20260507.md` |
+| ECS orchestrator / runtime config | `../ecs_orchestrator_lifecycle_completion_20260512.md`, `ecs_orchestrator_codex_guidance_20260512.md` |
 
 ## Active Interface Docs
 
 | File | Status | Role |
 |:--|:--|:--|
 | `INDEX.md` | active | This clean interface route. |
+| `app_web_parallel_routes_agent_team_20260513.md` | active / routing decision | App/Web parallel route split, AgentTeam vs nanobot instance boundary, Maid Team selector, and core-interface candidates requiring approval. |
 | `concept_dictionary_20260507.md` | active | Terminology and route hints. |
 | `legacy_issues_split_20260507.md` | active | P2.5/P3 issue split and dispatch hints. |
 | `menu_design_complete_20260507.md` | active / design | Menu design SSOT; frontend implementation must still follow Design workspace page flow. |

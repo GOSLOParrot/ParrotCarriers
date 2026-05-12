@@ -60,6 +60,7 @@
 | `Room` | 新房间、加入已有房间、测试房间 |
 | `Pattern` | 菜单 preset / 行为模式 / 启动模板 |
 | `Persona` | 之后可接 PersonaLoader |
+| `Maid Team` | 后台 AgentTeam / Maid Team 预设；V1 先固定 `CatMaid Team` |
 
 ## 启动动画留白
 

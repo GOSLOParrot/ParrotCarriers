@@ -126,11 +126,11 @@ Existing core surfaces:
 Need to define:
 
 - user-facing `Room` equals internal `RoomProfile`, not LiveKit room;
-- RoomSetting has five switching axes: Model, Room, Persona, Line, Scene;
+- RoomSetting has six switching axes: Model, Room, Persona, Line, Scene, Maid Team;
 - startup quick `Mode` must be represented as `experience_mode`, while GOSLO `behavior_mode` remains runtime/Brain-owned;
 - runtime HUD/tool drawer/settings/canvas choices save through explicit menu preference or canvas preset stores;
-- compatibility resolver disables/degrades menu items when Model, Line, Persona, Scene, permissions, or assets conflict.
+- compatibility resolver disables/degrades menu items when Model, Line, Persona, Scene, Maid Team, permissions, or assets conflict.
 
 Completion signal:
 
-- selecting a saved Room restores the five axes, START applies the effective profile, and incompatible actions such as fly-to-hand are visibly disabled and backend-enforced when the selected model cannot support them.
+- selecting a saved Room restores the six axes, START applies the effective profile, and incompatible actions such as fly-to-hand are visibly disabled and backend-enforced when the selected model cannot support them.

@@ -84,6 +84,11 @@ Suggested split:
 
 Start read-only. Use existing Python APIs. If an adapter cannot read data without new core API, document that as a business-interface gap before adding mutation or protocol fields.
 
+Web console now owns the dense operational route for L1.5/L2-B, node/photo
+management, Blackboard, IntentWorkspace, Plan, Scheduler/Nanobot monitoring,
+and future AgentTeam/MCP admin. Unity App owns the mobile/game-facing rendering
+of the same core state.
+
 ### Nanobot / Business IO
 
 Keep Nanobot-specific business mapping thin and testable:
@@ -92,6 +97,11 @@ Keep Nanobot-specific business mapping thin and testable:
 - normalized calendar node -> Nanobot command payload for create/update/delete;
 - Nanobot result -> app report card payload;
 - heartbeat writer -> Redis key already expected by scheduler/DSG.
+
+AgentTeam/Maid Team is a Parrot control-plane layer above nanobot instances.
+`CatMaid Team` V1 should stay one nanobot instance until the default path is
+observable; multi-instance routing needs an approved core `agent_team_id`
+addition before implementation.
 
 ## First Milestone Proposal
 

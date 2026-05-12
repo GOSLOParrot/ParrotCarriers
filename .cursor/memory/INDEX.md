@@ -1,7 +1,7 @@
 ﻿# ParrotCarriers 全局索引
 
 > 用途: 项目唯一真相源，供 Cursor 与用户快速定位关键信息
-> 更新: 2026-05-12 (ECS Orchestrator + Lifecycle 控制面升级登记 — runtime_config.json 配置层级、Setting Change Tier、orchestrator :7890、systemd、boot preflight、crash hook、限频重启；同时保留 2026-05-09 路由整理与接口分类骨架)
+> 更新: 2026-05-13 (App/Web parallel routes + AgentTeam boundary 登记；保留 2026-05-12 ECS Orchestrator + Lifecycle 控制面升级)
 > 路由: 由 `.cursor/rules/workspace.mdc` (alwaysApply) 指向本文件
 
 **全局约定**:
@@ -72,6 +72,7 @@
 | `architecture/Interface/legacy_issues_split_20260507.md` | **遗留问题二分**（含新 P2.5：2D 独立工作区）— P2.5 / P3 + grep 速查 + 修复 chat 派发表 |
 | `architecture/Interface/menu_design_complete_20260507.md` | **完整菜单设计 SSOT** — 三层架构 + 4 类块 + 预设 + 海盗换肤 + 像素画素材清单 |
 | `architecture/ecs_orchestrator_lifecycle_completion_20260512.md` | **ECS Orchestrator + Lifecycle 升级完成报告（2026-05-12）** — Tier 化设置 / orchestrator :7890 / systemd / 容器化 / boot preflight / crash hook / 限频重启；Round 5 后续阶段（控制面） |
+| `architecture/Interface/app_web_parallel_routes_agent_team_20260513.md` | **App/Web 并行路线 + AgentTeam 边界决策（2026-05-13）** — Unity App 与 Web Console 业务接口分离、共享核心接口、RoomSetting 增加 Maid Team、CatMaid Team V1 单 nanobot 实例 |
 | `architecture/Interface/chatB_obsidian_google_nanobot_realconnect_audit_20260509.md` | **Chat B 真连接审计** — Obsidian + Google Calendar + Nanobot 能力、阻塞 bug、业务流/数据流/接口草案、监控点 |
 | `architecture/Interface/obsidian_true_connection_guide_20260509.md` | **Obsidian 真连接指南** — 三 profile、L1.5 入池、L2-B / RefTable / IntentWorkspace 写边界 |
 | `architecture/Interface/google_calendar_nanobot_true_connection_guide_20260509.md` | **Google Calendar + Nanobot 真连接指南** — Scheduler / Nanobot / Google / L1.5 链路、writeback draft 边界 |

@@ -21,6 +21,7 @@ tests:
 related:
   - app_v1_facade_core_business_interface_20260510.md
   - app_v1_current_status_and_test_report_20260510.md
+  - app_web_parallel_routes_agent_team_20260513.md
   - menu_design_complete_20260507.md
   - ../../../../codex_workspace/design_workspace/unity_ar_app/startup_menu_design_v0_20260509.md
 ---
@@ -40,7 +41,7 @@ Startup RoomSetting is intentionally small:
 1. Select existing Room.
 2. Create new Room.
 3. Save current Room draft.
-4. Switch the five launch axes: `Model`, `Room`, `Persona`, `Line`, `Scene`.
+4. Switch the six launch axes: `Model`, `Room`, `Persona`, `Line`, `Scene`, `Maid Team`.
 
 The startup RoomSetting page must not expose the ambiguous label `Mode`.
 
@@ -53,6 +54,7 @@ The startup RoomSetting page must not expose the ambiguous label `Mode`.
 | `livekit_room_id` | Transport/session room used by LiveKit. Not the App Room. | startup transport config |
 | `Model` | Character/model controller selection, such as `GOSLO_default` or future `ner_skin2`. | model manifest registry |
 | `Persona` | Character prompt/lore/speaking style selection. | persona loader / persona registry |
+| `Maid Team` | Background AgentTeam preset for scheduled work, Nanobot/MCP capabilities, and report/task support. V1 defaults to `CatMaid Team`. | AgentTeam registry / orchestrator, pending core field |
 | `Line` | Brain voice pipeline, currently `line_a` or `line_b`. | line registry + runtime readiness |
 | `Scene` | Launch scene profile. Owns AR/2D surface, mansion map, skin/theme, and initial workspace. | scene profile registry |
 | `ExperienceMode` | Startup-page right-side start mode: AR companion, 2D hall/workspace, or room-only/light session. | startup draft / RoomProfile default |
@@ -103,7 +105,7 @@ Needed before implementation is complete:
 
 RoomSetting is complete when:
 
-- Startup `SCENE` opens a RoomSetting page with Room select/new/save and five selectors: Model, Room, Persona, Line, Scene.
+- Startup `SCENE` opens a RoomSetting page with Room select/new/save and six selectors: Model, Room, Persona, Line, Scene, Maid Team.
 - Selecting a saved Room populates those selectors and the startup model/scene preview.
 - Changing a selector recomputes compatibility before START.
 - START applies the effective profile, connects with the chosen Line, and enters the chosen Scene/ExperienceMode.
@@ -129,6 +131,7 @@ Candidate schema:
   "display_name": "GOSLO Study Room",
   "model_id": "GOSLO_default",
   "persona_id": "goslo_parrot_default",
+  "maid_team_id": "catmaid_team_default",
   "line_id": "line_a",
   "scene_profile_id": "ar_mansion_default",
   "experience_mode": "ar_companion",
@@ -165,6 +168,7 @@ Startup RoomSetting operates on a local `RoomProfileDraft` until the user starts
 | Save Room | Persist current draft as RoomProfile. |
 | Change Model | Update draft model, recompute capability compatibility, update model preview. |
 | Change Persona | Update draft persona, recompute line/model/persona requirements. |
+| Change Maid Team | Update draft background AgentTeam/Maid Team preset; V1 exposes fixed `CatMaid Team` until the shared core field and registry are implemented. |
 | Change Line | Update draft voice pipeline, recompute ASR/TTS/ADC/voiceprint/echo readiness. |
 | Change Scene | Update draft scene, map, skin/theme, default workspace, allowed ExperienceModes. |
 | START | Apply draft/effective RoomProfile and run startup flow. |
@@ -177,7 +181,7 @@ RoomProfile is not the only persisted menu object. Every menu surface needs a pe
 
 | Surface | Store | Saves |
 |:--|:--|:--|
-| Startup RoomSetting | `RoomProfile` | Model, Room, Persona, Line, Scene, default ExperienceMode, map/skin/workspace refs. |
+| Startup RoomSetting | `RoomProfile` | Model, Room, Persona, Line, Scene, Maid Team, default ExperienceMode, map/skin/workspace refs. |
 | Startup quick lever | startup draft / RoomProfile default | Last chosen `ExperienceMode`. |
 | HUD | `MenuPreference` | Corner, collapsed/expanded state, density, visibility. |
 | Tool drawer | `MenuPreference` | Tool order, pinning, collapsed/expanded state, disabled-item visibility. |

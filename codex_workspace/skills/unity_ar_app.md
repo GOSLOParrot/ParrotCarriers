@@ -8,6 +8,7 @@ Use this route for Unity app startup, HUD, tool cabinet, AR scene wiring, runtim
 2. `codex_workspace/implementation_map.md`
 3. `unity/ArSpike/Assets/Scripts/ParrotApp/MIGRATION.md`
 4. `.cursor/memory/architecture/ar_app_flow_ui_design.md`
+5. `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md`
 
 ## Code Areas
 
@@ -26,10 +27,14 @@ Use this route for Unity app startup, HUD, tool cabinet, AR scene wiring, runtim
 ## First Implementation Targets
 
 1. Boot/loading controller.
-2. HUD panel bound to lifecycle/connection state.
-3. Tool cabinet with placeholder buttons.
-4. Notification note spawner.
-5. Workspace open/close overlay.
+2. Startup RoomSetting with Model, Room, Persona, Line, Scene, and Maid Team.
+3. HUD panel bound to lifecycle/connection state.
+4. Tool cabinet with placeholder buttons.
+5. Notification note spawner.
+6. Workspace open/close overlay.
+
+Keep Web console admin concerns out of Unity. App may render a fixed
+`CatMaid Team` option before the shared `agent_team_id` core field exists.
 
 ## Verification
 
