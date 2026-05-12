@@ -29,8 +29,10 @@ namespace ParrotApp.EditorTools
     public static class ParrotSmokeSceneBuilder
     {
         private const string GlbAssetPath = "Assets/Models/GOSLO.glb";
-        private const string MenuPath = "Tools/Parrot/Build A2 Smoke Scene";
-        private const string UpgradeMenuPath = "Tools/Parrot/Upgrade Current A2 Smoke Scene";
+        private const string MenuPath = "Tools/Parrot/Smoke/Build A2 Smoke Scene";
+        private const string UpgradeMenuPath = "Tools/Parrot/Smoke/Upgrade Current A2 Smoke Scene";
+        private const string SmokeSceneFolder = "Assets/Tests/Smoke/Scenes";
+        private const string DefaultSmokeScenePath = SmokeSceneFolder + "/ParrotSmokeScene.unity";
         private const string ToolDrawerWoodSpritePath = "Assets/UI/ParrotApp/ToolCabinet/ToolDrawer_Wood_Menu1.png";
         private const string ToolButtonWoodSpritePath = "Assets/UI/ParrotApp/ToolCabinet/ToolButton_Wood_Front.png";
         private const string PaperNoteSmallSpritePath = "Assets/UI/ParrotApp/Notifications/PaperNote_Blank_New.png";
@@ -182,14 +184,15 @@ namespace ParrotApp.EditorTools
             WireStartupFlow(startupFlow, roomManager, lifecycleManager, shutdownService, tokenMintClient);
 
             // ── Save ───────────────────────────────────────────────────────
-            string savePath = EditorUtility.SaveFilePanelInProject(
-                "Save Smoke Scene", "ParrotSmokeScene", "unity",
-                "Choose where to save the W3.A.2/A.3 + W6-7 smoke scene.");
-            if (!string.IsNullOrEmpty(savePath))
-                EditorSceneManager.SaveScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene(), savePath);
+            // Save under the test tree so this builder cannot recreate the
+            // connectivity smoke scene inside the formal App scene directory.
+            EnsureAssetFolder(SmokeSceneFolder);
+            EditorSceneManager.SaveScene(
+                UnityEngine.SceneManagement.SceneManager.GetActiveScene(),
+                DefaultSmokeScenePath);
 
             Debug.Log(
-                "[ParrotSmokeSceneBuilder] Scene built.\n" +
+                "[ParrotSmokeSceneBuilder] Scene built at " + DefaultSmokeScenePath + ".\n" +
                 "── W3.A.2/A.3 (perch + EcpState) ───────────────\n" +
                 "► Play → wait 1s for [Heartbeat:LOG] in Console\n" +
                 "► Select HandSource → component ⋮ →\n" +

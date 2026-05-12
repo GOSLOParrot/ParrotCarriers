@@ -58,6 +58,16 @@
 - Start from `tasks/ACTIVE_CONTEXT.md`, then read the longline TODO before editing ECP, model manifest, Brain tools, RoomSetting, or Unity model controllers.
 - Current architecture decision: keep the existing ECP wire route and build profile, manifest, capability resolver, and `play_capability` layers on top.
 
+## 2026-05-13 App/Web 并行工作流
+
+- Workflow: `../app_web_parallel_workflow_20260513.md`
+- Shared board: `tasks/APP_WEB_PARALLEL_TODOLIST_20260513.md`
+- App business interfaces: `backend_interface_map/app/`
+- Web business interfaces: `backend_interface_map/web_console/`
+- Core candidate queue: `backend_interface_map/core_interface_candidate_queue_20260513.md`
+
+`ACTIVE_CONTEXT.md` 只保留当前事实和路由，不承载完整 TODOList。
+
 ## 2026-05-09 新增设计入口
 
 - `00_original_words/chat_original_20260509_startup_menu_assets.md`：本轮关于启动页、启动动画、2D 工作区、主页面 HUD 的原话摘录。

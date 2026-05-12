@@ -9,6 +9,7 @@ Use this route for Unity app startup, HUD, tool cabinet, AR scene wiring, runtim
 3. `unity/ArSpike/Assets/Scripts/ParrotApp/MIGRATION.md`
 4. `.cursor/memory/architecture/ar_app_flow_ui_design.md`
 5. `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md`
+6. `codex_workspace/app_web_parallel_workflow_20260513.md`
 
 ## Code Areas
 
@@ -35,6 +36,8 @@ Use this route for Unity app startup, HUD, tool cabinet, AR scene wiring, runtim
 
 Keep Web console admin concerns out of Unity. App may render a fixed
 `CatMaid Team` option before the shared `agent_team_id` core field exists.
+Write App business-interface notes under
+`codex_workspace/design_workspace/backend_interface_map/app/`.
 
 ## Verification
 

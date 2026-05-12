@@ -20,6 +20,9 @@ related:
 This document records the 2026-05-13 decision for starting Unity App and Web
 Console work in parallel while keeping shared core interfaces clean.
 
+Operational workflow for the two chats lives in:
+`codex_workspace/app_web_parallel_workflow_20260513.md`.
+
 ## 1. Ratified Decisions
 
 1. `Ner` is a Brain-side model/persona/profile concern. It is not a nanobot

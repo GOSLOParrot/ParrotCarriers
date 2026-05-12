@@ -110,6 +110,9 @@ time.
 Durable decision doc:
 `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md`.
 
+Operational workflow:
+`codex_workspace/app_web_parallel_workflow_20260513.md`.
+
 Ratified route:
 
 1. Unity App and Web Console can proceed in parallel as separate business

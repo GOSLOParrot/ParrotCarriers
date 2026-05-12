@@ -1,6 +1,6 @@
 # Design Workspace Active Context
 
-> Updated: 2026-05-11
+> Updated: 2026-05-13
 > Code repo / Codex project route: `D:\GOSLOParrot\ParrotCarriers`
 > App design workspace: `D:\GOSLOParrot\ParrotCarriers\codex_workspace\design_workspace`
 > Clean status report: `.cursor/memory/architecture/Interface/app_v1_current_status_and_test_report_20260510.md`
@@ -8,6 +8,27 @@
 ## Current Truth
 
 The formal App frontend is **not complete**.
+
+2026-05-13 parallel work route:
+
+- App and Web can now proceed in separate chats using the workflow in
+  `codex_workspace/app_web_parallel_workflow_20260513.md`.
+- Shared coordination board:
+  `codex_workspace/design_workspace/tasks/APP_WEB_PARALLEL_TODOLIST_20260513.md`.
+- Copyable App/Web startup prompts:
+  `codex_workspace/design_workspace/tasks/APP_WEB_CHAT_START_PROMPTS_20260513.md`.
+- Unity App business interfaces:
+  `codex_workspace/design_workspace/backend_interface_map/app/`.
+- Web Console business interfaces:
+  `codex_workspace/design_workspace/backend_interface_map/web_console/`.
+- Shared core-interface candidates:
+  `codex_workspace/design_workspace/backend_interface_map/core_interface_candidate_queue_20260513.md`.
+- Ratified shared core interfaces still live only under
+  `.cursor/memory/architecture/Interface/**` after the required App/Web lane
+  confirmation.
+
+`ACTIVE_CONTEXT.md` is not the TODO board. Keep detailed lane tasks in the
+shared TODO board and lane-specific business-interface directories.
 
 `D:\GOSLOParrot` is not the code repository. The root-level `D:\GOSLOParrot\codex_workspace` was a duplicate route and has been removed. New Codex work for this app should start from `D:\GOSLOParrot\ParrotCarriers`.
 
@@ -193,14 +214,17 @@ These are useful test evidence only. They must not be used as App completion evi
 ## Entry Order For New App Frontend Work
 
 1. `codex_workspace/design_workspace/tasks/ACTIVE_CONTEXT.md`
-2. `codex_workspace/design_workspace/unity_ar_app/startup_menu_design_v0_20260509.md`
-3. `codex_workspace/design_workspace/sketches/startup_menu_landscape_v0.html`
-4. `codex_workspace/design_workspace/unity_ar_app/main_hud_landscape_v0_20260509.md`
-5. `codex_workspace/design_workspace/sketches/main_hud_landscape_v0.html`
-6. `.cursor/memory/architecture/Interface/app_v1_room_setting_room_profile_interface_20260510.md`
-7. `codex_workspace/design_workspace/tasks/lineb_ner_gameplay_longline_todo_20260511.md` for LineB/Ner implementation planning.
-8. `codex_workspace/design_workspace/tasks/ner_unity_tuning_chat_prompt_20260511.md` when opening a dedicated Ner prefab/device-feel tuning chat.
-9. Backend interface documents only after the page flow is understood.
+2. `codex_workspace/app_web_parallel_workflow_20260513.md`
+3. `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md`
+4. `codex_workspace/design_workspace/tasks/APP_WEB_PARALLEL_TODOLIST_20260513.md`
+5. `codex_workspace/design_workspace/unity_ar_app/startup_menu_design_v0_20260509.md`
+6. `codex_workspace/design_workspace/sketches/startup_menu_landscape_v0.html`
+7. `codex_workspace/design_workspace/unity_ar_app/main_hud_landscape_v0_20260509.md`
+8. `codex_workspace/design_workspace/sketches/main_hud_landscape_v0.html`
+9. `.cursor/memory/architecture/Interface/app_v1_room_setting_room_profile_interface_20260510.md`
+10. `codex_workspace/design_workspace/tasks/lineb_ner_gameplay_longline_todo_20260511.md` for LineB/Ner implementation planning.
+11. `codex_workspace/design_workspace/tasks/ner_unity_tuning_chat_prompt_20260511.md` when opening a dedicated Ner prefab/device-feel tuning chat.
+12. Backend interface documents only after the page flow is understood.
 
 ## Route Rules
 

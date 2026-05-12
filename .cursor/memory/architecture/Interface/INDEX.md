@@ -74,6 +74,9 @@ Keep the split:
 
 - **Core interfaces**: stable public surfaces owned by Bus / Brain / DSG / Memory / Scheduler / Unity transport.
 - **Business flows**: user-visible workflows that compose core interfaces.
+- **Candidate core interfaces**: proposed shared contracts staged in
+  `codex_workspace/design_workspace/backend_interface_map/core_interface_candidate_queue_20260513.md`
+  until App/Web dual confirmation promotes them into this Interface route.
 
 Business flow docs must not copy large code signatures. Use the A-D discipline:
 
@@ -83,6 +86,20 @@ Business flow docs must not copy large code signatures. Use the A-D discipline:
 | B | Decide whether existing core interfaces can compose the flow. |
 | C | If no, list missing core surfaces without implementing protocol changes in the business doc. |
 | D | Define the input and observable success/failure signal. |
+
+When a candidate is confirmed and added to a core interface doc, include writer
+and lane-confirmation metadata either in frontmatter or in the nearby change
+log:
+
+| Field | Meaning |
+|:--|:--|
+| `source_chat` | `unity-app`, `web-console`, or `coordination`. |
+| `writer` | The agent/session that wrote the doc update. |
+| `confirmed_by` | Required lane confirmations, usually `unity-app` and `web-console`. |
+| `confirmed_at` | Confirmation date. |
+| `approved_by` | Optional; use when the user explicitly makes the final call. |
+| `origin_business_doc` | Business-interface file or candidate queue row that motivated the core addition. |
+| `consumers` | App, Web, Scheduler, Brain, etc. |
 
 ## Core Sources
 
@@ -101,7 +118,7 @@ Business flow docs must not copy large code signatures. Use the A-D discipline:
 | File | Status | Role |
 |:--|:--|:--|
 | `INDEX.md` | active | This clean interface route. |
-| `app_web_parallel_routes_agent_team_20260513.md` | active / routing decision | App/Web parallel route split, AgentTeam vs nanobot instance boundary, Maid Team selector, and core-interface candidates requiring approval. |
+| `app_web_parallel_routes_agent_team_20260513.md` | active / routing decision | App/Web parallel route split, AgentTeam vs nanobot instance boundary, Maid Team selector, and core-interface candidates requiring lane confirmation. |
 | `concept_dictionary_20260507.md` | active | Terminology and route hints. |
 | `legacy_issues_split_20260507.md` | active | P2.5/P3 issue split and dispatch hints. |
 | `menu_design_complete_20260507.md` | active / design | Menu design SSOT; frontend implementation must still follow Design workspace page flow. |

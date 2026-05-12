@@ -16,6 +16,7 @@ Read these in order for a new Codex session:
 5. `design_workspace/INDEX.md` — user-facing design workspace for original wording, sketches, Figma/Unity assets, and App/Web flow planning.
 6. `thesis_lineb_voiceprint_echo_addendum.md` — thesis addendum for Line B voiceprint detection, Line A speaker echo limits, and echo-safe dialogue wording.
 7. `app_frontend_startup_prep_20260512.md` plus `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md` for App/Web parallel routes and Maid Team boundary.
+8. `app_web_parallel_workflow_20260513.md` for the two-chat workflow, TODO board rules, business-interface write locations, and core-interface promotion rules.
 
 Then load only the relevant skill route:
 
@@ -32,6 +33,7 @@ Then load only the relevant skill route:
 
 - `app_frontend_startup_prep_20260512.md` — ECS Orchestrator handoff for App/Web frontend startup work: core interface inventory, route split, confirmation gaps, and parallel worktree plan.
 - `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md` — ratified App/Web parallel route split, AgentTeam vs nanobot instance boundary, and RoomSetting Maid Team selector.
+- `app_web_parallel_workflow_20260513.md` — operational workflow for two parallel chats: `ACTIVE_CONTEXT`, shared TODO board, lane business-interface directories, candidate queue, and core-interface writer metadata.
 
 ## Current Decision
 

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Parrot Web Console</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">P</span>
+          <div>
+            <div class="brand-title">Parrot Console</div>
+            <div class="brand-subtitle">Web lane</div>
+          </div>
+        </div>
+        <nav class="nav-list" aria-label="Console views">
+          <button class="nav-item active" type="button">
+            <span class="nav-icon">+</span>
+            <span data-i18n="nav.opsHealth">Ops Health</span>
+          </button>
+          <button class="nav-item" type="button" disabled>
+            <span class="nav-icon">#</span>
+            <span data-i18n="nav.runtimeState">Runtime State</span>
+          </button>
+          <button class="nav-item" type="button" disabled>
+            <span class="nav-icon">o</span>
+            <span data-i18n="nav.memoryGraph">Memory Graph</span>
+          </button>
+          <button class="nav-item" type="button" disabled>
+            <span class="nav-icon">></span>
+            <span data-i18n="nav.graphiti">Graphiti</span>
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <span id="authMode">auth: ...</span>
+          <span id="orchUrl">orchestrator: ...</span>
+          <button id="settingsButton" class="sidebar-button" type="button" data-i18n="settings.title">
+            Settings
+          </button>
+        </div>
+      </aside>
+
+      <main class="main-pane">
+        <header class="topbar">
+          <div>
+            <h1 data-i18n="ops.title">Ops Health</h1>
+            <p id="lastFetch">Waiting for status...</p>
+          </div>
+          <div class="topbar-actions">
+            <button id="refreshButton" class="button primary" type="button" data-i18n="actions.refresh">
+              Refresh
+            </button>
+            <button id="pauseButton" class="button" type="button" data-i18n="actions.pause">Pause</button>
+          </div>
+        </header>
+
+        <section class="summary-grid" aria-label="Status summary">
+          <article class="metric">
+            <span class="metric-label" data-i18n="metrics.connection">Connection</span>
+            <strong id="connectionState">...</strong>
+            <small id="connectionDetail">No data</small>
+          </article>
+          <article class="metric">
+            <span class="metric-label" data-i18n="metrics.modules">Modules</span>
+            <strong id="moduleCount">...</strong>
+            <small id="moduleDetail">online / offline</small>
+          </article>
+          <article class="metric">
+            <span class="metric-label" data-i18n="metrics.warnings">Warnings</span>
+            <strong id="warningCount">...</strong>
+            <small id="warningDetail">status warnings</small>
+          </article>
+          <article class="metric">
+            <span class="metric-label" data-i18n="metrics.selection">Selection</span>
+            <strong id="driftState">...</strong>
+            <small id="driftDetail">line drift</small>
+          </article>
+        </section>
+
+        <section class="topology-pane" aria-label="Connection topology">
+          <div class="pane-header">
+            <h2 data-i18n="topology.title">Status Topology</h2>
+            <span id="topologyState" class="pill">checking</span>
+          </div>
+          <div class="topology-map">
+            <div class="topology-node" id="nodeConsole">
+              <span class="node-dot good"></span>
+              <strong data-i18n="topology.console">Web Console</strong>
+              <small>BFF + UI</small>
+            </div>
+            <div class="topology-edge" id="edgeHealth"></div>
+            <div class="topology-node" id="nodeOrchestrator">
+              <span class="node-dot"></span>
+              <strong data-i18n="topology.orchestrator">Orchestrator</strong>
+              <small id="orchestratorHealthText">/health</small>
+            </div>
+            <div class="topology-edge" id="edgeStatus"></div>
+            <div class="topology-node" id="nodeStatus">
+              <span class="node-dot"></span>
+              <strong data-i18n="topology.status">Status Snapshot</strong>
+              <small id="statusAuthText">/status</small>
+            </div>
+            <div class="topology-edge" id="edgeModules"></div>
+            <div class="topology-node" id="nodeModules">
+              <span class="node-dot"></span>
+              <strong data-i18n="topology.modules">Module Heartbeats</strong>
+              <small id="moduleTopologyText">0 online</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="content-grid">
+          <article class="pane pane-wide">
+            <div class="pane-header">
+              <h2 data-i18n="panes.moduleHealth">Module Health</h2>
+              <span id="moduleTableState" class="pill">empty</span>
+            </div>
+            <div id="moduleMap" class="module-map"></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="table.module">Module</th>
+                    <th data-i18n="table.state">State</th>
+                    <th data-i18n="table.type">Type</th>
+                    <th data-i18n="table.layers">Layers</th>
+                    <th data-i18n="table.stale">Stale</th>
+                    <th data-i18n="table.note">Note</th>
+                  </tr>
+                </thead>
+                <tbody id="moduleRows"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="pane">
+            <div class="pane-header">
+              <h2 data-i18n="panes.runtimeConfig">Runtime Config</h2>
+              <span class="pill" data-i18n="pills.read">read</span>
+            </div>
+            <dl id="runtimeConfig" class="kv-list"></dl>
+          </article>
+
+          <article class="pane">
+            <div class="pane-header">
+              <h2 data-i18n="panes.brainSnapshot">Brain Snapshot</h2>
+              <span id="brainState" class="pill" data-i18n="pills.read">read</span>
+            </div>
+            <dl id="brainSnapshot" class="kv-list"></dl>
+          </article>
+
+          <article class="pane">
+            <div class="pane-header">
+              <h2 data-i18n="panes.containers">Containers</h2>
+              <span id="containerState" class="pill" data-i18n="pills.read">read</span>
+            </div>
+            <div id="containers" class="text-block"></div>
+          </article>
+
+          <article class="pane">
+            <div class="pane-header">
+              <h2 data-i18n="panes.warnings">Warnings</h2>
+              <span id="warningState" class="pill" data-i18n="pills.read">read</span>
+            </div>
+            <ul id="warnings" class="warning-list"></ul>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="settingsDialog" class="settings-dialog">
+      <form method="dialog" class="settings-card">
+        <header class="settings-header">
+          <h2 data-i18n="settings.title">Settings</h2>
+          <button class="icon-button" value="cancel" aria-label="Close" type="submit">x</button>
+        </header>
+        <label class="settings-row" for="languageSelect">
+          <span>
+            <strong data-i18n="settings.language">Language</strong>
+            <small data-i18n="settings.languageHint">Applies to this browser.</small>
+          </span>
+          <select id="languageSelect">
+            <option value="en">English</option>
+            <option value="zh">中文</option>
+          </select>
+        </label>
+      </form>
+    </dialog>
+    <script src="/assets/app.js" type="module"></script>
+  </body>
+</html>

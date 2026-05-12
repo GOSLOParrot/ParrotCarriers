@@ -401,6 +401,7 @@ def _index_html() -> str:
       background: rgba(31, 30, 37, .94);
       border-bottom: 1px solid var(--line);
       overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
     nav button { background: transparent; border-color: transparent; color: var(--muted); }
     nav button.active { background: #302a45; border-color: #5b4f80; color: #fff; }
@@ -486,7 +487,21 @@ def _index_html() -> str:
     }
     .form { padding: 10px; display: grid; gap: 8px; }
     .wide { grid-column: 1 / -1; }
-    @media (max-width: 900px) { main { grid-template-columns: 1fr; } .grid { grid-template-columns: 1fr; } }
+    .running { color: var(--warn); }
+    .okline { color: var(--ok); }
+    .errorline { color: var(--bad); }
+    @media (max-width: 900px) {
+      header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .actions {
+        justify-content: space-between;
+      }
+      main { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -666,6 +681,7 @@ def _index_html() -> str:
     <section>
       <h2>App V1 Self-check</h2>
       <div class="form">
+        <div id="selfcheckStatus" class="muted">Ready to run.</div>
         <button onclick="runSelfCheck()">Run Self-check</button>
       </div>
     </section>
@@ -887,9 +903,25 @@ def _index_html() -> str:
         JSON.stringify(await getJson('/api/graphiti/status'), null, 2);
     }
     async function runSelfCheck() {
-      const res = await fetch('/api/app/self-check', {method:'POST'});
-      document.getElementById('selfcheckResult').textContent =
-        JSON.stringify(await res.json(), null, 2);
+      const status = document.getElementById('selfcheckStatus');
+      const output = document.getElementById('selfcheckResult');
+      status.className = 'running';
+      status.textContent = 'Running self-check...';
+      output.textContent = 'running...';
+      try {
+        const res = await fetch('/api/app/self-check', {method:'POST'});
+        if (!res.ok) throw new Error(`self-check failed: ${res.status}`);
+        const data = await res.json();
+        output.textContent = JSON.stringify(data, null, 2);
+        status.className = data.passed ? 'okline' : 'errorline';
+        status.textContent = data.passed ? 'Self-check passed.' : 'Self-check completed with failures.';
+        await refresh();
+        await refreshLive();
+      } catch (err) {
+        status.className = 'errorline';
+        status.textContent = 'Self-check failed to run.';
+        output.textContent = err.message;
+      }
     }
     refresh()
       .then(() => refreshLive())

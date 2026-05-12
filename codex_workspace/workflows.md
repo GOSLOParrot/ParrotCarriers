@@ -64,6 +64,22 @@ Suggested loop:
 4. Use `backend_interface_map/` for business flows such as Obsidian, Google Calendar, PhotoNode, and Nanobot reports.
 5. Update `tasks/ACTIVE_CONTEXT.md` after a real design decision or route change.
 
+## App/Web Parallel Workflow (2026-05-13)
+
+Use `codex_workspace/app_web_parallel_workflow_20260513.md` when running Unity
+App and Web Console chats in parallel.
+
+Shared files:
+
+- `design_workspace/tasks/ACTIVE_CONTEXT.md` is current truth and route pointers only.
+- `design_workspace/tasks/APP_WEB_PARALLEL_TODOLIST_20260513.md` is the shared high-level board.
+- `design_workspace/backend_interface_map/app/` is owned by the Unity App chat.
+- `design_workspace/backend_interface_map/web_console/` is owned by the Web Console chat.
+- `design_workspace/backend_interface_map/core_interface_candidate_queue_20260513.md` is the staging queue for shared core-interface candidates.
+
+Core interface changes still require user approval before updating
+`.cursor/memory/architecture/Interface/**`.
+
 ## Unity Workflow
 
 Use `unity/ArSpike` as the implementation source.

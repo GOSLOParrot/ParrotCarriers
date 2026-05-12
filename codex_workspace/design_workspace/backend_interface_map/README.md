@@ -25,6 +25,46 @@
 - 菜单画布外部模块入口：`menu_canvas_external_modules_business_flow.md`。
 - 第一版 App 统一业务 facade：`app_v1_core_business_interface_coverage_20260510.md`。
 
+## 2026-05-13 App/Web 并行写入位置
+
+| 路线 | 业务接口写入位置 | 说明 |
+|:--|:--|:--|
+| Unity App | `app/` | 启动页、RoomSetting、HUD、菜单画布、工具柜、游戏/模型交互、App 侧报告/工作区入口。 |
+| Web Console | `web_console/` | ECS/module health、L1.5/L2-B、节点/照片、Blackboard、IntentWorkspace、Plan、Scheduler/Nanobot、AgentTeam/MCP 管理。 |
+| Shared core candidates | `core_interface_candidate_queue_20260513.md` | 未获用户确认前只记录候选，不改核心 SSOT。 |
+
+核心接口批准后才写入 `.cursor/memory/architecture/Interface/**`，并带
+`source_chat` / `writer` / `approved_by` / `origin_business_doc` 元数据。
+
+## Lane Index Discipline
+
+Each lane directory owns its README index. The root
+`backend_interface_map/README.md` points to the lane, and the lane README lists
+the active business files.
+
+| Lane | Local index | Rule |
+|:--|:--|:--|
+| Unity App | `app/README.md` | App chat maintains App business-interface files only. |
+| Web Console | `web_console/README.md` | Web chat maintains Web business-interface files only. |
+
+Do not scatter Web Console notes outside `web_console/`. If a temporary
+multi-round audit or implementation note is needed, keep it in a clearly marked
+temporary folder under the owning lane and promote only durable decisions back
+to the indexed business file.
+
+## Active App Business Interface Index
+
+Durable App-facing business interface files live under `app/` and are indexed
+again in `app/README.md`.
+
+| File | Scope |
+|:--|:--|
+| `app/startup_roomsetting_app_interface_20260513.md` | Startup page, RoomSetting, START transition, LineB/LiveKit status, main-ready contract. |
+| `app/canvas_menu_ref_workspace_app_interface_20260513.md` | Canvas menu, renderer-agnostic node/edge boundary, App-side Ref workspace. |
+
+Do not create one-off App interface files for every small step. Add durable
+decisions to these module-level files unless ownership or lifecycle changes.
+
 ## 共性纪律（2026-05-11 audit 三轮总结）
 
 > **任何在 `parrot/brain/**` 里声明的 module-level mutable state（`_dict` /

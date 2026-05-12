@@ -9,6 +9,7 @@ Use this route for developer Web console and visualization.
 3. `.cursor/memory/architecture/Interface/INDEX.md`
 4. `.cursor/memory/architecture/user_ideas_and_backend_capability_brief_20260509.md`
 5. `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md`
+6. `codex_workspace/app_web_parallel_workflow_20260513.md`
 
 ## Scope
 
@@ -24,6 +25,8 @@ Read-only first:
 Write/admin flows stay Web-only and need explicit core-interface approval before
 implementation: AgentTeam apply, MCP edit/apply, process restart controls, and
 message/control sends.
+Write Web business-interface notes under
+`codex_workspace/design_workspace/backend_interface_map/web_console/`.
 
 ## Suggested Structure
 
