@@ -1,20 +1,44 @@
 #!/usr/bin/env bash
-# Castle ECS 部署脚本 — Phase 1 最小部署
-# 用法: bash infra/deploy-castle.sh <castle-ip> [ssh-key]
+# Castle ECS 部署脚本
+#
+# 用法:
+#   bash infra/deploy-castle.sh <castle-ip> [ssh-key]
+#       常规部署：rsync 代码 + 装依赖 + 启 docker 容器 (LiveKit/Redis/FalkorDB/token-mint)
+#       Python 进程仍由 tmux 手工拉起（参见末尾说明）。
+#
+#   bash infra/deploy-castle.sh <castle-ip> [ssh-key] --systemd
+#       Phase 3.5 入口：在常规部署之后**安装 systemd unit** 并启 orchestrator。
+#       一旦切到 systemd，未来的 set_active_line / restart_component / 滚动重启
+#       都通过 orchestrator (:7890) 完成；不再需要 SSH + tmux。
 #
 # 部署内容:
-#   1. LiveKit Server + Redis (docker-compose.yml)
-#   2. Brain Agent + Scheduler + Nanobot Worker (systemd 或 tmux)
+#   1. LiveKit Server + Redis + FalkorDB + token-mint (docker-compose.yml)
+#   2. （可选 --systemd）Phase 3.1 systemd unit + orchestrator
+#   3. （默认）Brain / Scheduler / Maid / GOSLO-chat 由 tmux 手工拉起
 #
 # 前提:
 #   - Castle 上已安装 Docker + Docker Compose
-#   - SSH 可达
-#   - Castle 上 .env 已按 .env.castle 模板填好
+#   - SSH 可达 (root)
+#   - Castle 上 .env 已按 infra/env-castle.template 填好
 
 set -euo pipefail
 
-CASTLE_IP="${1:?Usage: deploy-castle.sh <castle-ip> [ssh-key-path]}"
-SSH_KEY="${2:-}"
+CASTLE_IP="${1:?Usage: deploy-castle.sh <castle-ip> [ssh-key-path] [--systemd]}"
+shift || true
+
+SSH_KEY=""
+INSTALL_SYSTEMD=0
+for arg in "$@"; do
+    case "$arg" in
+        --systemd) INSTALL_SYSTEMD=1 ;;
+        *)
+            if [ -z "$SSH_KEY" ]; then
+                SSH_KEY="$arg"
+            fi
+            ;;
+    esac
+done
+
 SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10"
 if [ -n "$SSH_KEY" ]; then
     SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
@@ -97,6 +121,28 @@ echo ""
 echo "[4/5] Starting Docker services..."
 $SSH_CMD "cd $REMOTE_DIR && docker compose -f infra/docker-compose.yml up -d"
 
+# 4b. （可选）Phase 3.5 — 安装 systemd unit
+if [ "$INSTALL_SYSTEMD" -eq 1 ]; then
+    echo ""
+    echo "[4b/5] Installing systemd units (Phase 3.1)..."
+    # 假设 Castle 上 ParrotCarriers 部署在 $REMOTE_DIR；systemd unit 默认期望
+    # /opt/parrot/ParrotCarriers，所以这里做一个 symlink 让 unit 找得到。
+    $SSH_CMD "mkdir -p /opt/parrot && [ -L /opt/parrot/ParrotCarriers ] || ln -sfn $REMOTE_DIR /opt/parrot/ParrotCarriers"
+    # systemd 的 EnvironmentFile 同样指向 /opt/parrot/...，所以 .env 也要 symlink。
+    $SSH_CMD "[ -f $REMOTE_DIR/.env ] && cp -f $REMOTE_DIR/.env $REMOTE_DIR/.env.castle || true"
+    $SSH_CMD "id parrot 2>/dev/null || useradd -m -u 1000 parrot"
+    $SSH_CMD "chown -R parrot:parrot $REMOTE_DIR"
+    $SSH_CMD "cp -f $REMOTE_DIR/infra/systemd/parrot-*.service /etc/systemd/system/"
+    $SSH_CMD "cp -f $REMOTE_DIR/infra/systemd/parrot-brain@.service /etc/systemd/system/ 2>/dev/null || true"
+    $SSH_CMD "systemctl daemon-reload"
+    $SSH_CMD "systemctl enable parrot-orchestrator parrot-brain parrot-scheduler parrot-maid parrot-goslo-chat"
+    $SSH_CMD "systemctl restart parrot-orchestrator"
+    $SSH_CMD "sleep 2 && systemctl status parrot-orchestrator --no-pager -n 15 || true"
+    echo "  → orchestrator running on :7890. Manage other components via:"
+    echo "    curl -X POST -H 'Authorization: Bearer \$PARROT_ORCH_SECRET' \\"
+    echo "         http://$CASTLE_IP:7890/restart_component -d '{\"component\":\"brain\"}'"
+fi
+
 # 5. 验证
 echo ""
 echo "[5/5] Health check..."
@@ -122,13 +168,25 @@ echo "  # 1. Brain Agent (GOSLO Live body):"
 echo "  tmux new -s brain"
 echo "  .venv/bin/python -m parrot.brain.agent dev"
 echo ""
-echo "  # 2. Nanobot Worker (猫娘女仆: parrot_bus + weixin):"
+echo "  # 2. Scheduler service (BT routing for dispatch_task / nanobot reply fan-in):"
+echo "  #    NOTE: this was a known deploy gap (deploy_snapshot_p2_20260412.md §4.2);"
+echo "  #    the Phase 1 ECS Orchestrator audit decided to keep Scheduler as an"
+echo "  #    independent process (\"file > BB > env > default\" config layering"
+echo "  #    means Brain restart and Scheduler restart can be decoupled)."
+echo "  tmux new -s scheduler"
+echo "  .venv/bin/python src/scripts/start_scheduler.py"
+echo ""
+echo "  # 3. Nanobot Worker (猫娘女仆: parrot_bus + weixin):"
 echo "  tmux new -s maid"
 echo "  .venv/bin/python src/scripts/start_nanobot_worker.py"
 echo ""
-echo "  # 3. GOSLO Chat (鹦鹉大小姐 Telegram bot):"
+echo "  # 4. GOSLO Chat (鹦鹉大小姐 Telegram bot):"
 echo "  tmux new -s goslo-chat"
 echo "  .venv/bin/python src/scripts/start_goslo_chat.py"
+echo ""
+echo "  # 5. (Phase 2+ — once orchestrator lands) Castle Orchestrator API on :7890:"
+echo "  #    tmux new -s orchestrator"
+echo "  #    .venv/bin/python -m parrot.castle.orchestrator"
 echo ""
 echo "  # Dispatch agent to room (from another shell or sim client):"
 echo "  # The sim_unity_client.py auto-dispatches when agent_name='parrot-brain'"

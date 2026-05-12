@@ -1,0 +1,31 @@
+# Phase 3.3 — Orchestrator with host control (Tier 2 restart capable)
+#
+# Layered on top of infra/docker-compose.yml. Adds:
+#   * /var/run/docker.sock mount   → orchestrator can `docker compose` other services
+#   * /run/systemd/system mount    → orchestrator can read systemd unit state
+#   * privileged: false but with cap_add=SYS_ADMIN minimum for systemctl
+#
+# Usage:
+#   docker compose \
+#     -f infra/docker-compose.yml \
+#     -f infra/docker-compose.orchestrator-host.yml \
+#     --profile orchestrator \
+#     up -d orchestrator
+#
+# Caveat: systemctl invocation from inside a container is fragile; the
+# operator should still consider running orchestrator directly on the
+# host via systemd (parrot-orchestrator.service) and using this layered
+# compose file only for dev / smoke tests.
+
+services:
+  orchestrator:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - /run/systemd/system:/run/systemd/system:rw
+      - /etc/systemd/system:/etc/systemd/system:ro
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      - PARROT_ORCH_HOST=0.0.0.0
+      - PARROT_ORCH_PORT=7890
+      - PARROT_ORCH_HOST_CONTROL=1

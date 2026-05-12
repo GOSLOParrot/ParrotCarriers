@@ -330,7 +330,13 @@ def test_lineb_missing_tts_voice_blocks_even_when_adc_is_missing(
     assert findings["google_adc"]["state"] == "blocked"
     assert findings["tts"]["state"] == "blocked"
     assert status.state == "blocked"
-    assert status.summary == "LineB selected TTS profile is missing a usable voice."
+    # 2026-05-11 audit Round 5 (Bug O): the voice tile may now append a
+    # selection-drift suffix when the running pipeline differs from the
+    # selected one. Use ``startswith`` to keep the original baseline
+    # assertion while tolerating the additional drift annotation.
+    assert status.summary.startswith(
+        "LineB selected TTS profile is missing a usable voice."
+    )
     assert line_b["readiness"]["tts"] == "blocked"
 
 

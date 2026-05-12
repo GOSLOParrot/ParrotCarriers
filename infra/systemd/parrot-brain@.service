@@ -1,0 +1,32 @@
+[Unit]
+Description=Parrot Brain Agent replica %i (rolling restart pool)
+Documentation=file:/opt/parrot/ParrotCarriers/.cursor/memory/architecture/Interface/app_v1_brain_cold_start_line_lifecycle_audit_20260511.md
+After=network-online.target docker.service parrot-orchestrator.service
+Wants=network-online.target docker.service parrot-orchestrator.service
+# Two replicas should never write the same identity to LiveKit at the
+# same time; the orchestrator uses %i as a suffix on PARROT_LIVEKIT_AGENT_IDENTITY
+# so the LiveKit dispatch round-robins between them and a third
+# replica can safely come up while the old one drains.
+
+[Service]
+Type=simple
+User=parrot
+WorkingDirectory=/opt/parrot/ParrotCarriers
+EnvironmentFile=-/opt/parrot/ParrotCarriers/.env.castle
+Environment=PYTHONUNBUFFERED=1
+Environment=PARROT_BRAIN_REPLICA=%i
+ExecStart=/opt/parrot/ParrotCarriers/.venv/bin/python -m parrot.brain.agent dev
+Restart=on-failure
+RestartSec=5s
+StartLimitBurst=5
+StartLimitIntervalSec=60
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/parrot/ParrotCarriers/data
+ReadWritePaths=/opt/parrot/ParrotCarriers/logs
+
+[Install]
+WantedBy=multi-user.target

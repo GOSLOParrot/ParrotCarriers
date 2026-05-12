@@ -118,13 +118,44 @@ _DEFAULT_PIPELINE = _PIPELINE_LINE_A
 
 
 def _resolve_pipeline() -> str:
-    raw = os.getenv("PARROT_LLM_PIPELINE", _DEFAULT_PIPELINE).strip().lower()
-    if raw not in (_PIPELINE_LINE_A, _PIPELINE_LINE_B):
-        raise RuntimeError(
-            f"PARROT_LLM_PIPELINE={raw!r} invalid; expected {_PIPELINE_LINE_A!r} "
-            f"or {_PIPELINE_LINE_B!r} (default {_DEFAULT_PIPELINE!r})."
+    """Pick LineA or LineB for the next AgentSession.
+
+    Resolution order (highest first; see
+    ``parrot.castle.runtime_config`` for the full layering rule and
+    ``app_v1_brain_cold_start_line_lifecycle_audit_20260511.md``
+    Phase 1 for the rationale):
+
+    1. ``data/runtime_config.json`` — Castle Orchestrator-controlled
+       file. Wins so a Tier 1 line switch can take effect on the next
+       LiveKit room job without needing the orchestrator to mutate
+       this Brain process's ``os.environ``.
+    2. Blackboard ``global/active_line_id`` — runtime apply path used
+       by ``apply_room_profile``.
+    3. Process env ``PARROT_LLM_PIPELINE`` — boot-time selection.
+    4. Default (``line_a``).
+
+    The previous behaviour (env-only) is preserved as the fallback so
+    every existing deployment that sets ``PARROT_LLM_PIPELINE=line_b``
+    in tmux still works without touching the file.
+    """
+    try:
+        from parrot.castle.runtime_config import resolve_runtime_config
+
+        resolved = resolve_runtime_config().line_id
+    except Exception:
+        logger.warning(
+            "Phase1 runtime_config resolve failed; falling back to env-only",
+            exc_info=True,
         )
-    return raw
+        resolved = os.getenv("PARROT_LLM_PIPELINE", _DEFAULT_PIPELINE).strip().lower()
+
+    if resolved not in (_PIPELINE_LINE_A, _PIPELINE_LINE_B):
+        raise RuntimeError(
+            f"runtime_config / PARROT_LLM_PIPELINE resolved to {resolved!r}; "
+            f"expected {_PIPELINE_LINE_A!r} or {_PIPELINE_LINE_B!r} "
+            f"(default {_DEFAULT_PIPELINE!r})."
+        )
+    return resolved
 
 
 def _build_session(pipeline: str, config: ParrotConfig) -> AgentSession:
@@ -808,13 +839,87 @@ def _attach_menu_rpc(room: "Any") -> None:
             }
         )
 
+    @room.local_participant.register_rpc_method("forceUnityReconnect")
+    async def _force_unity_reconnect(data: "Any") -> str:
+        """Phase 1 ECS Orchestrator Tier 1 trigger.
+
+        Disconnects Brain from the current LiveKit room. The room job
+        ends, ``brain_entrypoint`` is freed, and the next time Unity
+        reconnects (Unity's own RoomManager auto-reconnect, or a manual
+        Connect after the orchestrator wrote
+        ``data/runtime_config.json``) the new ``brain_entrypoint``
+        runs and re-resolves the pipeline / line_profile.
+
+        Required payload::
+
+            { "reason": "tier1_line_switch", "request_id": "..." }
+
+        ``reason`` is logged for audit trail. ``request_id`` is
+        echoed in the response so the caller can correlate.
+
+        Note: Unity is responsible for the actual reconnect. Brain
+        only signals "drop the room job, your config has changed".
+        That decoupling is intentional: it lets the orchestrator
+        coordinate with Unity (e.g. show a "switching to LineB ~5s"
+        toast) before Brain's room context disappears.
+        """
+        payload = _payload(data)
+        reason = str(payload.get("reason") or "orchestrator_tier1").strip() or "orchestrator_tier1"
+        request_id = str(payload.get("request_id") or "").strip()
+        # Best-effort: capture the current resolved config snapshot so
+        # the caller (or orchestrator audit log) can prove what the
+        # *next* job will read.
+        next_resolved: dict[str, Any] = {}
+        try:
+            from parrot.castle.runtime_config import resolve_runtime_config
+
+            next_resolved = resolve_runtime_config().as_json()
+        except Exception:
+            logger.exception("forceUnityReconnect: runtime_config resolve failed")
+        logger.info(
+            "forceUnityReconnect requested (reason=%s request_id=%s next=%s)",
+            reason,
+            request_id,
+            next_resolved.get("line_id"),
+        )
+
+        async def _disconnect_after_ack() -> None:
+            # Delay so the RPC reply is delivered first; otherwise the
+            # caller sees a transport error instead of the structured
+            # "ok" response.
+            await asyncio.sleep(0.25)
+            try:
+                # Disconnect the local agent from the room. LiveKit
+                # surfaces this as a clean room disconnect to all
+                # participants; Unity's RoomManager picks that up and
+                # re-runs Connect with the same identity, which
+                # triggers a fresh agent dispatch + brain_entrypoint.
+                await ctx.room.disconnect()
+            except Exception:
+                logger.exception("forceUnityReconnect: ctx.room.disconnect failed")
+
+        asyncio.ensure_future(_disconnect_after_ack())
+        return _dump(
+            {
+                "status": "ok",
+                "reason": reason,
+                "request_id": request_id,
+                "next": next_resolved,
+                "note": (
+                    "Brain will disconnect from the current LiveKit room "
+                    "shortly. Unity should reconnect to pick up the new "
+                    "runtime config."
+                ),
+            }
+        )
+
     logger.info(
         "Menu RPC handlers registered: listMenuBlocks, applyMenuSelection, "
         "applyPreset, saveAsPreset, applyWorkspace, setAppCapabilityMode, "
         "setPhotoAwareness, setCameraMode, setXrHandMode, "
         "getRoomSettingSnapshot, previewRoomProfile, newRoomProfile, "
         "saveRoomProfile, applyRoomProfile, setLineBAudioRoutePolicy, "
-        "registerLineBTtsSegment, classifyLineBMicInput"
+        "registerLineBTtsSegment, classifyLineBMicInput, forceUnityReconnect"
     )
 
 
@@ -1035,6 +1140,54 @@ def _attach_session_context_watchers(session: AgentSession) -> None:
     logger.info("session_context: Room/persona/mode/scene watchers attached")
 
 
+async def _handle_scheduler_message(
+    session: AgentSession,
+    message: dict[str, Any],
+) -> None:
+    """Per-message work for the scheduler result listener.
+
+    Extracted as a module-level coroutine (Round 5 Bug N) so the
+    per-message try/except in ``_listen_scheduler_results`` has a
+    clean unit to test in isolation, and so a future caller (real-mode
+    smoke test, replay tool) can drive the same handler without
+    rebuilding the whole listener.
+    """
+    result = json.loads(message["data"])
+    task_id = result.get("task_id", "?")
+    task_type = result.get("type", "unknown")
+    status = result.get("status", "unknown")
+    source = result.get("source_worker", "unknown")
+    summary = result.get("result_summary", "")
+    logger.info(
+        "Brain got result via Scheduler: task=%s type=%s status=%s source=%s",
+        task_id, task_type, status, source,
+    )
+    if status == "timeout":
+        instructions = (
+            f"A background task timed out. "
+            f"Task type: {task_type}, id: {task_id}. "
+            f"Apologize briefly and suggest trying again later."
+        )
+    elif status == "completed" and summary:
+        instructions = (
+            f"A background task just completed! "
+            f"Task type: {task_type}, result: {summary}. "
+            f"Briefly tell the user the result in a cheerful parrot way."
+        )
+    else:
+        instructions = (
+            f"A background task finished with status: {status}. "
+            f"Task type: {task_type}, id: {task_id}. "
+            f"Summary: {summary}. "
+            f"Briefly tell the user about it."
+        )
+    await _generate_reply_after_current_speech(
+        session,
+        instructions,
+        "scheduler_result",
+    )
+
+
 @server.rtc_session()
 async def brain_entrypoint(ctx: agents.JobContext):
     """Handle LiveKit's default room jobs and boot the Bus + Gemini session.
@@ -1063,6 +1216,55 @@ async def brain_entrypoint(ctx: agents.JobContext):
     assistant = ParrotAssistant()
     pipeline = _resolve_pipeline()
     session = _build_session(pipeline, config)
+
+    # Phase 5.2: ensure the async exception hook is attached to the
+    # currently running loop. Sync excepthook is installed in
+    # __main__; the async path needs the loop to exist.
+    try:
+        from parrot.brain.crash_hook import install_for_running_loop
+
+        install_for_running_loop(asyncio.get_running_loop())
+    except Exception:
+        logger.exception("Phase 5.2 crash_hook async loop install failed")
+
+    # Phase 5.1: pre-flight audit (Redis ping, runtime_config OK,
+    # photo_upload port bindable). Loud failure → BB
+    # global/brain_boot_preflight + log; soft failure (port already
+    # bound) → photo upload skip path picks it up. Never raises.
+    try:
+        from parrot.brain.boot_preflight import run_preflight
+
+        preflight_report = await run_preflight()
+        if preflight_report.overall != "ok":
+            logger.warning(
+                "Brain boot preflight: overall=%s (%d warnings/errors)",
+                preflight_report.overall,
+                sum(1 for c in preflight_report.checks if c.status != "ok"),
+            )
+    except Exception:
+        logger.exception("Phase5 boot_preflight raised; continuing")
+
+    # Phase 1 ECS Orchestrator: publish what this brain_entrypoint
+    # actually resolved (line_id + per-field source) so the future
+    # `parrot.castle.orchestrator` /status endpoint can answer "which
+    # Line is live right now" without touching env or re-reading the
+    # file. Best-effort; never raises into the room job.
+    try:
+        import time as _time
+
+        from parrot.castle.runtime_config import write_brain_runtime_snapshot
+
+        write_brain_runtime_snapshot(
+            pid=os.getpid(),
+            room_name=getattr(ctx.room, "name", "") or "",
+            started_at=_time.time(),
+            extra={"resolved_pipeline": pipeline},
+        )
+    except Exception:
+        logger.warning(
+            "Phase1 brain_runtime_snapshot publish failed",
+            exc_info=True,
+        )
     background_tasks: list[asyncio.Task[Any]] = []
     photo_upload_server: Any | None = None
 
@@ -1299,7 +1501,19 @@ async def brain_entrypoint(ctx: agents.JobContext):
     )
 
     async def _listen_scheduler_results() -> None:
-        """Background task: listen for aggregated results from Scheduler and notify user."""
+        """Background task: listen for aggregated results from Scheduler and notify user.
+
+        FIX (2026-05-11 audit Round 5, Bug N): per-message work runs in
+        its own try/except. Without that wrapper, any single failure
+        (a malformed Redis payload, ``json.JSONDecodeError``, a
+        ``generate_reply`` rejection from a session that's mid-
+        disconnect, etc.) used to bubble out of the ``async for`` loop,
+        get caught by the outer ``except Exception`` below, and end the
+        listener for the rest of the session. Subsequent scheduler
+        results would then be silently dropped — nanobot/long-task
+        completion notifications would never reach the user. The new
+        shape keeps the loop alive and logs each failure individually.
+        """
         try:
             r = await get_redis()
             pubsub = r.pubsub()
@@ -1309,40 +1523,15 @@ async def brain_entrypoint(ctx: agents.JobContext):
                 async for message in pubsub.listen():
                     if message["type"] != "message":
                         continue
-                    result = json.loads(message["data"])
-                    task_id = result.get("task_id", "?")
-                    task_type = result.get("type", "unknown")
-                    status = result.get("status", "unknown")
-                    source = result.get("source_worker", "unknown")
-                    summary = result.get("result_summary", "")
-                    logger.info(
-                        "Brain got result via Scheduler: task=%s type=%s status=%s source=%s",
-                        task_id, task_type, status, source,
-                    )
-                    if status == "timeout":
-                        instructions = (
-                            f"A background task timed out. "
-                            f"Task type: {task_type}, id: {task_id}. "
-                            f"Apologize briefly and suggest trying again later."
+                    try:
+                        await _handle_scheduler_message(session, message)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.exception(
+                            "scheduler_result_listener: per-message handler "
+                            "failed; staying subscribed for the next event"
                         )
-                    elif status == "completed" and summary:
-                        instructions = (
-                            f"A background task just completed! "
-                            f"Task type: {task_type}, result: {summary}. "
-                            f"Briefly tell the user the result in a cheerful parrot way."
-                        )
-                    else:
-                        instructions = (
-                            f"A background task finished with status: {status}. "
-                            f"Task type: {task_type}, id: {task_id}. "
-                            f"Summary: {summary}. "
-                            f"Briefly tell the user about it."
-                        )
-                    await _generate_reply_after_current_speech(
-                        session,
-                        instructions,
-                        "scheduler_result",
-                    )
             finally:
                 with contextlib.suppress(Exception):
                     await pubsub.unsubscribe(CH_SCHEDULER_TO_BRAIN)
@@ -1431,6 +1620,17 @@ async def brain_entrypoint(ctx: agents.JobContext):
             reset_ecp_state_ingest_on_session_end()
         except Exception:
             logger.exception("EcpState ingest reset failed on disconnect")
+        # Phase 1 ECS Orchestrator: drop brain_runtime_snapshot so a
+        # subsequent /status read between sessions can't mistake the
+        # last room's snapshot for a live Brain.
+        try:
+            from parrot.castle.runtime_config import clear_brain_runtime_snapshot
+
+            clear_brain_runtime_snapshot()
+        except Exception:
+            logger.exception(
+                "Phase1 brain_runtime_snapshot clear failed on disconnect"
+            )
         logger.info("GOSLO mode → chat (room disconnected)")
 
     logger.info("Brain Agent session active in room '%s'", ctx.room.name)
@@ -1446,4 +1646,13 @@ async def brain_entrypoint(ctx: agents.JobContext):
 
 
 if __name__ == "__main__":
+    # Phase 5.2 — install before the LiveKit worker starts so any
+    # crash inside the agent loop (or in attach_l1) writes to BB
+    # before the process dies.
+    try:
+        from parrot.brain.crash_hook import install_crash_hook
+
+        install_crash_hook()
+    except Exception:
+        logger.exception("Phase 5.2 crash_hook install failed; continuing")
     agents.cli.run_app(server)

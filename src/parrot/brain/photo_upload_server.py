@@ -43,8 +43,9 @@ import contextlib
 import datetime
 import logging
 import os
+import socket
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import uvicorn  # type: ignore[import-not-found]
@@ -245,6 +246,40 @@ async def _publish_asset_uploaded_event(
 # ─── uvicorn lifecycle helper (for brain.agent boot) ───────────────
 
 
+def _is_port_bindable(host: str, port: int) -> tuple[bool, str]:
+    """Probe ``host:port`` with a short-lived socket.
+
+    FIX (2026-05-11 audit Round 5, Bug M): uvicorn's ``Server.startup``
+    calls ``sys.exit(1)`` on bind failure. When wrapped in
+    ``asyncio.create_task``, that ``SystemExit`` propagates up and can
+    tear down the **brain agent's own event loop**, killing the whole
+    process. Pre-checking the port lets us refuse to start the server
+    cleanly and log a structured error instead of letting uvicorn crash
+    the agent.
+
+    Returns ``(True, "")`` if the port can be bound right now,
+    ``(False, reason)`` otherwise. The probe-then-bind window is racy
+    by definition, but the typical failure mode this guards against is
+    "previous Brain process didn't release the port" — a steady-state,
+    not a TOCTOU race — so this remains useful even though it's not
+    atomic.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # Deliberately NOT setting SO_REUSEADDR on the probe: on Windows,
+    # SO_REUSEADDR has "share the port" semantics, so a probe with that
+    # flag would succeed even when another listener already holds the
+    # port. Leaving it off makes the probe accurately answer "can a
+    # fresh listener take this port right now?".
+    try:
+        sock.bind((host, port))
+    except OSError as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    finally:
+        with contextlib.suppress(OSError):
+            sock.close()
+    return True, ""
+
+
 async def start_photo_upload_server(
     *,
     host: str | None = None,
@@ -254,11 +289,11 @@ async def start_photo_upload_server(
 
     Returns the ``uvicorn.Server`` instance so the caller can request a
     graceful shutdown later (``server.should_exit = True``). Returns
-    ``None`` and logs a warning if uvicorn is missing.
+    ``None`` and logs a warning if uvicorn is missing **or** the port
+    is already bound (Round 5 Bug M).
 
     Brain agent boot calls this and lets the returned task run as long
-    as the room is connected; no explicit drain on disconnect (Phase 4
-    spike scope — Phase 5+ will add lifecycle coupling).
+    as the room is connected.
     """
     try:
         import uvicorn  # type: ignore[import-not-found]
@@ -270,8 +305,18 @@ async def start_photo_upload_server(
 
     host = host or os.getenv(_PHOTO_UPLOAD_HOST_ENV, _DEFAULT_HOST)
     port = port or int(os.getenv(_PHOTO_UPLOAD_PORT_ENV, str(_DEFAULT_PORT)))
-    app = build_app()
 
+    bindable, reason = _is_port_bindable(host, port)
+    if not bindable:
+        logger.error(
+            "[photo_upload] cannot start: %s:%d already in use (%s); "
+            "photo asset upload disabled this session. Stop any stale "
+            "Brain / uvicorn process holding the port and reconnect.",
+            host, port, reason,
+        )
+        return None
+
+    app = build_app()
     config = uvicorn.Config(
         app,
         host=host,
@@ -285,6 +330,35 @@ async def start_photo_upload_server(
     # `should_exit` for cooperative shutdown.
     task = asyncio.create_task(server.serve(), name="photo_upload_server")
     setattr(server, "_parrot_task", task)
+
+    # FIX (2026-05-11 audit Round 5, Bug M): the photo upload task is
+    # NOT in `brain.agent.background_tasks`, so it has no
+    # `_log_task_done` callback. Without this hook, an unexpected
+    # `serve()` failure (e.g. a delayed uvicorn shutdown crash, or a
+    # ``SystemExit`` from a future code path) becomes "Task exception
+    # was never retrieved" — silently disabled photo upload.
+    def _log_done(done: "asyncio.Task[Any]") -> None:
+        with contextlib.suppress(asyncio.CancelledError):
+            exc = done.exception()
+            if exc is None:
+                logger.info("[photo_upload] server task exited cleanly")
+                return
+            if isinstance(exc, SystemExit):
+                logger.error(
+                    "[photo_upload] uvicorn raised SystemExit(%s) — "
+                    "agent process bind likely failed; photo upload "
+                    "is now disabled for this session.",
+                    getattr(exc, "code", "?"),
+                )
+                return
+            logger.error(
+                "[photo_upload] server task crashed: %s",
+                exc,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+
+    task.add_done_callback(_log_done)
+
     logger.info(
         "[photo_upload] server started host=%s port=%d cache_root=%s",
         host, port, get_cache_root(),
@@ -297,15 +371,37 @@ async def stop_photo_upload_server(
     *,
     timeout_s: float = 3.0,
 ) -> None:
-    """Request cooperative shutdown for the in-process upload server."""
+    """Request cooperative shutdown for the in-process upload server.
+
+    FIX (2026-05-11 audit Round 5, Bug L): the previous version wrapped
+    the task with ``asyncio.shield`` so timeouts could not cancel a
+    stuck uvicorn shutdown. The hung task survived the timeout window
+    and kept port 7889 bound — which then collided with the next
+    session's :func:`start_photo_upload_server` (Bug M) on cold restart.
+    Now we ask uvicorn to exit cooperatively first, and if that doesn't
+    win within ``timeout_s`` we explicitly cancel the task and wait a
+    final short grace period for the cancel to drain.
+    """
     if server is None:
         return
     server.should_exit = True
     task = getattr(server, "_parrot_task", None)
     if task is None:
         return
-    with contextlib.suppress(asyncio.TimeoutError):
+
+    try:
         await asyncio.wait_for(asyncio.shield(task), timeout=timeout_s)
+        return
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[photo_upload] cooperative shutdown did not finish within "
+            "%.2fs — cancelling task to release the port.",
+            timeout_s,
+        )
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError, Exception):
+        await asyncio.wait_for(task, timeout=max(0.5, timeout_s / 2))
 
 
 __all__ = [
@@ -316,4 +412,5 @@ __all__ = [
     "is_safe_photo_id",
     "start_photo_upload_server",
     "stop_photo_upload_server",
+    "_is_port_bindable",
 ]

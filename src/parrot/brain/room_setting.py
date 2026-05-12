@@ -63,15 +63,31 @@ class CapabilityDecision:
 
 @dataclass(frozen=True)
 class RoomCompatibilityReport:
-    """Aggregated compatibility result for one RoomProfile draft."""
+    """Aggregated compatibility result for one RoomProfile draft.
+
+    Phase 4.2 added the ``tier`` field: the maximum restart tier
+    implied by this draft vs the currently running Brain. UI uses
+    this to pick a single toast/confirm shape rather than
+    hand-mapping each ``decisions[*]`` row.
+    """
 
     state: str
     decisions: tuple[CapabilityDecision, ...]
+    tier: int = 0
+    tier_label: str = ""
+    tier_summary: str = ""
+    tier_summary_zh: str = ""
+    tier_ui_action: str = ""
 
     def as_json(self) -> dict[str, Any]:
         return {
             "state": self.state,
             "decisions": [d.as_json() for d in self.decisions],
+            "tier": self.tier,
+            "tier_label": self.tier_label,
+            "tier_summary": self.tier_summary,
+            "tier_summary_zh": self.tier_summary_zh,
+            "tier_ui_action": self.tier_ui_action,
         }
 
 
@@ -339,6 +355,14 @@ class RoomSettingService:
                     source=f"line:{profile.line_id}",
                 )
             )
+            # Phase 4.1: keep the audit-Round-5 "blocked /
+            # requires_brain_cold_restart" wording for the runtime
+            # apply path so existing client compatibility checks
+            # don't silently start letting mismatched lines through.
+            # The orchestrator-mediated Tier 1 flow is exposed
+            # separately via the new ``tier_metadata`` block below
+            # (see Phase 4.2 wire-up of ``tier`` on _line_selector
+            # and the setting_change_tier registry).
             if profile.line_id != process_line:
                 decisions.append(
                     CapabilityDecision(
@@ -430,7 +454,25 @@ class RoomSettingService:
             state = "blocked"
         elif any(d.state in {"degraded", "disabled"} for d in decisions):
             state = "degraded"
-        return RoomCompatibilityReport(state=state, decisions=tuple(decisions))
+
+        # Phase 4.2: collapse decisions → top-level tier so the
+        # Unity startup page renders a single toast/dialog.
+        tier = _max_tier_for_decisions(decisions, profile, _process_line_id())
+        from parrot.brain.setting_change_tier import (
+            tier_label as _tier_label,
+            tier_summary as _tier_summary,
+            tier_ui_action as _tier_ui_action,
+        )
+
+        return RoomCompatibilityReport(
+            state=state,
+            decisions=tuple(decisions),
+            tier=tier,
+            tier_label=_tier_label(tier),
+            tier_summary=_tier_summary(tier),
+            tier_summary_zh=_tier_summary(tier, lang="zh"),
+            tier_ui_action=_tier_ui_action(tier),
+        )
 
 
 def get_room_setting_service() -> RoomSettingService:
@@ -464,18 +506,92 @@ def _selectors(menu: MenuRegistrySnapshot) -> dict[str, Any]:
 def _line_selector(line: LineSummary) -> dict[str, Any]:
     data = line.as_json()
     process_line = _process_line_id()
+    # Phase 4.2: surface the tier registry so the Unity startup page
+    # can render the right toast/confirm dialog WITHOUT hard-coding
+    # "line_id is cold-start only". The static tier for line_id is 1
+    # (orchestrator-mediated reconnect), but it collapses to 0 when
+    # the offered line equals the running line (no apply needed).
+    from parrot.brain.setting_change_tier import (
+        line_switch_tier_for_profile,
+        tier_label,
+        tier_summary,
+        tier_ui_action,
+    )
+
+    tier = line_switch_tier_for_profile(line.line_id, process_line)
     data["selection_policy"] = {
         "scope": "cold_start_only",
         "requires_brain_restart": line.line_id != process_line,
         "current_process_line_id": process_line,
         "env_key": "PARROT_LLM_PIPELINE",
+        # Phase 4 tier metadata — additive, do not break existing
+        # callers that read the legacy `cold_start_only` scope.
+        "tier": tier,
+        "tier_label": tier_label(tier),
+        "tier_summary": tier_summary(tier),
+        "tier_summary_zh": tier_summary(tier, lang="zh"),
+        "tier_ui_action": tier_ui_action(tier),
+        "orchestrator_capable": True,
     }
     return data
 
 
+def _max_tier_for_decisions(
+    decisions: list[CapabilityDecision],
+    profile: RoomProfile,
+    process_line: str,
+) -> int:
+    """Pick the highest tier implied by the decisions.
+
+    Mapping rules (Phase 4.2):
+
+    * ``line.cold_start`` blocked → Tier 1 (orchestrator-mediated
+      reconnect; see ``setting_change_tier.json`` row ``line_id``).
+      We deliberately don't escalate to Tier 2 here because Phase 1
+      put the runtime config on disk; the orchestrator can flip a
+      line without restarting the Brain process.
+    * ``line.cold_start`` degraded → Tier 1 (same path).
+    * Any other ``blocked`` decision → still Tier 1 because
+      "blocked" today only means the apply path needs a deliberate
+      reconnect; nothing we wire above changes the live AgentSession
+      mid-room.
+    * Otherwise → Tier 0 (BB-write only).
+
+    Returns ``0``..``2``. Tier 3 is operator-only and never surfaced
+    here.
+    """
+    from parrot.brain.setting_change_tier import tier_for
+
+    line_tier = tier_for("line_id") if profile.line_id != process_line else 0
+    profile_tier = (
+        tier_for("line_profile_id")
+        if profile.line_profile_id and profile.line_profile_id != ""
+        else 0
+    )
+
+    decision_tier = 0
+    for decision in decisions:
+        cid = decision.capability_id
+        if cid == "line.cold_start" and decision.state in {"blocked", "degraded"}:
+            decision_tier = max(decision_tier, line_tier or 1)
+        elif cid in {"line.profile", "line.available"} and decision.state == "blocked":
+            decision_tier = max(decision_tier, 1)
+
+    return max(line_tier, profile_tier if profile.line_id != process_line else 0, decision_tier)
+
+
 def _process_line_id() -> str:
-    raw = os.getenv("PARROT_LLM_PIPELINE", DEFAULT_LINE_ID).strip().lower()
-    return raw if raw in {"line_a", "line_b"} else DEFAULT_LINE_ID
+    """Delegate to :func:`parrot.brain.line_status.running_line_id`.
+
+    FIX (2026-05-11 audit Round 5, Bug O): both this resolver and the
+    GOSLO Module canvas tile used to read ``PARROT_LLM_PIPELINE`` with
+    almost-but-not-quite-identical normalization. The canonical answer
+    now lives in ``line_status.running_line_id`` so cold-start
+    compatibility decisions and runtime status reports always agree.
+    """
+    from parrot.brain.line_status import running_line_id
+
+    return running_line_id()
 
 
 def _line_lookup() -> dict[str, LineSummary]:

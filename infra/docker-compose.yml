@@ -76,6 +76,7 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile.brain
+      target: base
     command: python -m parrot.castle.token_mint
     env_file:
       - ../.env
@@ -86,6 +87,68 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Phase 2 ECS Orchestrator — control plane for Tier-routed setting
+  # changes and process restart. Bound to 127.0.0.1 because Castle
+  # security group should not expose the orchestrator publicly; access
+  # via SSH tunnel or in-cluster client.
+  #
+  # When Phase 3.3 lands, this container also needs `/var/run/docker.sock`
+  # mounted in (so it can drive `docker compose`) and either D-Bus or a
+  # privileged sidecar to invoke systemctl. Today (Phase 3.1) the
+  # systemctl path requires the orchestrator to run on the host directly,
+  # so this docker-compose service is convenient for dev / Web monitor
+  # use only.
+  orchestrator:
+    profiles: ["orchestrator", "all"]
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.brain
+      target: base
+    command: python -m parrot.castle.orchestrator
+    env_file:
+      - ../.env
+    environment:
+      - PARROT_ORCH_HOST=0.0.0.0
+      - PARROT_ORCH_PORT=7890
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "127.0.0.1:7890:7890"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Phase 3.2 Brain container — profile-gated so the default `up` does
+  # not start it (a tmux/systemd Brain is still the recommended path
+  # while Phase 3 lands). Run with:
+  #   docker compose -f infra/docker-compose.yml --profile brain up -d brain
+  brain:
+    profiles: ["brain", "all"]
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.brain
+      target: full
+    command: python -m parrot.brain.agent dev
+    env_file:
+      - ../.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - LIVEKIT_URL=ws://livekit:7880
+      # Phase 1: Brain pipeline resolves from data/runtime_config.json
+      # > BB > env > default. PARROT_LLM_PIPELINE here is a fallback.
+      - PARROT_LLM_PIPELINE=${PARROT_LLM_PIPELINE:-line_a}
+    volumes:
+      # The runtime config file must be writable by the orchestrator
+      # (which runs in a sibling container) and readable by Brain. Bind
+      # the host data/ dir so both containers see the same file.
+      - ../data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

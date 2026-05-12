@@ -216,6 +216,21 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "Active scene/UI skin selected by the current RoomProfile.",
         event_driven=True,
     ),
+    BlackboardKey(
+        BbScope.GLOBAL,
+        "global/brain_runtime_snapshot",
+        "dict[str, Any]",
+        "brain.agent",
+        "Phase 1 ECS Orchestrator: snapshot of what `brain_entrypoint` "
+        "actually resolved this run (line_id, line_profile_id, "
+        "room_profile_id, source per field, pid, room name, "
+        "started_at, runtime_config_path). Lets the orchestrator "
+        "/status endpoint report which Brain is live and which layer "
+        "(file/bb/env/default) provided each setting. Written once "
+        "per `brain_entrypoint` (each LiveKit room job) and cleared "
+        "on disconnect.",
+        event_driven=True,
+    ),
     # `global/soul_constraints` was declared here in Sprint 1 planning but the
     # SOUL_CONSTRAINTS table ended up as a module-level dict inside
     # `brain.soul` and is never written to the Blackboard. To avoid a

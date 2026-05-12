@@ -1,0 +1,29 @@
+[Unit]
+Description=Parrot Castle ECS Orchestrator (Phase 2 control plane)
+Documentation=file:/opt/parrot/ParrotCarriers/.cursor/memory/architecture/Interface/app_v1_brain_cold_start_line_lifecycle_audit_20260511.md
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=parrot
+WorkingDirectory=/opt/parrot/ParrotCarriers
+EnvironmentFile=-/opt/parrot/ParrotCarriers/.env.castle
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/parrot/ParrotCarriers/.venv/bin/python -m parrot.castle.orchestrator
+Restart=on-failure
+RestartSec=5s
+# The orchestrator is the only entrypoint that can restart everything else;
+# never give up on it. systemd default is StartLimitBurst=5/IntervalSec=10s
+# which is too tight when Redis is also bouncing.
+StartLimitBurst=20
+StartLimitIntervalSec=120
+# Standard systemd hardening — orchestrator does not need write access to /etc.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/parrot/ParrotCarriers/data
+ReadWritePaths=/opt/parrot/ParrotCarriers/logs
+
+[Install]
+WantedBy=multi-user.target

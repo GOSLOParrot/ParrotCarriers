@@ -178,6 +178,21 @@ def line_status(line_id: str) -> LineSummary | None:
 
 
 def active_line_id() -> str:
+    """Return the **selected / saved** Line id (BB first, env second).
+
+    See :func:`running_line_id` for what is *actually* live in the
+    current Brain process. The two answers can disagree on cold-start
+    Line switches: an applied RoomProfile writes ``global/active_line_id``
+    to BB, but the running ``PARROT_LLM_PIPELINE`` env was fixed at
+    process boot and only an external supervisor can swap it. Callers
+    should pick deliberately:
+
+    * preference / RoomSetting UI / "what would START use next"
+      → :func:`active_line_id` (this function).
+    * runtime status / Web monitor / canvas voice pipeline tile / any
+      "what's actually serving voice right now" — must call
+      :func:`running_line_id`.
+    """
     value = _bb_value("global/active_line_id", "")
     if isinstance(value, str) and value:
         return value
@@ -194,8 +209,55 @@ def active_line_id() -> str:
     return DEFAULT_LINE_ID
 
 
+def running_line_id() -> str:
+    """Return the **live** Line id of the running Brain process.
+
+    Mirrors :func:`parrot.brain.agent._resolve_pipeline` exactly so the
+    canvas voice tile, RoomSetting compatibility resolver, and any
+    "what's actually serving voice right now" query agree on a single
+    answer.
+
+    Resolution order (highest first; see
+    ``parrot.castle.runtime_config`` for full layering rationale):
+
+    1. ``data/runtime_config.json`` (Castle Orchestrator-controlled).
+    2. Process env ``PARROT_LLM_PIPELINE``.
+    3. Default (``line_a``).
+
+    Note: this function intentionally **does not** read BB
+    ``global/active_line_id``. That key is "what the user *selected*"
+    and is consulted by :func:`active_line_id`. Mixing it in here
+    would re-introduce the Round 5 Bug O drift symptom.
+
+    Defaults to ``line_a`` if neither file nor env yields a valid
+    value (mirrors agent's ``_DEFAULT_PIPELINE``).
+    """
+    try:
+        from parrot.castle.runtime_config import resolve_runtime_config
+
+        resolved = resolve_runtime_config()
+        # Only honour file/env source for "running"; BB drift would
+        # mask the cold-start invariant the audit Round 5 set up.
+        if resolved.source.get("line_id") in {"file", "env", "default"}:
+            line_id = resolved.line_id
+            if line_id in {LINE_A_ID, LINE_B_ID}:
+                return line_id
+    except Exception:
+        pass
+    raw = os.getenv("PARROT_LLM_PIPELINE", DEFAULT_LINE_ID).strip().lower()
+    if raw in {LINE_A_ID, LINE_B_ID}:
+        return raw
+    return DEFAULT_LINE_ID
+
+
 def active_line_status() -> LineSummary:
+    """Status for the **selected / saved** Line. See :func:`active_line_id`."""
     return line_status(active_line_id()) or list_lines()[0]
+
+
+def running_line_status() -> LineSummary:
+    """Status for the **running** Line. See :func:`running_line_id`."""
+    return line_status(running_line_id()) or list_lines()[0]
 
 
 def _line_b_components(profile: LineProfile) -> tuple[ComponentReadiness, ...]:
@@ -620,4 +682,6 @@ __all__ = [
     "active_line_status",
     "line_status",
     "list_lines",
+    "running_line_id",
+    "running_line_status",
 ]

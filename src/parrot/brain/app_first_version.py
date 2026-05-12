@@ -802,44 +802,87 @@ class AppFirstVersionFacade:
         )
 
     def _voice_pipeline_status(self) -> AppModuleStatus:
-        from parrot.brain.line_status import active_line_status, list_lines
+        # FIX (2026-05-11 audit Round 5, Bug O): the GOSLO Module canvas
+        # voice tile historically reports the **selected** line's state +
+        # readiness so users can see "this is what I chose, with its
+        # health". That semantic is kept (Codex tests + canvas UI already
+        # depend on it). What was missing was any signal of *drift* —
+        # if the user picked LineB but the Brain process is still running
+        # LineA (cold-start required), nothing in the tile told them. Add
+        # ``running_line_id`` / ``selected_line_id`` / ``selection_drift``
+        # alongside the existing fields and surface the drift in summary
+        # + health so operators see "you selected X, X is configured,
+        # but the running process is Y; cold restart required to apply".
+        from parrot.brain.line_status import (
+            active_line_id,
+            active_line_status,
+            list_lines,
+            running_line_id,
+            running_line_status,
+        )
 
-        active = active_line_status()
+        selected = active_line_status()
+        selected_id = active_line_id() or selected.line_id
+        running_id = running_line_id()
+        running = running_line_status()
+        drift = bool(selected_id) and selected_id != running_id
         lines = tuple(line.as_json() for line in list_lines())
+
+        summary = selected.summary
+        health = selected.health
+        if drift:
+            summary = (
+                f"{summary} (selection drift: selected={selected_id} but "
+                f"running={running_id} — Brain cold restart required to "
+                f"apply the selection)"
+            )
+            if health == "ok":
+                health = "warning"
+
         return AppModuleStatus(
             module_id=ExternalModuleId.VOICE_PIPELINE,
-            state=active.state,
-            health=active.health,
-            summary=active.summary,
+            state=selected.state,
+            health=health,
+            summary=summary,
             metrics={
-                "active_line_id": active.line_id,
-                "active_line_profile_id": active.readiness.get("line_profile_id", ""),
-                "echo_risk": active.echo.risk_level if active.echo else "unknown",
-                "echo_handling_mode": active.echo.handling_mode if active.echo else "unknown",
-                "voiceprint_state": active.voiceprint.state if active.voiceprint else "unknown",
+                # Legacy ``active_line_id`` keeps its selection-driven
+                # meaning so existing canvas/test consumers don't break.
+                # New ``running_line_id`` + ``selection_drift`` are the
+                # honest answer to "is the running pipeline what was
+                # selected?" — these are what cold-start UX must read.
+                "active_line_id": selected.line_id,
+                "running_line_id": running_id,
+                "selected_line_id": selected_id,
+                "selection_drift": drift,
+                "active_line_profile_id": selected.readiness.get("line_profile_id", ""),
+                "echo_risk": selected.echo.risk_level if selected.echo else "unknown",
+                "echo_handling_mode": selected.echo.handling_mode if selected.echo else "unknown",
+                "voiceprint_state": selected.voiceprint.state if selected.voiceprint else "unknown",
                 "speaker_state": (
-                    active.voiceprint.speaker_state if active.voiceprint else "unknown"
+                    selected.voiceprint.speaker_state if selected.voiceprint else "unknown"
                 ),
-                "recent_tts_segment_count": active.readiness.get(
+                "recent_tts_segment_count": selected.readiness.get(
                     "recent_tts_segment_count",
                     0,
                 ),
-                "last_input_decision": active.readiness.get(
+                "last_input_decision": selected.readiness.get(
                     "last_input_decision",
                     "none",
                 ),
-                "last_speaker_role": active.readiness.get(
+                "last_speaker_role": selected.readiness.get(
                     "last_speaker_role",
                     "unknown",
                 ),
-                "voice_activity_state": active.readiness.get(
+                "voice_activity_state": selected.readiness.get(
                     "voice_activity_state",
                     "idle",
                 ),
             },
             refs={
                 "lines": lines,
-                "active_line": active.as_json(),
+                "active_line": selected.as_json(),
+                "running_line": running.as_json(),
+                "selected_line_id": selected_id,
                 "line_profiles": self.list_line_profiles(),
             },
         )

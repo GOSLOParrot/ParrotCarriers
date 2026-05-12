@@ -56,9 +56,15 @@ def test_mount_preflight_l1_without_identity():
         livekit_identity=None,
     )
     mount = ModuleMount(m)
+    # Use asyncio.run() so the test isn't affected by other tests that
+    # close the default event loop policy's loop (Phase 2 orchestrator
+    # tests in tests/test_castle/ exercise asyncio.run() and leave the
+    # main-thread loop in a "no current loop" state under
+    # pytest-asyncio mode=auto on Python 3.11+).
+    import asyncio
+
     with pytest.raises(ValueError, match="livekit_identity"):
-        import asyncio
-        asyncio.get_event_loop().run_until_complete(mount.mount())
+        asyncio.run(mount.mount())
 
 
 def test_mount_initial_state():

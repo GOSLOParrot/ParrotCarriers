@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "doc": "Phase 4.1 — setting-change tier registry. The Castle ECS Orchestrator and the Unity startup page both consume this file: it answers \"if a user changes setting X, what level of restart is required?\". Tier 0 = BB-write only (instant). Tier 1 = LiveKit reconnect (Brain process stays up; the next brain_entrypoint reads the new value). Tier 2 = Brain process restart (env/plugin/code change). Tier 3 = container/ECS restart (docker volume / system level).",
+  "tiers": {
+    "0": {
+      "label": "BB-write",
+      "summary_en": "Takes effect instantly; no restart required.",
+      "summary_zh": "即时生效，无需重启",
+      "ui_action": "silent_apply"
+    },
+    "1": {
+      "label": "LiveKit reconnect",
+      "summary_en": "Takes effect on the next LiveKit room job. Brain process stays up.",
+      "summary_zh": "需要 Unity 断线重连一次（Brain 进程不重启）",
+      "ui_action": "confirm_reconnect",
+      "ux_decision_doc": "Resolved 2026-05-12 (plan open-q-frontend-flow): Tier 1 defaults to explicit confirmation + auto-reconnect after the user accepts. Silent auto-reconnect was rejected because (a) Tier 1 transitions can change voice characteristics (LineA→LineB switches the pipeline / TTS / VAD), so the user must know a reconnect is happening; (b) the same reconnect path is used by the orchestrator from a Web monitor, where silent disconnects would surprise the on-device user. Toast copy: 'Switching pipelines — about to reconnect (~3s).'"
+    },
+    "2": {
+      "label": "Brain process restart",
+      "summary_en": "Brain process must be restarted (~5-10s downtime).",
+      "summary_zh": "需要重启 Brain 进程（约 5-10 秒）",
+      "ui_action": "confirm_with_progress_bar"
+    },
+    "3": {
+      "label": "Container/ECS restart",
+      "summary_en": "Container or full ECS restart required; not exposed to Unity UI.",
+      "summary_zh": "需要重启容器或整个 ECS，不暴露在 Unity 菜单",
+      "ui_action": "operator_only"
+    }
+  },
+  "settings": [
+    {
+      "key": "behavior_mode",
+      "tier": 0,
+      "doc": "BB session/behavior_mode; menu_registry apply_menu_selection writes BB and Brain reads on next tick.",
+      "anywhere_in_session": true
+    },
+    {
+      "key": "capability_mode",
+      "tier": 0,
+      "doc": "RPC setAppCapabilityMode → session_policy.apply_capability_mode → supervisor reload.",
+      "anywhere_in_session": true
+    },
+    {
+      "key": "persona_id",
+      "tier": 0,
+      "doc": "RoomProfile apply → preset_loader writes BB → context_injector picks up new system instructions.",
+      "anywhere_in_session": true
+    },
+    {
+      "key": "workspace_id",
+      "tier": 0,
+      "doc": "menu_registry apply_menu_selection / RPC applyWorkspace.",
+      "anywhere_in_session": true
+    },
+    {
+      "key": "scene_id",
+      "tier": 0,
+      "doc": "menu_registry apply_menu_selection.",
+      "anywhere_in_session": true
+    },
+    {
+      "key": "skin_id",
+      "tier": 0,
+      "doc": "menu_registry apply_menu_selection.",
+      "anywhere_in_session": true
+    },
+    {
+      "key": "model_id",
+      "tier": 0,
+      "doc": "RoomProfile + animate(model_id=...) hot-swap; LiveKit unaffected.",
+      "anywhere_in_session": true
+    },
+    {
+      "key": "room_profile_id",
+      "tier": 0,
+      "doc": "apply_room_profile writes BB JSON; if line_id matches the running Brain it stays at Tier 0. Compatibility resolver elevates to Tier 1 when line_id differs.",
+      "anywhere_in_session": true,
+      "elevates_to_tier_1_when": "profile.line_id differs from running_line_id"
+    },
+    {
+      "key": "experience_mode",
+      "tier": 1,
+      "doc": "AR vs 2D vs Room-only — switching mid-session needs the room dimension to reset (Unity reload).",
+      "anywhere_in_session": true,
+      "ui_action": "confirm_reconnect"
+    },
+    {
+      "key": "line_id",
+      "tier": 1,
+      "doc": "_resolve_pipeline reads runtime_config.json on each brain_entrypoint. After Phase 1.2 this is Tier 1: write file → forceUnityReconnect → new room job picks up new line.",
+      "anywhere_in_session": true,
+      "ui_action": "confirm_reconnect",
+      "phase1_promise": "true"
+    },
+    {
+      "key": "line_profile_id",
+      "tier": 1,
+      "doc": "Same path as line_id; LineB STT/LLM/TTS profile selection is read at brain_entrypoint.",
+      "anywhere_in_session": true,
+      "ui_action": "confirm_reconnect",
+      "phase1_promise": "true"
+    },
+    {
+      "key": "asr_profile_id",
+      "tier": 1,
+      "doc": "ASR profile selection lives inside LineProfile; same Tier 1 path."
+    },
+    {
+      "key": "tts_profile_id",
+      "tier": 1,
+      "doc": "TTS provider/voice selection lives inside LineProfile; same Tier 1 path."
+    },
+    {
+      "key": "voiceprint_profile_id",
+      "tier": 1,
+      "doc": "Voiceprint enrollment changes apply on the next room job."
+    },
+    {
+      "key": "echo_policy_id",
+      "tier": 1,
+      "doc": "Echo route/handling policy attaches at brain_entrypoint."
+    },
+    {
+      "key": "GOOGLE_API_KEY",
+      "tier": 2,
+      "doc": "Cached LLM client cannot hot-swap auth; Brain process must restart with new env."
+    },
+    {
+      "key": "GEMINI_API_KEY",
+      "tier": 2,
+      "doc": "Same as GOOGLE_API_KEY for any LineA usage path."
+    },
+    {
+      "key": "CARTESIA_API_KEY",
+      "tier": 2,
+      "doc": "Cartesia plugin client auth is bound at session build."
+    },
+    {
+      "key": "PARROT_LINEB_TTS_PROVIDER",
+      "tier": 2,
+      "doc": "Plugin selection is import-time in _build_session; needs process restart."
+    },
+    {
+      "key": "plugin_dependency_change",
+      "tier": 2,
+      "doc": "pyproject + venv install; Python module cache is per-process."
+    },
+    {
+      "key": "redis_schema",
+      "tier": 3,
+      "doc": "Operator-only; touches Redis volume. Not exposed via Unity."
+    },
+    {
+      "key": "falkordb_graph",
+      "tier": 3,
+      "doc": "Operator-only; touches FalkorDB volume."
+    },
+    {
+      "key": "livekit_yaml",
+      "tier": 3,
+      "doc": "LiveKit container config requires container reload."
+    },
+    {
+      "key": "kernel_security_group",
+      "tier": 3,
+      "doc": "ECS-level; rare. Not exposed."
+    }
+  ]
+}

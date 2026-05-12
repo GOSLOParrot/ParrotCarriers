@@ -31,6 +31,14 @@ def test_photo_upload_server_has_cooperative_stop_handle() -> None:
     assert 'setattr(server, "_parrot_task", task)' in text
     assert "async def stop_photo_upload_server" in text
     assert "server.should_exit = True" in text
+    # FIX (2026-05-11 audit Round 5, Bug L): cooperative-first, then
+    # cancel-on-timeout. The previous assertion locked in a bug-y
+    # ``asyncio.shield(task)`` shape that prevented the timeout from
+    # cancelling a stuck uvicorn shutdown. Now we still rely on
+    # ``shield`` to wait politely, but a hung task must be cancelled
+    # so the next session's ``start_photo_upload_server`` can rebind
+    # the port.
+    assert "task.cancel()" in text
     assert "asyncio.wait_for(asyncio.shield(task)" in text
 
 

@@ -20,7 +20,19 @@ logger = logging.getLogger(__name__)
 
 
 async def start_trigger_listener() -> asyncio.Task:
-    """Start background listener for DSG events. Returns the task handle."""
+    """Start background listener for DSG events. Returns the task handle.
+
+    FIX (2026-05-12 Phase 5.1, plan §5.1): same Bug N pattern that was
+    fixed in :mod:`parrot.brain.agent`'s scheduler-result listener now
+    applied here. A malformed Redis payload, JSONDecodeError, or
+    transient Brain-side handler crash MUST NOT terminate the
+    listener — DSG sources fan out at 0.2-2 Hz and the next event
+    must still be picked up.
+
+    Each per-message handler call gets its own try/except so the
+    outer ``async for`` loop survives. Connection errors still break
+    out so the supervisor / Brain restart path can react.
+    """
 
     async def _listen():
         pubsub = None
@@ -34,13 +46,21 @@ async def start_trigger_listener() -> asyncio.Task:
                 if message["type"] != "message":
                     continue
 
-                channel = message["channel"]
-                data = message["data"]
+                try:
+                    channel = message["channel"]
+                    data = message["data"]
 
-                if channel == CH_DSG_SCENE_UPDATE:
-                    await _handle_scene_update(data)
-                elif channel == CH_DSG_EVENTS:
-                    await _handle_trigger(data)
+                    if channel == CH_DSG_SCENE_UPDATE:
+                        await _handle_scene_update(data)
+                    elif channel == CH_DSG_EVENTS:
+                        await _handle_trigger(data)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception(
+                        "dsg_trigger_listener: per-message handler failed; "
+                        "staying subscribed for the next event"
+                    )
 
         except asyncio.CancelledError:
             pass
