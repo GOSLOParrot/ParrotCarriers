@@ -27,6 +27,10 @@ Then load only the relevant skill route:
 | Nanobot, Google Calendar, long task result loop | `skills/nanobot_business_io.md` |
 | User design workspace, sketches, original wording, Figma/Unity asset planning | `design_workspace/INDEX.md` |
 
+## Current Prep Addendum
+
+- `app_frontend_startup_prep_20260512.md` — ECS Orchestrator handoff for App/Web frontend startup work: core interface inventory, route split, confirmation gaps, and parallel worktree plan.
+
 ## Current Decision
 
 Codex should treat `unity/ArSpike` as the app implementation workspace. `unity/ParrotDev` is a frozen comparison/test bed unless a task explicitly says otherwise.

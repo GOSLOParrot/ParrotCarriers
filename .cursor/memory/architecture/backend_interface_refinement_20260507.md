@@ -2,7 +2,7 @@
 status: ratified
 category: backend-interface
 status_note: "Phase 1-4 menu modularisation + BB upgrade + IntentWorkspace + L2-B baseline algorithm interface contract. Frontend (Sub-Chat A) consumes this doc to wire menu canvas / HUD without touching Python."
-last_reviewed: 2026-05-07
+last_reviewed: 2026-05-12
 ai_priority: high
 ai_audience: "Sub-Chat A (frontend) + Chat 4 4-A (backend implementation) + DSG protocol upgrade chat"
 parent_doc: "Interface/backend_interface_chat_launch_prompt_v2_20260507.md"
@@ -13,6 +13,7 @@ related:
   - "Interface/interface_design_and_how_todo_v0_20260507.md (12-scenario interface map)"
   - "protocol_snapshot_p4.md (wire SSOT — unchanged)"
   - "sprint4_phase4_entry_20260430.md §8 (Phase 4 13 locks — unchanged)"
+  - "ecs_orchestrator_lifecycle_completion_20260512.md (ECS Orchestrator + Lifecycle control-plane completion)"
 ---
 
 # Backend Interface Refinement — Menu / BB / IntentWorkspace / L2-B (2026-05-07)
@@ -441,7 +442,102 @@ behavior, not as a stub.
 
 ---
 
-## §6 Phase 4 § 8 + cs_parity guard log
+## §6 Brain Control-Plane API（2026-05-12 新增 — Phase 1-5）
+
+This section records the control-plane surfaces added after Round 5. It is
+additive and does not change Phase 4 wire enums/topics.
+
+### §6.1 配置层级（file > BB > env > default）
+
+| 层 | 入口 | 谁写 | 谁读 |
+|:---|:---|:---|:---|
+| file | `data/runtime_config.json` | `parrot.castle.runtime_config.write_runtime_config(...)`（仅 orchestrator） | `parrot.castle.runtime_config.resolve_runtime_config()` |
+| BB | `global/brain_runtime_snapshot` | Brain 启动 / disconnect snapshot | Brain `_resolve_pipeline()`、orchestrator `/status` |
+| env | `.env` / systemd `PARROT_LLM_PIPELINE` | 运维（fallback only） | `_resolve_pipeline()` 兜底 |
+| default | `line_a` + 默认 LineProfile | 代码 | 兜底 |
+
+Important split: `running_line_id()` deliberately ignores BB to avoid Round 5
+Bug O; `active_line_id()` remains BB-first for user selection surfaces.
+
+### §6.2 新 RPC
+
+| RPC name | Owner | Caller | 用途 |
+|:---|:---|:---|:---|
+| `forceUnityReconnect` | Brain `room.local_participant` | orchestrator -> BB marker -> Brain self-call | Tier 1 触发 LiveKit room disconnect；Unity 重新 mint token / rejoin 后，新 `brain_entrypoint` 读取新的 `line_id` / `room_profile_id`。 |
+
+Return shape:
+
+```json
+{
+  "status": "ok",
+  "reason": "<orchestrator reason>",
+  "request_id": "<optional>",
+  "next": {
+    "line_id": "...",
+    "line_profile_id": "...",
+    "room_profile_id": "..."
+  },
+  "note": "..."
+}
+```
+
+### §6.3 Setting Change Tier 注册表
+
+`data/registries/setting_change_tier.json` maps 24 settings to Tier 0-3.
+Brain reads it through:
+
+```python
+from parrot.brain.setting_change_tier import (
+    tier_for,
+    tier_label,
+    tier_summary,
+    tier_ui_action,
+    line_switch_tier_for_profile,
+)
+```
+
+`RoomSettingService.compatibility()` exposes `tier`, `tier_label`,
+`tier_summary`, `tier_summary_zh`, and `tier_ui_action`; Unity can render the
+same decision with `SettingChangeTierDto`.
+
+### §6.4 BB 新 key
+
+| key | 写者 | 内容 |
+|:---|:---|:---|
+| `global/brain_runtime_snapshot` | Brain entrypoint / disconnect | `{pid, room_name, started_at, line_id, line_profile_id, room_profile_id}` |
+| `global/brain_boot_preflight` | `parrot.brain.boot_preflight` | `{redis_ok, photo_upload_port_in_use, runtime_config_valid, started_at}` |
+| `global/brain_last_crash` | `parrot.brain.crash_hook` | `{exception_type, message, traceback, ts, pid, kind}` |
+| `global/orchestrator_force_reconnect_marker` | orchestrator `/force_unity_reconnect` | `{request_id, reason, ts}`；Brain 轮询触发本地 RPC。 |
+
+### §6.5 Castle Orchestrator HTTP API
+
+| Endpoint | Method | Auth | Primary consumer | Purpose |
+|:---|:---:|:---|:---|:---|
+| `/health` | GET | open | systemd / docker | liveness |
+| `/status` | GET | dev-open; Bearer when `PARROT_ORCH_SECRET` is set | Web console / HUD badge | runtime_config, Brain snapshot, selection drift, process/container status, preflight, crash, restart stats |
+| `/set_active_line` | POST | Bearer when secret set | Unity startup / operator | write runtime_config `line_id`; caller should set `force_reconnect=true` after user confirmation |
+| `/apply_room_profile` | POST | Bearer when secret set | Unity startup / operator | write runtime_config `room_profile_id` plus optional line fields |
+| `/force_unity_reconnect` | POST | Bearer when secret set | orchestrator / operator | trigger Tier 1 reconnect marker |
+| `/restart_component` | POST | Bearer when secret set | operator / Tier 2 UI | `systemctl restart parrot-<component>` and optional heartbeat wait |
+| `/clear_runtime_config` | POST | Bearer when secret set | operator | remove runtime_config override |
+| `/rolling_restart_brain` | POST | Bearer when secret set | operator | current light-downtime rolling path |
+
+Python client:
+
+```python
+from parrot.castle.orchestrator.client import OrchestratorClient
+
+client = OrchestratorClient(
+    base_url="http://localhost:7890",
+    secret=os.getenv("PARROT_ORCH_SECRET"),
+)
+client.set_active_line("line_b", force_reconnect=True)
+status = client.status()
+```
+
+---
+
+## §7 Phase 4 § 8 + cs_parity guard log
 
 | Lock | This build's relationship | Status |
 |:--|:--|:--|
@@ -455,7 +551,7 @@ behavior, not as a stub.
 
 ---
 
-## §7 Out of scope (still pending)
+## §8 Out of scope (still pending)
 
 | Item | Where it goes |
 |:--|:--|
@@ -469,8 +565,11 @@ behavior, not as a stub.
 
 ---
 
-## §8 Change log
+## §9 Change log
 
+- **2026-05-12 ECS Orchestrator addendum**: added §6 Brain control-plane API:
+  runtime_config hierarchy, `forceUnityReconnect`, tier registry, new BB keys,
+  and Castle Orchestrator HTTP API. Phase 4 wire and cs_parity unchanged.
 - **2026-05-09 ChatA**: implemented the LiveKit startup/session slice:
   5-block menu registry with `2DWorkspace`, preset schema v2, app capability
   mode, silent keepalive speech gate, Unity startup token mint flow, and scoped

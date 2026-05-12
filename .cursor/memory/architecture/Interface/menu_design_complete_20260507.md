@@ -2,7 +2,7 @@
 status: ratified-design / pending-implementation
 category: menu-design
 status_note: "完整菜单设计 SSOT — 三层架构（启动页/HUD/工具柜/节点画布）+ 4 类块定义（Model/Persona/Mode/Scene）+ 预设系统 + 默认 fallback + 海盗换肤 + 像素画素材清单按菜单细分 + 与 8 场景关联 + 实施推荐顺序 Phase A-E。【2026-05-07 增量 v0.1】§4 节点画布加 2 占位（过滤器块 + 有效期预测模块 + §4.7 占位说明）+ §8 关联表 + §7.5 素材 2 条；具体设计延后到 NEED-P3-FILTER / NEED-P3-VALIDITY。Sub-Chat A 用户视角主输入；AR 工作区独立菜单 UI chat 主输入。"
-last_reviewed: 2026-05-07
+last_reviewed: 2026-05-12
 ai_priority: high
 ai_audience: "Sub-Chat A 用户视角 + AR 工作区独立菜单 UI chat + Sonnet 4.6 抄码 baseline"
 parent_doc: "../app_completion_master_audit_20260507.md"
@@ -19,7 +19,7 @@ related:
 status: ratified-design / pending-implementation
 category: menu-design
 status_note: "完整菜单设计 — 启动页 + HUD + 工具柜 + 4 类块 + 节点画布 + 默认 fallback + 海盗换肤 + 像素画素材清单 + 与 8 场景关联 + 实施推荐顺序。基于 ar_app_flow_ui_design + lore/ideas + concept_dictionary 综合设计。本文是 user-visible 菜单的 SSOT；Sub-Chat A 用户视角主输入；菜单 UI chat 主输入。"
-last_reviewed: 2026-05-07
+last_reviewed: 2026-05-12
 authoritative_for: "user-visible 菜单层（启动页 / 主菜单 / 节点画布 / 默认 fallback / 海盗换肤）的设计 SSOT"
 parent_doc: "../app_completion_master_audit_20260507.md"
 related:
@@ -634,7 +634,26 @@ def apply_preset(preset: Preset) -> None:
 
 ---
 
-## §11 引用源
+## §11 Setting Change Tier 渲染规范（2026-05-12 新增）
+
+每个启动页 / 菜单项决定执行时，前端必须读
+`RoomSettingService.compatibility()` 返回的 `tier` 和 `tier_ui_action`
+字段，或者使用同源的 `data/registries/setting_change_tier.json`。Unity
+C# 镜像：`unity/ArSpike/Assets/Scripts/ParrotApp/UI/SettingChangeTierDto.cs`。
+
+| Tier | tier_ui_action | UI 行为 |
+|:---:|:---|:---|
+| 0 | `silent_apply` | 写完 BB / 菜单 RPC 后 toast "已应用"；不弹窗。 |
+| 1 | `confirm_reconnect` | 弹"切换需要重连，预计 3-5s 不可用"对话框；用户确认后调用 orchestrator `/set_active_line` 或 `/apply_room_profile`，并带 `force_reconnect=true`；监听 room reconnected 后 toast "切换完成"。 |
+| 2 | `confirm_with_progress_bar` | 弹"切换需要重启 Brain，预计 5-10s 不可用"对话框；用户确认后调 orchestrator `/restart_component`，轮询 `/status.processes` 到 Brain online。 |
+| 3 | `operator_only` | 提示"此设置需要运维操作 ECS"；App 内不触发写操作。 |
+
+注意：控制面属于 App/Web 复用核心接口；具体按钮、弹窗文案、HUD badge
+属于业务 UI，不写回核心接口 SSOT。
+
+---
+
+## §12 引用源
 
 - AR App Flow / UI baseline：`ar_app_flow_ui_design.md`
 - 海盗 / 猫爪 / 望远镜 / 字体可读性灵感：`lore/ideas.md` 2026-04-27
@@ -648,8 +667,10 @@ def apply_preset(preset: Preset) -> None:
 
 ---
 
-## §12 变更日志
+## §13 变更日志
 
+- **2026-05-12 ECS Orchestrator 增量**：新增 §11 Setting Change Tier
+  渲染规范；启动页和主菜单按 tier 统一处理静默应用、重连确认、进程重启确认和运维阻断。
 - **2026-05-09 ChatA**：补充 LiveKit 启动切片。菜单从 4 类块运行态扩为 5 类块（新增 2DWorkspace），明确 2DWorkspace 与 IntentWorkspace 边界；启动问候延后到 `onGosloPlaced`；新增 `SessionOnlySilent` 静默保活、对话关闭、蓝牙/麦克风路由、安全 token 策略说明。画布菜单本轮保持最小实现，LiveKit 生命周期按最终路径实现。
 - **2026-05-07**：本文创建。三层菜单架构（启动页 + HUD/工具柜 + 节点画布）+ 4 类块定义（Model/Persona/Mode/Scene）+ 预设系统（NEED-P3-B/C）+ 默认 fallback（NEED-P3-E）+ 海盗主题换肤（P3）+ 像素画素材按菜单细分清单 + 与 8 场景关联表 + 实施推荐顺序 Phase A-E。
 - **2026-05-07 v0.1（增量）**：§4 加 2 占位节点类型（过滤器块灰 / 有效期预测模块橙）+ §4.3 边追加"过滤器 → 模块"+ §4.7 占位说明小节 + §7.5 素材 2 条（block_filter_gray / block_memory_validity_orange）+ §8 关联表 1 行；具体设计延后到 NEED-P3-FILTER / NEED-P3-VALIDITY；与 backend `memory/MemoryValidity 过滤器` PLANNED（`module_map_p2 §11.2`）对接，但 canvas 占位**不**强行绑定 backend schema。

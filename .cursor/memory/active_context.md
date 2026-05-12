@@ -1,5 +1,7 @@
 # 当前进度与下一步
 
+> **🟢 2026-05-12**：ECS Orchestrator + Lifecycle Audit Phase 1-5 落地 — `runtime_config.json` 配置层级 + `setting_change_tier` 注册表 + orchestrator (:7890) HTTP API + Bearer + systemd 5 unit + Brain 容器化（profile-gated）+ boot preflight + crash hook + 限频重启。详见 [`architecture/ecs_orchestrator_lifecycle_completion_20260512.md`](architecture/ecs_orchestrator_lifecycle_completion_20260512.md) + [`architecture/Interface/ecs_orchestrator_codex_guidance_20260512.md`](architecture/Interface/ecs_orchestrator_codex_guidance_20260512.md)。Round 5 18 bug + 1 gap 之后的下一阶段控制面收口；数据面零漂移。
+
 > ⚠ **2026-05-04 重大更新**：Sprint 4 Phase 4 **整体收口完成** + 联机 smoke 通过 + Phase 5 入场转换包就绪。下面 §0 是当前权威入场点，旧 4/29 内容（§1+ 起）保留作历史。
 >
 > **2026-05-04 追加**：DSG 工作区已建立（`architecture/dsg/`），作为 DSG 系列设计 chat（L1.5 池 / lifecycle / L2-B 简单升级 / Phase 5+ A10 接入）的 SSOT 入场点，与 AR 工作区（`ar_workspace_index.md`）对位。Chat 2 启动前先读 `architecture/dsg/workspace_index.md` + `dsg_current_state_distilled.md`。
