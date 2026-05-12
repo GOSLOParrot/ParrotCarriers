@@ -1,31 +1,74 @@
-# ParrotCarriers Castle 环境变量模板
+# ParrotCarriers Castle 环境变量模板（2026-05-12 升级，Phase 1-5 ECS Orchestrator 落地后的最终版）
 # 复制到 Castle 的 /opt/parrotcarriers/.env 并填入真实值
+#
+# === 阅读顺序 ===
+#   §A Phone-facing  — Brain / token-mint / LiveKit / orchestrator，必须正确，否则手机连不上
+#   §B Nanobot-only  — Maid / GOSLO Chat / Scheduler，**不直连手机**，只走 Bus 与第三方 IM
+#   §C 共享基础设施 — Redis / FalkorDB，Phone-facing 与 Nanobot 都要用
+#   §D Brain Line / Tier — `PARROT_LLM_PIPELINE` 仅作 boot 时 fallback；线上由 data/runtime_config.json 决定
+#   §E 调试 / 可选
 
-# ========== Google / Gemini ==========
+# =====================================================================
+# §A. Phone-facing（必填）
+#     ↳ Unity App 直连 token-mint :7888 取 token；Brain 也用同一个 LIVEKIT_URL 连 LiveKit。
+# =====================================================================
+
+# ---- Gemini / Google（Brain Agent + Vision Tools 共用） ----
 GOOGLE_API_KEY=<your-google-api-key>
 GEMINI_API_KEY=<same-as-above-or-separate-key>
 
-# ========== Telegram (GOSLO Chat bot) ==========
-TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
-
-# ========== GitHub (MCP tool for nanobot file/repo management) ==========
-GITHUB_TOKEN=<your-github-personal-access-token>
-
-# ========== Redis (Docker 内部通信, 绑定 127.0.0.1) ==========
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_URL=redis://localhost:6379/0
-
-# ========== LiveKit ==========
-# Castle 对外地址 (客户端通过此地址连接)
+# ---- LiveKit Server（手机 + Brain 共用同一 URL；token-mint 把它返回给 Unity） ----
+# Castle 对外 IP；Brain 在本机连这个 URL 也能工作（穿一次外网，但避免内外配置分歧）。
 LIVEKIT_URL=ws://8.216.45.45:7880
 LIVEKIT_API_KEY=devkey
 LIVEKIT_API_SECRET=secret
 LIVEKIT_ROOM=parrot-main
 
-# ========== FalkorDB (Graphiti graph backend, Docker 内部通信) ==========
+# ---- token-mint Bearer（Unity Resources/parrot_config.json 里读到的同一字符串） ----
+# 留空 = dev 模式，token-mint 接受任何请求并打 WARNING（仅 LAN 测试可用）。
+PARROT_MINT_SECRET=
+
+# ---- ECS Orchestrator Bearer（Phase 2 新增，:7890 治理面） ----
+# Web monitor / Brain self-call / 运维脚本 → /set_active_line, /restart_component 都要带这个。
+# 留空 = orchestrator 拒绝外部写操作（只允许 /health, /status 只读）。
+PARROT_ORCH_SECRET=
+
+# =====================================================================
+# §B. Nanobot-only（按需填；不连手机）
+#     ↳ Maid / GOSLO Chat 走第三方 IM + parrot_bus Stream，与 Phone 通道完全解耦。
+# =====================================================================
+
+# ---- GOSLO Chat（Telegram bot，鹦鹉大小姐人格） ----
+TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
+
+# ---- Maid（猫娘女仆 nanobot worker；微信经 nanobot fork 内部配置，不在此 .env） ----
+GITHUB_TOKEN=<your-github-personal-access-token>
+
+# =====================================================================
+# §C. 共享基础设施（Phone + Nanobot 都用）
+# =====================================================================
+
+# Redis（Bus / BB / 心跳）
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_URL=redis://localhost:6379/0
+
+# FalkorDB（Graphiti backend）
 FALKORDB_HOST=localhost
 FALKORDB_PORT=6380
 
-# ========== Debug ==========
+# =====================================================================
+# §D. Brain Line / Tier（2026-05-12 后新协议）
+#     ↳ 不要再靠改 .env 切线 — 切线走 orchestrator (:7890) 或直接写 data/runtime_config.json。
+#     ↳ 优先级：file (data/runtime_config.json) > BB > env > default。
+# =====================================================================
+
+# 仅作 boot 时 fallback（runtime_config.json 不存在 + BB 无 snapshot 时才生效）。
+# 一旦 orchestrator 写过 runtime_config.json，本变量会被忽略。
+PARROT_LLM_PIPELINE=line_a
+
+# =====================================================================
+# §E. 调试 / 可选
+# =====================================================================
+
 PARROT_DEBUG=false
