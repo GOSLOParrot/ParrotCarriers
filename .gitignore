@@ -43,6 +43,13 @@ unity/*/MemoryCaptures/
 *.csproj
 *.sln
 
+# Cursor ECS sync pack — real secrets live here locally + rsync to Castle; never commit
+# Naming: *.deploymirror / *.deploymirror.json — avoids root `.env.*` pattern; still ignored here.
+.cursor/config/*.deploymirror
+.cursor/config/*.deploymirror.json
+.cursor/config/castle-deploy.keys
+.cursor/config/nanobot-parrot.config.sync.json
+
 # Cursor internal (plans are Cursor-generated, not project docs)
 .cursor/plans/
 terminals/

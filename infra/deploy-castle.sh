@@ -13,8 +13,9 @@
 #
 # 部署内容:
 #   1. LiveKit Server + Redis + FalkorDB + token-mint (docker-compose.yml)
-#   2. （可选 --systemd）Phase 3.1 systemd unit + orchestrator
-#   3. （默认）Brain / Scheduler / Maid / GOSLO-chat 由 tmux 手工拉起
+#   2. rsync 仓库到 ECS（含 `.cursor/` 除 plans / skill references / 嵌套 node_modules）
+#   3. （可选 --systemd）Phase 3.1 systemd unit + orchestrator
+#   4. （默认）Brain / Scheduler / Maid / GOSLO-chat 由 tmux 手工拉起
 #
 # 前提:
 #   - Castle 上已安装 Docker + Docker Compose
@@ -52,6 +53,16 @@ echo "=== ParrotCarriers Castle Deploy ==="
 echo "Target: $CASTLE_IP → $REMOTE_DIR + $REMOTE_NANOBOT"
 
 # 1. 同步 ParrotCarriers 代码
+#
+# .cursor/ 策略（2026-05-12）：
+#   - 以前整棵 `.cursor/` 被排除，ECS 上看不到 memory / config，agent 对照困难。
+#   - 现在默认 **同步** `.cursor/` 下除「大且无关」外的内容。
+#   - 仍排除：`.cursor/plans/`（Cursor 生成）、`.cursor/skills/*/references/`（体积大、可再生成）、
+#     以及各层 `node_modules`。
+#   - 根目录 `.env` 仍不同步（Castle 用远端自有 .env）；本机真值对照请放在
+#     `.cursor/config/*.deploymirror`（见 `.cursor/config/README.md`），会随 rsync 上机。
+#   - 切勿把运行时密钥只放在本机 `.env` 却指望 ECS 自动一致 — 上机后仍需人工对齐
+#     `/opt/parrotcarriers/.env` 与 deploymirror 的差异。
 echo ""
 echo "[1/5] Syncing ParrotCarriers code..."
 rsync -avz --delete \
@@ -61,7 +72,9 @@ rsync -avz --delete \
     --exclude '.pytest_cache' \
     --exclude '.ruff_cache' \
     --exclude 'unity/' \
-    --exclude '.cursor/' \
+    --exclude '.cursor/plans/' \
+    --exclude '.cursor/skills/*/references/' \
+    --exclude '.cursor/**/node_modules/' \
     --exclude 'docs/' \
     --exclude 'agent-transcripts/' \
     --exclude 'terminals/' \
