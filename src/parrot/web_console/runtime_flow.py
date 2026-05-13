@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from typing import Any
 
 from parrot.brain.app_live_state import build_app_live_state
@@ -19,10 +20,20 @@ from parrot.brain.plan import (
     PlanStepProposal,
     get_plan_registry,
 )
+from parrot.brain.plan.plan_lifecycle import PlanLifecycle
 from parrot.web_console.runtime_monitor import build_runtime_monitor_snapshot
 
 _flow_sequence = 0
 _flow_signature = ""
+
+_VALID_HITL_ACTIONS = frozenset({
+    "approve",
+    "approve_and_start",
+    "reject",
+    "revise",
+    "cancel",
+    "resume",
+})
 
 
 def build_runtime_flow_snapshot() -> dict[str, Any]:
@@ -42,7 +53,7 @@ def build_runtime_flow_snapshot() -> dict[str, Any]:
     _add_scheduler_nodes(nodes, edges, events, monitor, candidate_sequence)
     _add_nanobot_nodes(nodes, edges, events, monitor, candidate_sequence)
     _add_trigger_message_nodes(nodes, edges, events, monitor, candidate_sequence)
-    _prune_dangling_edges(nodes, edges)
+    _normalize_runtime_graph(nodes, edges)
     pending = pending_human_gates()["gates"]
     signature = _stable_signature(nodes=nodes, edges=edges, events=events, gates=pending)
     if signature != _flow_signature:
@@ -146,21 +157,23 @@ def draft_human_gate_decision(payload: dict[str, Any] | None = None) -> dict[str
         plan_id = gate_id.split(":", 1)[1]
     if not gate_id and plan_id:
         gate_id = f"plan:{plan_id}"
-    valid_actions = {"approve", "approve_and_start", "reject", "revise", "cancel", "resume"}
-    plan_exists = _plan_exists(plan_id) if plan_id else False
-    success = bool(plan_id) and action in valid_actions and plan_exists
+    plan = _plan_for_hitl(plan_id) if plan_id else None
+    state_error = _hitl_decision_error(plan=plan, action=action)
+    success = bool(plan_id) and state_error == ""
     data: dict[str, Any] = {
         "gate_id": gate_id,
         "target_kind": "plan",
         "target_id": plan_id,
         "decision": action,
+        "plan_state": _plan_state_value(plan),
         "operator_required_for_execute": True,
         "would_apply": False,
     }
     if not success:
         data.update({
-            "error": "plan_not_found" if plan_id and action in valid_actions else "invalid_hitl_decision",
-            "valid_actions": sorted(valid_actions),
+            "error": state_error,
+            "valid_actions": sorted(_VALID_HITL_ACTIONS),
+            "valid_actions_for_state": _valid_hitl_actions_for_state(plan),
         })
     return _receipt(
         action="runtime.hitl.draft_decision",
@@ -193,25 +206,35 @@ async def apply_human_gate_decision(payload: dict[str, Any] | None = None) -> di
     decision = str(draft["data"]["decision"])
     try:
         registry = get_plan_registry()
-        if decision in {"approve", "approve_and_start"}:
+        plan = registry.get(plan_id)
+        plan_state = getattr(plan, "state", None)
+        if decision == "approve":
             await registry.approve(plan_id)
-            if decision == "approve_and_start":
-                await registry.start_executing(plan_id)
-        elif decision in {"reject", "cancel"}:
-            await registry.cancel(plan_id, reason=str(body.get("reason") or decision))
-        elif decision == "resume":
-            plan = registry.get(plan_id)
-            if plan is not None and getattr(plan, "state", None) == PlanState.AWAITING_USER_CONFIRMATION:
+        elif decision == "approve_and_start":
+            if plan_state == PlanState.AWAITING_USER_CONFIRMATION:
                 await registry.approve(plan_id)
             await registry.start_executing(plan_id)
+        elif decision == "resume":
+            if plan_state == PlanState.AWAITING_USER_CONFIRMATION:
+                await registry.approve(plan_id)
+            await registry.start_executing(plan_id)
+        elif decision == "reject":
+            await registry.cancel(plan_id, reason=str(body.get("reason") or decision))
+        elif decision == "cancel":
+            await registry.cancel(plan_id, reason=str(body.get("reason") or decision))
         elif decision == "revise":
             await registry.revise(plan_id, _revision_proposal(body))
+        applied_plan = registry.get(plan_id)
         return _receipt(
             action="runtime.hitl.apply_decision",
             success=True,
             dry_run=False,
             operator_mode=True,
-            data={**draft["data"], "applied": True},
+            data={
+                **draft["data"],
+                "applied": True,
+                "plan_state_after": _plan_state_value(applied_plan),
+            },
         )
     except Exception as exc:
         return _receipt(
@@ -244,11 +267,19 @@ def _add_intent_nodes(
             label=str(row.get("title") or row.get("role") or row.get("kind") or ref_id),
             status="active",
             summary=str(row.get("origin") or row.get("payload_source") or ""),
+            payload_ref=ref_id,
         ))
         related_node = str(row.get("related_node_uuid") or "")
         if related_node:
             edges.append(_edge(node_id, f"memory:{related_node}", "related_node"))
-        events.append(_event(sequence, "intent_ref", ref_id, "observed", row.get("title") or ref_id))
+        events.append(_event(
+            sequence,
+            "intent_ref",
+            ref_id,
+            "observed",
+            row.get("title") or ref_id,
+            payload_ref=ref_id,
+        ))
 
 
 def _add_plan_nodes(
@@ -271,8 +302,18 @@ def _add_plan_nodes(
             label=str(plan.get("title") or plan_id),
             status=str(plan.get("state") or "unknown"),
             summary=f"{plan.get('step_count', 0)} step(s)",
+            trace_id=f"plan:{plan_id}",
+            payload_ref=str(plan.get("staged_ref_id") or ""),
         ))
-        events.append(_event(sequence, "plan", plan_id, str(plan.get("state") or "observed"), plan.get("title") or plan_id))
+        events.append(_event(
+            sequence,
+            "plan",
+            plan_id,
+            str(plan.get("state") or "observed"),
+            plan.get("title") or plan_id,
+            trace_id=f"plan:{plan_id}",
+            payload_ref=str(plan.get("staged_ref_id") or ""),
+        ))
         if str(plan.get("state")) == PlanState.AWAITING_USER_CONFIRMATION.value:
             gate_id = f"gate:plan:{plan_id}"
             nodes.append(_node(
@@ -283,8 +324,10 @@ def _add_plan_nodes(
                 label="Awaiting approval",
                 status="pending",
                 summary=str(plan.get("title") or plan_id),
+                trace_id=f"plan:{plan_id}",
+                payload_ref=str(plan.get("staged_ref_id") or ""),
             ))
-            edges.append(_edge(plan_node_id, gate_id, "awaits_human"))
+            edges.append(_edge(plan_node_id, gate_id, "awaits_human", trace_id=f"plan:{plan_id}"))
         for step in (plan.get("steps", []) or [])[:16]:
             step_id = str(step.get("step_id") or "")
             if not step_id:
@@ -298,10 +341,17 @@ def _add_plan_nodes(
                 label=str(step.get("title") or step_id),
                 status=str(step.get("state") or "unknown"),
                 summary=str(step.get("expected_tool") or ""),
+                trace_id=f"plan:{plan_id}",
+                payload_ref=str(step.get("result_ref_id") or ""),
             ))
-            edges.append(_edge(plan_node_id, step_node_id, "has_step"))
+            edges.append(_edge(plan_node_id, step_node_id, "has_step", trace_id=f"plan:{plan_id}"))
             for dep in step.get("depends_on", []) or []:
-                edges.append(_edge(f"step:{plan_id}:{dep}", step_node_id, "depends_on"))
+                edges.append(_edge(
+                    f"step:{plan_id}:{dep}",
+                    step_node_id,
+                    "depends_on",
+                    trace_id=f"plan:{plan_id}",
+                ))
 
 
 def _add_blackboard_nodes(
@@ -337,6 +387,9 @@ def _add_scheduler_nodes(
         task_id = str(task.get("task_id") or "")
         if not task_id:
             continue
+        plan_id = str(task.get("plan_id") or "")
+        step_id = str(task.get("step_id") or "")
+        trace_id = f"plan:{plan_id}" if plan_id else f"scheduler_task:{task_id}"
         node_id = f"scheduler:{task_id}"
         nodes.append(_node(
             node_id=node_id,
@@ -346,12 +399,24 @@ def _add_scheduler_nodes(
             label=str(task.get("type") or task_id),
             status=str(task.get("status") or "active"),
             summary=str(task.get("destination") or ""),
+            trace_id=trace_id,
         ))
-        plan_id = str(task.get("plan_id") or "")
-        step_id = str(task.get("step_id") or "")
         if plan_id and step_id:
-            edges.append(_edge(f"step:{plan_id}:{step_id}", node_id, "dispatches"))
-        events.append(_event(sequence, "scheduler_task", task_id, "active", task.get("type") or task_id))
+            edges.append(_edge(
+                f"step:{plan_id}:{step_id}",
+                node_id,
+                "dispatches",
+                trace_id=trace_id,
+            ))
+        events.append(_event(
+            sequence,
+            "scheduler_task",
+            task_id,
+            str(task.get("status") or "active"),
+            task.get("type") or task_id,
+            trace_id=trace_id,
+            parent_span_id=f"step:{plan_id}:{step_id}" if plan_id and step_id else "",
+        ))
 
 
 def _add_nanobot_nodes(
@@ -376,7 +441,13 @@ def _add_nanobot_nodes(
     for task in (monitor.get("scheduler", {}).get("active_tasks", []) or [])[:20]:
         task_id = str(task.get("task_id") or "")
         if task_id:
-            edges.append(_edge(f"scheduler:{task_id}", "nanobot:worker", "queued_to"))
+            plan_id = str(task.get("plan_id") or "")
+            edges.append(_edge(
+                f"scheduler:{task_id}",
+                "nanobot:worker",
+                "queued_to",
+                trace_id=f"plan:{plan_id}" if plan_id else f"scheduler_task:{task_id}",
+            ))
 
 
 def _add_trigger_message_nodes(
@@ -428,24 +499,39 @@ def _node(
     label: str,
     status: str,
     summary: str,
+    trace_id: str = "",
+    payload_ref: str = "",
 ) -> dict[str, Any]:
+    """Build a renderer node with CORE-010-compatible trace hints.
+
+    `id`/`lane` are React Flow concerns; `trace_id`/`payload_ref` are the
+    portable observability hints we may later promote if CORE-010 is approved.
+    """
     return {
         "id": node_id,
         "lane": lane,
         "entity_kind": entity_kind,
         "entity_id": entity_id,
+        "trace_id": trace_id or f"{entity_kind}:{entity_id}",
         "label": label,
         "status": status,
         "summary": summary,
+        "payload_ref": payload_ref,
     }
 
 
-def _edge(source: str, target: str, kind: str) -> dict[str, str]:
+def _edge(source: str, target: str, kind: str, *, trace_id: str = "") -> dict[str, str]:
+    """Build a React Flow edge.
+
+    `source` and `target` are graph endpoint ids, not the same concept as the
+    `source` field on trace events.
+    """
     return {
         "id": f"{source}->{target}:{kind}",
         "source": source,
         "target": target,
         "kind": kind,
+        "trace_id": trace_id,
     }
 
 
@@ -455,12 +541,22 @@ def _event(
     entity_id: str,
     op: str,
     summary: Any,
+    *,
+    trace_id: str = "",
+    parent_span_id: str = "",
+    payload_ref: str = "",
 ) -> dict[str, Any]:
+    """Build one bounded runtime event row.
+
+    This deliberately mirrors trace/span vocabulary without making a shared
+    protocol promise yet. It stays a Web read model until CORE-010 is ratified.
+    """
+    trace = trace_id or f"{entity_kind}:{entity_id}"
     return {
         "sequence": sequence,
-        "trace_id": f"{entity_kind}:{entity_id}",
+        "trace_id": trace,
         "span_id": f"{sequence}:{entity_kind}:{entity_id}:{op}",
-        "parent_span_id": "",
+        "parent_span_id": parent_span_id,
         "entity_kind": entity_kind,
         "entity_id": entity_id,
         "op": op,
@@ -469,7 +565,7 @@ def _event(
         "writer": "read_model",
         "summary": str(summary or ""),
         "created_at": time.time(),
-        "payload_ref": "",
+        "payload_ref": payload_ref,
     }
 
 
@@ -510,19 +606,39 @@ def _stable_signature(
     return json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
 
 
-def _prune_dangling_edges(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None:
-    """Drop links whose endpoints are outside this read-model graph.
+def _normalize_runtime_graph(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None:
+    """Keep the Web read-model graph deterministic and renderer-safe.
 
     Runtime Flow intentionally stays smaller than the full Memory Graph page.
-    Related memory refs or truncated dependency nodes can be absent here; React
-    Flow should receive a clean graph rather than dangling edge ids.
+    Related memory refs, duplicate Plan dependencies, or truncated step lists
+    can produce duplicate or dangling edges. Those are renderer concerns, so
+    they are cleaned here without changing the underlying Plan/Blackboard data.
     """
+    seen_nodes: set[str] = set()
+    unique_nodes: list[dict[str, Any]] = []
+    for row in nodes:
+        node_id = str(row.get("id") or "")
+        if not node_id or node_id in seen_nodes:
+            continue
+        seen_nodes.add(node_id)
+        unique_nodes.append(row)
+    nodes[:] = unique_nodes
+
     node_ids = {str(row.get("id") or "") for row in nodes}
-    edges[:] = [
-        row for row in edges
-        if str(row.get("source") or "") in node_ids
-        and str(row.get("target") or "") in node_ids
-    ]
+    seen_edges: set[str] = set()
+    unique_edges: list[dict[str, Any]] = []
+    for row in edges:
+        edge_id = str(row.get("id") or "")
+        if (
+            not edge_id
+            or edge_id in seen_edges
+            or str(row.get("source") or "") not in node_ids
+            or str(row.get("target") or "") not in node_ids
+        ):
+            continue
+        seen_edges.add(edge_id)
+        unique_edges.append(row)
+    edges[:] = unique_edges
 
 
 def _rewrite_event_sequence(events: list[dict[str, Any]], sequence: int) -> None:
@@ -570,7 +686,7 @@ def _receipt(
         "action": action,
         "dry_run": dry_run,
         "operator_mode": operator_mode,
-        "receipt_id": f"web-{int(time.time() * 1000)}",
+        "receipt_id": f"web-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}",
         "data": data,
         "audit": _hitl_audit() if action.startswith("runtime.hitl") else {
             "web_only": True,
@@ -596,11 +712,69 @@ def _body_bool(value: Any, default: bool) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _plan_exists(plan_id: str) -> bool:
+def _plan_for_hitl(plan_id: str) -> Any | None:
     try:
-        return get_plan_registry().get(plan_id) is not None
+        return get_plan_registry().get(plan_id)
     except Exception:
-        return False
+        return None
+
+
+def _hitl_decision_error(*, plan: Any | None, action: str) -> str:
+    """Return an error code when a HITL decision cannot apply to this Plan.
+
+    CORE-011 is still only a candidate, so the Web BFF keeps the validation
+    local and explicit: a dry-run receipt must be as trustworthy as the later
+    operator execution attempt.
+    """
+    if action not in _VALID_HITL_ACTIONS:
+        return "invalid_hitl_decision"
+    if plan is None:
+        return "plan_not_found"
+    if action not in _valid_hitl_actions_for_state(plan):
+        return "invalid_plan_state"
+    return ""
+
+
+def _valid_hitl_actions_for_state(plan: Any | None) -> list[str]:
+    state = _plan_state(plan)
+    if state is None:
+        return []
+
+    valid: set[str] = set()
+    if PlanLifecycle.can_transition(state, PlanState.APPROVED):
+        valid.add("approve")
+    if state in {PlanState.AWAITING_USER_CONFIRMATION, PlanState.APPROVED}:
+        valid.add("approve_and_start")
+    if state in {
+        PlanState.AWAITING_USER_CONFIRMATION,
+        PlanState.APPROVED,
+        PlanState.PARTIAL_COMPLETE,
+    }:
+        valid.add("resume")
+    if state == PlanState.AWAITING_USER_CONFIRMATION:
+        valid.add("reject")
+    if PlanLifecycle.can_transition(state, PlanState.CANCELLED):
+        valid.add("cancel")
+    if PlanLifecycle.can_transition(state, PlanState.REVISED):
+        valid.add("revise")
+    return sorted(valid)
+
+
+def _plan_state(plan: Any | None) -> PlanState | None:
+    if plan is None:
+        return None
+    state = getattr(plan, "state", None)
+    if isinstance(state, PlanState):
+        return state
+    try:
+        return PlanState(str(state))
+    except Exception:
+        return None
+
+
+def _plan_state_value(plan: Any | None) -> str:
+    state = _plan_state(plan)
+    return state.value if state is not None else ""
 
 
 __all__ = [

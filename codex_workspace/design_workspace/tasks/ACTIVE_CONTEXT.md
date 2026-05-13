@@ -270,6 +270,21 @@ These are useful test evidence only. They must not be used as App completion evi
   new crash, and the five Castle services are active. The remaining gate is a
   true START proof with Brain participant + business-ok RPC payloads, not just
   service health.
+- 2026-05-14 fast START RPC retry: reused `src/scripts/sim_unity_client.py`
+  with a new `--startup-rpc-check` path instead of adding Editor scenes. The
+  diagnostic Unity identity joined Castle `parrot-main`; Brain was absent at
+  first, unnamed dispatch succeeded, `agent-*` joined, and the previous ADC
+  blocker did not recur. The active blocker is now narrower:
+  `getRoomSettingSnapshot` over Brain RPC returned `Response payload too large`
+  because the deployed full snapshot is about 27 KB. Local code now compacts
+  Brain RPC snapshots to about 8 KB while leaving full RoomSetting editing on
+  the App HTTP facade. Deploy that fix before claiming the three-RPC
+  business-ok pass complete.
+- Current phone/ECS config warning: local Unity `parrot_config.json` contains
+  Castle Mint/LiveKit/room values but no `appApiUrl` or `orchestratorUrl`.
+  A phone build can join LiveKit, but cannot prove backend RoomSetting
+  save/apply or LineB Tier 1 orchestrator prewrite until those endpoints are
+  injected or intentionally tunneled.
 - Lifecycle cleanup note: `LifecycleShutdownService` synchronous quit drain no
   longer blocks on SDK `UnpublishTrack`; latest Unity Play Mode exit after a
   connected room showed 0 Console errors/warnings.

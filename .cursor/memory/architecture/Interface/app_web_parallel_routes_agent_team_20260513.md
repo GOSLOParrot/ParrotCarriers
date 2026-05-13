@@ -87,7 +87,10 @@ business RPC payloads, DataChannel heartbeat, and main-ready gate ownership. The
 Castle LineB Google STT ADC / token-mint dispatch blocker was reported repaired
 on 2026-05-14. Do not treat old tmux Brain logs, service health alone, or Smoke
 UI scenes as formal App completion; use Brain participant + business RPC
-payloads as the next gate.
+payloads as the next gate. The 2026-05-14 fast retry proved Brain participant
+join after unnamed dispatch, then failed on `getRoomSettingSnapshot` response
+size; the local compact Brain RPC snapshot fix must be deployed before the
+three-RPC START proof is complete.
 
 ## 5. Web Console Business Route
 

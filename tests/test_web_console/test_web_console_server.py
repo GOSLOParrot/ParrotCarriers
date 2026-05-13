@@ -190,11 +190,19 @@ def test_runtime_flow_and_hitl_routes_are_web_only_receipt_surfaces(monkeypatch)
         plan = asyncio.run(registry.draft(PlanProposal(
             proposed_by="test",
             title="Runtime HITL test plan",
-            suggested_steps=(PlanStepProposal(
-                step_id="s1",
-                title="Check messages",
-                expected_tool="message_check",
-            ),),
+            suggested_steps=(
+                PlanStepProposal(
+                    step_id="s1",
+                    title="Check messages",
+                    expected_tool="message_check",
+                ),
+                PlanStepProposal(
+                    step_id="s2",
+                    title="Summarize messages",
+                    expected_tool="summarize",
+                    depends_on=("s1", "s1"),
+                ),
+            ),
         )))
         asyncio.run(registry.submit_for_confirmation(plan.plan_id))
 
@@ -226,6 +234,11 @@ def test_runtime_flow_and_hitl_routes_are_web_only_receipt_surfaces(monkeypatch)
         assert "CORE-010" in flow["audit"]["shared_core_candidates"]
         assert any(lane["id"] == "human_gate" for lane in flow["lanes"])
         assert any(gate["target_id"] == plan.plan_id for gate in flow["pending_human_gates"])
+        node_ids = {node["id"] for node in flow["nodes"]}
+        edge_ids = [edge["id"] for edge in flow["edges"]]
+        assert len(edge_ids) == len(set(edge_ids))
+        assert all(edge["source"] in node_ids and edge["target"] in node_ids for edge in flow["edges"])
+        assert any(node.get("trace_id") == f"plan:{plan.plan_id}" for node in flow["nodes"])
         assert changes["changed"] is True
         assert no_change["changed"] is False
         assert no_change["snapshot"] is None
@@ -237,6 +250,69 @@ def test_runtime_flow_and_hitl_routes_are_web_only_receipt_surfaces(monkeypatch)
         assert dry_apply["data"]["would_apply"] is True
         assert dry_apply["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
         assert "runtime-flow-secret" not in str(flow) + str(changes) + str(pending)
+    finally:
+        set_plan_registry_for_test(None)
+        set_intent_workspace_for_test(None)
+
+
+def test_runtime_hitl_draft_validates_plan_state() -> None:
+    import asyncio
+
+    from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
+    from parrot.brain.plan import (
+        PlanProposal,
+        PlanRegistry,
+        PlanStepProposal,
+        set_plan_registry_for_test,
+    )
+
+    set_intent_workspace_for_test(IntentWorkspace())
+    registry = PlanRegistry(dispatch_task=_fake_plan_dispatch)
+    set_plan_registry_for_test(registry)
+    try:
+        plan = asyncio.run(registry.draft(PlanProposal(
+            proposed_by="test",
+            title="Approved plan",
+            suggested_steps=(PlanStepProposal(
+                step_id="s1",
+                title="Check messages",
+                expected_tool="message_check",
+            ),),
+        )))
+        asyncio.run(registry.submit_for_confirmation(plan.plan_id))
+        asyncio.run(registry.approve(plan.plan_id))
+
+        empty_plan = asyncio.run(registry.draft(PlanProposal(
+            proposed_by="test",
+            title="Empty complete plan",
+            suggested_steps=(),
+        )))
+        asyncio.run(registry.submit_for_confirmation(empty_plan.plan_id))
+        asyncio.run(registry.approve(empty_plan.plan_id))
+        asyncio.run(registry.start_executing(empty_plan.plan_id))
+
+        client = TestClient(build_app(status_fetcher=_fake_fetcher))
+        stale_approve = client.post(
+            "/api/runtime/hitl/draft-decision",
+            json={"gate_id": f"plan:{plan.plan_id}", "decision": "approve"},
+        ).json()
+        start_draft = client.post(
+            "/api/runtime/hitl/draft-decision",
+            json={"gate_id": f"plan:{plan.plan_id}", "decision": "approve_and_start"},
+        ).json()
+        completed_cancel = client.post(
+            "/api/runtime/hitl/draft-decision",
+            json={"gate_id": f"plan:{empty_plan.plan_id}", "decision": "cancel"},
+        ).json()
+
+        assert stale_approve["success"] is False
+        assert stale_approve["data"]["error"] == "invalid_plan_state"
+        assert stale_approve["data"]["plan_state"] == "approved"
+        assert "approve_and_start" in stale_approve["data"]["valid_actions_for_state"]
+        assert start_draft["success"] is True
+        assert completed_cancel["success"] is False
+        assert completed_cancel["data"]["error"] == "invalid_plan_state"
+        assert completed_cancel["data"]["plan_state"] == "complete"
     finally:
         set_plan_registry_for_test(None)
         set_intent_workspace_for_test(None)

@@ -468,9 +468,11 @@ RoomSetting, menu registry, canvas snapshot, and LineB status surfaces.
 
 Open implementation gaps:
 
-- Brain RPC full START test is pending until a Brain participant joins the same
-  LiveKit room and stays alive. The latest ECS retry proved the dispatch reaches
-  Brain but LineB crashes on missing Google STT Application Default Credentials.
+- Brain RPC full START test is still pending on the deployed Castle revision.
+  The 2026-05-14 retry proved that Brain now joins the LiveKit room after
+  unnamed dispatch. The new failure is `getRoomSettingSnapshot` returning a
+  payload larger than the LiveKit RPC response limit on the currently deployed
+  Brain code.
 - Unity has local audio route detection and mic republish logic, but it does
   not yet push route policy to Brain `session/audio_route_policy`. The backend
   route policy endpoint/RPC exists; the Unity producer hook is intentionally
@@ -525,3 +527,66 @@ Next TODO draft for the homepage/LiveKit continuation:
    true START pass. This can be done without phone/voice.
 5. Add phone/device pass for microphone permission, Bluetooth route changes,
    AR camera/video publish, app switch, and reconnect behavior.
+
+### E. 2026-05-14 Fast RPC Check And Homepage Readiness Audit
+
+Fast check scope:
+
+- Reused `src/scripts/sim_unity_client.py` instead of adding Unity Editor
+  scripts or new scenes. The new `--startup-rpc-check` path only joins the
+  room, waits for Brain, verifies startup business RPC payloads, and exits.
+- The script now defaults to unnamed LiveKit Agents dispatch, matching
+  `PARROT_MINT_AGENT_DISPATCH=unity`, but still accepts `--agent-name` for old
+  named local experiments.
+- It grants `can_publish_data=True`, because LiveKit RPC/DataChannel readiness
+  is part of START and cannot be verified with a media-only token.
+
+Result against Castle on 2026-05-14:
+
+- `unity-rpc-check-*` joined `parrot-main`.
+- No Brain was present initially; manual unnamed dispatch created a room job.
+- Brain participant `agent-*` joined and published `roomio_audio`. This means
+  the previous ADC/dispatch blocker is no longer the active START blocker.
+- The first RPC, `getRoomSettingSnapshot`, failed with LiveKit
+  `Response payload too large`. Local measurement showed the full snapshot is
+  about 27 KB, while the compact launch snapshot is about 8 KB.
+
+Local code fix completed:
+
+- `src/parrot/brain/agent.py` now compacts `getRoomSettingSnapshot` by default
+  for Brain RPC callers. Full RoomSetting editing remains owned by the App HTTP
+  facade; Brain RPC returns a startup/menu-safe launch snapshot.
+- `tests/test_brain/test_room_setting_rpc_snapshot.py` guards that the compact
+  response stays below the LiveKit RPC limit and preserves active room, line,
+  skin, and experience-mode selectors.
+- This fix must be deployed to Castle before the three-RPC business-ok pass can
+  be called complete on ECS.
+
+Homepage readiness audit:
+
+- Formal scene `ParrotApp_Startup.unity` mounts the correct runtime services
+  for RoomSetting, token mint, LiveKit, heartbeat, mic/video, lifecycle, and
+  orchestrator.
+- `ParrotAppStartupUiController` is still a startup/RoomSetting/transition
+  controller with a main-ready placeholder. It is not the final HUD/menu home.
+- RoomSetting can load snapshot, preview, create a backend draft, save, and
+  build the START RoomProfile. If `appApiUrl` is absent, it falls back to local
+  draft state and must not be treated as saved backend state.
+- Current local `parrot_config.json` contains Castle Mint/LiveKit/room values
+  but no `appApiUrl` or `orchestratorUrl`. A phone ECS build therefore cannot
+  prove RoomSetting save/apply or LineB Tier 1 orchestrator prewrite until those
+  endpoints are injected or deliberately tunneled.
+- `Scene` as a user-facing RoomSetting concept should stay out of the startup
+  page. The visible row is `Theme` and writes `skin_id`; spatial/environment
+  baseline remains `scene_profile_id` and should be automatic.
+- `AudioRouteDetector` + `MicrophonePublisher` implement route detection,
+  sample-rate selection, and mic unpublish/republish on route changes. They are
+  not yet verified on iQOO Neo9 Bluetooth/SCO/A2DP and they do not yet publish
+  `session/audio_route_policy` to Brain.
+- `RoomManager.ReconnectUsingCachedCredentials()` is still an editor/debug
+  helper. Production mobile reconnect needs fresh token re-mint, bounded
+  backoff, and app-switch/network-flap ownership.
+- `AppV1MetaUiController` remains a Smoke/reference controller. Reuse only its
+  HUD/tool drawer/camera/workdesk/note/Focus/BBox interaction ideas; do not
+  mount it wholesale or let its local preview/mobile-incompatible assumptions
+  define the formal App.

@@ -34,6 +34,9 @@ and token-mint dispatch repairs are reported complete (`agent_dispatch_requested
 True`, Brain no new crash, five services active). The remaining proof is Brain
 participant presence plus business-ok `getRoomSettingSnapshot`,
 `applyRoomProfile`, and `setAppCapabilityMode` RPC payloads before main-ready.
+The 2026-05-14 fast retry already proved Brain participant join, then exposed
+`getRoomSettingSnapshot` RPC response-size failure; deploy the compact snapshot
+fix before calling the three-RPC START proof complete.
 
 ```text
 你是 Unity App 前端线的 Codex。工作目录是 D:\GOSLOParrot\ParrotCarriers。

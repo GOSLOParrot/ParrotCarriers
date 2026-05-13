@@ -81,7 +81,15 @@ def _make_token(
         AccessToken(cfg.livekit.api_key, cfg.livekit.api_secret)
         .with_identity(identity)
         .with_name(identity)
-        .with_grants(VideoGrants(room_join=True, room=room, can_publish=True, can_subscribe=True))
+        .with_grants(
+            VideoGrants(
+                room_join=True,
+                room=room,
+                can_publish=True,
+                can_subscribe=True,
+                can_publish_data=True,
+            )
+        )
         .with_ttl(timedelta(hours=1))
     )
     if include_agent_dispatch:
@@ -182,7 +190,7 @@ async def _run_startup_rpc_check(room: rtc.Room, brain_identity: str) -> None:
         room,
         brain_identity,
         "getRoomSettingSnapshot",
-        {},
+        {"compact": True},
     )
     active_room = (
         (snapshot.get("snapshot") or {}).get("active_room")
@@ -587,16 +595,20 @@ async def main(
     audio_selftest: bool = False,
     identity: str = "unity-sim",
     agent_playback: bool = True,
+    startup_rpc_check: bool = False,
+    brain_wait_seconds: float = 30.0,
+    agent_name: str = AGENT_NAME,
 ) -> None:
     cfg = ParrotConfig()
     room_name = cfg.livekit.room_name
 
-    token = _make_token(identity, room_name, cfg)
+    token = _make_token(identity, room_name, cfg, agent_name=agent_name)
     logger.info(
-        "Identity: %s  Room: %s  (agent_dispatch_in_token=%s, agent_playback=%s)",
+        "Identity: %s  Room: %s  (agent_dispatch_in_token=%s, agent_name=%s, agent_playback=%s)",
         identity,
         room_name,
         identity.startswith("unity"),
+        agent_name or "<unnamed>",
         agent_playback,
     )
 
@@ -676,17 +688,33 @@ async def main(
 
     # Join token may already include RoomAgentDispatch; the worker joins shortly after us.
     # If we dispatch immediately, we often spawn a duplicate job (Redis/asyncio issues + wasted work).
-    has_agent = False
-    for _ in range(60):  # up to ~15s
-        has_agent = any(
-            p.identity.startswith("agent-") for p in room.remote_participants.values()
-        )
-        if has_agent:
-            break
-        await asyncio.sleep(0.25)
-    if not has_agent:
-        logger.info("No agent in room after wait — dispatching %s ...", AGENT_NAME)
-        await _dispatch_agent(cfg, room_name)
+    brain_identity = await _wait_for_brain_participant(room, 15.0)
+    if not brain_identity:
+        logger.info("No agent in room after wait — dispatching %s ...", agent_name or "<unnamed>")
+        await _dispatch_agent(cfg, room_name, agent_name=agent_name)
+        brain_identity = await _wait_for_brain_participant(room, brain_wait_seconds)
+
+    if startup_rpc_check:
+        try:
+            if not brain_identity:
+                raise RuntimeError(
+                    f"START RPC check failed: Brain participant not present after {brain_wait_seconds:.1f}s"
+                )
+            await _run_startup_rpc_check(room, brain_identity)
+        finally:
+            for pt in playback_tasks:
+                pt.cancel()
+            if playback_tasks:
+                await asyncio.gather(*playback_tasks, return_exceptions=True)
+            result_monitor.cancel()
+            await asyncio.gather(result_monitor, return_exceptions=True)
+            if nanobot:
+                await nanobot.stop()
+            if scheduler:
+                await scheduler.stop()
+            await room.disconnect()
+            logger.info("Disconnected.")
+        return
 
     mic_stream = None
     mic_writer_task: asyncio.Task | None = None
@@ -782,6 +810,24 @@ Examples:
         action="store_true",
         help="Do not play agent TTS via sounddevice (use with Unity playing audio to avoid double playback).",
     )
+    parser.add_argument(
+        "--startup-rpc-check",
+        action="store_true",
+        help="After joining, verify getRoomSettingSnapshot/applyRoomProfile/setAppCapabilityMode business-ok and exit.",
+    )
+    parser.add_argument(
+        "--brain-wait-seconds",
+        type=float,
+        default=30.0,
+        metavar="S",
+        help="Seconds to wait for Brain after dispatch before failing --startup-rpc-check.",
+    )
+    parser.add_argument(
+        "--agent-name",
+        default=AGENT_NAME,
+        metavar="NAME",
+        help="LiveKit Agents dispatch name. Default is empty for the unnamed @server.rtc_session entrypoint.",
+    )
     parser.add_argument("--mic", action="store_true", help="Enable microphone → Gemini voice chat")
     parser.add_argument("--video", action="store_true", help="Publish webcam video (simulates ARVideoPublisher)")
     parser.add_argument("--text", action="store_true", help="Enable text input mode")
@@ -841,5 +887,8 @@ Examples:
             audio_selftest=args.audio_selftest,
             identity=args.identity,
             agent_playback=not args.no_agent_playback,
+            startup_rpc_check=args.startup_rpc_check,
+            brain_wait_seconds=args.brain_wait_seconds,
+            agent_name=args.agent_name,
         )
     )

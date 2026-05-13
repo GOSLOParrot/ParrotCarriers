@@ -103,6 +103,9 @@ fields to `.cursor/memory/architecture/Interface/**` until App/Web confirmation.
 - 2026-05-14: Review pass also hardened Runtime Flow graph hygiene:
   changed-since signatures are order-insensitive, and dangling edges are pruned
   before React Flow receives the graph snapshot.
+- 2026-05-14: CORE-010/011 review pass added Web-only trace hints
+  (`trace_id`, `parent_span_id`, `payload_ref`) to Runtime Flow rows and made
+  HITL draft receipts state-aware (`plan_state`, `valid_actions_for_state`).
 - 2026-05-13: Created `web/console_app/` React + Vite frontend and build output
   in `web/console_dist/`. The BFF static root now prefers `web/console_dist`
   when present while keeping the old vanilla `web/console/` as reference.
@@ -116,7 +119,7 @@ fields to `.cursor/memory/architecture/Interface/**` until App/Web confirmation.
   typecheck/build pass; browser smoke confirms React dist on port `7893`,
   Memory/Runtime navigation, LLM trigger receipt, zh/en toggle, and zero console
   errors.
-- 2026-05-14: Review verification updated to `46 passed`; frontend
+- 2026-05-14: Review verification updated to `47 passed`; frontend
   typecheck/build still pass; HTTP no-op changed-since smoke returns
   `changed=false`.
 
@@ -127,8 +130,16 @@ before any `.cursor/memory/architecture/Interface/**` edit:
 
 - CORE-010 `RuntimeFlowTraceReadModel`: may become shared if Unity/App needs a
   compact runtime trace/status stream. Current implementation is Web-only.
+  Field audit result: event `source` means read-model writer/system, while edge
+  `source`/`target` are React Flow endpoint ids; this needs explicit naming if
+  promoted. `trace_id=plan:<plan_id>` is clean for Plan -> Scheduler ->
+  Nanobot visibility, but Graphiti commit events and persistent cross-process
+  result spans are still not durable.
 - CORE-011 `RuntimeHumanGate`: may become shared if App also renders or writes
-  approvals. Current implementation is Web BFF/operator-safe.
+  approvals. Current implementation is Web BFF/operator-safe. Field audit
+  result: Plan gates are clean enough for Web V1 after state-aware validation;
+  trigger/message gates are not implemented yet, so the candidate must not be
+  promoted as a general HITL DTO until those target kinds exist.
 - Plan dispatch result metadata is now implemented in backend code as a local
   capability upgrade, but a durable cross-process Plan/Nanobot trace DTO still
   belongs in CORE-010/CORE-011 review.

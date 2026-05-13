@@ -443,6 +443,110 @@ async def _generate_reply_after_current_speech(
     return True
 
 
+def _compact_room_setting_snapshot_for_rpc(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Return the RoomSetting shape that is safe for LiveKit RPC responses.
+
+    The full App HTTP snapshot includes rich selector metadata and can exceed
+    LiveKit RPC payload limits. Brain RPC callers only need a launch/sync view;
+    the full RoomSetting editor should continue to use the App HTTP facade.
+    """
+
+    def _pick(raw: Any, keys: tuple[str, ...]) -> dict[str, Any]:
+        if not isinstance(raw, dict):
+            return {}
+        return {key: raw[key] for key in keys if key in raw}
+
+    def _items(raw: Any, keys: tuple[str, ...]) -> list[dict[str, Any]]:
+        if not isinstance(raw, (list, tuple)):
+            return []
+        return [_pick(item, keys) for item in raw if isinstance(item, dict)]
+
+    selectors = snapshot.get("selectors") if isinstance(snapshot, dict) else {}
+    if not isinstance(selectors, dict):
+        selectors = {}
+
+    return {
+        "generated_at": snapshot.get("generated_at"),
+        "active_room": snapshot.get("active_room") or {},
+        "rooms": _items(
+            snapshot.get("rooms"),
+            (
+                "room_profile_id",
+                "display_name",
+                "model_id",
+                "persona_id",
+                "line_id",
+                "line_profile_id",
+                "scene_profile_id",
+                "experience_mode",
+                "workspace_id",
+                "skin_id",
+            ),
+        ),
+        "selectors": {
+            "rooms": _items(
+                selectors.get("rooms"),
+                (
+                    "room_profile_id",
+                    "display_name",
+                    "model_id",
+                    "persona_id",
+                    "line_id",
+                    "line_profile_id",
+                    "experience_mode",
+                    "skin_id",
+                ),
+            ),
+            "models": _items(
+                selectors.get("models"),
+                ("model_id", "display_name", "label", "name", "kind"),
+            ),
+            "personas": _items(
+                selectors.get("personas"),
+                ("persona_id", "display_name", "label", "name"),
+            ),
+            "lines": _items(
+                selectors.get("lines"),
+                (
+                    "line_id",
+                    "display_name",
+                    "state",
+                    "health",
+                    "summary",
+                    "selection_policy",
+                ),
+            ),
+            "line_profiles": _items(
+                selectors.get("line_profiles"),
+                (
+                    "line_profile_id",
+                    "display_name",
+                    "line_id",
+                    "asr_profile_id",
+                    "tts_profile_id",
+                    "voiceprint_profile_id",
+                    "echo_policy_id",
+                ),
+            ),
+            "scenes": _items(
+                selectors.get("scenes"),
+                ("scene_id", "display_name", "label", "name", "kind"),
+            ),
+            "skins": _items(selectors.get("skins"), ("skin_id", "display_name")),
+            "workspaces": _items(
+                selectors.get("workspaces"),
+                ("workspace_id", "display_name", "label", "name"),
+            ),
+            "experience_modes": _items(
+                selectors.get("experience_modes"),
+                ("experience_mode", "display_name", "requires"),
+            ),
+            "defaults": selectors.get("defaults") or {},
+        },
+        "compatibility": snapshot.get("compatibility") or {},
+    }
+
+
 def _attach_menu_rpc(room: "Any") -> None:
     """Expose menu/workspace business RPCs to Unity.
 
@@ -515,8 +619,11 @@ def _attach_menu_rpc(room: "Any") -> None:
         payload = _payload(data)
         snapshot = AppFirstVersionFacade().room_setting_snapshot(
             str(payload.get("room_profile_id") or "") or None
-        )
-        return _dump({"status": "ok", "snapshot": snapshot.as_json()})
+        ).as_json()
+        compact = not _payload_bool(payload, "full", False)
+        if compact:
+            snapshot = _compact_room_setting_snapshot_for_rpc(snapshot)
+        return _dump({"status": "ok", "snapshot": snapshot, "compact": compact})
 
     @room.local_participant.register_rpc_method("previewRoomProfile")
     async def _preview_room_profile(data: "Any") -> str:

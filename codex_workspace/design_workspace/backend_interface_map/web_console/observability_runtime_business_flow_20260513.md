@@ -4,7 +4,7 @@ Owner: Web Console chat
 Status: in_progress
 Category: Web Console business interface  
 Scope: ECS/module health, orchestrator status, Blackboard, IntentWorkspace, Plan/task, Scheduler, Nanobot, AgentTeam/Maid Team, GOSLO/Nanobot collaboration  
-Updated: 2026-05-13  
+Updated: 2026-05-14
 Related TODO: WEB-002, WEB-004, WEB-005, WEB-009, WEB-012
 Sources: `src/parrot/castle/orchestrator/status.py`, `src/parrot/castle/orchestrator/server.py`, `src/parrot/scheduler/**`, `src/parrot/brain/intent_workspace.py`, `src/parrot/brain/plan/**`, `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md`
 
@@ -64,6 +64,11 @@ to `.cursor/memory/architecture/Interface/**`.
   empty Plans complete on start instead of staying in `executing`; and dangling
   graph edges are pruned before the React Flow Runtime renderer receives the
   snapshot.
+- Fixed in the 2026-05-14 CORE-010/011 review pass:
+  Runtime Flow nodes/edges/events now carry Web-only `trace_id` and
+  `payload_ref` hints where available, duplicate graph ids are normalized, and
+  HITL decision drafts validate the requested action against the current Plan
+  state before returning a success receipt.
 - Done in Web-only V1:
   HITL pending/draft/apply routes expose Plan confirmation decisions without
   promoting a shared App DTO.
@@ -88,9 +93,19 @@ Runtime Flow data model V1:
 
 - `sequence` and `generated_at` identify the snapshot.
 - `lanes` describe the visual swimlanes.
-- `nodes` and `edges` are graph-renderer read models, not core DTOs.
-- `events` is a bounded event tape for recent runtime facts.
-- `pending_human_gates` lists Web-reviewable Plan gates.
+- `nodes` and `edges` are graph-renderer read models, not core DTOs. `source`
+  and `target` on edges are graph endpoint ids; they are not the same field as
+  event `source`.
+- `trace_id` and `payload_ref` on nodes/edges/events are Web-only CORE-010
+  hints. Current strongest trace is `plan:<plan_id>` across Plan, step,
+  Scheduler, and Nanobot queue edges when Plan metadata is present.
+- `events` is a bounded event tape for recent runtime facts. Its shape mirrors
+  trace/span vocabulary (`trace_id`, `span_id`, `parent_span_id`,
+  `entity_kind`, `entity_id`, `op`, `status`, `source`, `writer`, `summary`,
+  `created_at`, `payload_ref`) but remains Web-only until CORE-010 is approved.
+- `pending_human_gates` lists Web-reviewable Plan gates. Its V1 fields are
+  `gate_id`, `target_kind`, `target_id`, `trace_id`, `state`, `prompt`,
+  `summary`, `options`, `created_at`, `expires_at`, and `payload_ref`.
 - `audit` marks the model as Web-only and points at CORE-010/CORE-011.
 
 HITL V1 decisions:
@@ -102,6 +117,11 @@ HITL V1 decisions:
 - `cancel`: cancel the target plan.
 - `resume`: resume a paused/revised plan when explicitly allowed.
 
+HITL draft receipts now include `plan_state` and, on invalid state/action
+pairs, `valid_actions_for_state`. Apply receipts include `plan_state_after`
+when execution succeeds. These fields are useful for Web operator safety, but
+remain CORE-011 candidates rather than shared App DTO fields.
+
 Boundary:
 
 - No Unity/App DTOs changed.
@@ -112,7 +132,7 @@ Boundary:
 Verification:
 
 - `uv run pytest tests\test_brain\test_plan_lifecycle.py tests\test_web_console\test_web_console_server.py tests\test_dsg\test_obsidian_true_connection.py tests\test_dsg\test_calendar_true_connection.py tests\test_dsg\test_trigger_outcome_v2.py -q`
-  -> `46 passed`.
+  -> `47 passed`.
 - `uv run python -m py_compile src\parrot\web_console\runtime_flow.py src\parrot\web_console\server.py src\parrot\brain\plan\plan_registry.py src\parrot\scheduler\service.py`
 - `cd web\console_app; npm run typecheck`
 - `cd web\console_app; npm run build`

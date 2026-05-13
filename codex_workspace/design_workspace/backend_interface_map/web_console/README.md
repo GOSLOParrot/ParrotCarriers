@@ -123,6 +123,11 @@ Completed:
   order-insensitive for nodes/edges/events, and graph edges whose endpoints are
   outside the Runtime Flow read model are pruned before React Flow rendering.
 - Fixed HITL draft validation for missing Plan ids.
+- Fixed HITL draft validation for invalid Plan-state/action pairs; dry-run
+  receipts now expose `plan_state` and `valid_actions_for_state` instead of
+  promising an action that apply would reject.
+- Added Web-only CORE-010 trace hints to Runtime Flow nodes/edges/events:
+  `trace_id`, `parent_span_id` where applicable, and redacted `payload_ref`.
 - Fixed empty Plan execution settlement so a zero-step Plan completes instead
   of staying active/executing forever.
 - Added React Memory Graph Workspace with React Flow L2-B canvas, L1.5 bucket
@@ -139,7 +144,7 @@ Verification at this checkpoint:
 - Browser smoke on `http://127.0.0.1:7893/`: React dist served, Memory and
   Runtime pages navigated, LLM trigger draft produced a receipt, zh/en toggle
   worked, and frontend console errors stayed at zero.
-- Latest combined focused result: `46 passed`.
+- Latest combined focused result: `47 passed`.
 - Latest HTTP smoke after service restart:
   `/api/runtime/flow/changes?since=<current sequence>` returns
   `changed=false`.
