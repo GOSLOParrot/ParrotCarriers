@@ -2,18 +2,20 @@
 Description=Parrot Maid Nanobot (parrot_bus + WeChat)
 After=network-online.target docker.service parrot-orchestrator.service
 Wants=network-online.target docker.service parrot-orchestrator.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
 Type=simple
-User=parrot
+User=root
 WorkingDirectory=/opt/parrot/ParrotCarriers
 EnvironmentFile=-/opt/parrot/ParrotCarriers/.env.castle
 Environment=PYTHONUNBUFFERED=1
+# Venv bin in PATH so shutil.which("nanobot") finds it
+Environment=PATH=/opt/parrot/ParrotCarriers/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/opt/parrot/ParrotCarriers/.venv/bin/python src/scripts/start_nanobot_worker.py
 Restart=on-failure
 RestartSec=5s
-StartLimitBurst=5
-StartLimitIntervalSec=60
 TimeoutStopSec=20s
 KillSignal=SIGTERM
 NoNewPrivileges=true

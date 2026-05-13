@@ -3,6 +3,8 @@ Description=Parrot Scheduler (BT routing + nanobot reply fan-in)
 Documentation=file:/opt/parrot/ParrotCarriers/.cursor/memory/architecture/Interface/app_v1_brain_cold_start_line_lifecycle_audit_20260511.md
 After=network-online.target docker.service parrot-orchestrator.service
 Wants=network-online.target docker.service parrot-orchestrator.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
 Type=simple
@@ -13,8 +15,6 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/parrot/ParrotCarriers/.venv/bin/python src/scripts/start_scheduler.py
 Restart=on-failure
 RestartSec=5s
-StartLimitBurst=5
-StartLimitIntervalSec=60
 TimeoutStopSec=10s
 KillSignal=SIGTERM
 NoNewPrivileges=true

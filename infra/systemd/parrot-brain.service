@@ -3,6 +3,9 @@ Description=Parrot Brain Agent (LiveKit ↔ Gemini Live)
 Documentation=file:/opt/parrot/ParrotCarriers/.cursor/memory/architecture/Interface/app_v1_brain_cold_start_line_lifecycle_audit_20260511.md
 After=network-online.target docker.service parrot-orchestrator.service
 Wants=network-online.target docker.service parrot-orchestrator.service
+# Phase 5 anti-thrash: cap at 5 restarts in 60s.
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
 Type=simple
@@ -16,13 +19,9 @@ Environment=PYTHONUNBUFFERED=1
 #   data/runtime_config.json > BB > env > default. Tier 1 line switches
 #   should write the file via the orchestrator and trigger
 #   forceUnityReconnect; do NOT mutate this env at runtime.
-ExecStart=/opt/parrot/ParrotCarriers/.venv/bin/python -m parrot.brain.agent dev
+ExecStart=/opt/parrot/ParrotCarriers/.venv/bin/python -m parrot.brain.agent start
 Restart=on-failure
 RestartSec=5s
-# Phase 5 anti-thrash: cap at 5 restarts in 60s. The orchestrator
-# /status endpoint surfaces sustained crash loops to operators.
-StartLimitBurst=5
-StartLimitIntervalSec=60
 TimeoutStopSec=20s
 KillSignal=SIGTERM
 NoNewPrivileges=true
