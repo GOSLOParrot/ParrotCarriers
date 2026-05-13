@@ -12,9 +12,6 @@ build/
 .venv/
 *.egg
 
-# JavaScript
-node_modules/
-
 # IDE（仅跟踪工作区终端 UTF-8 等共享设置）
 .vscode/*
 !.vscode/settings.json
