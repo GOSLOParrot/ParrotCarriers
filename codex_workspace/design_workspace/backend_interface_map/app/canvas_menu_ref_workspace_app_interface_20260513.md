@@ -152,3 +152,26 @@ shared answer for `CanvasMenuCoreV1`.
   but it is a Smoke/reference controller. It must not become the shared canvas
   menu contract, and it must not be mounted wholesale into the formal startup
   scene as proof that the menu is complete.
+
+## Slice: 2026-05-14 RPC Payload Budget
+
+Owner chat: Unity App
+Status: active rule
+Related TODO: APP-004, APP-015
+
+- LiveKit RPC is a compact control-plane surface, not a transport for full
+  homepage/canvas snapshots.
+- Current measured payloads: compact `getRoomSettingSnapshot` is about 8.3 KB,
+  `listMenuBlocks` is about 4.5 KB, full RoomSetting snapshot is about 27.5 KB,
+  and full `canvas_snapshot` is about 39.3 KB.
+- Safe App menu RPC use today: small in-room control calls such as
+  `applyMenuSelection`, `applyWorkspace`, and tier/status confirmations.
+  `listMenuBlocks` can remain a compact legacy/bootstrap fallback, but the
+  formal persisted menu/homepage read path should prefer the App HTTP facade
+  or a future compact/paged HTTP read model.
+- Unsafe App menu use today: sending full `canvas_snapshot` through LiveKit
+  RPC. The formal homepage/menu loader must fetch that through the App HTTP
+  facade or a future paged/compact read model.
+- Static tests guard compact RoomSetting and menu block RPC payloads below
+  15 KB. If a future registry grows past that, split the read model instead of
+  raising the RPC budget casually.

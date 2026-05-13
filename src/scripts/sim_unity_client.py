@@ -163,6 +163,21 @@ def _assert_business_ok(method: str, parsed: dict) -> None:
         raise RuntimeError(f"{method} result.success=false: {result}")
 
 
+def _load_startup_room_profile(room_profile_id: str) -> dict:
+    """Load the RoomProfile to send through START sync.
+
+    Formal startup cold-load/editing uses the App HTTP facade before LiveKit
+    connects. This diagnostic script mirrors only the post-join sync step, so
+    it loads the selected profile locally instead of calling Brain
+    getRoomSettingSnapshot over RPC.
+    """
+
+    from parrot.brain.preset_loader import DEFAULT_PRESET_ID, get_preset_loader
+
+    profile_id = (room_profile_id or "").strip() or DEFAULT_PRESET_ID
+    return get_preset_loader().load_room_profile(profile_id).as_json()
+
+
 async def _perform_startup_rpc(
     room: rtc.Room,
     brain_identity: str,
@@ -185,21 +200,12 @@ async def _perform_startup_rpc(
     return parsed
 
 
-async def _run_startup_rpc_check(room: rtc.Room, brain_identity: str) -> None:
-    snapshot = await _perform_startup_rpc(
-        room,
-        brain_identity,
-        "getRoomSettingSnapshot",
-        {"compact": True},
-    )
-    active_room = (
-        (snapshot.get("snapshot") or {}).get("active_room")
-        if isinstance(snapshot.get("snapshot"), dict)
-        else None
-    )
-    if not isinstance(active_room, dict):
-        raise RuntimeError("getRoomSettingSnapshot returned no snapshot.active_room")
-
+async def _run_startup_rpc_check(
+    room: rtc.Room,
+    brain_identity: str,
+    room_profile_id: str = "",
+) -> None:
+    active_room = _load_startup_room_profile(room_profile_id)
     experience_mode = str(active_room.get("experience_mode") or "ar_companion")
     await _perform_startup_rpc(
         room,
@@ -218,7 +224,7 @@ async def _run_startup_rpc_check(room: rtc.Room, brain_identity: str) -> None:
         {"mode": "FullARCompanion"},
     )
     logger.info(
-        "START RPC check passed: active_room=%s experience_mode=%s brain=%s",
+        "START RPC check passed: profile=%s experience_mode=%s brain=%s",
         active_room.get("room_profile_id"),
         experience_mode,
         brain_identity,
@@ -598,6 +604,7 @@ async def main(
     startup_rpc_check: bool = False,
     brain_wait_seconds: float = 30.0,
     agent_name: str = AGENT_NAME,
+    startup_room_profile_id: str = "",
 ) -> None:
     cfg = ParrotConfig()
     room_name = cfg.livekit.room_name
@@ -700,7 +707,7 @@ async def main(
                 raise RuntimeError(
                     f"START RPC check failed: Brain participant not present after {brain_wait_seconds:.1f}s"
                 )
-            await _run_startup_rpc_check(room, brain_identity)
+            await _run_startup_rpc_check(room, brain_identity, startup_room_profile_id)
         finally:
             for pt in playback_tasks:
                 pt.cancel()
@@ -813,7 +820,7 @@ Examples:
     parser.add_argument(
         "--startup-rpc-check",
         action="store_true",
-        help="After joining, verify getRoomSettingSnapshot/applyRoomProfile/setAppCapabilityMode business-ok and exit.",
+        help="After joining, verify post-join applyRoomProfile/setAppCapabilityMode business-ok and exit.",
     )
     parser.add_argument(
         "--brain-wait-seconds",
@@ -821,6 +828,12 @@ Examples:
         default=30.0,
         metavar="S",
         help="Seconds to wait for Brain after dispatch before failing --startup-rpc-check.",
+    )
+    parser.add_argument(
+        "--startup-room-profile-id",
+        default="",
+        metavar="ID",
+        help="RoomProfile id to load locally and send to applyRoomProfile during --startup-rpc-check.",
     )
     parser.add_argument(
         "--agent-name",
@@ -890,5 +903,6 @@ Examples:
             startup_rpc_check=args.startup_rpc_check,
             brain_wait_seconds=args.brain_wait_seconds,
             agent_name=args.agent_name,
+            startup_room_profile_id=args.startup_room_profile_id,
         )
     )

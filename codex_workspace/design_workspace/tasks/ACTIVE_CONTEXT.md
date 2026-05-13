@@ -271,20 +271,41 @@ These are useful test evidence only. They must not be used as App completion evi
   true START proof with Brain participant + business-ok RPC payloads, not just
   service health.
 - 2026-05-14 fast START RPC retry: reused `src/scripts/sim_unity_client.py`
-  with a new `--startup-rpc-check` path instead of adding Editor scenes. The
-  diagnostic Unity identity joined Castle `parrot-main`; Brain was absent at
-  first, unnamed dispatch succeeded, `agent-*` joined, and the previous ADC
-  blocker did not recur. The active blocker is now narrower:
-  `getRoomSettingSnapshot` over Brain RPC returned `Response payload too large`
-  because the deployed full snapshot is about 27 KB. Local code now compacts
-  Brain RPC snapshots to about 8 KB while leaving full RoomSetting editing on
-  the App HTTP facade. Deploy that fix before claiming the three-RPC
-  business-ok pass complete.
-- Current phone/ECS config warning: local Unity `parrot_config.json` contains
-  Castle Mint/LiveKit/room values but no `appApiUrl` or `orchestratorUrl`.
-  A phone build can join LiveKit, but cannot prove backend RoomSetting
-  save/apply or LineB Tier 1 orchestrator prewrite until those endpoints are
-  injected or intentionally tunneled.
+  instead of adding Editor scenes. The diagnostic Unity identity joined Castle
+  `parrot-main`; Brain was absent at first, unnamed dispatch succeeded,
+  `agent-*` joined, and the previous ADC blocker did not recur. After Castle
+  was fast-forwarded to `c0f1705`, the earlier compact
+  `getRoomSettingSnapshot` diagnostic worked. Formal START proof no longer
+  depends on that RPC: RoomSetting cold-load/edit/save is App HTTP before
+  LiveKit, and the diagnostic script now mirrors the post-join sync by loading
+  the selected RoomProfile locally/HTTP-side. The default active RoomProfile
+  (`default`, LineA) correctly failed `applyRoomProfile` against the running
+  LineB Brain with
+  `status:error/result.success:false`; this remains a real START failure, not
+  a transport success. Re-running with `--startup-room-profile-id ner_lineb_room`
+  passed `applyRoomProfile` and `setAppCapabilityMode` business-ok.
+- Current phone/ECS config warning: local Unity `parrot_config.json` now
+  contains Castle `appApiUrl` and `orchestratorUrl` in addition to
+  Mint/LiveKit/room values, so phone builds no longer silently fall back to
+  `127.0.0.1`. However, from this workstation
+  `http://8.216.45.45:8790/api/app/room-setting` and
+  `http://8.216.45.45:7890/health` return HTTP 502. A phone build can prove
+  Mint/LiveKit/Brain RPC, but RoomSetting save/apply and LineB Tier 1
+  orchestrator prewrite remain blocked on public routing/reverse proxy/security
+  group or an explicit tunnel. The ignored local config still has no
+  `orchestratorSecret`; if Castle keeps `PARROT_ORCH_SECRET` enabled, add it
+  only through local ignored config, never through tracked files.
+- 2026-05-14 ECS port audit from user: Orchestrator is running on
+  `127.0.0.1:7890` only, so public phone access requires a reverse proxy,
+  public bind, or tunnel. App API is not listening on `8790`; the visible
+  docker-proxy listener is `18790`, not `8790`. This explains public 502s and
+  keeps APP-015.3 open.
+- 2026-05-14 RPC payload rule: LiveKit RPC is compact control plane only.
+  Current measurements are compact RoomSetting ~8.3 KB, `listMenuBlocks`
+  ~4.5 KB, full RoomSetting ~27.5 KB, and full `canvas_snapshot` ~39.3 KB.
+  Full homepage/canvas snapshots must use App HTTP facade or a future compact
+  paged model; do not push them through RPC. Compact RoomSetting RPC is legacy
+  fallback/diagnostic only, not the formal startup load path.
 - Lifecycle cleanup note: `LifecycleShutdownService` synchronous quit drain no
   longer blocks on SDK `UnpublishTrack`; latest Unity Play Mode exit after a
   connected room showed 0 Console errors/warnings.

@@ -2,6 +2,7 @@ export type Language = "en" | "zh";
 
 export type Receipt = {
   receipt_id?: string;
+  receipt?: Record<string, unknown>;
   action?: string;
   success?: boolean;
   dry_run?: boolean;

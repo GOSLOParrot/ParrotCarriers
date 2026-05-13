@@ -106,6 +106,10 @@ fields to `.cursor/memory/architecture/Interface/**` until App/Web confirmation.
 - 2026-05-14: CORE-010/011 review pass added Web-only trace hints
   (`trace_id`, `parent_span_id`, `payload_ref`) to Runtime Flow rows and made
   HITL draft receipts state-aware (`plan_state`, `valid_actions_for_state`).
+- 2026-05-14: HITL consistency pass made pending gate `options` come from the
+  same Plan-state policy as draft/apply validation, added explicit
+  `unsupported_hitl_target` receipts for non-Plan gates, and included event
+  `source`/`writer` in changed-since signatures.
 - 2026-05-13: Created `web/console_app/` React + Vite frontend and build output
   in `web/console_dist/`. The BFF static root now prefers `web/console_dist`
   when present while keeping the old vanilla `web/console/` as reference.
@@ -114,14 +118,40 @@ fields to `.cursor/memory/architecture/Interface/**` until App/Web confirmation.
   node/edge dry-run receipts, and detail drawer; Runtime Flow Workspace with
   swimlane/DAG, event tape, manual trigger buttons, HITL cards, and receipt
   rail.
+- 2026-05-14: Runtime Flow React UI pass fixed zh/en copy rendering, exposed
+  the configured auto-refresh interval in the live pill, arranged Runtime nodes
+  by lane-local row, and made HITL gate cards render backend-provided actions
+  instead of hard-coded approve buttons.
+- 2026-05-14: Approved backend/DTO upgrade begins. WEB-012.15 records a
+  Web-only typed schema layer for Runtime Flow rows and receipts before any
+  shared DTO/SSOT promotion. CORE-010 and CORE-011 remain candidates; Plan HITL
+  is the only implemented gate target, and trigger/message HITL stays explicit
+  unsupported until a real state machine exists.
+- 2026-05-14: WEB-012.15/012.16 implemented. Runtime Flow nodes, edges, events,
+  snapshots, changed-since envelopes, HITL gates, and HITL receipts now
+  serialize through `parrot.web_console.runtime_flow_models`. Route smoke
+  confirms the typed schema audit field, no-op changed-since remains false, and
+  non-Plan HITL receipts expose `core_candidate=CORE-011`.
+- 2026-05-14: Trigger protocol cleanup pass confirmed that
+  `DSG-TRIGGER-V2` / `TriggerOutcome` is the active trigger output protocol.
+  `MessageNotificationTrigger` now commits `GOOGLE_MESSAGE` observations
+  through L1.5/Ingest, `TriggerRunner.fire_event()` routes `ON_DEMAND`
+  triggers, and trigger source files now use `TriggerOutcome` directly. The
+  old `TriggerResult` name remains only as a compatibility alias/test, while
+  early `SceneTrigger` scene-alert envelopes remain a separate input
+  compatibility path pending future typed event review.
 - Previous verification checkpoint: focused backend tests including
   Obsidian/Calendar/TriggerOutcome regressions report `44 passed`; React
   typecheck/build pass; browser smoke confirms React dist on port `7893`,
   Memory/Runtime navigation, LLM trigger receipt, zh/en toggle, and zero console
   errors.
-- 2026-05-14: Review verification updated to `47 passed`; frontend
+- 2026-05-14: Review verification updated to `48 passed`; frontend
   typecheck/build still pass; HTTP no-op changed-since smoke returns
   `changed=false`.
+- 2026-05-14: Trigger protocol cleanup verification updated to `64 passed` for
+  focused DSG/Web Console trigger, L1.5, TriggerOutcome, and Web route tests,
+  including a source guard that keeps new trigger implementations on the
+  `TriggerOutcome` name.
 
 ## Pending Core / Data Model Review
 

@@ -105,7 +105,9 @@ Runtime Flow data model V1:
   `created_at`, `payload_ref`) but remains Web-only until CORE-010 is approved.
 - `pending_human_gates` lists Web-reviewable Plan gates. Its V1 fields are
   `gate_id`, `target_kind`, `target_id`, `trace_id`, `state`, `prompt`,
-  `summary`, `options`, `created_at`, `expires_at`, and `payload_ref`.
+  `summary`, `plan_state`, `options`, `valid_actions_for_state`,
+  `operator_required_for_execute`, `created_at`, `expires_at`, and
+  `payload_ref`.
 - `audit` marks the model as Web-only and points at CORE-010/CORE-011.
 
 HITL V1 decisions:
@@ -122,6 +124,34 @@ pairs, `valid_actions_for_state`. Apply receipts include `plan_state_after`
 when execution succeeds. These fields are useful for Web operator safety, but
 remain CORE-011 candidates rather than shared App DTO fields.
 
+2026-05-14 review note:
+
+- Pending gate `options` now come from the same Plan-state policy as
+  draft/apply validation, so the UI should not display impossible decisions.
+- Non-Plan gate targets, for example `trigger:<id>` and `message:<id>`, return
+  `unsupported_hitl_target` until their backend state transitions and receipts
+  are explicitly implemented. They must not be promoted as shared CORE-011
+  targets yet.
+- React Runtime Flow now consumes the gate `options` field for button rendering
+  instead of hard-coding approve buttons. The UI also shows the configured
+  refresh interval and keeps Runtime graph positions lane-local for easier
+  scanning.
+
+2026-05-14 typed schema upgrade result:
+
+- WEB-012.15 added a Web-only typed schema layer in
+  `parrot.web_console.runtime_flow_models` for Runtime Flow rows, snapshots,
+  changed-since envelopes, HITL gates, and receipts. The route JSON stays
+  compatible with the React console.
+- CORE-010 remains a candidate read model. The implementation may clarify the
+  event writer field internally, but graph edge `source` / `target` must remain
+  route-compatible React Flow endpoints.
+- CORE-011 remains limited to Plan HITL gates. HITL receipts now expose
+  `core_candidate=CORE-011` when relevant. Trigger/message targets keep
+  explicit `unsupported_hitl_target` receipts until their backend state
+  machines are designed.
+- This slice does not create SSE/WebSocket and does not add App/Unity DTOs.
+
 Boundary:
 
 - No Unity/App DTOs changed.
@@ -132,14 +162,17 @@ Boundary:
 Verification:
 
 - `uv run pytest tests\test_brain\test_plan_lifecycle.py tests\test_web_console\test_web_console_server.py tests\test_dsg\test_obsidian_true_connection.py tests\test_dsg\test_calendar_true_connection.py tests\test_dsg\test_trigger_outcome_v2.py -q`
-  -> `47 passed`.
-- `uv run python -m py_compile src\parrot\web_console\runtime_flow.py src\parrot\web_console\server.py src\parrot\brain\plan\plan_registry.py src\parrot\scheduler\service.py`
+  -> `48 passed`.
+- `uv run python -m py_compile src\parrot\web_console\runtime_flow.py src\parrot\web_console\runtime_flow_models.py src\parrot\web_console\server.py src\parrot\brain\plan\plan_registry.py src\parrot\scheduler\service.py`
 - `cd web\console_app; npm run typecheck`
 - `cd web\console_app; npm run build`
 - Browser smoke: React Runtime Flow served on `http://127.0.0.1:7893/`,
-  manual LLM trigger draft produced a receipt, zh/en toggle worked, and browser
-  console errors stayed at zero.
-- HTTP smoke after the review fixes:
+  manual LLM trigger draft produced a receipt, zh/en toggle worked without
+  mojibake, and browser console errors stayed at zero.
+- HTTP smoke after the typed schema upgrade:
+  `/api/runtime/flow` returned
+  `typed_schema=parrot.web_console.runtime_flow_models`; non-Plan HITL draft
+  returned `unsupported_hitl_target` with `core_candidate=CORE-011`; and
   `/api/runtime/flow/changes?since=<current sequence>` returned
   `changed=false`.
 
@@ -334,11 +367,16 @@ Extension for Trigger Lab and Gmail message smoke:
 - Frontend Runtime Monitor now has a collapsed Trigger Lab with trigger catalog,
   editable event JSON, draft/fire dry-run buttons, Gmail check dry-run, message
   push dry-run, and receipt output.
-- Audit note: `MessageNotificationTrigger` still writes message EVENT nodes
-  directly to L2-B internally. This is a known backend drift from Calendar and
-  Obsidian, which use L1.5/TriggerOutcome commit paths. The next backend pass
-  should migrate it to `TriggerOutcome.commit_observations` or add an equivalent
-  receipt/audit boundary.
+- 2026-05-14 cleanup: `MessageNotificationTrigger` now returns
+  `TriggerOutcome.commit_observations` with
+  `ObservationSource.GOOGLE_MESSAGE`. Message EVENT nodes enter L2-B through
+  L1.5/Ingest like Calendar and Obsidian. This removes the previous direct
+  `self._graph.upsert_node(...)` drift.
+- 2026-05-14 cleanup: `TriggerRunner.fire_event()` now routes both
+  `EVENT_DRIVEN` and `ON_DEMAND` triggers. Web fire/draft remains receipt-first
+  and still publishes only to `CH_DSG_EVENTS` for real operator execution, but
+  scene/roleplay style on-demand triggers no longer require a private Web-side
+  singleton call.
 
 ### Interface Matrix: Trigger Lab And Message Checks
 
@@ -356,14 +394,19 @@ admin access.
 | `POST /api/google/messages/check` | Draft/dispatch Nanobot Gmail/Workspace `message_check`. | `dispatch_message_check()` -> Scheduler dispatch | Default dry-run; browser never holds Gmail credentials. |
 | `POST /api/google/messages/push-test` | Draft/publish a synthetic `message_push` event. | `push_test_message()` -> trigger event path | Default dry-run; real event requires operator mode. |
 
-Current drift / fix target:
+Current protocol status:
 
-- `CalendarTrigger` and Obsidian ingestion produce `TriggerOutcome`
-  upload-channel data that the runner can commit through L1.5.
-- `MessageNotificationTrigger` still creates message EVENT nodes with direct
-  `self._graph.upsert_node(...)`. This should be refactored to return
-  `commit_observations` or a comparable audited receipt so Web message tests
-  exercise the same path as Calendar/Obsidian.
+- `CalendarTrigger`, `ObsidianIngestTrigger`, `GosloCuriosityTrigger`, and
+  `MessageNotificationTrigger` now produce `TriggerOutcome` upload-channel
+  data that the runner can commit through L1.5.
+- `SceneSwitchTrigger`, `RoleplayModeTrigger`, and similar on-demand triggers
+  are reachable through the same `fire_event` router; their events use `kind`
+  instead of the legacy scene-alert `type` field.
+- `TriggerResult` remains a back-compat alias for legacy imports. It is not the
+  preferred implementation style for new trigger code.
+- 2026-05-14 source cleanup: DSG trigger implementations have been moved to
+  import and construct `TriggerOutcome` directly; the remaining
+  `TriggerResult` references are the compatibility/source-guard tests.
 
 ### Investigation: Runtime Visual Rendering Interfaces
 

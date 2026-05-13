@@ -20,7 +20,7 @@ import logging
 from typing import Any
 
 from parrot.dsg.l2b_types import ConfirmationStatus, Salience, SemanticNode
-from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerResult
+from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +36,13 @@ class SSOTEnrichmentTrigger(BaseTrigger):
         super().__init__(graph)
         self._enriched_uuids: set[str] = set()
 
-    async def on_startup(self) -> TriggerResult | None:
+    async def on_startup(self) -> TriggerOutcome | None:
         return await self._enrich_all_uncertain()
 
-    async def on_tick(self) -> TriggerResult | None:
+    async def on_tick(self) -> TriggerOutcome | None:
         return await self._enrich_all_uncertain()
 
-    async def on_event(self, event: dict[str, Any]) -> TriggerResult | None:
+    async def on_event(self, event: dict[str, Any]) -> TriggerOutcome | None:
         """React to new object events."""
         event_type = event.get("type", "")
 
@@ -56,7 +56,7 @@ class SSOTEnrichmentTrigger(BaseTrigger):
 
         return None
 
-    async def _enrich_single(self, uuid: str) -> TriggerResult | None:
+    async def _enrich_single(self, uuid: str) -> TriggerOutcome | None:
         """Enrich a single node from SSOT."""
         if uuid in self._enriched_uuids:
             return None
@@ -69,7 +69,7 @@ class SSOTEnrichmentTrigger(BaseTrigger):
         self._enriched_uuids.add(uuid)
 
         if enriched:
-            return TriggerResult(
+            return TriggerOutcome(
                 trigger_name=self.name,
                 summary=f"Enriched '{node.label}' from SSOT — confidence boosted",
                 nodes_affected=[uuid],
@@ -89,7 +89,7 @@ class SSOTEnrichmentTrigger(BaseTrigger):
                 },
             )
             if task_id:
-                return TriggerResult(
+                return TriggerOutcome(
                     trigger_name=self.name,
                     summary=f"No SSOT data for '{node.label}' — dispatched research",
                     nodes_affected=[uuid],
@@ -99,7 +99,7 @@ class SSOTEnrichmentTrigger(BaseTrigger):
 
         return None
 
-    async def _enrich_all_uncertain(self) -> TriggerResult | None:
+    async def _enrich_all_uncertain(self) -> TriggerOutcome | None:
         """Batch-enrich all EXPECTED/UNCERTAIN nodes that haven't been processed."""
         uncertain = self._graph.filter_nodes(
             lambda n: (
@@ -124,7 +124,7 @@ class SSOTEnrichmentTrigger(BaseTrigger):
                 affected.extend(result.nodes_affected)
 
         if enriched_count:
-            return TriggerResult(
+            return TriggerOutcome(
                 trigger_name=self.name,
                 summary=f"Batch enriched {enriched_count}/{len(uncertain)} uncertain nodes",
                 nodes_affected=affected,

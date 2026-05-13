@@ -70,17 +70,27 @@ class TriggerRunner:
             self._event_task.cancel()
 
     async def fire_event(self, event: dict) -> list[TriggerOutcome]:
-        """Manually fire an event to all EVENT_DRIVEN triggers."""
+        """Route one incoming event to event-driven and on-demand triggers.
+
+        ``ON_DEMAND`` triggers still self-filter inside ``on_event``. Including
+        them here makes Web/operator-triggered scene and roleplay events use the
+        same TriggerOutcome pipeline instead of requiring a private singleton
+        call from the Web process.
+        """
         results = []
         for t in self._triggers:
-            if TriggerKind.EVENT_DRIVEN in t.kinds:
-                try:
-                    result = await t.on_event(event)
-                    if result:
-                        await self._process_result(result)
-                        results.append(result)
-                except Exception:
-                    logger.exception("TriggerRunner: event error in %s", t.name)
+            if not (
+                TriggerKind.EVENT_DRIVEN in t.kinds
+                or TriggerKind.ON_DEMAND in t.kinds
+            ):
+                continue
+            try:
+                result = await t.on_event(event)
+                if result:
+                    await self._process_result(result)
+                    results.append(result)
+            except Exception:
+                logger.exception("TriggerRunner: event error in %s", t.name)
         return results
 
     async def _tick_loop(self) -> None:

@@ -21,6 +21,15 @@ from parrot.brain.plan import (
     get_plan_registry,
 )
 from parrot.brain.plan.plan_lifecycle import PlanLifecycle
+from parrot.web_console.runtime_flow_models import (
+    RuntimeFlowChanges,
+    RuntimeFlowEdge,
+    RuntimeFlowEvent,
+    RuntimeFlowNode,
+    RuntimeFlowSnapshot,
+    RuntimeHumanGate,
+    RuntimeReceipt,
+)
 from parrot.web_console.runtime_monitor import build_runtime_monitor_snapshot
 
 _flow_sequence = 0
@@ -62,27 +71,26 @@ def build_runtime_flow_snapshot() -> dict[str, Any]:
     sequence = _flow_sequence
     _rewrite_event_sequence(events, sequence)
 
-    return {
-        "success": True,
-        "action": "runtime.flow.snapshot",
-        "sequence": sequence,
-        "generated_at": generated_at,
-        "lanes": _runtime_lanes(),
-        "nodes": nodes,
-        "edges": edges,
-        "events": events[-80:],
-        "pending_human_gates": pending,
-        "source_sequences": {
+    return RuntimeFlowSnapshot(
+        sequence=sequence,
+        generated_at=generated_at,
+        lanes=_runtime_lanes(),
+        nodes=nodes,
+        edges=edges,
+        events=events[-80:],
+        pending_human_gates=pending,
+        source_sequences={
             "live_state": live_state.get("sequence"),
             "runtime_monitor_generated_at": monitor.get("generated_at"),
         },
-        "audit": {
+        audit={
             "web_only": True,
             "read_model": True,
+            "typed_schema": "parrot.web_console.runtime_flow_models",
             "shared_core_candidates": ["CORE-009", "CORE-010", "CORE-011"],
             "payload_policy": "summaries and redacted refs only",
         },
-    }
+    ).as_json()
 
 
 def build_runtime_flow_changes(*, since: int = 0) -> dict[str, Any]:
@@ -95,16 +103,14 @@ def build_runtime_flow_changes(*, since: int = 0) -> dict[str, Any]:
     snapshot = build_runtime_flow_snapshot()
     sequence = int(snapshot.get("sequence") or 0)
     changed = sequence > max(0, int(since or 0))
-    return {
-        "success": True,
-        "action": "runtime.flow.changes",
-        "since": max(0, int(since or 0)),
-        "sequence": sequence,
-        "changed": changed,
-        "events": snapshot["events"] if changed else [],
-        "snapshot": snapshot if changed else None,
-        "audit": snapshot["audit"],
-    }
+    return RuntimeFlowChanges(
+        since=max(0, int(since or 0)),
+        sequence=sequence,
+        changed=changed,
+        events=snapshot["events"] if changed else [],
+        snapshot=snapshot if changed else None,
+        audit=snapshot["audit"],
+    ).as_json()
 
 
 def pending_human_gates() -> dict[str, Any]:
@@ -126,19 +132,25 @@ def pending_human_gates() -> dict[str, Any]:
         if getattr(plan, "state", None) != PlanState.AWAITING_USER_CONFIRMATION:
             continue
         plan_id = str(getattr(plan, "plan_id", ""))
-        gates.append({
-            "gate_id": f"plan:{plan_id}",
-            "target_kind": "plan",
-            "target_id": plan_id,
-            "trace_id": f"plan:{plan_id}",
-            "state": "pending",
-            "prompt": "Plan is awaiting operator confirmation.",
-            "summary": str(getattr(plan, "title", "") or plan_id),
-            "options": ["approve", "approve_and_start", "reject", "revise", "cancel"],
-            "created_at": float(getattr(plan, "drafted_at", 0.0) or 0.0),
-            "expires_at": 0.0,
-            "payload_ref": str(getattr(plan, "staged_ref_id", "") or ""),
-        })
+        valid_actions = _valid_hitl_actions_for_state(plan)
+        # Use the same state-aware policy that draft/apply validation uses, so
+        # the Web workspace cannot render a button the BFF will refuse.
+        gates.append(RuntimeHumanGate(
+            gate_id=f"plan:{plan_id}",
+            target_kind="plan",
+            target_id=plan_id,
+            trace_id=f"plan:{plan_id}",
+            state="pending",
+            plan_state=_plan_state_value(plan),
+            prompt="Plan is awaiting operator confirmation.",
+            summary=str(getattr(plan, "title", "") or plan_id),
+            options=valid_actions,
+            valid_actions_for_state=valid_actions,
+            operator_required_for_execute=True,
+            created_at=float(getattr(plan, "drafted_at", 0.0) or 0.0),
+            expires_at=0.0,
+            payload_ref=str(getattr(plan, "staged_ref_id", "") or ""),
+        ).as_json())
     return {
         "success": True,
         "action": "runtime.hitl.pending",
@@ -151,19 +163,16 @@ def draft_human_gate_decision(payload: dict[str, Any] | None = None) -> dict[str
     """Validate a HITL decision and return a receipt without applying it."""
     body = payload or {}
     action = str(body.get("decision") or body.get("action") or "approve").strip().lower()
-    gate_id = str(body.get("gate_id") or "").strip()
-    plan_id = str(body.get("plan_id") or "").strip()
-    if gate_id.startswith("plan:") and not plan_id:
-        plan_id = gate_id.split(":", 1)[1]
-    if not gate_id and plan_id:
-        gate_id = f"plan:{plan_id}"
-    plan = _plan_for_hitl(plan_id) if plan_id else None
-    state_error = _hitl_decision_error(plan=plan, action=action)
+    gate_id, target_kind, target_id = _parse_hitl_target(body)
+    plan_id = target_id if target_kind == "plan" else ""
+    unsupported_target = target_kind != "plan"
+    plan = _plan_for_hitl(plan_id) if plan_id and not unsupported_target else None
+    state_error = "unsupported_hitl_target" if unsupported_target else _hitl_decision_error(plan=plan, action=action)
     success = bool(plan_id) and state_error == ""
     data: dict[str, Any] = {
         "gate_id": gate_id,
-        "target_kind": "plan",
-        "target_id": plan_id,
+        "target_kind": target_kind,
+        "target_id": target_id,
         "decision": action,
         "plan_state": _plan_state_value(plan),
         "operator_required_for_execute": True,
@@ -172,9 +181,14 @@ def draft_human_gate_decision(payload: dict[str, Any] | None = None) -> dict[str
     if not success:
         data.update({
             "error": state_error,
-            "valid_actions": sorted(_VALID_HITL_ACTIONS),
-            "valid_actions_for_state": _valid_hitl_actions_for_state(plan),
+            "valid_actions": [] if unsupported_target else sorted(_VALID_HITL_ACTIONS),
+            "valid_actions_for_state": [] if unsupported_target else _valid_hitl_actions_for_state(plan),
         })
+    if unsupported_target:
+        # CORE-011 is currently ratified only as a Web Plan gate prototype.
+        # Trigger/message gates stay explicit unsupported targets until their
+        # state machine and receipts are designed instead of guessed here.
+        data["valid_target_kinds"] = ["plan"]
     return _receipt(
         action="runtime.hitl.draft_decision",
         success=success,
@@ -507,32 +521,32 @@ def _node(
     `id`/`lane` are React Flow concerns; `trace_id`/`payload_ref` are the
     portable observability hints we may later promote if CORE-010 is approved.
     """
-    return {
-        "id": node_id,
-        "lane": lane,
-        "entity_kind": entity_kind,
-        "entity_id": entity_id,
-        "trace_id": trace_id or f"{entity_kind}:{entity_id}",
-        "label": label,
-        "status": status,
-        "summary": summary,
-        "payload_ref": payload_ref,
-    }
+    return RuntimeFlowNode(
+        id=node_id,
+        lane=lane,
+        entity_kind=entity_kind,
+        entity_id=entity_id,
+        trace_id=trace_id or f"{entity_kind}:{entity_id}",
+        label=label,
+        status=status,
+        summary=summary,
+        payload_ref=payload_ref,
+    ).as_json()
 
 
-def _edge(source: str, target: str, kind: str, *, trace_id: str = "") -> dict[str, str]:
+def _edge(source: str, target: str, kind: str, *, trace_id: str = "") -> dict[str, Any]:
     """Build a React Flow edge.
 
     `source` and `target` are graph endpoint ids, not the same concept as the
     `source` field on trace events.
     """
-    return {
-        "id": f"{source}->{target}:{kind}",
-        "source": source,
-        "target": target,
-        "kind": kind,
-        "trace_id": trace_id,
-    }
+    return RuntimeFlowEdge(
+        id=f"{source}->{target}:{kind}",
+        source=source,
+        target=target,
+        kind=kind,
+        trace_id=trace_id,
+    ).as_json()
 
 
 def _event(
@@ -552,21 +566,21 @@ def _event(
     protocol promise yet. It stays a Web read model until CORE-010 is ratified.
     """
     trace = trace_id or f"{entity_kind}:{entity_id}"
-    return {
-        "sequence": sequence,
-        "trace_id": trace,
-        "span_id": f"{sequence}:{entity_kind}:{entity_id}:{op}",
-        "parent_span_id": parent_span_id,
-        "entity_kind": entity_kind,
-        "entity_id": entity_id,
-        "op": op,
-        "status": op,
-        "source": "web_console.runtime_flow",
-        "writer": "read_model",
-        "summary": str(summary or ""),
-        "created_at": time.time(),
-        "payload_ref": payload_ref,
-    }
+    return RuntimeFlowEvent(
+        sequence=sequence,
+        trace_id=trace,
+        span_id=f"{sequence}:{entity_kind}:{entity_id}:{op}",
+        parent_span_id=parent_span_id,
+        entity_kind=entity_kind,
+        entity_id=entity_id,
+        op=op,
+        status=op,
+        event_source="web_console.runtime_flow",
+        writer="read_model",
+        summary=str(summary or ""),
+        created_at=time.time(),
+        payload_ref=payload_ref,
+    ).as_json()
 
 
 def _stable_signature(
@@ -588,10 +602,13 @@ def _stable_signature(
         "events": sorted([
             {
                 "trace_id": row.get("trace_id"),
+                "parent_span_id": row.get("parent_span_id"),
                 "entity_kind": row.get("entity_kind"),
                 "entity_id": row.get("entity_id"),
                 "op": row.get("op"),
                 "status": row.get("status"),
+                "source": row.get("source"),
+                "writer": row.get("writer"),
                 "summary": row.get("summary"),
                 "payload_ref": row.get("payload_ref"),
             }
@@ -681,18 +698,19 @@ def _receipt(
     operator_mode: bool,
     data: dict[str, Any],
 ) -> dict[str, Any]:
-    return {
-        "success": success,
-        "action": action,
-        "dry_run": dry_run,
-        "operator_mode": operator_mode,
-        "receipt_id": f"web-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}",
-        "data": data,
-        "audit": _hitl_audit() if action.startswith("runtime.hitl") else {
-            "web_only": True,
-            "operator_required_for_execute": True,
-        },
+    audit = _hitl_audit() if action.startswith("runtime.hitl") else {
+        "web_only": True,
+        "operator_required_for_execute": True,
     }
+    return RuntimeReceipt(
+        action=action,
+        success=success,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        receipt_id=f"web-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}",
+        data=data,
+        audit=audit,
+    ).as_json()
 
 
 def _hitl_audit() -> dict[str, Any]:
@@ -717,6 +735,34 @@ def _plan_for_hitl(plan_id: str) -> Any | None:
         return get_plan_registry().get(plan_id)
     except Exception:
         return None
+
+
+def _parse_hitl_target(payload: dict[str, Any]) -> tuple[str, str, str]:
+    """Normalize Web HITL targets without broadening CORE-011.
+
+    Runtime Flow can already display trigger/message nodes, but the executable
+    HITL contract is still Plan-only. Returning the parsed target kind lets the
+    route produce an explicit unsupported-target receipt instead of silently
+    treating every gate as a Plan.
+    """
+
+    gate_id = str(payload.get("gate_id") or "").strip()
+    target_kind = str(payload.get("target_kind") or "").strip().lower()
+    target_id = str(payload.get("target_id") or payload.get("plan_id") or "").strip()
+    if gate_id and ":" in gate_id:
+        parsed_kind, parsed_id = gate_id.split(":", 1)
+        parsed_kind = parsed_kind.strip().lower()
+        if parsed_kind:
+            target_kind = target_kind or parsed_kind
+        if parsed_id and not target_id:
+            target_id = parsed_id.strip()
+    elif gate_id and not target_id:
+        target_id = gate_id
+
+    target_kind = target_kind or "plan"
+    if not gate_id and target_id:
+        gate_id = f"{target_kind}:{target_id}"
+    return gate_id, target_kind, target_id
 
 
 def _hitl_decision_error(*, plan: Any | None, action: str) -> str:

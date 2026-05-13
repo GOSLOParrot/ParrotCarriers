@@ -43,7 +43,7 @@ planned. Detailed business rationale stays in the active files above.
 | LineB voice lab | `POST /api/app/lineb/audio-route`, `POST /api/app/lineb/tts-segment`, `POST /api/app/lineb/mic-input`, `GET /api/livekit/config`, `POST /api/livekit/web-token`; browser LiveKit audio wiring and event/transcript panes. | `observability_runtime_business_flow_20260513.md` | Implemented smoke; full voice conversation still needs user-approved mic and running agent. |
 | Runtime monitor | `GET /api/runtime/monitor`; Scheduler route order/channels/tasks, Nanobot bridge, Plan counts/DAG rows, Blackboard summary, AgentTeam placeholder. | `observability_runtime_business_flow_20260513.md` | Read-only Web surface; not an App DTO. |
 | Runtime Flow upgrade | `GET /api/runtime/flow`, `GET /api/runtime/flow/changes`, `GET /api/runtime/hitl/pending`, `POST /api/runtime/hitl/draft-decision`, `POST /api/runtime/hitl/apply-decision`, React swimlane/DAG workspace. | `observability_runtime_business_flow_20260513.md` | First slice implemented; Web-only read model/HITL first, core candidates staged before shared promotion. |
-| Trigger and message lab | `GET /api/dsg/triggers/catalog`, `POST /api/dsg/triggers/draft-event`, `POST /api/dsg/triggers/fire-event`, `POST /api/google/messages/check`, `POST /api/google/messages/push-test`. | `observability_runtime_business_flow_20260513.md` | Web-only dry-run/receipt surface; real fire publishes to `CH_DSG_EVENTS` only with explicit operator mode. Gmail check uses Scheduler/Nanobot dispatch. |
+| Trigger and message lab | `GET /api/dsg/triggers/catalog`, `POST /api/dsg/triggers/draft-event`, `POST /api/dsg/triggers/fire-event`, `POST /api/google/messages/check`, `POST /api/google/messages/push-test`. | `observability_runtime_business_flow_20260513.md` | Web-only dry-run/receipt surface; real fire publishes to `CH_DSG_EVENTS` only with explicit operator mode. Gmail check uses Scheduler/Nanobot dispatch; message results now enter L1.5 as `GOOGLE_MESSAGE` observations. |
 | Live memory snapshot | `GET /api/app/live-state?limit=...`; grouped Blackboard key rows, grouped IntentWorkspace ref rows, Ref registry, SVG L2-B graph canvas/detail panel, tool artifacts. | `memory_graph_workspace_business_flow_20260513.md` | Implemented as bounded active-view polling renderer with filters, new-node diff highlight, and soft Intent/Ref-to-L2-B links when linked nodes exist. User audit moved the next focus to WEB-011: large realtime cockpit, direct graph operations, simplified L1.5 cards, trigger palette, and possible changed_since/SSE after the visual model is useful. |
 | L1.5/L2-B operator drafts | `GET /api/l15/pool`, `POST /api/l15/bucket-op/draft`, `POST /api/l15/bucket-op`, `POST /api/l15/obsidian-node/draft`, `POST /api/l15/obsidian-node`, `POST /api/l2b/node/draft`, `POST /api/l2b/node`, `POST /api/l2b/node/delete`, `POST /api/l2b/edge/draft`, `POST /api/l2b/edge`. | `memory_graph_workspace_business_flow_20260513.md` | Default dry-run; Web-only receipts. Node create/update routes through `L15Pool.admit(Observation(source=USER_EXPLICIT))`; delete uses `L15Pool.evict`; real edge connect requires operator mode. |
 | Graphiti console | `GET /api/graphiti/status`, `POST /api/graphiti/search`, `POST /api/graphiti/episode/draft`, `POST /api/graphiti/episode`; dry-run first. | `graphiti_management_business_flow_20260513.md` | Implemented safe seed; full surgery/operator mode remains future work. |
@@ -82,10 +82,15 @@ Audit result:
 - No new scattered business docs were created for this slice.
 - `PARROT_ORCH_SECRET`, LiveKit secrets, and Google credentials are not exposed
   through frontend JSON or DOM.
-- Known backend drift remains: `MessageNotificationTrigger` still writes
-  message EVENT nodes directly to L2-B. The next backend pass should migrate it
-  to `TriggerOutcome.commit_observations` or an equivalent audited receipt
-  path so it matches Calendar/Obsidian.
+- 2026-05-14 cleanup: `MessageNotificationTrigger` now returns
+  `TriggerOutcome.commit_observations` and uses the new
+  `ObservationSource.GOOGLE_MESSAGE` / `BucketKind.GOOGLE_MESSAGE` path. It no
+  longer writes message EVENT nodes directly to L2-B.
+- 2026-05-14 cleanup: `TriggerRunner.fire_event()` now reaches `ON_DEMAND`
+  triggers as well as `EVENT_DRIVEN` triggers, so Web draft/fire events can
+  exercise scene/roleplay triggers through the same bus-facing path.
+- 2026-05-14 cleanup: DSG trigger source files now use `TriggerOutcome`
+  directly. `TriggerResult` remains only as a tested compatibility alias.
 
 ## Completion Report: React Runtime Flow / Memory Workspace First Slice
 
@@ -126,6 +131,10 @@ Completed:
 - Fixed HITL draft validation for invalid Plan-state/action pairs; dry-run
   receipts now expose `plan_state` and `valid_actions_for_state` instead of
   promising an action that apply would reject.
+- Fixed HITL pending gate drift: visible gate buttons now reuse the same
+  state-aware Plan policy as draft/apply validation, and non-Plan gates return
+  explicit `unsupported_hitl_target` receipts until trigger/message HITL is
+  designed.
 - Added Web-only CORE-010 trace hints to Runtime Flow nodes/edges/events:
   `trace_id`, `parent_span_id` where applicable, and redacted `payload_ref`.
 - Fixed empty Plan execution settlement so a zero-step Plan completes instead
@@ -134,17 +143,25 @@ Completed:
   board, node/edge dry-run action buttons, detail drawer, and receipts.
 - Added React Runtime Flow Workspace with swimlane/DAG graph, event tape,
   manual trigger buttons, HITL cards, and receipt rail.
+- Fixed React Runtime Flow UI drift: Chinese labels now render through stable
+  zh/en copy, the live pill shows the backend refresh interval, Runtime nodes
+  are arranged by lane-local rows, and HITL cards render action buttons from
+  backend `options` / `valid_actions_for_state`.
+- Added Web-only typed Runtime Flow models in
+  `parrot.web_console.runtime_flow_models`. Runtime Flow rows, snapshots,
+  changed-since envelopes, HITL gates, and HITL receipts now serialize through
+  this typed layer while keeping the existing route JSON compatible.
 
 Verification at this checkpoint:
 
-- `uv run python -m py_compile src\parrot\web_console\runtime_flow.py src\parrot\web_console\server.py src\parrot\brain\plan\plan_registry.py src\parrot\scheduler\service.py`
+- `uv run python -m py_compile src\parrot\web_console\runtime_flow.py src\parrot\web_console\runtime_flow_models.py src\parrot\web_console\server.py src\parrot\brain\plan\plan_registry.py src\parrot\scheduler\service.py`
 - `uv run pytest tests\test_brain\test_plan_lifecycle.py tests\test_web_console\test_web_console_server.py -q`
 - `cd web\console_app; npm run typecheck`
 - `cd web\console_app; npm run build`
 - Browser smoke on `http://127.0.0.1:7893/`: React dist served, Memory and
   Runtime pages navigated, LLM trigger draft produced a receipt, zh/en toggle
   worked, and frontend console errors stayed at zero.
-- Latest combined focused result: `47 passed`.
+- Latest combined focused result: `48 passed`.
 - Latest HTTP smoke after service restart:
   `/api/runtime/flow/changes?since=<current sequence>` returns
   `changed=false`.

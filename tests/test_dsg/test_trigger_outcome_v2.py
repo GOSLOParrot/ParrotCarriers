@@ -39,7 +39,7 @@ from parrot.dsg.l1_5 import (
 )
 from parrot.dsg.l2b_graph import L2BGraph
 from parrot.dsg.l2b_types import ConfirmationStatus, NodeKind
-from parrot.dsg.triggers.base import TriggerOutcome, TriggerResult
+from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerOutcome, TriggerResult
 from parrot.dsg.triggers.runner import TriggerRunner
 
 
@@ -75,6 +75,20 @@ def env(tmp_path: Path):
 def test_trigger_result_alias_kept_for_back_compat() -> None:
     """Legacy 4 triggers reference TriggerResult — alias must work."""
     assert TriggerResult is TriggerOutcome
+
+
+def test_trigger_implementations_use_trigger_outcome_name() -> None:
+    """TriggerResult is kept for imports, not as the implementation style."""
+    repo_root = Path(__file__).resolve().parents[2]
+    trigger_dir = repo_root / "src" / "parrot" / "dsg" / "triggers"
+    offenders = []
+    for path in sorted(trigger_dir.glob("*.py")):
+        if path.name == "base.py":
+            continue
+        if "TriggerResult" in path.read_text(encoding="utf-8"):
+            offenders.append(path.name)
+
+    assert offenders == []
 
 
 def test_legacy_only_outcome_runs_legacy_path(env) -> None:
@@ -170,6 +184,31 @@ async def test_plan_request_routed_to_plan_registry(env) -> None:
     await runner._process_result(outcome)
     actives = env["registry"].list_active()
     assert any(p.title == "auto plan" for p in actives)
+
+
+async def test_fire_event_routes_on_demand_triggers(env) -> None:
+    class OnDemandOnlyTrigger(BaseTrigger):
+        name = "on_demand_test"
+        kinds = [TriggerKind.ON_DEMAND]
+
+        async def on_startup(self):
+            return None
+
+        async def on_tick(self):
+            return None
+
+        async def on_event(self, event):
+            if event.get("kind") != "on_demand_test":
+                return None
+            return TriggerOutcome(trigger_name=self.name, summary="fired")
+
+    runner = TriggerRunner(graph=env["graph"])
+    runner.register(OnDemandOnlyTrigger)
+
+    results = await runner.fire_event({"kind": "on_demand_test"})
+
+    assert len(results) == 1
+    assert results[0].trigger_name == "on_demand_test"
 
 
 async def test_one_channel_failure_does_not_block_others(env) -> None:

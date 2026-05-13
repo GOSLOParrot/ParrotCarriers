@@ -117,6 +117,32 @@ It is not an active route or implementation source. When it conflicts with this
 SSOT, this SSOT wins. New Unity App implementation starts from
 `Assets/ParrotApp/**`, not from the archive or from `unity/ParrotDev/**`.
 
+## 2026-05-14 Live START Script Boundary
+
+`src/scripts/sim_unity_client.py` is an external diagnostic client, not a Unity
+runtime script and not formal App scene evidence. It may be used to verify
+Castle/LiveKit/Brain RPC business payloads quickly before phone testing.
+
+Current useful scope:
+
+- joins `parrot-main` as a `unity-*` identity;
+- requests unnamed Brain dispatch through the LiveKit join token / manual
+  dispatch fallback;
+- verifies post-join `applyRoomProfile` and `setAppCapabilityMode` business
+  payloads through `--startup-rpc-check`;
+- accepts `--startup-room-profile-id` so the check can target the RoomProfile
+  that matches the running Brain line.
+
+Boundary: formal startup cold-load/edit/save uses the App HTTP facade before
+LiveKit connects. `getRoomSettingSnapshot` is a legacy Brain RPC
+diagnostic/fallback and must not be treated as formal App scene evidence.
+
+Pollution rule: do not copy this Python client's media, transcript, Redis, or
+test-harness assumptions into the mobile Unity App. Phone behavior for iQOO
+Neo9 microphone permission, Bluetooth/SCO/A2DP route changes, app switching,
+AR/video publish, reconnect, and background recovery must be verified through
+the formal `Assets/ParrotApp/**` runtime.
+
 ## Pollution Guards
 
 - Formal App proof must come from `Assets/ParrotApp/Scenes/ParrotApp_Startup.unity`,

@@ -23,7 +23,7 @@ import time
 from typing import Any
 
 from parrot.dsg.l2b_types import EdgeKind, NodeKind, Salience, SemanticEdge, SemanticNode
-from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerResult
+from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +39,13 @@ class SceneContextTrigger(BaseTrigger):
         super().__init__(graph)
         self._last_scene_hash: str = ""
 
-    async def on_startup(self) -> TriggerResult | None:
+    async def on_startup(self) -> TriggerOutcome | None:
         return await self._search_scene_context()
 
-    async def on_tick(self) -> TriggerResult | None:
+    async def on_tick(self) -> TriggerOutcome | None:
         return None
 
-    async def on_event(self, event: dict[str, Any]) -> TriggerResult | None:
+    async def on_event(self, event: dict[str, Any]) -> TriggerOutcome | None:
         event_type = event.get("type", "")
 
         if event_type in ("scene_switch", "zone_entered", "scene_preloaded"):
@@ -59,7 +59,7 @@ class SceneContextTrigger(BaseTrigger):
 
         return None
 
-    async def _search_scene_context(self) -> TriggerResult | None:
+    async def _search_scene_context(self) -> TriggerOutcome | None:
         """Search Graphiti for past episodes with similar objects."""
         objects = self._graph.query_by_kind(NodeKind.OBJECT)
         if not objects:
@@ -110,7 +110,7 @@ class SceneContextTrigger(BaseTrigger):
 
             await self._notify_brain(notification)
 
-            return TriggerResult(
+            return TriggerOutcome(
                 trigger_name=self.name,
                 summary=f"Found {len(memories)} related memories for current scene",
                 nodes_affected=[n.uuid for n in objects[:5]],

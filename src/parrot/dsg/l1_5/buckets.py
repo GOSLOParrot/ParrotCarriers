@@ -31,6 +31,7 @@ class BucketKind(str, Enum):
     OBSIDIAN_SETTING_DAILY = "obsidian_setting_daily"
     OBSIDIAN_SETTING_ROLEPLAY = "obsidian_setting_roleplay"
     GOOGLE_CALENDAR = "google_calendar"
+    GOOGLE_MESSAGE = "google_message"
     AUTONOMOUS_CURIOSITY = "autonomous_curiosity"
     ROLEPLAY_TEMP = "roleplay_temp"
 
@@ -127,6 +128,12 @@ class BucketRegistry:
                 kind=BucketKind.GOOGLE_CALENDAR,
                 is_authority=False,
                 cleared_on_scene_switch=True,
+            ),
+            BucketSpec(
+                kind=BucketKind.GOOGLE_MESSAGE,
+                is_authority=False,
+                default_ttl_seconds=3600.0,
+                preserved_across_scene_switch=True,
             ),
             BucketSpec(
                 kind=BucketKind.AUTONOMOUS_CURIOSITY,

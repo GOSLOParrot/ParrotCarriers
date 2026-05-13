@@ -171,6 +171,109 @@ def test_runtime_monitor_route_is_web_only_read_surface() -> None:
     assert "secret" not in str(body).lower()
 
 
+def test_runtime_flow_typed_models_preserve_route_wire_shape() -> None:
+    from parrot.web_console.runtime_flow_models import (
+        RuntimeFlowChanges,
+        RuntimeFlowEdge,
+        RuntimeFlowEvent,
+        RuntimeFlowNode,
+        RuntimeFlowSnapshot,
+        RuntimeHumanGate,
+        RuntimeReceipt,
+    )
+
+    node = RuntimeFlowNode(
+        id="plan:p1",
+        lane="plan",
+        entity_kind="plan",
+        entity_id="p1",
+        trace_id="plan:p1",
+        label="Plan",
+        status="awaiting_user_confirmation",
+        summary="1 step",
+        payload_ref="ref:p1",
+    ).as_json()
+    edge = RuntimeFlowEdge(
+        id="plan:p1->gate:plan:p1:awaits_human",
+        source="plan:p1",
+        target="gate:plan:p1",
+        kind="awaits_human",
+        trace_id="plan:p1",
+    ).as_json()
+    event = RuntimeFlowEvent(
+        sequence=7,
+        trace_id="plan:p1",
+        span_id="7:plan:p1:awaiting_user_confirmation",
+        parent_span_id="",
+        entity_kind="plan",
+        entity_id="p1",
+        op="awaiting_user_confirmation",
+        status="awaiting_user_confirmation",
+        event_source="web_console.runtime_flow",
+        writer="read_model",
+        summary="Plan",
+        created_at=1.0,
+        payload_ref="ref:p1",
+    ).as_json()
+    gate = RuntimeHumanGate(
+        gate_id="plan:p1",
+        target_kind="plan",
+        target_id="p1",
+        trace_id="plan:p1",
+        state="pending",
+        plan_state="awaiting_user_confirmation",
+        prompt="Approve?",
+        summary="Plan",
+        options=["approve", "approve_and_start"],
+        valid_actions_for_state=["approve", "approve_and_start"],
+        payload_ref="ref:p1",
+    ).as_json()
+    audit = {
+        "web_only": True,
+        "read_model": True,
+        "typed_schema": "parrot.web_console.runtime_flow_models",
+    }
+    snapshot = RuntimeFlowSnapshot(
+        sequence=7,
+        generated_at=1.0,
+        lanes=[{"id": "plan", "label": "Plan"}],
+        nodes=[node],
+        edges=[edge],
+        events=[event],
+        pending_human_gates=[gate],
+        source_sequences={"live_state": 1},
+        audit=audit,
+    ).as_json()
+    changes = RuntimeFlowChanges(
+        since=6,
+        sequence=7,
+        changed=True,
+        events=[event],
+        snapshot=snapshot,
+        audit=audit,
+    ).as_json()
+    receipt = RuntimeReceipt(
+        action="runtime.hitl.draft_decision",
+        success=True,
+        dry_run=True,
+        operator_mode=False,
+        receipt_id="web-test",
+        data={"gate_id": "plan:p1"},
+        audit={"web_only": True, "core_candidate": "CORE-011"},
+    ).as_json()
+
+    assert node["id"] == "plan:p1"
+    assert edge["source"] == "plan:p1"
+    assert edge["target"] == "gate:plan:p1"
+    assert event["source"] == "web_console.runtime_flow"
+    assert "event_source" not in event
+    assert gate["options"] == gate["valid_actions_for_state"]
+    assert snapshot["action"] == "runtime.flow.snapshot"
+    assert snapshot["pending_human_gates"][0]["target_kind"] == "plan"
+    assert changes["snapshot"]["sequence"] == 7
+    assert receipt["core_candidate"] == "CORE-011"
+
+
 def test_runtime_flow_and_hitl_routes_are_web_only_receipt_surfaces(monkeypatch) -> None:
     import asyncio
 
@@ -219,6 +322,10 @@ def test_runtime_flow_and_hitl_routes_are_web_only_receipt_surfaces(monkeypatch)
             "/api/runtime/hitl/draft-decision",
             json={"gate_id": "plan:missing", "decision": "approve"},
         ).json()
+        unsupported_target_draft = client.post(
+            "/api/runtime/hitl/draft-decision",
+            json={"gate_id": "trigger:manual_llm_push", "decision": "approve"},
+        ).json()
         dry_apply = client.post(
             "/api/runtime/hitl/apply-decision",
             json={
@@ -239,14 +346,25 @@ def test_runtime_flow_and_hitl_routes_are_web_only_receipt_surfaces(monkeypatch)
         assert len(edge_ids) == len(set(edge_ids))
         assert all(edge["source"] in node_ids and edge["target"] in node_ids for edge in flow["edges"])
         assert any(node.get("trace_id") == f"plan:{plan.plan_id}" for node in flow["nodes"])
+        assert flow["audit"]["typed_schema"] == "parrot.web_console.runtime_flow_models"
         assert changes["changed"] is True
         assert no_change["changed"] is False
         assert no_change["snapshot"] is None
         assert pending["gates"][0]["gate_id"] == f"plan:{plan.plan_id}"
+        assert pending["gates"][0]["plan_state"] == "awaiting_user_confirmation"
+        assert pending["gates"][0]["options"] == pending["gates"][0]["valid_actions_for_state"]
+        assert pending["gates"][0]["operator_required_for_execute"] is True
         assert draft["success"] is True
+        assert draft["core_candidate"] == "CORE-011"
         assert draft["data"]["operator_required_for_execute"] is True
         assert missing_plan_draft["success"] is False
         assert missing_plan_draft["data"]["error"] == "plan_not_found"
+        assert unsupported_target_draft["success"] is False
+        assert unsupported_target_draft["data"]["error"] == "unsupported_hitl_target"
+        assert unsupported_target_draft["data"]["target_kind"] == "trigger"
+        assert unsupported_target_draft["data"]["valid_actions"] == []
+        assert unsupported_target_draft["data"]["valid_actions_for_state"] == []
+        assert unsupported_target_draft["data"]["valid_target_kinds"] == ["plan"]
         assert dry_apply["data"]["would_apply"] is True
         assert dry_apply["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
         assert "runtime-flow-secret" not in str(flow) + str(changes) + str(pending)
@@ -438,6 +556,10 @@ def test_dsg_trigger_management_routes_are_dry_run_and_secret_safe(monkeypatch) 
             "operator_mode": False,
         },
     ).json()
+    on_demand_draft = client.post(
+        "/api/dsg/triggers/draft-event",
+        json={"event": {"kind": "scene_switch", "new_scene_type": "desktop_webcam"}},
+    ).json()
 
     assert catalog["success"] is True
     assert "message_notification" in {item["name"] for item in catalog["triggers"]}
@@ -445,6 +567,7 @@ def test_dsg_trigger_management_routes_are_dry_run_and_secret_safe(monkeypatch) 
     assert draft["data"]["matched_triggers"] == ["message_notification"]
     assert dry_fire["data"]["would_publish"] is True
     assert dry_fire["data"]["publish_skipped_reason"] == "dry_run_or_operator_mode_missing"
+    assert on_demand_draft["data"]["matched_triggers"] == ["scene_switch"]
     assert "route-secret" not in str(catalog) + str(draft) + str(dry_fire)
 
 

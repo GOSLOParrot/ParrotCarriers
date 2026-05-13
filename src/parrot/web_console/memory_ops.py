@@ -75,10 +75,15 @@ _TRIGGER_EVENT_HINTS: dict[str, list[dict[str, Any]]] = {
         }
     ],
     "scene_switch": [
-        {"type": "scene_switch", "scene_type": "desktop_webcam", "source": "web_console"}
+        {
+            "kind": "scene_switch",
+            "old_scene_type": "previous",
+            "new_scene_type": "desktop_webcam",
+            "source": "web_console",
+        }
     ],
     "roleplay_mode": [
-        {"type": "roleplay_mode", "action": "register", "source": "web_console"}
+        {"kind": "roleplay_mode", "action": "open", "source": "web_console"}
     ],
 }
 
@@ -664,14 +669,29 @@ def _matched_trigger_names(event: dict[str, Any], trigger_name: str = "") -> lis
     explicit = trigger_name.strip()
     if explicit:
         return [explicit]
-    event_type = str(event.get("type") or "").strip()
     matched: list[str] = []
     for name, hints in _TRIGGER_EVENT_HINTS.items():
         for hint in hints:
-            if event_type and hint.get("type") == event_type:
+            if _event_matches_hint(event, hint):
                 matched.append(name)
                 break
     return matched
+
+
+def _event_matches_hint(event: dict[str, Any], hint: dict[str, Any]) -> bool:
+    """Return True when a draft event follows a catalog sample shape.
+
+    Trigger events are intentionally mixed while we migrate: legacy push events
+    use ``type`` and newer on-demand trigger events use ``kind``. The matcher
+    checks both keys so operator receipts do not imply an old-only protocol.
+    """
+    event_type = str(event.get("type") or "").strip()
+    hint_type = str(hint.get("type") or "").strip()
+    if event_type and hint_type and event_type == hint_type:
+        return True
+    event_kind = str(event.get("kind") or "").strip()
+    hint_kind = str(hint.get("kind") or "").strip()
+    return bool(event_kind and hint_kind and event_kind == hint_kind)
 
 
 def _extract_event(body: dict[str, Any]) -> dict[str, Any]:

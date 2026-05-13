@@ -116,10 +116,15 @@ Each chat follows this loop:
     payloads, DataChannel heartbeat, and main-ready gate ownership. The
     2026-05-13 blocker was ECS LineB Google STT ADC plus token-mint deployment
     of unnamed Brain dispatch for Unity identities; the 2026-05-14 Castle repair
-    report says those server-side repairs are complete. The 2026-05-14 fast
-    retry proved Brain participant join after unnamed dispatch, then found a
-    narrower Brain RPC payload-size bug in `getRoomSettingSnapshot`; deploy the
-    compact RPC snapshot fix before calling the three-RPC START proof complete.
+    report says those server-side repairs are complete. After Castle `c0f1705`,
+    the 2026-05-14 fast retry proved Brain participant join and post-join
+    business-ok `applyRoomProfile` / `setAppCapabilityMode` with
+    `ner_lineb_room`. Compact `getRoomSettingSnapshot` is legacy
+    diagnostic/fallback only; RoomSetting cold-load/edit/save stays on App
+    HTTP before LiveKit connects. The default LineA room profile still fails
+    correctly against a running LineB Brain. Phone RoomSetting/orchestrator
+    proof is separate and currently blocked by public `8790/7890` returning
+    502.
 
 ## 5. Skill Gate
 

@@ -35,6 +35,7 @@ const dict = {
     settings: "Settings",
     language: "Language",
     live: "live",
+    autoRefresh: "Auto",
     auth: "auth",
     nodes: "Nodes",
     edges: "Edges",
@@ -50,7 +51,14 @@ const dict = {
     llmPush: "LLM Push",
     dryApply: "Dry Apply",
     draft: "Draft",
+    approve: "Approve",
+    approveAndStart: "Approve + Start",
+    reject: "Reject",
+    revise: "Revise",
+    cancel: "Cancel",
+    resume: "Resume",
     clear: "Clear",
+    noPendingGate: "No pending gate.",
     noSelection: "Select an item on the canvas.",
     runtimeSummary: "Intent, Plan, HITL, Blackboard, Scheduler, Nanobot, and messages.",
     memorySummary: "L1.5, L2-B, Graphiti, Refs, Evidence Board, and dry-run graph operations."
@@ -62,6 +70,7 @@ const dict = {
     settings: "设置",
     language: "语言",
     live: "实时",
+    autoRefresh: "自动",
     auth: "认证",
     nodes: "节点",
     edges: "边",
@@ -77,12 +86,21 @@ const dict = {
     llmPush: "推给 LLM",
     dryApply: "干跑执行",
     draft: "草稿",
+    approve: "批准",
+    approveAndStart: "批准并启动",
+    reject: "拒绝",
+    revise: "修订",
+    cancel: "取消",
+    resume: "恢复",
     clear: "清空",
+    noPendingGate: "暂无待确认 gate。",
     noSelection: "在画布上选择一个项目。",
     runtimeSummary: "Intent、Plan、HITL、黑板、Scheduler、Nanobot 和消息流。",
     memorySummary: "L1.5、L2-B、Graphiti、Refs、Evidence Board 和图上干跑操作。"
   }
 };
+
+type ConsoleCopy = typeof dict.en;
 
 function receiptReducer(state: Receipt[], receipt: Receipt | null): Receipt[] {
   if (!receipt) return [];
@@ -100,6 +118,7 @@ export function App() {
   const [error, setError] = useState("");
   const [receipts, pushReceipt] = useReducer(receiptReducer, []);
   const t = dict[language];
+  const refreshIntervalS = Math.max(3, Math.round(Number(config.refresh_interval_s ?? 5)));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,9 +143,12 @@ export function App() {
 
   useEffect(() => {
     void load();
-    const timer = window.setInterval(() => void load(), 5000);
-    return () => window.clearInterval(timer);
   }, [load]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void load(), refreshIntervalS * 1000);
+    return () => window.clearInterval(timer);
+  }, [load, refreshIntervalS]);
 
   const setLang = (next: Language) => {
     localStorage.setItem("parrot.console.lang", next);
@@ -152,7 +174,7 @@ export function App() {
         <div className="sidebar-footer">
           <span><CircleDot size={14} /> {t.auth}: {config.orchestrator_auth_mode || "..."}</span>
           <button className="nav small" onClick={() => setLang(language === "zh" ? "en" : "zh")}>
-            <Languages size={16} /> {language === "zh" ? "EN" : "中文"}
+            <Languages size={16} /> {language === "zh" ? "EN" : "\u4e2d\u6587"}
           </button>
         </div>
       </aside>
@@ -165,7 +187,9 @@ export function App() {
             <p>{view === "memory" ? t.memorySummary : t.runtimeSummary}</p>
           </div>
           <div className="topbar-actions">
-            <span className={loading ? "live-pill loading" : "live-pill"}><Sparkles size={15} /> {t.live}</span>
+            <span className={loading ? "live-pill loading" : "live-pill"}>
+              <Sparkles size={15} /> {t.live} / {t.autoRefresh} {refreshIntervalS}s
+            </span>
             {error ? <span className="error-pill">{error}</span> : null}
             <button className="button" onClick={() => void load()}><RefreshCw size={16} /> {t.refresh}</button>
             <button className="button ghost"><Settings size={16} /> {t.settings}</button>
@@ -193,7 +217,7 @@ function MemoryGraphWorkspace({
   liveState: LiveState;
   l15Pool: L15Pool;
   pushReceipt: (receipt: Receipt | null) => void;
-  t: typeof dict.en;
+  t: ConsoleCopy;
 }) {
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
   const [previewNodes, setPreviewNodes] = useState<Array<Record<string, unknown>>>([]);
@@ -305,17 +329,20 @@ function RuntimeFlowWorkspace({
 }: {
   flow: RuntimeFlow;
   pushReceipt: (receipt: Receipt | null) => void;
-  t: typeof dict.en;
+  t: ConsoleCopy;
 }) {
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
 
   const nodes = useMemo<Node[]>(() => {
     const lanes = flow.lanes ?? [];
     const laneIndex = new Map(lanes.map((lane, index) => [lane.id, index]));
+    const laneRows = new Map<string, number>();
     return (flow.nodes ?? []).map((row, index) => {
       const lane = String(row.lane || "runtime");
+      const rowIndex = laneRows.get(lane) ?? 0;
+      laneRows.set(lane, rowIndex + 1);
       const x = (laneIndex.get(lane) ?? 0) * 250;
-      const y = 40 + (index % 8) * 92;
+      const y = 40 + rowIndex * 92;
       return {
         id: String(row.id || `${lane}:${index}`),
         position: { x, y },
@@ -392,14 +419,25 @@ function RuntimeFlowWorkspace({
           (flow.pending_human_gates ?? []).map((gate) => (
             <div className="gate-card" key={String(gate.gate_id)}>
               <strong>{String(gate.summary || gate.gate_id)}</strong>
-              <small>{String(gate.gate_id)}</small>
+              <small>{String(gate.gate_id)} / {String(gate.plan_state || gate.state || "pending")}</small>
               <div className="button-row">
-                <button className="button small" onClick={() => void draftGate(gate, "approve")}>{t.draft}</button>
-                <button className="button small primary" onClick={() => void draftGate(gate, "approve_and_start", true)}>{t.dryApply}</button>
+                {gateActions(gate).map((action) => (
+                  <button className="button small" key={action} onClick={() => void draftGate(gate, action)}>
+                    {hitlActionLabel(action, t)}
+                  </button>
+                ))}
+                {gateActions(gate).length ? (
+                  <button
+                    className="button small primary"
+                    onClick={() => void draftGate(gate, preferredGateAction(gate), true)}
+                  >
+                    {t.dryApply}: {hitlActionLabel(preferredGateAction(gate), t)}
+                  </button>
+                ) : null}
               </div>
             </div>
           ))
-        ) : <p className="muted">No pending gate.</p>}
+        ) : <p className="muted">{t.noPendingGate}</p>}
         <h2>{t.selected}</h2>
         {selected ? <JsonBlock value={selected} /> : <p className="muted">{t.noSelection}</p>}
       </aside>
@@ -415,6 +453,39 @@ function RuntimeFlowWorkspace({
       </div>
     </section>
   );
+}
+
+function gateActions(gate: Record<string, unknown>): string[] {
+  const raw = Array.isArray(gate.options)
+    ? gate.options
+    : Array.isArray(gate.valid_actions_for_state)
+      ? gate.valid_actions_for_state
+      : [];
+  return raw.map((action) => String(action)).filter(Boolean);
+}
+
+function preferredGateAction(gate: Record<string, unknown>): string {
+  const actions = gateActions(gate);
+  return actions.includes("approve_and_start") ? "approve_and_start" : actions[0] || "approve";
+}
+
+function hitlActionLabel(action: string, t: ConsoleCopy): string {
+  switch (action) {
+    case "approve":
+      return t.approve;
+    case "approve_and_start":
+      return t.approveAndStart;
+    case "reject":
+      return t.reject;
+    case "revise":
+      return t.revise;
+    case "cancel":
+      return t.cancel;
+    case "resume":
+      return t.resume;
+    default:
+      return action;
+  }
 }
 
 function BucketCard({ bucket, pushReceipt }: { bucket: Record<string, unknown>; pushReceipt: (receipt: Receipt | null) => void }) {

@@ -294,6 +294,10 @@ class L15Pool:
                 ref_value = self._google_calendar_ref_value(obs)
                 if ref_value:
                     self._refs.bind_ref(node.uuid, RefKind.OTHER, ref_value)
+            if obs.source == ObservationSource.GOOGLE_MESSAGE:
+                ref_value = self._google_message_ref_value(obs)
+                if ref_value:
+                    self._refs.bind_ref(node.uuid, RefKind.OTHER, ref_value)
 
             if changed:
                 admitted.append(node.uuid)
@@ -330,6 +334,14 @@ class L15Pool:
                             meta.get("calendar_id", "primary") == calendar_id
                             and meta.get("calendar_event_id") == event_id
                         ):
+                            return n
+            if obs.source.value == "google_message":
+                ref_value = L15Pool._google_message_ref_value(obs)
+                if ref_value:
+                    _, message_id = ref_value.split(":", 1)
+                    for n in graph.all_nodes():
+                        meta = n.source_meta or {}
+                        if meta.get("message_id") == message_id:
                             return n
             if obs.obsidian_uuid:
                 for n in graph.all_nodes():
@@ -408,6 +420,14 @@ class L15Pool:
             return ""
         calendar_id = str(meta.get("calendar_id", "primary") or "primary")
         return f"google_calendar:{calendar_id}:{event_id}"
+
+    @staticmethod
+    def _google_message_ref_value(obs: "Observation") -> str:
+        """Return the lightweight RefTable key for a Google/Gmail message."""
+        message_id = str((obs.meta or {}).get("message_id", "") or "")
+        if not message_id:
+            return ""
+        return f"google_message:{message_id}"
 
     async def evict(self, node_uuid: str, reason: EvictReason) -> bool:
         """Remove a node from the L2-B graph and clean up bookkeeping."""

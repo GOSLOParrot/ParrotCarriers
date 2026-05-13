@@ -31,12 +31,14 @@ only after reading the inventory SSOT classification.
 Current LiveKit status rule: do not mark START / Brain RPC complete just
 because Mint and LiveKit join succeed. As of 2026-05-14, Castle ADC permission
 and token-mint dispatch repairs are reported complete (`agent_dispatch_requested:
-True`, Brain no new crash, five services active). The remaining proof is Brain
-participant presence plus business-ok `getRoomSettingSnapshot`,
-`applyRoomProfile`, and `setAppCapabilityMode` RPC payloads before main-ready.
-The 2026-05-14 fast retry already proved Brain participant join, then exposed
-`getRoomSettingSnapshot` RPC response-size failure; deploy the compact snapshot
-fix before calling the three-RPC START proof complete.
+True`, Brain no new crash, five services active). After Castle `c0f1705`, the
+fast retry passed Brain participant presence plus post-join business-ok
+`applyRoomProfile` and `setAppCapabilityMode` with `ner_lineb_room`. Compact
+`getRoomSettingSnapshot` is legacy diagnostic/fallback only; formal RoomSetting
+cold-load/edit/save stays on App HTTP before LiveKit connects. The default
+LineA RoomProfile still fails correctly against a running LineB Brain. Phone
+RoomSetting/orchestrator proof is separate and currently blocked by public App
+API / Orchestrator URLs returning 502.
 
 ```text
 你是 Unity App 前端线的 Codex。工作目录是 D:\GOSLOParrot\ParrotCarriers。

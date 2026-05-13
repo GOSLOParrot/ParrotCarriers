@@ -1,17 +1,17 @@
 """Base trigger class for DSG background enrichment.
 
 All triggers follow the same lifecycle:
-  1. init(l2b_graph) — store reference to the working memory graph
-  2. on_startup() — optional one-time initialization
-  3. on_tick() — periodic execution (called by trigger runner)
-  4. on_event(event) — react to a specific event
-  5. results → either mutate L2-B graph directly, or dispatch to Nanobot
+  1. init(l2b_graph): keep a read/query handle to the working memory graph.
+  2. on_startup(): optional one-time initialization.
+  3. on_tick(): periodic execution called by TriggerRunner.
+  4. on_event(event): react to a specific Redis/operator event.
+  5. return TriggerOutcome: route side effects through TriggerRunner.
 
 DSG-TRIGGER-V2 (2026-05-06):
   TriggerOutcome supersedes TriggerResult (alias kept for back-compat).
-  New 5 upload-channel fields (commit_observations / bucket_ops /
-  archive_request / staged_refs / plan_request) let triggers participate
-  in the GOSLO "subconscious协作面" without bypassing IngestRunner.
+  New upload-channel fields (commit_observations / bucket_ops /
+  archive_request / staged_refs / plan_request) let triggers participate in
+  the GOSLO runtime without bypassing L1.5 Pool or IngestRunner.
 """
 
 from __future__ import annotations
@@ -48,10 +48,10 @@ class TriggerOutcome:
     Scheduler / Nanobot path unchanged. New 5 fields (DSG-TRIGGER-V2)
     flow into L1.5 Pool / IntentWorkspace / Plan / Archive subsystems.
 
-    See dsg_protocol_trigger_v2_20260506.md § 2 for the contract.
+    See dsg_protocol_trigger_v2_20260506.md section 2 for the contract.
     """
 
-    # ── Legacy 7 (Phase 4) ──
+    # Legacy 7 (Phase 4).
     trigger_name: str = ""
     summary: str = ""
     nodes_affected: list[str] = field(default_factory=list)
@@ -60,7 +60,7 @@ class TriggerOutcome:
     notify_gemini: bool = False
     notification_text: str = ""
 
-    # ── DSG-TRIGGER-V2 upload channels ──
+    # DSG-TRIGGER-V2 upload channels.
     commit_observations: tuple["Observation", ...] = ()
     bucket_ops: tuple["BucketOp", ...] = ()
     archive_request: "ArchiveRequest | None" = None
@@ -68,7 +68,7 @@ class TriggerOutcome:
     plan_request: "PlanProposal | None" = None
 
 
-# Back-compat alias — existing 4 triggers keep working unchanged.
+# Back-compat alias. New trigger code should use TriggerOutcome directly.
 TriggerResult = TriggerOutcome
 
 

@@ -58,6 +58,10 @@ _SOURCE_PRIORITY: dict[ObservationSource, int] = {
     # Google Calendar is a user-owned external source. It should beat passive
     # CV, but it must not override explicit user/Obsidian authority.
     ObservationSource.GOOGLE_CALENDAR: 65,
+    # Google messages are user-owned external notifications. Keep them near
+    # Calendar but below explicit user actions; message bodies remain outside
+    # L2-B, with only redacted identity/snippet metadata committed.
+    ObservationSource.GOOGLE_MESSAGE: 64,
     ObservationSource.CV_A10: 60,
     ObservationSource.CV_SENTINEL: 40,
     ObservationSource.GEMINI_ORAL: 30,
@@ -191,16 +195,23 @@ class IngestRunner:
     def _find_existing(self, obs: Observation) -> SemanticNode | None:
         """Look up an existing node by stable source identity before label.
 
-        Calendar events are deliberately excluded from the generic label
-        fallback. A meeting title can easily match an object/person label; a
-        Google event should only merge with another Google event carrying the
-        same calendar/event identity.
+        Calendar/message events are deliberately excluded from the generic
+        label fallback. A title/subject can easily match an object/person
+        label; Google events should only merge with another Google event
+        carrying the same stable provider identity.
         """
         if obs.source == ObservationSource.GOOGLE_CALENDAR:
             ref_key = _calendar_ref_key_from_obs(obs)
             if ref_key:
                 for n in self._graph.all_nodes():
                     if _calendar_ref_key_from_node(n) == ref_key:
+                        return n
+            return None
+        if obs.source == ObservationSource.GOOGLE_MESSAGE:
+            ref_key = _message_ref_key_from_obs(obs)
+            if ref_key:
+                for n in self._graph.all_nodes():
+                    if _message_ref_key_from_node(n) == ref_key:
                         return n
             return None
 
@@ -256,6 +267,21 @@ class IngestRunner:
                 changed = True
             if existing.time_span != obs.time_span:
                 existing.time_span = obs.time_span
+                changed = True
+            for key, value in obs.meta.items():
+                if existing.source_meta.get(key) != value:
+                    existing.source_meta[key] = value
+                    changed = True
+
+        if obs.source == ObservationSource.GOOGLE_MESSAGE:
+            # Message updates merge by provider message id, never by label.
+            # We keep only bounded/redacted metadata so Runtime Flow can show
+            # the notification without turning L2-B into a mailbox store.
+            if obs.label and existing.label != obs.label:
+                existing.label = obs.label
+                changed = True
+            if obs.description and existing.description != obs.description:
+                existing.description = obs.description
                 changed = True
             for key, value in obs.meta.items():
                 if existing.source_meta.get(key) != value:
@@ -346,6 +372,18 @@ def _calendar_ref_key_from_node(node: SemanticNode) -> tuple[str, str] | None:
         return None
     calendar_id = str(source_meta.get("calendar_id", "primary") or "primary")
     return calendar_id, event_id
+
+
+def _message_ref_key_from_obs(obs: Observation) -> str:
+    """Return the stable Google message identity carried by an Observation."""
+    return str((obs.meta or {}).get("message_id", "") or "")
+
+
+def _message_ref_key_from_node(node: SemanticNode) -> str:
+    """Return the stable Google message identity carried by a SemanticNode."""
+    if node.source != ObservationSource.GOOGLE_MESSAGE.value:
+        return ""
+    return str((node.source_meta or {}).get("message_id", "") or "")
 
 
 def _confirmation_rank(c: ConfirmationStatus) -> int:

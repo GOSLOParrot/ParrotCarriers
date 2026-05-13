@@ -125,6 +125,8 @@ class DesktopPolicy:
             return BucketKind.OBSIDIAN_SETTING_DAILY
         if obs.source == ObservationSource.GOOGLE_CALENDAR:
             return BucketKind.GOOGLE_CALENDAR
+        if obs.source == ObservationSource.GOOGLE_MESSAGE:
+            return BucketKind.GOOGLE_MESSAGE
         if obs.source == ObservationSource.GOSLO_AUTONOMOUS:
             return BucketKind.AUTONOMOUS_CURIOSITY
         return BucketKind.MAIN

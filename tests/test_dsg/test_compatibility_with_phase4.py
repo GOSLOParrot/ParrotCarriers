@@ -81,6 +81,11 @@ def test_observation_source_google_calendar_added() -> None:
     assert ingest_base.ObservationSource.GOOGLE_CALENDAR.value == "google_calendar"
 
 
+def test_observation_source_google_message_added() -> None:
+    """Web Runtime: Gmail/Workspace message notifications use L1.5 ingest."""
+    assert ingest_base.ObservationSource.GOOGLE_MESSAGE.value == "google_message"
+
+
 # ─── ADR-L1.5-001 § 4.1 三触发器 — must NOT be triggered by Chat 2 ──
 
 
@@ -163,6 +168,7 @@ def test_source_priority_full_table_unchanged() -> None:
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.IDENTIFY_OBJECT] == 80
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.GOSLO_AUTONOMOUS] == 70
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.GOOGLE_CALENDAR] == 65
+    assert _SOURCE_PRIORITY[ingest_base.ObservationSource.GOOGLE_MESSAGE] == 64
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.CV_A10] == 60
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.CV_SENTINEL] == 40
     assert _SOURCE_PRIORITY[ingest_base.ObservationSource.GEMINI_ORAL] == 30

@@ -87,10 +87,14 @@ business RPC payloads, DataChannel heartbeat, and main-ready gate ownership. The
 Castle LineB Google STT ADC / token-mint dispatch blocker was reported repaired
 on 2026-05-14. Do not treat old tmux Brain logs, service health alone, or Smoke
 UI scenes as formal App completion; use Brain participant + business RPC
-payloads as the next gate. The 2026-05-14 fast retry proved Brain participant
-join after unnamed dispatch, then failed on `getRoomSettingSnapshot` response
-size; the local compact Brain RPC snapshot fix must be deployed before the
-three-RPC START proof is complete.
+payloads as the next gate. After Castle `c0f1705`, the 2026-05-14 fast retry
+passed post-join `applyRoomProfile` and `setAppCapabilityMode` business-ok
+with `ner_lineb_room`. Compact `getRoomSettingSnapshot` is a legacy
+diagnostic/fallback only; formal RoomSetting cold-load/edit/save stays on App
+HTTP before LiveKit connects. The default LineA RoomProfile still fails
+correctly against a running LineB Brain and must remain a real App START
+failure. Phone RoomSetting/orchestrator proof is separate and currently blocked
+by public App API / Orchestrator URLs returning 502.
 
 ## 5. Web Console Business Route
 

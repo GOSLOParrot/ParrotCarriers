@@ -28,6 +28,7 @@ def test_default_buckets_present_after_init(pool: L15Pool) -> None:
     assert BucketKind.OBSIDIAN_SETTING_DAILY in kinds
     assert BucketKind.OBSIDIAN_SETTING_ROLEPLAY in kinds
     assert BucketKind.GOOGLE_CALENDAR in kinds
+    assert BucketKind.GOOGLE_MESSAGE in kinds
     assert BucketKind.AUTONOMOUS_CURIOSITY in kinds
 
 

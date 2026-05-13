@@ -363,8 +363,10 @@ Resolution path:
 4. Retire or ignore old tmux Brain processes; use systemd Brain as the formal
    ECS validation source.
 5. Re-run START with a diagnostic participant check: Mint OK -> Unity joins ->
-   Brain participant appears -> `getRoomSettingSnapshot` / `applyRoomProfile`
-   RPC payload succeeds -> DataChannel heartbeat -> main-ready gate.
+   Brain participant appears -> `applyRoomProfile` and
+   `setAppCapabilityMode` payloads succeed -> DataChannel heartbeat ->
+   main-ready gate. `getRoomSettingSnapshot` may be used as a legacy
+   diagnostic/fallback probe, but it is not the formal START cold-load path.
 
 ### A3. Repair Plan For START / Brain RPC
 
@@ -393,8 +395,9 @@ Do not treat this as an Android/voice problem first. Repair in this order:
    silently fall back to `127.0.0.1:8790`.
 5. Run the non-phone START proof:
    mint token -> LiveKit join -> Brain participant appears -> call
-   `getRoomSettingSnapshot`, `applyRoomProfile`, and `setAppCapabilityMode` ->
-   check payload business status, not just transport success.
+   `applyRoomProfile` and `setAppCapabilityMode` -> check payload business
+   status, not just transport success. RoomSetting snapshot load/save remains
+   an App HTTP proof, not a Brain RPC proof.
 6. Only after step 5 passes, run the phone/device pass for microphone
    permission, Bluetooth input/output route switching, app background/resume,
    AR camera/video publish, and long reconnect behavior.
@@ -435,9 +438,10 @@ Current status:
   is resolved.
 - This still does not by itself complete Unity START. The next verification is
   a true START chain: Unity/diagnostic client joins with a Unity identity,
-  Brain participant appears in `parrot-main`, `getRoomSettingSnapshot`,
-  `applyRoomProfile`, and `setAppCapabilityMode` return business-ok payloads,
-  DataChannel heartbeat stays bound, and main-ready gates are clean.
+  Brain participant appears in `parrot-main`, `applyRoomProfile` and
+  `setAppCapabilityMode` return business-ok payloads, DataChannel heartbeat
+  stays bound, and main-ready gates are clean. RoomSetting HTTP load/save and
+  orchestrator prewrite are separate HTTP proofs.
 
 ### B. Existing Core Interfaces
 
@@ -468,11 +472,11 @@ RoomSetting, menu registry, canvas snapshot, and LineB status surfaces.
 
 Open implementation gaps:
 
-- Brain RPC full START test is still pending on the deployed Castle revision.
-  The 2026-05-14 retry proved that Brain now joins the LiveKit room after
-  unnamed dispatch. The new failure is `getRoomSettingSnapshot` returning a
-  payload larger than the LiveKit RPC response limit on the currently deployed
-  Brain code.
+- Brain RPC full START proof now covers Brain participant presence plus
+  post-join `applyRoomProfile` / `setAppCapabilityMode` business-ok with the
+  LineB-compatible `ner_lineb_room`. The remaining phone-facing blocker is not
+  `getRoomSettingSnapshot`; it is public App HTTP / Orchestrator routing and
+  the formal main-ready HUD/menu gate.
 - Unity has local audio route detection and mic republish logic, but it does
   not yet push route policy to Brain `session/audio_route_policy`. The backend
   route policy endpoint/RPC exists; the Unity producer hook is intentionally
@@ -499,14 +503,14 @@ Current completed facts:
   RoomProfile draft. Theme writes `skin_id`; `scene_profile_id` remains an
   internal baseline.
 - Local smoke proves App API, token mint, LiveKit room join, and DataChannel
-  heartbeat binding. It does not prove Brain RPC success or production media.
+  heartbeat binding. The later Castle diagnostic proves Brain participant plus
+  post-join `applyRoomProfile` / `setAppCapabilityMode`; production phone
+  media and public HTTP endpoints remain separate.
 - Shutdown quit drain was fixed so exiting Play Mode after a connected room no
   longer hangs on SDK unpublish waits.
 
-Do not mark complete yet:
+Do not mark complete at phone/App level yet:
 
-- Brain RPC START sync (`applyRoomProfile` and `setAppCapabilityMode`) with a
-  live Brain participant.
 - True LiveKit connection stability under network flap, app switching, token
   expiry, reconnect, and long background.
 - Bluetooth/microphone route switching on iQOO Neo9 or other real Android
@@ -540,27 +544,92 @@ Fast check scope:
   named local experiments.
 - It grants `can_publish_data=True`, because LiveKit RPC/DataChannel readiness
   is part of START and cannot be verified with a media-only token.
+- Formal START does not call Brain `getRoomSettingSnapshot`: RoomSetting
+  cold-load/edit/save uses App HTTP before LiveKit connects, then the selected
+  RoomProfile is sent through `applyRoomProfile` after joining.
 
-Result against Castle on 2026-05-14:
+RoomSetting RPC provenance and cleanup:
+
+- `getRoomSettingSnapshot`, `previewRoomProfile`, `newRoomProfile`,
+  `saveRoomProfile`, and `applyRoomProfile` were not added by this fast test.
+  They are an older AppV1/RoomSetting Brain RPC surface from the 2026-05-10/11
+  design/audit pass.
+- The fast test reused that surface and exposed the payload/boundary problem.
+  The formal architecture is now HTTP-first for startup and persistent
+  RoomSetting edits.
+- `src/scripts/sim_unity_client.py --startup-rpc-check` no longer calls
+  `getRoomSettingSnapshot` as START evidence; it loads the selected
+  RoomProfile locally/HTTP-side and checks only the post-join Brain sync RPCs.
+- The Brain handlers remain for compatibility, diagnostics, and in-room
+  fallback, but comments mark them as non-startup surfaces. Removing the
+  handlers entirely should be a separate compatibility cleanup after no active
+  App/Web caller depends on them.
+
+First result against Castle on 2026-05-14:
 
 - `unity-rpc-check-*` joined `parrot-main`.
 - No Brain was present initially; manual unnamed dispatch created a room job.
 - Brain participant `agent-*` joined and published `roomio_audio`. This means
   the previous ADC/dispatch blocker is no longer the active START blocker.
-- The first RPC, `getRoomSettingSnapshot`, failed with LiveKit
-  `Response payload too large`. Local measurement showed the full snapshot is
+- The earlier deployed Brain failed `getRoomSettingSnapshot` with LiveKit
+  `Response payload too large`. Local measurement showed the full snapshot was
   about 27 KB, while the compact launch snapshot is about 8 KB.
 
-Local code fix completed:
+Code/deploy result:
 
 - `src/parrot/brain/agent.py` now compacts `getRoomSettingSnapshot` by default
-  for Brain RPC callers. Full RoomSetting editing remains owned by the App HTTP
-  facade; Brain RPC returns a startup/menu-safe launch snapshot.
+  for legacy Brain RPC callers. Full RoomSetting editing remains owned by the
+  App HTTP facade; the Brain RPC is a compact in-room diagnostic/fallback
+  surface, not a startup transport.
 - `tests/test_brain/test_room_setting_rpc_snapshot.py` guards that the compact
   response stays below the LiveKit RPC limit and preserves active room, line,
   skin, and experience-mode selectors.
-- This fix must be deployed to Castle before the three-RPC business-ok pass can
-  be called complete on ECS.
+- Castle was fast-forwarded to `c0f1705`, which includes the compact RPC
+  snapshot fix.
+- The earlier three-RPC diagnostic against the default snapshot proved a useful
+  negative case: compact `getRoomSettingSnapshot` passed, but
+  `applyRoomProfile` correctly returned
+  `status:error/result.success:false` because Castle Brain is running LineB
+  while the default active room is LineA. Unity must keep treating this as a
+  real START failure, not a LiveKit transport success.
+- Re-running with `--startup-room-profile-id ner_lineb_room` passed the
+  post-join business sync RPCs: `applyRoomProfile` and
+  `setAppCapabilityMode`. The diagnostic script now loads the selected
+  RoomProfile locally, mirroring the Unity HTTP preload, instead of calling
+  Brain `getRoomSettingSnapshot` as part of START proof.
+
+Config/public endpoint status:
+
+- Local Unity `parrot_config.json` now includes Castle `appApiUrl` and
+  `orchestratorUrl` so phone builds no longer silently fall back to
+  `127.0.0.1` for RoomSetting save/apply or Tier 1 LineB prewrite.
+- The local gitignored config still does not carry an `orchestratorSecret`.
+  If Castle keeps `PARROT_ORCH_SECRET` enabled, Unity write calls must receive
+  that secret through the same ignored/local config path before phone Tier 1
+  prewrite can pass. Do not commit the secret.
+- From the local workstation, `http://8.216.45.45:8790/api/app/room-setting`
+  and `http://8.216.45.45:7890/health` currently return HTTP 502. Treat phone
+  RoomSetting/orchestrator proof as blocked on ECS public routing / reverse
+  proxy / security group until those URLs are reachable from the phone network.
+- User-side ECS port audit explains the 502 shape: Orchestrator is listening
+  on `127.0.0.1:7890` only, and App API is not listening on `8790` at all
+  (the observed docker-proxy listener is `18790`, not `8790`). Phone access
+  needs either public bind / reverse proxy routes to these services or an
+  explicit tunnel decision.
+
+RPC payload budget:
+
+- Treat LiveKit RPC as a small control-plane surface, not a snapshot transport.
+  The current practical budget is guarded at `<15 KB` to stay below the
+  observed `Response payload too large` failure band.
+- Measured current payloads on 2026-05-14: full RoomSetting snapshot ~27.5 KB
+  (too large), compact RoomSetting RPC snapshot ~8.3 KB (safe), `listMenuBlocks`
+  ~4.5 KB (safe), full `canvas_snapshot` ~39.3 KB (too large).
+- Therefore compact RoomSetting is acceptable only as legacy in-room fallback
+  or diagnostics, not as the formal startup data source. Full RoomSetting
+  editing continues through App HTTP facade. Full homepage/canvas data must use
+  App HTTP facade, paging, or a future compact read model; it must not be
+  pushed through LiveKit RPC.
 
 Homepage readiness audit:
 
@@ -572,10 +641,10 @@ Homepage readiness audit:
 - RoomSetting can load snapshot, preview, create a backend draft, save, and
   build the START RoomProfile. If `appApiUrl` is absent, it falls back to local
   draft state and must not be treated as saved backend state.
-- Current local `parrot_config.json` contains Castle Mint/LiveKit/room values
-  but no `appApiUrl` or `orchestratorUrl`. A phone ECS build therefore cannot
-  prove RoomSetting save/apply or LineB Tier 1 orchestrator prewrite until those
-  endpoints are injected or deliberately tunneled.
+- Phone config now has App API and Orchestrator endpoints, but those public
+  endpoints are not yet reachable without 502. A phone ECS build can prove
+  Mint/LiveKit/Brain RPC, but cannot yet prove RoomSetting save/apply or LineB
+  Tier 1 prewrite until public HTTP routing is fixed or intentionally tunneled.
 - `Scene` as a user-facing RoomSetting concept should stay out of the startup
   page. The visible row is `Theme` and writes `skin_id`; spatial/environment
   baseline remains `scene_profile_id` and should be automatic.
@@ -590,3 +659,8 @@ Homepage readiness audit:
   HUD/tool drawer/camera/workdesk/note/Focus/BBox interaction ideas; do not
   mount it wholesale or let its local preview/mobile-incompatible assumptions
   define the formal App.
+- The next formal homepage implementation should introduce a main-ready gate
+  owner first, then a HUD/menu loader. `ReportRunning()` should move behind
+  RoomProfile applied, Brain present, RPC policy synced, heartbeat DataChannel
+  ready, HUD/menu snapshot loaded, model driver resolved, and AR/session
+  baseline clean.

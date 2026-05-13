@@ -52,6 +52,9 @@ class ObservationSource(str, Enum):
         DSG-POOL-V1 (2026-05-06): + ``GOSLO_AUTONOMOUS`` for self-initiated
         curiosity (master § 3.3, brain_protocol_plan_v1 § 3 PlanProposal
         path). Pure addition; no value rename, no value re-order.
+        Web Runtime upgrade (2026-05-13): + ``GOOGLE_MESSAGE`` for Gmail /
+        Google Workspace message notifications, keeping message triggers on
+        the same Observation -> L1.5 -> Ingest path as Calendar/Obsidian.
     """
 
     USER_TAG_OBSIDIAN = "user_tag_obsidian"
@@ -63,6 +66,7 @@ class ObservationSource(str, Enum):
     MOCK = "mock"
     GOSLO_AUTONOMOUS = "goslo_autonomous"
     GOOGLE_CALENDAR = "google_calendar"
+    GOOGLE_MESSAGE = "google_message"
 
 
 class Observation(BaseModel):
@@ -217,6 +221,27 @@ def _copy_google_calendar_source_meta(obs: Observation) -> dict[str, Any]:
     return {key: obs.meta[key] for key in keys if key in obs.meta}
 
 
+def _copy_google_message_source_meta(obs: Observation) -> dict[str, Any]:
+    """Keep Gmail/Workspace message identity on the L2-B event node.
+
+    This stores only redacted operational metadata. Full mailbox payloads,
+    OAuth tokens, and message bodies stay with the Nanobot/Google connector
+    side and must not leak into Web Console snapshots.
+    """
+    keys = (
+        "message_id",
+        "thread_id",
+        "sender",
+        "subject",
+        "snippet",
+        "timestamp",
+        "is_reply",
+        "importance",
+        "source",
+    )
+    return {key: obs.meta[key] for key in keys if key in obs.meta}
+
+
 try:
     from parrot.dsg.l2b_types import register_source_meta_factory
 
@@ -227,6 +252,10 @@ try:
     register_source_meta_factory(
         ObservationSource.GOOGLE_CALENDAR.value,
         _copy_google_calendar_source_meta,
+    )
+    register_source_meta_factory(
+        ObservationSource.GOOGLE_MESSAGE.value,
+        _copy_google_message_source_meta,
     )
 except Exception:
     # Import-time factory registration is best-effort. If a test imports this

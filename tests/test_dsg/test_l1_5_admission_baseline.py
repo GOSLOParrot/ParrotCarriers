@@ -101,6 +101,14 @@ def test_google_calendar_routing() -> None:
     assert decision.target_bucket == BucketKind.GOOGLE_CALENDAR
 
 
+def test_google_message_routing() -> None:
+    p = DesktopPolicy()
+    obs = _obs(ObservationSource.GOOGLE_MESSAGE, confidence=1.0)
+    decision = p.evaluate(obs, AdmissionContext())
+    assert decision.admit is True
+    assert decision.target_bucket == BucketKind.GOOGLE_MESSAGE
+
+
 def test_user_explicit_salience_promoted_to_foreground() -> None:
     p = DesktopPolicy()
     obs = _obs(ObservationSource.USER_EXPLICIT, confidence=0.7)

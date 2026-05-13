@@ -1,28 +1,10 @@
-"""Message Notification Trigger — summarizes important incoming messages.
+"""Message notification trigger for Gmail / Google Workspace.
 
-Trigger mode: PERIODIC (every 10 min) + EVENT_DRIVEN (on push notification)
-
-Supported sources (via Nanobot MCP tools):
-  - Gmail: fetches unread important/starred emails
-  - (Future) Telegram, WeChat, etc.
-
-Flow:
-  1. Periodic: Nanobot checks Gmail for unread important messages
-  2. Results come back as structured data via CH_TRIGGER_RESULTS
-  3. Trigger creates L2-B EVENT nodes for important messages
-  4. Notifies Gemini only for messages that pass the importance filter
-
-Importance filter (to avoid being annoying):
-  - Skip: marketing, newsletters, automated notifications (unless urgent)
-  - Include: messages from known contacts, replies to user's messages,
-    messages with keywords matching current scene/task context
-  - Quiet hours: same as CalendarTrigger (23:00–07:00)
-  - Cooldown: won't re-notify about the same message within 1 hour
-
-Notification style:
-  - Brief natural-language summary, not a raw list
-  - Group by sender/thread when possible
-  - Let Gemini decide whether to interrupt or wait for a pause
+The trigger can run periodically or react to pushed ``message_result`` /
+``message_push`` events. Important messages are converted into
+``Observation(source=GOOGLE_MESSAGE)`` and returned through
+``TriggerOutcome.commit_observations`` so the normal L1.5 Pool / Ingest path
+owns all L2-B writes.
 """
 
 from __future__ import annotations
@@ -32,13 +14,9 @@ import time
 from datetime import datetime
 from typing import Any
 
-from parrot.dsg.l2b_types import (
-    ConfirmationStatus,
-    NodeKind,
-    Salience,
-    SemanticNode,
-)
-from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerResult
+from parrot.dsg.ingest.base import Observation, ObservationSource
+from parrot.dsg.l2b_types import ConfirmationStatus, NodeKind
+from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +34,16 @@ class MessageNotificationTrigger(BaseTrigger):
 
     def __init__(self, graph):
         super().__init__(graph)
-        self._notified_ids: dict[str, float] = {}  # msg_id → timestamp of last notification
+        self._notified_ids: dict[str, float] = {}
 
-    async def on_startup(self) -> TriggerResult | None:
+    async def on_startup(self) -> TriggerOutcome | None:
         return await self._fetch_messages()
 
-    async def on_tick(self) -> TriggerResult | None:
+    async def on_tick(self) -> TriggerOutcome | None:
         self._cleanup_cooldowns()
         return await self._fetch_messages()
 
-    async def on_event(self, event: dict[str, Any]) -> TriggerResult | None:
+    async def on_event(self, event: dict[str, Any]) -> TriggerOutcome | None:
         if event.get("type") == "message_result":
             raw = event.get("result", "")
             return await self._parse_and_process(raw)
@@ -74,7 +52,7 @@ class MessageNotificationTrigger(BaseTrigger):
             return await self._handle_push(event)
         return None
 
-    async def _fetch_messages(self) -> TriggerResult | None:
+    async def _fetch_messages(self) -> TriggerOutcome | None:
         """Dispatch Nanobot to check Gmail for unread important messages."""
         task_id = await self._dispatch_nanobot(
             task_type="message_check",
@@ -97,16 +75,17 @@ class MessageNotificationTrigger(BaseTrigger):
         )
 
         if task_id:
-            return TriggerResult(
+            return TriggerOutcome(
                 trigger_name=self.name,
                 summary=f"Message check dispatched (task={task_id})",
                 dispatch_to_nanobot=True,
             )
         return None
 
-    async def _parse_and_process(self, raw_result: str) -> TriggerResult | None:
-        """Parse Nanobot message check result."""
+    async def _parse_and_process(self, raw_result: str) -> TriggerOutcome | None:
+        """Parse a Nanobot message-check result."""
         import json
+
         try:
             if isinstance(raw_result, str):
                 data = json.loads(raw_result)
@@ -126,7 +105,7 @@ class MessageNotificationTrigger(BaseTrigger):
             return await self._process_messages(messages)
         return None
 
-    async def _handle_push(self, event: dict) -> TriggerResult | None:
+    async def _handle_push(self, event: dict) -> TriggerOutcome | None:
         """Handle a real-time push notification about a new message."""
         msg = {
             "id": event.get("message_id", f"push_{int(time.time())}"),
@@ -134,46 +113,40 @@ class MessageNotificationTrigger(BaseTrigger):
             "subject": event.get("subject", ""),
             "snippet": event.get("snippet", ""),
             "importance": event.get("importance", "normal"),
+            "timestamp": event.get("timestamp", ""),
+            "thread_id": event.get("thread_id", ""),
+            "source": event.get("source", "gmail"),
         }
         return await self._process_messages([msg])
 
-    async def _process_messages(self, messages: list[dict]) -> TriggerResult | None:
-        """Filter and notify about important messages."""
+    async def _process_messages(self, messages: list[dict]) -> TriggerOutcome | None:
+        """Filter messages and return L1.5 commit observations."""
         now = time.time()
-        important = []
-        nodes_affected = []
+        important: list[dict[str, Any]] = []
+        observations: list[Observation] = []
 
         for msg in messages:
-            msg_id = msg.get("id", "")
-            importance = msg.get("importance", "normal")
+            msg_id = str(msg.get("id", "") or "")
+            importance = str(msg.get("importance", "normal") or "normal")
 
             if not self._passes_filter(msg_id, importance, now):
                 continue
 
-            sender = msg.get("sender", "Unknown")
-            subject = msg.get("subject", "(no subject)")
-            snippet = msg.get("snippet", "")
+            sender = str(msg.get("sender", "Unknown") or "Unknown")
+            subject = str(msg.get("subject", "(no subject)") or "(no subject)")
+            snippet = str(msg.get("snippet", "") or "")
 
-            msg_node = SemanticNode(
-                uuid=f"msg_{msg_id}",
-                kind=NodeKind.EVENT,
-                label=f"Message: {subject[:40]}",
-                description=f"From {sender}: {subject} — {snippet[:60]}",
-                tags=["message", "unread", importance],
-                attention=0.8 if importance == "high" else 0.5,
-                salience=Salience.ACTIVE if importance == "high" else Salience.BACKGROUND,
-                confirmation=ConfirmationStatus.CONFIRMED,
+            observations.append(self._message_to_observation(msg))
+            important.append(
+                {
+                    "sender": sender,
+                    "subject": subject,
+                    "snippet": snippet[:80],
+                    "importance": importance,
+                }
             )
-            self._graph.upsert_node(msg_node)
-            nodes_affected.append(msg_node.uuid)
-
-            important.append({
-                "sender": sender,
-                "subject": subject,
-                "snippet": snippet[:80],
-                "importance": importance,
-            })
-            self._notified_ids[msg_id] = now
+            if msg_id:
+                self._notified_ids[msg_id] = now
 
         if not important:
             return None
@@ -184,12 +157,44 @@ class MessageNotificationTrigger(BaseTrigger):
 
         await self._notify_brain(notification)
 
-        return TriggerResult(
+        return TriggerOutcome(
             trigger_name=self.name,
             summary=f"Found {len(important)} important messages",
-            nodes_affected=nodes_affected,
+            commit_observations=tuple(observations),
             notify_gemini=True,
             notification_text=notification,
+        )
+
+    @staticmethod
+    def _message_to_observation(msg: dict[str, Any]) -> Observation:
+        """Convert one filtered message into the canonical L1.5 ingest DTO."""
+        msg_id = str(msg.get("id", "") or f"message_{int(time.time())}")
+        sender = str(msg.get("sender", "Unknown") or "Unknown")
+        subject = str(msg.get("subject", "(no subject)") or "(no subject)")
+        snippet = str(msg.get("snippet", "") or "")
+        importance = str(msg.get("importance", "normal") or "normal")
+        label = f"Message: {subject[:40]}"
+        description = f"From {sender}: {subject}"
+        if snippet:
+            description = f"{description} - {snippet[:80]}"
+        return Observation(
+            source=ObservationSource.GOOGLE_MESSAGE,
+            label=label[:128],
+            kind=NodeKind.EVENT,
+            description=description[:400],
+            confidence=1.0 if importance == "high" else 0.8,
+            confirmation=ConfirmationStatus.CONFIRMED,
+            meta={
+                "message_id": msg_id,
+                "thread_id": str(msg.get("thread_id", "") or ""),
+                "sender": sender,
+                "subject": subject,
+                "snippet": snippet[:160],
+                "timestamp": str(msg.get("timestamp", "") or ""),
+                "is_reply": bool(msg.get("is_reply", False)),
+                "importance": importance,
+                "source": str(msg.get("source", "gmail") or "gmail"),
+            },
         )
 
     def _passes_filter(self, msg_id: str, importance: str, now: float) -> bool:
@@ -207,7 +212,7 @@ class MessageNotificationTrigger(BaseTrigger):
         return True
 
     def _build_notification(self, messages: list[dict]) -> str:
-        """Build natural-language message summary for Gemini."""
+        """Build a natural-language message summary for Gemini."""
         if not messages:
             return ""
 
@@ -220,7 +225,7 @@ class MessageNotificationTrigger(BaseTrigger):
             for m in high:
                 parts.append(f"  From {m['sender']}: {m['subject']}")
                 if m["snippet"]:
-                    parts.append(f"    → {m['snippet']}")
+                    parts.append(f"    -> {m['snippet']}")
 
         if normal:
             parts.append(f"[{len(normal)} other message(s)]")
@@ -229,8 +234,8 @@ class MessageNotificationTrigger(BaseTrigger):
 
         return (
             "The user has new messages. Mention them naturally when "
-            "there's a pause in conversation — don't interrupt. "
-            "For high-importance messages, you can gently bring them up sooner.\n\n"
+            "there's a pause in conversation; don't interrupt. For "
+            "high-importance messages, you can gently bring them up sooner.\n\n"
             + "\n".join(parts)
         )
 
@@ -243,8 +248,12 @@ class MessageNotificationTrigger(BaseTrigger):
         """Remove expired cooldown entries to prevent memory growth."""
         now = time.time()
         expired = [
-            k for k, v in self._notified_ids.items()
-            if now - v > MESSAGE_COOLDOWN_SECONDS * 2
+            key
+            for key, timestamp in self._notified_ids.items()
+            if now - timestamp > MESSAGE_COOLDOWN_SECONDS * 2
         ]
-        for k in expired:
-            del self._notified_ids[k]
+        for key in expired:
+            del self._notified_ids[key]
+
+
+__all__ = ["MessageNotificationTrigger"]
