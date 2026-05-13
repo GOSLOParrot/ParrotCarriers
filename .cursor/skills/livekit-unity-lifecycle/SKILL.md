@@ -1,4 +1,4 @@
----
+﻿---
 name: livekit-unity-lifecycle
 description: Use when working with Unity AR app lifecycle / 防御性机制 — Room 重连、SignalReconnect/ICE restart、OnApplicationPause 切后台短/长背景策略、graceful shutdown / 30s ICE 残留 / identity 抢占防御、connection health 聚合、ARCore 后台 blank texture / pause-resume crash、audio route policy、shutdown chokepoint、setVideoTier 切换副作用。配套 livekit-unity-video-publish 数据流主题。
 ---
@@ -17,7 +17,7 @@ description: Use when working with Unity AR app lifecycle / 防御性机制 — 
 2. VideoTier 切换属于 Intent；**禁止**塞进 Reflex 做毫秒级反应。
 3. DSG L2-B 工作记忆**不接受**实时帧；本 skill 不新增 L2-B 写入路径。
 4. 2026-05-09 ChatA 修订：蓝牙音频进入正式 App 支持范围；有蓝牙输入路由时默认优先使用蓝牙，蓝牙 / 手机麦克风切换必须稳定重建 mic track 且不重连 room。候选 BB 键 `session/audio_route_policy` 仍保留 candidate 标记，无协议 producer。
-5. 测试束隔离：本 skill 描述的 `AppLifecycleManager` 在 `unity/ArSpike/Assets/Scripts/ParrotApp/`；不要把 `unity/ParrotDev/` 的 SelfTest / Runtime HUD 反向当生命周期源。
+5. 测试束隔离：本 skill 描述的 `AppLifecycleManager` 在 `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/`；不要把 `unity/ParrotDev/` 的 SelfTest / Runtime HUD 反向当生命周期源。
 
 ## 当 LLM 写代码时应当如何用
 
@@ -49,3 +49,4 @@ Unity AppLifecycleManager (本 skill)
 ## 触发本 skill 的关键词
 
 切后台 / OnApplicationPause / Background / 重连 / Reconnecting / Room.Disconnect / Dispose / graceful shutdown / 30s ICE / identity 抢占 / 切前后摄 / ARSession pause / ARCore black texture / connection health / watchdog / heartbeat / 蓝牙路由 / 耳机插拔 / setVideoTier 副作用 / cool-down / lifecycle FSM / app lifecycle state
+

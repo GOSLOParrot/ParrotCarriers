@@ -1,54 +1,88 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 UNITY_ROOT = ROOT / "unity" / "ArSpike" / "Assets"
-META_UI = UNITY_ROOT / "Scripts" / "ParrotApp" / "UI" / "AppV1MetaUiController.cs"
+BUILD_SETTINGS = ROOT / "unity" / "ArSpike" / "ProjectSettings" / "EditorBuildSettings.asset"
+PROJECT_SETTINGS = ROOT / "unity" / "ArSpike" / "ProjectSettings" / "ProjectSettings.asset"
+PROJECT_VERSION = ROOT / "unity" / "ArSpike" / "ProjectSettings" / "ProjectVersion.txt"
+PACKAGE_MANIFEST = ROOT / "unity" / "ArSpike" / "Packages" / "manifest.json"
+PARROT_APP = UNITY_ROOT / "ParrotApp"
+FORMAL_STARTUP_SCENE = PARROT_APP / "Scenes" / "ParrotApp_Startup.unity"
+SCRIPT_ROOT = PARROT_APP / "Runtime" / "Scripts"
+META_UI = SCRIPT_ROOT / "UI" / "AppV1MetaUiController.cs"
 STARTUP_CONFIG = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "Config" / "AppStartupConfigDto.cs"
+    SCRIPT_ROOT / "Config" / "AppStartupConfigDto.cs"
 )
 STARTUP_FLOW = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "Lifecycle" / "AppStartupFlowController.cs"
+    SCRIPT_ROOT / "Lifecycle" / "AppStartupFlowController.cs"
+)
+SHUTDOWN_SERVICE = (
+    SCRIPT_ROOT / "Lifecycle" / "LifecycleShutdownService.cs"
+)
+FORMAL_STARTUP_UI = (
+    SCRIPT_ROOT / "Startup" / "ParrotAppStartupUiController.cs"
+)
+ROOM_SETTING_CLIENT = (
+    SCRIPT_ROOT / "Backend" / "AppRoomSettingClient.cs"
+)
+ORCHESTRATOR_CLIENT = (
+    SCRIPT_ROOT / "Backend" / "OrchestratorClient.cs"
+)
+RUNTIME_CONFIG = (
+    SCRIPT_ROOT / "Backend" / "ParrotRuntimeConfig.cs"
+)
+ROOM_SETTING_DTOS = (
+    SCRIPT_ROOT / "Backend" / "RoomSettingDtos.cs"
 )
 PARROT_CONTROLLER = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "ParrotController.cs"
+    SCRIPT_ROOT / "Parrot" / "ParrotController.cs"
 )
 ANIMATION_DRIVER = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "AnimationDriver.cs"
+    SCRIPT_ROOT / "Parrot" / "AnimationDriver.cs"
 )
 MODEL_DRIVER = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "ModelDriver.cs"
+    SCRIPT_ROOT / "Parrot" / "ModelDriver.cs"
 )
 NER_SPINE_CONTROLLER = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "NerSpineController.cs"
+    SCRIPT_ROOT / "Parrot" / "NerSpineController.cs"
 )
 NER_CHEEK_PINCH_INTERACTOR = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "NerCheekPinchInteractor.cs"
+    SCRIPT_ROOT / "Parrot" / "NerCheekPinchInteractor.cs"
 )
 NER_PICKUP_PLACE_INTERACTOR = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "NerPickupPlaceInteractor.cs"
+    SCRIPT_ROOT / "Parrot" / "NerPickupPlaceInteractor.cs"
 )
 NER_CHEEK_HIT_REGION = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "Parrot" / "NerCheekHitRegion.cs"
+    SCRIPT_ROOT / "Parrot" / "NerCheekHitRegion.cs"
 )
 NER_SPINE_AUDIT = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "Editor" / "NerSpineAnimationAudit.cs"
+    PARROT_APP / "Editor" / "NerSpineAnimationAudit.cs"
 )
 TOKEN_MINT_CLIENT = (
-    UNITY_ROOT / "Scripts" / "ParrotApp" / "LiveKit" / "LiveKitTokenMintClient.cs"
+    SCRIPT_ROOT / "LiveKit" / "LiveKitTokenMintClient.cs"
 )
 SMOKE_BUILDER = (
     UNITY_ROOT
-    / "Scripts"
-    / "ParrotApp"
+    / "Tests"
+    / "Smoke"
     / "Editor"
     / "ParrotSmokeSceneBuilder.cs"
 )
-ASSET_MANIFEST = UNITY_ROOT / "UI" / "ParrotApp" / "app_v1_asset_manifest.json"
-NER_MODEL_MANIFEST = UNITY_ROOT / "Resources" / "parrot_models" / "ner_skin2.json"
+ASSET_MANIFEST = PARROT_APP / "Art" / "AppV1" / "app_v1_asset_manifest.json"
+STARTUP_PAPER_RESOURCES = PARROT_APP / "Art" / "Startup" / "Resources" / "StartupPaperCraft"
+NER_MODEL_MANIFEST = PARROT_APP / "Resources" / "parrot_models" / "ner_skin2.json"
+
+
+def _unity_guid(asset: Path) -> str:
+    meta = asset.with_suffix(asset.suffix + ".meta")
+    match = re.search(r"^guid:\s*([0-9a-f]+)$", meta.read_text(encoding="utf-8"), re.M)
+    assert match, meta
+    return match.group(1)
 
 
 def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
@@ -116,6 +150,20 @@ def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
     assert "startupFlow.ReportGosloPlaced()" in text
 
 
+def test_unity_ar_foundation_and_livekit_version_locks_are_pinned() -> None:
+    project_version = PROJECT_VERSION.read_text(encoding="utf-8")
+    manifest = json.loads(PACKAGE_MANIFEST.read_text(encoding="utf-8"))
+    deps = manifest["dependencies"]
+
+    assert "m_EditorVersion: 2022.3.62f3" in project_version
+    assert deps["com.unity.xr.arfoundation"] == "5.2.2"
+    assert deps["com.unity.xr.arcore"] == "5.2.2"
+    assert deps["com.unity.xr.arkit"] == "5.2.2"
+    assert deps["io.livekit.livekit-sdk"].endswith(
+        "#7d868ef5cc5615c30a3ef4b73ae0dbb5cc4d6796"
+    )
+
+
 def test_startup_room_setting_selection_syncs_to_brain_before_capability() -> None:
     config = STARTUP_CONFIG.read_text(encoding="utf-8")
     flow = STARTUP_FLOW.read_text(encoding="utf-8")
@@ -127,8 +175,15 @@ def test_startup_room_setting_selection_syncs_to_brain_before_capability() -> No
         "experience_mode",
         "skin_id",
         "setting_file_refs",
+        "app_api_url",
+        "orchestrator_url",
+        "orchestrator_secret",
+        "compatibility_state",
+        "compatibility_summary",
     ]:
         assert f"public string {field}" in config or f"public string[] {field}" in config
+    assert "public int setting_change_tier" in config
+    assert "public bool requires_livekit_reconnect" in config
 
     assert "SyncStartupRoomProfile" in flow
     assert '"applyRoomProfile"' in flow
@@ -142,6 +197,147 @@ def test_startup_room_setting_selection_syncs_to_brain_before_capability() -> No
     assert '\\"skin_id\\"' in flow
     assert flow.index('"startup_reuse_room_profile"') < flow.index('"startup_reuse_capability_mode"')
     assert flow.index('"startup_room_profile"') < flow.index('"startup_capability_mode"')
+
+
+def test_formal_startup_playmode_uses_experience_mode_not_preview_switch() -> None:
+    text = FORMAL_STARTUP_UI.read_text(encoding="utf-8")
+
+    assert "StartupExperienceModes" in text
+    assert '"ar_companion"' in text
+    assert '"2d_hall"' in text
+    assert '"room_only"' in text
+    assert "button.onClick.AddListener(CycleExperienceMode)" in text
+    assert 'if (_config.experience_mode == "ar_companion" && _config.scene_id != "ar_handheld")' in text
+    assert '_config.scene_id = "ar_handheld";' in text
+    assert "ExperienceModeSelectors()" in text
+    assert "AddModeLever(controls, new Vector2(300f, 0f)" in text
+    assert "StartLocalPreview" not in text
+
+
+def test_formal_startup_scene_is_first_enabled_build_scene() -> None:
+    text = BUILD_SETTINGS.read_text(encoding="utf-8")
+
+    formal = "path: Assets/ParrotApp/Scenes/ParrotApp_Startup.unity"
+    assert formal in text
+    assert "- enabled: 1\n    " + formal in text
+    assert "Assets/Scenes/SampleScene.unity" not in text
+
+
+def test_formal_startup_scene_explicitly_mounts_runtime_services() -> None:
+    text = FORMAL_STARTUP_SCENE.read_text(encoding="utf-8")
+
+    assert f"guid: {_unity_guid(META_UI)}" not in text
+
+    for script in [
+        ROOM_SETTING_CLIENT,
+        ORCHESTRATOR_CLIENT,
+        SCRIPT_ROOT / "Ecp" / "LifecycleHeartbeatPublisher.cs",
+        SCRIPT_ROOT / "LiveKit" / "AudioRouteDetector.cs",
+        SCRIPT_ROOT / "LiveKit" / "MicrophonePublisher.cs",
+        SCRIPT_ROOT / "LiveKit" / "ARVideoPublisher.cs",
+        SCRIPT_ROOT / "LiveKit" / "VideoStateReporter.cs",
+        SCRIPT_ROOT / "LiveKit" / "VideoTierReceiver.cs",
+    ]:
+        assert f"guid: {_unity_guid(script)}" in text, script
+
+    for field in [
+        "roomSettingClient",
+        "microphonePublisher",
+        "videoPublisher",
+        "orchestratorClient",
+        "heartbeatPublisher",
+    ]:
+        assert f"{field}: {{fileID: 0}}" not in text
+
+
+def test_project_settings_default_scene_is_formal_startup_scene() -> None:
+    text = PROJECT_SETTINGS.read_text(encoding="utf-8")
+
+    assert "templateDefaultScene: Assets/ParrotApp/Scenes/ParrotApp_Startup.unity" in text
+    assert "templateDefaultScene: Assets/Scenes/SampleScene.unity" not in text
+
+
+def test_formal_startup_roomsetting_cold_load_uses_app_http_facade() -> None:
+    ui = FORMAL_STARTUP_UI.read_text(encoding="utf-8")
+    client = ROOM_SETTING_CLIENT.read_text(encoding="utf-8")
+    dtos = ROOM_SETTING_DTOS.read_text(encoding="utf-8")
+    runtime = RUNTIME_CONFIG.read_text(encoding="utf-8")
+
+    assert "AppRoomSettingClient roomSettingClient" in ui
+    assert "LoadRoomSettingSnapshotIfNeeded()" in ui
+    assert "roomSettingClient.LoadSnapshot" in ui
+    assert "roomSettingClient.Preview" in ui
+    assert "roomSettingClient.NewRoomProfile" in ui
+    assert "roomSettingClient.SaveRoomProfile" in ui
+    assert "ApplyCompatibility" in ui
+    assert "DefaultLineProfileFor" in ui
+    assert "SceneId(SceneSelectorDto" in ui
+    assert "ToggleTheme" in ui
+    assert "DisplayThemeValue" in ui
+    assert "startupFlow?.CancelStartup" in ui
+
+    assert "class AppRoomSettingClient" in client
+    assert '"/api/app/room-setting"' in client
+    assert '"/api/app/room-setting/preview"' in client
+    assert '"/api/app/room-setting/new"' in client
+    assert '"/api/app/room-setting/save"' in client
+    assert '"/api/app/room-setting/apply"' in client
+    assert "NewRoomProfileResponseDto" in dtos
+    assert "SkinSelectorDto" in dtos
+    assert "public SkinSelectorDto[] skins" in dtos
+    assert "ApplyRoomProfileResponseDto" in dtos
+    assert "appApiUrl" in runtime
+
+
+def test_formal_startup_layout_targets_landscape_phone_and_theme_selector() -> None:
+    text = FORMAL_STARTUP_UI.read_text(encoding="utf-8")
+
+    assert "private const float ReferenceWidth = 2800f" in text
+    assert "private const float ReferenceHeight = 1260f" in text
+    assert "iQOO Neo9 landscape target" in text
+    assert "StartupSelectionSummary" in text
+    assert "new Vector2(2140f, 900f)" in text
+    assert 'Tr("套装", "Theme")' in text
+    assert "ToggleTheme" in text
+    assert 'Tr("Scene", "Scene")' not in text
+    assert 'Tr("AR 就绪", "AR READY")' in text
+    assert 'Tr("新建", "NEW")' in text
+    assert 'Tr("保存", "SAVE")' in text
+
+
+def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> None:
+    flow = STARTUP_FLOW.read_text(encoding="utf-8")
+    orch = ORCHESTRATOR_CLIENT.read_text(encoding="utf-8")
+    shutdown = SHUTDOWN_SERVICE.read_text(encoding="utf-8")
+    video = (SCRIPT_ROOT / "LiveKit" / "ARVideoPublisher.cs").read_text(encoding="utf-8")
+    mic = (SCRIPT_ROOT / "LiveKit" / "MicrophonePublisher.cs").read_text(encoding="utf-8")
+
+    assert "OrchestratorClient orchestratorClient" in flow
+    assert "PrepareTierOneRuntimeConfig" in flow
+    assert "RequiresTierOneStartup" in flow
+    assert "orchestrator_required_for_tier1_startup" in flow
+    assert "tier1_setting_requires_fresh_livekit_reconnect" in flow
+    assert "orchestrator_apply_room_profile_failed" in flow
+    assert "rpcCall.Payload" in flow
+    assert "IsRpcBusinessOk" in flow
+    assert "RpcStatusEnvelope" in flow
+    assert "ApplyRoomProfileRpcResponse" in flow
+    assert "!response.result.success" in flow
+    assert "LiveKitDataChannelHeartbeatTransport" in flow
+    assert "heartbeatPublisher.Transport" in flow
+
+    assert '"/apply_room_profile"' in orch
+    assert '"/set_active_line"' in orch
+    assert '"/force_unity_reconnect"' in orch
+
+    assert "s_syncDrainDepth" in shutdown
+    assert "DrainDeltaSeconds()" in shutdown
+    assert "waited += DrainDeltaSeconds()" in shutdown
+    assert "cd += DrainDeltaSeconds()" in shutdown
+    assert "IsSynchronousQuitDrain" in video
+    assert "IsSynchronousQuitDrain" in mic
+    assert "sync quit drain skips waiting for UnpublishTrack" in video
+    assert "sync quit drain skips waiting for UnpublishTrack" in mic
 
 
 def test_smoke_scene_builder_mounts_meta_ui_and_wires_existing_tools() -> None:
@@ -189,9 +385,7 @@ def test_parrot_joystick_uses_existing_parrot_controller_boundary() -> None:
 
 def test_custom_capability_parameters_reach_model_controller() -> None:
     controller = PARROT_CONTROLLER.read_text(encoding="utf-8")
-    rpc = (UNITY_ROOT / "Scripts" / "ParrotApp" / "RPC" / "ParrotRpcHandler.cs").read_text(
-        encoding="utf-8"
-    )
+    rpc = (SCRIPT_ROOT / "RPC" / "ParrotRpcHandler.cs").read_text(encoding="utf-8")
 
     assert "public void PlayAnimation(string animationName, string modelId, string parametersJson)" in controller
     assert "public bool TryPlayAnimation(string animationName, string modelId, string parametersJson, bool strictCapability)" in controller
@@ -356,7 +550,7 @@ def test_app_v1_curated_asset_slots_are_imported_to_unity() -> None:
     root = ASSET_MANIFEST.parent
 
     assert manifest["schema_version"] == 1
-    assert manifest["unity_root"] == "Assets/UI/ParrotApp"
+    assert manifest["unity_root"] == "Assets/ParrotApp/Art/AppV1"
 
     slots = {slot["slot"]: slot for slot in manifest["slots"]}
     assert {
@@ -394,7 +588,7 @@ def test_app_v1_curated_asset_slots_are_imported_to_unity() -> None:
 
 def test_arspike_mint_client_uses_gitignored_runtime_config_without_logging_secret() -> None:
     text = TOKEN_MINT_CLIENT.read_text(encoding="utf-8")
-    example = UNITY_ROOT / "Resources" / "parrot_config.json.example"
+    example = PARROT_APP / "Resources" / "parrot_config.json.example"
 
     assert 'Resources.Load<TextAsset>("parrot_config")' in text
     assert "mintUrl" in text
@@ -410,3 +604,50 @@ def test_arspike_mint_client_uses_gitignored_runtime_config_without_logging_secr
     assert config["mintUrl"].endswith(":7888/mint")
     assert config["mintSecret"] == "same-as-PARROT_MINT_SECRET-on-castle"
     assert config["room"] == "parrot-main"
+    assert config["appApiUrl"].endswith(":8790")
+    assert config["orchestratorUrl"].endswith(":7890")
+    assert config["orchestratorSecret"] == "dev-only-same-as-PARROT_ORCH_SECRET"
+
+
+def test_unity_project_has_no_legacy_duplicate_app_roots() -> None:
+    forbidden = [
+        UNITY_ROOT / "Scripts" / "ParrotApp",
+        UNITY_ROOT / "Scripts",
+        UNITY_ROOT / "UI" / "ParrotApp",
+        UNITY_ROOT / "UI",
+        UNITY_ROOT / "Models",
+        UNITY_ROOT / "NerTuningTest",
+        UNITY_ROOT / "Samples",
+        UNITY_ROOT / "MobileARTemplateAssets",
+        UNITY_ROOT / "Scenes" / "SampleScene.unity",
+        UNITY_ROOT / "TextMesh Pro",
+    ]
+
+    for path in forbidden:
+        assert not path.exists(), f"legacy Unity path should be removed: {path}"
+
+    assert SCRIPT_ROOT.is_dir()
+    assert (PARROT_APP / "Resources" / "parrot_models").is_dir()
+    assert (PARROT_APP / "Art" / "AppV1").is_dir()
+    assert (PARROT_APP / "Models").is_dir()
+
+
+def test_startup_resources_only_contains_runtime_loaded_paper_sprites() -> None:
+    text = FORMAL_STARTUP_UI.read_text(encoding="utf-8")
+    loaded = set(re.findall(r'LoadSprite\("([^"]+)"\)', text))
+    pngs = {path.stem for path in STARTUP_PAPER_RESOURCES.glob("*.png")}
+
+    assert pngs == loaded
+    for path in STARTUP_PAPER_RESOURCES.glob("*.png"):
+        assert path.with_suffix(path.suffix + ".meta").exists()
+
+
+def test_top_level_resources_only_contains_livekit_sdk_generated_version_file() -> None:
+    resources = UNITY_ROOT / "Resources"
+
+    assert not (resources / "parrot_config.json").exists()
+    assert not (resources / "parrot_config.json.example").exists()
+    assert not (resources / "parrot_models").exists()
+    if resources.exists():
+        allowed = {"LiveKitSdkVersionInfo.txt", "LiveKitSdkVersionInfo.txt.meta"}
+        assert {child.name for child in resources.iterdir()} <= allowed

@@ -14,7 +14,7 @@ Existing core surfaces, no new core API required for the first startup slice:
 | Orchestrator `GET /status` | `src/parrot/castle/orchestrator/status.py` | Web console, HUD badge | Aggregates runtime_config, Brain snapshot, drift, processes, containers, preflight, crash, restart stats. |
 | Orchestrator writes | `src/parrot/castle/orchestrator/server.py` | Unity startup, operator | `/set_active_line`, `/apply_room_profile`, `/force_unity_reconnect`, `/restart_component`, `/clear_runtime_config`, `/rolling_restart_brain`. |
 | Runtime config | `src/parrot/castle/runtime_config.py` | Brain, orchestrator | `file > BB > env > default`; orchestrator is the intended file writer. |
-| Tier registry | `data/registries/setting_change_tier.json` | Brain, Unity | C# mirror already exists at `unity/ArSpike/Assets/Scripts/ParrotApp/UI/SettingChangeTierDto.cs`. |
+| Tier registry | `data/registries/setting_change_tier.json` | Brain, Unity | C# mirror already exists at `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/SettingChangeTierDto.cs`. |
 | RoomSetting read model | `src/parrot/brain/room_setting.py` | Unity startup/menu | `compatibility` now exposes `tier`, `tier_label`, `tier_summary`, `tier_summary_zh`, `tier_ui_action`. |
 | Existing Brain RPCs | `src/parrot/brain/agent.py` | Unity after LiveKit join | `applyRoomProfile`, `setAppCapabilityMode`, `applyWorkspace`, `onSceneReady`, `onGosloPlaced`, plus menu canvas RPC mirrors. |
 
@@ -81,7 +81,7 @@ write scopes disjoint:
 
 | Workstream | Suggested branch | Write scope |
 |:---|:---|:---|
-| Unity App startup | `codex/app-startup-orchestrator` | `unity/ArSpike/Assets/Scripts/ParrotApp/**`, `unity/ArSpike/Assets/Resources/*.example`, App-side docs |
+| Unity App startup | `codex/app-startup-orchestrator` | `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/**`, `unity/ArSpike/Assets/ParrotApp/Resources/*.example`, App-side docs |
 | Web console read model | `codex/web-console-status` | `src/parrot/web_console/**`, `web/console/**`, Web-side docs |
 | Shared SSOT/prep | current prep branch | `.cursor/memory/**`, `codex_workspace/**` |
 

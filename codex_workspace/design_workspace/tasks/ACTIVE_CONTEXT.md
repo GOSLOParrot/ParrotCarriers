@@ -19,6 +19,8 @@ The formal App frontend is **not complete**.
   `codex_workspace/design_workspace/tasks/APP_WEB_CHAT_START_PROMPTS_20260513.md`.
 - Unity App business interfaces:
   `codex_workspace/design_workspace/backend_interface_map/app/`.
+- Unity App project inventory / directory SSOT:
+  `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md`.
 - Web Console business interfaces:
   `codex_workspace/design_workspace/backend_interface_map/web_console/`.
 - Shared core-interface candidates:
@@ -35,6 +37,15 @@ shared TODO board and lane-specific business-interface directories.
 The only App design workspace is:
 
 - `codex_workspace/design_workspace`
+
+The only formal Unity App center is:
+
+- `unity/ArSpike/Assets/ParrotApp/**`
+
+`unity/ArSpike/Assets/Scripts/ParrotApp/**` was a migration-era duplicate
+script root and is now removed/forbidden. Unity App chats must read the project
+inventory SSOT before touching scenes, scripts, resources, models, art, or Build
+Settings.
 
 The only current App V1 status/test report is:
 
@@ -69,10 +80,19 @@ Completed menu/preset foundations:
 
 Completed or selected assets:
 
-- Unity imported Wood drawer/button, Paper notes, NekoClaw, BBox frame, and icon sheets under `unity/ArSpike/Assets/UI/ParrotApp`.
-- Ner raw Spine assets exist under `unity/ArSpike/Assets/Models/Ner`.
+- Formal startup page runtime sprites are under
+  `unity/ArSpike/Assets/ParrotApp/Art/Startup/Resources/StartupPaperCraft`
+  and must exactly match sprites loaded by `ParrotAppStartupUiController`.
+- Unused startup placeholder candidates are separated under
+  `unity/ArSpike/Assets/ParrotApp/Art/Startup/Candidates/StartupPaperCraft`
+  and are not completion evidence.
+- Unity imported Wood drawer/button, Paper notes, NekoClaw, BBox frame, and icon sheets under `unity/ArSpike/Assets/ParrotApp/Art/AppV1`.
+  These are curated/selected App V1 assets, but most are not yet wired into
+  the formal startup scene; current direct usage is mostly smoke/test builder
+  evidence until formal controllers load them.
+- Ner raw Spine assets exist under `unity/ArSpike/Assets/ParrotApp/Models/Ner`.
 - Ner is now a selectable backend/model-menu candidate through
-  `unity/ArSpike/Assets/Resources/parrot_models/ner_skin2.json`.
+  `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/ner_skin2.json`.
 - Ner has first-pass Unity controller probes for Spine capabilities, cheek
   pinch, and body pickup/place. It is **not** yet a verified production Unity
   prefab or real-device model.
@@ -98,7 +118,7 @@ These are useful test evidence only. They must not be used as App completion evi
 
 ## Blocking Original Requirements
 
-1. Room Setting: the startup `SCENE` entry opens an App preset/config page for saved Room preset, LineA/LineB, Model, setting file, Scene, skin, Persona, Maid Team, and Mode. Here `Room` means App menu preset, not LiveKit Room.
+1. Room Setting: the startup `ROOM` entry opens an App preset/config page for saved Room preset, LineA/LineB, Model, setting file, Theme/skin, Persona, Maid Team, and startup `experience_mode`. Here `Room` means App menu preset, not LiveKit Room. User-visible `Theme` writes `skin_id`; internal `scene_profile_id` is a launch baseline selected by app/device/experience policy, not a desktop/indoor/outdoor RoomSetting row.
 2. LineB menu upgrade: the menu must show ASR/TTS readiness, Google ADC status, voiceprint/speaker state, echo risk, and echo handling mode.
 3. Ner second model: Ner must move from raw asset to selectable production model path. Startup must be able to choose Brain pipeline, model, setting, scene, and skin.
 
@@ -106,7 +126,7 @@ These are useful test evidence only. They must not be used as App completion evi
 
 - User-facing saved preset name: `Room`.
 - Internal/professional term: `RoomProfile`.
-- Startup RoomSetting exposes Room select/new/save plus six selectors: `Model`, `Room`, `Persona`, `Line`, `Scene`, `Maid Team`.
+- Startup RoomSetting exposes Room select/new/save plus six selectors: `Model`, `Room`, `Persona`, `Line`, `Theme`, `Maid Team`.
 - Do not use a bare startup field named `Mode`. The startup-page right-side lever is `experience_mode`; GOSLO behavior flags are `behavior_mode` and belong to runtime Brain/persona menus.
 - New interface contract: `.cursor/memory/architecture/Interface/app_v1_room_setting_room_profile_interface_20260510.md`.
 
@@ -129,9 +149,9 @@ These are useful test evidence only. They must not be used as App completion evi
   `codex_workspace/design_workspace/unity_ar_app/ner_roleplay_setting_obsidian_v0_20260511.md`
   (`profile: roleplay`, no `obsidian_uuid` in frontmatter).
 - Scene draft: `codex_workspace/design_workspace/unity_ar_app/ner_mochi_scene_v0_20260511.md`.
-- Model manifest: `unity/ArSpike/Assets/Resources/parrot_models/ner_skin2.json`.
-- Unity controller probe: `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/NerSpineController.cs`.
-- Unity animation audit: `unity/ArSpike/Assets/Scripts/ParrotApp/Editor/NerSpineAnimationAudit.cs`.
+- Model manifest: `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/ner_skin2.json`.
+- Unity controller probe: `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/NerSpineController.cs`.
+- Unity animation audit: `unity/ArSpike/Assets/ParrotApp/Editor/NerSpineAnimationAudit.cs`.
 - Current boundary: RoomSetting can recognize/select Ner; Unity Editor has verified 60 imported Spine animations and primary manifest handlers. First-pass cheek pinch code exists (`NerCheekPinchInteractor` + Spine cheek-bone offset/reset), and first-pass body pickup/place code exists (`NerPickupPlaceInteractor` + body capabilities). Unity prefab wiring, startup UI binding, joystick routing to `spine_walk`, expression-button UI, hit-region tuning, and real-device ASR/TTS pass remain pending.
 
 2026-05-11 LineB configurable + Ner gameplay longline:
@@ -195,13 +215,53 @@ These are useful test evidence only. They must not be used as App completion evi
   3. External Brain cold-start supervisor for RoomSetting Line selection
      (`PARROT_LLM_PIPELINE` + `PARROT_ACTIVE_LINE_PROFILE_ID`) before Unity
      START can switch LineB without manual restart.
-  4. Startup/RoomSetting Unity binding for saved RoomProfile, Line, Model, Persona, Scene, and Maid Team selectors.
+  4. Startup/RoomSetting Unity binding for saved RoomProfile, Line, Model, Persona, Theme/skin, and Maid Team selectors.
+
+2026-05-13 Unity project inventory audit:
+
+- Physical cleanup is complete enough for current App work: formal scene,
+  runtime scripts, resources, art, and models live under `Assets/ParrotApp/**`.
+- `Assets/Scripts/ParrotApp/**` is removed and forbidden. Sprint4 migration
+  notes are archived at
+  `codex_workspace/design_workspace/archive/unity_parrotapp_scripts_migration_20260429.md`
+  for historical/reference value only.
+- Top-level `Assets/Resources` is SDK-owned and may contain only LiveKit's
+  generated `LiveKitSdkVersionInfo.txt`; App config/manifests live under
+  `Assets/ParrotApp/Resources/**`.
+- Current formal scene status: `ParrotApp_Startup` has Camera, Directional
+  Light, `ParrotAppRoot`, `StartupDesignStage`, `RuntimeServices`, and
+  `AssetPreviewStage`. Startup UI, lifecycle, token mint, RoomManager, shutdown
+  bridge, startup flow, AppRoomSettingClient, OrchestratorClient,
+  LifecycleHeartbeatPublisher, AudioRouteDetector, MicrophonePublisher,
+  ARVideoPublisher, VideoStateReporter, and VideoTierReceiver are mounted under
+  formal scene services.
+- 2026-05-13 runtime audit update: local App API `127.0.0.1:8790`, token
+  mint `127.0.0.1:7888`, and LiveKit dev server `127.0.0.1:7880` were brought
+  up for smoke verification. RoomSetting snapshot/new/save/reload works through
+  the App HTTP facade; Python and Unity both joined LiveKit `parrot-main`;
+  Unity heartbeat rebound to the LiveKit DataChannel. No Brain participant was
+  running, so Unity correctly failed START at `brain_rpc_room_profile_sync_timeout`
+  and must not be marked full START complete yet.
+- Lifecycle cleanup note: `LifecycleShutdownService` synchronous quit drain no
+  longer blocks on SDK `UnpublishTrack`; latest Unity Play Mode exit after a
+  connected room showed 0 Console errors/warnings.
+- Current not-complete boundary: this is still a whitebox startup/main-ready
+  shell. Full formal AR homepage, production model prefab wiring, real-device
+  LiveKit/LineB pass, and final canvas menu implementation remain pending.
+- 2026-05-13 homepage/LiveKit continuation audit: Brain RPC testing does not
+  require phone or voice, but it does require a Brain / LiveKit Agents
+  participant in the same room. Phone/device testing is still required for AR
+  camera, microphone permission, Bluetooth route switching, app switching, and
+  full voice media. `UI/AppV1MetaUiController.cs` is now classified as a
+  legacy Smoke/reference controller, not formal homepage evidence; useful HUD,
+  tool drawer, camera, workdesk, note, Focus, and BBox ideas must be re-bound to
+  the formal startup/lifecycle contracts before use.
 
 ## App Frontend Longline
 
 1. **调研**：read the source design docs, HTML sketches, interface docs, Unity Build Settings, existing scenes, assets, and App scripts before implementation.
 2. **启动页**：implement the landscape startup page with `GOSLO Parrot`, `SCENE`, `START`, Mode lever, and model portrait slot.
-3. **Room Setting**：complete the preset/config page with saved Room/RoomProfile, Model, Room, Persona, Line, Scene, and Maid Team selectors. The startup lever is `experience_mode`; GOSLO behavior flags stay runtime-owned.
+3. **Room Setting**：complete the preset/config page with saved Room/RoomProfile, Model, Room, Persona, Line, Theme/skin, and Maid Team selectors. The startup lever is `experience_mode`; GOSLO behavior flags stay runtime-owned.
 4. **启动转场**：create an independent IPoAC progress page; permission checks, Mint, and LiveKit connect run during this transition. Successful connect must stay silent.
 5. **AR 主界面**：add a formal App scene to Build Settings and stop treating the smoke scene as the App entry.
 6. **放置与问候**：after AR plane ready, wait for user placement. Only after placement should GOSLO wake/question and greet.
@@ -216,15 +276,16 @@ These are useful test evidence only. They must not be used as App completion evi
 1. `codex_workspace/design_workspace/tasks/ACTIVE_CONTEXT.md`
 2. `codex_workspace/app_web_parallel_workflow_20260513.md`
 3. `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md`
-4. `codex_workspace/design_workspace/tasks/APP_WEB_PARALLEL_TODOLIST_20260513.md`
-5. `codex_workspace/design_workspace/unity_ar_app/startup_menu_design_v0_20260509.md`
-6. `codex_workspace/design_workspace/sketches/startup_menu_landscape_v0.html`
-7. `codex_workspace/design_workspace/unity_ar_app/main_hud_landscape_v0_20260509.md`
-8. `codex_workspace/design_workspace/sketches/main_hud_landscape_v0.html`
-9. `.cursor/memory/architecture/Interface/app_v1_room_setting_room_profile_interface_20260510.md`
-10. `codex_workspace/design_workspace/tasks/lineb_ner_gameplay_longline_todo_20260511.md` for LineB/Ner implementation planning.
-11. `codex_workspace/design_workspace/tasks/ner_unity_tuning_chat_prompt_20260511.md` when opening a dedicated Ner prefab/device-feel tuning chat.
-12. Backend interface documents only after the page flow is understood.
+4. `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md`
+5. `codex_workspace/design_workspace/tasks/APP_WEB_PARALLEL_TODOLIST_20260513.md`
+6. `codex_workspace/design_workspace/unity_ar_app/startup_menu_design_v0_20260509.md`
+7. `codex_workspace/design_workspace/sketches/startup_menu_landscape_v0.html`
+8. `codex_workspace/design_workspace/unity_ar_app/main_hud_landscape_v0_20260509.md`
+9. `codex_workspace/design_workspace/sketches/main_hud_landscape_v0.html`
+10. `.cursor/memory/architecture/Interface/app_v1_room_setting_room_profile_interface_20260510.md`
+11. `codex_workspace/design_workspace/tasks/lineb_ner_gameplay_longline_todo_20260511.md` for LineB/Ner implementation planning.
+12. `codex_workspace/design_workspace/tasks/ner_unity_tuning_chat_prompt_20260511.md` when opening a dedicated Ner prefab/device-feel tuning chat.
+13. Backend interface documents only after the page flow is understood.
 
 ## Route Rules
 

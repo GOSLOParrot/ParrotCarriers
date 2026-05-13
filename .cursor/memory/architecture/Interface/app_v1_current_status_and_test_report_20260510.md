@@ -1,4 +1,4 @@
----
+﻿---
 status: active
 category: app-v1-status-report
 status_note: "Single clean App V1 status/test report after route cleanup. It replaces longline/self-check/smoke-derived App-completion claims. Formal App frontend remains not complete."
@@ -52,12 +52,12 @@ The production frontend must be validated from the startup page through the real
 
 | Slot | Current asset state |
 |:--|:--|
-| Wood drawer / wood button | Selected under `unity/ArSpike/Assets/UI/ParrotApp/ToolCabinet/`. |
-| Paper notes | Selected under `unity/ArSpike/Assets/UI/ParrotApp/Notifications/`. |
+| Wood drawer / wood button | Selected under `unity/ArSpike/Assets/ParrotApp/Art/AppV1/ToolCabinet/`. |
+| Paper notes | Selected under `unity/ArSpike/Assets/ParrotApp/Art/AppV1/Notifications/`. |
 | NekoClaw | Selected as `Notifications/NekoClaw_Cutout.png`. |
 | BBox frame | Placeholder/selected frame under `Icons/BoundaryBox_Frame.png`. |
 | Icon atlas | Placeholder icon source under `Icons/Items_16x16.png` and `Icons/Adventure_Icons.png`. |
-| Ner | Raw Spine assets under `unity/ArSpike/Assets/Models/Ner/`; not yet selectable in production App flow. |
+| Ner | Raw Spine assets under `unity/ArSpike/Assets/ParrotApp/Models/Ner/`; not yet selectable in production App flow. |
 
 ## 5. Blocking Tasks
 
@@ -211,3 +211,4 @@ RoomSetting Line cold-start + Brain lifecycle regression on 2026-05-11:
 .\.venv\Scripts\python.exe -m py_compile src\parrot\brain\agent.py src\parrot\brain\room_setting.py src\parrot\brain\photo_upload_server.py src\parrot\dsg\trigger_listener.py src\parrot\brain\line_profile.py src\parrot\brain\line_status.py
 passed
 ```
+

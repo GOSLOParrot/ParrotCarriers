@@ -229,11 +229,12 @@ def test_validate_only_on_goslo_default_baseline(capsys):
     baseline = (
         _REPO_ROOT
         / "unity"
-        / "ArSpike"
-        / "Assets"
-        / "Resources"
-        / "parrot_models"
-        / "goslo_default.json"
+            / "ArSpike"
+            / "Assets"
+            / "ParrotApp"
+            / "Resources"
+            / "parrot_models"
+            / "goslo_default.json"
     )
     code, out, err = _run_main(
         ["--validate-only", "--in", str(baseline)],

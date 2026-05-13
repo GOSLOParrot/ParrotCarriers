@@ -25,7 +25,13 @@ MODEL_MANIFEST_DIR_ENV = "PARROT_MODEL_MANIFEST_DIR"
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _UNITY_MODEL_MANIFEST_DIR = (
-    _REPO_ROOT / "unity" / "ArSpike" / "Assets" / "Resources" / "parrot_models"
+    _REPO_ROOT
+    / "unity"
+    / "ArSpike"
+    / "Assets"
+    / "ParrotApp"
+    / "Resources"
+    / "parrot_models"
 )
 
 

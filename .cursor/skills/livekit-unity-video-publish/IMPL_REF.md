@@ -1,4 +1,4 @@
----
+﻿---
 name: livekit-unity-video-publish
 description: Use when working with the AR video pipeline — Unity publish to LiveKit, Gemini Live consume, Python on-demand frame capture, DSG Worker interface, captureSnapshot RPC vs ByteStream, AR camera blit / RenderTexture / TextureVideoSource, Simulcast / VideoTier 推流配置, 黑帧 / stale 帧 / 首帧门
 ---
@@ -291,7 +291,7 @@ class DSGProcessor(BaseProcessor):  # Phase 3+, 需要 A10 GPU
 
 | 想了解… | 去哪里 |
 |:--------|:------|
-| 视频发布 Unity 代码 | `unity/ParrotDev/Assets/Scripts/LiveKit/ARVideoPublisher.cs`（Sprint4 起搬迁到 `unity/ArSpike/Assets/Scripts/ParrotApp/`） |
+| 视频发布 Unity 代码 | `unity/ParrotDev/Assets/Scripts/LiveKit/ARVideoPublisher.cs`（Sprint4 起搬迁到 `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/`） |
 | 麦克风发布 Unity 代码 | `unity/ParrotDev/Assets/Scripts/LiveKit/MicrophonePublisher.cs` |
 | Brain Agent 视频输入配置 | `src/parrot/brain/agent.py` |
 | DSG Processor 接口 | `src/parrot/bus/processor_hook.py` |
@@ -305,3 +305,4 @@ class DSGProcessor(BaseProcessor):  # Phase 3+, 需要 A10 GPU
 | **可调参数表（统一一处）** | `livekit-unity-lifecycle/IMPL_REF.md` §10 |
 | **Sprint4 Phase 3 决策索引** | `docs/sprint4_research/result/INDEX_for_phase3.md` |
 | **Phase 3 厚稿（lifecycle 决策原因）** | `docs/sprint4_research/result/05_lifecycle_and_defensive_design.md` |
+

@@ -1,4 +1,4 @@
----
+﻿---
 status: ratified-step1 / pending-unity-step2
 category: protocol-spec
 status_note: "GOSLO 模型 Manifest 协议 v1 — Step 1 (schema + meta plumbing + 文档) 落地，Step 2 (Unity ModelDriver / GosloLegacyController shim) 与 Step 3 (Brain animate model_id 参数) 待跟进。"
@@ -54,8 +54,8 @@ related:
 | **暗线审计 / 残余债清单 / p2.5 p3 前瞻需求注记** | `goslo_modularization_residual_debt_20260506.md` |
 | **Step 5 完成报告** | `goslo_modularization_completion_20260506.md` |
 | **AI CLI** | `src/scripts/asset_to_manifest.py` |
-| Unity ModelDriver / GosloLegacyController | `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/` (Step 2 后回填) |
-| 默认 GOSLO manifest | `unity/ArSpike/Assets/Resources/parrot_models/goslo_default.json` (Step 2 后回填) |
+| Unity ModelDriver / GosloLegacyController | `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/` (Step 2 后回填) |
+| 默认 GOSLO manifest | `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/goslo_default.json` (Step 2 后回填) |
 | AI CLI | `src/scripts/asset_to_manifest.py` (Step 4 后回填) |
 
 ---
@@ -198,7 +198,7 @@ Reserved 集合 = `frozenset(a.value for a in ParrotAnimation)`，定义在 `mod
 
 ### §4.1 Step 1 — 准备 Unity 资产
 
-把模型 prefab 放到 `unity/ArSpike/Assets/Resources/parrot_models/<model_id>.prefab`：
+把模型 prefab 放到 `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/<model_id>.prefab`：
 - 若来源是 `.fbx`：先 Drag-In Unity，调好材质，做成 Prefab
 - 若来源是 `.glb`：先用 [glTFast](https://github.com/atteneder/glTFast) 导入
 - 若来源是 MMD `.pmx + .vmd`：见 §5 walkthrough
@@ -207,7 +207,7 @@ prefab 必须能在场景里正常显示（不依赖编辑器 Prefab Variant）�
 
 ### §4.2 Step 2 — 写 IParrotController 实现
 
-新建 `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/<ModelName>Controller.cs`：
+新建 `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/<ModelName>Controller.cs`：
 
 ```csharp
 using ParrotApp.Parrot;  // IParrotController 接口（Step 2 落地后填详情）
@@ -247,7 +247,7 @@ namespace ParrotApp.Parrot
 
 ### §4.3 Step 3 — 写 manifest.json
 
-新建 `unity/ArSpike/Assets/Resources/parrot_models/<model_id>.json`：
+新建 `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/<model_id>.json`：
 
 ```json
 {
@@ -283,7 +283,7 @@ python -c "
 from pathlib import Path
 import json
 from parrot.shared.model_manifest import ModelManifest
-raw = json.loads(Path('unity/ArSpike/Assets/Resources/parrot_models/owl_v1.json').read_text(encoding='utf-8'))
+raw = json.loads(Path('unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/owl_v1.json').read_text(encoding='utf-8'))
 m = ModelManifest.model_validate(raw)
 print('OK', m.model_id, 'reflex=', m.parrot_reflex_enabled, 'caps=', m.declared_capability_ids)
 "
@@ -310,7 +310,7 @@ Step 2 落地后回填具体场景挂载步骤（ModelDriver / ParrotRegistry Ga
    - 安装 [mmd_tools](https://github.com/UuuNyaa/blender_mmd_tools) Blender 插件
    - 导入 `.pmx` → 加载 `.vmd` → 烘焙到骨骼动画 → FBX 导出
    - 导出时勾选 Apply Transform / Add Leaf Bones=False / Animation=Baked
-3. 导出的 FBX **直接拖入** `unity/ArSpike/Assets/Resources/parrot_models/<model_id>/`
+3. 导出的 FBX **直接拖入** `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/<model_id>/`
 
 ### §5.2 Unity 侧准备
 
@@ -432,11 +432,11 @@ Brain LLM 默认只会调 `animate(animation_name="idle")` — 因为它只学�
 
 | 项 | 状态 | 落点 |
 |:--|:--|:--|
-| Unity `IParrotController` 接口完整签名 | Step 2 | `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/IParrotController.cs` |
+| Unity `IParrotController` 接口完整签名 | Step 2 | `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/IParrotController.cs` |
 | Unity `ModelDriver` 实现 + Resources 加载约定 | Step 2 | 同目录 `ModelDriver.cs` |
 | `ParrotRegistry` P1 单 active stub | Step 2 | 同目录 `ParrotRegistry.cs` |
 | `GosloLegacyController` shim（包装现有 AnimationDriver 行为） | Step 2 | 同目录 `GosloLegacyController.cs` |
-| `Resources/parrot_models/goslo_default.json`（兼容性基线） | Step 2 | `unity/ArSpike/Assets/Resources/parrot_models/` |
+| `Resources/parrot_models/goslo_default.json`（兼容性基线） | Step 2 | `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/` |
 | `EcpCommandDto` 是否加 `meta` 字段 / 还是 RPC payload 加 `model_id` 顶层字段 | Step 2 决策 | `EcpDtos.cs` 或 `FlyToPayload` / `AnimatePayload` |
 | Brain `animate.py` 加 `model_id` 参数 | Step 3 | `src/parrot/brain/tools/animate.py` |
 | AI CLI `asset_to_manifest.py` MVP | Step 4 | `src/scripts/asset_to_manifest.py` |
@@ -452,3 +452,4 @@ Brain LLM 默认只会调 `animate(animation_name="idle")` — 因为它只学�
   - `tests/test_scheduler/test_ecp.py` 新增 2 个 meta kwarg 用例全绿
   - 既有 `tests/test_ecp_event/test_cs_parity.py` 4/4 不破
   - Phase 4 §8 wire schema 0 漂移
+

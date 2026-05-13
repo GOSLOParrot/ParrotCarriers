@@ -24,7 +24,7 @@ last_reviewed: 2026-04-29
 ArSpike 内部脚本治理规则：
 
 - 入口：`unity/ArSpike/README.md` —— ArSpike 双角色说明 + AR Foundation 5.1.5 版本锁
-- 迁移台账：`unity/ArSpike/Assets/Scripts/ParrotApp/MIGRATION.md` —— 当前迁移状态、依赖搬迁顺序、不搬迁清单、不允许误读
+- 迁移台账：`codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md` —— 当前迁移状态、依赖搬迁顺序、不搬迁清单、不允许误读
 
 ParrotDev 与 ArSpike 同时存在期间，ECP 协议代码以 ArSpike 为准；ParrotDev 那份 `EcpDtos.cs` 仅作对照保留，不再同步。
 
@@ -179,8 +179,8 @@ ParrotDev 与 ArSpike 同时存在期间，ECP 协议代码以 ArSpike 为准；
 | 文件 | 角色 |
 |:--|:--|
 | `unity/ArSpike/README.md` | ArSpike 双角色 + AR Foundation 5.1.5 版本锁 + xr.management 不钉的理由 |
-| `unity/ArSpike/Assets/Scripts/ParrotApp/MIGRATION.md` | 当前迁移状态 + 依赖搬迁顺序 + 不搬迁清单 + 不允许误读 |
-| `unity/ArSpike/Assets/Scripts/ParrotApp/RPC/EcpDtos.cs` | Sprint4 ECP-minimal 已迁移 |
+| `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md` | 当前迁移状态 + 依赖搬迁顺序 + 不搬迁清单 + 不允许误读 |
+| `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/RPC/EcpDtos.cs` | Sprint4 ECP-minimal 已迁移 |
 
 ## 6. 外部调研产物（非事实源，按需 @ 引用）
 
@@ -241,3 +241,4 @@ sprint4_ecp_minimal_audit_20260429.md (审计模板)
   - 新增 §2.6：App 完成度审计总 chat + Sub-Chat A/B 入场 prompt（含新 P2.5：2D 工作区）
   - 新增 §2.7：ECP 协议 + GOSLO 模块化相关文档索引补全
   - **新 P2.5 需求**：2D 独立工作区（nanobot 汇报批改 + Google 日程批改 + 工作区模块连接）纳入 AR 工作区范围
+

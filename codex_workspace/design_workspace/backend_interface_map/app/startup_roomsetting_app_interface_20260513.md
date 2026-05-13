@@ -29,9 +29,13 @@ Related TODO: APP-001
 
 ### A. Source Readback
 
-- Startup design says `SCENE` opens RoomSetting; first screen keeps `GOSLO Parrot`, model slot, `SCENE`, `START`, and a visual Mode lever.
-- RoomSetting interface says user-facing `Room` maps to internal `RoomProfile`, with selectors for `Model`, `Room`, `Persona`, `Line`, `Scene`, and `Maid Team`.
-- App/Web route decision says `Maid Team` is a logical AgentTeam layer; V1 may render fixed `CatMaid Team` until core AgentTeam fields are confirmed.
+- Startup whitebox now uses a settings entry to open RoomSetting; the first screen keeps a large product title, `设置/ROOM`, `开始/START`, and a PlayMode / `experience_mode` lever.
+- RoomSetting interface says user-facing `Room` maps to internal `RoomProfile`.
+  The Unity startup page now renders selectors for `Room`, `Model`,
+  `Persona`, `Line`, `Theme`, and `Agent Team`. `Theme` is the user-visible
+  label for `skin_id` / UI suite. The older backend `scene_profile_id` remains
+  an internal launch baseline selected by app/device/experience policy.
+- App/Web route decision says `Agent Team` is a logical AgentTeam layer; V1 may render fixed `CatMaid Agent Team` until core AgentTeam fields are confirmed.
 
 ### B. Existing Core Interfaces
 
@@ -41,31 +45,64 @@ Existing pieces that can compose the App V1 draft:
 
 - `RoomSettingService.snapshot()` exposes rooms, selectors, line profiles, and compatibility.
 - `RoomSettingService.preview/save/apply()` supports draft preview, persistence, and active apply.
-- `RoomProfile` already stores model, persona, line, line profile, scene, experience mode, workspace, skin, and setting refs.
+- `RoomProfile` already stores model, persona, line, line profile,
+  `scene_profile_id`, experience mode, workspace, `skin_id`, and setting refs.
 - Unity `AppStartupConfigDto` mirrors startup fields for START payloads.
 - Unity `AppV1MetaUiController` already has a runtime-built startup shell and local selector state.
 
-Existing pieces are enough for a first App UI pass except dynamic Maid Team
+Existing pieces are enough for a first App UI pass except dynamic Agent Team
 selection.
 
 ### C. Missing Core Surface
 
 | Candidate | Landing module | SSOT needed | Unity DTO mirror | Notes |
 |:--|:--|:--|:--|:--|
-| CORE-001 `agent_team_id` or `maid_team_id` on effective RoomSetting selection | Brain / Scheduler / Orchestrator | yes | yes, once confirmed | Needed to move `Maid Team` beyond fixed `CatMaid Team`. |
+| CORE-001 `agent_team_id` on effective RoomSetting selection | Brain / Scheduler / Orchestrator | yes | yes, once confirmed | Needed to move `Agent Team` beyond fixed `CatMaid Agent Team`. |
 | CORE-002 AgentTeam registry | Scheduler / Nanobot / Orchestrator | yes | read-only summary only | App needs safe labels/capabilities/restart tier, not Web admin internals. |
 
-Until CORE-001/002 are confirmed, App renders a fixed `CatMaid Team` selector
+Until CORE-001/002 are confirmed, App renders a fixed `CatMaid Agent Team` selector
 with a clear V1 placeholder state and does not persist a new field into
 RoomProfile.
 
 ### D. Observable Completion Signal
 
-- Startup `SCENE` opens RoomSetting, not a LiveKit room picker.
-- RoomSetting shows the six selectors in one page.
-- Selecting `GOSLO default` or `Ner LineB` updates the model/persona/line/scene/skin preview.
-- `Maid Team` is visible as fixed `CatMaid Team` and marked as V1 fixed until shared core is ratified.
+- Startup `设置/ROOM` opens RoomSetting, not a LiveKit room picker.
+- RoomSetting shows the six selectors as rows in one page.
+- Selecting `GOSLO default` or `Ner LineB` updates the model/persona/line/theme preview.
+- `New` creates a backend draft when the App API is available; without the
+  backend it creates only a clearly marked local draft. `Save` calls
+  `saveRoomProfile` and must not pretend to persist when the backend is down.
+- `Agent Team` is visible as fixed `CatMaid Agent Team` and marked as V1 fixed until shared core is ratified.
 - No Web-only Nanobot/MCP admin fields appear in Unity DTOs.
+
+2026-05-13 Unity whitebox update:
+
+- Formal startup now uses a minimal paper/wood placeholder slot set under
+  `Assets/ParrotApp/Art/Startup/Resources/StartupPaperCraft/**`.
+- First screen is intentionally sparse: large Chinese-first title
+  `AR 提醒助手`, `设置/ROOM`, `开始/START`, a PlayMode / `experience_mode`
+  lever, and a Chinese/English switch. Default language is Chinese.
+- RoomSetting is a separate full page, not a popup overlay on the first screen.
+- RoomSetting uses six selector rows: `Room`, `Model`, `Persona`, `Line`,
+  `Theme`, and `Agent Team`; it does not expose a separate `Mode` selector in
+  this whitebox.
+- `Theme` writes `skin_id`. It is where mansion paper / GOSLO classic /
+  Ner mochi room / pirate prototype UI suites belong.
+- `scene_profile_id` is not a user-facing desktop/indoor/outdoor picker in
+  startup RoomSetting. Environment/baseline selection should be automatic
+  through the AR/device/experience component.
+- The first-screen lever is the startup PlayMode / `experience_mode` selector,
+  not a RoomSetting row and not a UI-only local preview switch. Current whitebox
+  cycles the backend-registered values `ar_companion`, `2d_hall`, and
+  `room_only`.
+- `ar_companion` still requires an AR-capable internal baseline. Unity
+  auto-restores `scene_id=ar_handheld` when the PlayMode lever returns to AR,
+  and backend compatibility blocks `desktop_webcam + ar_companion` drafts from
+  non-startup clients. This is runtime baseline policy, not a user Theme row.
+- `START` sends the current RoomSetting draft as `room_profile` to
+  `applyRoomProfile`, not just `room_profile_id`, so Model / Persona / Line /
+  `scene_profile_id` / `skin_id` / setting refs selected in Unity reach Brain before capability
+  policy sync.
 
 ## Slice: START Transition And LiveKit / LineB Status
 
@@ -100,7 +137,7 @@ Possible later shared gap:
 
 | Candidate | Landing module | SSOT needed | Unity DTO mirror | Notes |
 |:--|:--|:--|:--|:--|
-| CORE-003 `/status` extension for active AgentTeam and nanobot instance health | Orchestrator / ECS status | yes | small HUD summary only | Needed after `Maid Team` becomes dynamic; not required for first fixed selector. |
+| CORE-003 `/status` extension for active AgentTeam and nanobot instance health | Orchestrator / ECS status | yes | small HUD summary only | Needed after `Agent Team` becomes dynamic; not required for first fixed selector. |
 
 ### D. Observable Completion Signal
 
@@ -111,6 +148,15 @@ Possible later shared gap:
 - LineB selection clearly shows if Brain cold restart is required.
 - `selection_drift=true` is visible as "selected X, running Y" instead of pretending the hot switch happened.
 - Pause/resume/reconnect status is shown through health/lifecycle status, not by exposing backend behavior-tree state.
+
+2026-05-13 Unity whitebox update:
+
+- `START` calls `AppStartupFlowController.StartFromConfig` with the selected
+  `experience_mode` from the startup PlayMode lever.
+- The first screen exposes no token, permission, or backend debugging prose; those
+  states remain in transition/HUD surfaces.
+- The old `StartupModern` temporary resources are no longer referenced by the
+  formal startup scene.
 
 ## Slice: Main Ready Contract
 
@@ -151,3 +197,203 @@ When startup completes:
 - Photo, focus, and BBox controls either work or show a local missing-controller state.
 - Selected model id is consistent across RoomProfile, Unity startup config, and model driver.
 - No greeting or first proactive speech happens before explicit placement.
+
+## Slice: 2026-05-13 Unity Directory Re-Audit And Cold-Load Implementation
+
+Owner chat: Unity App
+Status: done_static_verified
+Related TODO: APP-001, APP-002, APP-003, APP-005
+
+### A. Source Readback
+
+- Unity project root is `unity/ArSpike`. The formal App scene is
+  `Assets/ParrotApp/Scenes/ParrotApp_Startup.unity`.
+- Version locks are valid: Unity `2022.3.62f3`, AR Foundation/ARCore/ARKit
+  `5.2.2`, LiveKit Unity SDK git pin
+  `7d868ef5cc5615c30a3ef4b73ae0dbb5cc4d6796`.
+- Formal App inventory is now centralized in
+  `unity_project_inventory_app_ssot_20260513.md`: `Assets/ParrotApp/**` is the
+  only formal App center, while `Assets/Tests/Smoke/**` and
+  `Assets/Tests/NerTuning/**` are test evidence only.
+- Removed/forbidden legacy roots include `Assets/Scripts/ParrotApp/**`,
+  top-level App-owned `Assets/Resources/**`, top-level `Assets/UI/**`,
+  top-level `Assets/Models/**`, `Assets/Samples/**`,
+  `Assets/MobileARTemplateAssets/**`, `Assets/Scenes/SampleScene.unity`, and
+  `Assets/TextMesh Pro/**`. The only allowed top-level `Assets/Resources`
+  content is the LiveKit SDK-generated `LiveKitSdkVersionInfo.txt`.
+
+### B. Existing Core Interfaces
+
+- True cold RoomSetting load uses the local App HTTP monitor facade before
+  LiveKit: `GET /api/app/room-setting`, `POST /api/app/room-setting/preview`,
+  `new`, `save`, and `apply`.
+- In-room Brain RPC remains the START sync surface after LiveKit connects:
+  `applyRoomProfile`, `setAppCapabilityMode`, `onSceneReady`, and
+  `onGosloPlaced`.
+- Tier 1 LineB cold-start now goes through Castle orchestrator HTTP before
+  token mint / LiveKit connect: `POST /apply_room_profile` or
+  `POST /set_active_line` writes `data/runtime_config.json`. It does not
+  restart Brain in this flow.
+
+### C. Missing Core Surface
+
+No new shared core gap was found for startup cold-load. The App can consume the
+existing App HTTP facade plus the existing orchestrator Tier 1 endpoints. Agent
+Team and canvas/menu unification remain covered by CORE-001, CORE-002, and
+CORE-007 in the candidate queue.
+
+### D. Observable Completion Signal
+
+- Build Settings starts from `Assets/ParrotApp/Scenes/ParrotApp_Startup.unity`;
+  `SampleScene` is removed from Build Settings and from the active Assets tree.
+- RoomSetting selector data comes from the App backend snapshot when available,
+  with a local fallback only when the backend is unavailable.
+- User-visible `Theme` means `skin_id` / UI suite. Internal
+  `scene_profile_id` remains the runtime launch baseline. Startup mode is
+  `experience_mode`, not a bare `Mode`.
+- START fails if a Tier 1 LineB switch requires orchestrator but no
+  orchestrator endpoint is configured.
+- Unity inspects LiveKit RPC response payloads, so `status:error` and
+  `result.success:false` are not treated as successful START.
+- `LifecycleHeartbeatPublisher` is rebound to a LiveKit DataChannel transport
+  after the room connects.
+- Main Ready only means transport and UI are ready. `onSceneReady` and
+  `onGosloPlaced` stay separate gates; greeting/dialogue remains blocked until
+  placement.
+- Verification: `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py
+  tests/test_brain/test_app_first_version_facade.py tests/test_brain/test_menu_workspace.py
+  tests/test_brain/test_app_v1_monitor.py -q` passed with 82 tests. Unity MCP
+  script validation found 0 compile errors on the changed startup/backend/
+  lifecycle scripts.
+- Live runtime verification: local App API `127.0.0.1:8790`, token mint
+  `127.0.0.1:7888`, and LiveKit dev server `127.0.0.1:7880` were brought up
+  for a smoke pass. App HTTP RoomSetting snapshot/new/save/reload works, with
+  saved smoke files isolated under `codex_workspace/design_workspace/artifacts/`.
+  A Python LiveKit client joined `parrot-main`, and Unity START joined the same
+  room as `unity-codex-smoke-*`.
+- Current LiveKit boundary: this proves token mint + LiveKit room join + Unity
+  DataChannel heartbeat binding, not full App START. No Brain participant was
+  running, so Unity correctly failed at `brain_rpc_room_profile_sync_timeout`
+  instead of showing fake success.
+- Shutdown fix: the formal scene now exits Play Mode after a connected room
+  with 0 Console errors/warnings. `LifecycleShutdownService` uses a synthetic
+  delta for synchronous quit drain and publishers skip blocking on SDK
+  `UnpublishTrack` during `OnApplicationQuit`.
+- Formal scene wiring update: `RuntimeServices` now explicitly mounts
+  AppRoomSettingClient, OrchestratorClient, LifecycleHeartbeatPublisher,
+  AudioRouteDetector, MicrophonePublisher, ARVideoPublisher,
+  VideoStateReporter, and VideoTierReceiver. Startup flow references for
+  RoomSetting, heartbeat, mic, video, and orchestrator are non-null.
+  A true media-ready START still requires a live server/device pass.
+
+## Slice: 2026-05-13 Homepage And LiveKit Runtime Continuation Audit
+
+Owner chat: Unity App
+Status: in_progress
+Related TODO: APP-013, APP-015, APP-016
+
+### A. Source Readback
+
+- Brain RPC does not require a real phone or user voice by itself. It requires a
+  Brain / LiveKit Agents participant in the same LiveKit room. The latest local
+  smoke did not run that participant, so Unity correctly stopped at
+  `brain_rpc_room_profile_sync_timeout`.
+- Real phone tests are still required for AR camera, microphone permission
+  prompts, Android audio route changes, Bluetooth SCO/A2DP behavior, OS
+  background/resume, and the full voice/ASR/TTS loop.
+- `AppV1MetaUiController` is an older runtime-built App shell used by the Smoke
+  builder and as a design reference. It is not mounted in
+  `ParrotApp_Startup.unity`, still contains legacy terms such as `Scene` in
+  RoomSetting and `LOCAL PREVIEW`, and should not be treated as formal homepage
+  completion evidence.
+- The useful reference pieces inside `AppV1MetaUiController` are the HUD shape,
+  low-occlusion tool drawer, settings panel, camera WYSIWYG overlay, photo
+  entry, Focus/BBox draggable overlays, 2D workdesk, Nanobot paper note stack,
+  placement gate buttons, and local capability-mode controls. They need to be
+  re-bound to the formal startup/lifecycle contracts before production use.
+
+### B. Existing Core Interfaces
+
+- App HTTP facade:
+  `GET /api/app/room-setting`, `POST /api/app/room-setting/preview`,
+  `POST /api/app/room-setting/new`, `POST /api/app/room-setting/save`,
+  `POST /api/app/room-setting/apply`.
+- Token and runtime control:
+  token mint `POST /mint`, orchestrator `POST /apply_room_profile`,
+  `POST /set_active_line`, and dev-only `POST /force_unity_reconnect`.
+- LiveKit RPC after join:
+  `applyRoomProfile`, `setAppCapabilityMode`, `applyWorkspace`,
+  `onSceneReady`, `onGosloPlaced`, and the legacy video degraded path
+  `onVideoDegraded`.
+- LiveKit DataChannel topics currently emitted by Unity:
+  `parrot.ecp.state`, `parrot.ecp.health`,
+  `parrot.ecp.intent_disconnect`, and `parrot.ecp.event`.
+- LineB audio backend state exists through
+  `session/audio_route_policy`, `session/lineb_recent_tts_segments`,
+  `session/lineb_voice_activity`, and
+  `transient/lineb_last_input_decision`.
+
+### C. Missing Core Surface
+
+No new shared core field is required before formal homepage loading can start.
+The next work should use the existing App HTTP facade, LiveKit RPC/DataChannel,
+RoomSetting, menu registry, canvas snapshot, and LineB status surfaces.
+
+Open implementation gaps:
+
+- Brain RPC full START test is pending until a Brain participant joins the same
+  LiveKit room.
+- Unity has local audio route detection and mic republish logic, but it does
+  not yet push route policy to Brain `session/audio_route_policy`. The backend
+  route policy endpoint/RPC exists; the Unity producer hook is intentionally
+  reserved.
+- `RoomManager.ReconnectUsingCachedCredentials()` is editor/debug level. A
+  production reconnect loop with fresh token re-mint, network flap handling,
+  and bounded retry/backoff is not complete.
+- `RoomManagerLifecycleBridge` reports room/Brain presence and passive
+  disconnects, but `ReportRunning()` still needs a formal main-ready owner that
+  waits for HUD/menu/model/media gates.
+- Formal homepage/menu is still a placeholder in
+  `ParrotAppStartupUiController`; the old `AppV1MetaUiController` should be
+  demoted/renamed in a separate cleanup slice after its reusable pieces are
+  copied into the formal homepage plan.
+
+### D. Observable Completion Signal
+
+Current completed facts:
+
+- Formal scene starts from `ParrotApp_Startup.unity` and mounts the runtime
+  services needed for RoomSetting, token mint, LiveKit, heartbeat, mic/video,
+  lifecycle, and orchestrator.
+- Startup RoomSetting can load, preview, new, save, and build a full
+  RoomProfile draft. Theme writes `skin_id`; `scene_profile_id` remains an
+  internal baseline.
+- Local smoke proves App API, token mint, LiveKit room join, and DataChannel
+  heartbeat binding. It does not prove Brain RPC success or production media.
+- Shutdown quit drain was fixed so exiting Play Mode after a connected room no
+  longer hangs on SDK unpublish waits.
+
+Do not mark complete yet:
+
+- Brain RPC START sync (`applyRoomProfile` and `setAppCapabilityMode`) with a
+  live Brain participant.
+- True LiveKit connection stability under network flap, app switching, token
+  expiry, reconnect, and long background.
+- Bluetooth/microphone route switching on iQOO Neo9 or other real Android
+  hardware.
+- Formal homepage HUD/menu loading, canvas snapshot binding, model prefab
+  readiness, and `ReportRunning()` ownership.
+
+Next TODO draft for the homepage/LiveKit continuation:
+
+1. Demote or rename the old `AppV1MetaUiController` to an explicit
+   smoke/reference controller, preserving `.meta` and updating Smoke tests.
+2. Define formal homepage gates: RoomSetting applied, LiveKit connected, Brain
+   present, RPC policy synced, heartbeat DataChannel ready, HUD loaded, menu
+   snapshot loaded, model driver resolved, AR/session baseline clean.
+3. Build the formal HUD/menu loader from existing facade data instead of
+   mounting the old smoke UI wholesale.
+4. Start local App API + token mint + LiveKit + Brain participant and run a
+   true START pass. This can be done without phone/voice.
+5. Add phone/device pass for microphone permission, Bluetooth route changes,
+   AR camera/video publish, app switch, and reconnect behavior.

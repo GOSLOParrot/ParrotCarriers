@@ -46,6 +46,25 @@ EXPERIENCE_MODES: tuple[dict[str, Any], ...] = (
     },
 )
 
+THEME_SKINS: tuple[dict[str, Any], ...] = (
+    {
+        "skin_id": "manor",
+        "display_name": "Mansion Paper",
+    },
+    {
+        "skin_id": "goslo_default",
+        "display_name": "GOSLO Classic",
+    },
+    {
+        "skin_id": "ner_mochi_room_v0",
+        "display_name": "Ner Mochi Room",
+    },
+    {
+        "skin_id": "pirate",
+        "display_name": "Pirate Prototype",
+    },
+)
+
 
 @dataclass(frozen=True)
 class CapabilityDecision:
@@ -420,17 +439,8 @@ class RoomSettingService:
             if profile.line_id == "line_b":
                 decisions.extend(_lineb_profile_decisions(line_profile))
 
-        if profile.experience_mode == "2d_hall":
-            decisions.append(
-                CapabilityDecision(
-                    "ar.plane_placement",
-                    "disabled",
-                    "experience_mode_is_2d_hall",
-                    source="experience_mode:2d_hall",
-                    fallback_action="open_mansion_hub",
-                )
-            )
-        elif profile.experience_mode not in {m["experience_mode"] for m in EXPERIENCE_MODES}:
+        registered_experience_modes = {m["experience_mode"] for m in EXPERIENCE_MODES}
+        if profile.experience_mode not in registered_experience_modes:
             decisions.append(
                 CapabilityDecision(
                     "experience_mode.available",
@@ -449,6 +459,29 @@ class RoomSettingService:
                 )
             )
 
+        if profile.experience_mode == "ar_companion" and profile.scene_profile_id != "ar_handheld":
+            decisions.append(
+                CapabilityDecision(
+                    "experience_mode.scene_requirement",
+                    "blocked",
+                    "ar_companion_requires_ar_scene",
+                    source=(
+                        f"experience_mode:{profile.experience_mode};"
+                        f"scene:{profile.scene_profile_id}"
+                    ),
+                    fallback_action="switch_scene:ar_handheld",
+                )
+            )
+        elif profile.experience_mode == "2d_hall":
+            decisions.append(
+                CapabilityDecision(
+                    "ar.plane_placement",
+                    "disabled",
+                    "experience_mode_is_2d_hall",
+                    source="experience_mode:2d_hall",
+                    fallback_action="open_mansion_hub",
+                )
+            )
         state = "ready"
         if any(d.state == "blocked" for d in decisions):
             state = "blocked"
@@ -489,6 +522,11 @@ def _selectors(menu: MenuRegistrySnapshot) -> dict[str, Any]:
             profile.as_json() for profile in get_line_profile_loader().list_profiles()
         ),
         "scenes": _to_wire(menu.scenes),
+        # User-facing startup RoomSetting should render this as Theme/Skin.
+        # The older `scenes` array remains for compatibility with the menu
+        # registry and Web inspection, but mobile startup must not ask the user
+        # to classify desktop / indoor / outdoor environment here.
+        "skins": tuple(dict(skin) for skin in THEME_SKINS),
         "workspaces": _to_wire(menu.workspaces),
         "experience_modes": tuple(dict(m) for m in EXPERIENCE_MODES),
         "defaults": {

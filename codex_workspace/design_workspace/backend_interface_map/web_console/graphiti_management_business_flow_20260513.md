@@ -1,7 +1,7 @@
 # Graphiti Management Business Flow (2026-05-13)
 
 Owner chat: Web Console
-Status: approved
+Status: in_progress
 Category: Web Console business interface
 Scope: Graphiti/FalkorDB read, search, partitions, visualization, Episode, Graphiti API surgery, FalkorDB operator mode
 Updated: 2026-05-13
@@ -9,6 +9,45 @@ Related TODO: WEB-006; WEB-007 through shared Ref/Edge rendering boundaries
 Sources: `src/parrot/brain/graphiti_console.py`, `src/parrot/brain/app_monitor_server.py`, `src/parrot/memory/graphiti_client.py`, Graphiti skill, DSG L2-B skills
 
 ## Slice: Graphiti Console Management
+
+### Implementation Signal 2026-05-13
+
+- `src/parrot/web_console/server.py` now mirrors the existing monitor-safe
+  Graphiti routes: `/api/graphiti/status`, `/api/graphiti/search`,
+  `/api/graphiti/episode/draft`, and `/api/graphiti/episode`.
+- `web/console/` now has a dedicated Graphiti view with dependency/config
+  status, partition chips, scoped search result cards, Episode draft, and
+  dry-run write preview.
+- The Web UI still does not expose FalkorDB direct writes or irreversible
+  Graphiti node/edge surgery. Those remain blocked on explicit operator mode,
+  backup/export, audit logging, and rollback posture.
+- A language bug discovered during Web QA was fixed at the same time:
+  `lineb.profile` and `canvas.refs` are no longer swapped between English and
+  Chinese dictionaries.
+- Related memory-event boundary work now exists outside this Graphiti file:
+  Trigger Lab and L1.5/L2-B operator drafts produce dry-run receipts before
+  publishing to `CH_DSG_EVENTS` or applying L1.5/L2-B writes. Future Graphiti
+  API node/edge/fact surgery should reuse the same receipt posture before any
+  durable memory mutation.
+
+### Implemented Interface Matrix
+
+Checkpoint: 2026-05-13. This is the implemented safe seed for Graphiti
+management; it is not the full FalkorDB/operator surgery surface.
+
+| Endpoint | Purpose | Backend owner | Safety rule |
+|:--|:--|:--|:--|
+| `GET /api/graphiti/status` | Dependency/config/partition status. | `graphiti_status()` | Read-only. |
+| `POST /api/graphiti/search` | Partition-scoped semantic search. | `search_graphiti()` | Read-only search; bounded limit. |
+| `POST /api/graphiti/episode/draft` | Preview an Episode payload. | `draft_episode()` | Draft only; no durable write. |
+| `POST /api/graphiti/episode` | Add an Episode through Graphiti. | `add_episode()` | Dry-run remains default; real write must be explicit operator action. |
+
+Investigation note:
+
+- The next Web memory-rendering pass should not start with raw FalkorDB
+  controls. L2-B/Blackboard/IntentWorkspace visual usefulness is the immediate
+  gap; Graphiti surgery should wait for backup/export, allowlisted mutation
+  templates, and audit receipts.
 
 ### A. Source Readback
 

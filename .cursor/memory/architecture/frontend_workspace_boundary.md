@@ -1,4 +1,4 @@
----
+﻿---
 status: ratified
 category: workspace-coordination
 status_note: "Cursor 主工作区 vs Codex + Unity MCP 第二前端工作区的分工建议。**单人项目，无硬边界**——两侧都可读写整个仓库；只在改核心接口 / 协议字段 / 锁定决策时要求说明理由。本文 2026-05-09 由原硬边界版改写。"
@@ -31,7 +31,7 @@ related:
 | 改动对象 | 必须做的事 |
 |:--|:--|
 | `src/parrot/**` 公开导出（class/function 签名、enum 项、公共字段） | commit msg 写一行理由；如改公开 API，更新 `Interface/INDEX.md §1` 对应条目 |
-| `unity/ArSpike/Assets/Scripts/ParrotApp/**` DTO 字段 | commit msg 写理由；如属新增协议字段，在 `protocol_snapshot_p4.md` cs_parity 表加 1 行 |
+| `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/**` DTO 字段 | commit msg 写理由；如属新增协议字段，在 `protocol_snapshot_p4.md` cs_parity 表加 1 行 |
 | `protocol_snapshot_p4.md` / `bus_v4.md` / `sprint4_protocol_v2_ecp.md` | commit msg 写理由；同步检查 Python + C# 两侧实现是否对齐（cs_parity） |
 | `NodeKind` / `EdgeKind` / `EcpEventType` / `EcpEventSource` / topic 常量 | commit msg 写理由 + 引用对应 ADR；如越过 Phase 4 §8 锁，先开 ADR chat |
 | Phase 4 §8 13 决策锁 / ADR-L1.5-001 11 项 | commit msg 引用 ADR；新决策须新 ADR |
@@ -125,3 +125,4 @@ Codex 启动新任务时**不需要等 Cursor 喂资料**。建议自检流程�
 
 - 2026-05-09 初版：硬边界版（"Codex 不能产生新协议字段"）
 - 2026-05-09 当日修订：改为软分工建议 + 2 条硬规则。原因：单人开发现实，硬边界拖慢同一人在两 IDE 之间切换的实际工作流；改协议须注明理由是更朴素也更可执行的纪律。
+

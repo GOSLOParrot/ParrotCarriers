@@ -12,17 +12,20 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 try:
-    from fastapi import FastAPI
+    from fastapi import Body, FastAPI, HTTPException
     from fastapi.responses import FileResponse, HTMLResponse
     from fastapi.staticfiles import StaticFiles
 except ImportError:  # pragma: no cover - install gate
+    Body = None  # type: ignore[assignment]
     FastAPI = None  # type: ignore[assignment]
+    HTTPException = None  # type: ignore[assignment]
     FileResponse = None  # type: ignore[assignment]
     HTMLResponse = None  # type: ignore[assignment]
     StaticFiles = None  # type: ignore[assignment]
@@ -30,6 +33,7 @@ except ImportError:  # pragma: no cover - install gate
 
 StatusFetcher = Callable[["OrchestratorProxyConfig"], Awaitable[dict[str, Any]]]
 HealthFetcher = Callable[["OrchestratorProxyConfig"], Awaitable[dict[str, Any]]]
+AppFacadeFactory = Callable[[], Any]
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,7 @@ class OrchestratorProxyConfig:
 def build_app(
     status_fetcher: StatusFetcher | None = None,
     health_fetcher: HealthFetcher | None = None,
+    app_facade_factory: AppFacadeFactory | None = None,
 ):  # type: ignore[no-untyped-def]
     """Build the Web Console app."""
     if FastAPI is None:
@@ -60,6 +65,15 @@ def build_app(
     app = FastAPI(title="Parrot Web Console", version="0.1.0")
     fetcher = status_fetcher or fetch_orchestrator_status
     health_probe = health_fetcher or fetch_orchestrator_health
+    app_facade = app_facade_factory or _default_app_facade_factory
+
+    @app.middleware("http")
+    async def no_cache_console_static(request, call_next):  # type: ignore[no-untyped-def]
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.startswith("/assets/") or not path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     static_root = _static_root()
     assets_root = static_root / "assets"
@@ -87,6 +101,320 @@ def build_app(
     @app.get("/api/orchestrator/health")
     async def orchestrator_health() -> dict[str, Any]:
         return await health_probe(_orchestrator_config_from_env())
+
+    @app.get("/api/app/canvas")
+    async def app_canvas() -> dict[str, Any]:
+        return app_facade().canvas_snapshot().as_json()
+
+    @app.get("/api/app/modules")
+    async def app_modules() -> list[dict[str, Any]]:
+        return [status.as_json() for status in app_facade().list_module_statuses()]
+
+    @app.get("/api/app/line-profiles")
+    async def line_profiles() -> list[dict[str, Any]]:
+        return list(app_facade().list_line_profiles())
+
+    @app.post("/api/app/line-profiles/apply")
+    async def line_profile_apply(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        draft_or_id = body.get("line_profile") or body.get("line_profile_id") or body
+        return app_facade().apply_line_profile(draft_or_id)
+
+    @app.post("/api/app/workspace/apply")
+    async def workspace_apply(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        workspace_id = str(body.get("workspace_id") or "workdesk")
+        return app_facade().apply_workspace(workspace_id).as_json()
+
+    @app.post("/api/app/lineb/audio-route")
+    async def lineb_audio_route(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        return app_facade().set_lineb_audio_route_policy(
+            input_route=str(body.get("input_route") or "web_voice_lab"),
+            output_route=str(body.get("output_route") or "web_audio"),
+            microphone_enabled=_body_bool(body.get("microphone_enabled"), True),
+            speaker_output_enabled=_body_bool_or_none(body.get("speaker_output_enabled")),
+            echo_handling_mode=str(body.get("echo_handling_mode") or "web_no_video"),
+            voiceprint_enabled=_body_bool(body.get("voiceprint_enabled"), False),
+            speaker_state=str(body.get("speaker_state") or "web_no_video"),
+            source=str(body.get("source") or "web_console.lineb_voice"),
+        )
+
+    @app.post("/api/app/lineb/tts-segment")
+    async def lineb_tts_segment(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        acoustic_refs = body.get("acoustic_refs")
+        return app_facade().register_lineb_tts_segment(
+            text_summary=str(body.get("text_summary") or body.get("text") or ""),
+            duration_s=_body_float(body.get("duration_s"), 0.5),
+            started_at=_body_float_or_none(body.get("started_at")),
+            tts_voice=str(body.get("tts_voice") or body.get("voice") or ""),
+            voiceprint_hash=str(body.get("voiceprint_hash") or ""),
+            conversation_turn_id=str(body.get("conversation_turn_id") or ""),
+            acoustic_refs=acoustic_refs if isinstance(acoustic_refs, dict) else None,
+        )
+
+    @app.post("/api/app/lineb/mic-input")
+    async def lineb_mic_input(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        return app_facade().classify_lineb_mic_input(
+            observed_at=_body_float_or_none(body.get("observed_at")),
+            duration_s=_body_float(body.get("duration_s"), 0.0),
+            asr_text=str(body.get("asr_text") or body.get("text") or ""),
+            voiceprint_hash=str(body.get("voiceprint_hash") or ""),
+            echo_score=_body_float_or_none(body.get("echo_score")),
+            speaker_similarity=_body_float_or_none(body.get("speaker_similarity")),
+            voiceprint_decision=str(body.get("voiceprint_decision") or ""),
+            speaker_label=str(body.get("speaker_label") or ""),
+            voiceprint_profile_id=str(body.get("voiceprint_profile_id") or ""),
+            voiceprint_enabled=_body_bool_or_none(body.get("voiceprint_enabled")),
+            voiceprint_provider=str(body.get("voiceprint_provider") or ""),
+            voiceprint_manifest_path=str(body.get("voiceprint_manifest_path") or ""),
+            voiceprint_threshold_accept=_body_float_or_none(
+                body.get("voiceprint_threshold_accept")
+            ),
+            voiceprint_threshold_reject=_body_float_or_none(
+                body.get("voiceprint_threshold_reject")
+            ),
+        )
+
+    @app.get("/api/app/live-state")
+    async def app_live_state(limit: int = 80) -> dict[str, Any]:
+        from parrot.brain.app_live_state import build_app_live_state
+
+        return build_app_live_state(l2b_limit=max(1, min(limit, 200))).as_json()
+
+    @app.get("/api/memory/blackboard/activity")
+    async def memory_blackboard_activity(limit: int = 40) -> dict[str, Any]:
+        from parrot.web_console.blackboard_activity import build_blackboard_activity_snapshot
+
+        return build_blackboard_activity_snapshot(limit=max(1, min(limit, 120)))
+
+    @app.get("/api/runtime/monitor")
+    async def runtime_monitor() -> dict[str, Any]:
+        from parrot.web_console.runtime_monitor import build_runtime_monitor_snapshot
+
+        return build_runtime_monitor_snapshot()
+
+    @app.get("/api/dsg/triggers/catalog")
+    async def dsg_triggers_catalog() -> dict[str, Any]:
+        from parrot.web_console.memory_ops import trigger_catalog
+
+        return trigger_catalog()
+
+    @app.post("/api/dsg/triggers/draft-event")
+    async def dsg_triggers_draft_event(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_trigger_event
+
+        return draft_trigger_event(payload or {})
+
+    @app.post("/api/dsg/triggers/fire-event")
+    async def dsg_triggers_fire_event(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import fire_trigger_event
+
+        return await fire_trigger_event(payload or {})
+
+    @app.get("/api/l15/pool")
+    async def l15_pool() -> dict[str, Any]:
+        from parrot.web_console.memory_ops import build_l15_pool_snapshot
+
+        return await build_l15_pool_snapshot()
+
+    @app.post("/api/l15/bucket-op/draft")
+    async def l15_bucket_op_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_l15_bucket_op
+
+        return draft_l15_bucket_op(payload or {})
+
+    @app.post("/api/l15/bucket-op")
+    async def l15_bucket_op(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_l15_bucket_op
+
+        return await apply_l15_bucket_op(payload or {})
+
+    @app.post("/api/l15/obsidian-node/draft")
+    async def l15_obsidian_node_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_obsidian_setting_node
+
+        return draft_obsidian_setting_node(payload or {})
+
+    @app.post("/api/l15/obsidian-node")
+    async def l15_obsidian_node(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_obsidian_setting_node
+
+        return await apply_obsidian_setting_node(payload or {})
+
+    @app.post("/api/l2b/node/draft")
+    async def l2b_node_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_l2b_node
+
+        return draft_l2b_node(payload or {})
+
+    @app.post("/api/l2b/node")
+    async def l2b_node(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_l2b_node
+
+        return await apply_l2b_node(payload or {})
+
+    @app.post("/api/l2b/node/delete")
+    async def l2b_node_delete(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import delete_l2b_node
+
+        return await delete_l2b_node(payload or {})
+
+    @app.post("/api/l2b/edge/draft")
+    async def l2b_edge_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_l2b_edge
+
+        return draft_l2b_edge(payload or {})
+
+    @app.post("/api/l2b/edge")
+    async def l2b_edge(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_l2b_edge
+
+        return await apply_l2b_edge(payload or {})
+
+    @app.post("/api/google/messages/check")
+    async def google_messages_check(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import dispatch_message_check
+
+        return await dispatch_message_check(payload or {})
+
+    @app.post("/api/google/messages/push-test")
+    async def google_messages_push_test(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import push_test_message
+
+        return await push_test_message(payload or {})
+
+    @app.get("/api/graphiti/status")
+    async def graphiti_status_endpoint() -> dict[str, Any]:
+        from parrot.brain.graphiti_console import graphiti_status
+
+        return graphiti_status().as_json()
+
+    @app.post("/api/graphiti/search")
+    async def graphiti_search_endpoint(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.brain.graphiti_console import search_graphiti
+
+        body = payload or {}
+        return (
+            await search_graphiti(
+                query=str(body.get("query") or ""),
+                partition=str(body.get("partition") or "goslo"),
+                limit=int(body.get("limit") or 5),
+            )
+        ).as_json()
+
+    @app.post("/api/graphiti/episode/draft")
+    async def graphiti_episode_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.brain.graphiti_console import draft_episode
+
+        body = payload or {}
+        return draft_episode(
+            name=str(body.get("name") or "app_console_episode"),
+            body=str(body.get("body") or ""),
+            partition=str(body.get("partition") or "goslo"),
+            source_description=str(body.get("source_description") or "app-web-console"),
+        ).as_json()
+
+    @app.post("/api/graphiti/episode")
+    async def graphiti_episode(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.brain.graphiti_console import add_episode
+
+        body = payload or {}
+        return (
+            await add_episode(
+                name=str(body.get("name") or "app_console_episode"),
+                body=str(body.get("body") or ""),
+                partition=str(body.get("partition") or "goslo"),
+                source_description=str(body.get("source_description") or "app-web-console"),
+                dry_run=_body_bool(body.get("dry_run"), True),
+            )
+        ).as_json()
+
+    @app.get("/api/livekit/config")
+    async def livekit_config() -> dict[str, Any]:
+        room = _clean_livekit_value(os.getenv("LIVEKIT_ROOM", "parrot-main"), "parrot-main")
+        return {
+            "url": os.getenv("LIVEKIT_URL", "ws://localhost:7880"),
+            "room": room,
+            "token_ttl_s": _env_int("PARROT_WEB_CONSOLE_LIVEKIT_TOKEN_TTL_S", 600),
+            "web_identity_prefix": "web-console",
+            "token_available": True,
+        }
+
+    @app.post("/api/livekit/web-token")
+    async def livekit_web_token(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        room = _clean_livekit_value(
+            str(body.get("room") or os.getenv("LIVEKIT_ROOM", "parrot-main")),
+            "parrot-main",
+        )
+        identity = _clean_livekit_value(
+            str(body.get("identity") or f"web-console-{int(time.time())}"),
+            f"web-console-{int(time.time())}",
+        )
+        ttl_s = _env_int("PARROT_WEB_CONSOLE_LIVEKIT_TOKEN_TTL_S", 600)
+        try:
+            token = _mint_livekit_join_token(room=room, identity=identity, ttl_s=ttl_s)
+        except Exception as exc:
+            if HTTPException is None:
+                raise
+            raise HTTPException(
+                status_code=500,
+                detail=f"LiveKit token mint failed: {type(exc).__name__}",
+            ) from exc
+        return {
+            "url": os.getenv("LIVEKIT_URL", "ws://localhost:7880"),
+            "room": room,
+            "identity": identity,
+            "token": token,
+            "expires_at": int(time.time()) + ttl_s,
+        }
 
     @app.get("/", response_class=HTMLResponse)
     async def index():  # type: ignore[no-untyped-def]
@@ -206,6 +534,75 @@ def _fetch_json(
         return None, None, {"error": exc.__class__.__name__, "message": str(exc)}
 
 
+def _default_app_facade_factory() -> Any:
+    from parrot.brain.app_first_version import AppFirstVersionFacade
+
+    return AppFirstVersionFacade()
+
+
+def _body_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _body_bool_or_none(value: Any) -> bool | None:
+    if value is None or value == "":
+        return None
+    return _body_bool(value, False)
+
+
+def _body_float(value: Any, default: float) -> float:
+    parsed = _body_float_or_none(value)
+    return default if parsed is None else parsed
+
+
+def _body_float_or_none(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mint_livekit_join_token(*, room: str, identity: str, ttl_s: int) -> str:
+    try:
+        from livekit.api import AccessToken, VideoGrants
+    except ImportError:
+        from livekit.api.access_token import AccessToken, VideoGrants  # type: ignore
+
+    return (
+        AccessToken(
+            api_key=os.getenv("LIVEKIT_API_KEY", "devkey"),
+            api_secret=os.getenv(
+                "LIVEKIT_API_SECRET",
+                "parrot_carriers_local_dev_livekit_secret_key_v1",
+            ),
+        )
+        .with_identity(identity)
+        .with_name(identity)
+        .with_grants(
+            VideoGrants(
+                room_join=True,
+                room=room,
+                can_publish=True,
+                can_subscribe=True,
+                can_publish_data=True,
+            )
+        )
+        .with_ttl(timedelta(seconds=max(30, min(ttl_s, 3600))))
+        .to_jwt()
+    )
+
+
+def _clean_livekit_value(value: str, default: str) -> str:
+    cleaned = "".join(ch for ch in str(value or "").strip() if ch.isalnum() or ch in "-_.")
+    return (cleaned or default)[:80]
+
+
 def _proxy_envelope(
     *,
     ok: bool,
@@ -236,7 +633,9 @@ def _status_summary(status: dict[str, Any]) -> dict[str, Any]:
     processes = status.get("processes")
     process_list = processes if isinstance(processes, list) else []
     online_count = sum(1 for item in process_list if isinstance(item, dict) and item.get("online"))
-    offline_count = sum(1 for item in process_list if isinstance(item, dict) and not item.get("online"))
+    offline_count = sum(
+        1 for item in process_list if isinstance(item, dict) and not item.get("online")
+    )
     warnings = status.get("warnings") if isinstance(status.get("warnings"), list) else []
     containers = status.get("containers")
     containers_unavailable = isinstance(containers, dict) and bool(containers.get("unavailable"))
@@ -244,7 +643,11 @@ def _status_summary(status: dict[str, Any]) -> dict[str, Any]:
     is_drift = isinstance(selection_drift, dict) and bool(selection_drift.get("is_drift"))
     crash = status.get("brain_last_crash")
     has_crash = isinstance(crash, dict) and bool(crash)
-    state = "degraded" if warnings or offline_count or containers_unavailable or is_drift or has_crash else "connected"
+    state = (
+        "degraded"
+        if warnings or offline_count or containers_unavailable or is_drift or has_crash
+        else "connected"
+    )
     return {
         "state": state,
         "online_processes": online_count,
@@ -283,6 +686,13 @@ def _clean_base_url(value: str) -> str:
 def _env_float(name: str, default: float) -> float:
     try:
         return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
     except ValueError:
         return default
 

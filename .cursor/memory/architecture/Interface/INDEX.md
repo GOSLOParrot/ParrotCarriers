@@ -1,10 +1,10 @@
----
+﻿---
 status: ratified
 category: interface-skeleton
 status_note: "Cleaned 2026-05-10; updated 2026-05-13 with App/Web parallel route split and AgentTeam boundary. Interface remains the backend/core-interface route."
 last_reviewed: 2026-05-13
 ai_priority: high
-ai_audience: "Chats touching src/parrot/** public surfaces or unity/ArSpike/Assets/Scripts/ParrotApp/** DTOs"
+ai_audience: "Chats touching src/parrot/** public surfaces or unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/** DTOs"
 parent_doc: "../../INDEX.md"
 related:
   - "../backend_interface_refinement_20260507.md (Brain Core SSOT)"
@@ -151,3 +151,4 @@ These may remain in git history or archive, but they should not guide new App fr
 If the task is App page design or Unity frontend implementation, read the Design workspace first.
 
 If the task changes backend protocol, DTOs, BB keys, RPC methods, or public Python surfaces, use this Interface route and the core sources above.
+

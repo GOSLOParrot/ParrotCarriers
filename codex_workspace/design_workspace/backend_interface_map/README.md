@@ -61,9 +61,29 @@ again in `app/README.md`.
 |:--|:--|
 | `app/startup_roomsetting_app_interface_20260513.md` | Startup page, RoomSetting, START transition, LineB/LiveKit status, main-ready contract. |
 | `app/canvas_menu_ref_workspace_app_interface_20260513.md` | Canvas menu, renderer-agnostic node/edge boundary, App-side Ref workspace. |
+| `app/unity_project_inventory_app_ssot_20260513.md` | Unity App directory/resource/scene inventory SSOT and cleanup rules. |
 
 Do not create one-off App interface files for every small step. Add durable
 decisions to these module-level files unless ownership or lifecycle changes.
+
+## Active Web Business Interface Index
+
+Durable Web Console business interface files live under `web_console/` and are
+indexed again in `web_console/README.md`. The root index only lists the active
+Web surfaces; route matrices, completion ledgers, and checkpoint notes stay in
+the lane README and module-level Web files.
+
+| File | Scope |
+|:--|:--|
+| `web_console/web_console_step1_console_plan_20260513.md` | Web Console requirements, IA, Obsidian-like baseline, later Papers Please-inspired interaction lane, and doc hygiene. |
+| `web_console/observability_runtime_business_flow_20260513.md` | ECS/module health, orchestrator `/status`, Runtime Monitor, Blackboard/Plan/Scheduler/Nanobot observability, LineB voice smoke, and trigger palette. |
+| `web_console/memory_graph_workspace_business_flow_20260513.md` | L1.5 pool, L2-B visual workspace, Blackboard/IntentWorkspace visual renderer, node/photo management, Ref/Evidence Board, and Visual Memory Operations Cockpit. |
+| `web_console/graphiti_management_business_flow_20260513.md` | Graphiti/FalkorDB observe/search/episode draft/dry-run and future Web operator surgery. |
+
+Do not create one-off Web interface files for every UI slice. Add durable
+decisions to these module-level files, keep implementation checkpoints in
+`web_console/README.md`, and send shared core gaps to
+`core_interface_candidate_queue_20260513.md`.
 
 ## 共性纪律（2026-05-11 audit 三轮总结）
 
@@ -85,10 +105,11 @@ decisions to these module-level files unless ownership or lifecycle changes.
 | Scheduler | `src/parrot/scheduler/` | py-trees 行为树、Nanobot 任务路由、黑板。 |
 | DSG | `src/parrot/dsg/` | L1.5 Pool / Buckets / RefTable、L2-B 图、触发器、ingest filters。 |
 | Memory | `src/parrot/memory/` | Graphiti / FalkorDB / 对话归档。 |
-| Unity App | `unity/ArSpike/Assets/Scripts/ParrotApp/` | 正式 App 脚本工作区。 |
+| Unity App | `unity/ArSpike/Assets/ParrotApp/` | 正式 App 脚本工作区。 |
 | Unity Testbed | `unity/ParrotDev/` | 冻结测试床，不作为新 App 功能落点。 |
 | Nanobot | `../nanobot/` | 外挂 Agent / Google 等工具连接侧。 |
 
 ## 后端协作一句话
 
 Unity 通过 LiveKit 与 Brain 实时通信；Brain 用 tools / IntentWorkspace 做语义决策；Scheduler 负责长任务和行为树路由；Nanobot 处理后台 / 外部工具任务；DSG 把 Obsidian、照片、Google 日程等 Ref 源规整到 L1.5 桶和 L2-B 潜意识图；Memory / Graphiti 负责长期记忆和检索。
+

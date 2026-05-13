@@ -257,6 +257,7 @@ related:
 | 3.2.2 | **Mode**（模式块）| BehaviorMode 5 flags + ROLEPLAY flag（NEED-P3-MODE-ROLEPLAY）| ✅ set_mode tool + mode_watcher |
 | 3.2.3 | **Model**（模型块）| Unity 视觉模型 + capability 集合 | ✅ ModelManifest + ModelDriver + ParrotRegistry |
 | 3.2.4 | **Scene**（场景块）| SceneType + SceneProfile | ✅ SceneRegistry（DESKTOP only；2 baseline 待升）|
+| 3.2.5 | **Theme / Skin**（启动页套装）| 用户可选的视觉皮肤 / UI 套装；写 `skin_id`，不是 SceneType | RoomSetting V1 使用 Theme 标签；桌面/室内/室外识别应由设备/AR 组件自动完成 |
 | 3.2.5 | **预设 Preset** | 4 active ID 命名快照（model + persona + mode + scene） | ❌ NEED-P3-C |
 
 ### §3.3 Observer vs Attention 模块（**职责分离**）

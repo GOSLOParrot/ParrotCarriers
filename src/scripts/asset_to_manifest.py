@@ -47,7 +47,7 @@ Quick scaffolding (non-MMD model with custom capabilities)::
         --capability idle:pose:Idle \\
         --capability fly:pose:Fly \\
         --capability head_bob:pose:HeadBob \\
-        --out unity/ArSpike/Assets/Resources/parrot_models/owl_v1.json
+        --out unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/owl_v1.json
 
 MMD preset (auto-sets unit_meters=0.08, auto_scale_to_pet_height=true)::
 
@@ -61,13 +61,13 @@ MMD preset (auto-sets unit_meters=0.08, auto_scale_to_pet_height=true)::
         --capability wave_hand:animation:Wave \\
         --capability dance_q_pose:animation:Dance \\
         --capability bow:animation:Bow \\
-        --out unity/ArSpike/Assets/Resources/parrot_models/qfufu_v1.json
+        --out unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/qfufu_v1.json
 
 Validate an existing manifest in place::
 
     python src/scripts/asset_to_manifest.py \\
         --validate-only \\
-        --in unity/ArSpike/Assets/Resources/parrot_models/qfufu_v1.json
+        --in unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/qfufu_v1.json
 """
 
 from __future__ import annotations

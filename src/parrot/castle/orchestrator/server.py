@@ -61,15 +61,13 @@ except ImportError as e:  # pragma: no cover - install gate
 def _require_auth(request: Request) -> None:
     secret = os.getenv("PARROT_ORCH_SECRET", "").strip()
     if not secret:
-        logger.warning(
-            "PARROT_ORCH_SECRET not set — orchestrator is open (dev mode)"
-        )
+        logger.warning("PARROT_ORCH_SECRET not set — orchestrator is open (dev mode)")
         return
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         logger.warning("orchestrator auth failed: missing Bearer prefix")
         raise HTTPException(status_code=401, detail="unauthorized")
-    token = auth[len("Bearer "):]
+    token = auth[len("Bearer ") :]
     if not hmac.compare_digest(token, secret):
         logger.warning("orchestrator auth failed: bearer mismatch")
         raise HTTPException(status_code=401, detail="unauthorized")
@@ -147,9 +145,7 @@ def build_app() -> FastAPI:
         if result["status"] == "error":
             raise HTTPException(status_code=400, detail=result)
         if body.force_reconnect:
-            reconnect = await actions.force_unity_reconnect(
-                reason="set_active_line"
-            )
+            reconnect = await actions.force_unity_reconnect(reason="set_active_line")
             result["reconnect"] = reconnect
         return result
 
@@ -168,9 +164,7 @@ def build_app() -> FastAPI:
         if result["status"] == "error":
             raise HTTPException(status_code=400, detail=result)
         if body.force_reconnect:
-            reconnect = await actions.force_unity_reconnect(
-                reason="apply_room_profile"
-            )
+            reconnect = await actions.force_unity_reconnect(reason="apply_room_profile")
             result["reconnect"] = reconnect
         return result
 
@@ -201,9 +195,7 @@ def build_app() -> FastAPI:
             # can render it next to the status snapshot.
             return restart
         if body.wait_for_online:
-            heartbeat = await actions.wait_for_heartbeat(
-                body.component, timeout_s=body.timeout_s
-            )
+            heartbeat = await actions.wait_for_heartbeat(body.component, timeout_s=body.timeout_s)
             restart["heartbeat"] = heartbeat
         return restart
 
@@ -229,6 +221,13 @@ def build_app() -> FastAPI:
 def main() -> None:
     """Entry point for ``python -m parrot.castle.orchestrator``."""
     import uvicorn
+
+    try:
+        from dotenv import load_dotenv
+    except ImportError:  # pragma: no cover - optional local developer helper
+        pass
+    else:
+        load_dotenv()
 
     host = os.getenv("PARROT_ORCH_HOST", "127.0.0.1")
     port = int(os.getenv("PARROT_ORCH_PORT", "7890"))

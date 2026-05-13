@@ -1,4 +1,4 @@
-# App V1 Menu Canvas + Startup Audit (Round 4)
+﻿# App V1 Menu Canvas + Startup Audit (Round 4)
 
 Date: 2026-05-11
 Audit by: Cursor (Opus parent agent), continuation of Rounds 1-3.
@@ -79,7 +79,7 @@ LiveKit RPC，菜单画布走 in-band 通道时缺乏对称性 → **Gap K**。
 `AppStartupFlowController.cs` 当前调用的 RPC：
 
 ```csharp
-// 真实代码（unity/ArSpike/Assets/Scripts/ParrotApp/Lifecycle/AppStartupFlowController.cs）
+// 真实代码（unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Lifecycle/AppStartupFlowController.cs）
 "setAppCapabilityMode" → ✅
 "applyWorkspace"       → ✅
 // 其余 14 个 menu/RoomSetting RPC 全部未接入
@@ -417,3 +417,4 @@ Round 4 无关。
 - `_state_context.get_state_snapshot` staleness 检测（Round 3 §C 提到）
 - menu RPC payload fuzzing（hypothesis）
 - 真机 smoke 验证 Round 4 修复在 Unity 侧的可见性
+

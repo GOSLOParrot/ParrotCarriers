@@ -16,24 +16,34 @@
             <div class="brand-subtitle">Web lane</div>
           </div>
         </div>
+
         <nav class="nav-list" aria-label="Console views">
-          <button class="nav-item active" type="button">
+          <button class="nav-item active" type="button" data-view-target="ops">
             <span class="nav-icon">+</span>
             <span data-i18n="nav.opsHealth">Ops Health</span>
           </button>
-          <button class="nav-item" type="button" disabled>
-            <span class="nav-icon">#</span>
-            <span data-i18n="nav.runtimeState">Runtime State</span>
+          <button class="nav-item" type="button" data-view-target="runtime">
+            <span class="nav-icon">:</span>
+            <span data-i18n="nav.runtimeMonitor">Runtime Monitor</span>
           </button>
-          <button class="nav-item" type="button" disabled>
+          <button class="nav-item" type="button" data-view-target="lineb">
+            <span class="nav-icon">~</span>
+            <span data-i18n="nav.linebVoice">LineB Voice</span>
+          </button>
+          <button class="nav-item" type="button" data-view-target="canvas">
+            <span class="nav-icon">#</span>
+            <span data-i18n="nav.menuCanvas">Menu Canvas</span>
+          </button>
+          <button class="nav-item" type="button" data-view-target="memory">
             <span class="nav-icon">o</span>
             <span data-i18n="nav.memoryGraph">Memory Graph</span>
           </button>
-          <button class="nav-item" type="button" disabled>
+          <button class="nav-item" type="button" data-view-target="graphiti">
             <span class="nav-icon">></span>
             <span data-i18n="nav.graphiti">Graphiti</span>
           </button>
         </nav>
+
         <div class="sidebar-footer">
           <span id="authMode">auth: ...</span>
           <span id="orchUrl">orchestrator: ...</span>
@@ -46,8 +56,8 @@
       <main class="main-pane">
         <header class="topbar">
           <div>
-            <h1 data-i18n="ops.title">Ops Health</h1>
-            <p id="lastFetch">Waiting for status...</p>
+            <h1 id="viewTitle" data-i18n="ops.title">Ops Health</h1>
+            <p id="lastFetch" data-i18n="last.waiting">Waiting for status...</p>
           </div>
           <div class="topbar-actions">
             <button id="refreshButton" class="button primary" type="button" data-i18n="actions.refresh">
@@ -57,116 +67,856 @@
           </div>
         </header>
 
-        <section class="summary-grid" aria-label="Status summary">
-          <article class="metric">
-            <span class="metric-label" data-i18n="metrics.connection">Connection</span>
-            <strong id="connectionState">...</strong>
-            <small id="connectionDetail">No data</small>
-          </article>
-          <article class="metric">
-            <span class="metric-label" data-i18n="metrics.modules">Modules</span>
-            <strong id="moduleCount">...</strong>
-            <small id="moduleDetail">online / offline</small>
-          </article>
-          <article class="metric">
-            <span class="metric-label" data-i18n="metrics.warnings">Warnings</span>
-            <strong id="warningCount">...</strong>
-            <small id="warningDetail">status warnings</small>
-          </article>
-          <article class="metric">
-            <span class="metric-label" data-i18n="metrics.selection">Selection</span>
-            <strong id="driftState">...</strong>
-            <small id="driftDetail">line drift</small>
-          </article>
-        </section>
+        <section id="view-ops" class="view active" aria-label="Ops Health">
+          <section class="hero-status" aria-label="System overview">
+            <div class="hero-primary">
+              <span id="overallLight" class="status-light idle"></span>
+              <div>
+                <span class="eyebrow" data-i18n="overview.label">System State</span>
+                <strong id="connectionState">...</strong>
+                <p id="connectionDetail" data-i18n="empty.noData">No data</p>
+              </div>
+            </div>
+            <div class="hero-metrics">
+              <article class="metric-chip">
+                <span class="status-light small idle" id="moduleLight"></span>
+                <span data-i18n="metrics.modules">Modules</span>
+                <strong id="moduleCount">...</strong>
+              </article>
+              <article class="metric-chip">
+                <span class="status-light small idle" id="warningLight"></span>
+                <span data-i18n="metrics.warnings">Warnings</span>
+                <strong id="warningCount">...</strong>
+              </article>
+              <article class="metric-chip">
+                <span class="status-light small idle" id="driftLight"></span>
+                <span data-i18n="metrics.selection">Selection</span>
+                <strong id="driftState">...</strong>
+              </article>
+            </div>
+          </section>
 
-        <section class="topology-pane" aria-label="Connection topology">
-          <div class="pane-header">
-            <h2 data-i18n="topology.title">Status Topology</h2>
-            <span id="topologyState" class="pill">checking</span>
-          </div>
-          <div class="topology-map">
-            <div class="topology-node" id="nodeConsole">
-              <span class="node-dot good"></span>
-              <strong data-i18n="topology.console">Web Console</strong>
-              <small>BFF + UI</small>
+          <section class="topology-pane" aria-label="Connection topology">
+            <div class="pane-header compact">
+              <h2 data-i18n="topology.title">Status Topology</h2>
+              <span id="topologyState" class="pill">checking</span>
             </div>
-            <div class="topology-edge" id="edgeHealth"></div>
-            <div class="topology-node" id="nodeOrchestrator">
-              <span class="node-dot"></span>
-              <strong data-i18n="topology.orchestrator">Orchestrator</strong>
-              <small id="orchestratorHealthText">/health</small>
+            <div class="topology-map">
+              <div class="topology-node" id="nodeConsole">
+                <span class="status-light good"></span>
+                <strong data-i18n="topology.console">Web Console</strong>
+                <small>BFF + UI</small>
+              </div>
+              <div class="topology-edge" id="edgeHealth"></div>
+              <div class="topology-node" id="nodeOrchestrator">
+                <span class="status-light idle"></span>
+                <strong data-i18n="topology.orchestrator">Orchestrator</strong>
+                <small id="orchestratorHealthText">/health</small>
+              </div>
+              <div class="topology-edge" id="edgeStatus"></div>
+              <div class="topology-node" id="nodeStatus">
+                <span class="status-light idle"></span>
+                <strong data-i18n="topology.status">Status Snapshot</strong>
+                <small id="statusAuthText">/status</small>
+              </div>
+              <div class="topology-edge" id="edgeModules"></div>
+              <div class="topology-node" id="nodeModules">
+                <span class="status-light idle"></span>
+                <strong data-i18n="topology.modules">Module Heartbeats</strong>
+                <small id="moduleTopologyText">0 online</small>
+              </div>
             </div>
-            <div class="topology-edge" id="edgeStatus"></div>
-            <div class="topology-node" id="nodeStatus">
-              <span class="node-dot"></span>
-              <strong data-i18n="topology.status">Status Snapshot</strong>
-              <small id="statusAuthText">/status</small>
-            </div>
-            <div class="topology-edge" id="edgeModules"></div>
-            <div class="topology-node" id="nodeModules">
-              <span class="node-dot"></span>
-              <strong data-i18n="topology.modules">Module Heartbeats</strong>
-              <small id="moduleTopologyText">0 online</small>
-            </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="content-grid">
-          <article class="pane pane-wide">
-            <div class="pane-header">
+          <section class="module-overview" aria-label="Module overview">
+            <div class="pane-header compact">
               <h2 data-i18n="panes.moduleHealth">Module Health</h2>
               <span id="moduleTableState" class="pill">empty</span>
             </div>
             <div id="moduleMap" class="module-map"></div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th data-i18n="table.module">Module</th>
-                    <th data-i18n="table.state">State</th>
-                    <th data-i18n="table.type">Type</th>
-                    <th data-i18n="table.layers">Layers</th>
-                    <th data-i18n="table.stale">Stale</th>
-                    <th data-i18n="table.note">Note</th>
-                  </tr>
-                </thead>
-                <tbody id="moduleRows"></tbody>
-              </table>
-            </div>
-          </article>
+          </section>
 
-          <article class="pane">
-            <div class="pane-header">
-              <h2 data-i18n="panes.runtimeConfig">Runtime Config</h2>
+          <section class="details-grid" aria-label="Details">
+            <details class="detail-section" id="warningsDetails">
+              <summary>
+                <span data-i18n="panes.warnings">Warnings</span>
+                <span id="warningState" class="pill" data-i18n="pills.read">read</span>
+              </summary>
+              <ul id="warnings" class="warning-list"></ul>
+            </details>
+
+            <details class="detail-section">
+              <summary>
+                <span data-i18n="panes.runtimeConfig">Runtime Config</span>
+                <span class="pill" data-i18n="pills.read">read</span>
+              </summary>
+              <dl id="runtimeConfig" class="kv-list"></dl>
+            </details>
+
+            <details class="detail-section">
+              <summary>
+                <span data-i18n="panes.moduleTable">Module Table</span>
+                <span class="pill" data-i18n="pills.read">read</span>
+              </summary>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th data-i18n="table.module">Module</th>
+                      <th data-i18n="table.state">State</th>
+                      <th data-i18n="table.type">Type</th>
+                      <th data-i18n="table.layers">Layers</th>
+                      <th data-i18n="table.stale">Stale</th>
+                      <th data-i18n="table.note">Note</th>
+                    </tr>
+                  </thead>
+                  <tbody id="moduleRows"></tbody>
+                </table>
+              </div>
+            </details>
+
+            <details class="detail-section">
+              <summary>
+                <span data-i18n="panes.brainSnapshot">Brain Snapshot</span>
+                <span id="brainState" class="pill" data-i18n="pills.read">read</span>
+              </summary>
+              <dl id="brainSnapshot" class="kv-list"></dl>
+            </details>
+
+            <details class="detail-section">
+              <summary>
+                <span data-i18n="panes.containers">Containers</span>
+                <span id="containerState" class="pill" data-i18n="pills.read">read</span>
+              </summary>
+              <div id="containers" class="text-block"></div>
+            </details>
+          </section>
+        </section>
+
+        <section id="view-runtime" class="view" aria-label="Runtime Monitor">
+          <section class="hero-status slim" aria-label="Runtime overview">
+            <div class="hero-primary">
+              <span id="runtimeLight" class="status-light idle"></span>
+              <div>
+                <span class="eyebrow" data-i18n="runtime.label">Runtime</span>
+                <strong id="runtimeTitle">...</strong>
+                <p id="runtimeSummary" data-i18n="empty.noData">No data</p>
+              </div>
+            </div>
+            <div class="hero-metrics">
+              <article class="metric-chip">
+                <span class="status-light small idle"></span>
+                <span data-i18n="runtime.activeTasks">Active Tasks</span>
+                <strong id="runtimeTaskCount">...</strong>
+              </article>
+              <article class="metric-chip">
+                <span class="status-light small idle"></span>
+                <span data-i18n="runtime.plans">Plans</span>
+                <strong id="runtimePlanCount">...</strong>
+              </article>
+              <article class="metric-chip">
+                <span class="status-light small idle"></span>
+                <span data-i18n="runtime.reports">Reports</span>
+                <strong id="runtimeReportCount">...</strong>
+              </article>
+            </div>
+          </section>
+
+          <section class="console-panel">
+            <div class="pane-header compact">
+              <h2 data-i18n="runtime.collaboration">Collaboration</h2>
+              <span id="runtimeReadPill" class="pill" data-i18n="pills.read">read</span>
+            </div>
+            <div id="runtimeLanes" class="memory-lanes"></div>
+          </section>
+
+          <section class="console-panel runtime-trigger-palette">
+            <div class="pane-header compact">
+              <h2 data-i18n="runtime.triggerPalette">Trigger Palette</h2>
+              <span id="triggerLabPill" class="pill" data-i18n="pills.test">test</span>
+            </div>
+            <div class="trigger-palette-grid">
+              <button id="messageCheckButton" class="button" type="button" data-i18n="runtime.messageCheck">
+                Message Check
+              </button>
+              <button id="messagePushButton" class="button" type="button" data-i18n="runtime.messagePush">
+                Message Push Test
+              </button>
+              <button class="button" type="button" data-trigger-preset="llm_context_push" data-i18n="runtime.llmPush">
+                LLM Context Push
+              </button>
+              <button class="button" type="button" data-trigger-preset="scheduler_tick" data-i18n="runtime.schedulerTick">
+                Scheduler Tick
+              </button>
+              <button class="button" type="button" data-trigger-preset="calendar_event" data-i18n="runtime.calendarTest">
+                Calendar Test
+              </button>
+              <button class="button" type="button" data-trigger-preset="web_console_custom" data-i18n="runtime.customEvent">
+                Custom Event Draft
+              </button>
+            </div>
+            <pre id="triggerReceipt" class="text-block compact"></pre>
+          </section>
+
+          <details class="detail-section operator-drawer">
+            <summary>
+              <span data-i18n="runtime.triggerLab">Trigger Lab</span>
+              <span class="pill" data-i18n="runtime.rawEvent">raw event</span>
+            </summary>
+            <div class="operator-grid">
+              <div class="operator-column">
+                <div id="triggerCatalogList" class="compact-list"></div>
+                <textarea id="triggerEventJson" rows="8">{"type":"message_push","message_id":"web_test","sender":"test@example.com","subject":"Web Console trigger test","snippet":"Synthetic message push.","importance":"high"}</textarea>
+                <div class="inline-actions">
+                  <button id="triggerDraftButton" class="button" type="button" data-i18n="runtime.draftEvent">
+                    Draft Event
+                  </button>
+                  <button id="triggerFireDryRunButton" class="button primary" type="button" data-i18n="runtime.fireDryRun">
+                    Fire Dry-Run
+                  </button>
+                </div>
+              </div>
+              <div class="operator-column">
+                <p class="muted-line" data-i18n="runtime.triggerPaletteHint">
+                  Preset buttons live above; raw JSON stays here for custom dry-run events.
+                </p>
+              </div>
+            </div>
+          </details>
+
+          <section class="split-grid">
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="livekit.events">Connection Events</h2>
+                <span class="pill" data-i18n="pills.read">read</span>
+              </div>
+              <div id="livekitEvents" class="livekit-log" aria-live="polite">
+                <span class="empty" data-i18n="livekit.noEvents">No LiveKit events yet.</span>
+              </div>
+            </article>
+
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="livekit.transcripts">Transcripts</h2>
+                <span class="pill" data-i18n="pills.read">read</span>
+              </div>
+              <div id="livekitTranscripts" class="livekit-log" aria-live="polite">
+                <span class="empty" data-i18n="livekit.noTranscripts">No transcripts in this browser session yet.</span>
+              </div>
+            </article>
+          </section>
+
+          <section class="split-grid">
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="runtime.scheduler">Scheduler</h2>
+                <span id="runtimeSchedulerPill" class="pill" data-i18n="pills.empty">empty</span>
+              </div>
+              <div id="runtimeScheduler" class="runtime-stack"></div>
+            </article>
+
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="runtime.plans">Plans</h2>
+                <span id="runtimePlanPill" class="pill" data-i18n="pills.empty">empty</span>
+              </div>
+              <div id="runtimePlans" class="runtime-stack"></div>
+            </article>
+          </section>
+
+          <section class="split-grid">
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="runtime.nanobot">Nanobot</h2>
+                <span id="runtimeNanobotPill" class="pill" data-i18n="pills.empty">empty</span>
+              </div>
+              <div id="runtimeNanobot" class="runtime-stack"></div>
+            </article>
+
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="runtime.agentTeam">Agent Team</h2>
+                <span id="runtimeAgentPill" class="pill" data-i18n="pills.empty">empty</span>
+              </div>
+              <div id="runtimeAgentTeam" class="runtime-stack"></div>
+            </article>
+          </section>
+        </section>
+
+        <section id="view-lineb" class="view" aria-label="LineB Voice">
+          <section class="split-grid">
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="lineb.route">Voice Route</h2>
+                <span class="status-light small idle" id="voiceRouteLight"></span>
+              </div>
+              <div class="control-stack">
+                <button id="voiceRouteButton" class="button primary" type="button" data-i18n="lineb.setNoVideo">
+                  Set No-Video Route
+                </button>
+                <button id="micCheckButton" class="button" type="button" data-i18n="lineb.micCheck">
+                  Mic Permission
+                </button>
+                <p id="voiceRouteState" class="muted-line" data-i18n="empty.noData">No data</p>
+              </div>
+            </article>
+
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="lineb.profile">Line Profile</h2>
+                <span class="status-light small idle" id="profileLight"></span>
+              </div>
+              <div class="control-stack">
+                <select id="lineProfileSelect"></select>
+                <div class="inline-actions">
+                  <button id="refreshProfilesButton" class="button" type="button" data-i18n="actions.refresh">
+                    Refresh
+                  </button>
+                  <button id="applyProfileButton" class="button primary" type="button" data-i18n="lineb.applyProfile">
+                    Apply
+                  </button>
+                </div>
+              </div>
+            </article>
+
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="livekit.room">LiveKit Room</h2>
+                <span class="status-light small idle" id="livekitLight"></span>
+              </div>
+              <div class="control-stack">
+                <label class="field-row">
+                  <span data-i18n="livekit.roomId">Room</span>
+                  <input id="livekitRoom" type="text" value="parrot-main" />
+                </label>
+                <label class="field-row">
+                  <span data-i18n="livekit.identity">Identity</span>
+                  <input id="livekitIdentity" type="text" value="web-console" />
+                </label>
+                <button id="mintLiveKitButton" class="button primary" type="button" data-i18n="livekit.mint">
+                  Mint Web Token
+                </button>
+                <div class="inline-actions">
+                  <button id="connectLiveKitButton" class="button primary" type="button" data-i18n="livekit.connectAudio">
+                    Connect Audio
+                  </button>
+                  <button id="disconnectLiveKitButton" class="button" type="button" data-i18n="livekit.disconnect" disabled>
+                    Disconnect
+                  </button>
+                </div>
+                <p id="livekitState" class="muted-line" data-i18n="empty.noData">No data</p>
+                <div id="remoteAudioMount" class="remote-audio-mount" aria-live="polite"></div>
+              </div>
+            </article>
+          </section>
+
+          <section class="split-grid">
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="lineb.tts">TTS Segment</h2>
+                <span class="pill" data-i18n="pills.test">test</span>
+              </div>
+              <div class="control-stack">
+                <textarea id="ttsText" rows="3">hello from LineB</textarea>
+                <button id="registerTtsButton" class="button" type="button" data-i18n="lineb.registerTts">
+                  Register
+                </button>
+              </div>
+            </article>
+
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="lineb.micInput">Mic Input</h2>
+                <span class="pill" data-i18n="pills.test">test</span>
+              </div>
+              <div class="control-stack">
+                <textarea id="micText" rows="3">hello LineB</textarea>
+                <label class="field-row">
+                  <span data-i18n="lineb.echoScore">Echo score</span>
+                  <input id="echoScore" type="number" min="0" max="1" step="0.05" value="0.1" />
+                </label>
+                <button id="submitMicButton" class="button primary" type="button" data-i18n="lineb.submitMic">
+                  Submit
+                </button>
+              </div>
+            </article>
+          </section>
+
+          <section class="console-panel">
+            <div class="pane-header compact">
+              <h2 data-i18n="lineb.result">Result</h2>
+              <span id="linebResultPill" class="pill" data-i18n="pills.empty">empty</span>
+            </div>
+            <pre id="linebOutput" class="text-block compact"></pre>
+          </section>
+        </section>
+
+        <section id="view-canvas" class="view" aria-label="Menu Canvas">
+          <section class="hero-status slim" aria-label="Canvas overview">
+            <div class="hero-primary">
+              <span id="canvasLight" class="status-light idle"></span>
+              <div>
+                <span class="eyebrow" data-i18n="canvas.label">Canvas State</span>
+                <strong id="canvasTitle">...</strong>
+                <p id="canvasSummary" data-i18n="empty.noData">No data</p>
+              </div>
+            </div>
+            <div class="hero-metrics">
+              <article class="metric-chip">
+                <span class="status-light small idle"></span>
+                <span data-i18n="canvas.modules">Modules</span>
+                <strong id="canvasModuleCount">...</strong>
+              </article>
+              <article class="metric-chip">
+                <span class="status-light small idle"></span>
+                <span data-i18n="canvas.refs">Refs</span>
+                <strong id="canvasRefCount">...</strong>
+              </article>
+              <article class="metric-chip">
+                <span class="status-light small idle"></span>
+                <span data-i18n="canvas.tools">Tools</span>
+                <strong id="canvasToolCount">...</strong>
+              </article>
+            </div>
+          </section>
+
+          <section class="console-panel">
+            <div class="pane-header compact">
+              <h2 data-i18n="canvas.workspaces">Workspaces</h2>
+              <span id="workspacePill" class="pill" data-i18n="pills.empty">empty</span>
+            </div>
+            <div id="workspaceRail" class="workspace-rail"></div>
+          </section>
+
+          <section class="console-panel">
+            <div class="pane-header compact">
+              <h2 data-i18n="canvas.map">Canvas Map</h2>
               <span class="pill" data-i18n="pills.read">read</span>
             </div>
-            <dl id="runtimeConfig" class="kv-list"></dl>
-          </article>
+            <div id="canvasGraph" class="canvas-graph"></div>
+          </section>
+        </section>
 
-          <article class="pane">
-            <div class="pane-header">
-              <h2 data-i18n="panes.brainSnapshot">Brain Snapshot</h2>
-              <span id="brainState" class="pill" data-i18n="pills.read">read</span>
+        <section id="view-memory" class="view" aria-label="Memory Graph">
+          <section class="hero-status slim" aria-label="Memory overview">
+            <div class="hero-primary">
+              <span id="memoryLight" class="status-light idle"></span>
+              <div>
+                <span class="eyebrow" data-i18n="memory.label">Graph Snapshot</span>
+                <strong id="memoryTitle">...</strong>
+                <p id="memorySummary" data-i18n="empty.noData">No data</p>
+              </div>
             </div>
-            <dl id="brainSnapshot" class="kv-list"></dl>
-          </article>
+            <div class="hero-metrics">
+              <article class="metric-chip">
+                <span class="status-light small idle" id="memoryBlackboardLight"></span>
+                <span data-i18n="memory.blackboard">Blackboard</span>
+                <strong id="memoryBlackboardCount">...</strong>
+              </article>
+              <article class="metric-chip">
+                <span class="status-light small idle" id="memoryRefLight"></span>
+                <span data-i18n="memory.refs">Refs</span>
+                <strong id="memoryRefCount">...</strong>
+              </article>
+              <article class="metric-chip">
+                <span class="status-light small idle" id="memoryL2bLight"></span>
+                <span data-i18n="memory.l2b">L2-B</span>
+                <strong id="memoryNodeCount">...</strong>
+              </article>
+            </div>
+          </section>
 
-          <article class="pane">
-            <div class="pane-header">
-              <h2 data-i18n="panes.containers">Containers</h2>
-              <span id="containerState" class="pill" data-i18n="pills.read">read</span>
+          <section class="memory-cockpit" aria-label="Memory operations cockpit">
+            <div class="memory-cockpit-top">
+              <div class="memory-cockpit-title">
+                <span class="eyebrow" data-i18n="memory.visualWorkspace">Visual Workspace</span>
+                <h2 data-i18n="memory.opsCockpit">Memory Operations Cockpit</h2>
+                <p data-i18n="memory.liveHint">Active Memory view polls every 5 seconds; Pause freezes the surface.</p>
+              </div>
+              <div id="memoryLanes" class="memory-lanes compact"></div>
             </div>
-            <div id="containers" class="text-block"></div>
-          </article>
 
-          <article class="pane">
-            <div class="pane-header">
-              <h2 data-i18n="panes.warnings">Warnings</h2>
-              <span id="warningState" class="pill" data-i18n="pills.read">read</span>
+            <div class="memory-cockpit-main">
+              <aside class="console-panel memory-rail">
+                <div class="pane-header compact">
+                  <h2 data-i18n="memory.sourceBuckets">Source Buckets</h2>
+                  <span id="memoryReadPill" class="pill" data-i18n="pills.read">read</span>
+                </div>
+                <div id="l15PoolList" class="compact-list pool-list"></div>
+                <div class="memory-card-actions">
+                  <label class="field-row">
+                    <span data-i18n="memory.bucket">bucket</span>
+                    <select id="l15BucketKind">
+                      <option value="main">main</option>
+                      <option value="obsidian_setting_daily">obsidian_setting_daily</option>
+                      <option value="obsidian_setting_roleplay">obsidian_setting_roleplay</option>
+                      <option value="google_calendar">google_calendar</option>
+                      <option value="autonomous_curiosity">autonomous_curiosity</option>
+                      <option value="roleplay_temp">roleplay_temp</option>
+                    </select>
+                  </label>
+                  <label class="field-row">
+                    <span data-i18n="memory.operation">Operation</span>
+                    <select id="l15BucketOp">
+                      <option value="freeze">freeze</option>
+                      <option value="unfreeze">unfreeze</option>
+                      <option value="clear">clear</option>
+                      <option value="import">import</option>
+                    </select>
+                  </label>
+                  <details class="memory-inline-drawer">
+                    <summary>
+                      <span data-i18n="memory.payload">Payload JSON</span>
+                    </summary>
+                    <textarea id="l15BucketPayload" rows="3">{}</textarea>
+                  </details>
+                  <div class="inline-actions">
+                    <button id="l15BucketDraftButton" class="button" type="button" data-i18n="memory.draftBucketOp">
+                      Draft Bucket Op
+                    </button>
+                    <button id="l15BucketDryRunButton" class="button" type="button" data-i18n="memory.bucketDryRun">
+                      Bucket Dry-Run
+                    </button>
+                  </div>
+                </div>
+              </aside>
+
+              <article class="console-panel memory-stage">
+                <div class="pane-header compact">
+                  <h2 data-i18n="memory.graphMap">L2-B Map</h2>
+                  <span id="memoryGraphPill" class="pill" data-i18n="pills.empty">empty</span>
+                </div>
+                <div class="filter-bar memory-filter-bar">
+                  <select id="memoryGraphMode" aria-label="graph mode">
+                    <option value="all" data-i18n="memory.graphModeAll">All graph</option>
+                    <option value="selected" data-i18n="memory.graphModeSelected">Selected neighborhood</option>
+                    <option value="attention" data-i18n="memory.graphModeAttention">Top attention</option>
+                  </select>
+                  <select id="memoryFilterKind" aria-label="kind filter">
+                    <option value="" data-i18n="memory.allKinds">All kinds</option>
+                    <option value="object">object</option>
+                    <option value="person">person</option>
+                    <option value="event">event</option>
+                    <option value="photo">photo</option>
+                  </select>
+                  <input id="memoryFilterSource" type="text" placeholder="source" />
+                  <input id="memoryFilterBucket" type="text" placeholder="bucket" />
+                  <input id="memoryFilterAttention" type="number" min="0" max="1" step="0.05" value="0" aria-label="minimum attention" />
+                  <button id="memoryFilterApplyButton" class="button" type="button" data-i18n="memory.applyFilters">
+                    Apply
+                  </button>
+                </div>
+                <div id="memoryGraph" class="memory-graph large"></div>
+              </article>
+
+              <aside class="console-panel memory-inspector">
+                <div class="pane-header compact">
+                  <h2 data-i18n="memory.detail">Memory Detail</h2>
+                  <span id="memoryDetailPill" class="pill" data-i18n="memory.liveSnapshot">live snapshot</span>
+                </div>
+                <div id="memoryDetail" class="memory-detail"></div>
+
+                <section class="memory-action-card">
+                  <div class="memory-action-head">
+                    <strong data-i18n="memory.selectedActions">Selected Node Actions</strong>
+                    <small data-i18n="memory.directHint">Click a L2-B node, then draft a safe operation.</small>
+                  </div>
+                  <div class="inline-actions">
+                    <button id="memoryUseSelectedButton" class="button" type="button" data-i18n="memory.useSelected">
+                      Use Selected
+                    </button>
+                    <button id="memoryEdgeFromSelectedButton" class="button" type="button" data-i18n="memory.setEdgeFrom">
+                      Edge From
+                    </button>
+                    <button id="memoryEdgeToSelectedButton" class="button" type="button" data-i18n="memory.setEdgeTo">
+                      Edge To
+                    </button>
+                  </div>
+                  <label class="field-row">
+                    <span data-i18n="memory.labelField">Label</span>
+                    <input id="l2bLabel" type="text" value="Web Test Node" />
+                  </label>
+                  <label class="field-row">
+                    <span data-i18n="memory.kind">kind</span>
+                    <select id="l2bKind">
+                      <option value="object">object</option>
+                      <option value="person">person</option>
+                      <option value="event">event</option>
+                      <option value="zone">zone</option>
+                      <option value="surface">surface</option>
+                      <option value="photo">photo</option>
+                    </select>
+                  </label>
+                  <label class="field-row">
+                    <span data-i18n="memory.targetUuid">Target UUID</span>
+                    <input id="l2bTargetUuid" type="text" placeholder="optional update target" />
+                  </label>
+                  <textarea id="l2bDescription" rows="3">Created from Web Console draft path.</textarea>
+                  <div class="inline-actions">
+                    <button id="l2bDraftButton" class="button" type="button" data-i18n="memory.draftNode">
+                      Draft Node
+                    </button>
+                    <button id="l2bDryRunButton" class="button primary" type="button" data-i18n="memory.createDryRun">
+                      Create Dry-Run
+                    </button>
+                    <button id="l2bUpdateButton" class="button" type="button" data-i18n="memory.updateDryRun">
+                      Update Dry-Run
+                    </button>
+                  </div>
+                  <label class="field-row">
+                    <span data-i18n="memory.deleteUuid">Delete UUID</span>
+                    <input id="l2bDeleteUuid" type="text" placeholder="node uuid" />
+                  </label>
+                  <button id="l2bDeleteButton" class="button" type="button" data-i18n="memory.deleteDryRun">
+                    Delete Dry-Run
+                  </button>
+                </section>
+
+                <section class="memory-action-card">
+                  <div class="memory-action-head">
+                    <strong data-i18n="memory.edgeDraft">Edge Draft</strong>
+                    <small data-i18n="memory.edgeDirectHint">Use two selected L2-B nodes or paste UUIDs.</small>
+                  </div>
+                  <label class="field-row">
+                    <span>From</span>
+                    <input id="l2bEdgeFrom" type="text" placeholder="source uuid" />
+                  </label>
+                  <label class="field-row">
+                    <span>To</span>
+                    <input id="l2bEdgeTo" type="text" placeholder="target uuid" />
+                  </label>
+                  <label class="field-row">
+                    <span data-i18n="memory.kind">kind</span>
+                    <select id="l2bEdgeKind">
+                      <option value="associated_with">associated_with</option>
+                      <option value="reminds_of">reminds_of</option>
+                      <option value="co_occurred">co_occurred</option>
+                      <option value="spatial_context">spatial_context</option>
+                      <option value="part_of_episode">part_of_episode</option>
+                      <option value="has_photo">has_photo</option>
+                      <option value="captured_via">captured_via</option>
+                      <option value="candidate_subject">candidate_subject</option>
+                    </select>
+                  </label>
+                  <div class="inline-actions">
+                    <button id="l2bEdgeDraftButton" class="button" type="button" data-i18n="memory.draftEdge">
+                      Draft Edge
+                    </button>
+                    <button id="l2bEdgeDryRunButton" class="button primary" type="button" data-i18n="memory.edgeDryRun">
+                      Edge Dry-Run
+                    </button>
+                  </div>
+                </section>
+
+                <section class="memory-action-card receipt">
+                  <div class="memory-action-head">
+                    <strong data-i18n="memory.receipts">Receipts</strong>
+                    <span id="memoryOpsPill" class="pill" data-i18n="pills.test">test</span>
+                  </div>
+                  <button id="memoryClearPreviewButton" class="button" type="button" data-i18n="memory.clearPreview">
+                    Clear Preview
+                  </button>
+                  <pre id="memoryOpsOutput" class="text-block compact"></pre>
+                </section>
+              </aside>
             </div>
-            <ul id="warnings" class="warning-list"></ul>
-          </article>
+
+            <div class="memory-cockpit-bottom">
+              <article class="console-panel">
+                <div class="pane-header compact">
+                  <h2 data-i18n="memory.blackboardKeys">Blackboard Keys</h2>
+                  <span id="memoryBlackboardPill" class="pill" data-i18n="pills.empty">empty</span>
+                </div>
+                <div id="memoryBlackboardList" class="memory-list"></div>
+                <details class="memory-inline-drawer">
+                  <summary>
+                    <span data-i18n="memory.blackboardActivity">Blackboard Activity</span>
+                    <span id="memoryBlackboardActivityPill" class="pill" data-i18n="pills.read">read</span>
+                  </summary>
+                  <div id="memoryBlackboardActivity" class="memory-activity"></div>
+                </details>
+              </article>
+
+              <article class="console-panel">
+                <div class="pane-header compact">
+                  <h2 data-i18n="memory.intentRefs">Intent Refs</h2>
+                  <span id="memoryIntentPill" class="pill" data-i18n="pills.empty">empty</span>
+                </div>
+                <div id="memoryIntentList" class="memory-list"></div>
+              </article>
+
+              <article class="console-panel">
+                <div class="pane-header compact">
+                  <h2 data-i18n="memory.toolArtifacts">Tool Artifacts</h2>
+                  <span id="memoryToolPill" class="pill" data-i18n="pills.empty">empty</span>
+                </div>
+                <div id="memoryTools" class="memory-tools"></div>
+              </article>
+            </div>
+          </section>
+
+          <details class="detail-section operator-drawer advanced-drawer">
+            <summary>
+              <span data-i18n="memory.advancedDrafts">Advanced Drafts</span>
+              <span class="pill" data-i18n="memory.operatorSafe">operator-safe</span>
+            </summary>
+            <div class="operator-grid">
+              <div class="operator-column">
+                <h2 data-i18n="memory.obsidianSettingNode">Obsidian Setting Node</h2>
+                <label class="field-row">
+                  <span data-i18n="memory.profile">Profile</span>
+                  <select id="obsidianProfile">
+                    <option value="daily">daily</option>
+                    <option value="roleplay">roleplay</option>
+                    <option value="ref">ref</option>
+                  </select>
+                </label>
+                <label class="field-row">
+                  <span data-i18n="memory.labelField">Label</span>
+                  <input id="obsidianLabel" type="text" value="Web setting node" />
+                </label>
+                <label class="field-row">
+                  <span data-i18n="memory.kind">kind</span>
+                  <select id="obsidianKind">
+                    <option value="object">object</option>
+                    <option value="person">person</option>
+                    <option value="event">event</option>
+                    <option value="zone">zone</option>
+                    <option value="surface">surface</option>
+                    <option value="photo">photo</option>
+                  </select>
+                </label>
+                <label class="field-row">
+                  <span>UUID</span>
+                  <input id="obsidianUuid" type="text" placeholder="required for ref" />
+                </label>
+                <div class="inline-actions">
+                  <button id="obsidianDraftButton" class="button" type="button" data-i18n="memory.draft">
+                    Draft
+                  </button>
+                  <button id="obsidianDryRunButton" class="button primary" type="button" data-i18n="memory.dryRun">
+                    Dry Run
+                  </button>
+                </div>
+              </div>
+              <div class="operator-column">
+                <h2 data-i18n="memory.advancedNotes">Notes</h2>
+                <p class="muted-line" data-i18n="memory.advancedHint">
+                  Raw JSON and true writes stay behind explicit operator paths; the main cockpit keeps safe dry-run actions visible.
+                </p>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <section id="view-graphiti" class="view" aria-label="Graphiti">
+          <section class="hero-status slim" aria-label="Graphiti overview">
+            <div class="hero-primary">
+              <span id="graphitiLight" class="status-light idle"></span>
+              <div>
+                <span class="eyebrow" data-i18n="graphiti.label">Memory Core</span>
+                <strong id="graphitiTitle">...</strong>
+                <p id="graphitiSummary" data-i18n="empty.noData">No data</p>
+              </div>
+            </div>
+            <div class="hero-metrics">
+              <article class="metric-chip">
+                <span class="status-light small idle"></span>
+                <span data-i18n="graphiti.partitions">Partitions</span>
+                <strong id="graphitiPartitionCount">...</strong>
+              </article>
+              <article class="metric-chip">
+                <span class="status-light small idle"></span>
+                <span data-i18n="graphiti.results">Results</span>
+                <strong id="graphitiResultCount">0</strong>
+              </article>
+              <article class="metric-chip">
+                <span class="status-light small idle"></span>
+                <span data-i18n="graphiti.status">Status</span>
+                <strong id="graphitiConfigState">...</strong>
+              </article>
+            </div>
+          </section>
+
+          <section class="split-grid">
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="graphiti.status">Status</h2>
+                <span id="graphitiStatusPill" class="pill" data-i18n="pills.empty">empty</span>
+              </div>
+              <div id="graphitiPartitions" class="graphiti-partitions"></div>
+            </article>
+
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="graphiti.search">Search</h2>
+                <span id="graphitiSearchPill" class="pill" data-i18n="pills.empty">empty</span>
+              </div>
+              <div class="control-stack">
+                <label class="field-row wide">
+                  <span data-i18n="graphiti.query">Query</span>
+                  <input id="graphitiSearchQuery" type="text" value="blue mug" />
+                </label>
+                <label class="field-row">
+                  <span data-i18n="graphiti.partition">Partition</span>
+                  <select id="graphitiSearchPartition">
+                    <option value="goslo">goslo</option>
+                    <option value="maid">maid</option>
+                    <option value="scene">scene</option>
+                    <option value="user">user</option>
+                  </select>
+                </label>
+                <label class="field-row">
+                  <span data-i18n="graphiti.limit">Limit</span>
+                  <input id="graphitiSearchLimit" type="number" min="1" max="20" value="5" />
+                </label>
+                <button id="graphitiSearchButton" class="button primary" type="button" data-i18n="graphiti.runSearch">
+                  Search
+                </button>
+              </div>
+            </article>
+          </section>
+
+          <section class="split-grid">
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="graphiti.results">Results</h2>
+                <span class="pill" data-i18n="pills.read">read</span>
+              </div>
+              <div id="graphitiResults" class="graphiti-results">
+                <span class="empty" data-i18n="graphiti.noResults">no results yet</span>
+              </div>
+            </article>
+
+            <article class="console-panel">
+              <div class="pane-header compact">
+                <h2 data-i18n="graphiti.episodeDraft">Episode Draft</h2>
+                <span id="graphitiDraftPill" class="pill" data-i18n="pills.empty">empty</span>
+              </div>
+              <div class="control-stack">
+                <label class="field-row">
+                  <span data-i18n="graphiti.episodeName">Name</span>
+                  <input id="graphitiEpisodeName" type="text" value="app_console_episode" />
+                </label>
+                <label class="field-row wide">
+                  <span data-i18n="graphiti.episodeBody">Body</span>
+                  <textarea id="graphitiEpisodeBody" rows="4">Web console dry-run episode.</textarea>
+                </label>
+                <div class="inline-actions">
+                  <button id="graphitiDraftButton" class="button" type="button" data-i18n="graphiti.draft">
+                    Draft
+                  </button>
+                  <button id="graphitiDryRunButton" class="button primary" type="button" data-i18n="graphiti.dryRun">
+                    Dry Run
+                  </button>
+                </div>
+                <p class="muted-line" data-i18n="graphiti.operatorNote">
+                  Writes stay dry-run until operator mode is explicitly enabled.
+                </p>
+              </div>
+              <pre id="graphitiDraftOutput" class="text-block compact"></pre>
+            </article>
+          </section>
         </section>
       </main>
     </div>
@@ -184,7 +934,7 @@
           </span>
           <select id="languageSelect">
             <option value="en">English</option>
-            <option value="zh">中文</option>
+            <option value="zh">&#20013;&#25991;</option>
           </select>
         </label>
       </form>

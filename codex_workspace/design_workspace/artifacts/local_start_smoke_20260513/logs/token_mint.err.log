@@ -1,0 +1,51 @@
+= : 无法将“=”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后
+再试一次。
+所在位置 行:1 字符: 1
++ =''; ='7888'; ='ws://127.0.0.1:7880'; ='devkey'; ='parrot_carriers_lo ...
++ ~~~
+    + CategoryInfo          : ObjectNotFound: (=:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+=7888 : 无法将“=7888”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正
+确，然后再试一次。
+所在位置 行:1 字符: 6
++ =''; ='7888'; ='ws://127.0.0.1:7880'; ='devkey'; ='parrot_carriers_lo ...
++      ~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (=7888:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+=ws://127.0.0.1:7880 : 无法将“=ws://127.0.0.1:7880”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼
+写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:1 字符: 15
++ =''; ='7888'; ='ws://127.0.0.1:7880'; ='devkey'; ='parrot_carriers_lo ...
++               ~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (=ws://127.0.0.1:7880:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+=devkey : 无法将“=devkey”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路
+径正确，然后再试一次。
+所在位置 行:1 字符: 39
++ =''; ='7888'; ='ws://127.0.0.1:7880'; ='devkey'; ='parrot_carriers_lo ...
++                                       ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (=devkey:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+=parrot_carriers_local_dev_livekit_secret_key_v1 : 无法将“=parrot_carriers_local_dev_livekit_secret_key_v1”项识别为 c
+mdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:1 字符: 50
++ ...  ='devkey'; ='parrot_carriers_local_dev_livekit_secret_key_v1'; uv ru ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (=parrot_carrier...t_secret_key_v1:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+D:\GOSLOParrot\ParrotCarriers\src\parrot\castle\token_mint.py:80: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+INFO:     Started server process [53096]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:7888 (Press CTRL+C to quit)

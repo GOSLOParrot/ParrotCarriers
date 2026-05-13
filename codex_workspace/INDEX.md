@@ -1,4 +1,4 @@
-# Codex Workspace Index
+﻿# Codex Workspace Index
 
 > Created: 2026-05-09
 > Scope: Clean Codex-facing workspace for finishing the GOSLOParrot app layer on top of the existing ParrotCarriers backend.
@@ -17,6 +17,7 @@ Read these in order for a new Codex session:
 6. `thesis_lineb_voiceprint_echo_addendum.md` — thesis addendum for Line B voiceprint detection, Line A speaker echo limits, and echo-safe dialogue wording.
 7. `app_frontend_startup_prep_20260512.md` plus `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md` for App/Web parallel routes and Maid Team boundary.
 8. `app_web_parallel_workflow_20260513.md` for the two-chat workflow, TODO board rules, business-interface write locations, and core-interface promotion rules.
+9. `design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md` for Unity App directory/resource/scene inventory before touching Unity assets.
 
 Then load only the relevant skill route:
 
@@ -61,7 +62,7 @@ Keep these as reference, not as a maze:
 | `.cursor/memory/architecture/Interface/INDEX.md` | Interface discipline: core vs business, A-D template. |
 | **`.cursor/memory/architecture/Interface/audit_log_index_20260511.md`** | **3 轮 10 bug 审计/修复 SSOT — 改 RoomSetting/LineB/ECP/disconnect 路径前必读** |
 | `.cursor/memory/architecture/app_completion_master_audit_20260507.md` | 8 scenario audit and pixel UI asset inventory. |
-| `unity/ArSpike/Assets/Scripts/ParrotApp/MIGRATION.md` | Unity implementation status and ParrotDev vs ArSpike boundary. |
+| `design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md` | Unity App formal directory/resource/scene inventory and ParrotDev/test-evidence boundary. |
 | `src/scripts/start_nanobot_worker.py` | Current Nanobot gateway setup path. |
 
 ## Hard Rules
@@ -71,3 +72,4 @@ Keep these as reference, not as a maze:
 - If adding new `.cursor/memory/architecture/**` documents, update `.cursor/memory/INDEX.md`. This workspace avoids that by default.
 - Prefer placeholders over blocking on final Figma/pixel art assets.
 - Keep Web console read-only until the read surfaces are clear and stable.
+

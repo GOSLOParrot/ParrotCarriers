@@ -157,8 +157,8 @@ Camera:
   m_GameObject: {fileID: 275410331}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_ClearFlags: 2
+  m_BackGroundColor: {r: 0.02, g: 0.025, b: 0.03, a: 1}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
@@ -341,6 +341,20 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1120588091}
+  - component: {fileID: 1120588097}
+  - component: {fileID: 1120588096}
+  - component: {fileID: 1120588095}
+  - component: {fileID: 1120588094}
+  - component: {fileID: 1120588093}
+  - component: {fileID: 1120588092}
+  - component: {fileID: 1120588105}
+  - component: {fileID: 1120588104}
+  - component: {fileID: 1120588103}
+  - component: {fileID: 1120588102}
+  - component: {fileID: 1120588101}
+  - component: {fileID: 1120588100}
+  - component: {fileID: 1120588099}
+  - component: {fileID: 1120588098}
   m_Layer: 0
   m_Name: RuntimeServices
   m_TagString: Untagged
@@ -363,6 +377,254 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1500146269}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1120588092
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 214b017905774c59a71bd5f5394bfaed, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  roomManager: {fileID: 1120588096}
+  lifecycleManager: {fileID: 1120588097}
+  shutdownService: {fileID: 1120588095}
+  tokenMintClient: {fileID: 1120588093}
+  microphonePublisher: {fileID: 1120588101}
+  videoPublisher: {fileID: 1120588100}
+  orchestratorClient: {fileID: 1120588104}
+  heartbeatPublisher: {fileID: 1120588103}
+  defaultConfig:
+    scene_id: ar_handheld
+    room_id: parrot-main
+    room_profile_id: default
+    model_id: GOSLO_default
+    persona_id: goslo_parrot_default
+    pattern_id: default
+    line_id: line_a
+    line_profile_id: linea_gemini_realtime
+    experience_mode: ar_companion
+    skin_id: manor
+    setting_file_refs: []
+    capability_mode: FullARCompanion
+    workspace_id: mansion_hub
+    livekit_url: 
+    join_token: 
+    unity_identity: 
+    app_api_url: 
+    orchestrator_url: 
+    orchestrator_secret: 
+    setting_change_tier: 0
+    compatibility_state: 
+    compatibility_summary: 
+    requires_livekit_reconnect: 0
+  connectTimeoutSeconds: 20
+  brainRpcReadyTimeoutSeconds: 8
+  brainRpcRetryIntervalSeconds: 0.5
+--- !u!114 &1120588093
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1ae2b69323534cbca1d1faf6edd0e7a6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  mintEndpoint: http://127.0.0.1:7888/mint
+  bearerSecret: 
+--- !u!114 &1120588094
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3ef9ff16439f63b418b6e7c8955e8e4d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  roomManager: {fileID: 1120588096}
+  brainIdentityPrefix: agent-
+--- !u!114 &1120588095
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e5570cf1a0859a447bebefb035ac8042, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  roomManager: {fileID: 1120588096}
+  runOnApplicationQuit: 1
+--- !u!114 &1120588096
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c6f7abc7b3a89184ca6af5d8bc644cd9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  serverUrl: ws://localhost:7880
+  joinToken: 
+  autoConnectOnStart: 0
+  allowEditorTokenFile: 1
+--- !u!114 &1120588097
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b6c6390a228560a4e9926024f33f2d5e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  config: {fileID: 11400000, guid: bede49f18ac103b4e9d732289701cc0c, type: 2}
+  verboseEditorLog: 0
+--- !u!114 &1120588098
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d952a790b8331b04d8cfe104f84c8ce0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  verboseLogging: 1
+  videoPublisher: {fileID: 1120588100}
+--- !u!114 &1120588099
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e1e4677c4f087c54589a1cbe6e2f0208, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  agentIdentityPrefix: agent-
+  pauseReportDelay: 0.5
+  videoPublisher: {fileID: 1120588100}
+  frameFreshnessCheckSeconds: 1
+  lifecycleManager: {fileID: 1120588097}
+--- !u!114 &1120588100
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ab63bd26dd79b6c4d8c9d32b0121634a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  width: 1280
+  height: 720
+  targetFps: 30
+  fullBitrate: 1000000
+  fullFps: 30
+  geminiOnlyBitrate: 300000
+  geminiOnlyFps: 15
+  arCamera: {fileID: 275410333}
+  useWebcamFallback: 1
+  preferredDeviceName: 
+  webcamWarmupFrames: 3
+  lifecycleManager: {fileID: 1120588097}
+--- !u!114 &1120588101
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b8c4a7e182282294b802f6137ab7aafa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  preferredDevice: 
+  fallbackSampleRate: 48000
+  lifecycleManager: {fileID: 1120588097}
+  routeDetector: {fileID: 1120588102}
+  routeRepublishDebounceSeconds: 0.5
+  publishIntentEnabled: 1
+--- !u!114 &1120588102
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c857eef68eb9a2340b3c8036e095c0b0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pollIntervalSeconds: 2
+  pollInEditor: 0
+--- !u!114 &1120588103
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cb29b950d1c3b934fad7e186c86a04d8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  useLogTransportInEditor: 1
+  animationDriver: {fileID: 0}
+--- !u!114 &1120588104
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9df38e605a4344f4948a951f31126c33, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  orchestratorBaseUrl: 
+  bearerSecret: 
+--- !u!114 &1120588105
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ace88a811624f8da49531d531bb2484, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  appApiBaseUrl: http://127.0.0.1:8790
+  bearerSecret: 
 --- !u!1 &1265433863
 GameObject:
   m_ObjectHideFlags: 0
@@ -372,6 +634,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1265433864}
+  - component: {fileID: 1265433865}
   m_Layer: 0
   m_Name: StartupDesignStage
   m_TagString: Untagged
@@ -394,6 +657,23 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1500146269}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1265433865
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1265433863}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 36da0a5804b400b49a6a19727069d075, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  startupFlow: {fileID: 1120588092}
+  lifecycleManager: {fileID: 1120588097}
+  roomManager: {fileID: 1120588096}
+  roomSettingClient: {fileID: 1120588105}
+  resourcePrefix: StartupPaperCraft/
 --- !u!1 &1500146268
 GameObject:
   m_ObjectHideFlags: 0

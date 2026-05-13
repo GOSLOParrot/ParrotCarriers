@@ -1,4 +1,4 @@
-# Ner Unity Tuning Chat Prompt
+﻿# Ner Unity Tuning Chat Prompt
 
 > Date: 2026-05-11
 > Use from repo root: `D:\GOSLOParrot\ParrotCarriers`
@@ -15,10 +15,10 @@
 1. `codex_workspace/design_workspace/tasks/ACTIVE_CONTEXT.md`
 2. `codex_workspace/design_workspace/tasks/lineb_ner_gameplay_longline_todo_20260511.md`
 3. `.cursor/memory/architecture/Interface/app_v1_lineb_ner_realdevice_config_report_20260511.md`
-4. `unity/ArSpike/Assets/Resources/parrot_models/ner_skin2.json`
-5. `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/NerSpineController.cs`
-6. `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/NerCheekPinchInteractor.cs`
-7. `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/NerPickupPlaceInteractor.cs`
+4. `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/ner_skin2.json`
+5. `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/NerSpineController.cs`
+6. `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/NerCheekPinchInteractor.cs`
+7. `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/NerPickupPlaceInteractor.cs`
 8. `tests/test_unity/test_app_v1_meta_ui_static.py`
 
 目标不是重写架构，而是完成 Ner production prefab / 微调验证：
@@ -73,3 +73,4 @@
 - 简短列出改了哪些 prefab/script/manifest/test/doc。
 - 明确区分 `完成`、`partial`、`未验证`。
 - 如果有手感参数，记录推荐值和为什么。
+

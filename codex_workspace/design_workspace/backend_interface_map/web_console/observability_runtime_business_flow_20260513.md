@@ -1,11 +1,11 @@
 # Observability Runtime Business Flow (2026-05-13)
 
 Owner: Web Console chat  
-Status: approved  
+Status: in_progress
 Category: Web Console business interface  
 Scope: ECS/module health, orchestrator status, Blackboard, IntentWorkspace, Plan/task, Scheduler, Nanobot, AgentTeam/Maid Team, GOSLO/Nanobot collaboration  
 Updated: 2026-05-13  
-Related TODO: WEB-002, WEB-004, WEB-005  
+Related TODO: WEB-002, WEB-004, WEB-005, WEB-009, WEB-011
 Sources: `src/parrot/castle/orchestrator/status.py`, `src/parrot/castle/orchestrator/server.py`, `src/parrot/scheduler/**`, `src/parrot/brain/intent_workspace.py`, `src/parrot/brain/plan/**`, `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md`
 
 ## Slice: Runtime Observability
@@ -98,11 +98,164 @@ Current behavior:
   config, brain snapshot, containers, and warnings in the Obsidian-like console
   layer.
 - The frontend now includes a visual status topology, visual module heartbeat
-  placeholders, and a settings dialog with English/Chinese language switching.
+  placeholders, breathing status lights, a simplified overview-first home
+  screen, collapsed detail sections for raw/complex data, and a settings dialog
+  with English/Chinese language switching.
 - Verified desktop and mobile screenshots with headless Edge. Current local
   orchestrator run returns `/status` 200 through the BFF, while the console
   correctly marks the system `degraded` because Redis/Blackboard/Brain live
   data is absent in this local session.
+
+Extension for WEB-009:
+
+- Local `.env` now holds `PARROT_ORCH_SECRET`; `src/scripts/start_web_console.py`
+  and `python -m parrot.castle.orchestrator` both load `.env` for local
+  developer runs. The secret is a static bearer value, not a time-expiring
+  token; rotate it by changing the env/file value and restarting services.
+- BFF added App/LineB/Menu smoke routes:
+  `/api/app/canvas`, `/api/app/modules`, `/api/app/line-profiles`,
+  `/api/app/line-profiles/apply`, `/api/app/workspace/apply`,
+  `/api/app/lineb/audio-route`, `/api/app/lineb/tts-segment`,
+  `/api/app/lineb/mic-input`, and `/api/app/live-state`.
+- BFF also added Web-side LiveKit join-token support:
+  `/api/livekit/config` and `/api/livekit/web-token`. The route mints a
+  short-lived browser participant token server-side and does not expose
+  `LIVEKIT_API_SECRET` to the frontend; the UI stores the token only for the
+  current browser session and renders redacted token metadata.
+- Static frontend is split into three Web places instead of one crowded page:
+  `Ops Health`, `LineB Voice`, and `Menu Canvas`.
+- The LineB Voice place now includes browser LiveKit audio client wiring:
+  `Connect Audio` loads the LiveKit JS SDK, joins the configured room with the
+  BFF-minted token, starts browser audio, publishes the local microphone, and
+  attaches remote audio tracks to hidden audio elements. This stays Web-only
+  and does not add any fields to App DTOs.
+- LineB Voice also renders Web-local LiveKit event panes: token mint,
+  connect, signal reconnect, full reconnect, disconnect, remote audio attach,
+  `TranscriptionReceived`, and `lk.transcription` data-topic messages. These
+  panes are current-browser observability only; persistent conversation history
+  remains owned by Graphiti/DSG archive flows.
+- Browser-verified control-path smoke:
+  LineB no-video route applies through the BFF, simulated mic/asr input returns
+  `user_turn`, LineB profile selection stays on active LineB profiles only,
+  LiveKit Web token mint returns a redacted UI receipt with no raw JWT in the
+  page, Menu Canvas renders module/tool/workspace nodes, and workspace apply
+  can switch the visible canvas state.
+- Boundary: automatic browser verification did not click `Connect Audio`
+  because that requests microphone permission and transmits the short-lived
+  LiveKit token to the configured room. Real no-video conversation verification
+  still requires an explicit user-approved mic permission click plus a running
+  server-side LineB/LiveKit Agents session.
+
+Extension for WEB-004 / WEB-005:
+
+- Web BFF added `/api/runtime/monitor` through
+  `src/parrot/web_console/runtime_monitor.py`. This is a Web-only read model;
+  it does not promote Scheduler internals, Nanobot worker details, or AgentTeam
+  placeholders into App DTOs or the shared core SSOT.
+- Static frontend now has a dedicated `Runtime Monitor` view separate from the
+  simplified Ops home screen. It renders Scheduler route order/channels/task
+  types/active tasks, Nanobot report bridge state, Plan counts/list rows,
+  Blackboard declared/present summary, and the V1 fixed `CatMaid Team`
+  placeholder.
+- GOSLO/Nanobot collaboration is shown as safe channel/status topology:
+  Scheduler command channel -> Nanobot dispatch stream -> Nanobot result
+  channel -> Scheduler-to-Brain return. Chatroom/message-send/admin controls
+  remain future Web operator workflows that need draft/receipt/audit handling.
+- The collaboration topology now has a Web-only `channel_flow` read model and a
+  visual flow renderer: Scheduler Commands -> Nanobot Dispatch -> Nanobot
+  Worker -> Nanobot Results -> Brain Return. Each stage carries channel/status
+  summary only; raw channel admin remains out of the browser.
+
+Extension for Plan DAG rendering:
+
+- `src/parrot/web_console/runtime_monitor.py` now includes Web-only Plan DAG
+  data in `/api/runtime/monitor`: step dependencies, started/completed
+  timestamps, result refs, related node/ref ids, staged ref id, blackboard
+  namespace, and a bounded `dag.nodes` / `dag.edges` shape.
+- The frontend Runtime Monitor renders each Plan as a compact phase/step DAG
+  when steps exist, while keeping Scheduler/Nanobot/Plan internals read-only.
+- The Plan DAG read model now also includes bounded step hints:
+  `ready_step_ids`, `blocked_step_ids`, and `critical_step_ids`. The frontend
+  marks ready/blocked/critical nodes, emphasizes selected edges, and lets the
+  operator click a step to inspect expected tool, Nanobot task id, dependencies,
+  result ref/summary, timestamps, and errors.
+- This stays a Web read adapter. It does not promote py-trees internals,
+  Nanobot task payloads, or Plan UI DTOs into the App lane.
+
+Extension for Trigger Lab and Gmail message smoke:
+
+- Web BFF added the trigger management surface:
+  `GET /api/dsg/triggers/catalog`, `POST /api/dsg/triggers/draft-event`, and
+  `POST /api/dsg/triggers/fire-event`.
+- The route catalog reads registered DSG triggers and exposes kind/interval and
+  sample event hints. Draft/fire returns a receipt with matched trigger names.
+  Real fire publishes to `CH_DSG_EVENTS` only when `dry_run=false` and
+  `operator_mode=true`; it does not instantiate or call Brain trigger singletons
+  inside the Web process.
+- Web BFF added `POST /api/google/messages/check` and
+  `POST /api/google/messages/push-test`. The check route drafts/dispatches
+  Scheduler `message_check` work for Nanobot Google Workspace/Gmail MCP; the
+  push-test route drafts/publishes a synthetic `message_push` DSG event.
+- Frontend Runtime Monitor now has a collapsed Trigger Lab with trigger catalog,
+  editable event JSON, draft/fire dry-run buttons, Gmail check dry-run, message
+  push dry-run, and receipt output.
+- Audit note: `MessageNotificationTrigger` still writes message EVENT nodes
+  directly to L2-B internally. This is a known backend drift from Calendar and
+  Obsidian, which use L1.5/TriggerOutcome commit paths. The next backend pass
+  should migrate it to `TriggerOutcome.commit_observations` or add an equivalent
+  receipt/audit boundary.
+
+### Interface Matrix: Trigger Lab And Message Checks
+
+Checkpoint: 2026-05-13. These are Web-only operator-safe business interfaces.
+They exist to test trigger routing and Nanobot message dispatch without giving
+the browser direct Gmail OAuth, direct Brain trigger singletons, or raw Redis
+admin access.
+
+| Endpoint | Purpose | Backend adapter | Safety rule |
+|:--|:--|:--|:--|
+| `GET /api/runtime/monitor` | Read Scheduler, Nanobot, Plan DAG/hints, Blackboard, AgentTeam placeholder, and collaboration channel flow. | `build_runtime_monitor_snapshot()` | Read-only Web monitor. |
+| `GET /api/dsg/triggers/catalog` | Show trigger name/kind/interval and sample event hints. | `trigger_catalog()` | Read-only trigger discovery. |
+| `POST /api/dsg/triggers/draft-event` | Draft an event envelope and list likely matched triggers. | `draft_trigger_event()` | Draft only; no Redis publish. |
+| `POST /api/dsg/triggers/fire-event` | Publish a DSG event for the running trigger listener. | `fire_trigger_event()` -> `CH_DSG_EVENTS` | Default dry-run; real publish requires `operator_mode=true` and `dry_run=false`. |
+| `POST /api/google/messages/check` | Draft/dispatch Nanobot Gmail/Workspace `message_check`. | `dispatch_message_check()` -> Scheduler dispatch | Default dry-run; browser never holds Gmail credentials. |
+| `POST /api/google/messages/push-test` | Draft/publish a synthetic `message_push` event. | `push_test_message()` -> trigger event path | Default dry-run; real event requires operator mode. |
+
+Current drift / fix target:
+
+- `CalendarTrigger` and Obsidian ingestion produce `TriggerOutcome`
+  upload-channel data that the runner can commit through L1.5.
+- `MessageNotificationTrigger` still creates message EVENT nodes with direct
+  `self._graph.upsert_node(...)`. This should be refactored to return
+  `commit_observations` or a comparable audited receipt so Web message tests
+  exercise the same path as Calendar/Obsidian.
+
+### Investigation: Runtime Visual Rendering Interfaces
+
+Checkpoint: 2026-05-13. Runtime data is present enough for visual grouping, but
+not yet shaped as an operator-grade live canvas.
+
+Existing fields:
+
+- Scheduler exposes route order, destinations, Redis channels, Nanobot task
+  types, best-effort active tasks, and channel-flow stage summaries.
+- Nanobot exposes module status, busy flag, report count, last active time,
+  report refs, dispatch stream, and result channel.
+- Plans expose active/archive counts, current plan, state counts, compact step
+  rows, dependency edges, and Web-only ready/blocked/critical step hints.
+- Blackboard summary exposes declared/present counts and present keys by scope.
+- Collaboration summary exposes Scheduler command channel, Nanobot dispatch
+  stream, Nanobot result channel, Brain return channel, and high-level chatroom
+  boundary.
+
+Next Web-only interface work:
+
+1. Add receipt drawers for recent dispatch/result summaries once the worker
+   exposes bounded result receipts.
+2. Evaluate whether Plan/Blackboard need a durable `changed_since` or SSE lane
+   after the polling DAG/activity views prove useful.
+3. Keep chatroom/message-send/admin controls draft/receipt-first; do not expose
+   raw channel internals or credentials in the UI.
 
 ## Console Control Scope
 
@@ -131,3 +284,86 @@ they are added, Web must separate:
 - Web-only operator controls such as MCP edit/apply, nanobot config editing,
   and process surgery;
 - dry-run/confirmation/audit output for any non-read action.
+
+## Requirement Reframe: WEB-011 Runtime Flow And Trigger Palette
+
+Owner chat: Web Console
+Status: approved
+Related TODO: WEB-011
+Research anchors: React Flow interaction model, Cytoscape.js subgraph/compound
+layouts, py-trees Blackboard activity model, Nanobot task/cron/worker patterns.
+
+### Requirements Captured
+
+- Runtime Monitor should not remain a dense list of mini panels. It needs a
+  visual flow workspace for Scheduler, Nanobot, Plan/task, Blackboard activity,
+  IntentWorkspace refs, and Brain return flow.
+- Plan/task visualization should be a larger DAG/timeline workspace, with
+  phase/step nodes, ready/blocked/critical styling, dependencies, Nanobot task
+  ids, result refs, and receipt history.
+- Blackboard should show a live activity/ownership view: scope, writer,
+  key state, reads/writes, event-driven keys, recent changes, and links to
+  plans/intents where current data supports it.
+- IntentWorkspace should be shown as active intent/ref groups with owner,
+  role, expiry/pressure, related node/ref ids, and visible connections to
+  L2-B or Plan steps.
+- Trigger controls should be manual buttons, not only editable JSON:
+  `message_push`, `message_check`, `llm_context_push`, Calendar test,
+  Obsidian setting node, Graphiti episode, and custom DSG event draft/fire.
+- Manual trigger fire must remain receipt-first: draft, match triggers,
+  dry-run receipt, optional operator execution. The browser must not directly
+  call Brain trigger singletons or hold Google/LiveKit/server secrets.
+
+### Implementation Order
+
+1. Keep `/api/runtime/monitor` as the polling read model while the visual
+   workspace is being shaped.
+2. Turn the current channel-flow strip into a large visual Runtime Flow page:
+   Scheduler Commands -> Nanobot Dispatch -> Nanobot Worker -> Results ->
+   Brain/Blackboard/IntentWorkspace.
+3. Move Plan DAG into the large workspace, not a compact row-only card.
+4. Add a trigger palette with safe preset buttons and receipt timeline.
+5. Add recent dispatch/result receipt drawers once Scheduler/Nanobot exposes
+   bounded receipt summaries.
+6. Evaluate `changed_since` or SSE only after the visual model is useful;
+   promote to core only if App also needs the same runtime event stream.
+
+### Audit Notes
+
+- WEB-011 does not add Unity/App DTO requirements.
+- Message/Gmail actions stay through Scheduler/Nanobot paths, not browser
+  OAuth.
+- Raw channel administration, process restart, or config surgery remain
+  Web-only operator flows and must use dry-run/audit receipts.
+
+### Implementation Round: WEB-011.5 First Trigger Palette
+
+Status: in_progress
+
+Changed in this slice:
+
+- Moved common trigger actions out of the raw Trigger Lab drawer and into a
+  visible Runtime trigger palette.
+- Added preset buttons for `message_check`, `message_push`,
+  `llm_context_push`, `scheduler_tick`, `calendar_event`, and
+  `web_console_custom`.
+- Message actions still use the existing Nanobot/Web routes:
+  `POST /api/google/messages/check` and `POST /api/google/messages/push-test`.
+- LLM/scheduler/calendar/custom presets write the raw event textarea and call
+  `POST /api/dsg/triggers/draft-event`, so the browser still receives a safe
+  draft receipt rather than calling Brain trigger singletons.
+
+Verification:
+
+- `node --check web\console\assets\app.js`
+- Duplicate `id="..."` scan for `web/console/index.html`: clean.
+- In-app browser Runtime smoke:
+  trigger palette is visible, the LLM context push preset returns a receipt,
+  and no console errors are reported.
+
+Remaining work:
+
+- Add grouped catalog-driven trigger buttons once the catalog shape is rich
+  enough for stable labels.
+- Add a receipt timeline instead of a single receipt block.
+- Add explicit operator execution copy before any non-dry-run fire path.

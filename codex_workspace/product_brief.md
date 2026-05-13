@@ -35,8 +35,11 @@ Core controls:
 
 Implementation home:
 
-- `unity/ArSpike/Assets/Scripts/ParrotApp/`
-- future UI assets: `unity/ArSpike/Assets/UI/`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/`
+- curated UI assets: `unity/ArSpike/Assets/ParrotApp/Art/AppV1/`
+- runtime resources: `unity/ArSpike/Assets/ParrotApp/Resources/`
+- models: `unity/ArSpike/Assets/ParrotApp/Models/`
+- inventory SSOT: `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md`
 
 ### App 2D Workspace
 

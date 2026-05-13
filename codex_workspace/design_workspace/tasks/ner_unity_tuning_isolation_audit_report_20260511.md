@@ -1,4 +1,4 @@
-# Ner Unity Tuning Isolation Audit Report
+﻿# Ner Unity Tuning Isolation Audit Report
 
 > Date: 2026-05-11
 > Scope: Ner mouse tuning scene isolation, real controller pollution check, and next-step tuning risk.
@@ -7,19 +7,19 @@
 
 The Ner mouse tuning scene is isolated from the real app entry path after this audit.
 
-- `Assets/NerTuningTest` remains the only location for the mouse tuning scene, prefab, materials, builder, harness, and acceptance probe.
-- `EditorBuildSettings.asset` does not include `Assets/NerTuningTest/Scenes/NerMouseTuningScene.unity`; only `Assets/Scenes/SampleScene.unity` is enabled.
-- No `NerTuning`, `NerMouseTuningHarness`, `NerTuningAcceptanceProbe`, or `NerMouseTuningScene` references were found outside `Assets/NerTuningTest`.
+- `Assets/Tests/NerTuning` remains the only location for the mouse tuning scene, prefab, materials, builder, harness, and acceptance probe.
+- `EditorBuildSettings.asset` does not include `Assets/Tests/NerTuning/Scenes/NerMouseTuningScene.unity`; only `Assets/ParrotApp/Scenes/ParrotApp_Startup.unity` is enabled.
+- No `NerTuning`, `NerMouseTuningHarness`, `NerTuningAcceptanceProbe`, or `NerMouseTuningScene` references were found outside `Assets/Tests/NerTuning`.
 - The two test MonoBehaviours were wrapped with `#if UNITY_EDITOR`, so they do not enter player/runtime builds.
 - No real controller file was changed in this cleanup pass.
 
 ## Cleanup Applied
 
-- `unity/ArSpike/Assets/NerTuningTest/Scripts/NerMouseTuningHarness.cs`
+- `unity/ArSpike/Assets/Tests/NerTuning/Scripts/NerMouseTuningHarness.cs`
   - Added a file-level `#if UNITY_EDITOR` guard.
   - Keeps mouse-only cheek pinch, face-center tap, body click, pickup, wheel/keyboard tuning out of app runtime.
 
-- `unity/ArSpike/Assets/NerTuningTest/Scripts/NerTuningAcceptanceProbe.cs`
+- `unity/ArSpike/Assets/Tests/NerTuning/Scripts/NerTuningAcceptanceProbe.cs`
   - Added a file-level `#if UNITY_EDITOR` guard.
   - Keeps tuning-only acceptance probes out of app runtime.
 
@@ -27,7 +27,7 @@ No production `ParrotApp/Parrot` controller or interactor code was deleted, beca
 
 ## Verification
 
-- Searched `Assets` and `ProjectSettings` outside `Assets/NerTuningTest`; no tuning scene or harness references were found.
+- Searched `Assets` and `ProjectSettings` outside `Assets/Tests/NerTuning`; no tuning scene or harness references were found.
 - Ran Unity script refresh/compile request; Editor console returned `0` errors and `0` warnings.
 - Ran Python regression:
   - `.\.venv\Scripts\python.exe -m pytest tests\test_unity\test_app_v1_meta_ui_static.py tests\test_brain\test_menu_workspace.py tests\test_brain\test_tools_model_id.py tests\test_shared\test_model_manifest.py -q`
@@ -87,3 +87,4 @@ Use the isolated scene for feel tuning only:
 - Completed: test script player-build exclusion via `UNITY_EDITOR`.
 - Partial: mobile/AR input parity; production interactors still need a separate Input System pass.
 - Not verified in this report: real device AR touch behavior, ASR/TTS/LineB echo suppression, and final production prefab entry path.
+

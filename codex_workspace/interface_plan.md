@@ -126,7 +126,10 @@ Existing core surfaces:
 Need to define:
 
 - user-facing `Room` equals internal `RoomProfile`, not LiveKit room;
-- RoomSetting has six switching axes: Model, Room, Persona, Line, Scene, Maid Team;
+- RoomSetting has six switching axes: Model, Room, Persona, Line, Theme, Maid Team;
+- user-facing `Theme` means `skin_id` / UI suite; internal `scene_profile_id`
+  stays a launch baseline and should not be a desktop/indoor/outdoor manual
+  RoomSetting row;
 - startup quick `Mode` must be represented as `experience_mode`, while GOSLO `behavior_mode` remains runtime/Brain-owned;
 - runtime HUD/tool drawer/settings/canvas choices save through explicit menu preference or canvas preset stores;
 - compatibility resolver disables/degrades menu items when Model, Line, Persona, Scene, Maid Team, permissions, or assets conflict.

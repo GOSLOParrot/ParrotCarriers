@@ -723,6 +723,10 @@ def test_room_setting_snapshot_exposes_five_axes(tmp_path: Path) -> None:
         "ar_companion",
         "2d_hall",
     }
+    assert {skin["skin_id"] for skin in snapshot["selectors"]["skins"]} >= {
+        "manor",
+        "ner_mochi_room_v0",
+    }
     assert snapshot["selectors"]["models"][0]["model_id"] == "GOSLO_default"
     assert {model["model_id"] for model in snapshot["selectors"]["models"]} >= {
         "GOSLO_default",
@@ -836,6 +840,36 @@ def test_room_profile_preview_enables_ner_and_disables_fly_to_hand(tmp_path: Pat
     assert any(
         d["capability_id"] == "model.capability.touch_idle"
         and d["state"] == "enabled"
+        for d in decisions
+    )
+
+
+def test_room_profile_preview_blocks_ar_mode_without_ar_scene(tmp_path: Path) -> None:
+    set_preset_loader_for_test(PresetLoader(search_paths=[tmp_path / "presets"]))
+    facade = AppFirstVersionFacade()
+
+    preview = facade.preview_room_profile(
+        {
+            "schema_version": 3,
+            "kind": "room_profile",
+            "room_profile_id": "desktop_ar_mismatch",
+            "display_name": "Desktop AR Mismatch",
+            "model_id": "GOSLO_default",
+            "persona_id": "goslo_parrot_default",
+            "line_id": "line_a",
+            "scene_profile_id": "desktop_webcam",
+            "experience_mode": "ar_companion",
+            "workspace_id": "mansion_hub",
+        }
+    )
+
+    decisions = preview["compatibility"]["decisions"]
+    assert preview["compatibility"]["state"] == "blocked"
+    assert any(
+        d["capability_id"] == "experience_mode.scene_requirement"
+        and d["state"] == "blocked"
+        and d["reason"] == "ar_companion_requires_ar_scene"
+        and d["fallback_action"] == "switch_scene:ar_handheld"
         for d in decisions
     )
 

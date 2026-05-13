@@ -1,4 +1,4 @@
----
+﻿---
 title: App V1 Room Setting And Room Profile Interface
 date: 2026-05-10
 status: ratified-design / partial-implementation
@@ -13,8 +13,8 @@ code:
   - src/parrot/brain/app_first_version.py
   - src/parrot/brain/app_monitor_server.py
   - src/parrot/shared/bb_schema.py
-  - unity/ArSpike/Assets/Scripts/ParrotApp/Config/AppStartupConfigDto.cs
-  - unity/ArSpike/Assets/Scripts/ParrotApp/Lifecycle/AppStartupFlowController.cs
+  - unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Config/AppStartupConfigDto.cs
+  - unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Lifecycle/AppStartupFlowController.cs
 tests:
   - tests/test_brain/test_menu_workspace.py
   - tests/test_brain/test_app_first_version_facade.py
@@ -41,9 +41,22 @@ Startup RoomSetting is intentionally small:
 1. Select existing Room.
 2. Create new Room.
 3. Save current Room draft.
-4. Switch the six launch axes: `Model`, `Room`, `Persona`, `Line`, `Scene`, `Maid Team`.
+4. Switch the six launch axes: `Model`, `Room`, `Persona`, `Line`, `Theme`, `Maid Team`.
 
 The startup RoomSetting page must not expose the ambiguous label `Mode`.
+
+2026-05-13 App correction:
+
+- User-visible `Scene` was too ambiguous for startup RoomSetting. The startup
+  selector is now named **Theme** and writes `skin_id` / UI suite. Examples:
+  mansion paper, GOSLO classic, Ner mochi room, pirate prototype.
+- `scene_profile_id` stays in `RoomProfile` for backward compatibility and
+  runtime policy, but the user should not manually pick desktop / indoor /
+  outdoor there. That baseline should be selected by app/device/experience
+  components.
+- The broader canvas/menu layer may still expose a technical Scene block for
+  SceneRegistry inspection, but the mobile startup RoomSetting must not reuse
+  that block as a visual theme selector.
 
 ## 1. Terms
 
@@ -56,7 +69,8 @@ The startup RoomSetting page must not expose the ambiguous label `Mode`.
 | `Persona` | Character prompt/lore/speaking style selection. | persona loader / persona registry |
 | `Maid Team` | Background AgentTeam preset for scheduled work, Nanobot/MCP capabilities, and report/task support. V1 defaults to `CatMaid Team`. | AgentTeam registry / orchestrator, pending core field |
 | `Line` | Brain voice pipeline, currently `line_a` or `line_b`. | line registry + runtime readiness |
-| `Scene` | Launch scene profile. Owns AR/2D surface, mansion map, skin/theme, and initial workspace. | scene profile registry |
+| `SceneProfile` / `scene_profile_id` | Internal launch baseline / SceneRegistry profile. It can affect AR/2D surface policy, but startup RoomSetting should not show it as a desktop/indoor/outdoor picker. | scene profile registry / app device policy |
+| `Theme` / `skin_id` | User-visible skin and UI suite selection, e.g. mansion paper, Ner mochi room, pirate prototype. This is the startup RoomSetting visual selector formerly confused with `Scene`. | RoomProfile / skin or theme registry |
 | `ExperienceMode` | Startup-page right-side start mode: AR companion, 2D hall/workspace, or room-only/light session. | startup draft / RoomProfile default |
 | `BehaviorMode` | GOSLO behavior flags such as companion, butler, researcher, playful, roleplay. Not a startup RoomSetting selector. | runtime Brain/persona/menu |
 | `CapabilityMode` | Existing app capability policy such as silent, voice-only, full AR companion. | session policy |
@@ -75,7 +89,7 @@ Relevant source docs/code:
 - `.cursor/memory/architecture/Interface/app_v1_facade_core_business_interface_20260510.md`
 - `src/parrot/brain/preset_loader.py`
 - `src/parrot/brain/menu_registry.py`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/Config/AppStartupConfigDto.cs`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Config/AppStartupConfigDto.cs`
 
 ### B. Existing core interfaces that can compose this flow
 
@@ -105,7 +119,7 @@ Needed before implementation is complete:
 
 RoomSetting is complete when:
 
-- Startup `SCENE` opens a RoomSetting page with Room select/new/save and six selectors: Model, Room, Persona, Line, Scene, Maid Team.
+- Startup `ROOM` opens a RoomSetting page with Room select/new/save and six selectors: Model, Room, Persona, Line, Theme, Maid Team.
 - Selecting a saved Room populates those selectors and the startup model/scene preview.
 - Changing a selector recomputes compatibility before START.
 - START applies the effective profile, connects with the chosen Line, and enters the chosen Scene/ExperienceMode.
@@ -170,7 +184,7 @@ Startup RoomSetting operates on a local `RoomProfileDraft` until the user starts
 | Change Persona | Update draft persona, recompute line/model/persona requirements. |
 | Change Maid Team | Update draft background AgentTeam/Maid Team preset; V1 exposes fixed `CatMaid Team` until the shared core field and registry are implemented. |
 | Change Line | Update draft voice pipeline, recompute ASR/TTS/ADC/voiceprint/echo readiness. |
-| Change Scene | Update draft scene, map, skin/theme, default workspace, allowed ExperienceModes. |
+| Change Theme | Update draft `skin_id` / UI suite. It may update compatible map/workspace defaults later, but must not ask the user to classify desktop/indoor/outdoor environment. |
 | START | Apply draft/effective RoomProfile and run startup flow. |
 
 No LiveKit connection is required while editing the draft.
@@ -181,7 +195,7 @@ RoomProfile is not the only persisted menu object. Every menu surface needs a pe
 
 | Surface | Store | Saves |
 |:--|:--|:--|
-| Startup RoomSetting | `RoomProfile` | Model, Room, Persona, Line, Scene, Maid Team, default ExperienceMode, map/skin/workspace refs. |
+| Startup RoomSetting | `RoomProfile` | Model, Room, Persona, Line, Theme/skin, Maid Team, default ExperienceMode, map/workspace refs. |
 | Startup quick lever | startup draft / RoomProfile default | Last chosen `ExperienceMode`. |
 | HUD | `MenuPreference` | Corner, collapsed/expanded state, density, visibility. |
 | Tool drawer | `MenuPreference` | Tool order, pinning, collapsed/expanded state, disabled-item visibility. |
@@ -326,3 +340,4 @@ Minimum tests:
 - LineB without ADC/STT/TTS readiness produces degraded or blocked compatibility.
 - 2D hall ExperienceMode disables AR placement and keeps 2D workspace enabled.
 - START applies the effective profile and writes active BB keys once.
+

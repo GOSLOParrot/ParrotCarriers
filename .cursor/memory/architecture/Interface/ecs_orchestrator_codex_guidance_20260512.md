@@ -1,4 +1,4 @@
----
+﻿---
 status: ratified
 category: codex-handoff
 last_reviewed: 2026-05-12
@@ -138,7 +138,7 @@ status = client.status()
 | 2 | `confirm_process_restart` | 弹"切换需要重启 Brain，预计 5-10s 不可用"对话框 → 用户确认后调 orchestrator `/restart_component` → 轮询 `/status.processes.brain.alive` → toast |
 | 3 | `block` | 弹"此设置需要运维操作 ECS"非阻塞提示 → 不允许在 App 内触发 |
 
-C# 镜像与决策映射：`unity/ArSpike/Assets/Scripts/ParrotApp/UI/SettingChangeTierDto.cs`（已就位，含 `SettingChangeTierUiHelper.Decide()`）。
+C# 镜像与决策映射：`unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/SettingChangeTierDto.cs`（已就位，含 `SettingChangeTierUiHelper.Decide()`）。
 ```
 
 ### A-5 在顶层 `.cursor/memory/INDEX.md` §1.1 active 表加一行
@@ -287,3 +287,4 @@ Cursor 端 176 castle/brain 测试已绿。但如果你（Codex）在 Unity 端�
 读完本文件后请**先读** `ecs_orchestrator_lifecycle_completion_20260512.md`（200 行报告）再动手。
 
 — end —
+

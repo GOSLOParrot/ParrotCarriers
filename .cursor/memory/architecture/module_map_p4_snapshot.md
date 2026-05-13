@@ -1,4 +1,4 @@
----
+﻿---
 status: ratified
 category: architecture-snapshot
 status_note: "Sprint 4 收口 + DSG Chat 2 + GOSLO mod 之后的最新模块架构 单一清晰图。补充 module_map_p2.md（保留为 detail），本文是 quick reference snapshot。"
@@ -127,7 +127,7 @@ related:
 | `memory/conversation_writer.py` | Castle | ✅ ratified | Phase 3 |
 | `shared/ecp.py` + `ecp_event.py` + `bb_schema.py` + `ref_binding.py` + `parrot_actions.py` + `model_manifest.py` | Castle | ✅ ratified（Phase 4 §8 13 锁 + GOSLO Step 1） | wire 真源 |
 | **Mobile** | | | |
-| `unity/ArSpike/Assets/Scripts/ParrotApp/` | Mobile | ✅ ratified（白模 + ECP DTO）| ECP 工作区 |
+| `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/` | Mobile | ✅ ratified（白模 + ECP DTO）| ECP 工作区 |
 | `ParrotApp/Lifecycle/` | Mobile | ✅ ratified（11 态 + perch_to_finger）| Phase 4 W3.A.2/A.3 |
 | `ParrotApp/Ecp/` | Mobile | ✅ ratified（EcpEventDispatcher / Publisher / DTOs）| Phase 4 W1-2 + W6-7 |
 | `ParrotApp/Attention/` | Mobile | ✅ ratified（BBox/Focus/Echo） | Phase 4 W6-7 |
@@ -255,3 +255,4 @@ LLM (异步上下文) → "我查到了..."
 ## §8 变更日志
 
 - **2026-05-07**：本文创建。Sprint 4 收口 + DSG Chat 2 + GOSLO mod 之后的最新模块架构 quick reference snapshot；Chat 4 接口提炼 pivot 后的收口产物。
+

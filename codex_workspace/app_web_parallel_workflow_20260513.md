@@ -13,6 +13,7 @@ scope, TODO list, and implementation flow with the user inside their own chats.
 | `codex_workspace/design_workspace/tasks/ACTIVE_CONTEXT.md` | Shared current truth and route pointers. | Keep short. Update after route/status changes, not for detailed task tracking. |
 | `codex_workspace/design_workspace/tasks/APP_WEB_PARALLEL_TODOLIST_20260513.md` | Coordinated high-level TODO board for both chats. | App chat edits App lane; Web chat edits Web lane; both may add cross-lane blockers. |
 | `codex_workspace/design_workspace/backend_interface_map/app/` | Unity App business-interface notes and A-D slices. | App chat owns. Web chat reads only unless asked. |
+| `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md` | Unity App directory/resource/scene inventory SSOT. | App chat owns. Any Unity directory, resource, scene, or Build Settings change must update this file in the same turn when the inventory changes. |
 | `codex_workspace/design_workspace/backend_interface_map/web_console/` | Web Console business-interface notes and A-D slices. | Web chat owns. App chat reads only unless asked. |
 | `codex_workspace/design_workspace/backend_interface_map/core_interface_candidate_queue_20260513.md` | Staging queue for proposed shared core interfaces. | Either chat may propose; App/Web dual confirmation is required before moving shared contracts to core SSOT. |
 | `.cursor/memory/architecture/Interface/**` | Ratified core interface SSOT. | Update only after the required lane confirmation; include source/writer metadata. |
@@ -93,6 +94,10 @@ Each chat follows this loop:
 
 1. Read `ACTIVE_CONTEXT.md`, this workflow, the App/Web route decision doc, and
    the relevant skill route.
+   Unity App chats must also read
+   `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md`
+   before planning or editing Unity scenes, scripts, resources, models, art, or
+   Build Settings.
 2. Inspect the relevant code/docs before proposing work.
 3. Decide that chat's own goal, TODO list, and implementation order with the
    user inside that chat.
@@ -103,6 +108,9 @@ Each chat follows this loop:
 7. After App/Web dual confirmation, move the shared contract into
    `.cursor/memory/architecture/Interface/**` with writer/source metadata.
 8. Update `ACTIVE_CONTEXT.md` only when a route/status pointer changes.
+9. For Unity App directory, scene, resource, model, or Build Settings changes,
+   update the Unity project inventory SSOT and App TODO status in the same
+   turn.
 
 ## 5. Skill Gate
 

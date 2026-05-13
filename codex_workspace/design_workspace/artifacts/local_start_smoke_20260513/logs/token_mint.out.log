@@ -1,0 +1,22 @@
+2026-05-13 18:14:23,702 INFO [parrot.castle.token_mint] Token mint starting: port=7888 livekit_url_scheme=ws livekit_url_length=19 api_key_present=True api_secret_length=47 mint_secret_present=False default_room=parrot-main
+INFO:     127.0.0.1:50442 - "GET /health HTTP/1.1" 200 OK
+2026-05-13 18:19:24,723 INFO [parrot.castle.token_mint] Mint request received: room=parrot-main identity_length=17 authorization_header_present=False
+2026-05-13 18:19:24,726 WARNING [parrot.castle.token_mint] PARROT_MINT_SECRET not set ！ token mint is open (dev mode)
+2026-05-13 18:19:25,464 INFO [parrot.castle.token_mint] Minted token: room=parrot-main identity_length=17 ttl_s=600 expires_at=1778668165
+INFO:     127.0.0.1:53956 - "POST /mint HTTP/1.1" 200 OK
+2026-05-13 18:19:39,845 INFO [parrot.castle.token_mint] Mint request received: room=parrot-main identity_length=20 authorization_header_present=False
+2026-05-13 18:19:39,845 WARNING [parrot.castle.token_mint] PARROT_MINT_SECRET not set ！ token mint is open (dev mode)
+2026-05-13 18:19:39,845 INFO [parrot.castle.token_mint] Minted token: room=parrot-main identity_length=20 ttl_s=600 expires_at=1778668179
+INFO:     127.0.0.1:54384 - "POST /mint HTTP/1.1" 200 OK
+2026-05-13 18:21:11,878 INFO [parrot.castle.token_mint] Mint request received: room=parrot-main identity_length=17 authorization_header_present=False
+2026-05-13 18:21:11,879 WARNING [parrot.castle.token_mint] PARROT_MINT_SECRET not set ！ token mint is open (dev mode)
+2026-05-13 18:21:11,880 INFO [parrot.castle.token_mint] Minted token: room=parrot-main identity_length=17 ttl_s=600 expires_at=1778668271
+INFO:     127.0.0.1:51941 - "POST /mint HTTP/1.1" 200 OK
+2026-05-13 18:25:12,426 INFO [parrot.castle.token_mint] Mint request received: room=parrot-main identity_length=19 authorization_header_present=False
+2026-05-13 18:25:12,426 WARNING [parrot.castle.token_mint] PARROT_MINT_SECRET not set ！ token mint is open (dev mode)
+2026-05-13 18:25:12,428 INFO [parrot.castle.token_mint] Minted token: room=parrot-main identity_length=19 ttl_s=600 expires_at=1778668512
+INFO:     127.0.0.1:64809 - "POST /mint HTTP/1.1" 200 OK
+2026-05-13 18:27:43,446 INFO [parrot.castle.token_mint] Mint request received: room=parrot-main identity_length=19 authorization_header_present=False
+2026-05-13 18:27:43,446 WARNING [parrot.castle.token_mint] PARROT_MINT_SECRET not set ！ token mint is open (dev mode)
+2026-05-13 18:27:43,447 INFO [parrot.castle.token_mint] Minted token: room=parrot-main identity_length=19 ttl_s=600 expires_at=1778668663
+INFO:     127.0.0.1:49922 - "POST /mint HTTP/1.1" 200 OK

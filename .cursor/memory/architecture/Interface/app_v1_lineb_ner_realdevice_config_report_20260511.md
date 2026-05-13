@@ -1,4 +1,4 @@
----
+﻿---
 title: App V1 LineB + Ner Real Device Config Report
 date: 2026-05-11
 status: partial-implementation / ready-for-device-config
@@ -15,9 +15,9 @@ code:
   - data/line_profiles/lineb_ner_ja_test.json
   - data/presets/ner_lineb_room.json
   - codex_workspace/design_workspace/unity_ar_app/ner_roleplay_setting_obsidian_v0_20260511.md
-  - unity/ArSpike/Assets/Resources/parrot_models/ner_skin2.json
-  - unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/NerSpineController.cs
-  - unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/NerPickupPlaceInteractor.cs
+  - unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/ner_skin2.json
+  - unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/NerSpineController.cs
+  - unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/NerPickupPlaceInteractor.cs
 related:
   - app_v1_lineb_menu_readiness_interface_20260511.md
   - app_v1_room_setting_room_profile_interface_20260510.md
@@ -35,7 +35,7 @@ mic-input decision.
 
 Ner is now prepared as a selectable App model candidate:
 
-- Model manifest: `unity/ArSpike/Assets/Resources/parrot_models/ner_skin2.json`
+- Model manifest: `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/ner_skin2.json`
 - Controller probe: `NerSpineController`
 - Pickup/place probe: `NerPickupPlaceInteractor`
 - Brain capability resolver: `ModelManifestRegistry` + `play_capability`
@@ -176,12 +176,12 @@ the App profile usable.
 
 Existing raw assets:
 
-- `Assets/Models/Ner/NerSkin2.skel.bytes`
-- `Assets/Models/Ner/NerSkin2.atlas.txt`
-- `Assets/Models/Ner/NerSkin2.png`
-- `Assets/Models/Ner/NerSkin2_SkeletonData.asset`
-- `Assets/Models/Ner/NerSkin2_Atlas.asset`
-- `Assets/Models/Ner/NerSkin2_Material.mat`
+- `Assets/ParrotApp/Models/Ner/NerSkin2.skel.bytes`
+- `Assets/ParrotApp/Models/Ner/NerSkin2.atlas.txt`
+- `Assets/ParrotApp/Models/Ner/NerSkin2.png`
+- `Assets/ParrotApp/Models/Ner/NerSkin2_SkeletonData.asset`
+- `Assets/ParrotApp/Models/Ner/NerSkin2_Atlas.asset`
+- `Assets/ParrotApp/Models/Ner/NerSkin2_Material.mat`
 
 Spine package is present in Unity Packages. On 2026-05-11, Unity Editor
 enumerated 60 exact animation names from `NerSkin2_SkeletonData.asset`.
@@ -271,9 +271,11 @@ Ner:
 ## 7. Blocking Plan
 
 1. RoomSetting UI binding:
-   - Startup `SCENE` loads RoomSetting snapshot.
+   - Startup `ROOM` loads RoomSetting snapshot.
    - Model list shows `GOSLO_default` and `ner_skin2`.
-   - Selecting `ner_lineb_room` populates Model, Room, Persona, Line, Scene.
+   - Selecting `ner_lineb_room` populates Model, Room, Persona, Line, Theme.
+   - `Theme` writes `skin_id`; environment/scene baseline detection is automatic
+     or policy-owned, not a desktop/indoor/outdoor RoomSetting picker.
    - START applies the selected RoomProfile.
 
 2. LineB device pass:
@@ -545,8 +547,8 @@ passed
 101 passed
 
 Unity MCP validate_script:
-- Assets/Scripts/ParrotApp/Parrot/NerPickupPlaceInteractor.cs: 0 errors
-- Assets/Scripts/ParrotApp/Parrot/NerSpineController.cs: 0 errors
+- Assets/ParrotApp/Runtime/Scripts/Parrot/NerPickupPlaceInteractor.cs: 0 errors
+- Assets/ParrotApp/Runtime/Scripts/Parrot/NerSpineController.cs: 0 errors
 - Console after refresh: 0 errors / 0 warnings
 ```
 
@@ -588,3 +590,4 @@ Remaining boundary:
 - This is code/static-test complete, not device-feel complete.
 - Need Unity Editor compile and real-device pass to verify the reaction timing
   against actual TTS playback, touch latency, and cheek suppression feel.
+

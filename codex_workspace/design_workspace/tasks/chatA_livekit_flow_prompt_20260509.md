@@ -1,4 +1,4 @@
-# ChatA 启动提示词：LiveKit 启动流程与连接稳定性
+﻿# ChatA 启动提示词：LiveKit 启动流程与连接稳定性
 
 > 用途：复制到一个新 Codex Chat，专门处理 LiveKit 房间连接、启动流程、切屏/2D 工作区保活、业务接口和安全稳定性设计。  
 > 目标：先设计流程和接口，再按仓库现状实施。不要做 UI 美术，不要改无关前端结构。
@@ -42,11 +42,11 @@
 - `.cursor/memory/architecture/ar_feature_implementation_plan.md`
 - `unity/ArSpike/README.md`
 - `unity/ArSpike/Packages/manifest.json`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/**`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/**`
 
 ### 当前环境事实
 
-- 正式 Unity App 在 `unity/ArSpike/Assets/Scripts/ParrotApp/`。
+- 正式 Unity App 在 `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/`。
 - Unity 版本：`2022.3.62f3`。
 - AR Foundation / ARCore / ARKit：`5.2.2`。
 - XR Interaction Toolkit：`3.1.2`。
@@ -122,7 +122,7 @@
 4. 代码实现：
    - 只改必要文件。
    - 不动冻结测试床 `unity/ParrotDev/`。
-   - 正式 App 写在 `unity/ArSpike/Assets/Scripts/ParrotApp/`。
+   - 正式 App 写在 `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/`。
 5. 验证：
    - 用 Unity MCP 读 Console。
    - 如有 Play Mode 测试，说明测试步骤和结果。
@@ -137,3 +137,4 @@
 - 允许补核心接口；不要因为接口缺失而把需求降级成 mock。
 - 但实现顺序可以分层：先接口白膜/DTO/状态机，再接真实 LiveKit 流程。
 - 最终中文汇报：改了什么、接口设计、验证结果、下一步风险。
+

@@ -1,0 +1,31 @@
+{
+  "schema_version": 3,
+  "kind": "room_profile",
+  "room_profile_id": "room_f5237f8e",
+  "display_name": "Codex Smoke Room Saved",
+  "model_id": "GOSLO_default",
+  "persona_id": "goslo_parrot_default",
+  "line_id": "line_a",
+  "line_profile_id": "linea_gemini_realtime",
+  "asr_profile_id": "",
+  "tts_profile_id": "",
+  "voiceprint_profile_id": "",
+  "echo_policy_id": "",
+  "scene_profile_id": "ar_handheld",
+  "experience_mode": "ar_companion",
+  "workspace_id": "mansion_hub",
+  "map_id": "mansion_hub",
+  "skin_id": "manor",
+  "setting_file_refs": [],
+  "livekit_room_id": "parrot-main",
+  "canvas_preset_id": "default_canvas",
+  "menu_preference_id": "default_menu",
+  "behavior_mode_defaults": [
+    "BASE",
+    "COMPANION"
+  ],
+  "metadata": {
+    "user_label": "Default GOSLO setup",
+    "theme_skin": "manor"
+  }
+}

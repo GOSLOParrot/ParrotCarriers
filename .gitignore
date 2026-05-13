@@ -30,6 +30,10 @@ unity/*/Assets/Resources/parrot_config.json
 unity/*/Assets/Resources/parrot_config.json.meta
 unity/*/Assets/Resources/parrotdev.json
 unity/*/Assets/Resources/parrotdev.json.meta
+unity/*/Assets/ParrotApp/Resources/parrot_config.json
+unity/*/Assets/ParrotApp/Resources/parrot_config.json.meta
+unity/*/Assets/ParrotApp/Resources/parrotdev.json
+unity/*/Assets/ParrotApp/Resources/parrotdev.json.meta
 
 # Unity (both ParrotDev and future ParrotAR)
 unity/*/Library/

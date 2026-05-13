@@ -14,6 +14,8 @@ from typing import Any
 
 from parrot.memory.graphiti_client import PARTITIONS
 
+_GRAPHITI_MISSING_MESSAGE = "graphiti-core optional extra not installed"
+
 
 @dataclass(frozen=True)
 class GraphitiConsoleResult:
@@ -46,22 +48,24 @@ def graphiti_status() -> GraphitiConsoleResult:
         from parrot.shared.config import ParrotConfig
 
         cfg = ParrotConfig()
-        config_data.update({
-            "falkordb": {
-                "host": cfg.falkordb.host,
-                "port": cfg.falkordb.port,
-                "database": cfg.falkordb.database,
-            },
-            "google_api_key_configured": bool(cfg.google_api_key),
-            "gemini": {
-                "embedding_model": cfg.gemini.embedding_model,
-                "reranker_model": cfg.gemini.reranker_model,
-            },
-        })
+        config_data.update(
+            {
+                "falkordb": {
+                    "host": cfg.falkordb.host,
+                    "port": cfg.falkordb.port,
+                    "database": cfg.falkordb.database,
+                },
+                "google_api_key_configured": bool(cfg.google_api_key),
+                "gemini": {
+                    "embedding_model": cfg.gemini.embedding_model,
+                    "reranker_model": cfg.gemini.reranker_model,
+                },
+            }
+        )
     except Exception as exc:
         config_data["config_error"] = f"{type(exc).__name__}: {exc}"
 
-    message = "graphiti-core importable" if installed else "graphiti-core optional extra not installed"
+    message = "graphiti-core importable" if installed else _GRAPHITI_MISSING_MESSAGE
     return GraphitiConsoleResult(
         action="graphiti_status",
         success=True,
@@ -107,12 +111,21 @@ async def search_graphiti(
     limit: int = 5,
 ) -> GraphitiConsoleResult:
     """Search Graphiti with a scoped partition and graceful failure."""
+    installed = _graphiti_core_installed()
     if not query.strip():
         return GraphitiConsoleResult(
             action="search_graphiti",
             success=False,
-            available=_graphiti_core_installed(),
+            available=installed,
             message="query is required",
+        )
+    if not installed:
+        return GraphitiConsoleResult(
+            action="search_graphiti",
+            success=False,
+            available=False,
+            message=_GRAPHITI_MISSING_MESSAGE,
+            data={"query": query, "partition": partition, "results": []},
         )
     try:
         from parrot.memory.graphiti_client import get_graphiti
@@ -149,6 +162,7 @@ async def add_episode(
     dry_run: bool = True,
 ) -> GraphitiConsoleResult:
     """Add a text episode only when dry_run is false and body is present."""
+    installed = _graphiti_core_installed()
     draft = draft_episode(
         name=name,
         body=body,
@@ -160,7 +174,7 @@ async def add_episode(
         return GraphitiConsoleResult(
             action="add_episode",
             success=False,
-            available=_graphiti_core_installed(),
+            available=installed,
             message="episode_body is required",
             data={"draft": episode},
         )
@@ -168,8 +182,16 @@ async def add_episode(
         return GraphitiConsoleResult(
             action="add_episode",
             success=True,
-            available=_graphiti_core_installed(),
+            available=installed,
             message="dry_run=true; no Graphiti write performed",
+            data={"draft": episode},
+        )
+    if not installed:
+        return GraphitiConsoleResult(
+            action="add_episode",
+            success=False,
+            available=False,
+            message=_GRAPHITI_MISSING_MESSAGE,
             data={"draft": episode},
         )
 

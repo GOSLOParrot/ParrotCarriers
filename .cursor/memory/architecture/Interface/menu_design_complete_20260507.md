@@ -1,4 +1,4 @@
----
+﻿---
 status: ratified-design / pending-implementation
 category: menu-design
 status_note: "完整菜单设计 SSOT — 三层架构（启动页/HUD/工具柜/节点画布）+ 4 类块定义（Model/Persona/Mode/Scene）+ 预设系统 + 默认 fallback + 海盗换肤 + 像素画素材清单按菜单细分 + 与 8 场景关联 + 实施推荐顺序 Phase A-E。【2026-05-07 增量 v0.1】§4 节点画布加 2 占位（过滤器块 + 有效期预测模块 + §4.7 占位说明）+ §8 关联表 + §7.5 素材 2 条；具体设计延后到 NEED-P3-FILTER / NEED-P3-VALIDITY。Sub-Chat A 用户视角主输入；AR 工作区独立菜单 UI chat 主输入。"
@@ -45,6 +45,11 @@ related:
 > - 占位优先 + 美术后期补（master_audit §6 像素画清单）
 > - 不动 wire（Phase 4 §8 锁）
 > - Plan UI / body_state 升级走 P3 wire ADR；本文场景 5 用占位 stub UI
+
+> **2026-05-13 App correction**：启动页 RoomSetting 不再把用户可见
+> `Scene` 当作桌面/室内/室外下拉。移动端启动页显示 `Theme/套装`，
+> 写 `skin_id` / UI suite；`SceneType` / `SceneProfile` 保留给
+> SceneRegistry、AR/device baseline 和后续画布技术菜单。
 
 ---
 
@@ -216,7 +221,7 @@ related:
 |:--|:--|
 | ID | `model_id`（如 `GOSLO_default` / `qfufu_v1`） |
 | 数据格式 | `ModelManifest` Pydantic（`shared/model_manifest.py`）|
-| 文件位置 | `unity/ArSpike/Assets/Resources/parrot_models/<model_id>.json` |
+| 文件位置 | `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/<model_id>.json` |
 | 加载器 | `ModelDriver.cs` 反射实例化 + auto-scale |
 | active BB key | `global/active_model_id` |
 | 切换事件 | `EcpCommand.meta["model_id"]` 透传 |
@@ -639,7 +644,7 @@ def apply_preset(preset: Preset) -> None:
 每个启动页 / 菜单项决定执行时，前端必须读
 `RoomSettingService.compatibility()` 返回的 `tier` 和 `tier_ui_action`
 字段，或者使用同源的 `data/registries/setting_change_tier.json`。Unity
-C# 镜像：`unity/ArSpike/Assets/Scripts/ParrotApp/UI/SettingChangeTierDto.cs`。
+C# 镜像：`unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/SettingChangeTierDto.cs`。
 
 | Tier | tier_ui_action | UI 行为 |
 |:---:|:---|:---|
@@ -688,3 +693,4 @@ status，不各自 fork 核心接口。
 - **2026-05-09 ChatA**：补充 LiveKit 启动切片。菜单从 4 类块运行态扩为 5 类块（新增 2DWorkspace），明确 2DWorkspace 与 IntentWorkspace 边界；启动问候延后到 `onGosloPlaced`；新增 `SessionOnlySilent` 静默保活、对话关闭、蓝牙/麦克风路由、安全 token 策略说明。画布菜单本轮保持最小实现，LiveKit 生命周期按最终路径实现。
 - **2026-05-07**：本文创建。三层菜单架构（启动页 + HUD/工具柜 + 节点画布）+ 4 类块定义（Model/Persona/Mode/Scene）+ 预设系统（NEED-P3-B/C）+ 默认 fallback（NEED-P3-E）+ 海盗主题换肤（P3）+ 像素画素材按菜单细分清单 + 与 8 场景关联表 + 实施推荐顺序 Phase A-E。
 - **2026-05-07 v0.1（增量）**：§4 加 2 占位节点类型（过滤器块灰 / 有效期预测模块橙）+ §4.3 边追加"过滤器 → 模块"+ §4.7 占位说明小节 + §7.5 素材 2 条（block_filter_gray / block_memory_validity_orange）+ §8 关联表 1 行；具体设计延后到 NEED-P3-FILTER / NEED-P3-VALIDITY；与 backend `memory/MemoryValidity 过滤器` PLANNED（`module_map_p2 §11.2`）对接，但 canvas 占位**不**强行绑定 backend schema。
+

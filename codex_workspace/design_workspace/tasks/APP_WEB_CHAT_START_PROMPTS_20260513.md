@@ -8,12 +8,26 @@ Sources:
 - `codex_workspace/design_workspace/tasks/ACTIVE_CONTEXT.md`
 - `codex_workspace/app_web_parallel_workflow_20260513.md`
 - `codex_workspace/codex_skills/MIGRATION_STATUS_20260513.md`
+- `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md`
 - `codex_workspace/design_workspace/backend_interface_map/core_interface_candidate_queue_20260513.md`
 
 Use these prompts by copying one into a new Codex chat. The dedicated chat owns
 its own TODO list, decisions, and implementation order after it starts.
 
 ## Unity App Chat Prompt
+
+Inventory rule for this prompt: the formal Unity App center is
+`unity/ArSpike/Assets/ParrotApp/**`. Do not recreate
+`Assets/Scripts/ParrotApp/**`, top-level App-owned `Assets/Resources`,
+top-level `Assets/UI`, top-level `Assets/Models`, or
+`Assets/Scenes/SampleScene.unity`. The only allowed top-level
+`Assets/Resources` content is the LiveKit SDK-generated
+`LiveKitSdkVersionInfo.txt`.
+After Unity directory, scene, resource, model, art, or Build Settings changes,
+update the inventory SSOT and App TODO status in the same turn.
+`Assets/ParrotApp/Runtime/Scripts/UI/AppV1MetaUiController.cs` is a legacy
+Smoke/reference UI controller, not formal homepage completion evidence; use it
+only after reading the inventory SSOT classification.
 
 ```text
 你是 Unity App 前端线的 Codex。工作目录是 D:\GOSLOParrot\ParrotCarriers。
@@ -22,6 +36,7 @@ its own TODO list, decisions, and implementation order after it starts.
 - codex_workspace/design_workspace/tasks/ACTIVE_CONTEXT.md
 - codex_workspace/app_web_parallel_workflow_20260513.md
 - codex_workspace/codex_skills/MIGRATION_STATUS_20260513.md
+- codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md
 - .cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md
 - codex_workspace/design_workspace/backend_interface_map/core_interface_candidate_queue_20260513.md
 
@@ -98,4 +113,3 @@ its own TODO list, decisions, and implementation order after it starts.
 
 每次写文档遵守 app_web_parallel_workflow_20260513.md 的 Doc Hygiene：优先更新已有文件，新文件必须有 owner/status/category/scope/source。
 ```
-

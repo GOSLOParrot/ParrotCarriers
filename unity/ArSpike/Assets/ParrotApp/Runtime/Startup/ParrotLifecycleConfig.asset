@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b419d04b497c10e42a7ce0c05bee4418, type: 3}
+  m_Name: ParrotLifecycleConfig
+  m_EditorClassIdentifier: 
+  T_SHORT_BG: 5
+  T_LONG_BG: 30
+  T_DISCONNECT_WAIT_HARD: 5
+  T_SHUTDOWN_COOLDOWN: 5
+  T_HEARTBEAT_INTERVAL: 1
+  T_HEARTBEAT_SOFT: 15
+  T_HEARTBEAT_HARD: 30
+  T_AR_SESSION_TOGGLE_MIN: 2
+  T_TIER_COOLDOWN: 3
+  T_FIRST_FRAME_TIMEOUT: 3
+  STALE_FRAME_THRESHOLD_LOW_TIER: 2
+  STALE_FRAME_THRESHOLD_HIGH_TIER: 0.5
+  BYTESTREAM_RPC_THRESHOLD_BYTES: 15360
+  SNAPSHOT_DEFAULT_WIDTH: 480
+  SNAPSHOT_DEFAULT_HEIGHT: 270
+  SNAPSHOT_JPEG_QUALITY: 75
+  SIMULCAST_DEFAULT: 0

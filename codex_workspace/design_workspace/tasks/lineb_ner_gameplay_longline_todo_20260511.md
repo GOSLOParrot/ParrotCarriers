@@ -1,4 +1,4 @@
-# LineB Configurable + Ner Gameplay Longline TODO
+﻿# LineB Configurable + Ner Gameplay Longline TODO
 
 > Date: 2026-05-11
 > Status: longline plan / execution backlog
@@ -37,12 +37,12 @@ Local authoritative sources:
 - `src/parrot/brain/lineb_audio_guard.py`
 - `src/parrot/brain/menu_registry.py`
 - `src/parrot/brain/room_setting.py`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/RPC/EcpDtos.cs`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/RPC/ParrotRpcHandler.cs`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/ParrotRegistry.cs`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/ModelDriver.cs`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/NerSpineController.cs`
-- `unity/ArSpike/Assets/Models/Ner/*`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/RPC/EcpDtos.cs`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/RPC/ParrotRpcHandler.cs`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/ParrotRegistry.cs`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/ModelDriver.cs`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/NerSpineController.cs`
+- `unity/ArSpike/Assets/ParrotApp/Models/Ner/*`
 
 External reference sources:
 
@@ -724,3 +724,4 @@ Decision:
   Japanese female Neural2 voice and gives a stable SSML-compatible baseline.
 - Treat CV/voice actor info as reference only. Public or extracted audio must
   not enter Git, and a cloned/exact voice is not a default project behavior.
+

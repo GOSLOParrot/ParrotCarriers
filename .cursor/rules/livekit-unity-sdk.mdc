@@ -1,4 +1,4 @@
----
+﻿---
 description: LiveKit Unity SDK 版本适配注意事项
 globs:
   - "unity/**/*.cs"
@@ -15,7 +15,7 @@ last_reviewed: 2026-04-29
 > - `.cursor/skills/livekit-unity-video-publish/IMPL_REF.md` — Unity 推流接缝 + 12 条踩坑表（PublishTrack NRE / TrackSource / 黑帧 / 重连污染等更详尽现场）
 > - `.cursor/memory/architecture/sprint4_livekit_stability_and_video_strategy.md` — Sprint4 前置：LiveKit Bus 稳定性与视频上限策略
 >
-> **仓位说明**：本规则的代码示例引用 `unity/ParrotDev/` 是 Sprint 1–3 测试床。Sprint4 起新代码进 `unity/ArSpike/Assets/Scripts/ParrotApp/`，迁移顺序见 `unity/ArSpike/Assets/Scripts/ParrotApp/MIGRATION.md`。
+> **仓位说明**：本规则的代码示例引用 `unity/ParrotDev/` 是 Sprint 1–3 测试床。Sprint4 起新代码进 `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/`，迁移顺序见 `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md`。
 
 ## 版本管理
 
@@ -108,3 +108,4 @@ var stream = new AudioStream(audioTrack, source); // 错：方法返回后可能
 1. 先检查 `Library/PackageCache/io.livekit.livekit-sdk@*/Runtime/Scripts/` 中的实际类定义
 2. 不要依赖 README 或 WebSearch 的示例代码作为唯一 API 参考
 3. 注意 SDK 的 `namespace LiveKit` — 所有类型在 `LiveKit` 命名空间下
+

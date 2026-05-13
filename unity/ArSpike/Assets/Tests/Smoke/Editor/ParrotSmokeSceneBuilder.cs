@@ -28,16 +28,16 @@ namespace ParrotApp.EditorTools
     /// </summary>
     public static class ParrotSmokeSceneBuilder
     {
-        private const string GlbAssetPath = "Assets/Models/GOSLO.glb";
+        private const string GlbAssetPath = "Assets/ParrotApp/Models/GOSLO.glb";
         private const string MenuPath = "Tools/Parrot/Smoke/Build A2 Smoke Scene";
         private const string UpgradeMenuPath = "Tools/Parrot/Smoke/Upgrade Current A2 Smoke Scene";
         private const string SmokeSceneFolder = "Assets/Tests/Smoke/Scenes";
         private const string DefaultSmokeScenePath = SmokeSceneFolder + "/ParrotSmokeScene.unity";
-        private const string ToolDrawerWoodSpritePath = "Assets/UI/ParrotApp/ToolCabinet/ToolDrawer_Wood_Menu1.png";
-        private const string ToolButtonWoodSpritePath = "Assets/UI/ParrotApp/ToolCabinet/ToolButton_Wood_Front.png";
-        private const string PaperNoteSmallSpritePath = "Assets/UI/ParrotApp/Notifications/PaperNote_Blank_New.png";
-        private const string PaperNoteFilledSpritePath = "Assets/UI/ParrotApp/Notifications/PaperNote_Filled_Old.png";
-        private const string NekoClawSpritePath = "Assets/UI/ParrotApp/Notifications/NekoClaw_Cutout.png";
+        private const string ToolDrawerWoodSpritePath = "Assets/ParrotApp/Art/AppV1/ToolCabinet/ToolDrawer_Wood_Menu1.png";
+        private const string ToolButtonWoodSpritePath = "Assets/ParrotApp/Art/AppV1/ToolCabinet/ToolButton_Wood_Front.png";
+        private const string PaperNoteSmallSpritePath = "Assets/ParrotApp/Art/AppV1/Notifications/PaperNote_Blank_New.png";
+        private const string PaperNoteFilledSpritePath = "Assets/ParrotApp/Art/AppV1/Notifications/PaperNote_Filled_Old.png";
+        private const string NekoClawSpritePath = "Assets/ParrotApp/Art/AppV1/Notifications/NekoClaw_Cutout.png";
 
         [MenuItem(MenuPath)]
         public static void BuildSmokeScene()

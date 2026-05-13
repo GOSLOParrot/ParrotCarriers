@@ -2,7 +2,7 @@
 
 Entry doc §8.5 #2 + §8.4: event_type registry MUST be in lockstep between
 ``src/parrot/shared/ecp_event.py:EcpEventType`` and
-``unity/ArSpike/Assets/Scripts/ParrotApp/Ecp/EcpEventDto.cs:EcpEventTypeNames``.
+``unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Ecp/EcpEventDto.cs:EcpEventTypeNames``.
 
 This test parses the C# file as text (the alternative — compile + reflect —
 needs a full Unity toolchain; we don't want CI to depend on that). It looks
@@ -21,7 +21,17 @@ from parrot.shared.ecp_event import EcpEventSource, EcpEventType
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CS_DTO_PATH = REPO_ROOT / "unity" / "ArSpike" / "Assets" / "Scripts" / "ParrotApp" / "Ecp" / "EcpEventDto.cs"
+CS_DTO_PATH = (
+    REPO_ROOT
+    / "unity"
+    / "ArSpike"
+    / "Assets"
+    / "ParrotApp"
+    / "Runtime"
+    / "Scripts"
+    / "Ecp"
+    / "EcpEventDto.cs"
+)
 
 
 def _extract_const_strings(cs_text: str, class_name: str) -> set[str]:

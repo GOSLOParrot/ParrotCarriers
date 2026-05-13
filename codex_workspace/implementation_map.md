@@ -13,7 +13,7 @@
 
 ## Unity Status
 
-`unity/ArSpike/Assets/Scripts/ParrotApp/` already contains strong infrastructure:
+`unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/` already contains strong infrastructure:
 
 - `Lifecycle/` app state, shutdown service, room lifecycle bridge;
 - `Health/` connection health aggregation;
@@ -59,21 +59,20 @@ Known gaps:
 
 Create new scripts under:
 
-- `unity/ArSpike/Assets/Scripts/ParrotApp/UI/Boot/`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/UI/Hud/`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/UI/Tools/`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/UI/Workspace/`
-- `unity/ArSpike/Assets/Scripts/ParrotApp/UI/Notifications/`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/Boot/`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/Hud/`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/Tools/`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/Workspace/`
+- `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/Notifications/`
 
 Assets:
 
-- `unity/ArSpike/Assets/UI/Boot/`
-- `unity/ArSpike/Assets/UI/Hud/`
-- `unity/ArSpike/Assets/UI/ToolCabinet/`
-- `unity/ArSpike/Assets/UI/Workspace/`
-- `unity/ArSpike/Assets/UI/Notifications/`
-- `unity/ArSpike/Assets/UI/Skins/Pirate/`
-- `unity/ArSpike/Assets/UI/Placeholders/`
+- `unity/ArSpike/Assets/ParrotApp/Art/AppV1/`
+- `unity/ArSpike/Assets/ParrotApp/Resources/`
+- `unity/ArSpike/Assets/ParrotApp/Models/`
+
+Directory ownership is governed by
+`codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md`.
 
 ### Web Console
 

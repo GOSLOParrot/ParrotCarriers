@@ -1,4 +1,4 @@
----
+﻿---
 status: ratified
 category: completion-report
 last_reviewed: 2026-05-12
@@ -36,7 +36,7 @@ related:
 | **新容器** | docker-compose.yml 新增 `orchestrator` + `brain` 两个 profile-gated service；`Dockerfile.brain` 拆 base/full 多阶段；`docker-compose.orchestrator-host.yml` 把 host docker / systemd 控制权交给容器 |
 | **新注册表** | `data/registries/setting_change_tier.json` — 24 项 setting × Tier 0-3 + 决策文档 |
 | **新模块（Python）** | `parrot.castle.runtime_config` / `parrot.castle.orchestrator/{server,actions,status,client,__main__}` / `parrot.brain.boot_preflight` / `parrot.brain.crash_hook` / `parrot.brain.setting_change_tier` |
-| **DTO 镜像** | `unity/ArSpike/Assets/Scripts/ParrotApp/UI/SettingChangeTierDto.cs`（C# 镜像 tier registry + UI 决策映射） |
+| **DTO 镜像** | `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/SettingChangeTierDto.cs`（C# 镜像 tier registry + UI 决策映射） |
 | **强化点** | DSG trigger listener 加 per-message `try/except`；Brain 装 `sys.excepthook` + `loop.set_exception_handler`；orchestrator 5 次 / 300s 限频重启 |
 | **测试** | Phase 1-5 共 +6 个新测试文件，176 个 Castle/Brain 测试全绿；全仓 606 passed / 6 skipped（2 个 integration 失败为环境性，与本升级无关） |
 
@@ -198,3 +198,4 @@ bash infra/deploy-castle.sh <castle-ip> [ssh-key] --systemd
 - `ecs_audit_prompt_for_castle_20260512.md` 是给 ECS 端的复用审计 prompt（运维侧自检清单）。
 
 — 完 —
+

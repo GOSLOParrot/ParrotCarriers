@@ -1,4 +1,4 @@
----
+﻿---
 title: App V1 Model Capability Resolver Interface
 date: 2026-05-11
 status: partial-implementation
@@ -14,10 +14,10 @@ code:
   - src/parrot/brain/tools/fly_to.py
   - src/parrot/brain/tools/__init__.py
   - src/parrot/brain/agent.py
-  - unity/ArSpike/Assets/Scripts/ParrotApp/RPC/ParrotRpcHandler.cs
-  - unity/ArSpike/Assets/Scripts/ParrotApp/Parrot/ParrotController.cs
-  - unity/ArSpike/Assets/Resources/parrot_models/goslo_default.json
-  - unity/ArSpike/Assets/Resources/parrot_models/ner_skin2.json
+  - unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/RPC/ParrotRpcHandler.cs
+  - unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/Parrot/ParrotController.cs
+  - unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/goslo_default.json
+  - unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/ner_skin2.json
 tests:
   - tests/test_brain/test_menu_workspace.py
   - tests/test_brain/test_app_first_version_facade.py
@@ -80,3 +80,4 @@ Brain tools:
 - Add richer self-check state for parameterized capabilities after Unity
   prefab/controller binding is complete.
 - Expand persona/scene/device permission requirements into the same resolver.
+

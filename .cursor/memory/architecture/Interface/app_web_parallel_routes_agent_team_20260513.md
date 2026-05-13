@@ -34,7 +34,10 @@ Operational workflow for the two chats lives in:
 4. `CatMaid Team` V1 starts as one nanobot instance. Do not add multi-instance
    orchestration until the default team path is observable and stable.
 5. Startup `RoomSetting` now has six user-facing selectors:
-   `Model`, `Room`, `Persona`, `Line`, `Scene`, and `Maid Team`.
+   `Model`, `Room`, `Persona`, `Line`, `Theme`, and `Maid Team`.
+   `Theme` writes `skin_id` / UI suite. Internal `scene_profile_id` stays a
+   runtime launch baseline and should not be exposed as a desktop/indoor/outdoor
+   RoomSetting row.
 6. App and Web share core interfaces, but their business interfaces stay
    separate. Missing core surfaces must be reported before implementation.
 
@@ -68,7 +71,7 @@ App work emphasizes mobile UI, startup flow, game completion, and tool use.
 
 | App route | Business scope | Core dependency |
 |:--|:--|:--|
-| Startup RoomSetting | Select saved Room, Model, Persona, Line, Scene, Maid Team; then START. | RoomSetting + orchestrator runtime writes. |
+| Startup RoomSetting | Select saved Room, Model, Persona, Line, Theme, Maid Team; then START. | RoomSetting + orchestrator runtime writes. |
 | Runtime menu canvas | Render 4/5-block menu and tier actions in a mobile/AR-friendly way. | Menu registry + tier registry + Brain RPC mirrors. |
 | HUD and debug badge | Show connection, current line/profile/team, lightweight status. | `/status`, Brain snapshot, ECP state. |
 | Game/model interactions | Ner/GOSLO model controls, touch, joystick, pickup/place, tools. | Model manifest, `play_capability`, ECP/RPC. |

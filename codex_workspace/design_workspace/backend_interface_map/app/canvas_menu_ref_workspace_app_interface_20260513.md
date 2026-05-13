@@ -109,3 +109,46 @@ App must not:
 - App can show refs and edges as board artifacts while the core API stays renderer-agnostic.
 - Missing memory backend shows a clear unavailable/degraded state, not a fake graph.
 - Any App attach/detach action has an observable Brain-owned result and does not bypass shared core confirmation.
+
+## Slice: 2026-05-13 Startup Boundary Check
+
+Owner chat: Unity App
+Status: audited_only
+Related TODO: APP-004, APP-006
+
+### A. Source Readback
+
+- This round intentionally keeps the canvas menu out of the implementation
+  critical path. The active work is startup, RoomSetting cold-load, START,
+  LiveKit connection stability, and clean main entry.
+- Startup RoomSetting and canvas menu share selector concepts, but they do not
+  share the same lifecycle. Startup writes the initial RoomProfile and Tier 1
+  runtime config before LiveKit; canvas menu later applies in-session settings
+  from a connected main UI.
+- The startup page now labels the visual selector as `Theme` and writes
+  `skin_id`. Canvas/menu may still expose a technical Scene block later for
+  SceneRegistry or environment-baseline inspection, but that must not leak back
+  into startup RoomSetting as a desktop/indoor/outdoor manual picker.
+
+### B. Existing Core Interfaces
+
+- Shared selector truth is already available through `RoomSettingService`,
+  `MenuRegistry`, and `AppFirstVersionFacade.canvas_snapshot()`.
+- The canvas menu should eventually consume typed menu/canvas DTOs from the
+  shared boundary, not reuse the startup-only whitebox controller as its core.
+
+### C. Missing Core Surface
+
+No new row was added in this implementation round. CORE-007 remains the pending
+shared answer for `CanvasMenuCoreV1`.
+
+### D. Observable Completion Signal
+
+- Startup code may show a `ROOM` entry and a small main placeholder, but it
+  must not implement full canvas menu state.
+- Any later canvas menu work should start from CORE-007 confirmation, then bind
+  to existing facade/menu APIs instead of adding another local selector model.
+- `UI/AppV1MetaUiController.cs` contains useful canvas/HUD interaction ideas,
+  but it is a Smoke/reference controller. It must not become the shared canvas
+  menu contract, and it must not be mounted wholesale into the formal startup
+  scene as proof that the menu is complete.

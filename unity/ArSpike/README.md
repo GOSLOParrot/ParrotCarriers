@@ -1,4 +1,21 @@
-# ArSpike
+﻿# ArSpike
+
+## Current App Directory Rule (2026-05-13)
+
+The formal Unity App center is `Assets/ParrotApp/**`.
+
+- Runtime scripts: `Assets/ParrotApp/Runtime/Scripts/**`
+- Startup scene: `Assets/ParrotApp/Scenes/ParrotApp_Startup.unity`
+- Runtime resources: `Assets/ParrotApp/Resources/**`
+- Curated App art: `Assets/ParrotApp/Art/AppV1/**`
+- Models: `Assets/ParrotApp/Models/**`
+- Test evidence only: `Assets/Tests/Smoke/**` and `Assets/Tests/NerTuning/**`
+
+The old duplicate script root `Assets/Scripts/ParrotApp/**` has been removed
+and must not be recreated. Read
+`codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md`
+before changing Unity directories, scenes, resources, models, art, or Build
+Settings.
 
 Unity **2022.3 LTS** 下的工程仓位。当前承担两个角色（2026-04-29 起）：
 
@@ -11,7 +28,7 @@ Unity **2022.3 LTS** 下的工程仓位。当前承担两个角色（2026-04-29 
 
 ECP 协议代码与正式 App 脚本骨架的逐步迁移记录在：
 
-- `Assets/Scripts/ParrotApp/MIGRATION.md` — 当前迁移状态、依赖搬迁顺序、不搬迁清单、不允许误读。
+- `codex_workspace/design_workspace/archive/unity_parrotapp_scripts_migration_20260429.md` — 当前迁移状态、依赖搬迁顺序、不搬迁清单、不允许误读。
 
 修改 ECP 行为只动 ArSpike 这一份；ParrotDev 那份不再同步。
 
@@ -43,3 +60,5 @@ ECP 协议代码与正式 App 脚本骨架的逐步迁移记录在：
 - ECP 最小实现审计：`.cursor/memory/architecture/sprint4_ecp_minimal_audit_20260429.md`
 - LiveKit Unity 视频管线 skill：`.cursor/skills/livekit-unity-video-publish/IMPL_REF.md`
 - ParrotCarriers 模块索引：`.cursor/memory/INDEX.md`
+
+

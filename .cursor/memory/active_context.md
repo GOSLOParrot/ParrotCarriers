@@ -1,4 +1,4 @@
-# 当前进度与下一步
+﻿# 当前进度与下一步
 
 > **🟢 2026-05-12**：ECS Orchestrator + Lifecycle Audit Phase 1-5 落地 — `runtime_config.json` 配置层级 + `setting_change_tier` 注册表 + orchestrator (:7890) HTTP API + Bearer + systemd 5 unit + Brain 容器化（profile-gated）+ boot preflight + crash hook + 限频重启。详见 [`architecture/ecs_orchestrator_lifecycle_completion_20260512.md`](architecture/ecs_orchestrator_lifecycle_completion_20260512.md) + [`architecture/Interface/ecs_orchestrator_codex_guidance_20260512.md`](architecture/Interface/ecs_orchestrator_codex_guidance_20260512.md)。Round 5 18 bug + 1 gap 之后的下一阶段控制面收口；数据面零漂移。
 
@@ -139,7 +139,7 @@ Step 7: Chat 7 (P2.5 完成汇报) ← 等真机 spike 全 5 验收 ✅
 > **当前阶段**: **Sprint 4 协议升级 Phase 1 已完成 + Phase 3 前置调研已收口**
 > - Phase 1 = ECP-minimal：Pydantic schema (`src/parrot/shared/ecp.py`) + `_rpc_bridge` mirror + Unity DTO/handler + 19 项 pytest 全绿
 > - 审计回路完成（A1-A5 必修已全部修复，B1-B5 推迟 + DRIFT NOTE 已留档）
-> - ArSpike 已成为正式 AR App 接口工作区；EcpDtos.cs 已迁入 `unity/ArSpike/Assets/Scripts/ParrotApp/RPC/`
+> - ArSpike 已成为正式 AR App 接口工作区；EcpDtos.cs 已迁入 `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/RPC/`
 > - **Phase 3 前置调研产物已落地**（2026-04-29 晚）：
 >   - 厚稿：`docs/sprint4_research/result/05_lifecycle_and_defensive_design.md`（Phase A/B + 三段式）
 >   - 薄索引（Phase 3 实现 chat 起步页）：`docs/sprint4_research/result/INDEX_for_phase3.md`
@@ -239,7 +239,7 @@ Step 7: Chat 7 (P2.5 完成汇报) ← 等真机 spike 全 5 验收 ✅
 >   D3: Token Mint Bearer secret, Unity 存 Resources/parrot_config.json（gitignored，见 parrot_config.json.example）
 >   D4: 新增 TRACK_REBUILDING reason, 映射 PAUSED 跳过 Supervisor 降档计时
 >   D5: Gemini 继续看纯摄像头画面, Sprint 4 再接合成帧
->   D6: GOSLO.glb 换上真模型 (Assets/Models/GOSLO.glb 29KB), AnimationDriver 用 Transform.Find() 查节点
+>   D6: GOSLO.glb 换上真模型 (Assets/ParrotApp/Models/GOSLO.glb 29KB), AnimationDriver 用 Transform.Find() 查节点
 >
 > 部署快照: `.cursor/memory/deploy_snapshot_p2_20260412.md`
 > **P2 里程碑**: `.cursor/memory/milestone_p2.md` (P2 已完成, 历史归档)
@@ -412,7 +412,7 @@ GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 - [x] **.gitignore 更新**: ParrotDev + ParrotAR 通配
 - [x] **笔记本模拟验证**: sim_unity_client + Brain Agent 端到端 Gemini 语音 ✅
 - [x] **DevSceneSetup.cs**: Unity Editor 一键搭建 Dev 场景
-- [x] **GOSLO 鹦鹉模型**: Assets/Models/GOSLO.glb (29KB)
+- [x] **GOSLO 鹦鹉模型**: Assets/ParrotApp/Models/GOSLO.glb (29KB)
 - [x] **LiveKit SDK 适配规则**: .cursor/rules/livekit-unity-sdk.mdc
 - [x] **GitHub Push**: https://github.com/GOSLOParrot/ParrotCarriers (2 commits)
 - [x] **Nanobot ParrotBusChannel**: nanobot/channels/parrot_bus.py — Redis Stream 消费 + agent 回复 → Pub/Sub 结果发布
@@ -687,3 +687,4 @@ pytest tests/integration/test_graphiti_chain.py -v      # 需要 FalkorDB 运行
 | 深度搜索 | "帮我查一下这个" | identify_object(deep_search) → Nanobot research → 结果回写 |
 | Episode 管理 | "开始新任务：找包裹" | manage_episode(start) → L2-B Episode 创建 |
 | 日程提醒 | (自动) | CalendarTrigger → Nanobot → 三层提醒 → Gemini 自然播报 |
+
