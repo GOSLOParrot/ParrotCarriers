@@ -13,6 +13,9 @@ User=parrot
 WorkingDirectory=/opt/parrot/ParrotCarriers
 EnvironmentFile=-/opt/parrot/ParrotCarriers/.env.castle
 Environment=PYTHONUNBUFFERED=1
+# Bind to all interfaces so phone (Unity) can reach orchestrator from public IP.
+# Write endpoints are protected by PARROT_ORCH_SECRET bearer token.
+Environment=PARROT_ORCH_HOST=0.0.0.0
 ExecStart=/opt/parrot/ParrotCarriers/.venv/bin/python -m parrot.castle.orchestrator
 Restart=on-failure
 RestartSec=5s
