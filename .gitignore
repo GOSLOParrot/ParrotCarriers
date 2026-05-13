@@ -76,6 +76,9 @@ agent-transcripts/
 *-sa-key.json
 *-adc.json
 
+# ECS 本地 secrets 目录（service account JSON、voiceprint manifest 等）
+data/secrets/
+
 # Temporary transfer files / build artifacts
 FilePort/
 FilePort2/
