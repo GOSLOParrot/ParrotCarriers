@@ -1,0 +1,28 @@
+[Unit]
+Description=Parrot App Monitor HTTP Server (Unity RoomSetting API :8790)
+Documentation=file:/opt/parrot/ParrotCarriers/.cursor/memory/architecture/Interface/INDEX.md
+After=network-online.target docker.service parrot-orchestrator.service
+Wants=network-online.target docker.service parrot-orchestrator.service
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Service]
+Type=simple
+User=parrot
+WorkingDirectory=/opt/parrot/ParrotCarriers
+EnvironmentFile=-/opt/parrot/ParrotCarriers/.env.castle
+Environment=PYTHONUNBUFFERED=1
+# Bind to 0.0.0.0:8790 so Unity on phone can reach /api/app/room-setting/*
+ExecStart=/opt/parrot/ParrotCarriers/.venv/bin/python src/scripts/start_app_monitor_server.py --host 0.0.0.0 --port 8790
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/parrot/ParrotCarriers/data
+ReadWritePaths=/opt/parrot/ParrotCarriers/logs
+
+[Install]
+WantedBy=multi-user.target
