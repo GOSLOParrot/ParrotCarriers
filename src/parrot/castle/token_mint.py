@@ -20,6 +20,11 @@ Usage:
     200 {"token": "<livekit-jwt>", "url": "<LIVEKIT_URL>"}
     401 {"error": "unauthorized"}
     422 validation error
+
+Unity identities request the unnamed LiveKit Agents Brain dispatch by default
+(`PARROT_MINT_AGENT_DISPATCH=unity`). Listener/diagnostic identities can join
+without spawning Brain; set `PARROT_MINT_AGENT_DISPATCH=off` for manual dispatch
+tests or `all` for broad dev-room dispatch.
 """
 
 from __future__ import annotations
@@ -75,13 +80,26 @@ _DEFAULT_ROOM = os.getenv("LIVEKIT_ROOM", "parrot-main")
 # For self-hosting this also reduces stale-token replay risk because Cloud-only
 # token revocation is not available.
 _TOKEN_TTL_S = int(os.getenv("PARROT_MINT_TTL_SECONDS", "600"))
+# Phone START needs more than a LiveKit room join: Brain must also be present in
+# that room before Unity can call business RPCs such as applyRoomProfile. Unity
+# must never hold the LiveKit API secret, so the mint service is the narrow
+# security boundary that can request the server-side agent dispatch inside the
+# short-lived join token. Default "unity" keeps this phone-facing only; observer
+# and diagnostics clients can join without spawning Brain.
+_AGENT_DISPATCH_MODE = os.getenv("PARROT_MINT_AGENT_DISPATCH", "unity").strip().lower()
+
+# Empty means the Brain worker registered via the default unnamed
+# @server.rtc_session() entrypoint. Set only if the deployment later registers a
+# named worker and the LiveKit Agents server is configured to accept that name.
+_AGENT_NAME = os.getenv("PARROT_MINT_AGENT_NAME", "").strip()
 
 
 @app.on_event("startup")
 async def _log_startup_config() -> None:
     logger.info(
         "Token mint starting: port=%s livekit_url_scheme=%s livekit_url_length=%d "
-        "api_key_present=%s api_secret_length=%d mint_secret_present=%s default_room=%s",
+        "api_key_present=%s api_secret_length=%d mint_secret_present=%s default_room=%s "
+        "agent_dispatch_mode=%s agent_name_configured=%s",
         os.getenv("PARROT_MINT_PORT", "7888"),
         _LIVEKIT_URL.split(":", 1)[0] if ":" in _LIVEKIT_URL else "",
         len(_LIVEKIT_URL),
@@ -89,6 +107,8 @@ async def _log_startup_config() -> None:
         len(_LIVEKIT_API_SECRET),
         bool(_MINT_SECRET),
         _DEFAULT_ROOM,
+        _AGENT_DISPATCH_MODE or "unity",
+        bool(_AGENT_NAME),
     )
 
 
@@ -101,6 +121,10 @@ class MintResponse(BaseModel):
     token: str
     url: str
     expires_at: int
+    # Exposed for diagnostics/HUDs. This is not a secret and does not prove the
+    # Brain job stayed alive; Unity must still wait for participant presence and
+    # successful RPC payloads before marking START complete.
+    agent_dispatch_requested: bool = False
 
 
 def _check_auth(request: Request) -> None:
@@ -125,13 +149,32 @@ def _check_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="unauthorized")
 
 
+def _should_request_agent_dispatch(identity: str) -> bool:
+    """Return whether this token should start the unnamed Brain room job.
+
+    Unity does not hold the LiveKit API secret, so the token mint is the only
+    safe place in the phone-facing path to request the server-side Brain agent.
+    The default is intentionally narrow: only Unity identities dispatch Brain.
+    Diagnostic/listener clients can still join without spawning a new job.
+    """
+    mode = (_AGENT_DISPATCH_MODE or "unity").strip().lower()
+    if mode in {"0", "false", "no", "off", "disabled", "none"}:
+        return False
+    if mode in {"1", "true", "yes", "on", "all", "always"}:
+        return True
+    return identity.strip().lower().startswith("unity")
+
+
 def _generate_token(room: str, identity: str) -> str:
     """Generate a LiveKit JWT using livekit-server-sdk-python."""
     try:
-        from livekit.api import AccessToken, VideoGrants
+        from livekit.api import AccessToken, RoomAgentDispatch, VideoGrants
+        from livekit.protocol.room import RoomConfiguration
     except ImportError:
         try:
+            from livekit.api import RoomAgentDispatch  # type: ignore
             from livekit.api.access_token import AccessToken, VideoGrants  # type: ignore
+            from livekit.protocol.room import RoomConfiguration  # type: ignore
         except ImportError as exc:
             raise RuntimeError(
                 "livekit-server-sdk-python required: pip install livekit-api"
@@ -141,7 +184,7 @@ def _generate_token(room: str, identity: str) -> str:
     # Historical note: this was verified in the generate_token.py fix on 2026-04-11.
     # Grant only the normal participant powers Unity needs. Do not mint room
     # admin/list/create/record grants from the mobile app token endpoint.
-    token = (
+    builder = (
         AccessToken(api_key=_LIVEKIT_API_KEY, api_secret=_LIVEKIT_API_SECRET)
         .with_identity(identity)
         .with_name(identity)
@@ -156,7 +199,19 @@ def _generate_token(room: str, identity: str) -> str:
         )
         .with_ttl(timedelta(seconds=_TOKEN_TTL_S))
     )
-    return token.to_jwt()
+    if _should_request_agent_dispatch(identity):
+        # RoomConfiguration.agents asks LiveKit to dispatch the server-side
+        # Brain room job as part of the room join. This does not grant Unity any
+        # admin privilege and does not change media grants. If ECS Brain is
+        # misconfigured, the phone can still join the room, but START must fail
+        # later at the Brain-present/RPC gate instead of reporting fake success.
+        dispatch = (
+            RoomAgentDispatch(agent_name=_AGENT_NAME)
+            if _AGENT_NAME
+            else RoomAgentDispatch()
+        )
+        builder = builder.with_room_config(RoomConfiguration(agents=[dispatch]))
+    return builder.to_jwt()
 
 
 @app.post("/mint", response_model=MintResponse)
@@ -172,6 +227,7 @@ async def mint_token(req: MintRequest, request: Request) -> MintResponse:
         bool(request.headers.get("Authorization", "")),
     )
     _check_auth(request)
+    agent_dispatch_requested = _should_request_agent_dispatch(req.identity)
     try:
         jwt = _generate_token(req.room, req.identity)
     except Exception as exc:
@@ -180,13 +236,20 @@ async def mint_token(req: MintRequest, request: Request) -> MintResponse:
 
     expires_at = int(time.time()) + _TOKEN_TTL_S
     logger.info(
-        "Minted token: room=%s identity_length=%d ttl_s=%d expires_at=%d",
+        "Minted token: room=%s identity_length=%d ttl_s=%d expires_at=%d "
+        "agent_dispatch_requested=%s",
         req.room,
         len(req.identity),
         _TOKEN_TTL_S,
         expires_at,
+        agent_dispatch_requested,
     )
-    return MintResponse(token=jwt, url=_LIVEKIT_URL, expires_at=expires_at)
+    return MintResponse(
+        token=jwt,
+        url=_LIVEKIT_URL,
+        expires_at=expires_at,
+        agent_dispatch_requested=agent_dispatch_requested,
+    )
 
 
 @app.get("/health")

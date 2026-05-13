@@ -360,6 +360,10 @@ def test_l2b_node_and_edge_routes_stay_dry_run_by_default() -> None:
         "/api/l2b/edge",
         json={"from_uuid": "node_a", "to_uuid": "node_b", "kind": "associated_with"},
     ).json()
+    self_edge = client.post(
+        "/api/l2b/edge/draft",
+        json={"from_uuid": "node_a", "to_uuid": "node_a", "kind": "associated_with"},
+    ).json()
 
     assert node["success"] is True
     assert node["dry_run"] is True
@@ -372,6 +376,8 @@ def test_l2b_node_and_edge_routes_stay_dry_run_by_default() -> None:
     assert edge["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
     assert edge["data"]["operator_required_for_execute"] is True
     assert edge["data"]["edge"]["kind"] == "associated_with"
+    assert self_edge["success"] is False
+    assert self_edge["data"]["error"] == "self_edge_not_allowed"
 
 
 def test_google_message_routes_use_nanobot_and_trigger_drafts() -> None:

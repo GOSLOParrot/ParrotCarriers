@@ -28,6 +28,12 @@ update the inventory SSOT and App TODO status in the same turn.
 `Assets/ParrotApp/Runtime/Scripts/UI/AppV1MetaUiController.cs` is a legacy
 Smoke/reference UI controller, not formal homepage completion evidence; use it
 only after reading the inventory SSOT classification.
+Current LiveKit status rule: do not mark START / Brain RPC complete just
+because Mint and LiveKit join succeed. As of 2026-05-13, ECS Mint/LiveKit are
+reachable, but the systemd Brain LineB job crashes on missing Google STT
+Application Default Credentials before participant presence. Token mint has a
+local code fix to request unnamed Brain dispatch for Unity identities; ECS still
+needs deployment plus ADC or a deliberate LineA runtime config for true START.
 
 ```text
 你是 Unity App 前端线的 Codex。工作目录是 D:\GOSLOParrot\ParrotCarriers。

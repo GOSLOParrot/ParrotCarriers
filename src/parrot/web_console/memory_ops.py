@@ -478,6 +478,18 @@ def draft_l2b_edge(payload: dict[str, Any] | None = None) -> dict[str, Any]:
                 "valid_kinds": [item.value for item in EdgeKind],
             },
         )
+    if from_uuid == to_uuid:
+        return _receipt(
+            action="l2b.edge.draft",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "error": "self_edge_not_allowed",
+                "from_uuid": from_uuid,
+                "to_uuid": to_uuid,
+            },
+        )
     edge = {
         "from_uuid": from_uuid,
         "to_uuid": to_uuid,

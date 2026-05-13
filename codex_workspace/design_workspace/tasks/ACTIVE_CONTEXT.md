@@ -242,6 +242,25 @@ These are useful test evidence only. They must not be used as App completion evi
   Unity heartbeat rebound to the LiveKit DataChannel. No Brain participant was
   running, so Unity correctly failed START at `brain_rpc_room_profile_sync_timeout`
   and must not be marked full START complete yet.
+- 2026-05-13 ECS retry update: Castle Mint/LiveKit (`8.216.45.45`) are
+  reachable and authorized Mint returns a token. A diagnostic client joined
+  `parrot-main`; without dispatch the room only showed `scheduler`. Manual
+  unnamed dispatch reached systemd Brain, but the job crashed before participant
+  presence because LineB `google.STT` could not find Google Application Default
+  Credentials. This proves the current blocker is ECS LineB ADC/runtime config
+  (plus token-mint deployment), not phone/voice/mic. The Unity config file also
+  lacks `appApiUrl`/`orchestratorUrl`, so ECS phone runs would otherwise fall
+  back to local App API and skip orchestrator.
+- Follow-up ECS probe as `User=parrot`: `GOOGLE_APPLICATION_CREDENTIALS` is set,
+  but the service account file is not visible/readable to `parrot` even though
+  root can see it. Treat this as an ECS file permission/path/env issue, not as
+  evidence that the user changed their Google password. Fix ADC readability for
+  the systemd runtime before repeating LineB START.
+- Repair route recorded in
+  `backend_interface_map/app/startup_roomsetting_app_interface_20260513.md`
+  A3 and TODO `APP-017`: deploy token-mint dispatch, fix systemd Brain LineB
+  ADC or run a deliberate LineA START smoke, retire duplicate tmux Brain
+  evidence, then rerun non-phone Brain RPC proof before device audio/AR tests.
 - Lifecycle cleanup note: `LifecycleShutdownService` synchronous quit drain no
   longer blocks on SDK `UnpublishTrack`; latest Unity Play Mode exit after a
   connected room showed 0 Console errors/warnings.

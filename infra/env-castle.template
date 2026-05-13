@@ -28,6 +28,13 @@ LIVEKIT_ROOM=parrot-main
 # 留空 = dev 模式，token-mint 接受任何请求并打 WARNING（仅 LAN 测试可用）。
 PARROT_MINT_SECRET=
 
+# ---- token-mint LiveKit Agents dispatch ----
+# unity = only identities such as unity-app request the unnamed Brain worker.
+# off   = mint room tokens only; operator/test code must create dispatch.
+# all   = every minted token requests Brain dispatch (dev only).
+PARROT_MINT_AGENT_DISPATCH=unity
+PARROT_MINT_AGENT_NAME=
+
 # ---- ECS Orchestrator Bearer（Phase 2 新增，:7890 治理面） ----
 # Web monitor / Brain self-call / 运维脚本 → /set_active_line, /restart_component 都要带这个。
 # 留空 = orchestrator 拒绝外部写操作（只允许 /health, /status 只读）。

@@ -312,6 +312,101 @@ Related TODO: APP-013, APP-015, APP-016
   placement gate buttons, and local capability-mode controls. They need to be
   re-bound to the formal startup/lifecycle contracts before production use.
 
+### A2. ECS Retry Finding: Mint OK, Brain Job Crashes
+
+2026-05-13 CST live retry against Castle `8.216.45.45`:
+
+- `parrot_config.json` currently points Unity at ECS `mintUrl`,
+  `liveKitUrl`, and `room`, but does not include `appApiUrl` or
+  `orchestratorUrl`. Unity would therefore use local fallback App API
+  `127.0.0.1:8790` and skip the orchestrator unless those fields are injected
+  for the phone/ECS run.
+- ECS token mint `/health` is reachable and authorized `/mint` returns a
+  LiveKit token. A diagnostic LiveKit client joined `parrot-main`.
+- Without dispatch, the room showed only `scheduler`; there was no `agent-*`
+  or `brain` participant, so Unity Brain RPC would correctly time out.
+- Manual unnamed LiveKit agent dispatch reached `parrot-brain.service`, but the
+  job crashed before a Brain participant became visible:
+  `google.STT` raised `Application default credentials must be available`.
+  This is an ECS LineB ADC/runtime config blocker, not a phone or microphone
+  test requirement.
+- Follow-up ECS probe as the systemd runtime user found the sharper cause:
+  `GOOGLE_APPLICATION_CREDENTIALS` is set and root can see the service account
+  file, but user `parrot` reports the file as not existing / not readable. Since
+  `parrot-brain.service` runs as `User=parrot`, Google STT cannot load ADC.
+  This is a file ownership / directory traversal / env-file runtime issue, not
+  a normal Google account password change symptom.
+- ECS currently has both a systemd `parrot-brain.service` and an old root tmux
+  `python -m parrot.brain.agent dev` process. Future validation should treat
+  the systemd service as canonical and retire/ignore tmux evidence unless the
+  operator explicitly chooses the tmux path.
+- Public `:7890/status` returned `502` during this retry, while the host
+  service listens on `127.0.0.1:7890`. Unity ECS config must not assume
+  orchestrator is phone-reachable until that control path is explicitly fixed
+  or tunneled.
+
+Local code follow-up completed in this chat: `parrot.castle.token_mint` now
+requests unnamed LiveKit Agents dispatch for Unity identities by default
+(`PARROT_MINT_AGENT_DISPATCH=unity`). This removes the need for Unity to hold a
+LiveKit API secret or call a separate dispatch API, but ECS still needs the
+updated token-mint deployment plus valid LineB Google ADC, or a deliberate
+LineA runtime config for a START smoke.
+
+Resolution path:
+
+1. Put the Google service account JSON in a path readable by `parrot` but not
+   public, preferably under a gitignored runtime/secrets directory outside Unity
+   and outside committed source.
+2. Set `GOOGLE_APPLICATION_CREDENTIALS` in the env file actually loaded by
+   `parrot-brain.service` to that path, then restart Brain.
+3. Deploy/restart token-mint so the Unity identity dispatch fix is active.
+4. Retire or ignore old tmux Brain processes; use systemd Brain as the formal
+   ECS validation source.
+5. Re-run START with a diagnostic participant check: Mint OK -> Unity joins ->
+   Brain participant appears -> `getRoomSettingSnapshot` / `applyRoomProfile`
+   RPC payload succeeds -> DataChannel heartbeat -> main-ready gate.
+
+### A3. Repair Plan For START / Brain RPC
+
+Do not treat this as an Android/voice problem first. Repair in this order:
+
+1. Deploy the token-mint dispatch change to Castle and restart token-mint.
+   Verification: an authorized `/mint` call for identity `unity-*` returns a
+   token whose decoded claims include `roomConfig.agents=[{}]`; listener
+   identities such as `observer` should not dispatch by default.
+2. Fix the Brain runtime line for the smoke target:
+   - Production LineB route: install a Google Cloud service account JSON on
+     Castle, set `GOOGLE_APPLICATION_CREDENTIALS` for the same systemd
+     environment that runs `parrot-brain.service`, ensure the `parrot` user can
+     read it, then restart `parrot-brain`.
+   - Temporary START smoke route: clear/override `data/runtime_config.json` to
+     `line_a` and verify Brain no longer builds the LineB STT pipeline. This
+     proves START/RPC before the LineB ADC secret is ready, but must not be
+     labeled as a LineB pass.
+3. Remove or park the old root tmux Brain process. Use systemd Brain as the
+   canonical evidence source so dispatch, crash, restart, and logs are not
+   split between two runtimes.
+4. Configure Unity phone/ECS runtime endpoints. `parrot_config.json` needs
+   ECS/LAN `mintUrl` and `liveKitUrl`, and either a valid/tunneled
+   `orchestratorUrl` / `appApiUrl` or an explicit decision to run those
+   endpoints locally for the current smoke. Do not let an ECS phone build
+   silently fall back to `127.0.0.1:8790`.
+5. Run the non-phone START proof:
+   mint token -> LiveKit join -> Brain participant appears -> call
+   `getRoomSettingSnapshot`, `applyRoomProfile`, and `setAppCapabilityMode` ->
+   check payload business status, not just transport success.
+6. Only after step 5 passes, run the phone/device pass for microphone
+   permission, Bluetooth input/output route switching, app background/resume,
+   AR camera/video publish, and long reconnect behavior.
+
+Current verification target before homepage work can claim "real LiveKit START":
+
+- Brain participant visible in `parrot-main`.
+- `applyRoomProfile` and `setAppCapabilityMode` return business-ok payloads.
+- Unity DataChannel heartbeat remains bound.
+- Main-ready owner waits for HUD, menu snapshot, model/AR, LiveKit, Brain, RPC,
+  and DataChannel gates.
+
 ### B. Existing Core Interfaces
 
 - App HTTP facade:
@@ -342,7 +437,8 @@ RoomSetting, menu registry, canvas snapshot, and LineB status surfaces.
 Open implementation gaps:
 
 - Brain RPC full START test is pending until a Brain participant joins the same
-  LiveKit room.
+  LiveKit room and stays alive. The latest ECS retry proved the dispatch reaches
+  Brain but LineB crashes on missing Google STT Application Default Credentials.
 - Unity has local audio route detection and mic republish logic, but it does
   not yet push route policy to Brain `session/audio_route_policy`. The backend
   route policy endpoint/RPC exists; the Unity producer hook is intentionally

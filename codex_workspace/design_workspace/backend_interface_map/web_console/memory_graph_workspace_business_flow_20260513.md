@@ -193,7 +193,7 @@ flows can be audited without inventing a second memory write path.
 | `POST /api/l2b/node/draft` | Draft L2-B node create/update as an explicit user observation. | `draft_l2b_node()` | No direct graph mutation. |
 | `POST /api/l2b/node` | Admit a user-explicit observation through L1.5. | `apply_l2b_node()` -> `L15Pool.admit` | Keeps L1.5/Ingest as the write gate. |
 | `POST /api/l2b/node/delete` | Draft/execute L2-B node eviction. | `delete_l2b_node()` -> `L15Pool.evict` | Default dry-run; real eviction is operator-only. |
-| `POST /api/l2b/edge/draft` | Draft source/target/kind/strength/source/meta for a semantic edge. | `draft_l2b_edge()` | Validates edge shape only. |
+| `POST /api/l2b/edge/draft` | Draft source/target/kind/strength/source/meta for a semantic edge. | `draft_l2b_edge()` | Validates edge shape and rejects same-node self-edge drafts. |
 | `POST /api/l2b/edge` | Connect two L2-B nodes with a `SemanticEdge`. | `apply_l2b_edge()` -> `L2BGraph.connect` | Operator-only real write; receipt includes audit hints. |
 | `GET /api/memory/blackboard/activity` | Inspect recent py-trees Blackboard activity. | `build_blackboard_activity_snapshot()` -> `Blackboard.activity_stream` | Read-only, Web-only, bounded, summaries-only; starts activity capture if py-trees has not enabled it yet. |
 
@@ -599,6 +599,10 @@ Changed in this slice:
 - Fixed a preview cleanup bug: `Clear Preview` now clears stale selected ghost
   nodes and any `draft:` UUIDs left in target/delete/edge fields so later edge
   drafts cannot resurrect a removed preview endpoint.
+- Fixed a self-edge bug: From and To with the same UUID previously returned a
+  success receipt but produced a zero-length invisible edge. The frontend now
+  guards it locally, and the Web BFF returns `self_edge_not_allowed` if called
+  directly.
 - Added an explicit `Clear Preview` control in the receipt area so renderer-only
   draft state cannot be mistaken for committed L2-B data.
 - Blackboard rows now render as status-light cards grouped by scope/writer.
@@ -636,6 +640,10 @@ Verification:
   clicked draft edge again. Preview nodes stayed at `0`, preview edges stayed at
   `0`, the selection pill returned to the generic selection label, and browser
   console errors stayed at `0`.
+- Self-edge regression smoke:
+  created one preview node, set it as both From and To through the canvas
+  toolbar, then clicked draft edge. The browser rendered `0` preview edges,
+  showed the local guard receipt, and reported `0` console errors.
 
 Remaining work:
 

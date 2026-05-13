@@ -111,6 +111,11 @@ Each chat follows this loop:
 9. For Unity App directory, scene, resource, model, or Build Settings changes,
    update the Unity project inventory SSOT and App TODO status in the same
    turn.
+10. For Unity START / LiveKit work, do not mark completion on Mint or room join
+    alone. Completion needs Brain participant presence, successful business RPC
+    payloads, DataChannel heartbeat, and main-ready gate ownership. The current
+    2026-05-13 blocker is ECS LineB Google STT ADC plus token-mint deployment
+    of unnamed Brain dispatch for Unity identities.
 
 ## 5. Skill Gate
 

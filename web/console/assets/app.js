@@ -2629,24 +2629,40 @@ async function dryRunDeleteL2bNode() {
 }
 
 async function draftL2bEdge() {
+  const edge = l2bEdgePayload();
+  if (!validateL2bEdgePayload(edge, "l2b.edge.draft")) return;
   const payload = await postJson("/api/l2b/edge/draft", {
-    from_uuid: $("l2bEdgeFrom").value,
-    to_uuid: $("l2bEdgeTo").value,
-    kind: $("l2bEdgeKind").value,
+    ...edge,
     dry_run: true,
   });
   renderMemoryOpsReceipt(payload);
 }
 
 async function dryRunL2bEdge() {
+  const edge = l2bEdgePayload();
+  if (!validateL2bEdgePayload(edge, "l2b.edge.apply")) return;
   const payload = await postJson("/api/l2b/edge", {
-    from_uuid: $("l2bEdgeFrom").value,
-    to_uuid: $("l2bEdgeTo").value,
-    kind: $("l2bEdgeKind").value,
+    ...edge,
     dry_run: true,
     operator_mode: false,
   });
   renderMemoryOpsReceipt(payload);
+}
+
+function l2bEdgePayload() {
+  return {
+    from_uuid: $("l2bEdgeFrom").value.trim(),
+    to_uuid: $("l2bEdgeTo").value.trim(),
+    kind: $("l2bEdgeKind").value,
+  };
+}
+
+function validateL2bEdgePayload(edge, action) {
+  if (edge.from_uuid && edge.to_uuid && edge.from_uuid === edge.to_uuid) {
+    renderMemoryLocalError(action, new Error("From and To must be different"));
+    return false;
+  }
+  return true;
 }
 
 function selectedL2bNode() {

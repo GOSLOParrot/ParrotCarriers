@@ -94,7 +94,7 @@ Audit result:
 | `POST /api/l2b/node/draft` | draft | none | Produces a `USER_EXPLICIT` observation receipt for create/update. |
 | `POST /api/l2b/node` | dry-run/operator | `L15Pool.admit(Observation(...))`. | Keeps Ingest/L1.5 as the normal write gate. |
 | `POST /api/l2b/node/delete` | dry-run/operator | `L15Pool.evict`. | Web operator action; default is preview receipt. |
-| `POST /api/l2b/edge/draft` | draft | none | Normalizes `SemanticEdge`-shaped source/target/kind/strength/source/meta. |
+| `POST /api/l2b/edge/draft` | draft | none | Normalizes `SemanticEdge`-shaped source/target/kind/strength/source/meta; rejects same-node self-edge drafts. |
 | `POST /api/l2b/edge` | dry-run/operator | `L2BGraph.connect`. | Real edge connect requires operator mode and returns an audit receipt. |
 
 ## Drift Audit
@@ -147,6 +147,8 @@ Audit result:
 - `Clear Preview` also clears stale selected preview nodes and `draft:` UUIDs
   from target/delete/edge fields so later drafts cannot accidentally reuse a
   removed ghost endpoint.
+- Same-node edge drafts are rejected in the Web BFF and guarded in the frontend
+  so a zero-length invisible self-edge cannot return a success receipt.
 - Blackboard and IntentWorkspace rows now render as grouped status-light cards.
 - Verification signal: `node --check web\console\assets\app.js`, clean
   duplicate-id scan, and in-app browser Memory smoke. L2-B preview smoke showed
@@ -155,7 +157,9 @@ Audit result:
   preview node created from the center-stage action bar, selection pill update,
   toolbar clear to zero previews, and zero console errors. Cleanup regression
   smoke confirmed that drafting an edge after clearing previews does not
-  resurrect removed `draft:` endpoints.
+  resurrect removed `draft:` endpoints. Self-edge smoke confirmed that using
+  the same selected node for From and To creates no preview edge and reports a
+  local guard receipt with zero console errors.
 
 ## Implementation Anchors
 

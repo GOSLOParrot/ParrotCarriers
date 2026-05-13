@@ -18,11 +18,10 @@ from parrot.shared.config import ParrotConfig
 
 from livekit.api import AccessToken, VideoGrants
 
-# Brain registers with agent_name="" (unnamed default handler via @server.rtc_session()).
-# Do NOT set roomConfig.agents[agentName] here — LiveKit dispatches to unnamed workers
-# automatically when a participant joins. Adding a named agentName here causes dispatch
-# to fail because no worker with that name exists (Brain uses the default unnamed slot).
-# See agent.py brain_entrypoint docstring for the design rationale.
+# This helper intentionally generates a bare diagnostic join token.
+# The phone-facing production path is `parrot.castle.token_mint`, which requests
+# the unnamed Brain worker dispatch for Unity identities without exposing the
+# LiveKit API secret to the app.
 
 
 def generate(

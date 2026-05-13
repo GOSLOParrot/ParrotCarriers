@@ -56,7 +56,7 @@ Both App and Web may consume these, but neither should fork the contract:
 
 | Core surface | Current owner | Consumers |
 |:--|:--|:--|
-| Token mint `POST /mint` | `src/parrot/castle/token_mint.py` | Unity App startup. |
+| Token mint `POST /mint` | `src/parrot/castle/token_mint.py` | Unity App startup. Unity identities request unnamed Brain agent dispatch by default; room join alone is not Brain RPC readiness. |
 | Orchestrator `/status` | `src/parrot/castle/orchestrator/status.py` | Web console, App HUD/debug badge. |
 | Orchestrator setting writes | `src/parrot/castle/orchestrator/server.py` | Unity self-use startup/menu; Web operator console after approval. |
 | Runtime config | `src/parrot/castle/runtime_config.py` | Brain, orchestrator, future AgentTeam selector. |
@@ -80,6 +80,12 @@ App work emphasizes mobile UI, startup flow, game completion, and tool use.
 App should not edit nanobot JSON, MCP definitions, or Web console admin state.
 It can select a Maid Team preset once a shared core field exists. Until then,
 the selector may render `CatMaid Team` as a fixed V1 option.
+
+2026-05-13 App START verification rule: Mint success and LiveKit room join are
+only transport readiness. Full START needs Brain participant presence, successful
+business RPC payloads, DataChannel heartbeat, and main-ready gate ownership. The
+current Castle blocker is LineB Google STT ADC for the systemd Brain runtime;
+do not treat old tmux Brain logs or Smoke UI scenes as formal App completion.
 
 ## 5. Web Console Business Route
 
