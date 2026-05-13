@@ -8,6 +8,67 @@ Updated: 2026-05-13
 Related TODO: WEB-003, WEB-007, WEB-010, WEB-011
 Sources: `src/parrot/brain/l2b_monitor.py`, `src/parrot/dsg/l1_5/**`, `src/parrot/brain/observer/photo.py`, `src/parrot/brain/refs.py`, `codex_workspace/design_workspace/backend_interface_map/web_console/graphiti_management_business_flow_20260513.md`, Obsidian Canvas/JSON Canvas/React Flow/Cytoscape.js research anchors, `D:/GOSLOParrot/Pixel Asset`
 
+## 2026-05-13 Direction Update: React Memory Graph Workspace
+
+The Memory Graph work is now a formal React + Vite workspace, not another
+panel added to the vanilla console. It is separate from Runtime Flow.
+
+Memory Graph owns:
+
+- L1.5 bucket/pool management.
+- L2-B large graph canvas and direct node/edge dry-run CRUD.
+- Graphiti/FalkorDB operator drawers and search/draft links.
+- Ref, photo, Evidence/String Board rendering over shared Ref/Edge candidates.
+- Bucket board, selected-node drawer, receipt/event drawer, and graph filters.
+
+Runtime collaboration surfaces such as Plan, Scheduler, Nanobot, message
+receipt flow, and HITL belong to WEB-012 / Runtime Flow Workspace.
+
+Frontend direction:
+
+- Source: `web/console_app/` React + Vite.
+- Graph: React Flow first for direct graph CRUD/reconnect patterns.
+- Dense graph candidate: Cytoscape.js only after React Flow proves insufficient.
+- State: React hooks/reducers first; no Redux/Zustand until complexity
+  requires it.
+
+### Implementation Signal: React Memory Graph First Slice
+
+Date: 2026-05-13
+
+Implemented code:
+
+- React source: `web/console_app/src/App.tsx`,
+  `web/console_app/src/api.ts`, `web/console_app/src/types.ts`,
+  `web/console_app/src/styles.css`
+- Build output: `web/console_dist/`
+- BFF static switch: `src/parrot/web_console/server.py` now serves the React
+  build first when available and falls back to legacy `web/console/`.
+
+Current React Memory behavior:
+
+- `GET /api/app/live-state` remains the primary live read model for L2-B,
+  Blackboard, IntentWorkspace, refs, and tool artifacts.
+- `GET /api/l15/pool` feeds the bucket/source board.
+- L2-B nodes/edges render in a large React Flow canvas. Empty data uses
+  placeholder visual nodes so the workspace is not a raw-text wall.
+- Selecting a node opens a detail drawer with safe JSON detail.
+- Create/update/delete node actions and edge draft actions call existing
+  Web-only dry-run/draft routes and append receipts.
+- L1.5 bucket actions are presented as bucket cards, with raw/payload work kept
+  behind advanced flows.
+
+Remaining WEB-011 work:
+
+- Direct drag/connect/reconnect gestures need a dedicated follow-up slice.
+- L2-B graph-health metrics, source/bucket pressure visuals, and component/
+  traversal summaries still need bounded backend computation.
+- Evidence/String Board remains a renderer over CORE-006/CORE-007 candidates;
+  no separate board storage model has been created.
+- Browser smoke for this checkpoint confirmed the React Memory page is served
+  through the normal Web Console service on port `7893` with no frontend console
+  errors. Repeat this audit after each React UI slice.
+
 ## Slice: Memory Graph Workspace
 
 ### A. Source Readback

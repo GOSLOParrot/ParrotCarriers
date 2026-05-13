@@ -16,9 +16,18 @@ entries when a file stops being active.
 | File | Status | TODO | Scope |
 |:--|:--|:--|:--|
 | `web_console_step1_console_plan_20260513.md` | approved | WEB-001, WEB-008 | Step 1 requirements, IA, visual direction, implementation order, doc hygiene. |
-| `observability_runtime_business_flow_20260513.md` | in_progress | WEB-002, WEB-004, WEB-005, WEB-009, WEB-011 | ECS/module health, `/status`, Blackboard, IntentWorkspace, Plan/task, Scheduler, Nanobot, AgentTeam/Maid Team, collaboration status, LineB voice lab smoke, Runtime Flow and trigger palette. |
+| `observability_runtime_business_flow_20260513.md` | in_progress | WEB-002, WEB-004, WEB-005, WEB-009, WEB-012 | ECS/module health, `/status`, Blackboard, IntentWorkspace, Plan/task, Scheduler, Nanobot, AgentTeam/Maid Team, collaboration status, LineB voice lab smoke, Runtime Flow, HITL, and trigger palette. |
 | `memory_graph_workspace_business_flow_20260513.md` | in_progress | WEB-003, WEB-007, WEB-010, WEB-011 | L1.5, L2-B, Blackboard, IntentWorkspace, node/photo management, Ref binding, Evidence/String Board, real-time memory visualization plan, Visual Memory Operations Cockpit. |
 | `graphiti_management_business_flow_20260513.md` | in_progress | WEB-006 | Graphiti/FalkorDB management route: observe/search/draft/dry-run first, Web operator surgery later. |
+
+## Temporary Working Archives
+
+Temporary files are indexed here so they do not become scattered hidden SSOTs.
+Promote durable decisions back into the active business files above.
+
+| File | Status | Scope |
+|:--|:--|:--|
+| `_tmp/runtime_flow_memory_upgrade_research_20260513.md` | temporary-active | React + Vite migration, Runtime Flow workspace, Memory Graph workspace, HITL, runtime-flow read model, audit checklist. |
 
 ## Completed Interface Ledger
 
@@ -33,6 +42,7 @@ planned. Detailed business rationale stays in the active files above.
 | Menu/App smoke | `GET /api/app/canvas`, `GET /api/app/modules`, `GET /api/app/line-profiles`, `POST /api/app/line-profiles/apply`, `POST /api/app/workspace/apply`. | `observability_runtime_business_flow_20260513.md`, `memory_graph_workspace_business_flow_20260513.md` | Useful smoke path; not the main next focus. |
 | LineB voice lab | `POST /api/app/lineb/audio-route`, `POST /api/app/lineb/tts-segment`, `POST /api/app/lineb/mic-input`, `GET /api/livekit/config`, `POST /api/livekit/web-token`; browser LiveKit audio wiring and event/transcript panes. | `observability_runtime_business_flow_20260513.md` | Implemented smoke; full voice conversation still needs user-approved mic and running agent. |
 | Runtime monitor | `GET /api/runtime/monitor`; Scheduler route order/channels/tasks, Nanobot bridge, Plan counts/DAG rows, Blackboard summary, AgentTeam placeholder. | `observability_runtime_business_flow_20260513.md` | Read-only Web surface; not an App DTO. |
+| Runtime Flow upgrade | `GET /api/runtime/flow`, `GET /api/runtime/flow/changes`, `GET /api/runtime/hitl/pending`, `POST /api/runtime/hitl/draft-decision`, `POST /api/runtime/hitl/apply-decision`, React swimlane/DAG workspace. | `observability_runtime_business_flow_20260513.md` | First slice implemented; Web-only read model/HITL first, core candidates staged before shared promotion. |
 | Trigger and message lab | `GET /api/dsg/triggers/catalog`, `POST /api/dsg/triggers/draft-event`, `POST /api/dsg/triggers/fire-event`, `POST /api/google/messages/check`, `POST /api/google/messages/push-test`. | `observability_runtime_business_flow_20260513.md` | Web-only dry-run/receipt surface; real fire publishes to `CH_DSG_EVENTS` only with explicit operator mode. Gmail check uses Scheduler/Nanobot dispatch. |
 | Live memory snapshot | `GET /api/app/live-state?limit=...`; grouped Blackboard key rows, grouped IntentWorkspace ref rows, Ref registry, SVG L2-B graph canvas/detail panel, tool artifacts. | `memory_graph_workspace_business_flow_20260513.md` | Implemented as bounded active-view polling renderer with filters, new-node diff highlight, and soft Intent/Ref-to-L2-B links when linked nodes exist. User audit moved the next focus to WEB-011: large realtime cockpit, direct graph operations, simplified L1.5 cards, trigger palette, and possible changed_since/SSE after the visual model is useful. |
 | L1.5/L2-B operator drafts | `GET /api/l15/pool`, `POST /api/l15/bucket-op/draft`, `POST /api/l15/bucket-op`, `POST /api/l15/obsidian-node/draft`, `POST /api/l15/obsidian-node`, `POST /api/l2b/node/draft`, `POST /api/l2b/node`, `POST /api/l2b/node/delete`, `POST /api/l2b/edge/draft`, `POST /api/l2b/edge`. | `memory_graph_workspace_business_flow_20260513.md` | Default dry-run; Web-only receipts. Node create/update routes through `L15Pool.admit(Observation(source=USER_EXPLICIT))`; delete uses `L15Pool.evict`; real edge connect requires operator mode. |
@@ -76,6 +86,75 @@ Audit result:
   message EVENT nodes directly to L2-B. The next backend pass should migrate it
   to `TriggerOutcome.commit_observations` or an equivalent audited receipt
   path so it matches Calendar/Obsidian.
+
+## Completion Report: React Runtime Flow / Memory Workspace First Slice
+
+Date: 2026-05-13
+Status: implemented first vertical slice; visual polish and browser smoke are
+complete for this checkpoint, with follow-up polish still tracked by WEB-011
+and WEB-012
+Scope: Web Console only; no Unity/App DTO changes; no direct core SSOT edits.
+
+Completed:
+
+- Added React + Vite source under `web/console_app/` and build output under
+  `web/console_dist/`.
+- Updated the BFF static root so the same Web Console service prefers the React
+  build when `web/console_dist/index.html` exists and falls back to the old
+  vanilla console when it does not.
+- Added Web-only runtime-flow read model in
+  `src/parrot/web_console/runtime_flow.py`.
+- Added Runtime Flow routes:
+  `GET /api/runtime/flow`, `GET /api/runtime/flow/changes`,
+  `GET /api/runtime/hitl/pending`,
+  `POST /api/runtime/hitl/draft-decision`, and
+  `POST /api/runtime/hitl/apply-decision`.
+- Added first backend capability wiring so Plan steps can dispatch through
+  Scheduler/Nanobot task metadata and Nanobot result/timeout metadata can report
+  back into the Plan registry.
+- Fixed the Plan dispatch failure edge case: a dispatch exception now fails the
+  step and Plan instead of leaving the step stuck in `DISPATCHED`.
+- Fixed the unsupported Plan tool edge case: Plan steps now validate against
+  the Scheduler Nanobot task catalog before dispatch, so an unsupported tool
+  fails fast instead of being routed away from the Plan result flow.
+- Fixed the Runtime Flow changed-since edge case: no-op polls now return
+  `changed=false` instead of advancing sequence forever.
+- Fixed the Runtime Flow graph-read-model edge hygiene: the stable signature is
+  order-insensitive for nodes/edges/events, and graph edges whose endpoints are
+  outside the Runtime Flow read model are pruned before React Flow rendering.
+- Fixed HITL draft validation for missing Plan ids.
+- Fixed empty Plan execution settlement so a zero-step Plan completes instead
+  of staying active/executing forever.
+- Added React Memory Graph Workspace with React Flow L2-B canvas, L1.5 bucket
+  board, node/edge dry-run action buttons, detail drawer, and receipts.
+- Added React Runtime Flow Workspace with swimlane/DAG graph, event tape,
+  manual trigger buttons, HITL cards, and receipt rail.
+
+Verification at this checkpoint:
+
+- `uv run python -m py_compile src\parrot\web_console\runtime_flow.py src\parrot\web_console\server.py src\parrot\brain\plan\plan_registry.py src\parrot\scheduler\service.py`
+- `uv run pytest tests\test_brain\test_plan_lifecycle.py tests\test_web_console\test_web_console_server.py -q`
+- `cd web\console_app; npm run typecheck`
+- `cd web\console_app; npm run build`
+- Browser smoke on `http://127.0.0.1:7893/`: React dist served, Memory and
+  Runtime pages navigated, LLM trigger draft produced a receipt, zh/en toggle
+  worked, and frontend console errors stayed at zero.
+- Latest combined focused result: `46 passed`.
+- Latest HTTP smoke after service restart:
+  `/api/runtime/flow/changes?since=<current sequence>` returns
+  `changed=false`.
+
+Audit result:
+
+- Web-only runtime/HITL routes are documented here and in
+  `observability_runtime_business_flow_20260513.md`.
+- Shared/core implications stay in CORE-010 and CORE-011; no core SSOT file was
+  edited.
+- Frontend code does not embed `PARROT_ORCH_SECRET`, LiveKit secret, or Google
+  credentials.
+- Remaining risk: React UI is still a first vertical slice. Direct graph
+  drag/connect/reconnect, graph health metrics, and Evidence Board polish remain
+  future WEB-011/WEB-012 slices.
 
 ### Implemented Web Route Matrix
 
@@ -168,7 +247,8 @@ Keep active Web Console implementation in these locations:
 | Surface | Path | Notes |
 |:--|:--|:--|
 | BFF / read adapters | `src/parrot/web_console/` | Server-side only; may hold secrets such as `PARROT_ORCH_SECRET` in process env. |
-| Static frontend | `web/console/` | Obsidian-like console shell and future Web-only renderers. |
+| React frontend source | `web/console_app/` | Formal next Web Console frontend: React + Vite, Memory Graph Workspace, Runtime Flow Workspace. |
+| Built/static frontend | `web/console_dist/` | Served by the Web Console BFF when present; `web/console/` remains the legacy vanilla transition/reference shell. |
 | Launcher | `src/scripts/start_web_console.py` | Local entrypoint; default port `7893`. |
 | Tests | `tests/test_web_console/` | Focused BFF/static route tests. |
 

@@ -407,6 +407,38 @@ Current verification target before homepage work can claim "real LiveKit START":
 - Main-ready owner waits for HUD, menu snapshot, model/AR, LiveKit, Brain, RPC,
   and DataChannel gates.
 
+### A4. 2026-05-14 Castle Repair Status
+
+Owner report: Castle repair completed and pushed as commit `26a142f`.
+
+Completed server-side repairs:
+
+- `GOOGLE_APPLICATION_CREDENTIALS` was kept as a service-account JSON, not a
+  user OAuth credential. The failure was file permissions / directory access,
+  not a Google account password change.
+- ADC file moved from `/secure/ecs/parrot/google-stt-service-account.json` to
+  `data/secrets/google-stt-service-account.json`, owned by `parrot:parrot` and
+  mode `400`.
+- `.env` / `.env.castle` now points `GOOGLE_APPLICATION_CREDENTIALS` at the
+  new readable path.
+- `data/secrets/` is gitignored to prevent the service-account key from being
+  committed.
+- `PARROT_MINT_AGENT_DISPATCH=unity` is present in the Castle environment.
+- token-mint was rebuilt/restarted with the dispatch-token change.
+- Mint verification returned `agent_dispatch_requested: True` for Unity
+  identity, Brain has no new crash after restart, and the five Castle services
+  are `active`.
+
+Current status:
+
+- The old blocker "Brain job crashes because LineB Google STT cannot read ADC"
+  is resolved.
+- This still does not by itself complete Unity START. The next verification is
+  a true START chain: Unity/diagnostic client joins with a Unity identity,
+  Brain participant appears in `parrot-main`, `getRoomSettingSnapshot`,
+  `applyRoomProfile`, and `setAppCapabilityMode` return business-ok payloads,
+  DataChannel heartbeat stays bound, and main-ready gates are clean.
+
 ### B. Existing Core Interfaces
 
 - App HTTP facade:

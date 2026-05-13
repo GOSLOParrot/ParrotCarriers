@@ -14,25 +14,9 @@ import logging
 
 import py_trees
 
+from parrot.scheduler.task_catalog import NANOBOT_TASK_TYPES
+
 logger = logging.getLogger(__name__)
-
-GENERAL_NANOBOT_TASK_TYPES = frozenset({
-    "research",
-    "summarize",
-    "remind",
-    "memory_consolidation",
-    "vocabulary_learn",
-})
-
-GOOGLE_WORKSPACE_TASK_TYPES = frozenset({
-    "calendar_fetch",
-    "calendar_create",
-    "calendar_patch",
-    "calendar_delete",
-    "message_check",
-})
-
-NANOBOT_TASK_TYPES = GENERAL_NANOBOT_TASK_TYPES | GOOGLE_WORKSPACE_TASK_TYPES
 
 BB_NS = "scheduler"
 
@@ -66,12 +50,8 @@ class DispatchToNanobot(py_trees.behaviour.Behaviour):
 
         task_id = event.get("task_id", "unknown")
 
-        # TODO(Chat4-plan-nanobot-correlation): when PlanRegistry calls
-        #   do_dispatch_task with params={..., "plan_id", "step_id"}, the
-        #   incoming ``event["params"]`` will carry both. Stash them into
-        #   active_tasks so ``service._listen_nanobot_results`` can route
-        #   the result back to PlanRegistry.report_step_result(...). See
-        #   cross_chat_pending_registry_20260507 §3.B step 3.
+        # Plan correlation stays in Scheduler metadata rather than Nanobot
+        # internals; service.py uses it for result/timeout writeback.
         params = event.get("params", {}) or {}
         active = self.blackboard.active_tasks
         active[task_id] = {
@@ -82,8 +62,8 @@ class DispatchToNanobot(py_trees.behaviour.Behaviour):
             # CH_TRIGGER_RESULTS. The Scheduler is the single fan-out owner;
             # Nanobot only needs to publish one normal task result.
             "result_channel": params.get("result_channel", ""),
-            # NEED-P2.5-PLAN-INTEGRATION: extract Plan correlation fields
-            # so result回流 / timeout 路径都能找到 Plan owner.
+            # Plan correlation fields let result and timeout paths find the
+            # originating Plan owner without inspecting Nanobot internals.
             "plan_id": params.get("plan_id", ""),
             "step_id": params.get("step_id", ""),
         }

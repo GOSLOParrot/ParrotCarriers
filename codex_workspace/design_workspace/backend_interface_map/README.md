@@ -76,8 +76,8 @@ the lane README and module-level Web files.
 | File | Scope |
 |:--|:--|
 | `web_console/web_console_step1_console_plan_20260513.md` | Web Console requirements, IA, Obsidian-like baseline, later Papers Please-inspired interaction lane, and doc hygiene. |
-| `web_console/observability_runtime_business_flow_20260513.md` | ECS/module health, orchestrator `/status`, Runtime Monitor, Blackboard/Plan/Scheduler/Nanobot observability, LineB voice smoke, and trigger palette. |
-| `web_console/memory_graph_workspace_business_flow_20260513.md` | L1.5 pool, L2-B visual workspace, Blackboard/IntentWorkspace visual renderer, node/photo management, Ref/Evidence Board, and Visual Memory Operations Cockpit. |
+| `web_console/observability_runtime_business_flow_20260513.md` | ECS/module health, orchestrator `/status`, Runtime Monitor, React Runtime Flow Workspace, Blackboard/Plan/Scheduler/Nanobot observability, HITL, LineB voice smoke, and trigger palette. |
+| `web_console/memory_graph_workspace_business_flow_20260513.md` | L1.5 pool, L2-B React visual workspace, Blackboard/IntentWorkspace memory renderer, node/photo management, Ref/Evidence Board, and Visual Memory Operations Cockpit. |
 | `web_console/graphiti_management_business_flow_20260513.md` | Graphiti/FalkorDB observe/search/episode draft/dry-run and future Web operator surgery. |
 
 Do not create one-off Web interface files for every UI slice. Add durable

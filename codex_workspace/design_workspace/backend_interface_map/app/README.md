@@ -25,7 +25,7 @@ workspace entry.
 
 | Module file | Related TODO | Status | Scope |
 |:--|:--|:--|:--|
-| `startup_roomsetting_app_interface_20260513.md` | APP-001, APP-002, APP-003, APP-005, APP-013, APP-015, APP-016 | active | Startup page, RoomSetting six-axis selector, START transition, LiveKit/LineB status, main-ready/homepage contract, and legacy UI demotion notes. |
+| `startup_roomsetting_app_interface_20260513.md` | APP-001, APP-002, APP-003, APP-005, APP-013, APP-015, APP-016, APP-017 | active | Startup page, RoomSetting six-axis selector, START transition, LiveKit/LineB status, main-ready/homepage contract, Castle START repair, and legacy UI demotion notes. |
 | `canvas_menu_ref_workspace_app_interface_20260513.md` | APP-004, APP-006 | active | Canvas menu, renderer-agnostic nodes/edges, App-side Ref workspace boundary, future Red String / Evidence Board constraints. |
 | `unity_project_inventory_app_ssot_20260513.md` | APP-011 | active SSOT | Unity App formal directory, resource, scene, Build Settings, test evidence, and forbidden legacy path rules. |
 

@@ -171,6 +171,77 @@ def test_runtime_monitor_route_is_web_only_read_surface() -> None:
     assert "secret" not in str(body).lower()
 
 
+def test_runtime_flow_and_hitl_routes_are_web_only_receipt_surfaces(monkeypatch) -> None:
+    import asyncio
+
+    from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
+    from parrot.brain.plan import (
+        PlanProposal,
+        PlanRegistry,
+        PlanStepProposal,
+        set_plan_registry_for_test,
+    )
+
+    monkeypatch.setenv("PARROT_ORCH_SECRET", "runtime-flow-secret")
+    set_intent_workspace_for_test(IntentWorkspace())
+    registry = PlanRegistry(dispatch_task=_fake_plan_dispatch)
+    set_plan_registry_for_test(registry)
+    try:
+        plan = asyncio.run(registry.draft(PlanProposal(
+            proposed_by="test",
+            title="Runtime HITL test plan",
+            suggested_steps=(PlanStepProposal(
+                step_id="s1",
+                title="Check messages",
+                expected_tool="message_check",
+            ),),
+        )))
+        asyncio.run(registry.submit_for_confirmation(plan.plan_id))
+
+        client = TestClient(build_app(status_fetcher=_fake_fetcher))
+        flow = client.get("/api/runtime/flow").json()
+        changes = client.get("/api/runtime/flow/changes?since=0").json()
+        no_change = client.get(f"/api/runtime/flow/changes?since={flow['sequence']}").json()
+        pending = client.get("/api/runtime/hitl/pending").json()
+        draft = client.post(
+            "/api/runtime/hitl/draft-decision",
+            json={"gate_id": f"plan:{plan.plan_id}", "decision": "approve"},
+        ).json()
+        missing_plan_draft = client.post(
+            "/api/runtime/hitl/draft-decision",
+            json={"gate_id": "plan:missing", "decision": "approve"},
+        ).json()
+        dry_apply = client.post(
+            "/api/runtime/hitl/apply-decision",
+            json={
+                "gate_id": f"plan:{plan.plan_id}",
+                "decision": "approve_and_start",
+                "dry_run": True,
+                "operator_mode": False,
+            },
+        ).json()
+
+        assert flow["success"] is True
+        assert flow["audit"]["web_only"] is True
+        assert "CORE-010" in flow["audit"]["shared_core_candidates"]
+        assert any(lane["id"] == "human_gate" for lane in flow["lanes"])
+        assert any(gate["target_id"] == plan.plan_id for gate in flow["pending_human_gates"])
+        assert changes["changed"] is True
+        assert no_change["changed"] is False
+        assert no_change["snapshot"] is None
+        assert pending["gates"][0]["gate_id"] == f"plan:{plan.plan_id}"
+        assert draft["success"] is True
+        assert draft["data"]["operator_required_for_execute"] is True
+        assert missing_plan_draft["success"] is False
+        assert missing_plan_draft["data"]["error"] == "plan_not_found"
+        assert dry_apply["data"]["would_apply"] is True
+        assert dry_apply["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
+        assert "runtime-flow-secret" not in str(flow) + str(changes) + str(pending)
+    finally:
+        set_plan_registry_for_test(None)
+        set_intent_workspace_for_test(None)
+
+
 def test_blackboard_activity_route_returns_bounded_summaries() -> None:
     import py_trees
 
@@ -431,6 +502,10 @@ async def _fake_fetcher(config: OrchestratorProxyConfig) -> dict[str, Any]:
         "status": None,
         "detail": {"message": "fake"},
     }
+
+
+async def _fake_plan_dispatch(task_type: str, params: dict, priority: str) -> str:
+    return f"task-{task_type}-{params.get('step_id', 'step')}-{priority}"
 
 
 class _FakeSnapshot:

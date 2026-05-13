@@ -261,6 +261,15 @@ These are useful test evidence only. They must not be used as App completion evi
   A3 and TODO `APP-017`: deploy token-mint dispatch, fix systemd Brain LineB
   ADC or run a deliberate LineA START smoke, retire duplicate tmux Brain
   evidence, then rerun non-phone Brain RPC proof before device audio/AR tests.
+- 2026-05-14 Castle repair status: ADC stayed as a service-account JSON
+  unrelated to Google account password. The file was moved to
+  `data/secrets/google-stt-service-account.json` with `parrot:parrot 400`,
+  env was updated, `data/secrets/` was gitignored, `PARROT_MINT_AGENT_DISPATCH=unity`
+  was added, token-mint was rebuilt/restarted, commit `26a142f` was pushed, Mint
+  now reports `agent_dispatch_requested: True` for Unity identity, Brain has no
+  new crash, and the five Castle services are active. The remaining gate is a
+  true START proof with Brain participant + business-ok RPC payloads, not just
+  service health.
 - Lifecycle cleanup note: `LifecycleShutdownService` synchronous quit drain no
   longer blocks on SDK `UnpublishTrack`; latest Unity Play Mode exit after a
   connected room showed 0 Console errors/warnings.

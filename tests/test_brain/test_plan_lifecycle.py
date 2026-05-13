@@ -27,8 +27,8 @@ def _proposal(
 ) -> PlanProposal:
     if steps is None:
         steps = (
-            PlanStepProposal(step_id="s1", title="step1", expected_tool="x"),
-            PlanStepProposal(step_id="s2", title="step2", expected_tool="y", depends_on=("s1",)),
+            PlanStepProposal(step_id="s1", title="step1", expected_tool="research"),
+            PlanStepProposal(step_id="s2", title="step2", expected_tool="summarize", depends_on=("s1",)),
         )
     return PlanProposal(
         proposed_by="t",
@@ -42,8 +42,20 @@ def _proposal(
 def env():
     ws = IntentWorkspace()
     set_intent_workspace_for_test(ws)
-    registry = PlanRegistry()
-    yield {"ws": ws, "registry": registry}
+    dispatched: list[dict] = []
+
+    async def fake_dispatch(task_type: str, params: dict, priority: str) -> str:
+        task_id = f"task_{len(dispatched) + 1}"
+        dispatched.append({
+            "task_id": task_id,
+            "task_type": task_type,
+            "params": params,
+            "priority": priority,
+        })
+        return task_id
+
+    registry = PlanRegistry(dispatch_task=fake_dispatch)
+    yield {"ws": ws, "registry": registry, "dispatched": dispatched}
     set_intent_workspace_for_test(None)
 
 
@@ -85,12 +97,16 @@ async def test_legal_transition_chain_to_complete(env) -> None:
     assert plan.state == PlanState.EXECUTING
     assert plan.steps[0].state == PlanStepState.DISPATCHED
     assert plan.steps[1].state == PlanStepState.PENDING
+    assert plan.steps[0].nanobot_task_id == "task_1"
+    assert env["dispatched"][0]["params"]["plan_id"] == plan.plan_id
+    assert env["dispatched"][0]["params"]["step_id"] == "s1"
 
     await env["registry"].report_step_result(
         plan.plan_id, "s1", success=True, result_summary="ok",
     )
     assert plan.steps[0].state == PlanStepState.DONE
     assert plan.steps[1].state == PlanStepState.DISPATCHED  # cascaded
+    assert plan.steps[1].nanobot_task_id == "task_2"
     assert plan.state == PlanState.PARTIAL_COMPLETE
 
     await env["registry"].report_step_result(
@@ -121,6 +137,54 @@ async def test_step_failure_transitions_plan_failed(env) -> None:
         plan.plan_id, "s1", success=False, error="boom",
     )
     assert plan.state == PlanState.FAILED
+
+
+async def test_dispatch_failure_transitions_plan_failed() -> None:
+    ws = IntentWorkspace()
+    set_intent_workspace_for_test(ws)
+
+    async def failing_dispatch(task_type: str, params: dict, priority: str) -> str:
+        raise RuntimeError("dispatch offline")
+
+    try:
+        registry = PlanRegistry(dispatch_task=failing_dispatch)
+        plan = await registry.draft(_proposal(steps=(
+            PlanStepProposal(step_id="s1", title="step1", expected_tool="research"),
+        )))
+        await registry.submit_for_confirmation(plan.plan_id)
+        await registry.approve(plan.plan_id)
+        await registry.start_executing(plan.plan_id)
+
+        assert plan.state == PlanState.FAILED
+        assert plan.steps[0].state == PlanStepState.FAILED
+        assert plan.steps[0].error == "dispatch_failed:RuntimeError"
+    finally:
+        set_intent_workspace_for_test(None)
+
+
+async def test_unsupported_plan_tool_transitions_plan_failed(env) -> None:
+    plan = await env["registry"].draft(_proposal(steps=(
+        PlanStepProposal(step_id="s1", title="step1", expected_tool="unknown_tool"),
+    )))
+    await env["registry"].submit_for_confirmation(plan.plan_id)
+    await env["registry"].approve(plan.plan_id)
+    await env["registry"].start_executing(plan.plan_id)
+
+    assert plan.state == PlanState.FAILED
+    assert plan.steps[0].state == PlanStepState.FAILED
+    assert plan.steps[0].error == "unsupported_expected_tool:unknown_tool"
+    assert env["dispatched"] == []
+
+
+async def test_empty_plan_completes_on_start(env) -> None:
+    plan = await env["registry"].draft(_proposal(steps=()))
+    await env["registry"].submit_for_confirmation(plan.plan_id)
+    await env["registry"].approve(plan.plan_id)
+    await env["registry"].start_executing(plan.plan_id)
+
+    assert plan.state == PlanState.COMPLETE
+    assert env["registry"].get(plan.plan_id) is plan
+    assert plan not in env["registry"].list_active()
 
 
 async def test_cancel_transitions_to_cancelled(env) -> None:

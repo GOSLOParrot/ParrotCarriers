@@ -8,17 +8,18 @@ Responsibilities:
     - allocate PlanBlackboardClient per Plan
     - emit Timeline markers via L15Pool
 
-This implementation focuses on **interface contract + happy path**;
-NanobotTask dispatch / wire signaling for user confirmation are P3
-follow-ups. The skeleton lets verification tests pass and contract
-shapes are stable for downstream chats.
+This implementation keeps the Plan lifecycle local to Brain while dispatching
+ready steps through the Scheduler/Nanobot task boundary. User confirmation
+wire signaling is still surfaced through Web HITL first; Unity/App contracts
+are not extended from this registry directly.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any
 
 from parrot.brain.intent_workspace import (
     PayloadSource,
@@ -36,20 +37,25 @@ from parrot.brain.plan.plan import (
 )
 from parrot.brain.plan.plan_blackboard import PlanBlackboardClient
 from parrot.brain.plan.plan_lifecycle import PlanLifecycle
+from parrot.scheduler.task_catalog import is_nanobot_task_type
+from parrot.shared.constants import CH_NANOBOT_RESULTS
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
 
+PlanDispatchFn = Callable[[str, dict[str, Any], str], Awaitable[str]]
+
 
 class PlanRegistry:
     """Singleton registry holding active + historical Plans."""
 
-    def __init__(self) -> None:
+    def __init__(self, dispatch_task: PlanDispatchFn | None = None) -> None:
         self._active: dict[str, Plan] = {}
         self._archive: dict[str, Plan] = {}
         self._blackboards: dict[str, PlanBlackboardClient] = {}
+        self._dispatch_task = dispatch_task
 
     # ─── Lifecycle methods ─────────────────────────────────────
 
@@ -113,33 +119,18 @@ class PlanRegistry:
         self._mark_timeline("plan_confirmed", plan)
 
     async def start_executing(self, plan_id: str) -> None:
-        """Approve → Executing transition. Dispatch ready PlanSteps.
+        """Move an approved Plan into execution and dispatch ready steps.
 
-        # TODO(Chat4-plan-dispatch): SKELETON. We mark step.state =
-        #   DISPATCHED but **do NOT** call ``do_dispatch_task`` to push
-        #   the NanobotTask onto Redis Stream. Chat 4 must wire:
-        #     1. For each ready step: call
-        #        ``parrot.brain.tools.dispatch_task.do_dispatch_task(
-        #            task_type=step.expected_tool,
-        #            params={**step.inputs, plan_id, step_id, result_channel},
-        #            priority="normal"
-        #        )``
-        #     2. Stash returned task_id into step.nanobot_task_id
-        #     3. Set up listener on CH_NANOBOT_RESULTS so result回流
-        #        triggers report_step_result(plan_id, step_id, ...).
-        #     4. Handle dispatch failures (don't transition to FAILED;
-        #        retry / fallback).
-        #   See BRAIN-PLAN-V1 § 7.4 + dsg_protocol_trigger_v2 § 5.5
-        #   (IdleArchiveTrigger uses heartbeat pattern that this can mirror).
+        Dispatch still enters the system through the existing Scheduler task
+        route. The injected dispatch function keeps tests deterministic and
+        prevents PlanRegistry from taking ownership of Nanobot internals.
         """
         plan = self._require_active(plan_id)
         PlanLifecycle.enforce_transition(plan, PlanState.EXECUTING)
         plan.started_executing_at = time.time()
-        for step in plan.ready_steps():
-            step.state = PlanStepState.DISPATCHED
-            step.started_at = time.time()
-            # TODO(Chat4-plan-dispatch): real dispatch_task call here
         self._mark_timeline("plan_executing", plan)
+        await self._dispatch_ready_steps(plan)
+        self._settle_plan_after_step_updates(plan)
 
     async def report_step_result(
         self,
@@ -163,12 +154,26 @@ class PlanRegistry:
 
         # Cascade: dispatch ready steps now that this dep is done
         if success:
-            for next_step in plan.ready_steps():
-                next_step.state = PlanStepState.DISPATCHED
-                next_step.started_at = time.time()
+            await self._dispatch_ready_steps(plan)
 
-        # Plan-level transition
-        if plan.any_step_failed():
+        self._settle_plan_after_step_updates(plan)
+
+    def _settle_plan_after_step_updates(self, plan: Plan) -> None:
+        """Advance Plan state after local step mutations.
+
+        Nanobot results and dispatch failures both flow through this helper so
+        the Plan cannot stay forever in EXECUTING/PARTIAL_COMPLETE when a step
+        has already reached a terminal state.
+        """
+        if not plan.steps:
+            try:
+                PlanLifecycle.enforce_transition(plan, PlanState.COMPLETE)
+                plan.completed_at = time.time()
+                self._mark_timeline("plan_complete", plan)
+                self._archive_plan(plan)
+            except Exception:
+                logger.exception("Plan empty complete transition error")
+        elif plan.any_step_failed():
             try:
                 PlanLifecycle.enforce_transition(plan, PlanState.FAILED)
                 plan.completed_at = time.time()
@@ -276,6 +281,50 @@ class PlanRegistry:
         self._archive[plan.plan_id] = plan
         self._active.pop(plan.plan_id, None)
 
+    async def _dispatch_ready_steps(self, plan: Plan) -> None:
+        """Dispatch currently-ready Plan steps through Scheduler/Nanobot.
+
+        This keeps Plan state transitions inside PlanRegistry while preserving
+        the existing Scheduler boundary: the actual background work still
+        enters the system through ``dispatch_task`` and the Scheduler command
+        channel.
+        """
+        for step in plan.ready_steps():
+            step.state = PlanStepState.DISPATCHED
+            step.started_at = time.time()
+            if not step.expected_tool:
+                step.error = "missing_expected_tool"
+                step.state = PlanStepState.FAILED
+                step.completed_at = time.time()
+                continue
+            if not is_nanobot_task_type(step.expected_tool):
+                step.error = f"unsupported_expected_tool:{step.expected_tool}"
+                step.state = PlanStepState.FAILED
+                step.completed_at = time.time()
+                continue
+            try:
+                dispatch_task = self._dispatch_task or _default_dispatch_task
+                task_id = await dispatch_task(
+                    step.expected_tool,
+                    {
+                        **dict(step.inputs or {}),
+                        "plan_id": plan.plan_id,
+                        "step_id": step.step_id,
+                        "result_channel": CH_NANOBOT_RESULTS,
+                    },
+                    "normal",
+                )
+                step.nanobot_task_id = task_id
+            except Exception as exc:
+                step.error = f"dispatch_failed:{type(exc).__name__}"
+                step.state = PlanStepState.FAILED
+                step.completed_at = time.time()
+                logger.exception(
+                    "PlanRegistry failed dispatch: plan=%s step=%s",
+                    plan.plan_id,
+                    step.step_id,
+                )
+
     def _require_active(self, plan_id: str) -> Plan:
         plan = self._active.get(plan_id)
         if plan is None:
@@ -358,6 +407,16 @@ def get_plan_registry() -> PlanRegistry:
     return _registry
 
 
+async def _default_dispatch_task(
+    task_type: str,
+    params: dict[str, Any],
+    priority: str,
+) -> str:
+    from parrot.brain.tools.dispatch_task import do_dispatch_task
+
+    return await do_dispatch_task(task_type, params, priority)
+
+
 def set_plan_registry_for_test(registry: PlanRegistry | None) -> None:
     global _registry
     _registry = registry
@@ -365,6 +424,7 @@ def set_plan_registry_for_test(registry: PlanRegistry | None) -> None:
 
 __all__ = [
     "PlanRegistry",
+    "PlanDispatchFn",
     "get_plan_registry",
     "set_plan_registry_for_test",
 ]

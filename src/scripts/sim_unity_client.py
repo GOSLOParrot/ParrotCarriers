@@ -47,7 +47,9 @@ except ImportError:
 from livekit.api import AccessToken, RoomAgentDispatch, VideoGrants
 from livekit.protocol.room import RoomConfiguration
 
-AGENT_NAME = "parrot-brain"
+# Empty means the default unnamed @server.rtc_session() Brain entrypoint.
+# Older local experiments can still pass --agent-name parrot-brain explicitly.
+AGENT_NAME = ""
 # LiveKit Agents 通过文本流下发同步转写（与 livekit.agents.types.TOPIC_TRANSCRIPTION 一致）
 TRANSCRIPTION_TOPIC = "lk.transcription"
 # Mic publish rate (LiveKit / sim常用 48k)
@@ -65,6 +67,7 @@ def _make_token(
     cfg: ParrotConfig,
     *,
     include_agent_dispatch: bool | None = None,
+    agent_name: str = AGENT_NAME,
 ) -> str:
     """If include_agent_dispatch is None: only identities starting with 'unity' request agent dispatch.
 
@@ -82,12 +85,17 @@ def _make_token(
         .with_ttl(timedelta(hours=1))
     )
     if include_agent_dispatch:
-        room_config = RoomConfiguration(agents=[RoomAgentDispatch(agent_name=AGENT_NAME)])
+        dispatch = (
+            RoomAgentDispatch(agent_name=agent_name)
+            if agent_name
+            else RoomAgentDispatch()
+        )
+        room_config = RoomConfiguration(agents=[dispatch])
         b = b.with_room_config(room_config)
     return b.to_jwt()
 
 
-async def _dispatch_agent(cfg: ParrotConfig, room_name: str) -> None:
+async def _dispatch_agent(cfg: ParrotConfig, room_name: str, agent_name: str = AGENT_NAME) -> None:
     from livekit.api import CreateAgentDispatchRequest, LiveKitAPI
 
     lk = LiveKitAPI(
@@ -96,12 +104,117 @@ async def _dispatch_agent(cfg: ParrotConfig, room_name: str) -> None:
         cfg.livekit.api_secret,
     )
     try:
+        req = CreateAgentDispatchRequest(room=room_name)
+        if agent_name:
+            req.agent_name = agent_name
         dispatch = await lk.agent_dispatch.create_dispatch(
-            CreateAgentDispatchRequest(agent_name=AGENT_NAME, room=room_name)
+            req
         )
         logger.info("Agent dispatched: %s", dispatch.id)
     finally:
         await lk.aclose()
+
+
+def _is_brain_identity(identity: str) -> bool:
+    identity = (identity or "").strip().lower()
+    return identity == "brain" or identity.startswith("agent-")
+
+
+def _find_brain_participant(room: rtc.Room) -> str:
+    for participant in room.remote_participants.values():
+        if _is_brain_identity(participant.identity):
+            return participant.identity
+    return ""
+
+
+async def _wait_for_brain_participant(room: rtc.Room, timeout_s: float) -> str:
+    deadline = asyncio.get_running_loop().time() + max(0.0, timeout_s)
+    while asyncio.get_running_loop().time() < deadline:
+        identity = _find_brain_participant(room)
+        if identity:
+            return identity
+        await asyncio.sleep(0.25)
+    return _find_brain_participant(room)
+
+
+def _parse_rpc_json(method: str, payload: str) -> dict:
+    try:
+        parsed = json.loads(payload or "{}")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{method} returned non-JSON payload: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise RuntimeError(f"{method} returned {type(parsed).__name__}, expected object")
+    return parsed
+
+
+def _assert_business_ok(method: str, parsed: dict) -> None:
+    if parsed.get("status") == "error":
+        raise RuntimeError(f"{method} business status=error: {parsed}")
+    result = parsed.get("result")
+    if isinstance(result, dict) and result.get("success") is False:
+        raise RuntimeError(f"{method} result.success=false: {result}")
+
+
+async def _perform_startup_rpc(
+    room: rtc.Room,
+    brain_identity: str,
+    method: str,
+    payload: dict,
+) -> dict:
+    response = await room.local_participant.perform_rpc(
+        destination_identity=brain_identity,
+        method=method,
+        payload=json.dumps(payload, ensure_ascii=False),
+        response_timeout=5.0,
+    )
+    parsed = _parse_rpc_json(method, response)
+    _assert_business_ok(method, parsed)
+    logger.info(
+        "START RPC business-ok: %s keys=%s",
+        method,
+        ",".join(sorted(parsed.keys())),
+    )
+    return parsed
+
+
+async def _run_startup_rpc_check(room: rtc.Room, brain_identity: str) -> None:
+    snapshot = await _perform_startup_rpc(
+        room,
+        brain_identity,
+        "getRoomSettingSnapshot",
+        {},
+    )
+    active_room = (
+        (snapshot.get("snapshot") or {}).get("active_room")
+        if isinstance(snapshot.get("snapshot"), dict)
+        else None
+    )
+    if not isinstance(active_room, dict):
+        raise RuntimeError("getRoomSettingSnapshot returned no snapshot.active_room")
+
+    experience_mode = str(active_room.get("experience_mode") or "ar_companion")
+    await _perform_startup_rpc(
+        room,
+        brain_identity,
+        "applyRoomProfile",
+        {
+            "room_profile_id": active_room.get("room_profile_id") or "default",
+            "room_profile": active_room,
+            "experience_mode": experience_mode,
+        },
+    )
+    await _perform_startup_rpc(
+        room,
+        brain_identity,
+        "setAppCapabilityMode",
+        {"mode": "FullARCompanion"},
+    )
+    logger.info(
+        "START RPC check passed: active_room=%s experience_mode=%s brain=%s",
+        active_room.get("room_profile_id"),
+        experience_mode,
+        brain_identity,
+    )
 
 
 def _print_sound_devices() -> None:

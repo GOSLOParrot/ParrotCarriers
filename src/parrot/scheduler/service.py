@@ -132,17 +132,12 @@ class SchedulerService:
                 logger.exception("Error routing task")
 
     async def _listen_nanobot_results(self) -> None:
-        """Aggregate Nanobot results → correlate with active_tasks → forward to Brain.
+        """Aggregate Nanobot results, update Plan metadata, then notify Brain.
 
-        # TODO(Chat4-plan-step-result-route): when ``active_tasks[task_id]``
-        #   carries non-empty ``plan_id`` + ``step_id`` (set by
-        #   ``DispatchToNanobot`` per cross_chat_pending_registry_20260507
-        #   §3.B step 3), this listener must additionally route the result
-        #   to ``parrot.brain.plan.PlanRegistry.report_step_result(plan_id,
-        #   step_id, success=(status=="completed"), result_summary=...)``
-        #   so Plan-and-Execute state machine can advance / cascade /
-        #   fail-transition. The forward-to-Brain path (CH_SCHEDULER_TO_BRAIN)
-        #   stays unchanged for non-Plan tasks.
+        Plan-aware tasks carry ``plan_id`` and ``step_id`` in the dispatch-time
+        Blackboard metadata. When those fields are present, Scheduler reports
+        the result back to PlanRegistry before preserving the existing
+        forward-to-Brain summary path for every task.
         """
         r = await get_redis()
         pubsub = r.pubsub()
@@ -166,9 +161,11 @@ class SchedulerService:
                     active[task_id]["status"] = status
                     self._router.active_tasks = active
 
-                # TODO(Chat4-plan-step-result-route): if active[task_id]
-                #   has plan_id + step_id, additionally call
-                #   ``PlanRegistry.report_step_result(...)`` here.
+                await self._report_plan_step_result(
+                    task_meta=task_meta,
+                    status=status,
+                    result=result,
+                )
 
                 # Trigger tasks use Nanobot for external I/O but need the
                 # structured result to re-enter the DSG trigger runner. The
@@ -207,15 +204,11 @@ class SchedulerService:
 
 
     async def _check_timeouts(self) -> None:
-        """Periodically check for timed-out Nanobot tasks and notify Brain.
+        """Periodically fail timed-out Nanobot tasks and report them upstream.
 
-        # TODO(Chat4-plan-step-timeout): when active_tasks[task_id] has
-        #   plan_id + step_id, the timeout path must also call
-        #   ``PlanRegistry.report_step_result(plan_id, step_id,
-        #   success=False, error="timeout after Ns")`` so Plan transitions
-        #   to FAILED (or revisable) state. Otherwise a stuck Plan never
-        #   completes / never fails. See cross_chat_pending_registry_20260507
-        #   §3.B step 5.
+        If the pending task belongs to a Plan step, the timeout is reported to
+        PlanRegistry so the Plan can fail or become revisable instead of
+        hanging forever. Brain still receives the legacy timeout summary.
         """
         while True:
             try:
@@ -236,6 +229,11 @@ class SchedulerService:
                         active[task_id]["status"] = "timeout"
                         self._router.active_tasks = active
 
+                    await self._report_plan_step_timeout(
+                        task_meta=active.get(task_id, {}),
+                        task_id=task_id,
+                    )
+
                     summary = {
                         "task_id": task_id,
                         "type": active.get(task_id, {}).get("type", "unknown"),
@@ -250,6 +248,56 @@ class SchedulerService:
                 break
             except Exception:
                 logger.exception("Error in timeout check")
+
+    async def _report_plan_step_result(
+        self,
+        *,
+        task_meta: dict,
+        status: str,
+        result: dict,
+    ) -> None:
+        plan_id = str(task_meta.get("plan_id") or "")
+        step_id = str(task_meta.get("step_id") or "")
+        if not plan_id or not step_id:
+            return
+        try:
+            from parrot.brain.plan import get_plan_registry
+
+            await get_plan_registry().report_step_result(
+                plan_id,
+                step_id,
+                success=str(status).lower() in {"ok", "success", "completed", "done"},
+                result_summary=str(result.get("result") or result.get("summary") or ""),
+                result_ref_id=str(result.get("result_ref_id") or ""),
+                error=str(result.get("error") or ""),
+            )
+        except Exception:
+            logger.exception(
+                "Scheduler failed to report Plan step result: plan=%s step=%s",
+                plan_id,
+                step_id,
+            )
+
+    async def _report_plan_step_timeout(self, *, task_meta: dict, task_id: str) -> None:
+        plan_id = str(task_meta.get("plan_id") or "")
+        step_id = str(task_meta.get("step_id") or "")
+        if not plan_id or not step_id:
+            return
+        try:
+            from parrot.brain.plan import get_plan_registry
+
+            await get_plan_registry().report_step_result(
+                plan_id,
+                step_id,
+                success=False,
+                error=f"task {task_id} timed out after {NANOBOT_TASK_TIMEOUT:.0f}s",
+            )
+        except Exception:
+            logger.exception(
+                "Scheduler failed to report Plan step timeout: plan=%s step=%s",
+                plan_id,
+                step_id,
+            )
 
 
 async def run_scheduler() -> None:

@@ -206,6 +206,40 @@ def build_app(
 
         return build_runtime_monitor_snapshot()
 
+    @app.get("/api/runtime/flow")
+    async def runtime_flow() -> dict[str, Any]:
+        from parrot.web_console.runtime_flow import build_runtime_flow_snapshot
+
+        return build_runtime_flow_snapshot()
+
+    @app.get("/api/runtime/flow/changes")
+    async def runtime_flow_changes(since: int = 0) -> dict[str, Any]:
+        from parrot.web_console.runtime_flow import build_runtime_flow_changes
+
+        return build_runtime_flow_changes(since=since)
+
+    @app.get("/api/runtime/hitl/pending")
+    async def runtime_hitl_pending() -> dict[str, Any]:
+        from parrot.web_console.runtime_flow import pending_human_gates
+
+        return pending_human_gates()
+
+    @app.post("/api/runtime/hitl/draft-decision")
+    async def runtime_hitl_draft_decision(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.runtime_flow import draft_human_gate_decision
+
+        return draft_human_gate_decision(payload or {})
+
+    @app.post("/api/runtime/hitl/apply-decision")
+    async def runtime_hitl_apply_decision(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.runtime_flow import apply_human_gate_decision
+
+        return await apply_human_gate_decision(payload or {})
+
     @app.get("/api/dsg/triggers/catalog")
     async def dsg_triggers_catalog() -> dict[str, Any]:
         from parrot.web_console.memory_ops import trigger_catalog
@@ -698,7 +732,11 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _static_root() -> Path:
-    return Path(__file__).resolve().parents[3] / "web" / "console"
+    web_root = Path(__file__).resolve().parents[3] / "web"
+    react_dist = web_root / "console_dist"
+    if (react_dist / "index.html").exists():
+        return react_dist
+    return web_root / "console"
 
 
 def _missing_static_html() -> str:

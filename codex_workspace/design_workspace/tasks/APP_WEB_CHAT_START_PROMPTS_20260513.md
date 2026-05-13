@@ -29,11 +29,11 @@ update the inventory SSOT and App TODO status in the same turn.
 Smoke/reference UI controller, not formal homepage completion evidence; use it
 only after reading the inventory SSOT classification.
 Current LiveKit status rule: do not mark START / Brain RPC complete just
-because Mint and LiveKit join succeed. As of 2026-05-13, ECS Mint/LiveKit are
-reachable, but the systemd Brain LineB job crashes on missing Google STT
-Application Default Credentials before participant presence. Token mint has a
-local code fix to request unnamed Brain dispatch for Unity identities; ECS still
-needs deployment plus ADC or a deliberate LineA runtime config for true START.
+because Mint and LiveKit join succeed. As of 2026-05-14, Castle ADC permission
+and token-mint dispatch repairs are reported complete (`agent_dispatch_requested:
+True`, Brain no new crash, five services active). The remaining proof is Brain
+participant presence plus business-ok `getRoomSettingSnapshot`,
+`applyRoomProfile`, and `setAppCapabilityMode` RPC payloads before main-ready.
 
 ```text
 你是 Unity App 前端线的 Codex。工作目录是 D:\GOSLOParrot\ParrotCarriers。

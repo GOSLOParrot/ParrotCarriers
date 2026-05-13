@@ -19,8 +19,8 @@ import py_trees
 from parrot.brain.app_first_version import AppFirstVersionFacade
 from parrot.brain.plan import get_plan_registry
 from parrot.scheduler.blackboard import open_bb_client
-from parrot.scheduler.nodes import (
-    BB_NS as SCHEDULER_BB_NS,
+from parrot.scheduler.nodes import BB_NS as SCHEDULER_BB_NS
+from parrot.scheduler.task_catalog import (
     GENERAL_NANOBOT_TASK_TYPES,
     GOOGLE_WORKSPACE_TASK_TYPES,
     NANOBOT_TASK_TYPES,

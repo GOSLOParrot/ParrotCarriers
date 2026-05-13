@@ -5,8 +5,123 @@ Status: in_progress
 Category: Web Console business interface  
 Scope: ECS/module health, orchestrator status, Blackboard, IntentWorkspace, Plan/task, Scheduler, Nanobot, AgentTeam/Maid Team, GOSLO/Nanobot collaboration  
 Updated: 2026-05-13  
-Related TODO: WEB-002, WEB-004, WEB-005, WEB-009, WEB-011
+Related TODO: WEB-002, WEB-004, WEB-005, WEB-009, WEB-012
 Sources: `src/parrot/castle/orchestrator/status.py`, `src/parrot/castle/orchestrator/server.py`, `src/parrot/scheduler/**`, `src/parrot/brain/intent_workspace.py`, `src/parrot/brain/plan/**`, `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md`
+
+## 2026-05-13 Direction Update: Runtime Flow Workspace
+
+The old Runtime Monitor remains useful as a read source, but the next formal
+Web Console surface is a React + Vite Runtime Flow Workspace. It is separate
+from the Memory Graph Workspace.
+
+Runtime Flow owns:
+
+- GOSLO Intent, Plan, HITL gates, Blackboard, IntentWorkspace, Scheduler,
+  Nanobot, messages, manual triggers, and receipts.
+- A swimlane/DAG renderer where one operator can follow:
+  `Intent -> Plan -> Human Gate -> Scheduler -> Nanobot -> Result ->
+  Blackboard/IntentWorkspace -> Trigger/Message/Graphiti`.
+- A bottom event tape and right-side detail/action drawer instead of stacked
+  raw panels.
+- Web-only read model routes first: `GET /api/runtime/flow` and
+  `GET /api/runtime/flow/changes?since=...`.
+- HITL V1 routes: pending gates, decision draft, and decision apply. Default
+  behavior is dry-run/operator-safe.
+
+This is a Web business interface until App/Web confirm shared consumers. New
+shared surfaces are staged in the core candidate queue, not promoted directly
+to `.cursor/memory/architecture/Interface/**`.
+
+### Runtime Flow Route Matrix
+
+| Endpoint | Mode | Purpose | Core status |
+|:--|:--|:--|:--|
+| `GET /api/runtime/flow` | read | Build lanes, nodes, edges, events, receipts, and pending HITL gates from existing runtime monitors and registries. | Implemented Web-only first; candidate CORE-010 if shared. |
+| `GET /api/runtime/flow/changes?since=<sequence>` | read | Return bounded changed-since polling diff for active React workspaces. V1 returns the full snapshot/events when the sequence advances. | Implemented Web-only first; extends CORE-009 candidate if shared. |
+| `GET /api/runtime/hitl/pending` | read | List pending human gates for Plan confirmation actions. | Implemented Web-only first; candidate CORE-011 if shared. |
+| `POST /api/runtime/hitl/draft-decision` | draft | Validate approve/reject/revise/cancel/resume decisions and return receipt. | Implemented Web-only operator BFF first. |
+| `POST /api/runtime/hitl/apply-decision` | dry-run/operator | Apply a decision only under explicit operator mode; default request path is dry-run. | Implemented Web-only operator BFF first. |
+
+### Backend Capability Status
+
+- Done in the first WEB-012 backend slice:
+  `PlanRegistry.start_executing()` dispatches ready steps through an injectable
+  dispatch function, and dispatched tasks carry `plan_id`, `step_id`, and a
+  result channel.
+- Done in the first WEB-012 backend slice:
+  Scheduler Nanobot result and timeout paths call back into the Plan registry
+  when task metadata contains `plan_id` and `step_id`.
+- Fixed in the WEB-012 backend slice:
+  Plan dispatch exceptions now fail the affected step and Plan instead of
+  leaving the step stuck in `DISPATCHED` with an error string.
+- Fixed in the review pass:
+  Plan step dispatch now validates the Scheduler Nanobot task catalog before
+  dispatch. Unsupported tool types fail the Plan immediately instead of being
+  routed outside the Plan result/timeout return path.
+- Fixed in the review pass:
+  Runtime Flow changed-since now uses a stable content signature, so a no-op
+  poll can return `changed=false`; HITL decision drafts reject missing Plan ids;
+  empty Plans complete on start instead of staying in `executing`; and dangling
+  graph edges are pruned before the React Flow Runtime renderer receives the
+  snapshot.
+- Done in Web-only V1:
+  HITL pending/draft/apply routes expose Plan confirmation decisions without
+  promoting a shared App DTO.
+- Remaining gap:
+  durable cross-process runtime trace and human-gate DTOs are not yet ratified.
+  They remain CORE-010 and CORE-011 until App/Web lane confirmation.
+
+### Implementation Signal: WEB-012 React Runtime Flow First Slice
+
+Date: 2026-05-13
+
+Implemented code:
+
+- `src/parrot/web_console/runtime_flow.py`
+- Runtime/HITL route mounts in `src/parrot/web_console/server.py`
+- Plan dispatch upgrade in `src/parrot/brain/plan/plan_registry.py`
+- Scheduler result/timeout return path in `src/parrot/scheduler/service.py`
+- React workspace in `web/console_app/`
+- Built static output in `web/console_dist/`
+
+Runtime Flow data model V1:
+
+- `sequence` and `generated_at` identify the snapshot.
+- `lanes` describe the visual swimlanes.
+- `nodes` and `edges` are graph-renderer read models, not core DTOs.
+- `events` is a bounded event tape for recent runtime facts.
+- `pending_human_gates` lists Web-reviewable Plan gates.
+- `audit` marks the model as Web-only and points at CORE-010/CORE-011.
+
+HITL V1 decisions:
+
+- `approve`: draft/receipt path for accepting a pending gate.
+- `approve_and_start`: dry-run or operator-gated transition toward execution.
+- `reject`: mark the gate rejected.
+- `revise`: capture revision text as the next operator instruction.
+- `cancel`: cancel the target plan.
+- `resume`: resume a paused/revised plan when explicitly allowed.
+
+Boundary:
+
+- No Unity/App DTOs changed.
+- No `.cursor/memory/architecture/Interface/**` file changed.
+- The routes are Web BFF interfaces until the user and both lanes approve a
+  shared runtime-flow or human-gate contract.
+
+Verification:
+
+- `uv run pytest tests\test_brain\test_plan_lifecycle.py tests\test_web_console\test_web_console_server.py tests\test_dsg\test_obsidian_true_connection.py tests\test_dsg\test_calendar_true_connection.py tests\test_dsg\test_trigger_outcome_v2.py -q`
+  -> `46 passed`.
+- `uv run python -m py_compile src\parrot\web_console\runtime_flow.py src\parrot\web_console\server.py src\parrot\brain\plan\plan_registry.py src\parrot\scheduler\service.py`
+- `cd web\console_app; npm run typecheck`
+- `cd web\console_app; npm run build`
+- Browser smoke: React Runtime Flow served on `http://127.0.0.1:7893/`,
+  manual LLM trigger draft produced a receipt, zh/en toggle worked, and browser
+  console errors stayed at zero.
+- HTTP smoke after the review fixes:
+  `/api/runtime/flow/changes?since=<current sequence>` returned
+  `changed=false`.
 
 ## Slice: Runtime Observability
 

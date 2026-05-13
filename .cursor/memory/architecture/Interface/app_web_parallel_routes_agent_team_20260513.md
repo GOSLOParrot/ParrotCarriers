@@ -84,8 +84,10 @@ the selector may render `CatMaid Team` as a fixed V1 option.
 2026-05-13 App START verification rule: Mint success and LiveKit room join are
 only transport readiness. Full START needs Brain participant presence, successful
 business RPC payloads, DataChannel heartbeat, and main-ready gate ownership. The
-current Castle blocker is LineB Google STT ADC for the systemd Brain runtime;
-do not treat old tmux Brain logs or Smoke UI scenes as formal App completion.
+Castle LineB Google STT ADC / token-mint dispatch blocker was reported repaired
+on 2026-05-14. Do not treat old tmux Brain logs, service health alone, or Smoke
+UI scenes as formal App completion; use Brain participant + business RPC
+payloads as the next gate.
 
 ## 5. Web Console Business Route
 
