@@ -221,6 +221,8 @@ const dictionaries = {
     "memory.graphModeAll": "All graph",
     "memory.graphModeSelected": "Selected neighborhood",
     "memory.graphModeAttention": "Top attention",
+    "memory.canvasOps": "Canvas Ops",
+    "memory.createPreview": "Create Preview",
     "memory.grouped": "grouped",
     "memory.eventDriven": "event",
     "memory.refLinks": "ref links",
@@ -510,6 +512,8 @@ const dictionaries = {
     "memory.graphModeAll": "\u5168\u56fe",
     "memory.graphModeSelected": "\u9009\u4e2d\u90bb\u57df",
     "memory.graphModeAttention": "\u9ad8\u6ce8\u610f\u529b",
+    "memory.canvasOps": "\u753b\u5e03\u64cd\u4f5c",
+    "memory.createPreview": "\u521b\u5efa\u9884\u89c8",
     "memory.grouped": "\u5df2\u5206\u7ec4",
     "memory.eventDriven": "\u4e8b\u4ef6",
     "memory.refLinks": "\u5f15\u7528\u8fde\u63a5",
@@ -2371,13 +2375,40 @@ function updateMemoryDraftPreview(payload) {
 }
 
 function clearMemoryDraftPreview() {
+  const previewIds = new Set((state.memoryDraftPreview.nodes || []).map((node) => text(node.uuid, "")));
+  const clearedNodeCount = previewIds.size;
+  const clearedEdgeCount = (state.memoryDraftPreview.edges || []).length;
   state.memoryDraftPreview = {
     nodes: [],
     edges: [],
     deleteIds: new Set(),
     updateIds: new Set(),
   };
+  if (state.memorySelected?.type === "l2b" && isDraftPreviewId(state.memorySelected.id, previewIds)) {
+    state.memorySelected = null;
+  }
+  ["l2bTargetUuid", "l2bDeleteUuid", "l2bEdgeFrom", "l2bEdgeTo"].forEach((id) => {
+    const element = $(id);
+    if (element && isDraftPreviewId(element.value, previewIds)) element.value = "";
+  });
+  state.memoryOpsReceipt = {
+    success: true,
+    action: "memory.preview.clear",
+    dry_run: true,
+    operator_mode: false,
+    data: {
+      cleared_nodes: clearedNodeCount,
+      cleared_edges: clearedEdgeCount,
+    },
+  };
+  if ($("memoryOpsOutput")) $("memoryOpsOutput").textContent = JSON.stringify(state.memoryOpsReceipt, null, 2);
+  setPill("memoryOpsPill", "good", state.memoryOpsReceipt.action);
   if (state.memoryState) renderMemoryState(state.memoryState);
+}
+
+function isDraftPreviewId(value, previewIds = new Set()) {
+  const id = text(value, "");
+  return id.startsWith("draft:") || previewIds.has(id);
 }
 
 function readMemoryFilters() {
@@ -2830,6 +2861,12 @@ function renderMemoryGraph({ l2b, refs, intent, blackboard }) {
   const positions = memoryGraphLayout(graphNodes);
   const positionMap = new Map(positions.map((item) => [item.id, item]));
   const selectedId = state.memorySelected?.type === "l2b" ? state.memorySelected.id : "";
+  const selectedNode = selectedId ? graphNodes.find((node) => text(node.uuid, "") === selectedId) : null;
+  setPill(
+    "memoryCanvasSelectionPill",
+    selectedNode ? "good" : "",
+    selectedNode ? shortLabel(text(selectedNode.label || selectedNode.uuid, selectedId), 24) : t("metrics.selection"),
+  );
   const topIds = new Set((Array.isArray(l2b.top_attention) ? l2b.top_attention : [])
     .slice(0, 4)
     .map((item) => text(item.uuid, "")));
@@ -2977,6 +3014,7 @@ function memoryExternalLinks({ refs, intent, positionMap }) {
 }
 
 function renderMemoryGraphPlaceholder({ refs, intent, blackboard }) {
+  setPill("memoryCanvasSelectionPill", "", t("metrics.selection"));
   const buckets = Array.isArray(state.l15Pool?.buckets) ? state.l15Pool.buckets : [];
   const openBuckets = buckets.filter((bucket) => !bucket.frozen).length;
   const cards = [
@@ -3575,6 +3613,12 @@ $("memoryUseSelectedButton").addEventListener("click", useSelectedMemoryNode);
 $("memoryEdgeFromSelectedButton").addEventListener("click", () => setSelectedMemoryEdgeEndpoint("l2bEdgeFrom"));
 $("memoryEdgeToSelectedButton").addEventListener("click", () => setSelectedMemoryEdgeEndpoint("l2bEdgeTo"));
 $("memoryClearPreviewButton").addEventListener("click", clearMemoryDraftPreview);
+$("memoryCanvasCreatePreviewButton").addEventListener("click", dryRunL2bNode);
+$("memoryCanvasUseSelectedButton").addEventListener("click", useSelectedMemoryNode);
+$("memoryCanvasEdgeFromButton").addEventListener("click", () => setSelectedMemoryEdgeEndpoint("l2bEdgeFrom"));
+$("memoryCanvasEdgeToButton").addEventListener("click", () => setSelectedMemoryEdgeEndpoint("l2bEdgeTo"));
+$("memoryCanvasDraftEdgeButton").addEventListener("click", draftL2bEdge);
+$("memoryCanvasClearPreviewButton").addEventListener("click", clearMemoryDraftPreview);
 $("l15BucketDraftButton").addEventListener("click", draftL15BucketOp);
 $("l15BucketDryRunButton").addEventListener("click", dryRunL15BucketOp);
 $("obsidianDraftButton").addEventListener("click", draftObsidianNode);

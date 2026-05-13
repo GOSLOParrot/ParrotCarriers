@@ -592,6 +592,13 @@ Changed in this slice:
   persisted L2-B nodes: clicking the ghost node keeps the detail inspector on
   the node, exposes preview status, and lets the operator set Edge From/To from
   the visual selection.
+- Added a center-stage canvas action bar for the common graph operations:
+  create preview, use selected, set Edge From/To, draft edge, and clear preview.
+  These buttons reuse the existing Web dry-run/draft routes and do not add a
+  backend interface.
+- Fixed a preview cleanup bug: `Clear Preview` now clears stale selected ghost
+  nodes and any `draft:` UUIDs left in target/delete/edge fields so later edge
+  drafts cannot resurrect a removed preview endpoint.
 - Added an explicit `Clear Preview` control in the receipt area so renderer-only
   draft state cannot be mistaken for committed L2-B data.
 - Blackboard rows now render as status-light cards grouped by scope/writer.
@@ -619,6 +626,16 @@ Verification:
   preview nodes, staged one edge draft between them, rendered one
   `.memory-edge.preview`, and confirmed the selected preview-node detail panel
   included preview state with zero console errors.
+- Canvas toolbar smoke:
+  after reloading the Web Console, all seven toolbar controls were present; the
+  toolbar create action produced one `.memory-svg-node.preview`, selecting it
+  updated the canvas selection pill, and toolbar clear removed the preview with
+  zero console errors.
+- Preview cleanup regression smoke:
+  created two preview nodes, staged one preview edge, cleared previews, then
+  clicked draft edge again. Preview nodes stayed at `0`, preview edges stayed at
+  `0`, the selection pill returned to the generic selection label, and browser
+  console errors stayed at `0`.
 
 Remaining work:
 

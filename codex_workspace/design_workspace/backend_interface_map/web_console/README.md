@@ -141,11 +141,21 @@ Audit result:
 - Preview nodes are now selectable in the same inspector path as persisted
   L2-B nodes, and staged edge draft receipts draw preview edges when both
   endpoints are visible.
+- The central canvas now has a local action bar for create preview, use
+  selected, set Edge From/To, draft edge, and clear preview; it reuses existing
+  draft/dry-run routes and does not change the BFF route matrix.
+- `Clear Preview` also clears stale selected preview nodes and `draft:` UUIDs
+  from target/delete/edge fields so later drafts cannot accidentally reuse a
+  removed ghost endpoint.
 - Blackboard and IntentWorkspace rows now render as grouped status-light cards.
 - Verification signal: `node --check web\console\assets\app.js`, clean
   duplicate-id scan, and in-app browser Memory smoke. L2-B preview smoke showed
   two `.memory-svg-node.preview` nodes, one `.memory-edge.preview`, selectable
-  preview detail, and zero console errors.
+  preview detail, and zero console errors. Canvas-toolbar smoke showed one
+  preview node created from the center-stage action bar, selection pill update,
+  toolbar clear to zero previews, and zero console errors. Cleanup regression
+  smoke confirmed that drafting an edge after clearing previews does not
+  resurrect removed `draft:` endpoints.
 
 ## Implementation Anchors
 
