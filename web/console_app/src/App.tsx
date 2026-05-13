@@ -382,6 +382,11 @@ function MemoryGraphWorkspace({
       if (receipt.success !== false) {
         const uuid = "draft:" + Date.now();
         setPreviewNodes((rows) => [...rows, { uuid, label, kind: "object" }]);
+        setEdgeFrom((currentFrom) => {
+          if (!currentFrom) return uuid;
+          setEdgeTo((currentTo) => currentTo || (currentFrom !== uuid ? uuid : currentTo));
+          return currentFrom;
+        });
       }
       pushReceipt(receipt);
     } catch (exc) {
