@@ -489,14 +489,12 @@ function MemoryGraphWorkspace({
   };
 
   const draftSelectedEdgeRetarget = () => {
-    if (!isSelectedEdge(selected)) {
-      pushReceipt(localReceipt("l2b.edge.draft", false, { error: "no_selected_edge" }));
-      return;
-    }
+    const hasSelectedEdge = isSelectedEdge(selected);
     void draftEdgeBetween(edgeFrom, edgeTo, "edge_retarget", {
-      selected_edge_id: String(selected.id || ""),
-      previous_source: String(selected.source || ""),
-      previous_target: String(selected.target || "")
+      selected_edge_id: hasSelectedEdge ? String(selected.id || "") : "",
+      previous_source: hasSelectedEdge ? String(selected.source || "") : edgeFrom,
+      previous_target: hasSelectedEdge ? String(selected.target || "") : edgeTo,
+      staged_endpoint_draft: !hasSelectedEdge
     });
   };
 
@@ -565,9 +563,9 @@ function MemoryGraphWorkspace({
       <aside className="drawer">
         <h2><PanelRightOpen size={18} /> {t.selected}</h2>
         {selected ? <JsonBlock value={selected} /> : <p className="muted">{t.noSelection}</p>}
-        {isSelectedEdge(selected) ? (
+        {edgeFrom && edgeTo ? (
           <SelectedEdgeTools
-            selected={selected}
+            selected={isSelectedEdge(selected) ? selected : { source: edgeFrom, target: edgeTo }}
             edgeFrom={edgeFrom}
             edgeTo={edgeTo}
             onRetarget={draftSelectedEdgeRetarget}

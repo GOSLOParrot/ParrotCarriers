@@ -198,6 +198,13 @@ fields to `.cursor/memory/architecture/Interface/**` until App/Web confirmation.
   scan found only generic env-var references/fake test values, no raw local
   secret. WEB-012.14 is marked done, while CORE-010/CORE-011 remain candidate
   review items and no App/Unity DTO was changed by this audit.
+- 2026-05-14: Memory Graph direct operation continuation: successful node
+  drafts now auto-stage edge endpoints; staged endpoints reveal an edge
+  operation panel; swap and retarget draft actions reuse the existing
+  `/api/l2b/edge/draft` dry-run route; React Flow `onReconnect` is wired for
+  edge-handle retarget gestures. Browser smoke confirmed the panel, retarget
+  receipt, one preview edge, and zero console errors. No backend route, App DTO,
+  or shared core contract changed.
 
 ## Pending Core / Data Model Review
 

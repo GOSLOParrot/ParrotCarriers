@@ -59,13 +59,19 @@ Current React Memory behavior:
   now drafts an L2-B edge through the existing Web BFF and draws a
   frontend-only preview edge. Clicking an edge opens the same inspector path.
   The receipt rail is now a timeline with a short summary before raw JSON.
+- 2026-05-14 React continuation 3: successful node drafts auto-stage From/To
+  edge endpoints, staged endpoints reveal a compact edge-operation panel, and
+  selected/staged edges can swap endpoints or draft a retarget preview. React
+  Flow `onReconnect` is wired, but it still creates a new Web dry-run edge
+  preview instead of mutating an existing L2-B edge.
 - L1.5 bucket actions are presented as bucket cards, with raw/payload work kept
   behind advanced flows.
 
 Remaining WEB-011 work:
 
-- Selected-edge reconnect/retarget and create-on-canvas pointer gestures need a
-  dedicated follow-up slice.
+- Create-on-canvas pointer gestures still need a dedicated follow-up slice.
+- Persisted edge edit/delete semantics still need an operator-gated backend
+  policy. Current retarget is a draft/preview, not an in-place mutation.
 - L2-B graph-health metrics, source/bucket pressure visuals, and component/
   traversal summaries still need bounded backend computation.
 - Evidence/String Board remains a renderer over CORE-006/CORE-007 candidates;
@@ -76,6 +82,10 @@ Remaining WEB-011 work:
 - 2026-05-14 React smoke confirmed readable Chinese copy, visible connect hint,
   `l2b.node.draft` receipt, frontend preview node, receipt timeline, and zero
   console errors.
+- 2026-05-14 React retarget smoke confirmed that two node drafts auto-filled
+  endpoints, showed the edge-operation panel, `重定向草稿` produced an
+  `l2b.edge.draft` receipt plus one preview edge, and browser console errors
+  stayed at zero.
 
 ## Slice: Memory Graph Workspace
 
@@ -722,6 +732,12 @@ Verification:
   created one preview node, set it as both From and To through the canvas
   toolbar, then clicked draft edge. The browser rendered `0` preview edges,
   showed the local guard receipt, and reported `0` console errors.
+- Edge retarget smoke:
+  after reloading the React Web Console, two successful node drafts auto-filled
+  From/To, the edge-operation panel appeared without requiring a precise click
+  on a thin line, `重定向草稿` returned an `l2b.edge.draft` receipt, one
+  `.react-flow__edge.preview-edge` rendered, swap copy was visible, and browser
+  console errors stayed at `0`.
 
 Remaining work:
 
