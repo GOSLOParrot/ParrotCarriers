@@ -55,12 +55,17 @@ Current React Memory behavior:
 - Selecting a node opens a detail drawer with safe JSON detail.
 - Create/update/delete node actions and edge draft actions call existing
   Web-only dry-run/draft routes and append receipts.
+- 2026-05-14 React continuation: dragging from one React Flow node to another
+  now drafts an L2-B edge through the existing Web BFF and draws a
+  frontend-only preview edge. Clicking an edge opens the same inspector path.
+  The receipt rail is now a timeline with a short summary before raw JSON.
 - L1.5 bucket actions are presented as bucket cards, with raw/payload work kept
   behind advanced flows.
 
 Remaining WEB-011 work:
 
-- Direct drag/connect/reconnect gestures need a dedicated follow-up slice.
+- Selected-edge reconnect/retarget and create-on-canvas pointer gestures need a
+  dedicated follow-up slice.
 - L2-B graph-health metrics, source/bucket pressure visuals, and component/
   traversal summaries still need bounded backend computation.
 - Evidence/String Board remains a renderer over CORE-006/CORE-007 candidates;
@@ -68,6 +73,9 @@ Remaining WEB-011 work:
 - Browser smoke for this checkpoint confirmed the React Memory page is served
   through the normal Web Console service on port `7893` with no frontend console
   errors. Repeat this audit after each React UI slice.
+- 2026-05-14 React smoke confirmed readable Chinese copy, visible connect hint,
+  `l2b.node.draft` receipt, frontend preview node, receipt timeline, and zero
+  console errors.
 
 ## Slice: Memory Graph Workspace
 
@@ -136,7 +144,9 @@ fields.
 
 Done for the first WEB-003 read-only slice:
 
-- Static frontend enabled the `Memory Graph` place in `web/console/`.
+- Static frontend first enabled the `Memory Graph` place in legacy
+  `web/console/`; WEB-012 now serves the React + Vite Memory workspace from
+  `web/console_dist/` when the build is present.
 - Data source is the existing Web BFF route `GET /api/app/live-state?limit=80`,
   backed by `src/parrot/brain/app_live_state.py`.
 - The view renders Blackboard declared/present count, IntentWorkspace refs,
@@ -664,6 +674,13 @@ Changed in this slice:
   success receipt but produced a zero-length invisible edge. The frontend now
   guards it locally, and the Web BFF returns `self_edge_not_allowed` if called
   directly.
+- Fixed a placeholder-endpoint bug: the DSG compartment nodes used for the
+  empty/overview canvas are visual read-model markers, not L2-B nodes, so they
+  are no longer allowed to populate edge From/To or create React Flow draft
+  edges.
+- Fixed a receipt-trust bug: node and edge ghost previews now render only after
+  a successful draft receipt. Failed API/network actions produce local failure
+  receipts and do not create optimistic canvas artifacts.
 - Added an explicit `Clear Preview` control in the receipt area so renderer-only
   draft state cannot be mistaken for committed L2-B data.
 - Blackboard rows now render as status-light cards grouped by scope/writer.
@@ -710,3 +727,53 @@ Remaining work:
 
 - Add dedicated Blackboard/Intent visual lanes instead of only grouped cards.
 - Consider auto-expiry for stale frontend previews after a later usability pass.
+
+### Implementation Round: WEB-011.4 L1.5 Health Visual Patch
+
+Status: in_progress
+
+Changed in this slice:
+
+- React Memory Graph now renders a compact L1.5 pool health strip above the
+  bucket board. It surfaces total admitted nodes, Ref count, capacity pressure,
+  and current scene from the existing `/api/l15/pool` read model.
+- Bucket cards now include proportional node-count meters, frozen/open state,
+  and last-activity text. This makes the pool board usable as a quick status
+  surface instead of a dense list of nearly identical bucket names.
+- React Memory now includes a compact Obsidian setting-node draft card. It uses
+  the existing `/api/l15/obsidian-node/draft` route, supports the three backend
+  profiles (`daily`, `roleplay`, `ref`), keeps `daily` and `roleplay`
+  UUID-free, and surfaces the `ref` UUID requirement as a local warning/failure
+  receipt before the BFF call.
+- BFF normalization now treats blank/whitespace-only setting labels as missing
+  and falls back to `Web Console setting`. This keeps generated
+  `obsidian_note_key` values meaningful for UUID-free setting drafts.
+- No backend route, shared DTO, or App-facing contract changed in this slice.
+  The UI still consumes the existing Web-only L1.5 management snapshot and
+  existing bucket/Obsidian draft routes.
+
+Verification:
+
+- `cd web\console_app; npm run typecheck`
+- `cd web\console_app; npm run build`
+- `uv run pytest tests\test_web_console\test_web_console_server.py -q`
+  -> `17 passed`.
+- In-app browser smoke at `http://127.0.0.1:7893/`: Memory page rendered the
+  L1.5 pool health labels (`池健康`, `压力`, `最后活动` in zh) with zero console
+  errors.
+- Obsidian card smoke: `daily` draft produced a `l15.obsidian_node.draft`
+  receipt; switching to `ref` without UUID showed the UUID warning and produced
+  `ref_profile_requires_obsidian_uuid`; browser console errors stayed at zero.
+- Regression coverage: Web route tests assert the blank-label fallback, and
+  browser smoke confirmed rapid repeated local guard failures produce distinct
+  receipt ids with zero console errors.
+- Bugfix verification: frontend typecheck/build passed, Web route tests
+  reported `17 passed`, and browser smoke kept Memory/Runtime console errors at
+  zero after the preview guard changes.
+
+Audit:
+
+- No App/Unity DTOs were changed.
+- No Web-only operator field was promoted to shared core.
+- No raw `PARROT_ORCH_SECRET`, LiveKit secret, or Google credential was found in
+  the React source or dist output.

@@ -168,8 +168,8 @@ def _load_startup_room_profile(room_profile_id: str) -> dict:
 
     Formal startup cold-load/editing uses the App HTTP facade before LiveKit
     connects. This diagnostic script mirrors only the post-join sync step, so
-    it loads the selected profile locally instead of calling Brain
-    getRoomSettingSnapshot over RPC.
+    it loads the selected profile locally instead of calling any Brain
+    RoomSetting read RPC.
     """
 
     from parrot.brain.preset_loader import DEFAULT_PRESET_ID, get_preset_loader

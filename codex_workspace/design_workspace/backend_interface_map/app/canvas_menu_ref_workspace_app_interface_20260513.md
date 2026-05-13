@@ -161,9 +161,9 @@ Related TODO: APP-004, APP-015
 
 - LiveKit RPC is a compact control-plane surface, not a transport for full
   homepage/canvas snapshots.
-- Current measured payloads: compact `getRoomSettingSnapshot` is about 8.3 KB,
-  `listMenuBlocks` is about 4.5 KB, full RoomSetting snapshot is about 27.5 KB,
-  and full `canvas_snapshot` is about 39.3 KB.
+- Current measured payloads: `listMenuBlocks` is about 4.5 KB, full
+  RoomSetting snapshot is about 27.5 KB, and full `canvas_snapshot` is about
+  39.3 KB.
 - Safe App menu RPC use today: small in-room control calls such as
   `applyMenuSelection`, `applyWorkspace`, and tier/status confirmations.
   `listMenuBlocks` can remain a compact legacy/bootstrap fallback, but the
@@ -172,6 +172,6 @@ Related TODO: APP-004, APP-015
 - Unsafe App menu use today: sending full `canvas_snapshot` through LiveKit
   RPC. The formal homepage/menu loader must fetch that through the App HTTP
   facade or a future paged/compact read model.
-- Static tests guard compact RoomSetting and menu block RPC payloads below
-  15 KB. If a future registry grows past that, split the read model instead of
-  raising the RPC budget casually.
+- Static tests guard menu block RPC payloads below 15 KB. If a future registry
+  grows past that, split the read model instead of raising the RPC budget
+  casually.

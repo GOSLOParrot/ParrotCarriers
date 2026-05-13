@@ -33,12 +33,15 @@ because Mint and LiveKit join succeed. As of 2026-05-14, Castle ADC permission
 and token-mint dispatch repairs are reported complete (`agent_dispatch_requested:
 True`, Brain no new crash, five services active). After Castle `c0f1705`, the
 fast retry passed Brain participant presence plus post-join business-ok
-`applyRoomProfile` and `setAppCapabilityMode` with `ner_lineb_room`. Compact
-`getRoomSettingSnapshot` is legacy diagnostic/fallback only; formal RoomSetting
-cold-load/edit/save stays on App HTTP before LiveKit connects. The default
-LineA RoomProfile still fails correctly against a running LineB Brain. Phone
-RoomSetting/orchestrator proof is separate and currently blocked by public App
-API / Orchestrator URLs returning 502.
+`applyRoomProfile` and `setAppCapabilityMode` with `ner_lineb_room`. The
+obsolete Brain RoomSetting read/write RPC surface has been removed from active
+backend code; formal RoomSetting cold-load/edit/save stays on App HTTP before
+LiveKit connects. The default LineA RoomProfile still fails correctly against a
+running LineB Brain. Phone RoomSetting/orchestrator proof is separate; user
+repaired public ECS routing on 2026-05-14, so App API RoomSetting returns
+2 rooms and Orchestrator health is ok from this workstation. Next proof is
+formal Unity/phone START with RoomSetting save/apply, Tier 1 prewrite, and
+main-ready gates.
 
 ```text
 你是 Unity App 前端线的 Codex。工作目录是 D:\GOSLOParrot\ParrotCarriers。

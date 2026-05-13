@@ -37,14 +37,14 @@ planned. Detailed business rationale stays in the active files above.
 
 | Area | Implemented surface | Business file | Current status |
 |:--|:--|:--|:--|
-| Console shell | `GET /health`, static `web/console/`, zh/en setting, Obsidian-like layout, active-view refresh loop. | `observability_runtime_business_flow_20260513.md` | Useful foundation; keep simple. |
+| Console shell | `GET /health`, static `web/console_dist/` React build with legacy `web/console/` fallback, zh/en setting, Obsidian-like layout, active-view refresh loop. | `observability_runtime_business_flow_20260513.md` | React + Vite is the formal route; legacy vanilla remains transition/reference only. |
 | Orchestrator status | `GET /api/console/config`, `GET /api/orchestrator/health`, `GET /api/orchestrator/status`; BFF injects Bearer from `PARROT_ORCH_SECRET` server-side. | `observability_runtime_business_flow_20260513.md` | Implemented and tested; no secret leak. |
 | Menu/App smoke | `GET /api/app/canvas`, `GET /api/app/modules`, `GET /api/app/line-profiles`, `POST /api/app/line-profiles/apply`, `POST /api/app/workspace/apply`. | `observability_runtime_business_flow_20260513.md`, `memory_graph_workspace_business_flow_20260513.md` | Useful smoke path; not the main next focus. |
 | LineB voice lab | `POST /api/app/lineb/audio-route`, `POST /api/app/lineb/tts-segment`, `POST /api/app/lineb/mic-input`, `GET /api/livekit/config`, `POST /api/livekit/web-token`; browser LiveKit audio wiring and event/transcript panes. | `observability_runtime_business_flow_20260513.md` | Implemented smoke; full voice conversation still needs user-approved mic and running agent. |
 | Runtime monitor | `GET /api/runtime/monitor`; Scheduler route order/channels/tasks, Nanobot bridge, Plan counts/DAG rows, Blackboard summary, AgentTeam placeholder. | `observability_runtime_business_flow_20260513.md` | Read-only Web surface; not an App DTO. |
 | Runtime Flow upgrade | `GET /api/runtime/flow`, `GET /api/runtime/flow/changes`, `GET /api/runtime/hitl/pending`, `POST /api/runtime/hitl/draft-decision`, `POST /api/runtime/hitl/apply-decision`, React swimlane/DAG workspace. | `observability_runtime_business_flow_20260513.md` | First slice implemented; Web-only read model/HITL first, core candidates staged before shared promotion. |
 | Trigger and message lab | `GET /api/dsg/triggers/catalog`, `POST /api/dsg/triggers/draft-event`, `POST /api/dsg/triggers/fire-event`, `POST /api/google/messages/check`, `POST /api/google/messages/push-test`. | `observability_runtime_business_flow_20260513.md` | Web-only dry-run/receipt surface; real fire publishes to `CH_DSG_EVENTS` only with explicit operator mode. Gmail check uses Scheduler/Nanobot dispatch; message results now enter L1.5 as `GOOGLE_MESSAGE` observations. |
-| Live memory snapshot | `GET /api/app/live-state?limit=...`; grouped Blackboard key rows, grouped IntentWorkspace ref rows, Ref registry, SVG L2-B graph canvas/detail panel, tool artifacts. | `memory_graph_workspace_business_flow_20260513.md` | Implemented as bounded active-view polling renderer with filters, new-node diff highlight, and soft Intent/Ref-to-L2-B links when linked nodes exist. User audit moved the next focus to WEB-011: large realtime cockpit, direct graph operations, simplified L1.5 cards, trigger palette, and possible changed_since/SSE after the visual model is useful. |
+| Live memory snapshot | `GET /api/app/live-state?limit=...`, `GET /api/memory/blackboard/activity?limit=...`; grouped Blackboard key rows, grouped IntentWorkspace ref rows, Ref registry, React Flow L2-B graph/detail panel, and bounded Blackboard activity rows. | `memory_graph_workspace_business_flow_20260513.md` | Implemented as bounded active-view polling renderer with filters, new-node diff highlight, and soft Intent/Ref-to-L2-B links when linked nodes exist. User audit moved the next focus to WEB-011: large realtime cockpit, direct graph operations, simplified L1.5 cards, trigger palette, and possible changed_since/SSE after the visual model is useful. |
 | L1.5/L2-B operator drafts | `GET /api/l15/pool`, `POST /api/l15/bucket-op/draft`, `POST /api/l15/bucket-op`, `POST /api/l15/obsidian-node/draft`, `POST /api/l15/obsidian-node`, `POST /api/l2b/node/draft`, `POST /api/l2b/node`, `POST /api/l2b/node/delete`, `POST /api/l2b/edge/draft`, `POST /api/l2b/edge`. | `memory_graph_workspace_business_flow_20260513.md` | Default dry-run; Web-only receipts. Node create/update routes through `L15Pool.admit(Observation(source=USER_EXPLICIT))`; delete uses `L15Pool.evict`; real edge connect requires operator mode. |
 | Graphiti console | `GET /api/graphiti/status`, `POST /api/graphiti/search`, `POST /api/graphiti/episode/draft`, `POST /api/graphiti/episode`; dry-run first. | `graphiti_management_business_flow_20260513.md` | Implemented safe seed; full surgery/operator mode remains future work. |
 
@@ -143,6 +143,14 @@ Completed:
   board, node/edge dry-run action buttons, detail drawer, and receipts.
 - Added React Runtime Flow Workspace with swimlane/DAG graph, event tape,
   manual trigger buttons, HITL cards, and receipt rail.
+- 2026-05-14 React UI continuation: Memory Graph now supports direct
+  React Flow drag/connect edge drafts with frontend-only preview edges, and
+  Runtime Flow now uses a grouped trigger palette plus receipt timeline for
+  message, LLM, scheduler, calendar, scene-switch, and roleplay dry-runs.
+- 2026-05-14 React UX continuation: Memory Graph now shows L1.5 pool health,
+  capacity pressure, current scene, per-bucket node meters, frozen/open state,
+  and last activity. Runtime Flow now reads `/api/dsg/triggers/catalog` and
+  renders registered trigger chips by trigger kind next to the manual presets.
 - Fixed React Runtime Flow UI drift: Chinese labels now render through stable
   zh/en copy, the live pill shows the backend refresh interval, Runtime nodes
   are arranged by lane-local rows, and HITL cards render action buttons from
@@ -161,6 +169,28 @@ Verification at this checkpoint:
 - Browser smoke on `http://127.0.0.1:7893/`: React dist served, Memory and
   Runtime pages navigated, LLM trigger draft produced a receipt, zh/en toggle
   worked, and frontend console errors stayed at zero.
+- Latest React smoke: Runtime trigger palette and scene-switch preset visible,
+  LLM dry-run produced `dsg.trigger.draft_event` with matched trigger text,
+  Memory node draft produced an `l2b.node.draft` receipt and preview node,
+  Chinese copy rendered normally, and console errors stayed at zero.
+- Latest React UX smoke: Memory page shows L1.5 pool health labels
+  (`池健康`, `压力`, `最后活动` in zh); Runtime page shows registered trigger chips including
+  `event_driven` and `on_demand`; console errors stayed at zero.
+- Latest bugfix smoke: Runtime action groups are localized in zh
+  (`消息`, `运行`, `模式`), the LLM dry-run button produced a receipt, and console
+  errors stayed at zero. Memory graph placeholders are no longer draftable
+  L2-B edge endpoints; node/edge previews only render after success receipts.
+- Latest L1.5 smoke: React Memory includes an Obsidian setting-node draft card
+  for `daily`, `roleplay`, and `ref`. Daily draft produced a
+  `l15.obsidian_node.draft` receipt, and `ref` without UUID now shows a warning
+  and produces the expected `ref_profile_requires_obsidian_uuid` local failure
+  receipt with zero console errors.
+- Latest Obsidian draft bugfix: whitespace-only labels now normalize to
+  `Web Console setting`, so generated `obsidian_note_key` values do not end in
+  an empty label segment. Local frontend receipts now include a random suffix so
+  rapid repeated guard failures do not collide in the receipt timeline.
+- Latest Web route focused result: `17 passed` for
+  `tests/test_web_console/test_web_console_server.py`.
 - Latest combined focused result: `48 passed`.
 - Latest HTTP smoke after service restart:
   `/api/runtime/flow/changes?since=<current sequence>` returns
@@ -174,11 +204,11 @@ Audit result:
   edited.
 - Frontend code does not embed `PARROT_ORCH_SECRET`, LiveKit secret, or Google
   credentials.
-- Remaining risk: React UI is still a first vertical slice. Direct graph
-  drag/connect/reconnect, graph health metrics, and Evidence Board polish remain
-  future WEB-011/WEB-012 slices.
+- Remaining risk: React UI is still a first vertical slice. Selected-edge
+  reconnect/retarget, richer trigger sample editing, operator execution guard
+  copy, and Evidence Board polish remain future WEB-011/WEB-012 slices.
 
-### Implemented Web Route Matrix
+### Implemented Trigger/L1.5/L2-B Route Matrix
 
 | Endpoint | Mode | Write path | Notes |
 |:--|:--|:--|:--|
@@ -201,11 +231,31 @@ Audit result:
 ## Drift Audit
 
 - No implemented Web-only route has been intentionally added to Unity/App DTOs.
-- Business-interface files now cover every implemented Web route listed above.
+- Business-interface files now cover every implemented Web route. The top
+  ledger indexes the full route groups, while the table above tracks the
+  operator/draft memory-management routes that were most likely to drift.
 - The current risk is product focus, not undocumented routes: the UI has several
   useful smoke panels, and the Memory Graph now has a first visual renderer with
   operator drafts, but WEB-011 should replace dense component stacking with a
   larger visual operations cockpit before adding more broad admin panels.
+
+### Final Compliance Audit: 2026-05-14 React Checkpoint
+
+- Actual BFF route list was reconciled against this README and the active
+  Runtime/Memory/Graphiti business files. `web/console_dist/` hosting and
+  `GET /api/memory/blackboard/activity` are now indexed at the top level.
+- The latest Web work stays inside `src/parrot/web_console/`,
+  `web/console_app/`, `web/console_dist/`, `tests/test_web_console/`, and this
+  Web business-interface directory. Unrelated App/Unity worktree files were not
+  touched by this audit.
+- No App/Unity DTO received Web-only operator fields. CORE-010/CORE-011 remain
+  candidate-review items until the user approves shared promotion.
+- Secret scan found only generic `PARROT_ORCH_SECRET` references and fake test
+  values. The raw local secret, LiveKit secrets, and Google credentials are not
+  present in React source/dist or Web business docs.
+- Verification at this checkpoint: Web route tests `17 passed`; React
+  typecheck/build passed; Memory browser smoke produced expected receipts with
+  zero console errors.
 
 ### WEB-011.1 Checkpoint
 
@@ -214,6 +264,10 @@ Audit result:
   receipt stream, and advanced Obsidian draft drawer.
 - L1.5 bucket cards now include freeze/unfreeze/clear quick draft buttons that
   reuse the existing bucket draft route.
+- React Memory now exposes the existing Obsidian setting-node draft route as a
+  compact card. It is receipt-only, keeps `daily`/`roleplay` UUID-free, and lets
+  the frontend guard `ref` drafts that omit an Obsidian UUID before calling the
+  BFF.
 - No route matrix changes were made in this slice. Existing L1.5/L2-B/edge
   routes remain the interface surface.
 - Verification signal: `node --check web\console\assets\app.js`, clean
@@ -224,10 +278,17 @@ Audit result:
 ### WEB-011.5 Checkpoint
 
 - Runtime Monitor now has a visible trigger palette for message check/message
-  push, LLM context push, scheduler tick, calendar test, and custom DSG event
-  drafts.
+  push, LLM context push, scheduler tick, calendar test, scene switch,
+  roleplay-open, and custom DSG event drafts.
 - No new routes were added. Message actions continue through Nanobot Web routes;
   other presets call the existing DSG trigger draft route.
+- React continuation replaced the single raw receipt block with a receipt
+  timeline so operators can see the last dry-run results without opening a
+  dense JSON panel first.
+- React continuation also reads the existing trigger catalog route and shows
+  kind-grouped registry chips, so operators can compare manual presets with
+  real registered `startup`, `periodic`, `event_driven`, and `on_demand`
+  triggers before firing anything.
 - Verification signal: `node --check web\console\assets\app.js`, clean
   duplicate-id scan, and in-app browser Runtime smoke with no console errors.
 
@@ -250,6 +311,10 @@ Audit result:
   removed ghost endpoint.
 - Same-node edge drafts are rejected in the Web BFF and guarded in the frontend
   so a zero-length invisible self-edge cannot return a success receipt.
+- Placeholder DSG compartment nodes are not valid L2-B edge endpoints, and
+  failed node/edge draft receipts no longer create ghost preview nodes or lines.
+- Frontend action failures are converted into local failure receipts instead of
+  unhandled browser promise errors.
 - Blackboard and IntentWorkspace rows now render as grouped status-light cards.
 - Verification signal: `node --check web\console\assets\app.js`, clean
   duplicate-id scan, and in-app browser Memory smoke. L2-B preview smoke showed

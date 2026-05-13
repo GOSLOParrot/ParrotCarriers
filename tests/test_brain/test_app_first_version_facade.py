@@ -9,6 +9,7 @@ import pytest
 from parrot.brain.intent_workspace import IntentWorkspace, StagedRefKind, set_intent_workspace_for_test
 from parrot.brain.line_profile import LineProfileLoader, set_line_profile_loader_for_test
 from parrot.brain.lineb_audio_guard import reset_lineb_audio_guard_for_test
+from parrot.brain.persona_loader import PersonaLoader, set_persona_loader_for_test
 from parrot.brain.app_first_version import (
     AppFirstVersionFacade,
     AppToolId,
@@ -39,6 +40,7 @@ def _reset_state(monkeypatch: pytest.MonkeyPatch):
         "PARROT_LINEB_ECHO_HANDLING_MODE",
         "GOOGLE_TTS_VOICE",
         "GOOGLE_TTS_LANGUAGE",
+        "PARROT_PERSONA_DIRS",
     ):
         monkeypatch.delenv(key, raising=False)
     py_trees.blackboard.Blackboard.storage = {}
@@ -46,12 +48,14 @@ def _reset_state(monkeypatch: pytest.MonkeyPatch):
     reset_lineb_audio_guard_for_test()
     set_intent_workspace_for_test(IntentWorkspace())
     set_line_profile_loader_for_test(None)
+    set_persona_loader_for_test(None)
     set_preset_loader_for_test(None)
     set_workspace_registry_for_test(None)
     yield
     reset_lineb_audio_guard_for_test()
     set_intent_workspace_for_test(None)
     set_line_profile_loader_for_test(None)
+    set_persona_loader_for_test(None)
     set_preset_loader_for_test(None)
     set_workspace_registry_for_test(None)
 
@@ -733,6 +737,36 @@ def test_room_setting_snapshot_exposes_five_axes(tmp_path: Path) -> None:
         "ner_skin2",
     }
     assert snapshot["compatibility"]["state"] == "ready"
+
+
+def test_persona_listing_exposes_safe_selector_metadata(tmp_path: Path) -> None:
+    persona_dir = tmp_path / "personas"
+    persona_dir.mkdir()
+    _write_note(
+        persona_dir / "custom.md",
+        """
+        persona_id: custom_persona
+        display_name: Custom Persona
+        schema_version: 1
+        description: Selector-safe description.
+        """,
+        body="## core\nPrivate prompt body must not be exposed.",
+    )
+    set_persona_loader_for_test(PersonaLoader(search_paths=[persona_dir]))
+
+    personas = AppFirstVersionFacade().list_personas()
+
+    assert personas == (
+        {
+            "persona_id": "custom_persona",
+            "display_name": "Custom Persona",
+            "description": "Selector-safe description.",
+            "schema_version": 1,
+            "tags": [],
+        },
+    )
+    assert "file_path" not in personas[0]
+    assert "text" not in personas[0]
 
 
 def test_room_setting_blocks_hot_line_switch_until_brain_cold_restart(

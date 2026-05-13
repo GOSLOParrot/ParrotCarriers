@@ -8,6 +8,7 @@ same EcpEvent observer path Unity uses; live-state views are read-only.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -32,13 +33,17 @@ from parrot.brain.app_live_state import build_app_live_state
 from parrot.brain.l2b_monitor import build_l2b_snapshot
 
 try:
-    from fastapi import Body, FastAPI
-    from fastapi.responses import HTMLResponse
+    from fastapi import Body, FastAPI, Header, HTTPException, Request
+    from fastapi.responses import HTMLResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
 except ImportError:  # pragma: no cover - only matters on deployments without [http]
     Body = None  # type: ignore[assignment]
     FastAPI = None  # type: ignore[assignment]
+    Header = None  # type: ignore[assignment]
+    HTTPException = None  # type: ignore[assignment]
+    Request = None  # type: ignore[assignment]
     HTMLResponse = None  # type: ignore[assignment]
+    JSONResponse = None  # type: ignore[assignment]
     StaticFiles = None  # type: ignore[assignment]
 
 
@@ -48,6 +53,25 @@ def build_app():  # type: ignore[no-untyped-def]
         raise RuntimeError("fastapi not installed; install parrotcarriers[http]")
 
     app = FastAPI(title="GOSLO App V1 Smoke Monitor")
+    write_secret = os.environ.get("PARROT_APP_MONITOR_SECRET", "").strip()
+
+    @app.middleware("http")
+    async def app_monitor_write_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
+        if write_secret and request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            auth = request.headers.get("Authorization", "").strip()
+            if auth != f"Bearer {write_secret}":
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "app_monitor_auth_required"},
+                )
+        return await call_next(request)
+
+    def require_write_auth(authorization: str = "") -> None:
+        if not write_secret:
+            return
+        if authorization.strip() != f"Bearer {write_secret}":
+            raise HTTPException(status_code=401, detail="app_monitor_auth_required")
+
     asset_root = _pixel_asset_root()
     if asset_root.exists():
         app.mount("/pixel-assets", StaticFiles(directory=str(asset_root)), name="pixel-assets")
@@ -72,6 +96,10 @@ def build_app():  # type: ignore[no-untyped-def]
     async def app_assets():  # type: ignore[no-untyped-def]
         return AppFirstVersionFacade().asset_manifest()
 
+    @app.get("/api/app/personas")
+    async def app_personas():  # type: ignore[no-untyped-def]
+        return list(AppFirstVersionFacade().list_personas())
+
     @app.get("/api/app/room-setting")
     async def room_setting(room_profile_id: str = ""):  # type: ignore[no-untyped-def]
         return AppFirstVersionFacade().room_setting_snapshot(
@@ -93,13 +121,21 @@ def build_app():  # type: ignore[no-untyped-def]
         )
 
     @app.post("/api/app/room-setting/save")
-    async def room_setting_save(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+    async def room_setting_save(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ):  # type: ignore[misc]
+        require_write_auth(authorization)
         body = payload or {}
         draft = body.get("room_profile") if isinstance(body.get("room_profile"), dict) else body
         return AppFirstVersionFacade().save_room_profile(draft)
 
     @app.post("/api/app/room-setting/apply")
-    async def room_setting_apply(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+    async def room_setting_apply(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ):  # type: ignore[misc]
+        require_write_auth(authorization)
         body = payload or {}
         draft_or_id = body.get("room_profile") or body.get("room_profile_id") or body
         return AppFirstVersionFacade().apply_room_profile(
@@ -118,19 +154,31 @@ def build_app():  # type: ignore[no-untyped-def]
         return AppFirstVersionFacade().preview_line_profile(draft)
 
     @app.post("/api/app/line-profiles/save")
-    async def line_profile_save(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+    async def line_profile_save(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ):  # type: ignore[misc]
+        require_write_auth(authorization)
         body = payload or {}
         draft = body.get("line_profile") if isinstance(body.get("line_profile"), dict) else body
         return AppFirstVersionFacade().save_line_profile(draft)
 
     @app.post("/api/app/line-profiles/apply")
-    async def line_profile_apply(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+    async def line_profile_apply(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ):  # type: ignore[misc]
+        require_write_auth(authorization)
         body = payload or {}
         draft_or_id = body.get("line_profile") or body.get("line_profile_id") or body
         return AppFirstVersionFacade().apply_line_profile(draft_or_id)
 
     @app.post("/api/app/lineb/audio-route")
-    async def lineb_audio_route(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+    async def lineb_audio_route(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ):  # type: ignore[misc]
+        require_write_auth(authorization)
         body = payload or {}
         return AppFirstVersionFacade().set_lineb_audio_route_policy(
             input_route=str(body.get("input_route") or "unknown"),
@@ -144,7 +192,11 @@ def build_app():  # type: ignore[no-untyped-def]
         )
 
     @app.post("/api/app/lineb/tts-segment")
-    async def lineb_tts_segment(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+    async def lineb_tts_segment(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ):  # type: ignore[misc]
+        require_write_auth(authorization)
         body = payload or {}
         acoustic_refs = body.get("acoustic_refs")
         return AppFirstVersionFacade().register_lineb_tts_segment(
@@ -158,7 +210,11 @@ def build_app():  # type: ignore[no-untyped-def]
         )
 
     @app.post("/api/app/lineb/mic-input")
-    async def lineb_mic_input(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+    async def lineb_mic_input(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ):  # type: ignore[misc]
+        require_write_auth(authorization)
         body = payload or {}
         return AppFirstVersionFacade().classify_lineb_mic_input(
             observed_at=_body_float_or_none(body.get("observed_at")),

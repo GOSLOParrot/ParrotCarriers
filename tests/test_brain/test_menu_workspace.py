@@ -81,11 +81,11 @@ def _reset_state(monkeypatch: pytest.MonkeyPatch):
 
 
 class TestAuditRound4MenuCanvasGuards:
-    """Audit Round 4 (2026-05-11) regressions — Bugs G + I + J.
+    """Audit Round 4 (2026-05-11) regressions: Bugs G + I + J.
 
-    Bug G: ``saveRoomProfile`` could overwrite the builtin ``default``
-    preset (and other reserved sentinel ids) without any guard, silently
-    rebranding the system default.
+    Bug G: RoomSetting save could overwrite the builtin ``default`` preset
+    (and other reserved sentinel ids) without any guard, silently rebranding
+    the system default.
 
     Bug I: ``MenuRegistry.apply_selection`` silently substituted the
     fallback workspace when an unknown ``workspace_id`` was passed,

@@ -595,6 +595,10 @@ def test_l15_pool_route_and_operator_drafts_are_exposed() -> None:
         "/api/l15/obsidian-node/draft",
         json={"profile": "ref", "label": "Missing UUID ref"},
     ).json()
+    blank_label_obsidian = client.post(
+        "/api/l15/obsidian-node/draft",
+        json={"profile": "daily", "label": "   "},
+    ).json()
 
     assert pool["success"] is True
     assert "main" in {item["kind"] for item in pool["buckets"]}
@@ -605,6 +609,9 @@ def test_l15_pool_route_and_operator_drafts_are_exposed() -> None:
     assert bucket_apply_dry_run["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
     assert daily_obsidian["success"] is True
     assert daily_obsidian["data"]["uuid_free_allowed"] is True
+    blank_payload = blank_label_obsidian["data"]["event"]["payload"]
+    assert blank_payload["label"] == "Web Console setting"
+    assert blank_payload["obsidian_note_key"] == "web-console/daily/Web Console setting"
     assert ref_obsidian["success"] is False
     assert ref_obsidian["data"]["error"] == "ref_profile_requires_obsidian_uuid"
 

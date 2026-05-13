@@ -132,6 +132,12 @@ fields to `.cursor/memory/architecture/Interface/**` until App/Web confirmation.
   serialize through `parrot.web_console.runtime_flow_models`. Route smoke
   confirms the typed schema audit field, no-op changed-since remains false, and
   non-Plan HITL receipts expose `core_candidate=CORE-011`.
+- 2026-05-14: React Web Console UX continuation implemented. Memory Graph now
+  supports direct React Flow drag/connect edge drafts with frontend preview
+  edges and selected-edge inspection. Runtime Flow now has a grouped manual
+  trigger palette for message, LLM, scheduler, calendar, scene-switch, and
+  roleplay dry-runs. The shared receipt rail is now a timeline with compact
+  status/summary before raw JSON, and the zh copy in React source is readable.
 - 2026-05-14: Trigger protocol cleanup pass confirmed that
   `DSG-TRIGGER-V2` / `TriggerOutcome` is the active trigger output protocol.
   `MessageNotificationTrigger` now commits `GOOGLE_MESSAGE` observations
@@ -152,6 +158,46 @@ fields to `.cursor/memory/architecture/Interface/**` until App/Web confirmation.
   focused DSG/Web Console trigger, L1.5, TriggerOutcome, and Web route tests,
   including a source guard that keeps new trigger implementations on the
   `TriggerOutcome` name.
+- 2026-05-14: React UX verification: `npm run typecheck` and `npm run build`
+  pass; `tests/test_web_console/test_web_console_server.py` reports
+  `17 passed`; browser smoke on `http://127.0.0.1:7893/` confirms Runtime
+  trigger palette, scene-switch preset, LLM dry-run receipt, Memory node draft
+  receipt and preview, readable Chinese copy, and zero console errors.
+- 2026-05-14: React UX continuation 2: Memory Graph L1.5 bucket board now
+  shows pool health, capacity pressure, current scene, per-bucket node meters,
+  frozen/open state, and last activity. Runtime Flow now consumes
+  `/api/dsg/triggers/catalog` and renders registered trigger chips grouped by
+  kind next to the manual dry-run palette. Verification repeated frontend
+  typecheck/build, Web route tests (`17 passed`), browser Memory/Runtime smoke,
+  and secret scan with no raw secret in React source/dist.
+- 2026-05-14: Bugfix pass: Memory placeholder DSG compartment nodes are no
+  longer valid L2-B edge draft endpoints; failed node/edge receipts no longer
+  create ghost previews; Runtime group headings are localized; Runtime/HITL/
+  Memory action failures now become local failure receipts instead of unhandled
+  browser promise errors. Verification: frontend typecheck/build pass, Web route
+  tests report `17 passed`, Runtime LLM dry-run receipt appears, and browser
+  console errors remain zero.
+- 2026-05-14: L1.5 card continuation: React Memory now exposes the existing
+  Obsidian setting-node draft route as a compact card with `daily`, `roleplay`,
+  and `ref` profiles. Browser smoke confirmed a successful daily UUID-free
+  draft receipt and the expected `ref_profile_requires_obsidian_uuid` failure
+  receipt with zero console errors. Follow-up bugfix added a local `ref` missing
+  UUID guard and warning before any BFF call. No backend route, App DTO, or
+  shared core contract changed.
+- 2026-05-14: Obsidian draft bugfix: whitespace-only labels now normalize to
+  `Web Console setting` in the BFF, preventing empty generated note-key
+  segments. Local frontend receipts now include a random suffix, avoiding key
+  collisions during rapid repeated local guard failures. Verification: Web route
+  tests `17 passed`, frontend typecheck/build pass, and browser receipt-id smoke
+  showed two unique local failure receipts with zero console errors.
+- 2026-05-14: Final React checkpoint audit: reconciled actual
+  `src/parrot/web_console/server.py` route mounts with the Web README and active
+  Runtime/Memory business files. The top-level Web interface ledger now indexes
+  `web/console_dist/` as the formal React shell and includes
+  `GET /api/memory/blackboard/activity` next to the live memory snapshot. Secret
+  scan found only generic env-var references/fake test values, no raw local
+  secret. WEB-012.14 is marked done, while CORE-010/CORE-011 remain candidate
+  review items and no App/Unity DTO was changed by this audit.
 
 ## Pending Core / Data Model Review
 

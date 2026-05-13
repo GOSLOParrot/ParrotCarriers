@@ -119,12 +119,17 @@ Each chat follows this loop:
     report says those server-side repairs are complete. After Castle `c0f1705`,
     the 2026-05-14 fast retry proved Brain participant join and post-join
     business-ok `applyRoomProfile` / `setAppCapabilityMode` with
-    `ner_lineb_room`. Compact `getRoomSettingSnapshot` is legacy
-    diagnostic/fallback only; RoomSetting cold-load/edit/save stays on App
-    HTTP before LiveKit connects. The default LineA room profile still fails
-    correctly against a running LineB Brain. Phone RoomSetting/orchestrator
-    proof is separate and currently blocked by public `8790/7890` returning
-    502.
+    `ner_lineb_room`. The obsolete Brain RoomSetting read/write RPC surface
+    has been removed from active backend code; RoomSetting cold-load/edit/save
+    stays on App HTTP before LiveKit connects. The default LineA room profile
+    still fails correctly against a running LineB Brain. User repaired public
+    ECS routing on 2026-05-14: `8790` RoomSetting returns 2 rooms and `7890`
+    orchestrator health is ok. Phone proof can now move to formal Unity START
+    with RoomSetting save/apply, Tier 1 prewrite, and main-ready gates.
+    App HTTP selector follow-up: `GET /api/app/line-profiles` is reachable,
+    `GET /api/app/personas` was added for selector-safe persona metadata, and
+    app-monitor POST routes can be protected by `PARROT_APP_MONITOR_SECRET`
+    plus Unity's ignored `appApiSecret`.
 
 ## 5. Skill Gate
 

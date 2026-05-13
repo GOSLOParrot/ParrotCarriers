@@ -79,8 +79,8 @@ class ReservedRoomProfileIdError(ValueError):
         super().__init__(
             f"room_profile_id={profile_id!r} is reserved by the system "
             f"(reserved set: {sorted(RESERVED_ROOM_PROFILE_IDS)}); "
-            f"pick a different id (drafts created via newRoomProfile get "
-            f"a fresh ``room_<hex>`` id automatically)."
+            f"pick a different id (RoomSetting new-profile drafts get a "
+            f"fresh ``room_<hex>`` id automatically)."
         )
         self.profile_id = profile_id
 SCHEMA_VERSION = 2
@@ -618,8 +618,8 @@ class PresetLoader:
         reserved ids (``default`` / ``ephemeral`` / ``workspace_only``). A
         ``RoomProfile`` draft with one of those ids would silently rewrite
         the builtin default preset or step on a menu sentinel; raise a
-        typed error so the caller (RoomSetting RPC layer) can return a
-        proper status to Unity / Web instead of corrupting state.
+        typed error so the RoomSetting facade can return a proper status to
+        Unity / Web instead of corrupting state.
         """
         if profile.room_profile_id in RESERVED_ROOM_PROFILE_IDS:
             raise ReservedRoomProfileIdError(profile.room_profile_id)

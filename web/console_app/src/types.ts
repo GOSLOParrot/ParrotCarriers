@@ -54,6 +54,13 @@ export type RuntimeFlow = {
   pending_human_gates?: Array<Record<string, unknown>>;
 };
 
+export type TriggerCatalog = {
+  success?: boolean;
+  action?: string;
+  triggers?: Array<Record<string, unknown>>;
+  audit?: Record<string, unknown>;
+};
+
 export type ConsoleConfig = {
   orchestrator_auth_mode?: string;
   refresh_interval_s?: number;

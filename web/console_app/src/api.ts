@@ -1,4 +1,4 @@
-import type { ConsoleConfig, L15Pool, LiveState, Receipt, RuntimeFlow } from "./types";
+import type { ConsoleConfig, L15Pool, LiveState, Receipt, RuntimeFlow, TriggerCatalog } from "./types";
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -19,6 +19,7 @@ export const api = {
   liveState: () => json<LiveState>("/api/app/live-state?limit=120"),
   l15Pool: () => json<L15Pool>("/api/l15/pool"),
   runtimeFlow: () => json<RuntimeFlow>("/api/runtime/flow"),
+  triggerCatalog: () => json<TriggerCatalog>("/api/dsg/triggers/catalog"),
   runtimeFlowChanges: (since: number) =>
     json<{ changed: boolean; sequence: number; snapshot?: RuntimeFlow }>("/api/runtime/flow/changes?since=" + since),
   hitlPending: () => json<{ gates: Array<Record<string, unknown>> }>("/api/runtime/hitl/pending"),
@@ -34,6 +35,11 @@ export const api = {
     }),
   l15BucketDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/l15/bucket-op/draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  l15ObsidianNodeDraft: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l15/obsidian-node/draft", {
       method: "POST",
       body: JSON.stringify(body)
     }),

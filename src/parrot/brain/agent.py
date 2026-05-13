@@ -443,110 +443,6 @@ async def _generate_reply_after_current_speech(
     return True
 
 
-def _compact_room_setting_snapshot_for_rpc(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Return the RoomSetting shape that is safe for LiveKit RPC responses.
-
-    The full App HTTP snapshot includes rich selector metadata and can exceed
-    LiveKit RPC payload limits. Brain RPC callers only need a launch/sync view;
-    the full RoomSetting editor should continue to use the App HTTP facade.
-    """
-
-    def _pick(raw: Any, keys: tuple[str, ...]) -> dict[str, Any]:
-        if not isinstance(raw, dict):
-            return {}
-        return {key: raw[key] for key in keys if key in raw}
-
-    def _items(raw: Any, keys: tuple[str, ...]) -> list[dict[str, Any]]:
-        if not isinstance(raw, (list, tuple)):
-            return []
-        return [_pick(item, keys) for item in raw if isinstance(item, dict)]
-
-    selectors = snapshot.get("selectors") if isinstance(snapshot, dict) else {}
-    if not isinstance(selectors, dict):
-        selectors = {}
-
-    return {
-        "generated_at": snapshot.get("generated_at"),
-        "active_room": snapshot.get("active_room") or {},
-        "rooms": _items(
-            snapshot.get("rooms"),
-            (
-                "room_profile_id",
-                "display_name",
-                "model_id",
-                "persona_id",
-                "line_id",
-                "line_profile_id",
-                "scene_profile_id",
-                "experience_mode",
-                "workspace_id",
-                "skin_id",
-            ),
-        ),
-        "selectors": {
-            "rooms": _items(
-                selectors.get("rooms"),
-                (
-                    "room_profile_id",
-                    "display_name",
-                    "model_id",
-                    "persona_id",
-                    "line_id",
-                    "line_profile_id",
-                    "experience_mode",
-                    "skin_id",
-                ),
-            ),
-            "models": _items(
-                selectors.get("models"),
-                ("model_id", "display_name", "label", "name", "kind"),
-            ),
-            "personas": _items(
-                selectors.get("personas"),
-                ("persona_id", "display_name", "label", "name"),
-            ),
-            "lines": _items(
-                selectors.get("lines"),
-                (
-                    "line_id",
-                    "display_name",
-                    "state",
-                    "health",
-                    "summary",
-                    "selection_policy",
-                ),
-            ),
-            "line_profiles": _items(
-                selectors.get("line_profiles"),
-                (
-                    "line_profile_id",
-                    "display_name",
-                    "line_id",
-                    "asr_profile_id",
-                    "tts_profile_id",
-                    "voiceprint_profile_id",
-                    "echo_policy_id",
-                ),
-            ),
-            "scenes": _items(
-                selectors.get("scenes"),
-                ("scene_id", "display_name", "label", "name", "kind"),
-            ),
-            "skins": _items(selectors.get("skins"), ("skin_id", "display_name")),
-            "workspaces": _items(
-                selectors.get("workspaces"),
-                ("workspace_id", "display_name", "label", "name"),
-            ),
-            "experience_modes": _items(
-                selectors.get("experience_modes"),
-                ("experience_mode", "display_name", "requires"),
-            ),
-            "defaults": selectors.get("defaults") or {},
-        },
-        "compatibility": snapshot.get("compatibility") or {},
-    }
-
-
 def _attach_menu_rpc(room: "Any") -> None:
     """Expose menu/workspace business RPCs to Unity.
 
@@ -611,76 +507,6 @@ def _attach_menu_rpc(room: "Any") -> None:
         from parrot.brain.menu_registry import get_menu_registry
 
         return _dump({"status": "ok", "snapshot": get_menu_registry().list_blocks()})
-
-    @room.local_participant.register_rpc_method("getRoomSettingSnapshot")
-    async def _get_room_setting_snapshot(data: "Any") -> str:
-        from parrot.brain.app_first_version import AppFirstVersionFacade
-
-        payload = _payload(data)
-        snapshot = AppFirstVersionFacade().room_setting_snapshot(
-            str(payload.get("room_profile_id") or "") or None
-        ).as_json()
-        compact = not _payload_bool(payload, "full", False)
-        if compact:
-            snapshot = _compact_room_setting_snapshot_for_rpc(snapshot)
-        return _dump({"status": "ok", "snapshot": snapshot, "compact": compact})
-
-    @room.local_participant.register_rpc_method("previewRoomProfile")
-    async def _preview_room_profile(data: "Any") -> str:
-        from parrot.brain.app_first_version import AppFirstVersionFacade
-
-        payload = _payload(data)
-        # FIX (2026-05-11 audit Round 4, Bug H): same payload-shape warning
-        # as ``applyRoomProfile`` (Round 2 Bug D) and ``saveRoomProfile``.
-        # A typo in the ``room_profile`` wrapper used to silently fall back
-        # to the whole payload, which then ran through RoomProfile.from_json
-        # with all defaults — preview looked plausible but was for an empty
-        # profile, masking real frontend bugs.
-        room_profile = payload.get("room_profile")
-        if not isinstance(room_profile, dict):
-            logger.warning(
-                "previewRoomProfile: payload missing 'room_profile' wrapper; "
-                "treating top-level keys as draft. payload_keys=%s",
-                sorted(payload.keys()),
-            )
-        draft = room_profile if isinstance(room_profile, dict) else payload
-        return _dump({"status": "ok", "preview": AppFirstVersionFacade().preview_room_profile(draft)})
-
-    @room.local_participant.register_rpc_method("newRoomProfile")
-    async def _new_room_profile(data: "Any") -> str:
-        from parrot.brain.app_first_version import AppFirstVersionFacade
-
-        payload = _payload(data)
-        draft = AppFirstVersionFacade().new_room_profile(
-            base_id=str(payload.get("base_id") or "") or None,
-            display_name=str(payload.get("display_name") or "") or None,
-        )
-        return _dump({"status": "ok", "draft": draft})
-
-    @room.local_participant.register_rpc_method("saveRoomProfile")
-    async def _save_room_profile(data: "Any") -> str:
-        from parrot.brain.app_first_version import AppFirstVersionFacade
-
-        payload = _payload(data)
-        # FIX (2026-05-11 audit Round 4, Bug H): same payload-shape warning
-        # as ``applyRoomProfile`` (Round 2 Bug D). A typo in the wrapper key
-        # used to silently treat the whole payload as a draft, which combined
-        # with the now-fixed Bug G (reserved id guard) could either overwrite
-        # the default preset or save under an unintended id.
-        room_profile = payload.get("room_profile")
-        if not isinstance(room_profile, dict):
-            logger.warning(
-                "saveRoomProfile: payload missing 'room_profile' wrapper; "
-                "treating top-level keys as draft. payload_keys=%s",
-                sorted(payload.keys()),
-            )
-        draft = room_profile if isinstance(room_profile, dict) else payload
-        saved = AppFirstVersionFacade().save_room_profile(draft)
-        # FIX (Bug G): if save_room_profile rejected the id (reserved), the
-        # facade now returns ``status="error"``; mirror that into the RPC
-        # response so Unity sees the failure instead of a generic "ok".
-        rpc_status = "error" if saved.get("status") == "error" else "ok"
-        return _dump({"status": rpc_status, "saved": saved})
 
     @room.local_participant.register_rpc_method("applyRoomProfile")
     async def _apply_room_profile(data: "Any") -> str:
@@ -1024,9 +850,8 @@ def _attach_menu_rpc(room: "Any") -> None:
         "Menu RPC handlers registered: listMenuBlocks, applyMenuSelection, "
         "applyPreset, saveAsPreset, applyWorkspace, setAppCapabilityMode, "
         "setPhotoAwareness, setCameraMode, setXrHandMode, "
-        "getRoomSettingSnapshot, previewRoomProfile, newRoomProfile, "
-        "saveRoomProfile, applyRoomProfile, setLineBAudioRoutePolicy, "
-        "registerLineBTtsSegment, classifyLineBMicInput, forceUnityReconnect"
+        "applyRoomProfile, setLineBAudioRoutePolicy, registerLineBTtsSegment, "
+        "classifyLineBMicInput, forceUnityReconnect"
     )
 
 

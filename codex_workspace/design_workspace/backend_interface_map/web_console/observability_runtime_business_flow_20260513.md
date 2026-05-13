@@ -136,6 +136,14 @@ remain CORE-011 candidates rather than shared App DTO fields.
   instead of hard-coding approve buttons. The UI also shows the configured
   refresh interval and keeps Runtime graph positions lane-local for easier
   scanning.
+- React Runtime Flow now reads the existing `GET /api/dsg/triggers/catalog`
+  route and renders registered trigger chips grouped by kind. This keeps the
+  manual dry-run palette aligned with the real trigger registry without adding
+  a new Web route or calling Brain trigger singletons from the browser.
+- Runtime trigger group headings are localized through the same zh/en copy table
+  as the rest of the console. Runtime action and HITL request failures now
+  create local failure receipts, keeping the operator audit trail visible even
+  when a BFF call fails.
 
 2026-05-14 typed schema upgrade result:
 
@@ -169,6 +177,12 @@ Verification:
 - Browser smoke: React Runtime Flow served on `http://127.0.0.1:7893/`,
   manual LLM trigger draft produced a receipt, zh/en toggle worked without
   mojibake, and browser console errors stayed at zero.
+- React trigger-catalog smoke: Runtime page showed registered trigger chips,
+  including `event_driven` and `on_demand`, next to the manual Message/Runtime/
+  Mode action groups; browser console errors stayed at zero.
+- Bugfix smoke: zh mode showed localized action groups (`消息`, `运行`, `模式`),
+  the LLM dry-run button produced a `dsg.trigger.draft_event` receipt, and
+  browser console errors stayed at zero.
 - HTTP smoke after the typed schema upgrade:
   `/api/runtime/flow` returned
   `typed_schema=parrot.web_console.runtime_flow_models`; non-Plan HITL draft
@@ -249,8 +263,9 @@ surface.
 Done for WEB-002 skeleton:
 
 - BFF: `src/parrot/web_console/server.py`
-- Static frontend: `web/console/index.html`, `web/console/assets/styles.css`,
-  `web/console/assets/app.js`
+- Static frontend: legacy skeleton in `web/console/index.html` and
+  `web/console/assets/*`; WEB-012 formal React build in `web/console_dist/`
+  is served first when present.
 - Launcher: `src/scripts/start_web_console.py`
 - Tests: `tests/test_web_console/test_web_console_server.py`
 - Local run verified at `http://127.0.0.1:7893/`
@@ -525,11 +540,18 @@ Changed in this slice:
 - Added preset buttons for `message_check`, `message_push`,
   `llm_context_push`, `scheduler_tick`, `calendar_event`, and
   `web_console_custom`.
+- React continuation expands the visible preset set to message check, message
+  push, LLM context push, scheduler tick, calendar test, scene switch, and
+  roleplay-open. Scene and roleplay presets use `kind=scene_switch` and
+  `kind=roleplay_mode` to match the current on-demand trigger protocol.
 - Message actions still use the existing Nanobot/Web routes:
   `POST /api/google/messages/check` and `POST /api/google/messages/push-test`.
 - LLM/scheduler/calendar/custom presets write the raw event textarea and call
   `POST /api/dsg/triggers/draft-event`, so the browser still receives a safe
   draft receipt rather than calling Brain trigger singletons.
+- React continuation replaces the single receipt block with a receipt timeline
+  that summarizes matched triggers/errors first and keeps raw JSON available in
+  the same card.
 
 Verification:
 
@@ -538,10 +560,13 @@ Verification:
 - In-app browser Runtime smoke:
   trigger palette is visible, the LLM context push preset returns a receipt,
   and no console errors are reported.
+- React browser smoke on `http://127.0.0.1:7893/`: Runtime trigger palette and
+  scene-switch preset visible; LLM dry-run returns `dsg.trigger.draft_event`
+  with matched trigger text; Chinese copy is readable; console errors remain
+  zero.
 
 Remaining work:
 
 - Add grouped catalog-driven trigger buttons once the catalog shape is rich
   enough for stable labels.
-- Add a receipt timeline instead of a single receipt block.
 - Add explicit operator execution copy before any non-dry-run fire path.

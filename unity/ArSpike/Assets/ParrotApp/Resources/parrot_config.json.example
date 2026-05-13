@@ -4,6 +4,7 @@
   "liveKitUrl": "ws://YOUR_CASTLE_IP:7880",
   "room": "parrot-main",
   "appApiUrl": "http://127.0.0.1:8790",
+  "appApiSecret": "dev-only-same-as-PARROT_APP_MONITOR_SECRET-when-enabled",
   "orchestratorUrl": "http://127.0.0.1:7890",
   "orchestratorSecret": "dev-only-same-as-PARROT_ORCH_SECRET"
 }

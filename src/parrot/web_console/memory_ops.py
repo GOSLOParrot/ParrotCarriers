@@ -724,7 +724,7 @@ def _obsidian_node_payload(body: dict[str, Any]) -> dict[str, Any]:
         profile = "ref"
     if profile not in {"daily", "roleplay", "ref"}:
         profile = "daily"
-    label = str(body.get("label") or "Web Console setting").strip()[:128]
+    label = str(body.get("label") or "").strip()[:128] or "Web Console setting"
     tags = body.get("tags")
     if isinstance(tags, str):
         tags = [item.strip() for item in tags.split(",") if item.strip()]

@@ -29,6 +29,8 @@ namespace ParrotApp.Backend
             var config = ParrotRuntimeConfig.Load();
             if (!string.IsNullOrWhiteSpace(config.appApiUrl))
                 appApiBaseUrl = config.appApiUrl.TrimEnd('/');
+            if (!string.IsNullOrWhiteSpace(config.appApiSecret))
+                bearerSecret = config.appApiSecret;
         }
 
         public IEnumerator LoadSnapshot(string roomProfileId, Action<RequestResult<RoomSettingSnapshotDto>> onComplete)

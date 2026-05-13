@@ -215,6 +215,25 @@ class AppFirstVersionFacade:
 
         return get_room_setting_service().snapshot(room_profile_id)
 
+    def list_personas(self) -> tuple[dict[str, Any], ...]:
+        """Return persona metadata safe for App selectors.
+
+        The App needs labels and ids, not prompt bodies or server file paths.
+        Keep the full markdown content behind PersonaLoader/Brain runtime.
+        """
+        from parrot.brain.persona_loader import get_persona_loader
+
+        return tuple(
+            {
+                "persona_id": persona.persona_id,
+                "display_name": persona.display_name,
+                "description": persona.description,
+                "schema_version": persona.schema_version,
+                "tags": list(persona.tags),
+            }
+            for persona in get_persona_loader().list_personas()
+        )
+
     def preview_room_profile(self, draft: dict[str, Any]) -> dict[str, Any]:
         """Preview a RoomProfile draft without writing Blackboard state."""
         from parrot.brain.room_setting import get_room_setting_service

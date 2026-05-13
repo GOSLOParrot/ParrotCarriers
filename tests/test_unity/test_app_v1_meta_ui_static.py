@@ -287,6 +287,8 @@ def test_formal_startup_roomsetting_cold_load_uses_app_http_facade() -> None:
     assert "public SkinSelectorDto[] skins" in dtos
     assert "ApplyRoomProfileResponseDto" in dtos
     assert "appApiUrl" in runtime
+    assert "appApiSecret" in runtime
+    assert "config.appApiSecret" in client
 
 
 def test_formal_startup_layout_targets_landscape_phone_and_theme_selector() -> None:
@@ -605,6 +607,7 @@ def test_arspike_mint_client_uses_gitignored_runtime_config_without_logging_secr
     assert config["mintSecret"] == "same-as-PARROT_MINT_SECRET-on-castle"
     assert config["room"] == "parrot-main"
     assert config["appApiUrl"].endswith(":8790")
+    assert config["appApiSecret"] == "dev-only-same-as-PARROT_APP_MONITOR_SECRET-when-enabled"
     assert config["orchestratorUrl"].endswith(":7890")
     assert config["orchestratorSecret"] == "dev-only-same-as-PARROT_ORCH_SECRET"
 

@@ -14,14 +14,14 @@ namespace ParrotApp.UI
     /// Tier semantics:
     ///   0  BB-write only (instant, no UI prompt)
     ///   1  LiveKit reconnect (Brain process stays up)
-    ///   2  Brain process restart (5–10s downtime, progress bar)
+    ///   2  Brain process restart (5-20s downtime, progress bar)
     ///   3  Operator-only (never offered to Unity UI)
     ///
-    /// Wire: this DTO is filled either from the Brain RPC
-    /// <c>getRoomSettingSnapshot</c> response (per-row <c>tier</c> field on
-    /// each line selector and the top-level <c>compatibility.tier</c>) or by
-    /// fetching <c>setting_change_tier.json</c> directly when the orchestrator
-    /// isn't reachable.
+    /// Wire: this DTO is filled from the App HTTP RoomSetting snapshot
+    /// (per-row <c>tier</c> field on each line selector and the top-level
+    /// <c>compatibility.tier</c>) or by fetching
+    /// <c>setting_change_tier.json</c> directly when the orchestrator isn't
+    /// reachable.
     /// </summary>
     [Serializable]
     public class SettingChangeTierDto

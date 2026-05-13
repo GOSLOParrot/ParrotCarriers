@@ -9,6 +9,7 @@ from parrot.brain.app_v1_self_check import run_app_v1_self_check
 from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
 from parrot.brain.lineb_audio_guard import reset_lineb_audio_guard_for_test
 from parrot.brain.l2b_monitor import build_l2b_snapshot
+from parrot.brain.persona_loader import set_persona_loader_for_test
 from parrot.brain.preset_loader import PresetLoader, set_preset_loader_for_test
 from parrot.brain.workspace_registry import WorkspaceRegistry, set_workspace_registry_for_test
 import parrot.dsg.l2b_graph as l2b_graph_module
@@ -24,6 +25,7 @@ def _reset_state(tmp_path):
     refs_registry.reset_refs_for_tests()
     set_intent_workspace_for_test(IntentWorkspace())
     l2b_graph_module._instance = L2BGraph()
+    set_persona_loader_for_test(None)
     set_preset_loader_for_test(PresetLoader(search_paths=[tmp_path / "presets"]))
     set_workspace_registry_for_test(WorkspaceRegistry(search_paths=[tmp_path / "workspaces"]))
     yield
@@ -31,6 +33,7 @@ def _reset_state(tmp_path):
     refs_registry.reset_refs_for_tests()
     l2b_graph_module._instance = None
     set_intent_workspace_for_test(None)
+    set_persona_loader_for_test(None)
     set_preset_loader_for_test(None)
     set_workspace_registry_for_test(None)
 
@@ -81,6 +84,46 @@ def test_monitor_health_and_canvas_endpoints() -> None:
     assert any(w["workspace_id"] == "workdesk" for w in body["workspaces"])
     assert len(body["tool_cabinet"]) >= 6
     assert body["asset_manifest"]["schema_version"] == 1
+
+
+def test_monitor_personas_endpoint_lists_selector_metadata() -> None:
+    from fastapi.testclient import TestClient
+
+    client = TestClient(build_app())
+
+    response = client.get("/api/app/personas")
+
+    assert response.status_code == 200
+    personas = response.json()
+    assert {row["persona_id"] for row in personas} >= {
+        "goslo_parrot_default",
+        "ner_companion",
+    }
+    assert all("text" not in row for row in personas)
+    assert all("file_path" not in row for row in personas)
+
+
+def test_monitor_write_auth_is_optional_but_enforced_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("PARROT_APP_MONITOR_SECRET", "unit-secret")
+    client = TestClient(build_app())
+
+    open_read = client.get("/api/app/personas")
+    blocked = client.post("/api/app/room-setting/preview", json={})
+    allowed = client.post(
+        "/api/app/room-setting/preview",
+        json={},
+        headers={"Authorization": "Bearer unit-secret"},
+    )
+
+    assert open_read.status_code == 200
+    assert blocked.status_code == 401
+    assert blocked.json()["detail"] == "app_monitor_auth_required"
+    assert allowed.status_code == 200
+    assert "compatibility" in allowed.json()
 
 
 def test_console_action_endpoints_drive_app_tool_flows() -> None:

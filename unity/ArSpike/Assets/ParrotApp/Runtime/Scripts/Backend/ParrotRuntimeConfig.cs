@@ -11,6 +11,7 @@ namespace ParrotApp.Backend
         public string liveKitUrl = "";
         public string room = "";
         public string appApiUrl = "";
+        public string appApiSecret = "";
         public string orchestratorUrl = "";
         public string orchestratorSecret = "";
     }

@@ -134,8 +134,8 @@ Current useful scope:
   that matches the running Brain line.
 
 Boundary: formal startup cold-load/edit/save uses the App HTTP facade before
-LiveKit connects. `getRoomSettingSnapshot` is a legacy Brain RPC
-diagnostic/fallback and must not be treated as formal App scene evidence.
+LiveKit connects. Brain RoomSetting read/write RPCs have been removed from
+active backend code and must not be recreated as formal App scene evidence.
 
 Pollution rule: do not copy this Python client's media, transcript, Redis, or
 test-harness assumptions into the mobile Unity App. Phone behavior for iQOO
