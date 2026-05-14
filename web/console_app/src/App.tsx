@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useState, type MouseEvent as ReactMouseEvent } from "react";
 import ReactFlow, {
   Background,
   type Connection,
@@ -20,6 +20,8 @@ import {
   Activity,
   Bell,
   CalendarDays,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   CircleDot,
   GitBranch,
@@ -52,6 +54,15 @@ type MemoryNodeData = {
   source?: Record<string, unknown>;
   preview?: boolean;
 };
+
+type EdgeHandlePair = {
+  sourceHandle?: string;
+  targetHandle?: string;
+};
+
+type HandleSide = "top" | "right" | "bottom" | "left";
+
+type NodePositionMap = Map<string, { x: number; y: number }>;
 
 const memoryNodeTypes: NodeTypes = {
   memory: MemoryNodeCard
@@ -91,6 +102,8 @@ const dict = {
     selected: "Selection",
     createNode: "New Node",
     draftEdge: "Connect Edge",
+    tools: "Tools",
+    closeTools: "Close Tools",
     messageCheck: "Message Check",
     messagePush: "Message Push",
     actionGroupMessage: "Message",
@@ -128,7 +141,7 @@ const dict = {
     nodeLabel: "Node label",
     fromUuid: "from uuid",
     toUuid: "to uuid",
-    connectHint: "Double-click empty canvas to create a Node. Drag between Node handles to preview an Edge.",
+    connectHint: "Double-click to add; drag handles to connect.",
     selectedEdgeTools: "Edge Operations",
     retargetEdge: "Preview Retarget",
     swapEdge: "Swap",
@@ -173,6 +186,8 @@ const dict = {
     selected: "选中项",
     createNode: "新建 Node",
     draftEdge: "连接 Edge",
+    tools: "工具",
+    closeTools: "收起工具",
     messageCheck: "查新消息",
     messagePush: "消息推送",
     actionGroupMessage: "消息",
@@ -210,7 +225,7 @@ const dict = {
     nodeLabel: "Node 标签",
     fromUuid: "起点 UUID",
     toUuid: "终点 UUID",
-    connectHint: "双击空白画布新建 Node；拖动 Node 连接点可创建 Edge 预览。",
+    connectHint: "双击新建；拖动连接点连 Edge。",
     selectedEdgeTools: "Edge 操作",
     retargetEdge: "重定向预览",
     swapEdge: "交换端点",
@@ -242,8 +257,11 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [receipts, pushReceipt] = useReducer(receiptReducer, []);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [recordsOpen, setRecordsOpen] = useState(false);
   const t = dict[language];
-  const refreshIntervalS = Math.max(3, Math.round(Number(config.refresh_interval_s ?? 5)));
+  const configuredRefreshIntervalS = Math.max(3, Math.round(Number(config.refresh_interval_s ?? 5)));
+  const refreshIntervalS = view === "memory" ? Math.min(configuredRefreshIntervalS, 5) : configuredRefreshIntervalS;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -283,24 +301,29 @@ export function App() {
   };
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}${recordsOpen ? "" : " records-collapsed"}`}>
+      <aside className={sidebarOpen ? "sidebar" : "sidebar collapsed"}>
+        <button className="sidebar-toggle" onClick={() => setSidebarOpen((open) => !open)} title={sidebarOpen ? "Collapse" : "Expand"}>
+          <PanelRightOpen size={17} />
+        </button>
         <div className="brand">
           <div className="brand-mark">P</div>
-          <div>
-            <strong>Parrot Console</strong>
-            <small>React Web lane</small>
-          </div>
+          {sidebarOpen ? (
+            <div>
+              <strong>Parrot Console</strong>
+              <small>React Web lane</small>
+            </div>
+          ) : null}
         </div>
-        <button className={view === "memory" ? "nav active" : "nav"} onClick={() => setView("memory")}>
-          <GitBranch size={18} /> {t.memory}
+        <button className={view === "memory" ? "nav active" : "nav"} onClick={() => setView("memory")} title={t.memory}>
+          <GitBranch size={18} /> {sidebarOpen ? t.memory : null}
         </button>
-        <button className={view === "runtime" ? "nav active" : "nav"} onClick={() => setView("runtime")}>
-          <Activity size={18} /> {t.runtime}
+        <button className={view === "runtime" ? "nav active" : "nav"} onClick={() => setView("runtime")} title={t.runtime}>
+          <Activity size={18} /> {sidebarOpen ? t.runtime : null}
         </button>
         <div className="sidebar-footer">
-          <span><CircleDot size={14} /> {t.auth}: {config.orchestrator_auth_mode || "..."}</span>
-          <button className="nav small" onClick={() => setLang(language === "zh" ? "en" : "zh")}>
+          {sidebarOpen ? <span><CircleDot size={14} /> {t.auth}: {config.orchestrator_auth_mode || "..."}</span> : null}
+          <button className="nav small" onClick={() => setLang(language === "zh" ? "en" : "zh")} title={t.language}>
             <Languages size={16} /> {language === "zh" ? "EN" : "\u4e2d\u6587"}
           </button>
         </div>
@@ -311,7 +334,6 @@ export function App() {
           <div>
             <span className="eyebrow">{view === "memory" ? t.memory : t.runtime}</span>
             <h1>{view === "memory" ? t.memory : t.runtime}</h1>
-            <p>{view === "memory" ? t.memorySummary : t.runtimeSummary}</p>
           </div>
           <div className="topbar-actions">
             <span className={loading ? "live-pill loading" : "live-pill"}>
@@ -330,7 +352,7 @@ export function App() {
         )}
       </main>
 
-      <ReceiptRail receipts={receipts} t={t} />
+      <ReceiptRail receipts={receipts} t={t} open={recordsOpen} onToggle={() => setRecordsOpen((open) => !open)} />
     </div>
   );
 }
@@ -354,6 +376,7 @@ function MemoryGraphWorkspace({
   const [nodeLabel, setNodeLabel] = useState("Web Test Node");
   const [manualPositions, setManualPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<MemoryNodeData> | null>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   const l2bNodes = liveState.l2b?.nodes ?? [];
   const l2bEdges = liveState.l2b?.edges ?? [];
@@ -382,6 +405,10 @@ function MemoryGraphWorkspace({
     () => new Set(graphNodes.filter((node) => isDraftableMemoryNodeId(node.id)).map((node) => node.id)),
     [graphNodes]
   );
+  const nodePositions = useMemo<NodePositionMap>(
+    () => new Map(graphNodes.map((node) => [node.id, node.position])),
+    [graphNodes]
+  );
 
   const graphEdges = useMemo<Edge[]>(() => {
     const persisted: Edge[] = [];
@@ -389,10 +416,13 @@ function MemoryGraphWorkspace({
       const source = edgeEndpoint(row, "source");
       const target = edgeEndpoint(row, "target");
       if (!source || !target) return;
+      const handles = inferEdgeHandles(source, target, nodePositions);
       persisted.push({
         id: `edge-${index}-${source}-${target}`,
         source,
         target,
+        sourceHandle: handles.sourceHandle,
+        targetHandle: handles.targetHandle,
         label: String(row.kind || ""),
         className: row.cross_compartment ? "cross-edge" : "",
         reconnectable: true,
@@ -401,9 +431,10 @@ function MemoryGraphWorkspace({
     });
     return [...persisted, ...previewEdges].map((edge) => ({
       ...edge,
+      ...(edge.sourceHandle && edge.targetHandle ? {} : inferEdgeHandles(edge.source, edge.target, nodePositions)),
       selected: edge.id === selectedEdgeId
     }));
-  }, [l2bEdges, previewEdges, selectedEdgeId]);
+  }, [l2bEdges, nodePositions, previewEdges, selectedEdgeId]);
 
   const onNodeClick: NodeMouseHandler = (_, node) => {
     const source = (node.data as { source?: Record<string, unknown> }).source ?? {};
@@ -416,7 +447,15 @@ function MemoryGraphWorkspace({
 
   const onEdgeClick: EdgeMouseHandler = (_, edge) => {
     const source = (edge.data as { source?: Record<string, unknown> } | undefined)?.source ?? {};
-    setSelected({ selection_type: "edge", id: edge.id, source: edge.source, target: edge.target, ...source });
+    setSelected({
+      ...source,
+      selection_type: "edge",
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      source_handle: formatHandleSide(edge.sourceHandle),
+      target_handle: formatHandleSide(edge.targetHandle)
+    });
     setEdgeFrom(edge.source);
     setEdgeTo(edge.target);
   };
@@ -479,7 +518,8 @@ function MemoryGraphWorkspace({
     from: string,
     to: string,
     reason: string,
-    meta: Record<string, unknown> = {}
+    meta: Record<string, unknown> = {},
+    handles: EdgeHandlePair = {}
   ) => {
     const source = from.trim();
     const target = to.trim();
@@ -502,19 +542,31 @@ function MemoryGraphWorkspace({
         operator_mode: false
       });
       if (receipt.success !== false && draftableNodeIds.has(source) && draftableNodeIds.has(target)) {
+        const resolvedHandles = completeEdgeHandles(source, target, nodePositions, handles);
         setPreviewEdges((rows) => [
           ...rows,
           {
             id: `${makeDraftId("edge")}:${source}:${target}`,
             source,
             target,
+            sourceHandle: resolvedHandles.sourceHandle,
+            targetHandle: resolvedHandles.targetHandle,
             label: "associated_with",
             className: reason === "edge_retarget" || reason === "edge_reconnect" ? "preview-edge retarget-edge" : "preview-edge",
             animated: true,
             reconnectable: true,
             type: "smoothstep",
             style: { strokeWidth: 3 },
-            data: { source: { kind: "associated_with", reason, preview: true, ...meta } }
+            data: {
+              source: {
+                kind: "associated_with",
+                reason,
+                preview: true,
+                ...meta,
+                source_handle: resolvedHandles.sourceHandle,
+                target_handle: resolvedHandles.targetHandle
+              }
+            }
           }
         ]);
       }
@@ -537,7 +589,10 @@ function MemoryGraphWorkspace({
       }));
       return;
     }
-    void draftEdgeBetween(source, target, "canvas_connect");
+    void draftEdgeBetween(source, target, "canvas_connect", {}, {
+      sourceHandle: connection.sourceHandle || undefined,
+      targetHandle: connection.targetHandle || undefined
+    });
   };
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -562,6 +617,8 @@ function MemoryGraphWorkspace({
       id: oldEdge.id,
       source,
       target,
+      source_handle: formatHandleSide(connection.sourceHandle) || formatHandleSide(oldEdge.sourceHandle),
+      target_handle: formatHandleSide(connection.targetHandle) || formatHandleSide(oldEdge.targetHandle),
       previous_source: oldEdge.source,
       previous_target: oldEdge.target,
       retarget_preview: true
@@ -580,6 +637,9 @@ function MemoryGraphWorkspace({
       selected_edge_id: oldEdge.id,
       previous_source: oldEdge.source,
       previous_target: oldEdge.target
+    }, {
+      sourceHandle: connection.sourceHandle || oldEdge.sourceHandle || undefined,
+      targetHandle: connection.targetHandle || oldEdge.targetHandle || undefined
     });
   };
 
@@ -668,16 +728,26 @@ function MemoryGraphWorkspace({
       </div>
 
       <div className="canvas-panel">
-        <div className="canvas-toolbar">
-          <span className="toolbar-hint"><GitBranch size={15} /> {t.connectHint}</span>
-          <input value={nodeLabel} onChange={(event) => setNodeLabel(event.target.value)} placeholder={t.nodeLabel} />
-          <button className="button primary" onClick={() => void draftNode()}><Plus size={16} /> {t.createNode}</button>
-          <input value={edgeFrom} onChange={(event) => setEdgeFrom(event.target.value)} placeholder={t.fromUuid} />
-          <input value={edgeTo} onChange={(event) => setEdgeTo(event.target.value)} placeholder={t.toUuid} />
-          <button className="button" onClick={() => void draftEdgeBetween(edgeFrom, edgeTo, "toolbar")}><GitBranch size={16} /> {t.draftEdge}</button>
-          <button className="button ghost" onClick={focusSelection}><CircleDot size={16} /> {t.focusSelection}</button>
-          <button className="button ghost" onClick={layoutGraph}><Workflow size={16} /> {t.layoutGraph}</button>
-          <button className="button ghost" onClick={clearPreview}><Trash2 size={16} /> {t.clear}</button>
+        <div className={toolsOpen ? "canvas-toolbar expanded" : "canvas-toolbar compact"}>
+          <div className="toolbar-main">
+            <span className="toolbar-hint"><GitBranch size={15} /> {t.connectHint}</span>
+            <input className="node-label-input" value={nodeLabel} onChange={(event) => setNodeLabel(event.target.value)} placeholder={t.nodeLabel} />
+            <button className="button primary" onClick={() => void draftNode()}><Plus size={16} /> {t.createNode}</button>
+            <button className="button ghost" onClick={focusSelection}><CircleDot size={16} /> {t.focusSelection}</button>
+            <button className="button ghost" onClick={layoutGraph}><Workflow size={16} /> {t.layoutGraph}</button>
+            <button className="button ghost" onClick={() => setToolsOpen((open) => !open)}>
+              {toolsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              {toolsOpen ? t.closeTools : t.tools}
+            </button>
+          </div>
+          {toolsOpen ? (
+            <div className="toolbar-drawer">
+              <input value={edgeFrom} onChange={(event) => setEdgeFrom(event.target.value)} placeholder={t.fromUuid} />
+              <input value={edgeTo} onChange={(event) => setEdgeTo(event.target.value)} placeholder={t.toUuid} />
+              <button className="button" onClick={() => void draftEdgeBetween(edgeFrom, edgeTo, "toolbar")}><GitBranch size={16} /> {t.draftEdge}</button>
+              <button className="button ghost" onClick={clearPreview}><Trash2 size={16} /> {t.clear}</button>
+            </div>
+          ) : null}
         </div>
         <ReactFlow
           nodes={graphNodes}
@@ -700,7 +770,12 @@ function MemoryGraphWorkspace({
           zoomOnDoubleClick={false}
           fitView
         >
-          <MiniMap pannable zoomable />
+          <MiniMap
+            pannable
+            zoomable
+            nodeColor={(node) => (node.selected ? "#7bd99f" : node.className?.includes("preview") ? "#5f8f6a" : "#3a4250")}
+            maskColor="rgba(15, 17, 22, 0.72)"
+          />
           <Controls />
           <Background />
         </ReactFlow>
@@ -1060,7 +1135,6 @@ function EmptyL2BHint({ liveState, t }: { liveState: LiveState; t: ConsoleCopy }
     <div className="empty-graph-hint">
       <div>
         <strong>{t.emptyGraphTitle}</strong>
-        <p>{t.emptyGraphBody}</p>
       </div>
       <div className="empty-scope-row">
         {rows.map((row) => (
@@ -1179,6 +1253,8 @@ function SelectedEdgeTools({
 }) {
   const previousSource = String(selected.previous_source || selected.source || "");
   const previousTarget = String(selected.previous_target || selected.target || "");
+  const sourceHandle = String(selected.source_handle || "");
+  const targetHandle = String(selected.target_handle || "");
   return (
     <article className="edge-tools">
       <div className="edge-tools-head">
@@ -1191,7 +1267,7 @@ function SelectedEdgeTools({
         <span>{t.toUuid}</span>
         <strong>{edgeTo || "-"}</strong>
       </div>
-      <small>{`${previousSource} -> ${previousTarget}`}</small>
+      <small>{`${previousSource} -> ${previousTarget}${sourceHandle || targetHandle ? ` (${sourceHandle || "?"} -> ${targetHandle || "?"})` : ""}`}</small>
       <div className="button-row">
         <button className="button small" onClick={onRetarget}>{t.retargetEdge}</button>
         <button className="button small ghost" onClick={onSwap}>{t.swapEdge}</button>
@@ -1251,10 +1327,34 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ReceiptRail({ receipts, t }: { receipts: Receipt[]; t: ConsoleCopy }) {
+function ReceiptRail({
+  receipts,
+  t,
+  open,
+  onToggle
+}: {
+  receipts: Receipt[];
+  t: ConsoleCopy;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  if (!open) {
+    return (
+      <aside className="receipt-rail collapsed">
+        <button className="rail-toggle" onClick={onToggle} title={t.receiptTimeline}>
+          <PanelRightOpen size={17} />
+        </button>
+      </aside>
+    );
+  }
   return (
     <aside className="receipt-rail">
-      <h2>{t.receiptTimeline}</h2>
+      <div className="rail-head">
+        <h2>{t.receiptTimeline}</h2>
+        <button className="rail-toggle" onClick={onToggle} title="Collapse">
+          <PanelRightOpen size={17} />
+        </button>
+      </div>
       {receipts.length ? receipts.map((receipt, index) => {
         const id = receiptId(receipt, index);
         const data = receipt.data ?? {};
@@ -1290,22 +1390,31 @@ function MemoryNodeCard({ data, selected, isConnectable }: NodeProps<MemoryNodeD
   const nodeKind = String(data.source?.kind || (data.preview ? "preview" : "node"));
   const compactId = String(data.source?.uuid || "").slice(0, 18);
   const handlePositions = [
-    { id: "top", position: Position.Top },
-    { id: "right", position: Position.Right },
-    { id: "bottom", position: Position.Bottom },
-    { id: "left", position: Position.Left }
-  ];
+    { side: "top", position: Position.Top },
+    { side: "right", position: Position.Right },
+    { side: "bottom", position: Position.Bottom },
+    { side: "left", position: Position.Left }
+  ] as const;
 
   return (
     <div className={selected ? "memory-node-card selected" : "memory-node-card"}>
       {handlePositions.map((handle) => (
-        <Handle
-          key={handle.id}
-          id={handle.id}
-          type="source"
-          position={handle.position}
-          isConnectable={isConnectable}
-        />
+        <Fragment key={handle.side}>
+          <Handle
+            id={sourceHandleId(handle.side)}
+            type="source"
+            position={handle.position}
+            isConnectable={isConnectable}
+            className="memory-handle memory-handle-source"
+          />
+          <Handle
+            id={targetHandleId(handle.side)}
+            type="target"
+            position={handle.position}
+            isConnectable={isConnectable}
+            className="memory-handle memory-handle-target"
+          />
+        </Fragment>
       ))}
       <div className="memory-node-title">{data.label}</div>
       <div className="memory-node-meta">
@@ -1338,6 +1447,55 @@ function isDraftableMemoryNodeId(id: string): boolean {
 
 function makeDraftId(kind: string): string {
   return `draft:${kind}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeHandleSide(value: string | null | undefined): HandleSide | null {
+  const raw = String(value || "").replace(/^(source|target)-/, "");
+  if (raw === "top" || raw === "right" || raw === "bottom" || raw === "left") return raw;
+  return null;
+}
+
+function sourceHandleId(side: HandleSide): string {
+  return `source-${side}`;
+}
+
+function targetHandleId(side: HandleSide): string {
+  return `target-${side}`;
+}
+
+function formatHandleSide(value: string | null | undefined): string {
+  return normalizeHandleSide(value) || "";
+}
+
+function completeEdgeHandles(
+  source: string,
+  target: string,
+  positions: NodePositionMap,
+  handles: EdgeHandlePair
+): Required<EdgeHandlePair> {
+  const inferred = inferEdgeHandles(source, target, positions);
+  return {
+    sourceHandle: sourceHandleId(normalizeHandleSide(handles.sourceHandle) || normalizeHandleSide(inferred.sourceHandle) || "right"),
+    targetHandle: targetHandleId(normalizeHandleSide(handles.targetHandle) || normalizeHandleSide(inferred.targetHandle) || "left")
+  };
+}
+
+function inferEdgeHandles(source: string, target: string, positions: NodePositionMap): Required<EdgeHandlePair> {
+  const sourcePosition = positions.get(source);
+  const targetPosition = positions.get(target);
+  if (!sourcePosition || !targetPosition) {
+    return { sourceHandle: sourceHandleId("right"), targetHandle: targetHandleId("left") };
+  }
+  const dx = targetPosition.x - sourcePosition.x;
+  const dy = targetPosition.y - sourcePosition.y;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0
+      ? { sourceHandle: sourceHandleId("right"), targetHandle: targetHandleId("left") }
+      : { sourceHandle: sourceHandleId("left"), targetHandle: targetHandleId("right") };
+  }
+  return dy >= 0
+    ? { sourceHandle: sourceHandleId("bottom"), targetHandle: targetHandleId("top") }
+    : { sourceHandle: sourceHandleId("top"), targetHandle: targetHandleId("bottom") };
 }
 
 function edgeEndpoint(row: Record<string, unknown>, side: "source" | "target"): string {

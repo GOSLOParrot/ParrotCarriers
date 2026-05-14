@@ -25,16 +25,24 @@ Unity identities request the unnamed LiveKit Agents Brain dispatch by default
 (`PARROT_MINT_AGENT_DISPATCH=unity`). Listener/diagnostic identities can join
 without spawning Brain; set `PARROT_MINT_AGENT_DISPATCH=off` for manual dispatch
 tests or `all` for broad dev-room dispatch.
+
+Castle can keep a room alive with scheduler/diagnostic participants. In that
+case the JWT room-config dispatch may not fire because Unity is not creating a
+fresh room. For Unity identities, token-mint also performs a best-effort
+server-side dispatch using the LiveKit API secret, while still returning only a
+normal participant token to Unity.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 import os
 import sys
 import time
 from datetime import timedelta
+from typing import Any
 
 _LOGGER_NAME = "parrot.castle.token_mint"
 
@@ -87,6 +95,13 @@ _TOKEN_TTL_S = int(os.getenv("PARROT_MINT_TTL_SECONDS", "600"))
 # short-lived join token. Default "unity" keeps this phone-facing only; observer
 # and diagnostics clients can join without spawning Brain.
 _AGENT_DISPATCH_MODE = os.getenv("PARROT_MINT_AGENT_DISPATCH", "unity").strip().lower()
+_ACTIVE_AGENT_DISPATCH_MODE = os.getenv(
+    "PARROT_MINT_ACTIVE_AGENT_DISPATCH",
+    "1",
+).strip().lower()
+_ACTIVE_AGENT_DISPATCH_TIMEOUT_S = float(
+    os.getenv("PARROT_MINT_ACTIVE_AGENT_DISPATCH_TIMEOUT_SECONDS", "4.0")
+)
 
 # Empty means the Brain worker registered via the default unnamed
 # @server.rtc_session() entrypoint. Set only if the deployment later registers a
@@ -99,7 +114,8 @@ async def _log_startup_config() -> None:
     logger.info(
         "Token mint starting: port=%s livekit_url_scheme=%s livekit_url_length=%d "
         "api_key_present=%s api_secret_length=%d mint_secret_present=%s default_room=%s "
-        "agent_dispatch_mode=%s agent_name_configured=%s",
+        "agent_dispatch_mode=%s active_agent_dispatch=%s active_agent_dispatch_timeout_s=%.1f "
+        "agent_name_configured=%s",
         os.getenv("PARROT_MINT_PORT", "7888"),
         _LIVEKIT_URL.split(":", 1)[0] if ":" in _LIVEKIT_URL else "",
         len(_LIVEKIT_URL),
@@ -108,6 +124,8 @@ async def _log_startup_config() -> None:
         bool(_MINT_SECRET),
         _DEFAULT_ROOM,
         _AGENT_DISPATCH_MODE or "unity",
+        _ACTIVE_AGENT_DISPATCH_MODE or "1",
+        _ACTIVE_AGENT_DISPATCH_TIMEOUT_S,
         bool(_AGENT_NAME),
     )
 
@@ -125,6 +143,14 @@ class MintResponse(BaseModel):
     # Brain job stayed alive; Unity must still wait for participant presence and
     # successful RPC payloads before marking START complete.
     agent_dispatch_requested: bool = False
+    # Token roomConfig dispatch is enough when Unity creates the room. Castle also
+    # keeps a scheduler participant in the room, so token-mint performs a
+    # best-effort server-side dispatch for Unity identities to avoid a phone START
+    # that joins LiveKit successfully but never gets a Brain participant.
+    agent_dispatch_active_attempted: bool = False
+    agent_dispatch_active_created: bool = False
+    agent_dispatch_active_already_present: bool = False
+    agent_dispatch_active_error: str = ""
 
 
 def _check_auth(request: Request) -> None:
@@ -163,6 +189,84 @@ def _should_request_agent_dispatch(identity: str) -> bool:
     if mode in {"1", "true", "yes", "on", "all", "always"}:
         return True
     return identity.strip().lower().startswith("unity")
+
+
+def _active_agent_dispatch_enabled() -> bool:
+    mode = (_ACTIVE_AGENT_DISPATCH_MODE or "1").strip().lower()
+    return mode not in {"0", "false", "no", "off", "disabled", "none"}
+
+
+def _is_brain_identity(identity: str) -> bool:
+    identity = (identity or "").strip().lower()
+    return identity == "brain" or identity.startswith("agent-")
+
+
+def _livekit_http_url() -> str:
+    return _LIVEKIT_URL.replace("ws://", "http://").replace("wss://", "https://")
+
+
+async def _ensure_agent_dispatch(room: str) -> dict[str, Any]:
+    """Best-effort server-side Brain dispatch for Unity phone START.
+
+    The JWT RoomConfiguration agent dispatch only fires reliably when the
+    connecting Unity participant creates the room. Castle can keep the LiveKit
+    room alive with scheduler/diagnostic participants, so the mint service also
+    uses the server API secret to dispatch Brain when no Brain participant is
+    already present. Unity still receives only a normal participant token.
+    """
+    from livekit.api import (  # type: ignore
+        CreateAgentDispatchRequest,
+        ListParticipantsRequest,
+        LiveKitAPI,
+    )
+
+    result: dict[str, Any] = {
+        "attempted": True,
+        "created": False,
+        "already_present": False,
+        "error": "",
+    }
+    lk = LiveKitAPI(_livekit_http_url(), _LIVEKIT_API_KEY, _LIVEKIT_API_SECRET)
+    try:
+        try:
+            participants_response = await lk.room.list_participants(
+                ListParticipantsRequest(room=room)
+            )
+            participants = getattr(participants_response, "participants", []) or []
+            for participant in participants:
+                identity = getattr(participant, "identity", "")
+                if _is_brain_identity(identity):
+                    result["already_present"] = True
+                    logger.info(
+                        "Brain already present during mint dispatch check: room=%s identity=%s",
+                        room,
+                        identity,
+                    )
+                    return result
+        except Exception as exc:
+            # If the room does not exist yet, token RoomConfiguration remains the
+            # normal room-create path. Continue with create_dispatch as a
+            # best-effort nudge for existing-room cases and keep mint non-fatal.
+            logger.info(
+                "Could not list LiveKit room participants before active dispatch: "
+                "room=%s exception_type=%s",
+                room,
+                type(exc).__name__,
+            )
+
+        dispatch_request = CreateAgentDispatchRequest(room=room)
+        if _AGENT_NAME:
+            dispatch_request.agent_name = _AGENT_NAME
+        dispatch = await lk.agent_dispatch.create_dispatch(dispatch_request)
+        result["created"] = True
+        logger.info(
+            "Active Brain dispatch requested by token mint: room=%s dispatch_id=%s",
+            room,
+            getattr(dispatch, "id", ""),
+        )
+        return result
+    finally:
+        await lk.aclose()
 
 
 def _generate_token(room: str, identity: str) -> str:
@@ -234,21 +338,61 @@ async def mint_token(req: MintRequest, request: Request) -> MintResponse:
         logger.exception("Token generation failed: exception_type=%s", type(exc).__name__)
         raise HTTPException(status_code=500, detail="token generation failed") from exc
 
+    active_dispatch_result: dict[str, Any] = {
+        "attempted": False,
+        "created": False,
+        "already_present": False,
+        "error": "",
+    }
+    if agent_dispatch_requested and _active_agent_dispatch_enabled():
+        active_dispatch_result["attempted"] = True
+        try:
+            active_dispatch_result = await asyncio.wait_for(
+                _ensure_agent_dispatch(req.room),
+                timeout=max(0.1, _ACTIVE_AGENT_DISPATCH_TIMEOUT_S),
+            )
+        except TimeoutError:
+            active_dispatch_result["error"] = "timeout"
+            logger.warning(
+                "Active Brain dispatch timed out: room=%s timeout_s=%.1f",
+                req.room,
+                _ACTIVE_AGENT_DISPATCH_TIMEOUT_S,
+            )
+        except Exception as exc:
+            active_dispatch_result["error"] = type(exc).__name__
+            logger.exception(
+                "Active Brain dispatch failed: room=%s exception_type=%s",
+                req.room,
+                type(exc).__name__,
+            )
+
     expires_at = int(time.time()) + _TOKEN_TTL_S
     logger.info(
         "Minted token: room=%s identity_length=%d ttl_s=%d expires_at=%d "
-        "agent_dispatch_requested=%s",
+        "agent_dispatch_requested=%s active_dispatch_attempted=%s "
+        "active_dispatch_created=%s active_dispatch_already_present=%s "
+        "active_dispatch_error=%s",
         req.room,
         len(req.identity),
         _TOKEN_TTL_S,
         expires_at,
         agent_dispatch_requested,
+        bool(active_dispatch_result.get("attempted")),
+        bool(active_dispatch_result.get("created")),
+        bool(active_dispatch_result.get("already_present")),
+        active_dispatch_result.get("error", ""),
     )
     return MintResponse(
         token=jwt,
         url=_LIVEKIT_URL,
         expires_at=expires_at,
         agent_dispatch_requested=agent_dispatch_requested,
+        agent_dispatch_active_attempted=bool(active_dispatch_result.get("attempted")),
+        agent_dispatch_active_created=bool(active_dispatch_result.get("created")),
+        agent_dispatch_active_already_present=bool(
+            active_dispatch_result.get("already_present")
+        ),
+        agent_dispatch_active_error=str(active_dispatch_result.get("error", "")),
     )
 
 

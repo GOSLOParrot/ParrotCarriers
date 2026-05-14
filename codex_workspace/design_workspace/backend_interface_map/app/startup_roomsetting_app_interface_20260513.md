@@ -451,6 +451,41 @@ Current status:
   stays bound, and main-ready gates are clean. RoomSetting HTTP load/save and
   orchestrator prewrite are separate HTTP proofs.
 
+### A5. 2026-05-14 Formal START Retry After LiveKit Restart
+
+Verification after Castle LiveKit key alignment:
+
+- Mint-issued Unity tokens now validate against Castle LiveKit, and a
+  diagnostic Unity client can join `parrot-main`.
+- The formal START script passed App HTTP RoomSetting load/preview/save/apply
+  for `ner_lineb_room`, orchestrator LineB Tier 1 prewrite, token mint, and
+  LiveKit connect.
+- It then correctly failed at the Brain-present gate: no `agent-*` / `brain`
+  participant became visible within 75 seconds. The script restored active
+  RoomSetting to `default` and cleared the temporary runtime config file.
+- A follow-up run using the existing `sim_unity_client.py
+  --startup-rpc-check --startup-room-profile-id ner_lineb_room` path manually
+  dispatched the unnamed Brain job server-side; Brain joined and the post-join
+  START RPCs `applyRoomProfile` and `setAppCapabilityMode` returned business-ok.
+
+Interpretation:
+
+- LiveKit key alignment is fixed.
+- Brain / LineB / RPC business sync works when the Brain job is actively
+  dispatched.
+- The remaining phone-path gap is dispatch ownership. Unity cannot hold the
+  LiveKit API secret, and JWT `roomConfig.agents=[{}]` does not reliably fire
+  when the room already exists because a scheduler/diagnostic participant keeps
+  it alive.
+- Local follow-up in `src/parrot/castle/token_mint.py` now keeps the existing
+  JWT `RoomConfiguration` fallback and additionally performs a best-effort
+  server-side active dispatch for Unity identities when no Brain/agent
+  participant is present. The `/mint` response exposes non-secret diagnostics:
+  `agent_dispatch_active_attempted`, `agent_dispatch_active_created`,
+  `agent_dispatch_active_already_present`, and `agent_dispatch_active_error`.
+- APP-013 remains blocked until this token-mint patch is deployed/restarted on
+  Castle and the full START chain is rerun through heartbeat and main-ready.
+
 ### B. Existing Core Interfaces
 
 - App HTTP facade:
@@ -480,11 +515,13 @@ RoomSetting, menu registry, canvas snapshot, and LineB status surfaces.
 
 Open implementation gaps:
 
-- Brain RPC START proof now covers Brain participant presence plus
-  post-join `applyRoomProfile` / `setAppCapabilityMode` business-ok with the
-  LineB-compatible `ner_lineb_room`. The remaining phone-facing blocker is
-  public App HTTP / Orchestrator routing and the formal main-ready HUD/menu
-  gate.
+- Brain RPC START proof covers Brain participant presence plus post-join
+  `applyRoomProfile` / `setAppCapabilityMode` business-ok when dispatch is
+  performed server-side. The phone-facing blocker is deploying token-mint's
+  active dispatch fallback so Unity does not depend on token-only dispatch in
+  an already-live room.
+- After token-mint active dispatch is deployed, the remaining App-side blocker
+  is the formal main-ready HUD/menu gate and device media/lifecycle pass.
 - Unity has local audio route detection and mic republish logic, but it does
   not yet push route policy to Brain `session/audio_route_policy`. The backend
   route policy endpoint/RPC exists; the Unity producer hook is intentionally
@@ -622,16 +659,15 @@ Config/public endpoint status:
 - Restored: active RoomSetting was restored to `default`, and the temporary
   orchestrator runtime config file was cleared back to the env-backed LineB
   state.
-- Blocked: LiveKit rejected both the mint-issued Unity token and a locally
-  generated diagnostic token with `401 invalid token`. Treat this as a Castle
-  LiveKit API key/secret alignment issue. Do not mark Brain RPC, DataChannel
-  heartbeat consumption, or main-ready as passed from this run.
-- Root cause found locally: Castle production compose mounts
-  `infra/livekit/livekit.yaml`, and that file still used the old `devkey`
-  placeholder secret. The `.env`, token-mint, Brain, and diagnostic scripts use
-  the longer dev secret. Local fix aligns `livekit.yaml` and adds a guard test;
-  ECS needs that config deployed and the LiveKit container restarted before the
-  true START retry.
+- Follow-up after LiveKit config restart: token validation is fixed and LiveKit
+  join succeeds. The formal script now blocks later because token-only
+  `roomConfig.agents=[{}]` did not make a Brain participant appear within
+  75 seconds when the room was already alive. Manual server-side dispatch via
+  the existing diagnostic script works and proves Brain/RPC business-ok.
+- Local follow-up: token-mint now actively dispatches Brain server-side for
+  Unity identities when no Brain participant is present, while still returning
+  only a normal participant token to Unity. Deploy/restart token-mint on Castle
+  before rerunning the full START chain.
 
 RPC payload budget:
 
@@ -656,9 +692,10 @@ Homepage readiness audit:
   build the START RoomProfile. If `appApiUrl` is absent, it falls back to local
   draft state and must not be treated as saved backend state.
 - Phone config now has reachable App API and Orchestrator endpoints. A phone
-  ECS build can proceed after the Castle LiveKit token-validation blocker is
-  fixed. Until then it can prove RoomSetting/App HTTP and orchestrator prewrite,
-  but it will fail before Brain RPC and heartbeat.
+  ECS build can proceed after token-mint active dispatch is deployed and the
+  formal non-phone START chain passes Brain, RPC, heartbeat, and main-ready
+  gates. Until then it can prove RoomSetting/App HTTP, orchestrator prewrite,
+  Mint, and LiveKit join, but may still fail before Brain RPC and heartbeat.
 - `Scene` as a user-facing RoomSetting concept should stay out of the startup
   page. The visible row is `Theme` and writes `skin_id`; spatial/environment
   baseline remains `scene_profile_id` and should be automatic.

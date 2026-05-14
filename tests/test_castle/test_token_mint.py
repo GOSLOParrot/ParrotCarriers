@@ -3,16 +3,25 @@ from __future__ import annotations
 import importlib
 
 import jwt
+from fastapi.testclient import TestClient
 
 
-def _reload_token_mint(monkeypatch, *, mode: str = "unity", agent_name: str = ""):
+def _reload_token_mint(
+    monkeypatch,
+    *,
+    mode: str = "unity",
+    agent_name: str = "",
+    active_dispatch: str = "1",
+):
     monkeypatch.setenv("LIVEKIT_URL", "ws://example.test:7880")
     monkeypatch.setenv("LIVEKIT_API_KEY", "devkey")
     monkeypatch.setenv(
         "LIVEKIT_API_SECRET",
         "parrot_test_livekit_secret_at_least_32_bytes",
     )
+    monkeypatch.delenv("PARROT_MINT_SECRET", raising=False)
     monkeypatch.setenv("PARROT_MINT_AGENT_DISPATCH", mode)
+    monkeypatch.setenv("PARROT_MINT_ACTIVE_AGENT_DISPATCH", active_dispatch)
     monkeypatch.setenv("PARROT_MINT_AGENT_NAME", agent_name)
 
     import parrot.castle.token_mint as token_mint
@@ -53,3 +62,98 @@ def test_mint_agent_dispatch_can_be_disabled(monkeypatch) -> None:
 
     assert "roomConfig" not in claims
 
+
+def test_mint_endpoint_actively_dispatches_for_unity_identity(monkeypatch) -> None:
+    token_mint = _reload_token_mint(monkeypatch)
+    calls: list[str] = []
+
+    async def fake_ensure_agent_dispatch(room: str) -> dict:
+        calls.append(room)
+        return {
+            "attempted": True,
+            "created": True,
+            "already_present": False,
+            "error": "",
+        }
+
+    monkeypatch.setattr(
+        token_mint,
+        "_ensure_agent_dispatch",
+        fake_ensure_agent_dispatch,
+    )
+
+    response = TestClient(token_mint.app).post(
+        "/mint",
+        json={"room": "parrot-main", "identity": "unity-phone"},
+    )
+
+    assert response.status_code == 200
+    assert calls == ["parrot-main"]
+    body = response.json()
+    assert body["agent_dispatch_requested"] is True
+    assert body["agent_dispatch_active_attempted"] is True
+    assert body["agent_dispatch_active_created"] is True
+    assert body["agent_dispatch_active_already_present"] is False
+    assert body["agent_dispatch_active_error"] == ""
+
+
+def test_mint_endpoint_skips_active_dispatch_for_observer(monkeypatch) -> None:
+    token_mint = _reload_token_mint(monkeypatch)
+    calls: list[str] = []
+
+    async def fake_ensure_agent_dispatch(room: str) -> dict:
+        calls.append(room)
+        return {
+            "attempted": True,
+            "created": True,
+            "already_present": False,
+            "error": "",
+        }
+
+    monkeypatch.setattr(
+        token_mint,
+        "_ensure_agent_dispatch",
+        fake_ensure_agent_dispatch,
+    )
+
+    response = TestClient(token_mint.app).post(
+        "/mint",
+        json={"room": "parrot-main", "identity": "observer"},
+    )
+
+    assert response.status_code == 200
+    assert calls == []
+    body = response.json()
+    assert body["agent_dispatch_requested"] is False
+    assert body["agent_dispatch_active_attempted"] is False
+
+
+def test_mint_endpoint_can_disable_active_dispatch(monkeypatch) -> None:
+    token_mint = _reload_token_mint(monkeypatch, active_dispatch="off")
+    calls: list[str] = []
+
+    async def fake_ensure_agent_dispatch(room: str) -> dict:
+        calls.append(room)
+        return {
+            "attempted": True,
+            "created": True,
+            "already_present": False,
+            "error": "",
+        }
+
+    monkeypatch.setattr(
+        token_mint,
+        "_ensure_agent_dispatch",
+        fake_ensure_agent_dispatch,
+    )
+
+    response = TestClient(token_mint.app).post(
+        "/mint",
+        json={"room": "parrot-main", "identity": "unity-phone"},
+    )
+
+    assert response.status_code == 200
+    assert calls == []
+    body = response.json()
+    assert body["agent_dispatch_requested"] is True
+    assert body["agent_dispatch_active_attempted"] is False

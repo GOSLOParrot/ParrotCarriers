@@ -124,14 +124,17 @@ Each chat follows this loop:
     stays on App HTTP before LiveKit connects. The default LineA room profile
     still fails correctly against a running LineB Brain. User repaired public
     ECS routing on 2026-05-14: `8790` RoomSetting returns 2 rooms and `7890`
-    orchestrator health is ok. The formal START script now passes RoomSetting
-    save/apply, Tier 1 prewrite, and Mint, but LiveKit rejects the resulting
-    tokens with 401 invalid token. Completion is blocked on aligning Castle
-    LiveKit API key/secret configuration; local root cause is
-    `infra/livekit/livekit.yaml` using the old placeholder secret while
-    token-mint/Brain use the newer dev secret. Local config/test fix is done,
-    but ECS needs LiveKit config deployment and restart. Do not count Brain RPC,
-    heartbeat, or main-ready as passed from that run.
+    orchestrator health is ok. Castle LiveKit key alignment is now fixed:
+    mint-issued Unity tokens validate and LiveKit join succeeds. The formal
+    START script now passes RoomSetting save/apply, Tier 1 prewrite, Mint, and
+    LiveKit connect, then fails correctly at the Brain-present gate because no
+    Brain participant appears within 75s. The existing diagnostic script proves
+    manual server-side dispatch works and post-join `applyRoomProfile` /
+    `setAppCapabilityMode` are business-ok with `ner_lineb_room`. Completion is
+    blocked on deploying token-mint's active server-side dispatch fallback for
+    Unity identities, because token-only `roomConfig.agents=[{}]` does not
+    reliably fire when scheduler already keeps the room alive. Do not count
+    heartbeat or main-ready as passed from the failed formal run.
     App HTTP selector follow-up: `GET /api/app/line-profiles` is reachable,
     `GET /api/app/personas` was added for selector-safe persona metadata, and
     app-monitor POST routes can be protected by `PARROT_APP_MONITOR_SECRET`

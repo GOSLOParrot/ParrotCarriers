@@ -17,7 +17,7 @@ entries when a file stops being active.
 |:--|:--|:--|:--|
 | `web_console_step1_console_plan_20260513.md` | approved | WEB-001, WEB-008 | Step 1 requirements, IA, visual direction, implementation order, doc hygiene. |
 | `observability_runtime_business_flow_20260513.md` | in_progress | WEB-002, WEB-004, WEB-005, WEB-009, WEB-012 | ECS/module health, `/status`, Blackboard, IntentWorkspace, Plan/task, Scheduler, Nanobot, AgentTeam/Maid Team, collaboration status, LineB voice lab smoke, Runtime Flow, HITL, and trigger palette. |
-| `memory_graph_workspace_business_flow_20260513.md` | in_progress | WEB-003, WEB-007, WEB-010, WEB-011 | L1.5, L2-B, Blackboard, IntentWorkspace, node/photo management, Ref binding, Evidence/String Board, real-time memory visualization plan, Visual Memory Operations Cockpit. |
+| `memory_graph_workspace_business_flow_20260513.md` | in_progress | WEB-003, WEB-007, WEB-010, WEB-011, WEB-013 | L1.5, L2-B, Blackboard, IntentWorkspace, node/photo management, Ref binding, Evidence/String Board, real-time memory visualization plan, Memory Canvas, and planned full-screen L2-B monitor. |
 | `graphiti_management_business_flow_20260513.md` | in_progress | WEB-006 | Graphiti/FalkorDB management route: observe/search/draft/dry-run first, Web operator surgery later. |
 
 ## Temporary Working Archives

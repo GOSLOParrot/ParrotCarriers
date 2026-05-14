@@ -90,12 +90,20 @@ Current React Memory behavior:
   selected Edge; with no selection it fits the full graph. `Layout` reapplies a
   local circular layout to visible Nodes and then fits the viewport. These
   controls do not change L2-B data or App DTOs.
+- 2026-05-14 homepage cleanup: Memory view polling is capped at 5s in the React
+  shell, while Runtime keeps the configured BFF cadence. This remains polling,
+  not true realtime; SSE/changed-since remains the next CORE-009 candidate.
+  React Flow edges now store or infer `sourceHandle`/`targetHandle`, and Memory
+  Nodes expose both source and target handles on all four sides, fixing the
+  top-to-top fallback seen in the browser. Left navigation and the right records
+  rail can collapse, React Flow controls/minimap/edge labels are dark-mode
+  styled, records default collapsed to protect canvas width, and topbar/
+  empty-state explanatory copy was reduced.
 - L1.5 bucket actions are presented as bucket cards, with raw/payload work kept
   behind advanced flows.
 
 Remaining WEB-011 work:
 
-- Create-on-canvas pointer gestures still need a dedicated follow-up slice.
 - Persisted edge edit/delete semantics still need an operator-gated backend
   policy. Current retarget is a draft/preview, not an in-place mutation.
 - The next visual-quality slice should move from simple positioned nodes to a
@@ -833,3 +841,73 @@ Audit:
 - No Web-only operator field was promoted to shared core.
 - No raw `PARROT_ORCH_SECRET`, LiveKit secret, or Google credential was found in
   the React source or dist output.
+
+## 2026-05-14 L2-B Realtime Graph Reframe
+
+Owner: Web Console lane
+Status: in_progress
+Category: requirement / implementation-plan
+Scope: WEB-011, WEB-013, CORE-008, CORE-009 candidate review
+Source: user audit on the React Memory Canvas, `dsg-rustworkx-master`,
+`dsg-l2b-node-organization-options`, React Flow docs, force-graph docs.
+
+The current React Flow Memory page is now treated as a **Memory Canvas /
+operator draft page**. It is useful for safe previews, staging Edge receipts,
+inspecting selected items, and testing L1.5/L2-B BFF routes. It is not the
+final dense L2-B knowledge-graph monitor.
+
+The next L2-B page should be separate and full-screen:
+
+- React Flow stays available for canvas/workflow/editing patterns.
+- React-Force-Graph or another Canvas/WebGL graph renderer is the first
+  candidate for the full-screen L2-B monitor because the view should emphasize
+  realtime topology, clustering, filters, attention/salience, and continuous
+  status rather than form-heavy editing.
+- Cytoscape.js remains a later candidate for compound/subgraph/cluster
+  exploration if L2-B needs stronger graph-analysis UI affordances.
+- The renderer should be selected behind a component adapter so the route/API
+  does not become tied to one graph engine.
+
+L2-B/RustworkX architecture notes to preserve before backend changes:
+
+- RustworkX is the topology skeleton, not the business DTO. Stable DSG UUIDs
+  must stay as business ids, with RustworkX integer indices kept as internal
+  working mappings.
+- Heavy memory content should remain in source stores or payload pointers when
+  possible; L2-B should carry lightweight labels, kind/source, attention,
+  salience, activation/decay, provenance, and relation metadata needed for
+  traversal/visualization.
+- Source buckets/subgraphs such as Google Calendar, Obsidian settings,
+  WorkIntent/workflow, Graphiti, Ref, and L1.5 observations should be visible
+  as filters or subgraph groupings. One-click import/preload must route through
+  L1.5, trigger, Graphiti, or explicit Web operator receipts, not direct hidden
+  mutation of L2-B.
+- Bounded graph operations are preferred for realtime UI: ego graph expansion,
+  limited-depth BFS, selected-node neighborhood, local PPR/spreading activation
+  views, and offline or throttled health/cluster/community calculations.
+- Missing shared fields for realtime graph streaming, visual style ids, or
+  graph health metrics belong in the core candidate queue before any App/Unity
+  DTO promotion.
+
+Current UI bugfixes from this slice:
+
+- The Memory Canvas toolbar is collapsed by default; Edge endpoint inputs and
+  clear controls live inside an expandable tool drawer.
+- Four visible directional connection dots are kept for each Memory Node, but
+  the implementation maps them to separate `source-*` / `target-*` React Flow
+  handles so Edge rendering attaches to the intended side instead of falling
+  back to top/top.
+- The empty L2-B status overlay is now semi-transparent and visually distinct
+  from real graph Nodes.
+- React Flow controls/minimap remain dark-mode styled.
+
+Open interface questions:
+
+1. `GET /api/l2b/graph/changes?since=...` or an SSE/WebSocket equivalent is
+   needed for the full-screen monitor. This is a Web-only CORE-009 candidate
+   until the App lane needs the same stream.
+2. Node/Edge CRUD completeness needs explicit route and receipt coverage for
+   labels/tags, subgraphs, clusters, and source bucket assignment.
+3. Import/preload buttons need exact mappings for Google Calendar bucket,
+   Obsidian setting buckets, WorkIntent subgraph/workflow, and selected
+   Graphiti/Ref slices.

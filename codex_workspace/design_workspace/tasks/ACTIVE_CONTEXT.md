@@ -1,6 +1,6 @@
 # Design Workspace Active Context
 
-> Updated: 2026-05-13
+> Updated: 2026-05-14
 > Code repo / Codex project route: `D:\GOSLOParrot\ParrotCarriers`
 > App design workspace: `D:\GOSLOParrot\ParrotCarriers\codex_workspace\design_workspace`
 > Clean status report: `.cursor/memory/architecture/Interface/app_v1_current_status_and_test_report_20260510.md`
@@ -290,19 +290,24 @@ These are useful test evidence only. They must not be used as App completion evi
   contains Castle `appApiUrl`, `orchestratorUrl`, mint/LiveKit/room values, and
   the required bearer secrets in the gitignored local config. Do not commit or
   echo those secrets. User repaired ECS public routing; from this workstation
-  `http://8.216.45.45:8790/api/app/room-setting` is reachable and returns
-  2 rooms, and `http://8.216.45.45:7890/health` returns orchestrator `ok`.
-  APP-015.3 HTTP reachability is resolved. 2026-05-14 formal START script
-  reached RoomSetting save/apply, LineB Tier 1 prewrite, and Mint, but LiveKit
-  rejected both mint-issued and locally generated tokens with 401 invalid token.
-  Treat this as a Castle LiveKit API key/secret alignment blocker, not a Unity
-  UI blocker and not a fake success. RoomSetting active was restored to
-  `default`; orchestrator runtime config file was cleared back to the
-  env-backed LineB state. Root cause found in repo config: Castle compose mounts
-  `infra/livekit/livekit.yaml`, whose `devkey` still used the old placeholder
-  secret while `.env`/token-mint/Brain used the newer dev secret. Local fix
-  aligns `infra/livekit/livekit.yaml` with token-mint and adds a guard test;
-  ECS still needs that file deployed and LiveKit restarted.
+  App HTTP, line profiles, and orchestrator health are reachable. APP-015.3
+  HTTP reachability is resolved.
+- 2026-05-14 formal START retry after Castle LiveKit config restart: Minted
+  Unity tokens now validate and a diagnostic Unity client can join
+  `parrot-main`. The full formal START script reached RoomSetting save/apply,
+  LineB Tier 1 prewrite, Mint, and LiveKit connect, then correctly failed
+  because no Brain participant became visible within 75s. A follow-up run with
+  existing `sim_unity_client.py --startup-rpc-check --startup-room-profile-id
+  ner_lineb_room` manually dispatched the unnamed Brain job server-side; Brain
+  joined and `applyRoomProfile` / `setAppCapabilityMode` returned business-ok.
+  Interpretation: token secret alignment is fixed, Brain itself works, but the
+  phone path cannot rely only on JWT `roomConfig.agents=[{}]` when the LiveKit
+  room already exists with the scheduler participant. Local token-mint follow-up
+  now performs a best-effort server-side active dispatch for Unity identities
+  when no Brain/agent participant is present, without exposing the LiveKit API
+  secret to Unity. This still needs Castle deployment/restart before APP-013 can
+  be marked complete. The failed formal script restored active RoomSetting to
+  `default` and cleared the temporary runtime config file.
 - 2026-05-14 App HTTP selector/security update: `GET /api/app/line-profiles`
   is already present on app-monitor and reachable from Castle; `GET
   /api/app/personas` was added for selector-safe persona metadata

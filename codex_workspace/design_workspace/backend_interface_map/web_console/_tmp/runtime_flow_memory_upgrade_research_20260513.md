@@ -245,6 +245,29 @@ fields to `.cursor/memory/architecture/Interface/**` until App/Web confirmation.
   and does not change L2-B, L1.5, Ref, App DTO, or core interface contracts.
   Verification: frontend typecheck/build, Web route tests, static awkward-label
   scan, `git diff --check`, and local HTTP checks passed.
+- 2026-05-14: Homepage/edge UX bugfix slice: Memory view polling now caps at 5s
+  even when the server default is 15s, but this is still polling rather than
+  true realtime. React Flow Memory Nodes now expose source and target handles on
+  top/right/bottom/left, and preview/persisted edges carry or infer handle ids
+  so they do not fall back to top-to-top rendering. Left navigation and the
+  records rail are collapsible, with records default collapsed to protect canvas
+  width. React Flow controls, minimap, attribution, and edge labels are
+  dark-mode styled. Topbar summaries and the empty-state body copy were
+  removed/reduced. No backend DTO or core interface changed.
+  Verification: frontend typecheck/build, Web route tests, static awkward-label
+  scan, `git diff --check`, and local HTTP checks passed.
+- 2026-05-14: Memory Canvas toolbar / L2-B monitor prep slice: the current
+  ReactFlow page is explicitly preserved as Memory Canvas/editor, while a new
+  WEB-013 full-screen L2-B realtime graph monitor is planned separately. The
+  canvas toolbar now defaults to a compact row and moves Edge endpoint inputs
+  into an expandable drawer. Visible Node handles are now one dot per side, with
+  separate hidden `target-*` anchors and `source-*` anchors used for React Flow
+  edge rendering. This follows React Flow's loose connection model while
+  avoiding the confusing doubled handle dots and top/top fallback. Empty L2-B
+  state now renders as a semi-transparent status overlay, not a solid component
+  block. Research anchors recorded: React Flow ConnectionMode/Handles docs and
+  force-graph Canvas/dynamic data examples. No backend route, App DTO, or core
+  interface changed.
 
 ## Pending Core / Data Model Review
 
