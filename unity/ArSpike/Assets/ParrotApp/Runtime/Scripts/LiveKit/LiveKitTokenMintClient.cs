@@ -89,7 +89,7 @@ namespace ParrotApp.LiveKit
                     return;
 
                 if (!string.IsNullOrWhiteSpace(config.mintUrl))
-                    mintEndpoint = config.mintUrl;
+                    mintEndpoint = NormalizeMintEndpoint(config.mintUrl);
                 if (!string.IsNullOrWhiteSpace(config.mintSecret))
                     bearerSecret = config.mintSecret;
 
@@ -153,6 +153,21 @@ namespace ParrotApp.LiveKit
                     onComplete?.Invoke(new MintResult(false, null, $"parse_failed:{ex.Message}"));
                 }
             }
+        }
+
+        private static string NormalizeMintEndpoint(string value)
+        {
+            string endpoint = (value ?? "").Trim();
+            if (endpoint.Length == 0)
+                return endpoint;
+
+            endpoint = endpoint.TrimEnd('/');
+            // Castle exposes token mint at /mint. The phone config sometimes
+            // stores only the service root (:7888); normalize that root so the
+            // formal App and quick scripts exercise the same endpoint.
+            if (endpoint.EndsWith("/mint", StringComparison.OrdinalIgnoreCase))
+                return endpoint;
+            return endpoint + "/mint";
         }
     }
 }

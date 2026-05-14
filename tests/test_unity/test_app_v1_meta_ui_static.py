@@ -595,6 +595,8 @@ def test_arspike_mint_client_uses_gitignored_runtime_config_without_logging_secr
     assert 'Resources.Load<TextAsset>("parrot_config")' in text
     assert "mintUrl" in text
     assert "mintSecret" in text
+    assert "NormalizeMintEndpoint(config.mintUrl)" in text
+    assert 'endpoint.EndsWith("/mint"' in text
     assert "SetRequestHeader(\"Authorization\"" in text
     assert "loaded parrot_config" in text
     debug_lines = [line for line in text.splitlines() if "Debug." in line]

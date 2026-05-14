@@ -13,8 +13,10 @@ redis:
   address: redis:6379
 
 keys:
-  # Phase 1 开发用 key，生产环境需替换
-  devkey: secret
+  # Must match LIVEKIT_API_KEY/LIVEKIT_API_SECRET used by token-mint, Brain,
+  # Scheduler, and Unity diagnostics. A mismatch here makes LiveKit reject
+  # otherwise valid JWTs with 401 invalid token.
+  devkey: parrot_carriers_local_dev_livekit_secret_key_v1
 
 room:
   empty_timeout: 300

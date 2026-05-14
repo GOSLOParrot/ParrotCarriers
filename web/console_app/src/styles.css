@@ -250,6 +250,63 @@ select {
   padding: 8px 10px;
 }
 
+.empty-graph-hint {
+  position: absolute;
+  left: 28px;
+  right: 28px;
+  bottom: 28px;
+  z-index: 8;
+  border: 1px solid #343842;
+  border-radius: 8px;
+  background: rgba(31, 33, 39, 0.92);
+  padding: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.empty-graph-hint strong {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.empty-graph-hint p {
+  color: #9aa4b2;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.empty-scope-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.empty-scope-chip {
+  border: 1px solid #3a3f4a;
+  border-radius: 999px;
+  background: #252832;
+  color: #cbd2df;
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.empty-scope-chip i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7bd99f;
+  box-shadow: 0 0 10px rgba(123, 217, 159, 0.6);
+}
+
 .action-palette {
   grid-column: 1 / -1;
   border: 1px solid #343842;
@@ -579,6 +636,21 @@ select {
   font-size: 13px;
 }
 
+.record-details {
+  border-top: 1px solid #343842;
+  padding-top: 7px;
+}
+
+.record-details summary {
+  color: #9aa4b2;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.record-details .json-block {
+  margin-top: 7px;
+}
+
 .json-block {
   max-height: 260px;
   overflow: auto;
@@ -637,6 +709,62 @@ select {
   min-width: 170px;
 }
 
+.react-flow__node-memory,
+.react-flow__node-memory.preview-node {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
+.memory-node-card {
+  min-width: 154px;
+  max-width: 220px;
+  padding: 12px 14px 10px;
+  border: 1px solid #454b58;
+  border-radius: 8px;
+  background: #242832;
+  color: #edf0f5;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  cursor: grab;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease, background 140ms ease;
+}
+
+.react-flow__node-memory.dragging .memory-node-card {
+  cursor: grabbing;
+}
+
+.react-flow__node-memory.selected .memory-node-card,
+.memory-node-card.selected {
+  border-color: #7bd99f;
+  background: #223228;
+  box-shadow: 0 0 0 1px rgba(123, 217, 159, 0.35), 0 0 20px rgba(123, 217, 159, 0.18);
+}
+
+.react-flow__node-memory.preview-node .memory-node-card {
+  border-color: #85b990;
+  background: #25352c;
+}
+
+.memory-node-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.memory-node-meta {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 5px;
+  color: #9aa4b2;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
 .react-flow__edge.cross-edge path,
 .react-flow__edge.selected path,
 .react-flow__edge.preview-edge path {
@@ -651,6 +779,27 @@ select {
 .react-flow__edge.retarget-edge path {
   stroke: #a8b981;
   stroke-dasharray: 3 4;
+}
+
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border: 1px solid #9aa4b2;
+  background: #1f2127;
+  opacity: 0.9;
+}
+
+.react-flow__node-memory .react-flow__handle {
+  background: #1a1d23;
+  border-color: #aab2c0;
+}
+
+.react-flow__handle:hover,
+.react-flow__handle.connectingto,
+.react-flow__handle.valid {
+  border-color: #7bd99f;
+  background: #7bd99f;
+  box-shadow: 0 0 12px rgba(123, 217, 159, 0.85);
 }
 
 @keyframes pulse {

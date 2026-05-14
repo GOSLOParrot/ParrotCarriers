@@ -610,8 +610,28 @@ Config/public endpoint status:
 - Local gitignored Unity config now carries Castle App API, Orchestrator,
   mint, LiveKit, and required bearer secrets. Do not commit this file or echo
   the secrets into docs.
-- APP-015.3 public endpoint blocker is resolved for HTTP reachability. The next
-  validation is a true START pass through the formal Unity scene/phone path.
+- APP-015.3 public endpoint blocker is resolved for HTTP reachability. Unity's
+  token mint client also normalizes a root mint service URL to `/mint`, so
+  phone config does not fail if `mintUrl` is stored as the service root.
+
+2026-05-14 formal START script result:
+
+- Passed: `GET /api/app/room-setting`, RoomSetting preview/save/apply for
+  `ner_lineb_room`, orchestrator `/apply_room_profile` LineB prewrite, and
+  token-mint `/mint` with Unity dispatch requested.
+- Restored: active RoomSetting was restored to `default`, and the temporary
+  orchestrator runtime config file was cleared back to the env-backed LineB
+  state.
+- Blocked: LiveKit rejected both the mint-issued Unity token and a locally
+  generated diagnostic token with `401 invalid token`. Treat this as a Castle
+  LiveKit API key/secret alignment issue. Do not mark Brain RPC, DataChannel
+  heartbeat consumption, or main-ready as passed from this run.
+- Root cause found locally: Castle production compose mounts
+  `infra/livekit/livekit.yaml`, and that file still used the old `devkey`
+  placeholder secret. The `.env`, token-mint, Brain, and diagnostic scripts use
+  the longer dev secret. Local fix aligns `livekit.yaml` and adds a guard test;
+  ECS needs that config deployed and the LiveKit container restarted before the
+  true START retry.
 
 RPC payload budget:
 
@@ -636,8 +656,9 @@ Homepage readiness audit:
   build the START RoomProfile. If `appApiUrl` is absent, it falls back to local
   draft state and must not be treated as saved backend state.
 - Phone config now has reachable App API and Orchestrator endpoints. A phone
-  ECS build can proceed to prove RoomSetting save/apply, LineB Tier 1 prewrite,
-  Mint/LiveKit/Brain RPC, and the formal main-ready gates.
+  ECS build can proceed after the Castle LiveKit token-validation blocker is
+  fixed. Until then it can prove RoomSetting/App HTTP and orchestrator prewrite,
+  but it will fail before Brain RPC and heartbeat.
 - `Scene` as a user-facing RoomSetting concept should stay out of the startup
   page. The visible row is `Theme` and writes `skin_id`; spatial/environment
   baseline remains `scene_profile_id` and should be automatic.

@@ -1,13 +1,20 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState, type MouseEvent as ReactMouseEvent } from "react";
 import ReactFlow, {
   Background,
   type Connection,
+  ConnectionMode,
   Controls,
   type Edge,
   type EdgeMouseHandler,
+  Handle,
   MiniMap,
   type Node,
-  type NodeMouseHandler
+  type NodeChange,
+  type NodeMouseHandler,
+  type NodeProps,
+  type NodeTypes,
+  Position,
+  type ReactFlowInstance
 } from "reactflow";
 import {
   Activity,
@@ -40,6 +47,16 @@ type RuntimeAction =
   | "scene_switch"
   | "roleplay_open";
 
+type MemoryNodeData = {
+  label: string;
+  source?: Record<string, unknown>;
+  preview?: boolean;
+};
+
+const memoryNodeTypes: NodeTypes = {
+  memory: MemoryNodeCard
+};
+
 const dict = {
   en: {
     memory: "Memory Graph",
@@ -69,11 +86,11 @@ const dict = {
     uuidFree: "daily / roleplay are UUID-free",
     refRequiresUuid: "ref requires an Obsidian UUID",
     registeredTriggers: "Registered triggers",
-    receipt: "Receipts",
-    receiptTimeline: "Receipt Timeline",
+    receipt: "Records",
+    receiptTimeline: "Records",
     selected: "Selection",
-    createNode: "Draft Node",
-    draftEdge: "Draft Edge",
+    createNode: "New Node",
+    draftEdge: "Connect Edge",
     messageCheck: "Message Check",
     messagePush: "Message Push",
     actionGroupMessage: "Message",
@@ -84,8 +101,8 @@ const dict = {
     calendarTest: "Calendar Test",
     sceneSwitch: "Scene Switch",
     roleplayOpen: "Roleplay Open",
-    dryApply: "Dry Apply",
-    draft: "Draft",
+    dryApply: "Preview Apply",
+    draft: "Preview",
     approve: "Approve",
     approveAndStart: "Approve + Start",
     reject: "Reject",
@@ -93,22 +110,35 @@ const dict = {
     cancel: "Cancel",
     resume: "Resume",
     clear: "Clear",
+    focusSelection: "Focus",
+    layoutGraph: "Layout",
     noPendingGate: "No pending gate.",
     noSelection: "Select an item on the canvas.",
-    noReceipts: "No receipts yet.",
+    noReceipts: "No records yet.",
     triggerPalette: "Trigger Palette",
-    operatorSafe: "operator-safe dry run",
-    dryRunOnly: "dry-run only",
-    nodeLabel: "node label",
+    operatorSafe: "operator-safe preview",
+    dryRunOnly: "preview only",
+    previewMode: "preview",
+    executeMode: "execute",
+    safeMode: "safe",
+    operatorMode: "operator",
+    okStatus: "ok",
+    failedStatus: "failed",
+    recordDetails: "JSON details",
+    nodeLabel: "Node label",
     fromUuid: "from uuid",
     toUuid: "to uuid",
-    connectHint: "Drag between graph nodes to draft an edge and preview it on the canvas.",
+    connectHint: "Double-click empty canvas to create a Node. Drag between Node handles to preview an Edge.",
     selectedEdgeTools: "Edge Operations",
-    retargetEdge: "Draft Retarget",
+    retargetEdge: "Preview Retarget",
     swapEdge: "Swap",
-    selectedEdgeHint: "Retarget creates a new dry-run edge preview; it does not mutate or delete the existing edge.",
+    selectedEdgeHint: "Retarget creates a new Edge preview and record; it does not mutate or delete the existing Edge.",
+    emptyGraphTitle: "No L2-B Nodes yet",
+    emptyGraphBody: "This canvas will show real L2-B Nodes and Edges after L1.5 commits memory candidates. The chips below are status summaries, not graph Nodes.",
+    blackboardScope: "Blackboard",
+    intentScope: "Intent",
     runtimeSummary: "Intent, Plan, HITL, Blackboard, Scheduler, Nanobot, and messages.",
-    memorySummary: "L1.5, L2-B, Graphiti, Refs, Evidence Board, and dry-run graph operations."
+    memorySummary: "L1.5, L2-B, Graphiti, Refs, Evidence Board, and safe graph previews."
   },
   zh: {
     memory: "记忆图谱",
@@ -119,8 +149,8 @@ const dict = {
     live: "实时",
     autoRefresh: "自动",
     auth: "认证",
-    nodes: "节点",
-    edges: "边",
+    nodes: "Node",
+    edges: "Edge",
     blackboard: "黑板",
     intent: "IntentWorkspace",
     l15: "L1.5 池",
@@ -138,11 +168,11 @@ const dict = {
     uuidFree: "daily / roleplay 可不填 UUID",
     refRequiresUuid: "ref 必须绑定 Obsidian UUID",
     registeredTriggers: "已注册触发器",
-    receipt: "回执",
-    receiptTimeline: "回执时间线",
+    receipt: "操作记录",
+    receiptTimeline: "操作记录",
     selected: "选中项",
-    createNode: "节点草稿",
-    draftEdge: "边草稿",
+    createNode: "新建 Node",
+    draftEdge: "连接 Edge",
     messageCheck: "查新消息",
     messagePush: "消息推送",
     actionGroupMessage: "消息",
@@ -153,8 +183,8 @@ const dict = {
     calendarTest: "日程测试",
     sceneSwitch: "场景切换",
     roleplayOpen: "打开 Roleplay",
-    dryApply: "干跑执行",
-    draft: "草稿",
+    dryApply: "预演执行",
+    draft: "预览",
     approve: "批准",
     approveAndStart: "批准并启动",
     reject: "拒绝",
@@ -162,22 +192,35 @@ const dict = {
     cancel: "取消",
     resume: "恢复",
     clear: "清空",
+    focusSelection: "聚焦",
+    layoutGraph: "整理",
     noPendingGate: "暂无待确认 gate。",
     noSelection: "在画布上选择一个项目。",
-    noReceipts: "暂无回执。",
+    noReceipts: "暂无操作记录。",
     triggerPalette: "触发器面板",
-    operatorSafe: "operator 安全干跑",
-    dryRunOnly: "仅干跑",
-    nodeLabel: "节点标签",
+    operatorSafe: "operator 安全预演",
+    dryRunOnly: "仅预演",
+    previewMode: "预演",
+    executeMode: "执行",
+    safeMode: "安全",
+    operatorMode: "operator",
+    okStatus: "ok",
+    failedStatus: "失败",
+    recordDetails: "JSON 详情",
+    nodeLabel: "Node 标签",
     fromUuid: "起点 UUID",
     toUuid: "终点 UUID",
-    connectHint: "在图上从一个节点拖到另一个节点，可以直接生成边草稿并显示预览线。",
-    selectedEdgeTools: "边操作",
-    retargetEdge: "重定向草稿",
+    connectHint: "双击空白画布新建 Node；拖动 Node 连接点可创建 Edge 预览。",
+    selectedEdgeTools: "Edge 操作",
+    retargetEdge: "重定向预览",
     swapEdge: "交换端点",
-    selectedEdgeHint: "重定向只生成新的干跑边预览，不会修改或删除已有边。",
+    selectedEdgeHint: "重定向只生成新的 Edge 预览和操作记录，不会改写已有 Edge。",
+    emptyGraphTitle: "L2-B 还没有真实 Node",
+    emptyGraphBody: "这里之后显示真实 L2-B Node / Edge。下面这些是状态概览，不是可以连接的图 Node。",
+    blackboardScope: "黑板",
+    intentScope: "Intent",
     runtimeSummary: "Intent、Plan、HITL、黑板、Scheduler、Nanobot 和消息流。",
-    memorySummary: "L1.5、L2-B、Graphiti、Refs、Evidence Board 和图上干跑操作。"
+    memorySummary: "L1.5、L2-B、Graphiti、Refs、Evidence Board 和图上安全预演操作。"
   }
 };
 
@@ -309,22 +352,32 @@ function MemoryGraphWorkspace({
   const [edgeFrom, setEdgeFrom] = useState("");
   const [edgeTo, setEdgeTo] = useState("");
   const [nodeLabel, setNodeLabel] = useState("Web Test Node");
+  const [manualPositions, setManualPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<MemoryNodeData> | null>(null);
 
   const l2bNodes = liveState.l2b?.nodes ?? [];
   const l2bEdges = liveState.l2b?.edges ?? [];
+  const selectedNodeId = selected?.selection_type === "node" ? String(selected.uuid || selected.id || "") : "";
+  const selectedEdgeId = selected?.selection_type === "edge" ? String(selected.id || "") : "";
   const graphNodes = useMemo<Node[]>(() => {
     const real = l2bNodes.length
       ? l2bNodes.map((row, index) => memoryNode(row, index))
-      : memoryPlaceholderNodes(liveState);
+      : [];
     const previews = previewNodes.map((row, index) => ({
       id: String(row.uuid),
-      position: { x: 260 + index * 95, y: 260 },
-      data: { label: String(row.label), source: row },
+      position: { x: 260 + (index % 4) * 170, y: 230 + Math.floor(index / 4) * 96 },
+      type: "memory",
+      data: { label: String(row.label), source: row, preview: true },
       className: "preview-node",
       connectable: true
     }));
-    return [...real, ...previews];
-  }, [l2bNodes, liveState, previewNodes]);
+    return [...real, ...previews].map((node) => ({
+      ...node,
+      draggable: true,
+      position: manualPositions[node.id] ?? node.position,
+      selected: node.id === selectedNodeId
+    }));
+  }, [l2bNodes, manualPositions, previewNodes, selectedNodeId]);
   const draftableNodeIds = useMemo(
     () => new Set(graphNodes.filter((node) => isDraftableMemoryNodeId(node.id)).map((node) => node.id)),
     [graphNodes]
@@ -346,8 +399,11 @@ function MemoryGraphWorkspace({
         data: { source: row }
       });
     });
-    return [...persisted, ...previewEdges];
-  }, [l2bEdges, previewEdges]);
+    return [...persisted, ...previewEdges].map((edge) => ({
+      ...edge,
+      selected: edge.id === selectedEdgeId
+    }));
+  }, [l2bEdges, previewEdges, selectedEdgeId]);
 
   const onNodeClick: NodeMouseHandler = (_, node) => {
     const source = (node.data as { source?: Record<string, unknown> }).source ?? {};
@@ -365,7 +421,21 @@ function MemoryGraphWorkspace({
     setEdgeTo(edge.target);
   };
 
-  const draftNode = async () => {
+  const stagePreviewNode = (uuid: string, label: string, position?: { x: number; y: number }) => {
+    const nodeSource = { uuid, label, kind: "object", preview: true };
+    setPreviewNodes((rows) => [...rows, nodeSource]);
+    if (position) {
+      setManualPositions((current) => ({ ...current, [uuid]: position }));
+    }
+    setSelected({ selection_type: "node", ...nodeSource });
+    setEdgeFrom((currentFrom) => {
+      if (!currentFrom) return uuid;
+      setEdgeTo((currentTo) => currentTo || (currentFrom !== uuid ? uuid : currentTo));
+      return currentFrom;
+    });
+  };
+
+  const draftNode = async (position?: { x: number; y: number }, origin = "toolbar") => {
     const label = nodeLabel.trim();
     if (!label) {
       pushReceipt(localReceipt("l2b.node.draft", false, { error: "missing_label" }));
@@ -375,23 +445,34 @@ function MemoryGraphWorkspace({
       const receipt = await api.l2bNodeDraft({
         label,
         kind: "object",
-        description: "Created from React Memory Graph Workspace.",
+        description: `Created from React Memory Graph Workspace (${origin}).`,
         dry_run: true,
         operator_mode: false
       });
       if (receipt.success !== false) {
-        const uuid = "draft:" + Date.now();
-        setPreviewNodes((rows) => [...rows, { uuid, label, kind: "object" }]);
-        setEdgeFrom((currentFrom) => {
-          if (!currentFrom) return uuid;
-          setEdgeTo((currentTo) => currentTo || (currentFrom !== uuid ? uuid : currentTo));
-          return currentFrom;
-        });
+        stagePreviewNode(makeDraftId("node"), label, position);
       }
       pushReceipt(receipt);
     } catch (exc) {
       pushReceipt(errorReceipt("l2b.node.draft", exc));
     }
+  };
+
+  const onPaneClick = (event: ReactMouseEvent) => {
+    if (event.detail === 1) {
+      setSelected(null);
+      return;
+    }
+    if (event.detail !== 2) return;
+    if (!flowInstance) {
+      pushReceipt(localReceipt("l2b.node.draft", false, { error: "flow_instance_not_ready" }));
+      return;
+    }
+    const position = flowInstance.screenToFlowPosition({
+      x: event.clientX,
+      y: event.clientY
+    });
+    void draftNode(position, "canvas_double_click");
   };
 
   const draftEdgeBetween = async (
@@ -424,13 +505,15 @@ function MemoryGraphWorkspace({
         setPreviewEdges((rows) => [
           ...rows,
           {
-            id: `preview-edge:${Date.now()}:${source}:${target}`,
+            id: `${makeDraftId("edge")}:${source}:${target}`,
             source,
             target,
             label: "associated_with",
             className: reason === "edge_retarget" || reason === "edge_reconnect" ? "preview-edge retarget-edge" : "preview-edge",
             animated: true,
             reconnectable: true,
+            type: "smoothstep",
+            style: { strokeWidth: 3 },
             data: { source: { kind: "associated_with", reason, preview: true, ...meta } }
           }
         ]);
@@ -456,6 +539,18 @@ function MemoryGraphWorkspace({
     }
     void draftEdgeBetween(source, target, "canvas_connect");
   };
+
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setManualPositions((current) => {
+      let next = current;
+      changes.forEach((change) => {
+        if (change.type !== "position" || !change.position) return;
+        if (next === current) next = { ...current };
+        next[change.id] = change.position;
+      });
+      return next;
+    });
+  }, []);
 
   const onReconnect = (oldEdge: Edge, connection: Connection) => {
     const source = connection.source || oldEdge.source;
@@ -520,6 +615,45 @@ function MemoryGraphWorkspace({
     setEdgeTo("");
     setSelected(null);
   };
+  const focusSelection = () => {
+    if (!flowInstance) return;
+    const selectedId = selectedNodeId || selectedEdgeId;
+    if (!selectedId) {
+      flowInstance.fitView({ padding: 0.2, duration: 220 });
+      return;
+    }
+    if (selectedNodeId) {
+      flowInstance.fitView({ nodes: [{ id: selectedNodeId }], padding: 0.7, duration: 220, maxZoom: 1.25 });
+      return;
+    }
+    const edge = graphEdges.find((candidate) => candidate.id === selectedEdgeId);
+    if (edge) {
+      flowInstance.fitView({
+        nodes: [{ id: edge.source }, { id: edge.target }],
+        padding: 0.45,
+        duration: 220,
+        maxZoom: 1.1
+      });
+    }
+  };
+  const layoutGraph = () => {
+    const nodes = graphNodes.filter((node) => !node.hidden);
+    if (!nodes.length) return;
+    const radius = Math.max(190, Math.min(520, nodes.length * 54));
+    const center = { x: 420, y: 300 };
+    setManualPositions((current) => {
+      const next = { ...current };
+      nodes.forEach((node, index) => {
+        const angle = (-Math.PI / 2) + (Math.PI * 2 * index) / Math.max(1, nodes.length);
+        next[node.id] = {
+          x: center.x + Math.cos(angle) * radius,
+          y: center.y + Math.sin(angle) * radius
+        };
+      });
+      return next;
+    });
+    window.setTimeout(() => flowInstance?.fitView({ padding: 0.2, duration: 220 }), 0);
+  };
   const poolHealth = l15Pool.health ?? {};
   const buckets = l15Pool.buckets ?? [];
   const maxBucketCount = Math.max(1, ...buckets.map((bucket) => Number(bucket.node_count ?? 0)));
@@ -541,23 +675,36 @@ function MemoryGraphWorkspace({
           <input value={edgeFrom} onChange={(event) => setEdgeFrom(event.target.value)} placeholder={t.fromUuid} />
           <input value={edgeTo} onChange={(event) => setEdgeTo(event.target.value)} placeholder={t.toUuid} />
           <button className="button" onClick={() => void draftEdgeBetween(edgeFrom, edgeTo, "toolbar")}><GitBranch size={16} /> {t.draftEdge}</button>
+          <button className="button ghost" onClick={focusSelection}><CircleDot size={16} /> {t.focusSelection}</button>
+          <button className="button ghost" onClick={layoutGraph}><Workflow size={16} /> {t.layoutGraph}</button>
           <button className="button ghost" onClick={clearPreview}><Trash2 size={16} /> {t.clear}</button>
         </div>
         <ReactFlow
           nodes={graphNodes}
           edges={graphEdges}
+          nodeTypes={memoryNodeTypes}
+          connectionMode={ConnectionMode.Loose}
+          connectionRadius={28}
           onConnect={onConnect}
           onEdgeClick={onEdgeClick}
           onReconnect={onReconnect}
+          onNodesChange={onNodesChange}
           onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          onInit={(instance) => setFlowInstance(instance)}
           edgesUpdatable
+          elevateEdgesOnSelect
+          elevateNodesOnSelect
+          nodesDraggable
           reconnectRadius={18}
+          zoomOnDoubleClick={false}
           fitView
         >
           <MiniMap pannable zoomable />
           <Controls />
           <Background />
         </ReactFlow>
+        {!l2bNodes.length && !previewNodes.length ? <EmptyL2BHint liveState={liveState} t={t} /> : null}
       </div>
 
       <aside className="drawer">
@@ -902,6 +1049,31 @@ function isSelectedEdge(selected: Record<string, unknown> | null): selected is R
   return selected?.selection_type === "edge";
 }
 
+function EmptyL2BHint({ liveState, t }: { liveState: LiveState; t: ConsoleCopy }) {
+  const rows = [
+    { label: t.blackboardScope, value: `${liveState.blackboard?.present_count ?? 0}/${liveState.blackboard?.declared_count ?? 0}` },
+    { label: t.intentScope, value: String(liveState.intent_workspace?.ref_count ?? 0) },
+    { label: "Refs", value: String(liveState.refs?.refs?.length ?? 0) },
+    { label: "L2-B", value: `${liveState.l2b?.node_count ?? 0}/${liveState.l2b?.edge_count ?? 0}` }
+  ];
+  return (
+    <div className="empty-graph-hint">
+      <div>
+        <strong>{t.emptyGraphTitle}</strong>
+        <p>{t.emptyGraphBody}</p>
+      </div>
+      <div className="empty-scope-row">
+        {rows.map((row) => (
+          <span className="empty-scope-chip" key={row.label}>
+            <i />
+            {row.label} {row.value}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function L15HealthPanel({ health, t }: { health: Record<string, unknown>; t: ConsoleCopy }) {
   const totalNodes = Number(health.total_nodes ?? 0);
   const refsTotal = Number(health.refs_total ?? 0);
@@ -1092,12 +1264,17 @@ function ReceiptRail({ receipts, t }: { receipts: Receipt[]; t: ConsoleCopy }) {
             <div className="receipt-head">
               <strong>{receipt.action || "receipt"}</strong>
               <span className={receipt.success === false ? "status-chip bad" : "status-chip"}>
-                {receipt.success === false ? "failed" : "ok"}
+                {receipt.success === false ? t.failedStatus : t.okStatus}
               </span>
             </div>
-            <small>{receipt.dry_run ? "dry-run" : "execute"} / {receipt.operator_mode ? "operator" : "safe"} / {id}</small>
+            <small>
+              {receipt.dry_run ? t.previewMode : t.executeMode} / {receipt.operator_mode ? t.operatorMode : t.safeMode} / {id}
+            </small>
             {summary ? <p className="receipt-summary">{summary}</p> : null}
-            <JsonBlock value={data} />
+            <details className="record-details">
+              <summary>{t.recordDetails}</summary>
+              <JsonBlock value={data} />
+            </details>
           </div>
         );
       }) : <p className="muted">{t.noReceipts}</p>}
@@ -1109,12 +1286,43 @@ function JsonBlock({ value }: { value: unknown }) {
   return <pre className="json-block">{JSON.stringify(value, null, 2)}</pre>;
 }
 
+function MemoryNodeCard({ data, selected, isConnectable }: NodeProps<MemoryNodeData>) {
+  const nodeKind = String(data.source?.kind || (data.preview ? "preview" : "node"));
+  const compactId = String(data.source?.uuid || "").slice(0, 18);
+  const handlePositions = [
+    { id: "top", position: Position.Top },
+    { id: "right", position: Position.Right },
+    { id: "bottom", position: Position.Bottom },
+    { id: "left", position: Position.Left }
+  ];
+
+  return (
+    <div className={selected ? "memory-node-card selected" : "memory-node-card"}>
+      {handlePositions.map((handle) => (
+        <Handle
+          key={handle.id}
+          id={handle.id}
+          type="source"
+          position={handle.position}
+          isConnectable={isConnectable}
+        />
+      ))}
+      <div className="memory-node-title">{data.label}</div>
+      <div className="memory-node-meta">
+        <span>{nodeKind}</span>
+        {compactId ? <span>{compactId}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function memoryNode(row: Record<string, unknown>, index: number): Node {
   const angle = (Math.PI * 2 * index) / Math.max(1, 12);
   const radius = 220;
   return {
     id: String(row.uuid),
     position: { x: 360 + Math.cos(angle) * radius, y: 280 + Math.sin(angle) * radius },
+    type: "memory",
     data: {
       label: String(row.label || row.uuid),
       source: row
@@ -1124,24 +1332,12 @@ function memoryNode(row: Record<string, unknown>, index: number): Node {
   };
 }
 
-function memoryPlaceholderNodes(liveState: LiveState): Node[] {
-  const rows = [
-    { id: "placeholder:blackboard", label: `Blackboard ${liveState.blackboard?.present_count ?? 0}` },
-    { id: "placeholder:intent", label: `Intent ${liveState.intent_workspace?.ref_count ?? 0}` },
-    { id: "placeholder:refs", label: `Refs ${liveState.refs?.refs?.length ?? 0}` },
-    { id: "placeholder:l2b", label: `L2-B ${liveState.l2b?.node_count ?? 0}` }
-  ];
-  return rows.map((row, index) => ({
-    id: row.id,
-    position: { x: 180 + index * 210, y: 260 },
-    data: { label: row.label, source: row },
-    className: "placeholder-node",
-    connectable: false
-  }));
-}
-
 function isDraftableMemoryNodeId(id: string): boolean {
   return Boolean(id) && !id.startsWith("placeholder:");
+}
+
+function makeDraftId(kind: string): string {
+  return `draft:${kind}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function edgeEndpoint(row: Record<string, unknown>, side: "source" | "target"): string {

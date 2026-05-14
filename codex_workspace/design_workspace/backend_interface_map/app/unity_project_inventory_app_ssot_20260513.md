@@ -133,6 +133,15 @@ Current useful scope:
 - accepts `--startup-room-profile-id` so the check can target the RoomProfile
   that matches the running Brain line.
 
+2026-05-14 formal START note: Unity `LiveKitTokenMintClient` now normalizes a
+root mint service URL to `/mint`. The latest script pass proved App HTTP
+RoomSetting save/apply, orchestrator LineB prewrite, and token mint, but Castle
+LiveKit rejected the token with 401 invalid token. That is a server key/secret
+alignment blocker, not a Unity directory/resource completion signal. Local root
+cause is `infra/livekit/livekit.yaml` using the old placeholder secret while
+token-mint/Brain use the newer dev secret; local config/test guard is fixed,
+but ECS still needs LiveKit config deployment and restart.
+
 Boundary: formal startup cold-load/edit/save uses the App HTTP facade before
 LiveKit connects. Brain RoomSetting read/write RPCs have been removed from
 active backend code and must not be recreated as formal App scene evidence.

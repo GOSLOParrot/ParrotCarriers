@@ -50,8 +50,10 @@ Current React Memory behavior:
 - `GET /api/app/live-state` remains the primary live read model for L2-B,
   Blackboard, IntentWorkspace, refs, and tool artifacts.
 - `GET /api/l15/pool` feeds the bucket/source board.
-- L2-B nodes/edges render in a large React Flow canvas. Empty data uses
-  placeholder visual nodes so the workspace is not a raw-text wall.
+- L2-B Nodes/Edges render in a large React Flow canvas. Empty data now uses a
+  non-connectable Obsidian-like empty-state overlay with status chips; the old
+  Blackboard/Intent/Refs/L2-B placeholder boxes were removed because they looked
+  like real graph Nodes.
 - Selecting a node opens a detail drawer with safe JSON detail.
 - Create/update/delete node actions and edge draft actions call existing
   Web-only dry-run/draft routes and append receipts.
@@ -64,6 +66,30 @@ Current React Memory behavior:
   selected/staged edges can swap endpoints or draft a retarget preview. React
   Flow `onReconnect` is wired, but it still creates a new Web dry-run edge
   preview instead of mutating an existing L2-B edge.
+- 2026-05-14 terminology/interaction polish: Chinese UI now uses `Node` and
+  `Edge` in the graph workspace, `dry-run` is presented as `预演`, and the
+  right rail is `操作记录` with raw JSON collapsed behind details. React Flow
+  now uses `ConnectionMode.Loose` so handles can connect without the confusing
+  source-top/target-bottom restriction, and controlled node positions are
+  updated from node-change events so preview Nodes can be dragged.
+- 2026-05-14 graph interaction polish: Memory Nodes now use a custom
+  Obsidian-like React Flow node renderer with four directional handles and a
+  compact kind/id meta line. Draft node/edge ids now carry a random suffix so
+  rapid repeated preview operations do not collide in React state.
+- 2026-05-14 canvas-create polish: double-clicking an empty Memory Graph pane
+  drafts a Node at the clicked React Flow coordinate through the existing
+  `/api/l2b/node/draft` dry-run route. Default double-click zoom is disabled in
+  this workspace so the gesture creates content instead of unexpectedly moving
+  the camera.
+- 2026-05-14 selection bugfix: clicking blank canvas now clears the Web detail
+  selection, and React Flow Node/Edge `selected` props are driven from the same
+  Web selection state. This prevents the right drawer from showing a stale
+  object after the canvas itself has already cleared selection.
+- 2026-05-14 viewport controls: the Memory canvas now has Web-only `Focus` and
+  `Layout` controls. `Focus` centers the selected Node or both endpoints of a
+  selected Edge; with no selection it fits the full graph. `Layout` reapplies a
+  local circular layout to visible Nodes and then fits the viewport. These
+  controls do not change L2-B data or App DTOs.
 - L1.5 bucket actions are presented as bucket cards, with raw/payload work kept
   behind advanced flows.
 
@@ -72,6 +98,9 @@ Remaining WEB-011 work:
 - Create-on-canvas pointer gestures still need a dedicated follow-up slice.
 - Persisted edge edit/delete semantics still need an operator-gated backend
   policy. Current retarget is a draft/preview, not an in-place mutation.
+- The next visual-quality slice should move from simple positioned nodes to a
+  cleaner local-graph layout inspired by Obsidian Graph View: graph first,
+  filters/groups/local depth second, raw payload last.
 - L2-B graph-health metrics, source/bucket pressure visuals, and component/
   traversal summaries still need bounded backend computation.
 - Evidence/String Board remains a renderer over CORE-006/CORE-007 candidates;
@@ -86,6 +115,17 @@ Remaining WEB-011 work:
   endpoints, showed the edge-operation panel, `重定向草稿` produced an
   `l2b.edge.draft` receipt plus one preview edge, and browser console errors
   stayed at zero.
+- 2026-05-14 terminology/interaction verification: `npm run typecheck` and
+  `npm run build` passed; static scan confirmed the previous awkward graph and
+  record Chinese labels are absent from React source/dist; local HTTP smoke
+  returned `200` for `/` and `/api/app/live-state`. In-app browser automation
+  timed out during this round, so visual click/drag smoke should be repeated
+  when the browser bridge recovers.
+- 2026-05-14 canvas-create verification: `npm run typecheck`, `npm run build`,
+  Web route tests, static awkward-label scan, `git diff --check`, and local HTTP
+  checks passed after adding empty-canvas double-click Node creation. Browser
+  automation timed out again, so the visual double-click gesture remains a
+  manual smoke item in the open browser.
 
 ## Slice: Memory Graph Workspace
 
@@ -710,9 +750,9 @@ Verification:
 - Duplicate `id="..."` scan for `web/console/index.html`: clean.
 - In-app browser Memory smoke:
   DSG state map strings are present and no console errors were reported.
-- L2-B create dry-run smoke:
-  clicking `创建干跑` produced one `.memory-svg-node.preview` with no console
-  errors.
+- L2-B create preview smoke:
+  clicking the former create-dry-run button produced one
+  `.memory-svg-node.preview` with no console errors.
 - L2-B preview edge smoke:
   after reloading `http://127.0.0.1:7893/`, the browser created two dry-run
   preview nodes, staged one edge draft between them, rendered one

@@ -104,6 +104,17 @@ reachable on app-monitor, `GET /api/app/personas` was added for selector-safe
 Persona metadata, and app-monitor POST routes can be protected with
 `PARROT_APP_MONITOR_SECRET` plus Unity's ignored `appApiSecret`.
 
+2026-05-14 formal START check: RoomSetting save/apply, orchestrator LineB
+prewrite, and token mint passed, and the test restored active RoomSetting plus
+runtime config shape afterward. LiveKit rejected both mint-issued and local
+diagnostic tokens with 401 invalid token, so the remaining blocker is Castle
+LiveKit API key/secret alignment. Local root cause is that production Castle
+compose mounts `infra/livekit/livekit.yaml`, which still had the old placeholder
+secret for `devkey` while token-mint/Brain use the newer dev secret. Local
+config/test fix is done; ECS needs that file deployed and LiveKit restarted.
+Until that is fixed, Brain RPC, heartbeat, and main-ready cannot be marked as
+true START completion.
+
 ## 5. Web Console Business Route
 
 Web work emphasizes observability, management, visualization, and admin flows.

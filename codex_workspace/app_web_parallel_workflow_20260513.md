@@ -124,8 +124,14 @@ Each chat follows this loop:
     stays on App HTTP before LiveKit connects. The default LineA room profile
     still fails correctly against a running LineB Brain. User repaired public
     ECS routing on 2026-05-14: `8790` RoomSetting returns 2 rooms and `7890`
-    orchestrator health is ok. Phone proof can now move to formal Unity START
-    with RoomSetting save/apply, Tier 1 prewrite, and main-ready gates.
+    orchestrator health is ok. The formal START script now passes RoomSetting
+    save/apply, Tier 1 prewrite, and Mint, but LiveKit rejects the resulting
+    tokens with 401 invalid token. Completion is blocked on aligning Castle
+    LiveKit API key/secret configuration; local root cause is
+    `infra/livekit/livekit.yaml` using the old placeholder secret while
+    token-mint/Brain use the newer dev secret. Local config/test fix is done,
+    but ECS needs LiveKit config deployment and restart. Do not count Brain RPC,
+    heartbeat, or main-ready as passed from that run.
     App HTTP selector follow-up: `GET /api/app/line-profiles` is reachable,
     `GET /api/app/personas` was added for selector-safe persona metadata, and
     app-monitor POST routes can be protected by `PARROT_APP_MONITOR_SECRET`

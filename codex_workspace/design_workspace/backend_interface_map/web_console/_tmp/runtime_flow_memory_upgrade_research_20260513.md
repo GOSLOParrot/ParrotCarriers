@@ -205,6 +205,46 @@ fields to `.cursor/memory/architecture/Interface/**` until App/Web confirmation.
   edge-handle retarget gestures. Browser smoke confirmed the panel, retarget
   receipt, one preview edge, and zero console errors. No backend route, App DTO,
   or shared core contract changed.
+- 2026-05-14: Memory Graph terminology/interaction polish: user audit found the
+  old dry-run wording, record-rail label, node/edge draft labels, and the empty
+  L2-B placeholder blocks confusing. UI copy now presents dry-run as
+  preview/`预演`, the right rail as records/`操作记录`, graph terms as
+  `Node`/`Edge`, and raw JSON behind a collapsible detail. Empty L2-B now shows
+  a non-connectable Obsidian-like status overlay instead of fake graph nodes.
+  React Flow uses loose connection mode and stores node positions from
+  node-change events. Research anchor: React Flow `ConnectionMode.Loose` and
+  Obsidian Graph View filter/local graph patterns.
+- 2026-05-14: Memory Graph custom node slice: replaced default React Flow L2-B
+  node boxes with compact Obsidian-like Memory Node cards. Each Memory Node now
+  exposes top/right/bottom/left handles under loose connection mode, so edge
+  previews are no longer restricted to top-to-bottom pairing. Draft node/edge ids
+  now include a random suffix to avoid rapid-click collisions. Verification:
+  frontend typecheck/build and Web route tests passed; local HTTP checks returned
+  `200` for `/` and `/api/app/live-state`. Browser visual smoke was attempted,
+  but the in-app browser automation bridge timed out again, so manual visual
+  review is still required for this slice.
+- 2026-05-14: Memory Graph canvas-create slice: empty-canvas double-click now
+  drafts a Node at the clicked React Flow coordinate using
+  `screenToFlowPosition`, not deprecated pane-relative `project()` math. React
+  Flow double-click zoom is disabled on this workspace so the create gesture is
+  stable. Verification: frontend typecheck/build, Web route tests, static
+  awkward-label scan, `git diff --check`, and local HTTP checks passed. Browser
+  visual smoke was retried and timed out at the automation bridge again, so the
+  open browser still needs manual refresh/visual confirmation.
+- 2026-05-14: Selection-state bugfix: React Flow clears internal selection on
+  blank-pane click, but the Web drawer was keeping its own stale selected
+  object. Blank-pane click now clears the Web detail selection, and custom Node
+  / Edge selected props are driven from that same state so the canvas highlight
+  and drawer do not diverge. Verification: frontend typecheck/build, Web route
+  tests, static awkward-label scan, `git diff --check`, and local HTTP checks
+  passed.
+- 2026-05-14: View recovery controls: added Web-only `Focus` and `Layout`
+  controls to the React Memory canvas. `Focus` fits the selected Node or the two
+  endpoints of the selected Edge; `Layout` reapplies a local circular layout to
+  visible Nodes. This is intentionally a frontend view-state improvement only
+  and does not change L2-B, L1.5, Ref, App DTO, or core interface contracts.
+  Verification: frontend typecheck/build, Web route tests, static awkward-label
+  scan, `git diff --check`, and local HTTP checks passed.
 
 ## Pending Core / Data Model Review
 

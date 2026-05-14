@@ -292,9 +292,17 @@ These are useful test evidence only. They must not be used as App completion evi
   echo those secrets. User repaired ECS public routing; from this workstation
   `http://8.216.45.45:8790/api/app/room-setting` is reachable and returns
   2 rooms, and `http://8.216.45.45:7890/health` returns orchestrator `ok`.
-  APP-015.3 HTTP reachability is resolved; next proof is formal Unity/phone
-  START with RoomSetting save/apply, LineB Tier 1 prewrite, Mint/LiveKit/Brain
-  RPC, and main-ready gates.
+  APP-015.3 HTTP reachability is resolved. 2026-05-14 formal START script
+  reached RoomSetting save/apply, LineB Tier 1 prewrite, and Mint, but LiveKit
+  rejected both mint-issued and locally generated tokens with 401 invalid token.
+  Treat this as a Castle LiveKit API key/secret alignment blocker, not a Unity
+  UI blocker and not a fake success. RoomSetting active was restored to
+  `default`; orchestrator runtime config file was cleared back to the
+  env-backed LineB state. Root cause found in repo config: Castle compose mounts
+  `infra/livekit/livekit.yaml`, whose `devkey` still used the old placeholder
+  secret while `.env`/token-mint/Brain used the newer dev secret. Local fix
+  aligns `infra/livekit/livekit.yaml` with token-mint and adds a guard test;
+  ECS still needs that file deployed and LiveKit restarted.
 - 2026-05-14 App HTTP selector/security update: `GET /api/app/line-profiles`
   is already present on app-monitor and reachable from Castle; `GET
   /api/app/personas` was added for selector-safe persona metadata
