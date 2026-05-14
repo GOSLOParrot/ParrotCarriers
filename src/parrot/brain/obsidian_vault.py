@@ -30,7 +30,10 @@ class VaultCheckResult:
 
 def parse_simple_frontmatter(path: Path) -> tuple[dict[str, str], str] | None:
     """Parse a small YAML-like frontmatter block without adding dependencies."""
-    text = path.read_text(encoding="utf-8")
+    # Windows editors and some Obsidian/plugin export paths may leave a UTF-8
+    # BOM at the start of a Markdown file. Treat it as transport noise so a
+    # valid frontmatter block still scans as import-ready.
+    text = path.read_text(encoding="utf-8").lstrip("\ufeff")
     if not text.startswith("---"):
         return None
     end = text.find("\n---", 3)

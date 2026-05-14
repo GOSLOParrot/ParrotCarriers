@@ -53,9 +53,17 @@ Examples:
 - Scheduler/Nanobot: `py-trees`, `nanobot`, `nanobot-overview`,
   `parrot-bus-orchestration`.
 
+## Project Skill Drafts
+
+These are repo-local working skills or skill drafts. They are not replacements
+for the installed direct Codex skills above.
+
+| Skill | Status | Main trigger surface |
+|:--|:--|:--|
+| `react-force-graph-l2b` | draft | Web Console full-screen L2-B realtime graph monitor, React-Force-Graph renderer adapter, Obsidian-like graph filters/groups/local graph behavior, trigger/attention animations, and graph-engine switching. |
+
 ## Maintenance Rule
 
 If `.cursor/skills/<name>/SKILL.md` changes, reinstall or refresh the matching
 Codex skill and keep the Codex `description` trigger-friendly. Do not let the
 bridge be the only route for version-locked code paths.
-

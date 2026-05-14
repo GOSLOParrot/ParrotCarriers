@@ -238,7 +238,7 @@ def test_brain_runtime_snapshot_round_trip(
 
 
 def test_force_unity_reconnect_rpc_registered() -> None:
-    """Static check: forceUnityReconnect must be registered alongside menu RPCs.
+    """Static check: forceUnityReconnect stays on the real-time RPC surface.
 
     Until livekit-agents grows a real test harness, this is the
     cheapest guard against a future refactor accidentally dropping
@@ -248,7 +248,7 @@ def test_force_unity_reconnect_rpc_registered() -> None:
 
     text = Path("src/parrot/brain/agent.py").read_text(encoding="utf-8")
     assert 'register_rpc_method("forceUnityReconnect")' in text
-    assert "ctx.room.disconnect()" in text
+    assert "await room.disconnect()" in text
     # Logger registration line must mention it so an operator can
     # grep ECS logs for "forceUnityReconnect" and find both sides.
     assert "forceUnityReconnect" in text

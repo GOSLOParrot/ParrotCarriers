@@ -38,8 +38,39 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  obsidianVaultScan: (vaultPath = "") => {
+    const params = new URLSearchParams({ limit: "24" });
+    if (vaultPath.trim()) params.set("vault_path", vaultPath.trim());
+    return json<Receipt>("/api/l15/obsidian-vault/scan?" + params.toString());
+  },
+  obsidianVaultImportDraft: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l15/obsidian-vault/import-draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  obsidianVaultImport: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l15/obsidian-vault/import", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   l15ObsidianNodeDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/l15/obsidian-node/draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  graphitiStatus: () => json<Record<string, unknown>>("/api/graphiti/status"),
+  graphitiSubgraphSearch: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/graphiti/subgraph/search", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  graphitiSubgraphExportDraft: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/graphiti/subgraph/export-draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  graphitiSubgraphExport: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/graphiti/subgraph/export", {
       method: "POST",
       body: JSON.stringify(body)
     }),
@@ -67,5 +98,10 @@ export const api = {
     json<Receipt>("/api/google/messages/push-test", {
       method: "POST",
       body: JSON.stringify({ subject: "Runtime Flow message push test", dry_run: true })
+    }),
+  googleCalendarPreview: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/google/calendar/preview", {
+      method: "POST",
+      body: JSON.stringify(body)
     })
 };

@@ -24,16 +24,20 @@ import {
   ChevronUp,
   CheckCircle2,
   CircleDot,
+  Database,
+  FileText,
   GitBranch,
   Languages,
   PanelRightOpen,
   Play,
   Plus,
   RefreshCw,
+  Search,
   Settings,
   ShieldCheck,
   Sparkles,
   Trash2,
+  UploadCloud,
   Workflow
 } from "lucide-react";
 import { api } from "./api";
@@ -59,6 +63,16 @@ type EdgeHandlePair = {
   sourceHandle?: string;
   targetHandle?: string;
 };
+
+type GraphitiPreviewPayload = {
+  hits?: Array<Record<string, unknown>>;
+  nodes?: Array<Record<string, unknown>>;
+  edges?: Array<Record<string, unknown>>;
+  partition?: string;
+  query?: string;
+};
+
+type SourceBoardId = "graphiti" | "obsidian" | "calendar" | "manual";
 
 type HandleSide = "top" | "right" | "bottom" | "left";
 
@@ -151,7 +165,41 @@ const dict = {
     blackboardScope: "Blackboard",
     intentScope: "Intent",
     runtimeSummary: "Intent, Plan, HITL, Blackboard, Scheduler, Nanobot, and messages.",
-    memorySummary: "L1.5, L2-B, Graphiti, Refs, Evidence Board, and safe graph previews."
+    memorySummary: "L1.5, L2-B, Graphiti, Refs, Evidence Board, and safe graph previews.",
+    sourceBoard: "Source Board",
+    graphiti: "Graphiti",
+    graphitiQuery: "Natural-language search",
+    partition: "Partition",
+    limit: "Limit",
+    searchGraphiti: "Search",
+    previewOnCanvas: "Preview on canvas",
+    exportSubgraphDraft: "Export Draft",
+    applyExportDryRun: "Preview Apply",
+    selectedHits: "Selected hits",
+    selectAll: "Select all",
+    selectedOf: "selected",
+    resultGraph: "Result graph",
+    noHits: "No hits yet.",
+    writeThroughL15: "writes through L1.5",
+    sourceBoardHint: "Sources become previews or L1.5 observations before L2-B.",
+    googleCalendar: "Google Calendar",
+    calendarPreview: "Calendar Preview",
+    manualNode: "Manual Node",
+    manualNodeHint: "Use the canvas toolbar for direct Node and Edge drafts.",
+    roleplayModeHint: "RolePlay is a mode/profile; it can contain many source packs.",
+    obsidianVaultPath: "Vault path",
+    scanVault: "Scan vault",
+    readyNotes: "Ready notes",
+    invalidNotes: "Invalid notes",
+    useNote: "Use note",
+    importDraft: "Import Preview",
+    selectedNotes: "Selected notes",
+    selectVisibleNotes: "Select visible",
+    clearSelection: "Clear selection",
+    vaultStatus: "Vault status",
+    readyCount: "Ready",
+    normalizedPreview: "Normalized preview",
+    observationPreview: "Observation preview"
   },
   zh: {
     memory: "记忆图谱",
@@ -235,7 +283,41 @@ const dict = {
     blackboardScope: "黑板",
     intentScope: "Intent",
     runtimeSummary: "Intent、Plan、HITL、黑板、Scheduler、Nanobot 和消息流。",
-    memorySummary: "L1.5、L2-B、Graphiti、Refs、Evidence Board 和图上安全预演操作。"
+    memorySummary: "L1.5、L2-B、Graphiti、Refs、Evidence Board 和图上安全预演操作。",
+    sourceBoard: "Source Board",
+    graphiti: "Graphiti",
+    graphitiQuery: "自然语言检索",
+    partition: "分区",
+    limit: "数量",
+    searchGraphiti: "搜索",
+    previewOnCanvas: "画布预览",
+    exportSubgraphDraft: "导出草稿",
+    applyExportDryRun: "预演执行",
+    selectedHits: "选中结果",
+    selectAll: "全选",
+    selectedOf: "已选",
+    resultGraph: "结果子图",
+    noHits: "暂无结果。",
+    writeThroughL15: "通过 L1.5 写入",
+    sourceBoardHint: "来源数据先变成预览或 L1.5 Observation，再进入 L2-B。",
+    googleCalendar: "Google 日程",
+    calendarPreview: "日程预览",
+    manualNode: "手动 Node",
+    manualNodeHint: "直接 Node / Edge 草稿放在画布工具栏里操作。",
+    roleplayModeHint: "RolePlay 是模式/Profile，可以包含很多来源包。",
+    obsidianVaultPath: "Vault 路径",
+    scanVault: "扫描 Vault",
+    readyNotes: "可导入 Notes",
+    invalidNotes: "无效 Notes",
+    useNote: "使用 Note",
+    importDraft: "导入预演",
+    selectedNotes: "已选 Notes",
+    selectVisibleNotes: "选择可见项",
+    clearSelection: "清空选择",
+    vaultStatus: "Vault 状态",
+    readyCount: "可导入",
+    normalizedPreview: "标准化预览",
+    observationPreview: "Observation 预览"
   }
 };
 
@@ -392,7 +474,7 @@ function MemoryGraphWorkspace({
       type: "memory",
       data: { label: String(row.label), source: row, preview: true },
       className: "preview-node",
-      connectable: true
+      connectable: row.draftable !== false
     }));
     return [...real, ...previews].map((node) => ({
       ...node,
@@ -402,7 +484,12 @@ function MemoryGraphWorkspace({
     }));
   }, [l2bNodes, manualPositions, previewNodes, selectedNodeId]);
   const draftableNodeIds = useMemo(
-    () => new Set(graphNodes.filter((node) => isDraftableMemoryNodeId(node.id)).map((node) => node.id)),
+    () => new Set(graphNodes
+      .filter((node) => {
+        const source = (node.data as MemoryNodeData | undefined)?.source;
+        return isDraftableMemoryNodeId(node.id) && node.connectable !== false && source?.draftable !== false;
+      })
+      .map((node) => node.id)),
     [graphNodes]
   );
   const nodePositions = useMemo<NodePositionMap>(
@@ -472,6 +559,67 @@ function MemoryGraphWorkspace({
       setEdgeTo((currentTo) => currentTo || (currentFrom !== uuid ? uuid : currentTo));
       return currentFrom;
     });
+  };
+
+  const stageGraphitiPreview = (preview: GraphitiPreviewPayload) => {
+    const sourceRows = (preview.nodes?.length ? preview.nodes : preview.hits ?? []).slice(0, 18);
+    const nodes = sourceRows.map((row, index) => ({
+      uuid: graphitiPreviewNodeId(row, index),
+      label: graphitiHitLabel(row, index),
+      kind: String(row.kind || "graphiti_fact"),
+      preview: true,
+      draftable: false,
+      source_tool: "graphiti_subgraph_preview",
+      partition: String(row.partition || preview.partition || "arknights_test"),
+      graphiti_uuid: String(row.uuid || row.graphiti_uuid || ""),
+      source_url: String(row.source_url || ""),
+      source_description: String(row.source_description || ""),
+      summary: String(row.summary || row.text || "")
+    }));
+    const nodeIds = new Set(nodes.map((node) => node.uuid));
+    const graphitiEdges = (preview.edges ?? [])
+      .filter((edge) => nodeIds.has(String(edge.source || "")) && nodeIds.has(String(edge.target || "")))
+      .slice(0, 24)
+      .map((edge, index): Edge => ({
+        id: String(edge.id || `graphiti-preview-edge:${index}`),
+        source: String(edge.source || ""),
+        target: String(edge.target || ""),
+        label: String(edge.label || edge.kind || "fact"),
+        className: "preview-edge graphiti-preview-edge",
+        animated: true,
+        reconnectable: false,
+        type: "smoothstep",
+        style: { strokeWidth: 2.5 },
+        data: {
+          source: {
+            ...edge,
+            source_tool: "graphiti_subgraph_preview",
+            preview: true,
+            draftable: false
+          }
+        }
+      }));
+    setPreviewNodes((current) => [
+      ...current.filter((row) => row.source_tool !== "graphiti_subgraph_preview"),
+      ...nodes
+    ]);
+    setPreviewEdges((current) => [
+      ...current.filter((edge) => {
+        const source = (edge.data as { source?: Record<string, unknown> } | undefined)?.source;
+        return source?.source_tool !== "graphiti_subgraph_preview";
+      }),
+      ...graphitiEdges
+    ]);
+    if (nodes.length) {
+      pushReceipt(localReceipt("graphiti.subgraph.preview", true, {
+        count: nodes.length,
+        edge_count: graphitiEdges.length,
+        partition: preview.partition || "arknights_test",
+        query: preview.query || "",
+        canvas_preview: true,
+        note: "Graphiti preview nodes are read-only until exported through L1.5."
+      }));
+    }
   };
 
   const draftNode = async (position?: { x: number; y: number }, origin = "toolbar") => {
@@ -795,9 +943,14 @@ function MemoryGraphWorkspace({
             t={t}
           />
         ) : null}
-        <h2>{t.l15Buckets}</h2>
+        <h2>{t.sourceBoard}</h2>
         <L15HealthPanel health={poolHealth} t={t} />
-        <ObsidianDraftCard pushReceipt={pushReceipt} t={t} />
+        <SourceBoard
+          pushReceipt={pushReceipt}
+          t={t}
+          onGraphitiPreview={stageGraphitiPreview}
+        />
+        <h2>{t.l15Buckets}</h2>
         <div className="bucket-board">
           {buckets.map((bucket) => (
             <BucketCard key={String(bucket.kind)} bucket={bucket} maxNodeCount={maxBucketCount} pushReceipt={pushReceipt} t={t} />
@@ -1176,6 +1329,308 @@ function L15HealthPanel({ health, t }: { health: Record<string, unknown>; t: Con
   );
 }
 
+function SourceBoard({
+  pushReceipt,
+  t,
+  onGraphitiPreview
+}: {
+  pushReceipt: (receipt: Receipt | null) => void;
+  t: ConsoleCopy;
+  onGraphitiPreview: (preview: GraphitiPreviewPayload) => void;
+}) {
+  const [activeSource, setActiveSource] = useState<SourceBoardId>("graphiti");
+  const sourceTabs = [
+    { id: "graphiti" as const, label: t.graphiti, icon: <Database size={15} /> },
+    { id: "obsidian" as const, label: "Obsidian", icon: <FileText size={15} /> },
+    { id: "calendar" as const, label: t.googleCalendar, icon: <CalendarDays size={15} /> },
+    { id: "manual" as const, label: t.manualNode, icon: <Plus size={15} /> }
+  ];
+  return (
+    <div className="source-board">
+      <div className="source-board-tabs" role="tablist" aria-label={t.sourceBoard}>
+        {sourceTabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={activeSource === tab.id ? "source-tab active" : "source-tab"}
+            onClick={() => setActiveSource(tab.id)}
+            role="tab"
+            aria-selected={activeSource === tab.id}
+          >
+            {tab.icon}
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="source-board-active">
+        <div className="source-panel" hidden={activeSource !== "graphiti"}>
+          <GraphitiSourceCard pushReceipt={pushReceipt} t={t} onPreview={onGraphitiPreview} />
+        </div>
+        <div className="source-panel" hidden={activeSource !== "obsidian"}>
+          <ObsidianDraftCard pushReceipt={pushReceipt} t={t} />
+        </div>
+        <div className="source-panel" hidden={activeSource !== "calendar"}>
+          <CalendarSourceCard pushReceipt={pushReceipt} t={t} />
+        </div>
+        <div className="source-panel" hidden={activeSource !== "manual"}>
+          <ManualNodeSourceCard t={t} />
+        </div>
+      </div>
+      <p className="source-board-note">{t.sourceBoardHint}</p>
+    </div>
+  );
+}
+
+function GraphitiSourceCard({
+  pushReceipt,
+  t,
+  onPreview
+}: {
+  pushReceipt: (receipt: Receipt | null) => void;
+  t: ConsoleCopy;
+  onPreview: (preview: GraphitiPreviewPayload) => void;
+}) {
+  const [partition, setPartition] = useState("arknights_test");
+  const [query, setQuery] = useState("Amiya Chernobog");
+  const [limit, setLimit] = useState(6);
+  const [hits, setHits] = useState<Array<Record<string, unknown>>>([]);
+  const [subgraphNodes, setSubgraphNodes] = useState<Array<Record<string, unknown>>>([]);
+  const [subgraphEdges, setSubgraphEdges] = useState<Array<Record<string, unknown>>>([]);
+  const [selectedHitKeys, setSelectedHitKeys] = useState<string[]>([]);
+  const selectedHits = useMemo(
+    () => hits.filter((hit, index) => selectedHitKeys.includes(graphitiHitKey(hit, index))),
+    [hits, selectedHitKeys]
+  );
+  const selectedPreview = () => buildGraphitiPreviewPayload({
+    hits: selectedHits,
+    subgraphNodes,
+    subgraphEdges,
+    partition,
+    query
+  });
+  const search = async () => {
+    if (!query.trim()) {
+      pushReceipt(localReceipt("graphiti.subgraph.search", false, { error: "missing_query" }));
+      return;
+    }
+    try {
+      const receipt = await api.graphitiSubgraphSearch({ query: query.trim(), partition, limit });
+      const nextHits = receiptArray(receipt, "hits");
+      const subgraph = receiptRecord(receipt, "subgraph");
+      const nextSubgraphNodes = recordArrayFrom(subgraph, "nodes");
+      const nextSubgraphEdges = recordArrayFrom(subgraph, "edges");
+      setHits(nextHits);
+      setSubgraphNodes(nextSubgraphNodes);
+      setSubgraphEdges(nextSubgraphEdges);
+      setSelectedHitKeys(nextHits.map((hit, index) => graphitiHitKey(hit, index)));
+      if (receipt.success !== false && (nextHits.length || nextSubgraphNodes.length)) {
+        onPreview(buildGraphitiPreviewPayload({
+          hits: nextHits,
+          subgraphNodes: nextSubgraphNodes,
+          subgraphEdges: nextSubgraphEdges,
+          partition,
+          query
+        }));
+      }
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("graphiti.subgraph.search", exc, { partition, query }));
+    }
+  };
+  const toggleHit = (key: string) => {
+    setSelectedHitKeys((current) => (
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key]
+    ));
+  };
+  const selectAllHits = () => {
+    setSelectedHitKeys(hits.map((hit, index) => graphitiHitKey(hit, index)));
+  };
+  const exportDraft = async () => {
+    if (!selectedHits.length) {
+      pushReceipt(localReceipt("graphiti.subgraph.export_draft", false, { error: "no_hits_selected", partition, query }));
+      return;
+    }
+    try {
+      pushReceipt(await api.graphitiSubgraphExportDraft({ partition, query: query.trim(), hits: selectedHits }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("graphiti.subgraph.export_draft", exc, { partition, query }));
+    }
+  };
+  const exportDryRun = async () => {
+    if (!selectedHits.length) {
+      pushReceipt(localReceipt("graphiti.subgraph.export", false, { error: "no_hits_selected", partition, query }));
+      return;
+    }
+    try {
+      pushReceipt(await api.graphitiSubgraphExport({
+        partition,
+        query: query.trim(),
+        hits: selectedHits,
+        dry_run: true,
+        operator_mode: false
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("graphiti.subgraph.export", exc, { partition, query }));
+    }
+  };
+
+  return (
+    <article className="source-card graphiti-source-card">
+      <div className="source-card-head">
+        <strong><Database size={16} /> {t.graphiti}</strong>
+        <small>{t.writeThroughL15}</small>
+      </div>
+      <label>
+        <span>{t.partition}</span>
+        <select value={partition} onChange={(event) => setPartition(event.target.value)}>
+          <option value="arknights_test">arknights_test</option>
+          <option value="goslo">goslo</option>
+          <option value="maid">maid</option>
+          <option value="scene">scene</option>
+          <option value="user">user</option>
+        </select>
+      </label>
+      <label>
+        <span>{t.graphitiQuery}</span>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.graphitiQuery} />
+      </label>
+      <label>
+        <span>{t.limit}</span>
+        <input
+          type="number"
+          min={1}
+          max={20}
+          value={limit}
+          onChange={(event) => setLimit(Math.max(1, Math.min(20, Number(event.target.value) || 1)))}
+        />
+      </label>
+      <div className="button-row">
+        <button className="button primary" onClick={() => void search()}><Search size={16} /> {t.searchGraphiti}</button>
+        <button className="button" onClick={() => onPreview(selectedPreview())} disabled={!selectedHits.length}><GitBranch size={16} /> {t.previewOnCanvas}</button>
+        <button className="button" onClick={() => void exportDraft()} disabled={!selectedHits.length}><UploadCloud size={16} /> {t.exportSubgraphDraft}</button>
+        <button className="button ghost" onClick={() => void exportDryRun()} disabled={!selectedHits.length}><ShieldCheck size={16} /> {t.applyExportDryRun}</button>
+      </div>
+      <div className="hit-list">
+        <div className="hit-list-head">
+          <strong>{t.resultGraph}</strong>
+          <small>{`${selectedHits.length}/${hits.length} ${t.selectedOf} · ${subgraphNodes.length} Node · ${subgraphEdges.length} Edge`}</small>
+        </div>
+        {hits.length ? (
+          <div className="button-row compact">
+            <button className="button small" onClick={selectAllHits}>{t.selectAll}</button>
+            <button className="button small ghost" onClick={() => setSelectedHitKeys([])}>{t.clearSelection}</button>
+          </div>
+        ) : null}
+        {hits.length ? hits.slice(0, 8).map((hit, index) => {
+          const key = graphitiHitKey(hit, index);
+          const checked = selectedHitKeys.includes(key);
+          return (
+            <div className={checked ? "hit-select-row selected" : "hit-select-row"} key={key}>
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => toggleHit(key)}
+                aria-label={`${t.selectedHits}: ${graphitiHitLabel(hit, index)}`}
+              />
+              <button
+                className="hit-row"
+                onClick={() => onPreview(buildGraphitiPreviewPayload({
+                  hits: [hit],
+                  subgraphNodes,
+                  subgraphEdges,
+                  partition,
+                  query
+                }))}
+                title={String(hit.text || hit.summary || hit.label || "")}
+              >
+                <span>{graphitiHitLabel(hit, index)}</span>
+                <small>{String(hit.source_description || hit.uuid || hit.score || "")}</small>
+              </button>
+            </div>
+          );
+        }) : <small className="muted">{t.noHits}</small>}
+      </div>
+    </article>
+  );
+}
+
+function CalendarSourceCard({
+  pushReceipt,
+  t
+}: {
+  pushReceipt: (receipt: Receipt | null) => void;
+  t: ConsoleCopy;
+}) {
+  const [normalizedEvents, setNormalizedEvents] = useState<Array<Record<string, unknown>>>([]);
+  const [observations, setObservations] = useState<Array<Record<string, unknown>>>([]);
+  const draft = async () => {
+    const events = [
+      {
+        id: "react_source_board_calendar_event",
+        calendar_id: "primary",
+        summary: "React Source Board calendar preview",
+        start: { dateTime: "2026-05-15T10:00:00+08:00", timeZone: "Asia/Shanghai" },
+        end: { dateTime: "2026-05-15T10:30:00+08:00", timeZone: "Asia/Shanghai" },
+        htmlLink: "https://calendar.google.com/",
+        status: "confirmed",
+        objects: ["blue mug"]
+      }
+    ];
+    try {
+      const receipt = await api.googleCalendarPreview({ events });
+      setNormalizedEvents(receiptArray(receipt, "normalized_events"));
+      setObservations(receiptArray(receipt, "observations"));
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("calendar.preview", exc));
+    }
+  };
+  return (
+    <article className="source-card">
+      <div className="source-card-head">
+        <strong><CalendarDays size={16} /> {t.googleCalendar}</strong>
+        <small>{t.writeThroughL15}</small>
+      </div>
+      <button className="button" onClick={() => void draft()}><Bell size={16} /> {t.calendarPreview}</button>
+      {normalizedEvents.length ? (
+        <div className="note-preview-list">
+          <strong>{t.normalizedPreview}</strong>
+          {normalizedEvents.slice(0, 3).map((event, index) => (
+            <div className="preview-row" key={`${String(event.id || index)}:calendar`}>
+              <span>{String(event.title || event.id || "-")}</span>
+              <small>{`${String(event.start_time || "")} / ${String(event.timezone || "")}`}</small>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {observations.length ? (
+        <div className="note-preview-list">
+          <strong>{t.observationPreview}</strong>
+          {observations.slice(0, 3).map((observation, index) => (
+            <div className="preview-row" key={`${String(observation.label || index)}:obs`}>
+              <span>{String(observation.label || "-")}</span>
+              <small>{String((observation.meta as Record<string, unknown> | undefined)?.calendar_event_id || observation.source || "")}</small>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function ManualNodeSourceCard({ t }: { t: ConsoleCopy }) {
+  return (
+    <article className="source-card">
+      <div className="source-card-head">
+        <strong><FileText size={16} /> {t.manualNode}</strong>
+        <small>{t.roleplayModeHint}</small>
+      </div>
+      <p className="source-card-note">{t.manualNodeHint}</p>
+    </article>
+  );
+}
+
 function ObsidianDraftCard({
   pushReceipt,
   t
@@ -1186,7 +1641,63 @@ function ObsidianDraftCard({
   const [profile, setProfile] = useState("daily");
   const [label, setLabel] = useState("Web setting node");
   const [obsidianUuid, setObsidianUuid] = useState("");
+  const [vaultPath, setVaultPath] = useState("D:/GOSLOParrot/GOSLObsidian");
+  const [scanNotes, setScanNotes] = useState<Array<Record<string, unknown>>>([]);
+  const [invalidNotes, setInvalidNotes] = useState<Array<Record<string, unknown>>>([]);
+  const [selectedNotePaths, setSelectedNotePaths] = useState<string[]>([]);
+  const [vaultStatus, setVaultStatus] = useState<Record<string, unknown> | null>(null);
+  const visibleScanNotes = scanNotes.slice(0, 12);
   const refMissingUuid = profile === "ref" && !obsidianUuid.trim();
+  const scanVault = async () => {
+    try {
+      const receipt = await api.obsidianVaultScan(vaultPath);
+      const notes = receiptArray(receipt, "notes");
+      setScanNotes(notes);
+      setSelectedNotePaths([]);
+      setInvalidNotes(receiptArray(receipt, "invalid_notes"));
+      const nextVaultStatus = receipt.data?.vault;
+      setVaultStatus((nextVaultStatus && typeof nextVaultStatus === "object" && !Array.isArray(nextVaultStatus))
+        ? nextVaultStatus as Record<string, unknown>
+        : null);
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("l15.obsidian_vault.scan", exc, { vault_path: vaultPath }));
+    }
+  };
+  const useScannedNote = (note: Record<string, unknown>) => {
+    const payload = (note.payload && typeof note.payload === "object" && !Array.isArray(note.payload))
+      ? note.payload as Record<string, unknown>
+      : note;
+    setProfile(String(payload.profile || note.profile || "daily"));
+    setLabel(String(payload.label || note.label || ""));
+    setObsidianUuid(String(payload.obsidian_uuid || note.obsidian_uuid || ""));
+  };
+  const toggleSelectedNote = (path: string) => {
+    setSelectedNotePaths((current) => (
+      current.includes(path)
+        ? current.filter((item) => item !== path)
+        : [...current, path]
+    ));
+  };
+  const selectVisibleNotes = () => {
+    setSelectedNotePaths(visibleScanNotes.map((note) => String(note.path || "")).filter(Boolean));
+  };
+  const draftImport = async () => {
+    if (!selectedNotePaths.length) {
+      pushReceipt(localReceipt("l15.obsidian_vault.import_draft", false, { error: "no_notes_selected" }));
+      return;
+    }
+    try {
+      pushReceipt(await api.obsidianVaultImportDraft({
+        vault_path: vaultPath,
+        paths: selectedNotePaths,
+        dry_run: true,
+        operator_mode: false
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("l15.obsidian_vault.import_draft", exc, { vault_path: vaultPath, paths: selectedNotePaths }));
+    }
+  };
   const draft = async () => {
     if (refMissingUuid) {
       pushReceipt(localReceipt("l15.obsidian_node.draft", false, {
@@ -1210,11 +1721,48 @@ function ObsidianDraftCard({
     }
   };
   return (
-    <article className="obsidian-card">
-      <div className="obsidian-card-head">
-        <strong>{t.obsidianSettings}</strong>
+    <article className="source-card obsidian-card">
+      <div className="source-card-head">
+        <strong><FileText size={16} /> {t.obsidianSettings}</strong>
         <small className={refMissingUuid ? "warn-text" : ""}>{profile === "ref" ? t.refRequiresUuid : t.uuidFree}</small>
       </div>
+      <label>
+        <span>{t.obsidianVaultPath}</span>
+        <input value={vaultPath} onChange={(event) => setVaultPath(event.target.value)} placeholder="D:/GOSLOParrot/GOSLObsidian" />
+      </label>
+      <button className="button" onClick={() => void scanVault()}><Search size={16} /> {t.scanVault}</button>
+      {vaultStatus ? (
+        <div className="preview-row">
+          <span>{`${t.vaultStatus}: ${String(vaultStatus.status || "-")}`}</span>
+          <small>{`${t.readyCount}: ${String(vaultStatus.ingest_ready_count ?? 0)} / ${String(vaultStatus.markdown_count ?? 0)}; ${t.invalidNotes}: ${String(vaultStatus.invalid_count ?? 0)}`}</small>
+        </div>
+      ) : null}
+      {scanNotes.length ? (
+        <div className="note-preview-list">
+          <strong>{t.readyNotes}</strong>
+          <small>{t.selectedNotes}: {selectedNotePaths.length}</small>
+          <div className="button-row compact">
+            <button className="button small" onClick={selectVisibleNotes}>{t.selectVisibleNotes}</button>
+            <button className="button small ghost" onClick={() => setSelectedNotePaths([])}>{t.clearSelection}</button>
+          </div>
+          {visibleScanNotes.map((note, index) => (
+            <div className="note-select-row" key={`${String(note.path || note.label)}:${index}`}>
+              <input
+                type="checkbox"
+                checked={selectedNotePaths.includes(String(note.path || ""))}
+                onChange={() => toggleSelectedNote(String(note.path || ""))}
+                aria-label={`${t.selectedNotes}: ${String(note.label || note.path || "")}`}
+              />
+              <button className="hit-row" onClick={() => useScannedNote(note)}>
+                <span>{String(note.label || "-")}</span>
+                <small>{`${String(note.profile || "")} / ${String(note.path || "")}`}</small>
+              </button>
+            </div>
+          ))}
+          <button className="button" onClick={() => void draftImport()}><UploadCloud size={16} /> {t.importDraft}</button>
+        </div>
+      ) : null}
+      {invalidNotes.length ? <small className="warn-text">{t.invalidNotes}: {invalidNotes.length}</small> : null}
       <label>
         <span>{t.settingProfile}</span>
         <select value={profile} onChange={(event) => setProfile(event.target.value)}>
@@ -1423,6 +1971,81 @@ function MemoryNodeCard({ data, selected, isConnectable }: NodeProps<MemoryNodeD
       </div>
     </div>
   );
+}
+
+function receiptArray(receipt: Receipt, key: string): Array<Record<string, unknown>> {
+  const data = receipt.data ?? {};
+  const raw = data[key];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+}
+
+function receiptRecord(receipt: Receipt, key: string): Record<string, unknown> {
+  const raw = (receipt.data ?? {})[key];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return raw as Record<string, unknown>;
+}
+
+function recordArrayFrom(source: Record<string, unknown>, key: string): Array<Record<string, unknown>> {
+  const raw = source[key];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+}
+
+function graphitiHitKey(hit: Record<string, unknown>, index: number): string {
+  return String(
+    hit.uuid
+    || hit.graphiti_uuid
+    || hit.id
+    || `${hit.source_node_uuid || ""}:${hit.target_node_uuid || ""}:${index}`
+  );
+}
+
+function buildGraphitiPreviewPayload({
+  hits,
+  subgraphNodes,
+  subgraphEdges,
+  partition,
+  query
+}: {
+  hits: Array<Record<string, unknown>>;
+  subgraphNodes: Array<Record<string, unknown>>;
+  subgraphEdges: Array<Record<string, unknown>>;
+  partition: string;
+  query: string;
+}): GraphitiPreviewPayload {
+  const hitNodeIds = new Set(hits.map((hit, index) => graphitiPreviewNodeId(hit, index)));
+  const selectedEdges = subgraphEdges.filter((edge) => {
+    const hitId = String(edge.hit_id || "");
+    return hitNodeIds.has(hitId) || hitNodeIds.has(String(edge.source || "")) || hitNodeIds.has(String(edge.target || ""));
+  });
+  const selectedNodeIds = new Set(hitNodeIds);
+  selectedEdges.forEach((edge) => {
+    selectedNodeIds.add(String(edge.source || ""));
+    selectedNodeIds.add(String(edge.target || ""));
+  });
+  const nodes = subgraphNodes.filter((node) => selectedNodeIds.has(String(node.id || node.uuid || node.graphiti_uuid || "")));
+  return {
+    hits,
+    nodes: nodes.length ? nodes : hits,
+    edges: selectedEdges,
+    partition,
+    query: query.trim()
+  };
+}
+
+function graphitiPreviewNodeId(hit: Record<string, unknown>, index: number): string {
+  const id = String(hit.id || "").trim();
+  if (id) return id;
+  const uuid = String(hit.uuid || hit.graphiti_uuid || "").trim();
+  return uuid ? `graphiti:${uuid}` : `graphiti:hit:${index}:${String(hit.label || hit.text || "").slice(0, 18)}`;
+}
+
+function graphitiHitLabel(hit: Record<string, unknown>, index: number): string {
+  const raw = String(hit.label || hit.summary || hit.text || "").replace(/\s+/g, " ").trim();
+  if (!raw) return `Graphiti hit ${index + 1}`;
+  const firstClause = raw.split(/[.。:：]/, 1)[0] || raw;
+  return firstClause.slice(0, 72);
 }
 
 function memoryNode(row: Record<string, unknown>, index: number): Node {

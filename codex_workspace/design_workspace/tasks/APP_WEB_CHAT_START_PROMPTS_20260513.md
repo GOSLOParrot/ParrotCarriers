@@ -9,6 +9,9 @@ Sources:
 - `codex_workspace/app_web_parallel_workflow_20260513.md`
 - `codex_workspace/codex_skills/MIGRATION_STATUS_20260513.md`
 - `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md`
+- `codex_workspace/design_workspace/backend_interface_map/app/unity_app_transport_interface_taxonomy_20260515.md`
+- `codex_workspace/design_workspace/backend_interface_map/app/unity_livekit_ecp_sva_data_flow_map_20260515.md`
+- `codex_workspace/design_workspace/backend_interface_map/app/unity_homepage_menu_livekit_audit_20260515.md`
 - `codex_workspace/design_workspace/backend_interface_map/core_interface_candidate_queue_20260513.md`
 
 Use these prompts by copying one into a new Codex chat. The dedicated chat owns
@@ -25,23 +28,21 @@ top-level `Assets/UI`, top-level `Assets/Models`, or
 `LiveKitSdkVersionInfo.txt`.
 After Unity directory, scene, resource, model, art, or Build Settings changes,
 update the inventory SSOT and App TODO status in the same turn.
-`Assets/ParrotApp/Runtime/Scripts/UI/AppV1MetaUiController.cs` is a legacy
+`Assets/ParrotApp/Runtime/Scripts/UI/AppV1SmokeReferenceUiController.cs` is a legacy
 Smoke/reference UI controller, not formal homepage completion evidence; use it
 only after reading the inventory SSOT classification.
 Current LiveKit status rule: do not mark START / Brain RPC complete just
-because Mint and LiveKit join succeed. As of 2026-05-14, Castle ADC permission
-and token-mint dispatch repairs are reported complete (`agent_dispatch_requested:
-True`, Brain no new crash, five services active). After Castle `c0f1705`, the
-fast retry passed Brain participant presence plus post-join business-ok
-`applyRoomProfile` and `setAppCapabilityMode` with `ner_lineb_room`. The
-obsolete Brain RoomSetting read/write RPC surface has been removed from active
-backend code; formal RoomSetting cold-load/edit/save stays on App HTTP before
-LiveKit connects. The default LineA RoomProfile still fails correctly against a
-running LineB Brain. Phone RoomSetting/orchestrator proof is separate; user
-repaired public ECS routing on 2026-05-14, so App API RoomSetting returns
-2 rooms and Orchestrator health is ok from this workstation. Next proof is
-formal Unity/phone START with RoomSetting save/apply, Tier 1 prewrite, and
-main-ready gates.
+because Mint and LiveKit join succeed. After the 2026-05-15 ECS restart, the
+non-phone formal START probe passed App HTTP RoomSetting snapshot/save/apply,
+orchestrator LineB prewrite, Mint, LiveKit join, Brain `agent-*` participant
+without manual dispatch, `applyRoomProfile` business-ok,
+`setAppCapabilityMode` business-ok, and `parrot.ecp.state` heartbeat publish.
+This closes non-phone START only. Formal homepage/main-ready ownership and
+iQOO Neo9 mic/Bluetooth/app-switch/AR/video verification remain pending. ECP
+must be treated as a broad embodied-control protocol plane; read
+`unity_app_transport_interface_taxonomy_20260515.md` and
+`unity_livekit_ecp_sva_data_flow_map_20260515.md` and
+`unity_homepage_menu_livekit_audit_20260515.md` before homepage/menu work.
 
 ```text
 你是 Unity App 前端线的 Codex。工作目录是 D:\GOSLOParrot\ParrotCarriers。
@@ -51,6 +52,9 @@ main-ready gates.
 - codex_workspace/app_web_parallel_workflow_20260513.md
 - codex_workspace/codex_skills/MIGRATION_STATUS_20260513.md
 - codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md
+- codex_workspace/design_workspace/backend_interface_map/app/unity_app_transport_interface_taxonomy_20260515.md
+- codex_workspace/design_workspace/backend_interface_map/app/unity_livekit_ecp_sva_data_flow_map_20260515.md
+- codex_workspace/design_workspace/backend_interface_map/app/unity_homepage_menu_livekit_audit_20260515.md
 - .cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md
 - codex_workspace/design_workspace/backend_interface_map/core_interface_candidate_queue_20260513.md
 

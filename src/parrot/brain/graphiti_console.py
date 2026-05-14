@@ -12,7 +12,7 @@ import datetime as _dt
 from dataclasses import dataclass, field
 from typing import Any
 
-from parrot.memory.graphiti_client import PARTITIONS
+from parrot.memory.graphiti_client import PARTITIONS, graphiti_provider_status
 
 _GRAPHITI_MISSING_MESSAGE = "graphiti-core optional extra not installed"
 
@@ -56,6 +56,7 @@ def graphiti_status() -> GraphitiConsoleResult:
                     "database": cfg.falkordb.database,
                 },
                 "google_api_key_configured": bool(cfg.google_api_key),
+                "graphiti_llm": graphiti_provider_status(cfg),
                 "gemini": {
                     "embedding_model": cfg.gemini.embedding_model,
                     "reranker_model": cfg.gemini.reranker_model,
@@ -153,6 +154,139 @@ async def search_graphiti(
         )
 
 
+async def search_graphiti_subgraph(
+    *,
+    query: str,
+    partition: str = PARTITIONS.GOSLO,
+    limit: int = 8,
+) -> dict[str, Any]:
+    """Return a bounded Graphiti search slice shaped for graph renderers."""
+    selected_partition = _normalize_partition(partition)
+    search = await search_graphiti(
+        query=query,
+        partition=selected_partition,
+        limit=max(1, min(limit, 20)),
+    )
+    payload = search.as_json()
+    if not search.success:
+        payload["action"] = "graphiti.subgraph.search"
+        payload.setdefault("data", {})["subgraph"] = _empty_subgraph(
+            query=query,
+            partition=selected_partition,
+        )
+        return payload
+
+    hits = list(search.data.get("results") or [])
+    subgraph = _hits_to_subgraph(hits, query=query, partition=selected_partition)
+    return {
+        "action": "graphiti.subgraph.search",
+        "success": True,
+        "available": search.available,
+        "message": f"{len(hits)} hit(s), {len(subgraph['nodes'])} node(s)",
+        "data": {
+            "query": query.strip(),
+            "partition": selected_partition,
+            "hits": hits,
+            "subgraph": subgraph,
+        },
+        "audit": {
+            "web_only": True,
+            "read_only": True,
+            "direct_falkordb_write": False,
+        },
+    }
+
+
+def draft_graphiti_subgraph_export(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft Graphiti search hits as L1.5 observations.
+
+    The draft intentionally uses ``ObservationSource.USER_EXPLICIT`` for this
+    first Web operator path: the operator is choosing to materialize search
+    results into L2-B. Graphiti provenance stays in meta/graphiti_uuid instead
+    of becoming a new shared source enum before CORE-008 review.
+    """
+    body = payload or {}
+    partition = _normalize_partition(str(body.get("partition") or PARTITIONS.GOSLO))
+    hits = _extract_export_hits(body)
+    observations = [
+        _hit_to_l15_observation_draft(hit, partition=partition, index=index)
+        for index, hit in enumerate(hits)
+    ]
+    warnings: list[str] = []
+    if not observations:
+        warnings.append("no Graphiti hits selected for export")
+    return _graphiti_receipt(
+        action="graphiti.subgraph.export_draft",
+        success=bool(observations),
+        dry_run=True,
+        operator_mode=False,
+        data={
+            "partition": partition,
+            "query": str(body.get("query") or "").strip(),
+            "selected_count": len(observations),
+            "observations": observations,
+            "write_path": "L15Pool.admit(Observation(source=USER_EXPLICIT))",
+            "warnings": warnings,
+            "operator_required_for_execute": True,
+        },
+    )
+
+
+async def export_graphiti_subgraph(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Export selected Graphiti hits into L2-B through L1.5.
+
+    Default browser calls only get a receipt. Real apply requires both
+    ``dry_run=false`` and ``operator_mode=true`` so a Graphiti search cannot
+    silently mutate L2-B.
+    """
+    from parrot.dsg.ingest.base import Observation, ObservationSource
+    from parrot.dsg.l1_5.pool import get_l1_5_pool
+    from parrot.dsg.l2b_types import ConfirmationStatus, NodeKind
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    draft = draft_graphiti_subgraph_export(body)
+    draft["action"] = "graphiti.subgraph.export"
+    draft["dry_run"] = dry_run
+    draft["operator_mode"] = operator_mode
+    if not draft.get("success"):
+        return draft
+    if dry_run or not operator_mode:
+        draft["data"]["would_apply"] = True
+        draft["data"]["apply_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        return draft
+
+    observations: list[Observation] = []
+    for row in draft["data"]["observations"]:
+        observations.append(
+            Observation(
+                source=ObservationSource.USER_EXPLICIT,
+                provenance_stream_id=str(row.get("provenance_stream_id") or ""),
+                graphiti_uuid=str(row.get("graphiti_uuid") or ""),
+                label=str(row["label"]),
+                kind=NodeKind(row.get("kind") or "object"),
+                description=str(row.get("description") or ""),
+                confidence=float(row.get("confidence") or 0.78),
+                confirmation=ConfirmationStatus(row.get("confirmation") or "confirmed"),
+                meta=dict(row.get("meta") or {}),
+            )
+        )
+    outcome = await get_l1_5_pool().admit(tuple(observations))
+    return _graphiti_receipt(
+        action="graphiti.subgraph.export",
+        success=not outcome.rejected,
+        dry_run=False,
+        operator_mode=True,
+        data={
+            "partition": draft["data"]["partition"],
+            "selected_count": len(observations),
+            "admit_outcome": _jsonable(outcome),
+            "write_path": "L15Pool.admit(Observation(source=USER_EXPLICIT))",
+        },
+    )
+
+
 async def add_episode(
     *,
     name: str,
@@ -227,7 +361,7 @@ async def add_episode(
 
 
 def _partition_values() -> list[str]:
-    return [PARTITIONS.GOSLO, PARTITIONS.MAID, PARTITIONS.SCENE, PARTITIONS.USER]
+    return PARTITIONS.values()
 
 
 def _normalize_partition(raw: str) -> str:
@@ -256,6 +390,216 @@ def _serialize_search_hit(hit: Any) -> dict[str, Any]:
         "uuid": getattr(hit, "uuid", ""),
         "source_node_uuid": getattr(hit, "source_node_uuid", ""),
         "target_node_uuid": getattr(hit, "target_node_uuid", ""),
+        "source_url": getattr(hit, "source_url", ""),
+        "source_description": getattr(hit, "source_description", ""),
+    }
+
+
+def _empty_subgraph(*, query: str, partition: str) -> dict[str, Any]:
+    return {"query": query.strip(), "partition": partition, "nodes": [], "edges": []}
+
+
+def _hits_to_subgraph(
+    hits: list[dict[str, Any]],
+    *,
+    query: str,
+    partition: str,
+) -> dict[str, Any]:
+    nodes: dict[str, dict[str, Any]] = {}
+    edges: list[dict[str, Any]] = []
+    for index, hit in enumerate(hits):
+        node_id = _graphiti_node_id(hit, index)
+        text = str(hit.get("text") or "").strip()
+        nodes.setdefault(
+            node_id,
+            {
+                "id": node_id,
+                "label": _label_from_text(text, fallback=f"Graphiti hit {index + 1}"),
+                "kind": "graphiti_fact",
+                "partition": partition,
+                "graphiti_uuid": str(hit.get("uuid") or ""),
+                "score": hit.get("score"),
+                "summary": text[:280],
+                "source_url": str(hit.get("source_url") or ""),
+                "source_description": str(hit.get("source_description") or ""),
+            },
+        )
+        source_uuid = str(hit.get("source_node_uuid") or "").strip()
+        target_uuid = str(hit.get("target_node_uuid") or "").strip()
+        if source_uuid:
+            nodes.setdefault(
+                f"graphiti:{source_uuid}",
+                {
+                    "id": f"graphiti:{source_uuid}",
+                    "label": source_uuid[:12],
+                    "kind": "graphiti_source",
+                    "partition": partition,
+                    "graphiti_uuid": source_uuid,
+                },
+            )
+        if target_uuid:
+            nodes.setdefault(
+                f"graphiti:{target_uuid}",
+                {
+                    "id": f"graphiti:{target_uuid}",
+                    "label": target_uuid[:12],
+                    "kind": "graphiti_target",
+                    "partition": partition,
+                    "graphiti_uuid": target_uuid,
+                },
+            )
+        if source_uuid and target_uuid:
+            edges.append(
+                {
+                    "id": f"graphiti:{source_uuid}->{target_uuid}:{index}",
+                    "source": f"graphiti:{source_uuid}",
+                    "target": f"graphiti:{target_uuid}",
+                    "kind": "graphiti_fact",
+                    "label": _label_from_text(text, fallback="fact"),
+                    "hit_id": node_id,
+                }
+            )
+    return {
+        "query": query.strip(),
+        "partition": partition,
+        "nodes": list(nodes.values()),
+        "edges": edges,
+    }
+
+
+def _extract_export_hits(body: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = body.get("hits")
+    if raw is None:
+        raw = body.get("results")
+    if raw is None:
+        raw = (body.get("subgraph") or {}).get("nodes") if isinstance(body.get("subgraph"), dict) else []
+    if not isinstance(raw, list):
+        return []
+    hits: list[dict[str, Any]] = []
+    for item in raw[:20]:
+        if isinstance(item, dict):
+            hits.append(dict(item))
+        elif isinstance(item, str) and item.strip():
+            hits.append({"text": item.strip()})
+    return hits
+
+
+def _hit_to_l15_observation_draft(
+    hit: dict[str, Any],
+    *,
+    partition: str,
+    index: int,
+) -> dict[str, Any]:
+    text = str(hit.get("text") or hit.get("summary") or hit.get("label") or "").strip()
+    label = _label_from_text(text, fallback=f"Graphiti export {index + 1}")[:128]
+    graphiti_uuid = str(hit.get("uuid") or hit.get("graphiti_uuid") or "").strip()
+    source_node_uuid = str(hit.get("source_node_uuid") or "").strip()
+    target_node_uuid = str(hit.get("target_node_uuid") or "").strip()
+    source_url = str(hit.get("source_url") or "").strip()
+    source_description = str(hit.get("source_description") or "").strip()
+    return {
+        "source": "user_explicit",
+        "provenance_stream_id": f"web:graphiti:{partition}:{graphiti_uuid or index}",
+        "graphiti_uuid": graphiti_uuid,
+        "label": label,
+        "kind": _normalize_node_kind(str(hit.get("kind") or "object")),
+        "description": text[:400],
+        "confidence": _safe_float(hit.get("confidence"), 0.78),
+        "confirmation": str(hit.get("confirmation") or "confirmed"),
+        "meta": {
+            "source_tool": "web_console.graphiti_subgraph_export",
+            "graphiti_partition": partition,
+            "graphiti_hit_uuid": graphiti_uuid,
+            "graphiti_source_node_uuid": source_node_uuid,
+            "graphiti_target_node_uuid": target_node_uuid,
+            "graphiti_score": hit.get("score"),
+            "source_url": source_url,
+            "source_description": source_description,
+            "fact_text": text[:800],
+        },
+    }
+
+
+def _graphiti_node_id(hit: dict[str, Any], index: int) -> str:
+    uuid = str(hit.get("uuid") or hit.get("graphiti_uuid") or "").strip()
+    return f"graphiti:{uuid}" if uuid else f"graphiti:hit:{index}"
+
+
+def _label_from_text(text: str, *, fallback: str) -> str:
+    cleaned = " ".join((text or "").split())
+    if not cleaned:
+        return fallback
+    for separator in (".", "。", ":", "：", "\n"):
+        if separator in cleaned:
+            cleaned = cleaned.split(separator, 1)[0]
+            break
+    return cleaned[:80] or fallback
+
+
+def _normalize_node_kind(raw: str) -> str:
+    value = raw.strip().lower()
+    return value if value in {"object", "surface", "zone", "person", "event", "photo"} else "object"
+
+
+def _safe_float(value: Any, fallback: float) -> float:
+    try:
+        return max(0.0, min(float(value), 1.0))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _body_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _jsonable(value: Any) -> Any:
+    if hasattr(value, "as_json"):
+        return value.as_json()
+    if hasattr(value, "__dataclass_fields__"):
+        return {
+            key: _jsonable(getattr(value, key))
+            for key in value.__dataclass_fields__  # type: ignore[attr-defined]
+        }
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if hasattr(value, "value"):
+        return value.value
+    return value
+
+
+def _graphiti_receipt(
+    *,
+    action: str,
+    success: bool,
+    dry_run: bool,
+    operator_mode: bool,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "action": action,
+        "success": success,
+        "dry_run": dry_run,
+        "operator_mode": operator_mode,
+        "receipt_id": (
+            f"web_{action.replace('.', '_')}_"
+            f"{_dt.datetime.now(_dt.timezone.utc).timestamp():.0f}"
+        ),
+        "data": data,
+        "audit": {
+            "web_only": True,
+            "default_mode": "dry_run",
+            "write_boundary": "L1.5",
+            "direct_falkordb_write": False,
+            "app_dto": False,
+        },
     }
 
 
@@ -263,6 +607,9 @@ __all__ = [
     "GraphitiConsoleResult",
     "add_episode",
     "draft_episode",
+    "draft_graphiti_subgraph_export",
+    "export_graphiti_subgraph",
     "graphiti_status",
     "search_graphiti",
+    "search_graphiti_subgraph",
 ]

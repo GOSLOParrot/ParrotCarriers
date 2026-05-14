@@ -5,6 +5,7 @@ using ParrotApp.Backend;
 using ParrotApp.Config;
 using ParrotApp.Ecp;
 using ParrotApp.LiveKit;
+using ParrotApp.UI;
 using UnityEngine;
 
 namespace ParrotApp.Lifecycle
@@ -13,9 +14,10 @@ namespace ParrotApp.Lifecycle
     /// START button business flow for the white-box app workspace.
     ///
     /// Flow:
-    /// permissions -> token mint -> transition/loading surface -> LiveKit connect
-    /// -> main UI. It intentionally does not greet on connect; greeting is gated
-    /// by <see cref="ReportGosloPlaced"/>.
+    /// permissions -> transition/loading surface -> Tier 1 runtime prewrite
+    /// -> App HTTP RoomSetting apply -> token mint -> LiveKit connect
+    /// -> Brain RPC sync -> main-ready hold screen. It intentionally does not
+    /// greet on connect; greeting is gated by <see cref="ReportGosloPlaced"/>.
     /// </summary>
     public class AppStartupFlowController : MonoBehaviour
     {
@@ -27,17 +29,28 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private MicrophonePublisher microphonePublisher;
         [SerializeField] private ARVideoPublisher videoPublisher;
         [SerializeField] private OrchestratorClient orchestratorClient;
+        [SerializeField] private AppRoomSettingClient roomSettingClient;
+        [SerializeField] private AppHomeMenuClient homeMenuClient;
         [SerializeField] private LifecycleHeartbeatPublisher heartbeatPublisher;
+        [SerializeField] private FormalMainReadyGate mainReadyGate;
+        [SerializeField] private FormalHomeHudController homeHudController;
+        [SerializeField] private FormalHomeMenuLoader homeMenuLoader;
+        [SerializeField] private FormalModelReadyReporter modelReadyReporter;
+        [SerializeField] private FormalArRuntimeBootstrap arRuntimeBootstrap;
+        [SerializeField] private FormalArSessionBaselineReporter arSessionBaselineReporter;
 
         [Header("Defaults")]
         [SerializeField] private AppStartupConfigDto defaultConfig = new AppStartupConfigDto();
         [SerializeField] private float connectTimeoutSeconds = 20f;
         [SerializeField] private float brainRpcReadyTimeoutSeconds = 8f;
         [SerializeField] private float brainRpcRetryIntervalSeconds = 0.5f;
+        [SerializeField] private float tierOneReconnectShutdownTimeoutSeconds = 18f;
 
         public AppStartupConfigDto ActiveConfig { get; private set; }
         public StartupPermissionSnapshotDto LastPermissionSnapshot { get; private set; }
         public bool StartupInProgress { get; private set; }
+        public bool FreshReconnectInProgress => _freshReconnectCoroutine != null;
+        public bool MainUiReadyOnce => _mainUiReadyOnce;
         public string LastError { get; private set; } = "";
 
         public event Action<AppStartupConfigDto> OnTransitionStarted;
@@ -45,6 +58,8 @@ namespace ParrotApp.Lifecycle
         public event Action<string> OnStartupFailed;
 
         private Coroutine _startupCoroutine;
+        private Coroutine _freshReconnectCoroutine;
+        private bool _mainUiReadyOnce;
 
         void Awake()
         {
@@ -92,10 +107,32 @@ namespace ParrotApp.Lifecycle
                 StopCoroutine(_startupCoroutine);
                 _startupCoroutine = null;
             }
+            if (_freshReconnectCoroutine != null)
+            {
+                StopCoroutine(_freshReconnectCoroutine);
+                _freshReconnectCoroutine = null;
+            }
             StartupInProgress = false;
             LastError = reason ?? "startup_cancelled";
             lifecycleManager?.ReportDegraded(LastError);
             Debug.LogWarning($"[AppStartupFlow] START cancelled: {LastError}");
+        }
+
+        public bool RequestFreshTokenReconnect(string reason = "fresh_token_reconnect")
+        {
+            if (!_mainUiReadyOnce)
+            {
+                LastError = "fresh_reconnect_rejected_before_main_ready";
+                return false;
+            }
+            if (StartupInProgress || _freshReconnectCoroutine != null)
+            {
+                LastError = "fresh_reconnect_rejected_startup_in_progress";
+                return false;
+            }
+
+            _freshReconnectCoroutine = StartCoroutine(RunFreshTokenReconnect(reason));
+            return true;
         }
 
         public void ApplyCapabilityMode(string mode)
@@ -200,6 +237,7 @@ namespace ParrotApp.Lifecycle
         {
             StartupInProgress = true;
             LastError = "";
+            _mainUiReadyOnce = false;
             ResolveServices();
 
             ActiveConfig = config;
@@ -235,7 +273,16 @@ namespace ParrotApp.Lifecycle
 
                 if (RequiresTierOneStartup())
                 {
-                    Fail("tier1_setting_requires_fresh_livekit_reconnect");
+                    yield return RestartConnectedRoomForTierOne(null);
+                    StartupInProgress = false;
+                    _startupCoroutine = null;
+                    yield break;
+                }
+
+                bool reusedHttpApplied = false;
+                yield return ApplyStartupRoomProfileHttp(ok => reusedHttpApplied = ok);
+                if (!reusedHttpApplied)
+                {
                     StartupInProgress = false;
                     _startupCoroutine = null;
                     yield break;
@@ -271,7 +318,7 @@ namespace ParrotApp.Lifecycle
                 }
 
                 BindHeartbeatTransport();
-                OnMainUiReady?.Invoke(ActiveConfig);
+                MarkMainUiReady();
                 StartupInProgress = false;
                 _startupCoroutine = null;
                 yield break;
@@ -280,6 +327,15 @@ namespace ParrotApp.Lifecycle
             bool tierOneReady = false;
             yield return PrepareTierOneRuntimeConfig(ok => tierOneReady = ok);
             if (!tierOneReady)
+            {
+                StartupInProgress = false;
+                _startupCoroutine = null;
+                yield break;
+            }
+
+            bool roomSettingApplied = false;
+            yield return ApplyStartupRoomProfileHttp(ok => roomSettingApplied = ok);
+            if (!roomSettingApplied)
             {
                 StartupInProgress = false;
                 _startupCoroutine = null;
@@ -355,9 +411,234 @@ namespace ParrotApp.Lifecycle
                 yield break;
             }
 
-            OnMainUiReady?.Invoke(ActiveConfig);
+            MarkMainUiReady();
             StartupInProgress = false;
             _startupCoroutine = null;
+        }
+
+        private IEnumerator RunFreshTokenReconnect(string reason)
+        {
+            StartupInProgress = true;
+            LastError = "";
+            ResolveServices();
+
+            if (ActiveConfig == null)
+                ActiveConfig = AppStartupConfigDto.Default();
+            ActiveConfig.Normalize();
+            ApplyCapabilityModeLocal(ActiveConfig.capability_mode);
+
+            if (roomManager == null || tokenMintClient == null)
+            {
+                Fail("fresh_reconnect_missing_runtime_services");
+                CompleteFreshReconnect();
+                yield break;
+            }
+
+            if (roomManager.IsDisconnecting)
+            {
+                Fail("fresh_reconnect_rejected_chokepoint_running");
+                CompleteFreshReconnect();
+                yield break;
+            }
+
+            lifecycleManager?.ReportReconnecting(reason);
+
+            LiveKitTokenMintClient.MintResult mint = default;
+            yield return tokenMintClient.Mint(
+                ActiveConfig.room_id,
+                ResolveUnityIdentity(ActiveConfig),
+                result => mint = result);
+            if (!mint.Ok)
+            {
+                lifecycleManager?.ReportDegraded("fresh_reconnect_token_mint_failed");
+                Fail($"fresh_reconnect_token_mint_failed:{mint.Error}");
+                CompleteFreshReconnect();
+                yield break;
+            }
+
+            string url = string.IsNullOrWhiteSpace(mint.Response.url)
+                ? ActiveConfig.livekit_url
+                : mint.Response.url;
+            roomManager.Connect(mint.Response.token, string.IsNullOrWhiteSpace(url) ? null : url);
+
+            float deadline = Time.realtimeSinceStartup + connectTimeoutSeconds;
+            while (roomManager != null && !roomManager.IsConnected
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            if (roomManager == null || !roomManager.IsConnected)
+            {
+                lifecycleManager?.ReportDegraded("fresh_reconnect_livekit_timeout");
+                Fail("fresh_reconnect_livekit_timeout");
+                CompleteFreshReconnect();
+                yield break;
+            }
+
+            BindHeartbeatTransport();
+
+            bool roomSynced = false;
+            yield return SyncStartupRoomProfile(
+                "fresh_reconnect_room_profile",
+                ok => roomSynced = ok);
+            if (!roomSynced)
+            {
+                lifecycleManager?.ReportDegraded("fresh_reconnect_room_profile_sync_timeout");
+                Fail("fresh_reconnect_room_profile_sync_timeout");
+                CompleteFreshReconnect();
+                yield break;
+            }
+
+            bool policySynced = false;
+            yield return CallBrainRpc(
+                "setAppCapabilityMode",
+                $"{{\"mode\":{Quote(ActiveConfig.capability_mode)}}}",
+                "fresh_reconnect_capability_mode",
+                waitForBrain: true,
+                onComplete: ok => policySynced = ok);
+            if (!policySynced)
+            {
+                lifecycleManager?.ReportDegraded("fresh_reconnect_policy_sync_timeout");
+                Fail("fresh_reconnect_policy_sync_timeout");
+                CompleteFreshReconnect();
+                yield break;
+            }
+
+            MarkMainUiReady();
+            CompleteFreshReconnect();
+        }
+
+        private IEnumerator RestartConnectedRoomForTierOne(Action<bool> onComplete)
+        {
+            bool tierOneReady = false;
+            yield return PrepareTierOneRuntimeConfig(ok => tierOneReady = ok);
+            if (!tierOneReady)
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            bool roomSettingApplied = false;
+            yield return ApplyStartupRoomProfileHttp(ok => roomSettingApplied = ok);
+            if (!roomSettingApplied)
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            if (shutdownService == null || roomManager == null || tokenMintClient == null)
+            {
+                Fail("tier1_fresh_reconnect_missing_runtime_services");
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            lifecycleManager?.ReportReconnecting("tier1_setting_requires_fresh_livekit_reconnect");
+            shutdownService.RequestShutdown("tier1_setting_requires_fresh_livekit_reconnect");
+
+            float shutdownDeadline = Time.realtimeSinceStartup + Mathf.Max(1f, tierOneReconnectShutdownTimeoutSeconds);
+            // tier1_fresh_reconnect_waits_for_shutdown_cooldown:
+            // RoomManager clears Room before LifecycleShutdownService finishes
+            // its cool-down and ReportDisconnected() step. Starting a new room
+            // before that final step can let the old shutdown mark the fresh
+            // session disconnected. Wait for both the room handle and FSM
+            // chokepoint state to settle.
+            while (Time.realtimeSinceStartup < shutdownDeadline
+                   && roomManager != null
+                   && (roomManager.IsConnected
+                       || roomManager.IsDisconnecting
+                       || roomManager.Room != null
+                       || lifecycleManager?.CurrentState == AppLifecycleState.ShuttingDown))
+            {
+                yield return null;
+            }
+
+            if (roomManager == null
+                || roomManager.IsConnected
+                || roomManager.IsDisconnecting
+                || roomManager.Room != null
+                || lifecycleManager?.CurrentState == AppLifecycleState.ShuttingDown)
+            {
+                Fail("tier1_fresh_reconnect_shutdown_timeout");
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            // tier1_fresh_reconnect_reenter_token_gate:
+            // LifecycleShutdownService correctly leaves the FSM in Disconnected.
+            // A user-visible START is allowed to begin a new session from there,
+            // but RoomManagerLifecycleBridge will treat OnConnecting as a
+            // reconnect and ReportReconnecting intentionally ignores
+            // Disconnected. Re-enter the normal startup gates before mint/connect
+            // so ReportRoomConnected -> ReportRunning can advance again.
+            lifecycleManager?.EnterTokenGate();
+
+            LiveKitTokenMintClient.MintResult mint = default;
+            yield return tokenMintClient.Mint(
+                ActiveConfig.room_id,
+                ResolveUnityIdentity(ActiveConfig),
+                result => mint = result);
+            if (!mint.Ok)
+            {
+                lifecycleManager?.ReportDegraded("tier1_fresh_reconnect_token_mint_failed");
+                Fail($"tier1_fresh_reconnect_token_mint_failed:{mint.Error}");
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            string url = string.IsNullOrWhiteSpace(mint.Response.url)
+                ? ActiveConfig.livekit_url
+                : mint.Response.url;
+            lifecycleManager?.EnterArSessionStarting();
+            roomManager.Connect(mint.Response.token, string.IsNullOrWhiteSpace(url) ? null : url);
+
+            float connectDeadline = Time.realtimeSinceStartup + connectTimeoutSeconds;
+            while (roomManager != null && !roomManager.IsConnected
+                   && Time.realtimeSinceStartup < connectDeadline)
+            {
+                yield return null;
+            }
+
+            if (roomManager == null || !roomManager.IsConnected)
+            {
+                lifecycleManager?.ReportDegraded("tier1_fresh_reconnect_livekit_timeout");
+                Fail("tier1_fresh_reconnect_livekit_timeout");
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            BindHeartbeatTransport();
+
+            bool roomSynced = false;
+            yield return SyncStartupRoomProfile(
+                "tier1_fresh_reconnect_room_profile",
+                ok => roomSynced = ok);
+            if (!roomSynced)
+            {
+                lifecycleManager?.ReportDegraded("tier1_fresh_reconnect_room_profile_sync_timeout");
+                Fail("tier1_fresh_reconnect_room_profile_sync_timeout");
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            bool policySynced = false;
+            yield return CallBrainRpc(
+                "setAppCapabilityMode",
+                $"{{\"mode\":{Quote(ActiveConfig.capability_mode)}}}",
+                "tier1_fresh_reconnect_capability_mode",
+                waitForBrain: true,
+                onComplete: ok => policySynced = ok);
+            if (!policySynced)
+            {
+                lifecycleManager?.ReportDegraded("tier1_fresh_reconnect_policy_sync_timeout");
+                Fail("tier1_fresh_reconnect_policy_sync_timeout");
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            MarkMainUiReady();
+            onComplete?.Invoke(true);
         }
 
         private IEnumerator RequestPermissions(AppStartupConfigDto config)
@@ -555,6 +836,49 @@ namespace ParrotApp.Lifecycle
             return false;
         }
 
+        private IEnumerator ApplyStartupRoomProfileHttp(Action<bool> onComplete)
+        {
+            ResolveServices();
+            if (ActiveConfig == null) ActiveConfig = AppStartupConfigDto.Default();
+            ActiveConfig.Normalize();
+
+            if (roomSettingClient == null || !roomSettingClient.HasEndpoint)
+            {
+                Fail("room_setting_http_apply_required");
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            var profile = RoomSettingDtoMapper.FromStartupConfig(
+                ActiveConfig,
+                ActiveConfig.room_profile_id);
+            RequestResult<ApplyRoomProfileResponseDto> result = default;
+            yield return roomSettingClient.ApplyRoomProfile(profile, r => result = r);
+
+            if (!result.Success || result.Value == null || !result.Value.success)
+            {
+                string detail = result.Error;
+                if (result.Value != null && result.Value.errors != null && result.Value.errors.Length > 0)
+                    detail = string.Join("|", result.Value.errors);
+                if (string.IsNullOrWhiteSpace(detail)) detail = "unknown";
+                Fail("room_setting_http_apply_failed:" + detail);
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            if (result.Value.room_profile != null)
+                ActiveConfig = RoomSettingDtoMapper.ToStartupConfig(result.Value.room_profile, ActiveConfig);
+            if (result.Value.compatibility != null)
+            {
+                ActiveConfig.setting_change_tier = result.Value.compatibility.tier;
+                ActiveConfig.compatibility_state = result.Value.compatibility.state ?? "";
+                ActiveConfig.compatibility_summary = result.Value.compatibility.tier_summary ?? "";
+                ActiveConfig.requires_livekit_reconnect = result.Value.compatibility.tier >= 1;
+            }
+            ActiveConfig.Normalize();
+            onComplete?.Invoke(true);
+        }
+
         private void BindHeartbeatTransport()
         {
             ResolveServices();
@@ -619,9 +943,87 @@ namespace ParrotApp.Lifecycle
             if (videoPublisher == null) videoPublisher = FindObjectOfType<ARVideoPublisher>();
             if (orchestratorClient == null) orchestratorClient = FindObjectOfType<OrchestratorClient>();
             if (orchestratorClient == null) orchestratorClient = gameObject.AddComponent<OrchestratorClient>();
+            if (roomSettingClient == null) roomSettingClient = FindObjectOfType<AppRoomSettingClient>();
+            if (homeMenuClient == null) homeMenuClient = FindObjectOfType<AppHomeMenuClient>();
+            if (homeMenuClient == null) homeMenuClient = gameObject.AddComponent<AppHomeMenuClient>();
             if (heartbeatPublisher == null) heartbeatPublisher = FindObjectOfType<LifecycleHeartbeatPublisher>();
             if (heartbeatPublisher == null && lifecycleManager != null)
                 heartbeatPublisher = lifecycleManager.gameObject.AddComponent<LifecycleHeartbeatPublisher>();
+            if (mainReadyGate == null) mainReadyGate = FindObjectOfType<FormalMainReadyGate>();
+            if (mainReadyGate == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                mainReadyGate = host.AddComponent<FormalMainReadyGate>();
+            }
+            if (homeHudController == null) homeHudController = FindObjectOfType<FormalHomeHudController>();
+            if (homeHudController == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                homeHudController = host.AddComponent<FormalHomeHudController>();
+            }
+            if (homeMenuLoader == null) homeMenuLoader = FindObjectOfType<FormalHomeMenuLoader>();
+            if (homeMenuLoader == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                homeMenuLoader = host.AddComponent<FormalHomeMenuLoader>();
+            }
+            if (modelReadyReporter == null) modelReadyReporter = FindObjectOfType<FormalModelReadyReporter>();
+            if (modelReadyReporter == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                modelReadyReporter = host.AddComponent<FormalModelReadyReporter>();
+            }
+            if (arRuntimeBootstrap == null) arRuntimeBootstrap = FindObjectOfType<FormalArRuntimeBootstrap>();
+            if (arRuntimeBootstrap == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                arRuntimeBootstrap = host.AddComponent<FormalArRuntimeBootstrap>();
+            }
+            if (arSessionBaselineReporter == null)
+                arSessionBaselineReporter = FindObjectOfType<FormalArSessionBaselineReporter>();
+            if (arSessionBaselineReporter == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                arSessionBaselineReporter = host.AddComponent<FormalArSessionBaselineReporter>();
+            }
+            if (FindObjectOfType<AudioRoutePolicyBrainReporter>() == null)
+            {
+                var host = microphonePublisher != null
+                    ? microphonePublisher.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                host.AddComponent<AudioRoutePolicyBrainReporter>();
+            }
+            if (FindObjectOfType<LiveKitReconnectSupervisor>() == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                host.AddComponent<LiveKitReconnectSupervisor>();
+            }
+        }
+
+        private void MarkMainUiReady()
+        {
+            _mainUiReadyOnce = true;
+            OnMainUiReady?.Invoke(ActiveConfig);
+        }
+
+        private void CompleteFreshReconnect()
+        {
+            StartupInProgress = false;
+            _freshReconnectCoroutine = null;
         }
 
         private string ResolveUnityIdentity(AppStartupConfigDto config)

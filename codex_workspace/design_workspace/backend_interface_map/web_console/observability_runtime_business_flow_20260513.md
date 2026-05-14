@@ -570,3 +570,48 @@ Remaining work:
 - Add grouped catalog-driven trigger buttons once the catalog shape is rich
   enough for stable labels.
 - Add explicit operator execution copy before any non-dry-run fire path.
+
+## 2026-05-15 Runtime Flow Responsibility Clarification
+
+Owner: Web Console lane
+Status: in_progress
+Category: requirement / interface-boundary
+Scope: WEB-012, CORE-010, CORE-011
+Source: user clarification on Runtime Flow / collaboration-flow workspace
+
+Runtime Flow is the whole-system collaboration workspace, not the L2-B graph
+renderer and not the detailed Ref-file manager.
+
+Primary responsibilities:
+
+- Visualize GOSLO Intent -> Plan/HITL -> Blackboard -> IntentWorkspace ->
+  Scheduler -> Nanobot -> Message/Trigger collaboration as lanes, DAGs, event
+  tape, receipts, and later workflow nodes.
+- Support manual Plan import as a receipt-first Web action.
+- Support manual Nanobot task dispatch with an explicit result destination,
+  for example `view_only`, `return_to_goslo`, `return_to_app`, or a future
+  workspace/blackboard return path.
+- Support message send/receive and trigger fire/testing through existing safe
+  BFF routes and future typed task routes; the browser must not hold Google,
+  LiveKit, Redis, or server secrets.
+- Support human-in-the-loop gates where the target state machine is real.
+  Today Plan HITL is implemented; trigger/message HITL remains unsupported
+  until those target state machines exist.
+
+Interaction direction:
+
+- The page should become a simple ComfyUI-like workflow board for collaboration
+  routing: Plan nodes, Nanobot task nodes, result destination nodes, message
+  nodes, HITL gates, and trigger nodes.
+- It should keep a clear event/receipt timeline so an operator can see where a
+  task went and who wrote the result.
+- It may link to L2-B/Memory details, but detailed Node/Ref/file/photo editing
+  stays on the Memory operation page.
+
+Data-model notes:
+
+- WEB-012.19 tracks the larger workflow page.
+- WEB-012.20 tracks manual Nanobot task destination and receipt modeling.
+- Durable trace gaps stay in CORE-010.
+- HITL/action-gate gaps stay in CORE-011 and should not be promoted beyond Plan
+  gates until real trigger/message state machines exist.

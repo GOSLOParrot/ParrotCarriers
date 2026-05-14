@@ -28,6 +28,9 @@ workspace entry.
 | `startup_roomsetting_app_interface_20260513.md` | APP-001, APP-002, APP-003, APP-005, APP-013, APP-015, APP-016, APP-017 | active | Startup page, RoomSetting six-axis selector, START transition, LiveKit/LineB status, main-ready/homepage contract, Castle START repair, and legacy UI demotion notes. |
 | `canvas_menu_ref_workspace_app_interface_20260513.md` | APP-004, APP-006 | active | Canvas menu, renderer-agnostic nodes/edges, App-side Ref workspace boundary, future Red String / Evidence Board constraints. |
 | `unity_project_inventory_app_ssot_20260513.md` | APP-011 | active SSOT | Unity App formal directory, resource, scene, Build Settings, test evidence, and forbidden legacy path rules. |
+| `unity_app_transport_interface_taxonomy_20260515.md` | APP-018 | active | Channel ownership for App HTTP, orchestrator HTTP, token mint, LiveKit media, DataChannel/ECP, RPC, Unity local state, SVA/video, and smoke evidence boundaries. |
+| `unity_homepage_menu_livekit_audit_20260515.md` | APP-015, APP-018, APP-021, APP-022, APP-023, APP-024 | active | Formal homepage/menu readiness, menu save/load boundaries, Mint/config phone suitability, LiveKit lifecycle stability gaps, ECP protocol correction, and reference/test script guardrails. |
+| `unity_livekit_ecp_sva_data_flow_map_20260515.md` | APP-015.19, APP-018, APP-022, APP-023, APP-024 | active map | Formal Unity App data-flow map across App HTTP, orchestrator, token mint, LiveKit media/RPC, ECP, SVA/video, Brain/DSG/GOSLO/Scheduler, Unity local state, and phone config rules. |
 
 ## Suggested Slice Header
 

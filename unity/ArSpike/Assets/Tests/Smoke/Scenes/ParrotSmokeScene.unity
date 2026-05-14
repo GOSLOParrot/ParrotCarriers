@@ -299,7 +299,7 @@ GameObject:
   - component: {fileID: 849041491}
   - component: {fileID: 849041490}
   m_Layer: 0
-  m_Name: AppV1MetaUI
+  m_Name: AppV1SmokeReferenceUI
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

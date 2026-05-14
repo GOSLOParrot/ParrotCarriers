@@ -232,7 +232,11 @@ namespace ParrotApp.Lifecycle
         public void ReportDegraded(string reason)
         {
             if (CurrentState == AppLifecycleState.Running
-                || CurrentState == AppLifecycleState.Connected)
+                || CurrentState == AppLifecycleState.Connected
+                || CurrentState == AppLifecycleState.Reconnecting
+                || CurrentState == AppLifecycleState.Connecting
+                || CurrentState == AppLifecycleState.ArSessionStarting
+                || CurrentState == AppLifecycleState.TokenGate)
             {
                 Transition(AppLifecycleState.Degraded, $"degraded:{reason}");
             }

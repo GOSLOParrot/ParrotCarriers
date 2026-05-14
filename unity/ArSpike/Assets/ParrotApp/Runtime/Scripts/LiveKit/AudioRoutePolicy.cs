@@ -24,16 +24,11 @@ namespace ParrotApp.LiveKit
     /// <summary>
     /// 当前会话的音频路由策略快照（不可变 struct）。
     ///
-    /// <b>Sprint4 范围说明</b>：本 struct <b>仅在 ArSpike LiveKit 子目录内</b>消费，
-    /// 用于 <see cref="MicrophonePublisher"/> 决定 native source 采样率与 republish 触发。
-    /// <b>不</b>下沉到 <c>EcpFrontendState</c>、<b>不</b>进 Blackboard，<b>不</b>新增
-    /// ConnectionHealth 字段；avoid 与 Phase 4 协议升级冲突。
-    ///
-    /// <b>// AudioRoutePolicy producer hook reserved for Sprint4 Phase 4</b>
-    /// — 后续把 <see cref="RouteName"/> / <see cref="PreferredSampleRate"/> /
-    ///   <c>echo_policy</c> / <c>publish_intent</c> 暴露给 Brain 端时，把
-    ///   <see cref="AudioRouteDetector"/> 升格为唯一 producer，灌到候选 BB 键
-    ///   <c>session/audio_route_policy</c> 与 <c>EcpState</c>。
+    /// <b>Sprint4 范围说明</b>：本 struct 是 Unity 本地 route 快照，用于
+    /// <see cref="MicrophonePublisher"/> 决定 native source 采样率与 republish 触发。
+    /// 它本身不写 ConnectionHealth、不写 ECP state，也不直接写 Blackboard。
+    /// <see cref="AudioRoutePolicyBrainReporter"/> 会在 LiveKit 连接后把压缩后的
+    /// input/output route policy 通过 Brain RPC 同步到后端。
     /// </summary>
     public readonly struct AudioRoutePolicy : IEquatable<AudioRoutePolicy>
     {

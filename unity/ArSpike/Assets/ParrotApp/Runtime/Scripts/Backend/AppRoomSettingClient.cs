@@ -8,7 +8,11 @@ namespace ParrotApp.Backend
 {
     public class AppRoomSettingClient : MonoBehaviour
     {
-        [SerializeField] private string appApiBaseUrl = "http://127.0.0.1:8790";
+        // Deliberately empty by default. A phone build must get this from
+        // gitignored Resources/parrot_config.json or an explicit Inspector
+        // override; otherwise START should fail fast instead of trying the
+        // device's own localhost.
+        [SerializeField] private string appApiBaseUrl = "";
         [SerializeField] private string bearerSecret = "";
 
         public string AppApiBaseUrl
@@ -118,6 +122,11 @@ namespace ParrotApp.Backend
                     {
                         return RequestResult<SaveRoomProfileResponseDto>.Fail("save_room_profile_rejected:" + dto.status);
                     }
+                    if (dto == null || dto.room_profile == null
+                        || string.IsNullOrWhiteSpace(dto.room_profile.room_profile_id))
+                    {
+                        return RequestResult<SaveRoomProfileResponseDto>.Fail("save_room_profile_missing_profile");
+                    }
                     return RequestResult<SaveRoomProfileResponseDto>.Ok(dto);
                 }
                 catch (Exception ex)
@@ -137,6 +146,11 @@ namespace ParrotApp.Backend
                     var dto = JsonUtility.FromJson<ApplyRoomProfileResponseDto>(text);
                     if (dto != null && !dto.success)
                         return RequestResult<ApplyRoomProfileResponseDto>.Fail("apply_room_profile_rejected");
+                    if (dto == null || dto.room_profile == null
+                        || string.IsNullOrWhiteSpace(dto.room_profile.room_profile_id))
+                    {
+                        return RequestResult<ApplyRoomProfileResponseDto>.Fail("apply_room_profile_missing_profile");
+                    }
                     return RequestResult<ApplyRoomProfileResponseDto>.Ok(dto);
                 }
                 catch (Exception ex)

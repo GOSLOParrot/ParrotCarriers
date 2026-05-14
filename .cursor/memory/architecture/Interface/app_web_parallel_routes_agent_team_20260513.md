@@ -72,7 +72,7 @@ App work emphasizes mobile UI, startup flow, game completion, and tool use.
 | App route | Business scope | Core dependency |
 |:--|:--|:--|
 | Startup RoomSetting | Select saved Room, Model, Persona, Line, Theme, Maid Team; then START. | RoomSetting + orchestrator runtime writes. |
-| Runtime menu canvas | Render 4/5-block menu and tier actions in a mobile/AR-friendly way. | Menu registry + tier registry + Brain RPC mirrors. |
+| Runtime menu canvas | Render 4/5-block menu and tier actions in a mobile/AR-friendly way. | App HTTP canvas/menu read models + menu/tier registries + compact Brain RPC mirrors only for in-room controls. |
 | HUD and debug badge | Show connection, current line/profile/team, lightweight status. | `/status`, Brain snapshot, ECP state. |
 | Game/model interactions | Ner/GOSLO model controls, touch, joystick, pickup/place, tools. | Model manifest, `play_capability`, ECP/RPC. |
 | Tools and reports | Photo, focus, notes, Nanobot result cards, 2D workspace entry. | Existing photo, scheduler, report/workspace adapters. |
@@ -96,24 +96,24 @@ LineA RoomProfile still fails correctly against a running LineB Brain and must
 remain a real App START failure. Phone RoomSetting/orchestrator proof is
 separate; user repaired public ECS routing on 2026-05-14, so App API
 RoomSetting returns 2 rooms and Orchestrator health is ok from this workstation.
-Next proof is formal Unity/phone START with RoomSetting save/apply, Tier 1
-prewrite, and main-ready gates.
+2026-05-15 non-phone proof passed RoomSetting save/apply, Tier 1 prewrite,
+Mint, LiveKit connect, Brain business RPC, and heartbeat. Formal main-ready
+gate reporters now exist for HUD, App HTTP menu snapshot, model manifest, and
+AR runtime/session baseline; the current checkpoint also fixes main-ready
+self-degrade, rejects half-parsed menu snapshots, waits for mobile
+`ARSessionState.SessionTracking`, and routes already-connected Tier1/LineB START
+through graceful shutdown plus fresh reconnect. Next proof is phone START on
+iQOO Neo9 with real mic, Bluetooth, app-switch, AR/video, reconnect, and no fake
+success evidence.
 
 2026-05-14 App HTTP selector/security update: `GET /api/app/line-profiles` is
 reachable on app-monitor, `GET /api/app/personas` was added for selector-safe
 Persona metadata, and app-monitor POST routes can be protected with
 `PARROT_APP_MONITOR_SECRET` plus Unity's ignored `appApiSecret`.
 
-2026-05-14 formal START check: RoomSetting save/apply, orchestrator LineB
-prewrite, and token mint passed, and the test restored active RoomSetting plus
-runtime config shape afterward. LiveKit rejected both mint-issued and local
-diagnostic tokens with 401 invalid token, so the remaining blocker is Castle
-LiveKit API key/secret alignment. Local root cause is that production Castle
-compose mounts `infra/livekit/livekit.yaml`, which still had the old placeholder
-secret for `devkey` while token-mint/Brain use the newer dev secret. Local
-config/test fix is done; ECS needs that file deployed and LiveKit restarted.
-Until that is fixed, Brain RPC, heartbeat, and main-ready cannot be marked as
-true START completion.
+2026-05-15 formal START update: Castle LiveKit key alignment and public App API
+routing were repaired. The current remaining gaps are not token/mint reachability;
+they are formal homepage controls and production phone evidence.
 
 ## 5. Web Console Business Route
 

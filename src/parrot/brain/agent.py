@@ -443,13 +443,15 @@ async def _generate_reply_after_current_speech(
     return True
 
 
-def _attach_menu_rpc(room: "Any") -> None:
-    """Expose menu/workspace business RPCs to Unity.
+def _attach_realtime_app_rpc(room: "Any") -> None:
+    """Expose only compact real-time App control RPCs to Unity.
 
-    reason: The existing Brain core interfaces are Python objects
-    (MenuRegistry/PresetLoader/WorkspaceRegistry). Unity needs a minimal
-    LiveKit RPC boundary to list/apply/save menu selections without learning
-    Blackboard internals or reconnecting the room on 2DWorkspace switches.
+    Durable App surfaces are intentionally HTTP-owned:
+    RoomSetting load/new/save/apply, full canvas/menu snapshots, selector lists,
+    and preset/menu persistence must stay under ``/api/app/**``. LiveKit RPC is
+    reserved for small in-room commands after Unity and Brain are both present:
+    startup Brain sync, placement gates, workspace/camera/media toggles,
+    audio-route policy, LineB diagnostics, and reconnect governance.
     """
     import json as _json
     from dataclasses import asdict, is_dataclass
@@ -502,12 +504,9 @@ def _attach_menu_rpc(room: "Any") -> None:
         except (TypeError, ValueError):
             return None
 
-    @room.local_participant.register_rpc_method("listMenuBlocks")
-    async def _list_menu_blocks(data: "Any") -> str:
-        from parrot.brain.menu_registry import get_menu_registry
-
-        return _dump({"status": "ok", "snapshot": get_menu_registry().list_blocks()})
-
+    # Category A: START / session sync.
+    # Persistence already happened through App HTTP before LiveKit joined.
+    # These calls only synchronize Brain's in-room context and policy.
     @room.local_participant.register_rpc_method("applyRoomProfile")
     async def _apply_room_profile(data: "Any") -> str:
         from parrot.brain.app_first_version import AppFirstVersionFacade
@@ -534,6 +533,32 @@ def _attach_menu_rpc(room: "Any") -> None:
         )
         return _dump({"status": "ok" if applied.get("success") else "error", "result": applied})
 
+    @room.local_participant.register_rpc_method("setAppCapabilityMode")
+    async def _set_app_capability_mode(data: "Any") -> str:
+        from parrot.brain.session_policy import apply_capability_mode
+
+        payload = _payload(data)
+        profile = apply_capability_mode(payload.get("mode") or payload.get("capability_mode"))
+        supervisor_applied = False
+        try:
+            from parrot.brain.perception_supervisor import get_perception_supervisor
+
+            supervisor = get_perception_supervisor()
+            if supervisor is not None:
+                supervisor_applied = await supervisor.apply_capability_profile(profile)
+        except Exception:
+            logger.exception("setAppCapabilityMode: supervisor policy apply failed")
+        return _dump(
+            {
+                "status": "ok",
+                "profile": profile,
+                "supervisor_applied": supervisor_applied,
+            }
+        )
+
+    # Category B: LineB / audio route diagnostics.
+    # These are compact, latency-sensitive status/control packets. Raw debug
+    # details should not be exposed directly in the formal mobile HUD.
     @room.local_participant.register_rpc_method("setLineBAudioRoutePolicy")
     async def _set_lineb_audio_route_policy(data: "Any") -> str:
         from parrot.brain.app_first_version import AppFirstVersionFacade
@@ -615,45 +640,9 @@ def _attach_menu_rpc(room: "Any") -> None:
         )
         return _dump({"status": "ok", "decision": decision})
 
-    @room.local_participant.register_rpc_method("applyMenuSelection")
-    async def _apply_menu_selection(data: "Any") -> str:
-        from parrot.brain.menu_registry import MenuSelection, get_menu_registry
-
-        payload = _payload(data)
-        mode_flags = payload.get("mode_flags") or payload.get("active_mode") or ()
-        if isinstance(mode_flags, str):
-            mode_flags = [s.strip() for s in mode_flags.split("|") if s.strip()]
-        selection = MenuSelection(
-            persona_id=str(payload.get("persona_id") or payload.get("active_persona_id") or ""),
-            mode_flags=tuple(str(x) for x in mode_flags),
-            scene_id=str(payload.get("scene_id") or payload.get("active_scene_id") or ""),
-            model_id=str(payload.get("model_id") or payload.get("active_model_id") or ""),
-            workspace_id=str(
-                payload.get("workspace_id") or payload.get("active_workspace_id") or ""
-            ),
-            metadata=dict(payload.get("metadata") or {}),
-        )
-        result = get_menu_registry().apply_selection(selection)
-        return _dump({"status": "ok" if result.success else "error", "result": result})
-
-    @room.local_participant.register_rpc_method("applyPreset")
-    async def _apply_preset(data: "Any") -> str:
-        from parrot.brain.menu_registry import get_menu_registry
-
-        payload = _payload(data)
-        preset_id = str(payload.get("preset_id") or "default")
-        result = get_menu_registry().apply_preset_id(preset_id)
-        return _dump({"status": "ok" if result.success else "error", "result": result})
-
-    @room.local_participant.register_rpc_method("saveAsPreset")
-    async def _save_as_preset(data: "Any") -> str:
-        from parrot.brain.preset_loader import Preset, get_preset_loader
-
-        payload = _payload(data)
-        preset = Preset.from_json(payload)
-        path = get_preset_loader().save(preset)
-        return _dump({"status": "ok", "preset_id": preset.preset_id, "path": str(path)})
-
+    # Category C: in-room workspace control.
+    # Full workspace/canvas snapshots stay on App HTTP; this only switches the
+    # active workspace in the current room without tearing down LiveKit.
     @room.local_participant.register_rpc_method("applyWorkspace")
     async def _apply_workspace(data: "Any") -> str:
         from parrot.brain.workspace_registry import get_workspace_registry
@@ -663,14 +652,10 @@ def _attach_menu_rpc(room: "Any") -> None:
         result = get_workspace_registry().apply_workspace(workspace_id)
         return _dump({"status": "ok" if result.success else "error", "result": result})
 
-    # FIX (2026-05-11 audit Round 4, Gap K): mirror the GOSLO Module canvas
-    # controls (Photo Awareness / Camera mode / XRHand mode) as LiveKit RPC
-    # in addition to the existing HTTP /api/app/awareness, /api/app/camera/mode
-    # and (no http for) xrhand. Menu canvas design (codex_workspace
-    # /design_workspace/unity_ar_app/menu_canvas_external_modules_20260509.md
-    # §6 GOSLO Module) requires backend-owned RPC for these toggles; HTTP
-    # alone is the Web monitor surface, not the production Unity in-band
-    # channel. See ``audit_log_index_20260511.md`` Round 4 §K.
+    # Category D: compact media/module controls.
+    # These are command-like toggles that affect the current room/session.
+    # Larger module read models, saved settings, and formal menu persistence
+    # stay HTTP-owned.
 
     @room.local_participant.register_rpc_method("setPhotoAwareness")
     async def _set_photo_awareness(data: "Any") -> str:
@@ -749,29 +734,9 @@ def _attach_menu_rpc(room: "Any") -> None:
             })
         return _dump({"status": "ok", "result": result})
 
-    @room.local_participant.register_rpc_method("setAppCapabilityMode")
-    async def _set_app_capability_mode(data: "Any") -> str:
-        from parrot.brain.session_policy import apply_capability_mode
-
-        payload = _payload(data)
-        profile = apply_capability_mode(payload.get("mode") or payload.get("capability_mode"))
-        supervisor_applied = False
-        try:
-            from parrot.brain.perception_supervisor import get_perception_supervisor
-
-            supervisor = get_perception_supervisor()
-            if supervisor is not None:
-                supervisor_applied = await supervisor.apply_capability_profile(profile)
-        except Exception:
-            logger.exception("setAppCapabilityMode: supervisor policy apply failed")
-        return _dump(
-            {
-                "status": "ok",
-                "profile": profile,
-                "supervisor_applied": supervisor_applied,
-            }
-        )
-
+    # Category E: ops/governance signal.
+    # Orchestrator HTTP owns runtime config writes. This RPC is only the
+    # in-room signal that tells Brain to leave so Unity can reconnect cleanly.
     @room.local_participant.register_rpc_method("forceUnityReconnect")
     async def _force_unity_reconnect(data: "Any") -> str:
         """Phase 1 ECS Orchestrator Tier 1 trigger.
@@ -827,9 +792,9 @@ def _attach_menu_rpc(room: "Any") -> None:
                 # participants; Unity's RoomManager picks that up and
                 # re-runs Connect with the same identity, which
                 # triggers a fresh agent dispatch + brain_entrypoint.
-                await ctx.room.disconnect()
+                await room.disconnect()
             except Exception:
-                logger.exception("forceUnityReconnect: ctx.room.disconnect failed")
+                logger.exception("forceUnityReconnect: room.disconnect failed")
 
         asyncio.ensure_future(_disconnect_after_ack())
         return _dump(
@@ -847,11 +812,11 @@ def _attach_menu_rpc(room: "Any") -> None:
         )
 
     logger.info(
-        "Menu RPC handlers registered: listMenuBlocks, applyMenuSelection, "
-        "applyPreset, saveAsPreset, applyWorkspace, setAppCapabilityMode, "
-        "setPhotoAwareness, setCameraMode, setXrHandMode, "
-        "applyRoomProfile, setLineBAudioRoutePolicy, registerLineBTtsSegment, "
-        "classifyLineBMicInput, forceUnityReconnect"
+        "Realtime App RPC handlers registered: startup=[applyRoomProfile,"
+        "setAppCapabilityMode] workspace=[applyWorkspace] media=[setPhotoAwareness,"
+        "setCameraMode,setXrHandMode] audio=[setLineBAudioRoutePolicy,"
+        "registerLineBTtsSegment,classifyLineBMicInput,verifyLineBVoiceprintEmbedding] "
+        "ops=[forceUnityReconnect]. Durable menu/RoomSetting read-write stays HTTP."
     )
 
 
@@ -860,12 +825,14 @@ def _attach_scene_ready_rpc(
     session: AgentSession,
     greeting_state: dict[str, bool],
 ) -> None:
-    """Handle Unity startup/placement RPCs.
+    """Handle Unity placement and runtime-scene gate RPCs.
 
     reason: LiveKit connection success only means transport is alive. The user
     asked that GOSLO stay silent until AR plane detection and explicit placement
     finish, so ``onSceneReady`` is now a readiness marker and the greeting moves
-    to ``onGosloPlaced``.
+    to ``onGosloPlaced``. ``setScene`` here means the runtime device scene
+    (AR_HANDHELD / DESKTOP_WEBCAM), not RoomSetting's skin/theme
+    ``scene_profile_id``.
     """
     import json as _json
 
@@ -921,12 +888,14 @@ def _attach_scene_ready_rpc(
 
     @room.local_participant.register_rpc_method("setScene")
     async def _on_set_scene(data: "Any") -> str:
-        """Unity SceneProfileManager tells Brain which scene is active.
+        """Unity SceneProfileManager tells Brain which runtime scene is active.
 
         Writes session/scene to BB so context_injector + soul know whether
         we are in AR_HANDHELD or DESKTOP_WEBCAM mode. This mirrors the
         startup write in brain.agent (which uses DESKTOP_WEBCAM by default)
         but lets Unity override it at runtime when running on a real device.
+        This RPC must not be used for RoomSetting theme/skin/profile changes;
+        those remain App HTTP-owned.
         """
         try:
             payload = _json.loads(data.payload) if data.payload else {}
@@ -1304,7 +1273,7 @@ async def brain_entrypoint(ctx: agents.JobContext):
 
     attach_telemetry_receiver(ctx.room)
     attach_video_state_rpc(ctx.room)
-    _attach_menu_rpc(ctx.room)
+    _attach_realtime_app_rpc(ctx.room)
     greeting_state = {"sent": False}
     _attach_scene_ready_rpc(ctx.room, session, greeting_state)
 

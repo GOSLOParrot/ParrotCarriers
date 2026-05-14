@@ -1,6 +1,6 @@
 # Design Workspace Active Context
 
-> Updated: 2026-05-14
+> Updated: 2026-05-15
 > Code repo / Codex project route: `D:\GOSLOParrot\ParrotCarriers`
 > App design workspace: `D:\GOSLOParrot\ParrotCarriers\codex_workspace\design_workspace`
 > Clean status report: `.cursor/memory/architecture/Interface/app_v1_current_status_and_test_report_20260510.md`
@@ -19,6 +19,13 @@ The formal App frontend is **not complete**.
   `codex_workspace/design_workspace/tasks/APP_WEB_CHAT_START_PROMPTS_20260513.md`.
 - Unity App business interfaces:
   `codex_workspace/design_workspace/backend_interface_map/app/`.
+- Unity App transport/interface taxonomy:
+  `codex_workspace/design_workspace/backend_interface_map/app/unity_app_transport_interface_taxonomy_20260515.md`.
+- Unity App LiveKit/ECP/SVA data-flow map:
+  `codex_workspace/design_workspace/backend_interface_map/app/unity_livekit_ecp_sva_data_flow_map_20260515.md`.
+- Unity App RoomSetting ECS persistence is verified as of 2026-05-15:
+  `New` returns an unsaved draft, `Save` persists a user Room through App HTTP,
+  reload lists it from ECS, and save does not apply or change active Room.
 - Unity App project inventory / directory SSOT:
   `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md`.
 - Web Console business interfaces:
@@ -249,8 +256,9 @@ These are useful test evidence only. They must not be used as App completion evi
   presence because LineB `google.STT` could not find Google Application Default
   Credentials. This proves the current blocker is ECS LineB ADC/runtime config
   (plus token-mint deployment), not phone/voice/mic. The Unity config file also
-  lacks `appApiUrl`/`orchestratorUrl`, so ECS phone runs would otherwise fall
-  back to local App API and skip orchestrator.
+  lacks `appApiUrl`/`orchestratorUrl`; after the 2026-05-15 client fix, ECS
+  phone runs fail fast when App HTTP is missing instead of falling back to
+  local App API. Orchestrator remains explicit for Tier 1 LineB prewrite.
 - Follow-up ECS probe as `User=parrot`: `GOOGLE_APPLICATION_CREDENTIALS` is set,
   but the service account file is not visible/readable to `parrot` even though
   root can see it. Treat this as an ECS file permission/path/env issue, not as
@@ -315,22 +323,80 @@ These are useful test evidence only. They must not be used as App completion evi
   App-monitor POST write/control routes can now be guarded with
   `PARROT_APP_MONITOR_SECRET`; Unity can send that value through the new
   gitignored `appApiSecret` runtime config field.
-- 2026-05-14 RPC payload rule: LiveKit RPC is compact control plane only.
-  Current measurements are `listMenuBlocks` ~4.5 KB, full RoomSetting ~27.5 KB,
-  and full `canvas_snapshot` ~39.3 KB. RoomSetting snapshots and full
-  homepage/canvas snapshots must use App HTTP facade or a future compact paged
-  HTTP model; do not push them through RPC.
+- 2026-05-15 RPC/HTTP cleanup rule: LiveKit RPC is compact real-time control
+  plane only. Old menu wrappers (`listMenuBlocks`, `applyMenuSelection`,
+  `applyPreset`, `saveAsPreset`) are no longer registered by the Brain room
+  job. Full RoomSetting (~27.5 KB) and full `canvas_snapshot` (~39.3 KB)
+  remain HTTP-owned; RoomSetting snapshots, selector lists, full
+  homepage/canvas snapshots, and menu/preset persistence must use App HTTP
+  facade or a future compact paged HTTP model.
 - Lifecycle cleanup note: `LifecycleShutdownService` synchronous quit drain no
   longer blocks on SDK `UnpublishTrack`; latest Unity Play Mode exit after a
   connected room showed 0 Console errors/warnings.
 - Current not-complete boundary: this is still a whitebox startup/main-ready
   shell. Full formal AR homepage, production model prefab wiring, real-device
   LiveKit/LineB pass, and final canvas menu implementation remain pending.
+- 2026-05-15 START / interface taxonomy update: RoomSetting page has backend
+  `New` and `Save`; when Unity `appApiUrl` points to ECS, saved Rooms persist
+  through App HTTP RoomProfile storage. `AppStartupFlowController` now applies
+  the selected RoomProfile through App HTTP before Mint/LiveKit, after any
+  required Tier 1 orchestrator prewrite. Missing App HTTP endpoint or backend
+  rejection fails START instead of treating a local draft as ECS state. The
+  current main-ready surface is only a hold screen, not homepage/menu design.
+  Formal homepage/menu work must restart from
+  `unity_app_transport_interface_taxonomy_20260515.md`: App HTTP owns durable
+  load/save and large snapshots, Orchestrator HTTP owns Tier 1 runtime control,
+  token-mint owns short-lived tokens and server-side Brain dispatch, LiveKit
+  media owns audio/video, ECP is the broad embodied-control protocol plane
+  (`EcpCommand`/`EcpAck`, `EcpState`, `EcpEvent`, lossy tick, command
+  causality, snapshot/sighting/ref links), and Brain RPC remains one compact
+  in-room transport/control bridge under that larger model. Smoke scripts
+  remain fast evidence, not phone production completion.
+- 2026-05-15 post-ECS-restart formal START probe: using the gitignored Unity
+  runtime config, the non-phone script passed App HTTP RoomSetting
+  snapshot/save/apply for `ner_lineb_room`, orchestrator LineB prewrite,
+  token mint, LiveKit connect, Brain `agent-*` presence without manual
+  dispatch, `applyRoomProfile` business-ok, `setAppCapabilityMode`
+  business-ok, and `parrot.ecp.state` heartbeat publish. A fresh temporary
+  LiveKit room also spawned Brain from Mint/LiveKit dispatch without manual
+  server dispatch. Mint currently returns `agent_dispatch_requested` but not
+  the newer active-dispatch diagnostic fields, so that is a deployment
+  diagnostics gap, not a START blocker. The probe restored active RoomSetting
+  to `default` and cleared temporary runtime config. This closes APP-013 for
+  non-phone START verification only; formal HUD/menu main-ready ownership and
+  iQOO Neo9 mic/Bluetooth/app-switch/AR/video tests remain pending.
+- 2026-05-15 homepage/menu/LiveKit audit: read
+  `backend_interface_map/app/unity_homepage_menu_livekit_audit_20260515.md`
+  before designing the formal homepage. Current main-ready is a hold screen
+  only. Menu persistence and large canvas/homepage reads stay on App HTTP;
+  Brain RPC is compact in-room control; ECP is the broad embodied-control
+  protocol plane, not a single DataChannel. Existing LiveKit stability coverage
+  is partial: silent keepalive, chokepoint shutdown, route-aware mic republish,
+  background FSM, AR/video tiers, audio-route Brain RPC publication, ECP event
+  payload parsing, and fresh-token reconnect/backoff now exist, but production
+  gaps remain in 2D pause policy, degraded HUD, and phone evidence.
+  The App TODO board now has a binding execution order. Current checkpoint:
+  FormalMainReadyGate owns `ReportRunning()` and self-reevaluates while waiting
+  so missing one-shot loader events degrade instead of silently hanging.
+  FormalHomeHudController reports `hud_loaded`, FormalHomeMenuLoader reports
+  `menu_snapshot_loaded` from App HTTP `/api/app/canvas` only after a real
+  workspace/menu shell payload is parsed, FormalModelReadyReporter reports
+  `model_resolved` from Resources manifests, FormalArRuntimeBootstrap mounts
+  ARSession plus ARCameraManager/ARCameraBackground for the formal scene,
+  XRGeneralSettings auto-loads/runs Android ARCore and Standalone XR Simulation
+  loaders, and FormalArSessionBaselineReporter owns `ar_session_baseline_clean`
+  by waiting for mobile `ARSessionState.SessionTracking`. The home menu/model/AR
+  reporters catch up if mounted after `OnMainUiReady`, so dynamic service
+  resolution does not leave the App stuck on missing gates. START while already
+  connected to a Tier1/LineB-changing Room now uses graceful shutdown plus fresh
+  Mint reconnect instead of hard-failing. Next App
+  work should build the accepted touch menu/tool drawer and production model
+  placement from the App HTTP/RPC/ECP boundaries, not from Smoke UI.
 - 2026-05-13 homepage/LiveKit continuation audit: Brain RPC testing does not
   require phone or voice, but it does require a Brain / LiveKit Agents
   participant in the same room. Phone/device testing is still required for AR
   camera, microphone permission, Bluetooth route switching, app switching, and
-  full voice media. `UI/AppV1MetaUiController.cs` is now classified as a
+  full voice media. `UI/AppV1SmokeReferenceUiController.cs` is now classified as a
   legacy Smoke/reference controller, not formal homepage evidence; useful HUD,
   tool drawer, camera, workdesk, note, Focus, and BBox ideas must be re-bound to
   the formal startup/lifecycle contracts before use.

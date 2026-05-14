@@ -11,15 +11,23 @@ BUILD_SETTINGS = ROOT / "unity" / "ArSpike" / "ProjectSettings" / "EditorBuildSe
 PROJECT_SETTINGS = ROOT / "unity" / "ArSpike" / "ProjectSettings" / "ProjectSettings.asset"
 PROJECT_VERSION = ROOT / "unity" / "ArSpike" / "ProjectSettings" / "ProjectVersion.txt"
 PACKAGE_MANIFEST = ROOT / "unity" / "ArSpike" / "Packages" / "manifest.json"
+CSC_RSP = ROOT / "unity" / "ArSpike" / "Assets" / "csc.rsp"
+XR_GENERAL_SETTINGS = ROOT / "unity" / "ArSpike" / "Assets" / "XR" / "XRGeneralSettings.asset"
 PARROT_APP = UNITY_ROOT / "ParrotApp"
 FORMAL_STARTUP_SCENE = PARROT_APP / "Scenes" / "ParrotApp_Startup.unity"
 SCRIPT_ROOT = PARROT_APP / "Runtime" / "Scripts"
-META_UI = SCRIPT_ROOT / "UI" / "AppV1MetaUiController.cs"
+SMOKE_REFERENCE_UI = SCRIPT_ROOT / "UI" / "AppV1SmokeReferenceUiController.cs"
 STARTUP_CONFIG = (
     SCRIPT_ROOT / "Config" / "AppStartupConfigDto.cs"
 )
 STARTUP_FLOW = (
     SCRIPT_ROOT / "Lifecycle" / "AppStartupFlowController.cs"
+)
+FORMAL_MAIN_READY_GATE = (
+    SCRIPT_ROOT / "Lifecycle" / "FormalMainReadyGate.cs"
+)
+APP_LIFECYCLE_MANAGER = (
+    SCRIPT_ROOT / "Lifecycle" / "AppLifecycleManager.cs"
 )
 SHUTDOWN_SERVICE = (
     SCRIPT_ROOT / "Lifecycle" / "LifecycleShutdownService.cs"
@@ -27,8 +35,17 @@ SHUTDOWN_SERVICE = (
 FORMAL_STARTUP_UI = (
     SCRIPT_ROOT / "Startup" / "ParrotAppStartupUiController.cs"
 )
+FORMAL_HOME_HUD = (
+    SCRIPT_ROOT / "UI" / "FormalHomeHudController.cs"
+)
+FORMAL_HOME_MENU_LOADER = (
+    SCRIPT_ROOT / "UI" / "FormalHomeMenuLoader.cs"
+)
 ROOM_SETTING_CLIENT = (
     SCRIPT_ROOT / "Backend" / "AppRoomSettingClient.cs"
+)
+HOME_MENU_CLIENT = (
+    SCRIPT_ROOT / "Backend" / "AppHomeMenuClient.cs"
 )
 ORCHESTRATOR_CLIENT = (
     SCRIPT_ROOT / "Backend" / "OrchestratorClient.cs"
@@ -48,6 +65,18 @@ ANIMATION_DRIVER = (
 MODEL_DRIVER = (
     SCRIPT_ROOT / "Parrot" / "ModelDriver.cs"
 )
+MODEL_MANIFEST_DTO = (
+    SCRIPT_ROOT / "Parrot" / "ModelManifestDto.cs"
+)
+FORMAL_MODEL_READY_REPORTER = (
+    SCRIPT_ROOT / "Lifecycle" / "FormalModelReadyReporter.cs"
+)
+FORMAL_AR_SESSION_BASELINE_REPORTER = (
+    SCRIPT_ROOT / "Lifecycle" / "FormalArSessionBaselineReporter.cs"
+)
+FORMAL_AR_RUNTIME_BOOTSTRAP = (
+    SCRIPT_ROOT / "Lifecycle" / "FormalArRuntimeBootstrap.cs"
+)
 NER_SPINE_CONTROLLER = (
     SCRIPT_ROOT / "Parrot" / "NerSpineController.cs"
 )
@@ -65,6 +94,12 @@ NER_SPINE_AUDIT = (
 )
 TOKEN_MINT_CLIENT = (
     SCRIPT_ROOT / "LiveKit" / "LiveKitTokenMintClient.cs"
+)
+AUDIO_ROUTE_POLICY_REPORTER = (
+    SCRIPT_ROOT / "LiveKit" / "AudioRoutePolicyBrainReporter.cs"
+)
+RECONNECT_SUPERVISOR = (
+    SCRIPT_ROOT / "LiveKit" / "LiveKitReconnectSupervisor.cs"
 )
 SMOKE_BUILDER = (
     UNITY_ROOT
@@ -85,8 +120,8 @@ def _unity_guid(asset: Path) -> str:
     return match.group(1)
 
 
-def test_meta_ui_keeps_app_v1_flow_and_existing_controller_boundaries() -> None:
-    text = META_UI.read_text(encoding="utf-8")
+def test_smoke_reference_ui_keeps_app_v1_reference_flow_and_boundaries() -> None:
+    text = SMOKE_REFERENCE_UI.read_text(encoding="utf-8")
 
     assert "StartupSurface" in text
     assert "StartupTitleBoard_GosloParrot" in text
@@ -162,6 +197,14 @@ def test_unity_ar_foundation_and_livekit_version_locks_are_pinned() -> None:
     assert deps["io.livekit.livekit-sdk"].endswith(
         "#7d868ef5cc5615c30a3ef4b73ae0dbb5cc4d6796"
     )
+    assert "-define:UNITY_AR_FOUNDATION" in CSC_RSP.read_text(encoding="utf-8")
+
+    xr = XR_GENERAL_SETTINGS.read_text(encoding="utf-8")
+    for provider in ["Android Providers", "Standalone Providers", "iPhone Providers"]:
+        assert re.search(
+            rf"m_Name: {provider}[\s\S]{{0,260}}m_AutomaticLoading: 1[\s\S]{{0,80}}m_AutomaticRunning: 1",
+            xr,
+        ), provider
 
 
 def test_startup_room_setting_selection_syncs_to_brain_before_capability() -> None:
@@ -226,7 +269,7 @@ def test_formal_startup_scene_is_first_enabled_build_scene() -> None:
 def test_formal_startup_scene_explicitly_mounts_runtime_services() -> None:
     text = FORMAL_STARTUP_SCENE.read_text(encoding="utf-8")
 
-    assert f"guid: {_unity_guid(META_UI)}" not in text
+    assert f"guid: {_unity_guid(SMOKE_REFERENCE_UI)}" not in text
 
     for script in [
         ROOM_SETTING_CLIENT,
@@ -237,17 +280,37 @@ def test_formal_startup_scene_explicitly_mounts_runtime_services() -> None:
         SCRIPT_ROOT / "LiveKit" / "ARVideoPublisher.cs",
         SCRIPT_ROOT / "LiveKit" / "VideoStateReporter.cs",
         SCRIPT_ROOT / "LiveKit" / "VideoTierReceiver.cs",
+        AUDIO_ROUTE_POLICY_REPORTER,
+        RECONNECT_SUPERVISOR,
+        FORMAL_MAIN_READY_GATE,
+        FORMAL_HOME_HUD,
+        HOME_MENU_CLIENT,
+        FORMAL_HOME_MENU_LOADER,
+        FORMAL_MODEL_READY_REPORTER,
+        FORMAL_AR_SESSION_BASELINE_REPORTER,
+        FORMAL_AR_RUNTIME_BOOTSTRAP,
     ]:
         assert f"guid: {_unity_guid(script)}" in text, script
 
     for field in [
         "roomSettingClient",
+        "homeMenuClient",
         "microphonePublisher",
         "videoPublisher",
         "orchestratorClient",
         "heartbeatPublisher",
+        "mainReadyGate",
+        "homeHudController",
+        "homeMenuLoader",
+        "modelReadyReporter",
+        "arRuntimeBootstrap",
+        "arSessionBaselineReporter",
     ]:
+        assert f"{field}: {{fileID:" in text
         assert f"{field}: {{fileID: 0}}" not in text
+    assert "bootstrapOnAwake: 0" in text
+    assert "appApiBaseUrl: http://127.0.0.1:8790" not in text
+    assert "appApiBaseUrl: http://localhost:8790" not in text
 
 
 def test_project_settings_default_scene_is_formal_startup_scene() -> None:
@@ -269,6 +332,9 @@ def test_formal_startup_roomsetting_cold_load_uses_app_http_facade() -> None:
     assert "roomSettingClient.Preview" in ui
     assert "roomSettingClient.NewRoomProfile" in ui
     assert "roomSettingClient.SaveRoomProfile" in ui
+    assert "BuildWritableRoomProfileForSave" in ui
+    assert "IsReservedRoomProfileId" in ui
+    assert 'string.Equals(id, "ner_lineb_room", StringComparison.Ordinal)' in ui
     assert "ApplyCompatibility" in ui
     assert "DefaultLineProfileFor" in ui
     assert "SceneId(SceneSelectorDto" in ui
@@ -282,6 +348,8 @@ def test_formal_startup_roomsetting_cold_load_uses_app_http_facade() -> None:
     assert '"/api/app/room-setting/new"' in client
     assert '"/api/app/room-setting/save"' in client
     assert '"/api/app/room-setting/apply"' in client
+    assert "save_room_profile_missing_profile" in client
+    assert "apply_room_profile_missing_profile" in client
     assert "NewRoomProfileResponseDto" in dtos
     assert "SkinSelectorDto" in dtos
     assert "public SkinSelectorDto[] skins" in dtos
@@ -301,6 +369,9 @@ def test_formal_startup_layout_targets_landscape_phone_and_theme_selector() -> N
     assert "new Vector2(2140f, 900f)" in text
     assert 'Tr("套装", "Theme")' in text
     assert "ToggleTheme" in text
+    assert "FormalMainReadyGate mainReadyGate" in text
+    assert "Loading home gates" in text
+    assert "MainReadyMissingText" in text
     assert 'Tr("Scene", "Scene")' not in text
     assert 'Tr("AR 就绪", "AR READY")' in text
     assert 'Tr("新建", "NEW")' in text
@@ -309,13 +380,24 @@ def test_formal_startup_layout_targets_landscape_phone_and_theme_selector() -> N
 
 def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> None:
     flow = STARTUP_FLOW.read_text(encoding="utf-8")
+    main_ready = FORMAL_MAIN_READY_GATE.read_text(encoding="utf-8")
+    home_hud = FORMAL_HOME_HUD.read_text(encoding="utf-8")
     orch = ORCHESTRATOR_CLIENT.read_text(encoding="utf-8")
     shutdown = SHUTDOWN_SERVICE.read_text(encoding="utf-8")
     video = (SCRIPT_ROOT / "LiveKit" / "ARVideoPublisher.cs").read_text(encoding="utf-8")
     mic = (SCRIPT_ROOT / "LiveKit" / "MicrophonePublisher.cs").read_text(encoding="utf-8")
+    route_reporter = AUDIO_ROUTE_POLICY_REPORTER.read_text(encoding="utf-8")
+    reconnect_supervisor = RECONNECT_SUPERVISOR.read_text(encoding="utf-8")
+    lifecycle = APP_LIFECYCLE_MANAGER.read_text(encoding="utf-8")
+    ecp_dto = (SCRIPT_ROOT / "Ecp" / "EcpEventDto.cs").read_text(encoding="utf-8")
+    ecp_dispatcher = (SCRIPT_ROOT / "Ecp" / "EcpEventDispatcher.cs").read_text(encoding="utf-8")
 
     assert "OrchestratorClient orchestratorClient" in flow
+    assert "AppRoomSettingClient roomSettingClient" in flow
     assert "PrepareTierOneRuntimeConfig" in flow
+    assert "ApplyStartupRoomProfileHttp" in flow
+    assert "room_setting_http_apply_required" in flow
+    assert "roomSettingClient.ApplyRoomProfile" in flow
     assert "RequiresTierOneStartup" in flow
     assert "orchestrator_required_for_tier1_startup" in flow
     assert "tier1_setting_requires_fresh_livekit_reconnect" in flow
@@ -327,6 +409,73 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "!response.result.success" in flow
     assert "LiveKitDataChannelHeartbeatTransport" in flow
     assert "heartbeatPublisher.Transport" in flow
+    assert "AudioRoutePolicyBrainReporter" in flow
+    assert "host.AddComponent<AudioRoutePolicyBrainReporter>()" in flow
+    assert "LiveKitReconnectSupervisor" in flow
+    assert "host.AddComponent<LiveKitReconnectSupervisor>()" in flow
+    assert "FormalMainReadyGate mainReadyGate" in flow
+    assert "host.AddComponent<FormalMainReadyGate>()" in flow
+    assert "FormalHomeHudController homeHudController" in flow
+    assert "host.AddComponent<FormalHomeHudController>()" in flow
+    assert "AppHomeMenuClient homeMenuClient" in flow
+    assert "AddComponent<AppHomeMenuClient>()" in flow
+    assert "FormalHomeMenuLoader homeMenuLoader" in flow
+    assert "host.AddComponent<FormalHomeMenuLoader>()" in flow
+    assert "FormalModelReadyReporter modelReadyReporter" in flow
+    assert "host.AddComponent<FormalModelReadyReporter>()" in flow
+    assert "FormalArRuntimeBootstrap arRuntimeBootstrap" in flow
+    assert "host.AddComponent<FormalArRuntimeBootstrap>()" in flow
+    assert "FormalArSessionBaselineReporter arSessionBaselineReporter" in flow
+    assert "host.AddComponent<FormalArSessionBaselineReporter>()" in flow
+    assert "RequestFreshTokenReconnect" in flow
+    assert "fresh_reconnect_token_mint_failed" in flow
+    assert "fresh_reconnect_room_profile_sync_timeout" in flow
+    assert "RestartConnectedRoomForTierOne" in flow
+    assert "shutdownService.RequestShutdown(\"tier1_setting_requires_fresh_livekit_reconnect\")" in flow
+    assert "tier1_fresh_reconnect_shutdown_timeout" in flow
+    assert "tier1_fresh_reconnect_waits_for_shutdown_cooldown" in flow
+    assert "tier1_fresh_reconnect_reenter_token_gate" in flow
+    assert "tier1_fresh_reconnect_room_profile" in flow
+    assert '"setLineBAudioRoutePolicy"' in route_reporter
+    assert "unity_audio_route_policy" in route_reporter
+    assert "BrainParticipantResolver.FindBrainParticipantId" in route_reporter
+    assert "InputRouteFor" in route_reporter
+    assert "system_default_microphone" in route_reporter
+    assert "input_route" in route_reporter
+    assert "output_route" in route_reporter
+    assert "RequestFreshTokenReconnect" in reconnect_supervisor
+    assert "Mathf.Pow(2f" in reconnect_supervisor
+    assert "IsBackgroundState" in reconnect_supervisor
+    assert "roomManager.IsDisconnecting" in reconnect_supervisor
+    assert "fresh_token_backoff" in reconnect_supervisor
+    assert "CurrentState == AppLifecycleState.Reconnecting" in lifecycle
+    assert "CurrentState == AppLifecycleState.Connecting" in lifecycle
+    assert "CurrentState == AppLifecycleState.ArSessionStarting" in lifecycle
+    assert "CurrentState == AppLifecycleState.TokenGate" in lifecycle
+    assert "FromWireJson" in ecp_dto
+    assert "ExtractBalancedJson" in ecp_dto
+    assert "EcpEventBuilder.FromWireJson(json)" in ecp_dispatcher
+    assert "class FormalMainReadyGate" in main_ready
+    assert "OnMainUiReady += HandleStartupMainReady" in main_ready
+    assert "ReportRunning()" in main_ready
+    assert '"startup_transport_ready"' in main_ready
+    assert '"startup_brain_rpc_synced"' in main_ready
+    assert '"heartbeat_datachannel_ready"' in main_ready
+    assert '"hud_loaded"' in main_ready
+    assert '"menu_snapshot_loaded"' in main_ready
+    assert '"model_resolved"' in main_ready
+    assert '"ar_session_baseline_clean"' in main_ready
+    assert "AppCapabilityModeNames.MicrophoneEnabled" in main_ready
+    assert "VideoFreshFrame" in main_ready
+    assert "OnGateChanged" in main_ready
+    assert "waitingReevaluateIntervalSeconds" in main_ready
+    assert "waiting_tick" in main_ready
+    assert "class FormalHomeHudController" in home_hud
+    assert "ReportHudLoaded" in home_hud
+    assert "formal_home_hud_shell" in home_hud
+    assert "FormalHomeHudCanvas" in home_hud
+    assert "OnMainUiReady += HandleStartupMainReady" in home_hud
+    assert "LastMissingGates" in home_hud
 
     assert '"/apply_room_profile"' in orch
     assert '"/set_active_line"' in orch
@@ -342,11 +491,82 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "sync quit drain skips waiting for UnpublishTrack" in mic
 
 
-def test_smoke_scene_builder_mounts_meta_ui_and_wires_existing_tools() -> None:
+def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
+    menu_client = HOME_MENU_CLIENT.read_text(encoding="utf-8")
+    room_client = ROOM_SETTING_CLIENT.read_text(encoding="utf-8")
+    menu_loader = FORMAL_HOME_MENU_LOADER.read_text(encoding="utf-8")
+    model_reporter = FORMAL_MODEL_READY_REPORTER.read_text(encoding="utf-8")
+    ar_reporter = FORMAL_AR_SESSION_BASELINE_REPORTER.read_text(encoding="utf-8")
+    ar_bootstrap = FORMAL_AR_RUNTIME_BOOTSTRAP.read_text(encoding="utf-8")
+    manifest = MODEL_MANIFEST_DTO.read_text(encoding="utf-8")
+
+    assert "class AppHomeMenuClient" in menu_client
+    assert '"/api/app/canvas"' in menu_client
+    assert "compact in-room control" in menu_client
+    assert "AppCanvasSnapshotDto" in menu_client
+    assert "public float generated_at" in menu_client
+    assert "public double generated_at" not in menu_client
+    assert "HasUsableHomePayload" in menu_client
+    assert "hasMenuShell" in menu_client
+    assert "&& !string.IsNullOrWhiteSpace(active_workspace_id)" in menu_client
+    assert "config.appApiUrl" in menu_client
+    assert "config.appApiSecret" in menu_client
+    assert 'private string appApiBaseUrl = "";' in menu_client
+    assert 'private string appApiBaseUrl = "";' in room_client
+    assert "device's own localhost" in menu_client
+    assert "device's own localhost" in room_client
+    assert "http://127.0.0.1:8790" not in menu_client
+    assert "http://127.0.0.1:8790" not in room_client
+
+    assert "class FormalHomeMenuLoader" in menu_loader
+    assert "menuClient.LoadCanvasSnapshot" in menu_loader
+    assert "maxLoadAttempts" in menu_loader
+    assert "_loadCoroutine = null" in menu_loader
+    assert "startupFlow.MainUiReadyOnce" in menu_loader
+    assert "Bind(allowMainReadyCatchUp: false)" in menu_loader
+    assert "ReportMenuSnapshotLoaded" in menu_loader
+    assert "app_http_canvas_snapshot" in menu_loader
+    assert "ReportGateInvalidated(\"menu_snapshot_loaded\")" in menu_loader
+    assert "AppV1SmokeReferenceUiController" not in menu_loader
+
+    assert "class FormalModelReadyReporter" in model_reporter
+    assert "ModelManifestDto.LoadFromResources" in model_reporter
+    assert "startupFlow.MainUiReadyOnce" in model_reporter
+    assert "ReportModelResolved" in model_reporter
+    assert "model_manifest_missing" in model_reporter
+    assert "ToLowerInvariant()" in manifest
+
+    assert "class FormalArSessionBaselineReporter" in ar_reporter
+    assert "FormalArRuntimeBootstrap arRuntimeBootstrap" in ar_reporter
+    assert "arRuntimeBootstrap?.EnsureArRuntime()" in ar_reporter
+    assert "startupFlow.MainUiReadyOnce" in ar_reporter
+    assert "ReportArSessionBaselineClean" in ar_reporter
+    assert "ARSessionState.SessionTracking" in ar_reporter
+    assert "ar_session_waiting" in ar_reporter
+    assert "mobile_ar_session_not_mounted" in ar_reporter
+    assert "yield return null;" in ar_reporter
+    assert "_checkCoroutine = null;" in ar_reporter
+    assert "ARSessionState.Ready" not in ar_reporter
+    assert "ARSessionState.SessionInitializing" not in ar_reporter
+    assert "ReportGosloPlaced" not in ar_reporter
+    assert "CallBrainRpc" not in ar_reporter
+
+    assert "class FormalArRuntimeBootstrap" in ar_bootstrap
+    assert "UNITY_AR_FOUNDATION" in ar_bootstrap
+    assert "bootstrapOnAwake = false" in ar_bootstrap
+    assert "if (bootstrapOnAwake)" in ar_bootstrap
+    assert "ARSession" in ar_bootstrap
+    assert "ARCameraManager" in ar_bootstrap
+    assert "ARCameraBackground" in ar_bootstrap
+    assert "EnsureArRuntime" in ar_bootstrap
+    assert "ARInputManager" in ar_bootstrap
+
+
+def test_smoke_scene_builder_mounts_reference_ui_and_wires_existing_tools() -> None:
     text = SMOKE_BUILDER.read_text(encoding="utf-8")
 
     assert "using ParrotApp.UI;" in text
-    assert "AddComponent<AppV1MetaUiController>()" in text
+    assert "AddComponent<AppV1SmokeReferenceUiController>()" in text
     assert "AddComponent<AppStartupFlowController>()" in text
     assert "AddComponent<LiveKitTokenMintClient>()" in text
     assert "ConfigureRoomManagerForMint" in text
@@ -354,7 +574,7 @@ def test_smoke_scene_builder_mounts_meta_ui_and_wires_existing_tools() -> None:
     assert 'SetBool(roomManager, "allowEditorTokenFile", false)' in text
     assert "Upgrade Current A2 Smoke Scene" in text
     assert "UpgradeCurrentSmokeScene" in text
-    assert "FindOrCreateRoot(\"AppV1MetaUI\")" in text
+    assert "FindOrCreateRoot(\"AppV1SmokeReferenceUI\")" in text
     assert 'FindProperty("startupFlow")' in text
     assert 'FindProperty("photoController")' in text
     assert 'FindProperty("parrotController")' in text
@@ -609,8 +829,10 @@ def test_arspike_mint_client_uses_gitignored_runtime_config_without_logging_secr
     assert config["mintSecret"] == "same-as-PARROT_MINT_SECRET-on-castle"
     assert config["room"] == "parrot-main"
     assert config["appApiUrl"].endswith(":8790")
+    assert config["appApiUrl"].startswith("http://YOUR_CASTLE_IP:")
     assert config["appApiSecret"] == "dev-only-same-as-PARROT_APP_MONITOR_SECRET-when-enabled"
     assert config["orchestratorUrl"].endswith(":7890")
+    assert config["orchestratorUrl"].startswith("http://YOUR_CASTLE_IP:")
     assert config["orchestratorSecret"] == "dev-only-same-as-PARROT_ORCH_SECRET"
 
 

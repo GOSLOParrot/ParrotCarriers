@@ -27,6 +27,7 @@ namespace ParrotApp.UI
         [SerializeField] private AppLifecycleManager lifecycleManager;
         [SerializeField] private RoomManager roomManager;
         [SerializeField] private AppRoomSettingClient roomSettingClient;
+        [SerializeField] private FormalMainReadyGate mainReadyGate;
 
         [Header("Paper/Wood Placeholder Resources")]
         [SerializeField] private string resourcePrefix = "StartupPaperCraft/";
@@ -75,6 +76,7 @@ namespace ParrotApp.UI
         private float _statusTick;
         private float _transitionTick;
         private bool _subscribed;
+        private FormalMainReadyGate _subscribedMainReadyGate;
         private bool _useChinese = true;
         private VisibleScreen _visibleScreen = VisibleScreen.Startup;
         private string _startupMessage = "Ready.";
@@ -126,11 +128,13 @@ namespace ParrotApp.UI
         {
             ResolveServices();
             SubscribeStartupFlow();
+            SubscribeMainReadyGate();
         }
 
         private void OnDisable()
         {
             UnsubscribeStartupFlow();
+            UnsubscribeMainReadyGate();
         }
 
         private void Start()
@@ -164,6 +168,8 @@ namespace ParrotApp.UI
             if (roomManager == null) roomManager = RoomManager.Instance ?? FindObjectOfType<RoomManager>();
             if (roomSettingClient == null) roomSettingClient = FindObjectOfType<AppRoomSettingClient>();
             if (roomSettingClient == null) roomSettingClient = gameObject.AddComponent<AppRoomSettingClient>();
+            if (mainReadyGate == null) mainReadyGate = FindObjectOfType<FormalMainReadyGate>();
+            if (_subscribedMainReadyGate != mainReadyGate) SubscribeMainReadyGate();
         }
 
         private void SubscribeStartupFlow()
@@ -182,6 +188,22 @@ namespace ParrotApp.UI
             startupFlow.OnMainUiReady -= HandleMainReady;
             startupFlow.OnStartupFailed -= HandleStartupFailed;
             _subscribed = false;
+        }
+
+        private void SubscribeMainReadyGate()
+        {
+            if (_subscribedMainReadyGate == mainReadyGate) return;
+            UnsubscribeMainReadyGate();
+            _subscribedMainReadyGate = mainReadyGate;
+            if (_subscribedMainReadyGate != null)
+                _subscribedMainReadyGate.OnGateChanged += HandleMainReadyGateChanged;
+        }
+
+        private void UnsubscribeMainReadyGate()
+        {
+            if (_subscribedMainReadyGate == null) return;
+            _subscribedMainReadyGate.OnGateChanged -= HandleMainReadyGateChanged;
+            _subscribedMainReadyGate = null;
         }
 
         private void LoadSprites()
@@ -677,6 +699,10 @@ namespace ParrotApp.UI
         private static bool IsReservedRoomProfileId(string id)
         {
             return string.Equals(id, "default", StringComparison.Ordinal)
+                   // Built-in selectable baseline. Saving from the phone should
+                   // create a user Room copy instead of overwriting the shipped
+                   // LineB/Ner test profile on ECS.
+                   || string.Equals(id, "ner_lineb_room", StringComparison.Ordinal)
                    || string.Equals(id, "ephemeral", StringComparison.Ordinal)
                    || string.Equals(id, "workspace_only", StringComparison.Ordinal);
         }
@@ -870,7 +896,17 @@ namespace ParrotApp.UI
         private void HandleMainReady(AppStartupConfigDto config)
         {
             _config = CopyConfig(config);
-            ShowMain(Tr("就绪", "Ready"));
+            ShowMain("Loading home gates...");
+        }
+
+        private void HandleMainReadyGateChanged(FormalMainReadySnapshot snapshot)
+        {
+            if (_visibleScreen != VisibleScreen.Main || _mainText == null) return;
+            if (snapshot != null && snapshot.ready)
+                _mainText.text = "Home ready";
+            else
+                _mainText.text = "Loading home gates...\n" + MainReadyMissingText();
+            RefreshStatus();
         }
 
         private void HandleStartupFailed(string reason)
@@ -907,7 +943,10 @@ namespace ParrotApp.UI
             SetActive(_roomSettingSurface, false);
             SetActive(_transitionSurface, false);
             SetActive(_mainSurface, true);
-            if (_mainText != null) _mainText.text = message;
+            if (_mainText != null)
+                _mainText.text = message == "Loading home gates..."
+                    ? "Loading home gates...\n" + MainReadyMissingText()
+                    : message;
             RefreshStatus();
         }
 
@@ -972,14 +1011,29 @@ namespace ParrotApp.UI
                 _startupStatus.text = connected ? Tr("已连接", "Connected") : Tr("离线", "Offline");
             if (_hudText != null)
             {
+                string mainReady = mainReadyGate == null
+                    ? "missing"
+                    : (mainReadyGate.IsReady ? "ready" : "wait " + MainReadyMissingText());
                 _hudText.text =
                     "LiveKit: " + (connected ? Tr("已连接", "connected") : Tr("离线", "offline")) + "\n" +
                     Tr("状态：", "State: ") + lifecycle + "\n" +
                     Tr("房间：", "Room: ") + room + "\n" +
                     Tr("连接：", "Connect: ") + connectTime + "\n" +
-                    "Line: " + _config.line_id;
+                    "Line: " + _config.line_id + "\n" +
+                    "Home: " + mainReady;
             }
             if (_statusIcon != null) _statusIcon.sprite = connected ? _statusGreen : _statusRed;
+        }
+
+        private string MainReadyMissingText()
+        {
+            ResolveServices();
+            if (mainReadyGate == null) return "main_ready_gate_missing";
+            if (mainReadyGate.IsReady) return "ready";
+            string missing = mainReadyGate.LastMissingGates;
+            if (string.IsNullOrWhiteSpace(missing)) return "waiting";
+            const int maxLen = 86;
+            return missing.Length <= maxLen ? missing : missing.Substring(0, maxLen) + "...";
         }
 
         private string Tr(string zh, string en)
@@ -1048,7 +1102,7 @@ namespace ParrotApp.UI
                     ShowTransition(Tr("启动中...", "Starting..."));
                     break;
                 case VisibleScreen.Main:
-                    ShowMain(Tr("就绪", "Ready"));
+                    ShowMain("Loading home gates...");
                     break;
                 default:
                     ShowStartup(Tr("就绪。", "Ready."));

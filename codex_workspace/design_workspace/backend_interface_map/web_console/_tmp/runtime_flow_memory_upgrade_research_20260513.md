@@ -267,7 +267,39 @@ fields to `.cursor/memory/architecture/Interface/**` until App/Web confirmation.
   state now renders as a semi-transparent status overlay, not a solid component
   block. Research anchors recorded: React Flow ConnectionMode/Handles docs and
   force-graph Canvas/dynamic data examples. No backend route, App DTO, or core
-  interface changed.
+  interface changed. Verification: frontend typecheck/build passed, Web route
+  tests reported `17 passed`, local HTTP `/` and `/api/app/live-state` returned
+  `200`, browser smoke confirmed compact/expanded toolbar states with zero
+  console errors, and `git diff --check` passed.
+- 2026-05-15: Requirement split recorded after user clarified the intended
+  division between the Memory operation page, Runtime Flow/collaboration page,
+  and a new full-screen L2-B realtime monitor. Memory owns advanced L2-B/L1.5
+  operations plus Node/Ref/file/photo detail; Runtime Flow owns GOSLO Intent,
+  Plan/HITL, Blackboard, IntentWorkspace, Scheduler, Nanobot, message/trigger,
+  manual Plan import, task dispatch, and result destination routing; the new
+  WEB-013 page owns full-screen L2-B rendering, filters, Graphiti search
+  subgraphs, selected Node/Edge inspection, trigger animation, and
+  attention/salience overlays. Important boundary: IntentWorkspace is a GOSLO
+  Intent-layer workspace, while L2-B is only a graph/bucket projection used as
+  context. Guidance or edit requests for IntentWorkspace must route through
+  GOSLO Intent/task/workspace-file/Plan-edit paths, not direct L2-B graph
+  mutation.
+- 2026-05-15: React-Force-Graph reference pack collected for WEB-013:
+  `https://github.com/vasturiano/react-force-graph`,
+  `https://github.com/vasturiano/react-force-graph/tree/master/example`,
+  `https://vasturiano.github.io/react-force-graph/example/large-graph/`,
+  `https://reactflow.dev/learn/customization/handles`,
+  `https://reactflow.dev/api-reference/types/connection-mode`,
+  `https://obsidian.md/help/plugins/graph`, and
+  `https://d3js.org/d3-force`. Durable draft skill added at
+  `codex_workspace/codex_skills/react-force-graph-l2b/SKILL.md`.
+- 2026-05-15: The new L1.5/Graphiti import test task moved into its own
+  temporary ledger:
+  `web_console/_tmp/l15_graphiti_import_test_20260515.md`. Durable conclusions
+  were promoted to the Web TODO board, Memory business flow, Graphiti business
+  flow, and core candidate queue. Key correction: `roleplay` is a mode/profile
+  that can group many source packs, not one singleton bucket. Graphiti imports
+  should preserve temporal episode order and state changes.
 
 ## Pending Core / Data Model Review
 

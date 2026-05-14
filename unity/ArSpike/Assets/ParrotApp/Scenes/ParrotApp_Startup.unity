@@ -242,8 +242,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   m_Version: 3
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
@@ -355,6 +355,15 @@ GameObject:
   - component: {fileID: 1120588100}
   - component: {fileID: 1120588099}
   - component: {fileID: 1120588098}
+  - component: {fileID: 1120588106}
+  - component: {fileID: 1120588107}
+  - component: {fileID: 1120588108}
+  - component: {fileID: 1120588109}
+  - component: {fileID: 1120588110}
+  - component: {fileID: 1120588111}
+  - component: {fileID: 1120588112}
+  - component: {fileID: 1120588113}
+  - component: {fileID: 1120588114}
   m_Layer: 0
   m_Name: RuntimeServices
   m_TagString: Untagged
@@ -387,8 +396,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 214b017905774c59a71bd5f5394bfaed, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   roomManager: {fileID: 1120588096}
   lifecycleManager: {fileID: 1120588097}
   shutdownService: {fileID: 1120588095}
@@ -396,7 +405,15 @@ MonoBehaviour:
   microphonePublisher: {fileID: 1120588101}
   videoPublisher: {fileID: 1120588100}
   orchestratorClient: {fileID: 1120588104}
+  roomSettingClient: {fileID: 1120588105}
+  homeMenuClient: {fileID: 1120588110}
   heartbeatPublisher: {fileID: 1120588103}
+  mainReadyGate: {fileID: 1120588108}
+  homeHudController: {fileID: 1120588109}
+  homeMenuLoader: {fileID: 1120588111}
+  modelReadyReporter: {fileID: 1120588112}
+  arRuntimeBootstrap: {fileID: 1120588114}
+  arSessionBaselineReporter: {fileID: 1120588113}
   defaultConfig:
     scene_id: ar_handheld
     room_id: parrot-main
@@ -411,15 +428,15 @@ MonoBehaviour:
     setting_file_refs: []
     capability_mode: FullARCompanion
     workspace_id: mansion_hub
-    livekit_url: 
-    join_token: 
-    unity_identity: 
-    app_api_url: 
-    orchestrator_url: 
-    orchestrator_secret: 
+    livekit_url:
+    join_token:
+    unity_identity:
+    app_api_url:
+    orchestrator_url:
+    orchestrator_secret:
     setting_change_tier: 0
-    compatibility_state: 
-    compatibility_summary: 
+    compatibility_state:
+    compatibility_summary:
     requires_livekit_reconnect: 0
   connectTimeoutSeconds: 20
   brainRpcReadyTimeoutSeconds: 8
@@ -434,10 +451,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1ae2b69323534cbca1d1faf6edd0e7a6, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   mintEndpoint: http://127.0.0.1:7888/mint
-  bearerSecret: 
+  bearerSecret:
 --- !u!114 &1120588094
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -448,8 +465,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 3ef9ff16439f63b418b6e7c8955e8e4d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   roomManager: {fileID: 1120588096}
   brainIdentityPrefix: agent-
 --- !u!114 &1120588095
@@ -462,8 +479,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e5570cf1a0859a447bebefb035ac8042, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   roomManager: {fileID: 1120588096}
   runOnApplicationQuit: 1
 --- !u!114 &1120588096
@@ -476,10 +493,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c6f7abc7b3a89184ca6af5d8bc644cd9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   serverUrl: ws://localhost:7880
-  joinToken: 
+  joinToken:
   autoConnectOnStart: 0
   allowEditorTokenFile: 1
 --- !u!114 &1120588097
@@ -492,8 +509,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b6c6390a228560a4e9926024f33f2d5e, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   config: {fileID: 11400000, guid: bede49f18ac103b4e9d732289701cc0c, type: 2}
   verboseEditorLog: 0
 --- !u!114 &1120588098
@@ -506,8 +523,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d952a790b8331b04d8cfe104f84c8ce0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   verboseLogging: 1
   videoPublisher: {fileID: 1120588100}
 --- !u!114 &1120588099
@@ -520,8 +537,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e1e4677c4f087c54589a1cbe6e2f0208, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   agentIdentityPrefix: agent-
   pauseReportDelay: 0.5
   videoPublisher: {fileID: 1120588100}
@@ -537,8 +554,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: ab63bd26dd79b6c4d8c9d32b0121634a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   width: 1280
   height: 720
   targetFps: 30
@@ -548,7 +565,7 @@ MonoBehaviour:
   geminiOnlyFps: 15
   arCamera: {fileID: 275410333}
   useWebcamFallback: 1
-  preferredDeviceName: 
+  preferredDeviceName:
   webcamWarmupFrames: 3
   lifecycleManager: {fileID: 1120588097}
 --- !u!114 &1120588101
@@ -561,9 +578,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b8c4a7e182282294b802f6137ab7aafa, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  preferredDevice: 
+  m_Name:
+  m_EditorClassIdentifier:
+  preferredDevice:
   fallbackSampleRate: 48000
   lifecycleManager: {fileID: 1120588097}
   routeDetector: {fileID: 1120588102}
@@ -579,8 +596,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c857eef68eb9a2340b3c8036e095c0b0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   pollIntervalSeconds: 2
   pollInEditor: 0
 --- !u!114 &1120588103
@@ -593,8 +610,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cb29b950d1c3b934fad7e186c86a04d8, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   useLogTransportInEditor: 1
   animationDriver: {fileID: 0}
 --- !u!114 &1120588104
@@ -607,10 +624,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9df38e605a4344f4948a951f31126c33, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  orchestratorBaseUrl: 
-  bearerSecret: 
+  m_Name:
+  m_EditorClassIdentifier:
+  orchestratorBaseUrl:
+  bearerSecret:
 --- !u!114 &1120588105
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -621,10 +638,168 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4ace88a811624f8da49531d531bb2484, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  appApiBaseUrl: http://127.0.0.1:8790
-  bearerSecret: 
+  m_Name:
+  m_EditorClassIdentifier:
+  appApiBaseUrl:
+  bearerSecret:
+--- !u!114 &1120588106
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 68356dda020849039d9e8b25ee53635b, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  roomManager: {fileID: 1120588096}
+  routeDetector: {fileID: 1120588102}
+  microphonePublisher: {fileID: 1120588101}
+  reportDebounceSeconds: 0.4
+  brainReadyTimeoutSeconds: 6
+--- !u!114 &1120588107
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 98e99be7da434833882cd22bbc24c72b, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  roomManager: {fileID: 1120588096}
+  lifecycleManager: {fileID: 1120588097}
+  startupFlow: {fileID: 1120588092}
+  automaticReconnect: 1
+  initialBackoffSeconds: 1
+  maxBackoffSeconds: 20
+  jitterSeconds: 0.35
+  maxAttemptsPerDrop: 5
+  attemptTimeoutSeconds: 40
+--- !u!114 &1120588108
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b3257a05d89f44b1b59943cfa3615a4d, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  startupFlow: {fileID: 1120588092}
+  lifecycleManager: {fileID: 1120588097}
+  roomManager: {fileID: 1120588096}
+  requireLiveKitConnected: 1
+  requireBrainPresent: 1
+  requireStartupBrainRpcSynced: 1
+  requireHeartbeatDataChannelReady: 1
+  requireUnityCommandRpcReady: 0
+  requireAudioWhenModeNeedsMic: 1
+  requireVideoWhenModeNeedsVideo: 1
+  requireHudLoaded: 1
+  requireMenuSnapshotLoaded: 1
+  requireModelResolved: 1
+  requireArSessionBaselineClean: 1
+  degradedAfterSeconds: 12
+--- !u!114 &1120588109
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4963a3cdf154a9991b74c840ad47d26, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  startupFlow: {fileID: 1120588092}
+  lifecycleManager: {fileID: 1120588097}
+  roomManager: {fileID: 1120588096}
+  mainReadyGate: {fileID: 1120588108}
+--- !u!114 &1120588110
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a5a896bb144046f0b2a9d9d01fd3e690, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  appApiBaseUrl:
+  bearerSecret:
+--- !u!114 &1120588111
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f9ed5b1c106440cba1d9618dc1d5b6f1, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  startupFlow: {fileID: 1120588092}
+  mainReadyGate: {fileID: 1120588108}
+  menuClient: {fileID: 1120588110}
+--- !u!114 &1120588112
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 86635a0ae56a47e79db27e6933d086d9, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  startupFlow: {fileID: 1120588092}
+  mainReadyGate: {fileID: 1120588108}
+  modelDriver: {fileID: 0}
+--- !u!114 &1120588113
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 05e7f08efad54404887612c153610628, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  startupFlow: {fileID: 1120588092}
+  mainReadyGate: {fileID: 1120588108}
+  videoPublisher: {fileID: 1120588100}
+  arRuntimeBootstrap: {fileID: 1120588114}
+  arStateWaitSeconds: 4
+--- !u!114 &1120588114
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 44c254962391459bbf45fbd99c24750c, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  arCamera: {fileID: 275410333}
+  bootstrapOnAwake: 0
+  createArSessionObject: 1
+  attachCameraManagers: 1
 --- !u!1 &1265433863
 GameObject:
   m_ObjectHideFlags: 0
@@ -667,8 +842,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 36da0a5804b400b49a6a19727069d075, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Name:
+  m_EditorClassIdentifier:
   startupFlow: {fileID: 1120588092}
   lifecycleManager: {fileID: 1120588097}
   roomManager: {fileID: 1120588096}

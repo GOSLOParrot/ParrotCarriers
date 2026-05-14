@@ -8,10 +8,12 @@ default to dry-run and require an explicit operator flag.
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from dataclasses import fields, is_dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 
@@ -224,6 +226,232 @@ async def build_l15_pool_snapshot() -> dict[str, Any]:
             "writes_default_to": "draft_receipt",
         },
     }
+
+
+def scan_obsidian_vault(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Scan an Obsidian vault and preview L1.5-ready note payloads.
+
+    This is a Web-only read surface for the Source Board. It deliberately stops
+    before publishing ``obsidian_note`` events: the operator should inspect the
+    profile, UUID policy, target bucket, and payload before a later import
+    action sends anything through the trigger bus.
+    """
+    from parrot.brain.obsidian_vault import (
+        check_obsidian_vault,
+        collect_markdown_files,
+        note_to_ingest_payload,
+    )
+
+    body = payload or {}
+    vault = _default_obsidian_vault_path(body.get("vault_path"))
+    limit, limit_error = _body_int_limit(body.get("limit"), default=24, maximum=80)
+    if limit_error:
+        return _receipt(
+            action="l15.obsidian_vault.scan",
+            success=False,
+            dry_run=True,
+            operator_mode=False,
+            data={
+                "error": limit_error,
+                "vault": {"vault_path": str(vault), "status": "not_scanned"},
+                "notes": [],
+                "invalid_notes": [],
+                "profiles": _obsidian_profile_descriptions(),
+                "operator_required_for_import": True,
+            },
+        )
+    check = check_obsidian_vault(vault, sample_limit=min(limit, 12))
+    notes: list[dict[str, Any]] = []
+    invalid_notes: list[dict[str, Any]] = []
+    selected_paths = _obsidian_selected_paths(body.get("paths") or body.get("selected_paths"))
+    seen_selected_paths: set[str] = set()
+    invalid_preview_limit = min(limit, 24)
+    if vault.exists():
+        for path in collect_markdown_files(vault):
+            rel_path = _relative_path(path, vault)
+            is_selected_path = rel_path in selected_paths
+            if is_selected_path:
+                seen_selected_paths.add(rel_path)
+            if (
+                not selected_paths
+                and len(notes) >= limit
+                and len(invalid_notes) >= invalid_preview_limit
+            ):
+                break
+            payload_row = note_to_ingest_payload(path)
+            if payload_row is None:
+                if is_selected_path or len(invalid_notes) < invalid_preview_limit:
+                    invalid_notes.append({
+                        "path": rel_path,
+                        "reason": "missing_frontmatter_or_ref_target",
+                    })
+                continue
+            if len(notes) >= limit and not is_selected_path:
+                continue
+            profile = str(payload_row.get("profile") or "daily")
+            notes.append({
+                "path": rel_path,
+                "profile": profile,
+                "label": str(payload_row.get("label") or path.stem),
+                "obsidian_uuid": str(payload_row.get("obsidian_uuid") or ""),
+                "obsidian_note_key": str(payload_row.get("obsidian_note_key") or ""),
+                "target_bucket": _obsidian_profile_target(profile),
+                "uuid_free_allowed": profile in {"daily", "roleplay"},
+                "import_ready": True,
+                "payload": payload_row,
+            })
+            if selected_paths and selected_paths <= seen_selected_paths:
+                break
+
+    return _receipt(
+        action="l15.obsidian_vault.scan",
+        success=check.status != "missing_path",
+        dry_run=True,
+        operator_mode=False,
+        data={
+            "vault": _jsonable(check),
+            "notes": notes,
+            "invalid_notes": invalid_notes,
+            "profiles": _obsidian_profile_descriptions(),
+            "operator_required_for_import": True,
+        },
+    )
+
+
+def draft_obsidian_vault_import(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft a batch import from scanned Obsidian notes into L1.5.
+
+    This route is the batch companion to ``l15.obsidian_node.draft``. It
+    rescans the local vault server-side, applies optional path/profile filters,
+    converts each ready note through the same ``UserTagFilter`` used by the
+    runtime Obsidian trigger, and returns a reviewable receipt. It does not
+    publish Redis events and does not commit to L1.5/L2-B.
+    """
+
+    items, errors, scan_receipt = _obsidian_vault_import_items(payload)
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    return _receipt(
+        action="l15.obsidian_vault.import_draft",
+        success=bool(items) and not errors,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            "items": items,
+            "errors": errors,
+            "selected_count": len(items),
+            "scan_summary": {
+                "vault": (scan_receipt.get("data") or {}).get("vault", {}),
+                "ready_count": len((scan_receipt.get("data") or {}).get("notes", [])),
+                "invalid_count": len((scan_receipt.get("data") or {}).get("invalid_notes", [])),
+            },
+            "write_path": "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)",
+            "runtime_path": "ObsidianIngestTrigger -> TriggerOutcome.commit_observations -> L15Pool.admit",
+            "operator_required_for_import": True,
+        },
+    )
+
+
+async def apply_obsidian_vault_import(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Import selected Obsidian notes through L1.5 under operator mode only.
+
+    Runtime Obsidian sync still uses the trigger/event path. This direct
+    ``L15Pool.admit`` route is intentionally Web-only so an operator can test
+    source-pack imports without requiring the full Brain/Redis trigger runner
+    to be alive. It must stay behind explicit operator mode.
+    """
+
+    from parrot.dsg.l1_5.pool import get_l1_5_pool
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    draft = draft_obsidian_vault_import(
+        {**body, "dry_run": dry_run, "operator_mode": operator_mode}
+    )
+    draft["action"] = "l15.obsidian_vault.import"
+    if not draft.get("success"):
+        return draft
+    if dry_run or not operator_mode:
+        draft["data"]["would_apply"] = True
+        draft["data"]["apply_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        return draft
+
+    observations = tuple(
+        _observation_from_json(item["observation"])
+        for item in draft["data"]["items"]
+        if isinstance(item, dict) and isinstance(item.get("observation"), dict)
+    )
+    outcome = await get_l1_5_pool().admit(observations)
+    return _receipt(
+        action="l15.obsidian_vault.import",
+        success=not bool(outcome.rejected),
+        dry_run=False,
+        operator_mode=True,
+        data={
+            "imported_count": len(observations),
+            "admit_outcome": _jsonable(outcome),
+            "write_path": "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)",
+        },
+    )
+
+
+def preview_google_calendar_events(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Preview Google Calendar event normalization and L1.5 observations.
+
+    The preview uses the same CalendarTrigger conversion helpers as the real
+    trigger path, but it does not return commit_observations to the runner and
+    does not mutate L1.5/L2-B.
+    """
+    from parrot.dsg.l2b_graph import get_l2b_graph
+    from parrot.dsg.triggers.calendar_trigger import (
+        CalendarTrigger,
+        _extract_event_list,
+        _loads_jsonish,
+    )
+
+    body = payload or {}
+    raw_events = body.get("events")
+    if not isinstance(raw_events, list):
+        raw_input = body.get("result") if "result" in body else body.get("raw")
+        raw_events = _extract_event_list(_loads_jsonish(raw_input))
+    raw_dicts = [dict(item) for item in raw_events[:20] if isinstance(item, dict)]
+    trigger = CalendarTrigger(get_l2b_graph())
+    normalized = [trigger._normalize_event(ev) for ev in raw_dicts]
+    observations = []
+    for event in normalized:
+        start_ts = trigger._parse_time(str(event.get("start_time") or ""))
+        end_ts = trigger._parse_time(str(event.get("end_time") or ""))
+        observations.append(trigger._event_to_observation(event, start_ts, end_ts))
+
+    return _receipt(
+        action="google.calendar.preview",
+        success=bool(raw_dicts),
+        dry_run=True,
+        operator_mode=False,
+        data={
+            "raw_events": raw_dicts,
+            "normalized_events": normalized,
+            "observations": observations,
+            "write_path": "CalendarTrigger -> TriggerOutcome.commit_observations -> L15Pool.admit",
+            "preserved_fields": [
+                "calendar_id",
+                "calendar_event_id",
+                "start_time",
+                "end_time",
+                "timezone",
+                "location",
+                "html_link",
+                "etag",
+                "status",
+                "ical_uid",
+                "updated",
+                "objects",
+            ],
+            "operator_required_for_import": True,
+        },
+    )
 
 
 def draft_l15_bucket_op(payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -748,6 +976,143 @@ def _obsidian_node_payload(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _obsidian_vault_import_items(
+    payload: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """Return selected Obsidian note drafts plus validation errors.
+
+    The source board sends relative vault paths chosen by the operator. The
+    server rescans the vault instead of trusting browser-provided note payloads
+    so preview/import receipts are always based on current local files.
+    """
+
+    from parrot.dsg.ingest.user_tag_filter import UserTagFilter
+
+    body = payload or {}
+    scan_receipt = scan_obsidian_vault(body)
+    notes = list((scan_receipt.get("data") or {}).get("notes") or [])
+    selected_paths = _obsidian_selected_paths(body.get("paths") or body.get("selected_paths"))
+    selected_profiles = _obsidian_selected_profiles(body.get("profiles"))
+    limit, limit_error = _body_int_limit(body.get("limit"), default=24, maximum=80)
+
+    filter_ = UserTagFilter()
+    items: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    ready_paths_seen: set[str] = set()
+    if limit_error:
+        errors.append(limit_error)
+        return items, errors, scan_receipt
+    for note in notes:
+        rel_path = str(note.get("path") or "").replace("\\", "/")
+        profile = str(note.get("profile") or "daily").strip().lower()
+        if selected_paths and rel_path not in selected_paths:
+            continue
+        ready_paths_seen.add(rel_path)
+        # A selected path is explicit operator intent. Report profile mismatches
+        # instead of silently dropping the note from the receipt.
+        if selected_profiles and profile not in selected_profiles:
+            if selected_paths:
+                errors.append({
+                    "path": rel_path,
+                    "profile": profile,
+                    "error": "selected_profile_mismatch",
+                    "expected_profiles": sorted(selected_profiles),
+                })
+            continue
+        if len(items) >= limit:
+            if selected_paths:
+                errors.append({
+                    "path": rel_path,
+                    "profile": profile,
+                    "error": "selected_path_over_limit",
+                    "limit": limit,
+                })
+                continue
+            break
+        payload_row = note.get("payload")
+        if not isinstance(payload_row, dict):
+            errors.append({"path": rel_path, "error": "missing_note_payload"})
+            continue
+        event = _obsidian_event(dict(payload_row))
+        outcome = filter_.process_tag(
+            dict(payload_row),
+            provenance_stream_id=str(event.get("provenance_stream_id") or ""),
+        )
+        if outcome.rejected or not outcome.observations:
+            errors.append({
+                "path": rel_path,
+                "profile": profile,
+                "error": outcome.reason or "filter_rejected",
+            })
+            continue
+        observation = outcome.observations[0]
+        items.append({
+            "path": rel_path,
+            "profile": profile,
+            "label": str(note.get("label") or payload_row.get("label") or ""),
+            "target_bucket": _obsidian_profile_target(profile),
+            "uuid_free_allowed": profile in {"daily", "roleplay"},
+            "bind_policy": (
+                "ref_bind_existing_node"
+                if profile == "ref"
+                else "setting_node_uuid_free_allowed"
+            ),
+            "event": event,
+            "observation": _jsonable(observation),
+        })
+    if selected_paths:
+        invalid_by_path = {
+            str(row.get("path") or "").replace("\\", "/"): row
+            for row in (scan_receipt.get("data") or {}).get("invalid_notes", [])
+            if isinstance(row, dict)
+        }
+        for path in sorted(selected_paths - ready_paths_seen):
+            if path in invalid_by_path:
+                errors.append({
+                    "path": path,
+                    "error": "note_not_import_ready",
+                    "reason": invalid_by_path[path].get("reason", ""),
+                })
+            else:
+                errors.append({"path": path, "error": "selected_path_not_found"})
+    return items, errors, scan_receipt
+
+
+def _observation_from_json(data: dict[str, Any]) -> Any:
+    """Rehydrate a Web receipt observation for the final L1.5 admit call."""
+
+    from parrot.dsg.ingest.base import Observation, ObservationSource
+    from parrot.dsg.l2b_types import ConfirmationStatus, NodeKind
+
+    source_raw = str(data.get("source") or ObservationSource.USER_TAG_OBSIDIAN.value)
+    kind_raw = str(data.get("kind") or NodeKind.OBJECT.value)
+    confirmation_raw = str(data.get("confirmation") or ConfirmationStatus.CONFIRMED.value)
+    try:
+        source = ObservationSource(source_raw)
+    except ValueError:
+        source = ObservationSource.USER_TAG_OBSIDIAN
+    try:
+        kind = NodeKind(kind_raw)
+    except ValueError:
+        kind = NodeKind.OBJECT
+    try:
+        confirmation = ConfirmationStatus(confirmation_raw)
+    except ValueError:
+        confirmation = ConfirmationStatus.CONFIRMED
+    return Observation(
+        source=source,
+        provenance_stream_id=str(data.get("provenance_stream_id") or ""),
+        obsidian_uuid=str(data.get("obsidian_uuid") or ""),
+        graphiti_uuid=str(data.get("graphiti_uuid") or ""),
+        label=str(data.get("label") or "").strip()[:128],
+        kind=kind,
+        description=str(data.get("description") or "")[:400],
+        confidence=max(0.0, min(_body_float(data.get("confidence"), 1.0), 1.0)),
+        confirmation=confirmation,
+        meta=dict(data.get("meta") or {}),
+    )
+
+
 def _obsidian_event(node_payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "obsidian_note",
@@ -756,6 +1121,65 @@ def _obsidian_event(node_payload: dict[str, Any]) -> dict[str, Any]:
         "payload": node_payload,
         "timestamp": time.time(),
     }
+
+
+def _default_obsidian_vault_path(raw: Any = "") -> Path:
+    candidate = str(raw or os.environ.get("GOSLO_OBSIDIAN_VAULT") or "").strip()
+    if candidate:
+        return Path(candidate).expanduser().resolve()
+    root = Path("D:/GOSLOParrot/GOSLObsidian")
+    return root.resolve()
+
+
+def _obsidian_profile_target(profile: str) -> str:
+    if profile == "roleplay":
+        return "obsidian_setting_roleplay"
+    if profile == "ref":
+        return "ref_binding"
+    return "obsidian_setting_daily"
+
+
+def _obsidian_profile_descriptions() -> dict[str, str]:
+    return {
+        "daily": "UUID-free setting profile",
+        "roleplay": "UUID-free mode/profile; may contain many source packs",
+        "ref": "binding profile; requires existing target UUID",
+    }
+
+
+def _obsidian_selected_paths(raw: Any) -> set[str]:
+    if isinstance(raw, str):
+        values: Any = [raw]
+    else:
+        values = raw
+    if not isinstance(values, (list, tuple, set)):
+        return set()
+    return {
+        str(item).strip().replace("\\", "/")
+        for item in values
+        if str(item).strip()
+    }
+
+
+def _obsidian_selected_profiles(raw: Any) -> set[str]:
+    if isinstance(raw, str):
+        values: Any = [raw]
+    else:
+        values = raw
+    if not isinstance(values, (list, tuple, set)):
+        return set()
+    return {
+        str(item).strip().lower().replace("-", "_")
+        for item in values
+        if str(item).strip()
+    }
+
+
+def _relative_path(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
 
 
 def _l2b_observation_draft(body: dict[str, Any]) -> dict[str, Any]:
@@ -840,6 +1264,29 @@ def _body_float(value: Any, default: float) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _body_int_limit(
+    value: Any,
+    *,
+    default: int,
+    minimum: int = 1,
+    maximum: int,
+) -> tuple[int, dict[str, Any] | None]:
+    if value is None or value == "":
+        return default, None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default, {
+            "field": "limit",
+            "error": "invalid_limit",
+            "value": str(value),
+            "default": default,
+            "minimum": minimum,
+            "maximum": maximum,
+        }
+    return max(minimum, min(parsed, maximum)), None
 
 
 def _enum_value(value: Any) -> str:

@@ -49,6 +49,113 @@ Investigation note:
   gap; Graphiti surgery should wait for backup/export, allowlisted mutation
   templates, and audit receipts.
 
+## 2026-05-15 Upgrade Plan: DeepSeek, `arknights_test`, and L2-B Export
+
+Owner: Web Console lane
+Status: in_progress
+Category: Web Console business interface / implementation plan
+Scope: WEB-006, WEB-013, WEB-014, CORE-006, CORE-008, CORE-009
+Sources: Graphiti skill, `src/parrot/brain/graphiti_console.py`,
+`src/parrot/memory/graphiti_client.py`, DeepSeek official API docs,
+Graphiti/Zep episode and temporal fact docs, PRTS Wiki `剧情一览`
+
+### Research Conclusions
+
+- DeepSeek official API docs list an OpenAI-compatible API with
+  `base_url=https://api.deepseek.com` and V4 model ids including
+  `deepseek-v4-pro` and `deepseek-v4-flash`. The repo must read the API key
+  from `DEEPSEEK_API_KEY` or another local ignored secret source, never from a
+  committed file or frontend payload.
+- Graphiti episode ingestion uses `source_description` and `reference_time`.
+  Bulk ingestion exists, but bulk mode should be reserved for empty/test graphs
+  because it may skip edge invalidation behavior that matters for evolving
+  facts.
+- Graphiti/Zep temporal facts track when facts become valid and when they stop
+  being valid. For Arknights testing, each episode should represent a chapter,
+  arc, or major state change so Graphiti can model timeline and role/faction
+  changes instead of flattening lore into static cards.
+- PRTS Wiki `剧情一览` is useful as a source index for main story pages. URL
+  extraction should be best-effort: store exact story/chapter URLs when links
+  are available; otherwise store the parent page URL plus section/chapter id in
+  `source_description`.
+
+### Route Plan
+
+These routes remain Web-only business interfaces until reviewed:
+
+| Endpoint | Purpose | Safety rule |
+|:--|:--|:--|
+| `POST /api/graphiti/subgraph/search` | Natural-language Graphiti search returning bounded hits/subgraph candidates from one partition. | Read-only; bounded limit; partition allowlist includes `arknights_test`. |
+| `POST /api/graphiti/subgraph/export-draft` | Convert selected Graphiti hits into a planned L1.5/L2-B export receipt. | Draft only; no Graphiti or L2-B mutation. |
+| `POST /api/graphiti/subgraph/export` | Export selected hits to L2-B by admitting observations through L1.5. | Default dry-run; real apply requires `operator_mode=true`; no direct FalkorDB or direct L2-B write. |
+
+Exported observations should use `ObservationSource.USER_EXPLICIT` for the
+first Web operator path and preserve Graphiti provenance in source metadata:
+partition/group id, hit/fact text, score, Graphiti UUIDs when present,
+source node UUID, target node UUID, source description, and source URL.
+
+### 2026-05-15 Implementation Checkpoint
+
+- Implemented provider config in `src/parrot/shared/config.py` and
+  `src/parrot/memory/graphiti_client.py`: Graphiti extraction/rerank defaults
+  to DeepSeek via `DEEPSEEK_API_KEY`, `https://api.deepseek.com`,
+  `deepseek-v4-pro`, and `deepseek-v4-flash`; Gemini remains the fallback and
+  embedding provider.
+- Implemented the `arknights_test` partition in the partition allowlist and
+  Graphiti status/search route shape.
+- Implemented Web-only BFF routes:
+  `/api/graphiti/subgraph/search`,
+  `/api/graphiti/subgraph/export-draft`, and
+  `/api/graphiti/subgraph/export`.
+- Export is dry-run/operator-gated and writes only through
+  `L15Pool.admit(Observation(source=USER_EXPLICIT))`. It does not directly
+  write FalkorDB or bypass Graphiti/L1.5 audit receipts.
+- Added `src/scripts/import_arknights_to_graphiti.py` as a dry-run-first
+  fixture importer for compact original Arknights temporal episodes with
+  source URL/source description and chapter-order metadata.
+- Verification: Web Console route tests passed, DSG Obsidian/Calendar/trigger
+  regressions passed, script dry-run passed, `py_compile` passed, and exact
+  DeepSeek-key scan found no committed secret.
+
+### 2026-05-15 React Source Board Slice
+
+- The Memory page now exposes Graphiti as one tab in the L1.5 Source Board
+  instead of mixing it with Obsidian/Calendar controls.
+- Search returns the route's bounded `hits` and `subgraph` shape. The UI lets an
+  operator select individual hits, previews selected subgraph Nodes/Edges on the
+  React Flow canvas as read-only Graphiti preview objects, and keeps export
+  actions separate from preview actions.
+- `Export Draft` calls `/api/graphiti/subgraph/export-draft`; `Preview Apply`
+  calls `/api/graphiti/subgraph/export` with `dry_run=true` and
+  `operator_mode=false`. Real apply remains operator-gated and is not exposed as
+  a casual primary action.
+- The canvas preview is still a Memory operation aid, not the final full-screen
+  L2-B graph monitor. WEB-013 owns the later React-Force-Graph/Cytoscape-style
+  renderer evaluation.
+
+### `arknights_test` Import Plan
+
+- Add `arknights_test` to the Graphiti partition list/status/search UI.
+- Create a dry-run-first import script that generates compact original episode
+  summaries and fact candidates for main/major Arknights story arcs.
+- Avoid saving long copied plot text. Store derived summaries, source URLs or
+  source descriptions, chapter/order metadata, and optional reference times.
+- Use `deepseek-v4-pro` for Graphiti LLM extraction by default; keep provider
+  fallback visible in status.
+- Do not treat this test partition as production memory. It is an isolated
+  fixture for Graphiti search/export/L2-B subgraph rendering.
+
+### Interface Gaps
+
+No shared core field is promoted yet. Candidate gaps:
+
+- Graphiti-source virtual L1.5 bucket/grouping for UI filters belongs under
+  CORE-008 review if the App lane needs a compact read subset.
+- Graphiti-search-to-L2-B change events belong under CORE-009 only if App also
+  consumes the same realtime/diff stream.
+- Ref binding between Graphiti facts/episodes and L2-B Nodes stays aligned with
+  CORE-006; Web operator repair actions stay outside App DTOs.
+
 ### A. Source Readback
 
 - `src/parrot/brain/graphiti_console.py` already separates status, search,

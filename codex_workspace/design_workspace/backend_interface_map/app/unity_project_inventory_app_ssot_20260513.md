@@ -44,16 +44,17 @@ objects:
 
 | Object | Formal role |
 |:--|:--|
-| `Main Camera` | Startup UI camera and AR/video fallback camera reference. |
+| `Main Camera` | Startup UI camera and AR/video camera reference. `FormalArRuntimeBootstrap` attaches ARCameraManager/ARCameraBackground on demand from the AR baseline gate when AR Foundation is compiled. |
 | `Directional Light` | Main light required for scene validity. |
 | `ParrotAppRoot/StartupDesignStage` | `ParrotAppStartupUiController`; references startup flow, lifecycle, RoomManager, and AppRoomSettingClient. |
-| `ParrotAppRoot/RuntimeServices` | AppLifecycleManager, RoomManager, LifecycleShutdownService, RoomManagerLifecycleBridge, LiveKitTokenMintClient, AppStartupFlowController, AppRoomSettingClient, OrchestratorClient, LifecycleHeartbeatPublisher, AudioRouteDetector, MicrophonePublisher, ARVideoPublisher, VideoStateReporter, and VideoTierReceiver. |
+| `ParrotAppRoot/RuntimeServices` | AppLifecycleManager, RoomManager, LifecycleShutdownService, RoomManagerLifecycleBridge, LiveKitTokenMintClient, AppStartupFlowController, AppRoomSettingClient, AppHomeMenuClient, OrchestratorClient, LifecycleHeartbeatPublisher, AudioRouteDetector, MicrophonePublisher, ARVideoPublisher, VideoStateReporter, VideoTierReceiver, AudioRoutePolicyBrainReporter, LiveKitReconnectSupervisor, FormalMainReadyGate, FormalHomeHudController, FormalHomeMenuLoader, FormalModelReadyReporter, FormalArRuntimeBootstrap, and FormalArSessionBaselineReporter. |
 | `ParrotAppRoot/AssetPreviewStage` | Empty formal preview mount for future model/art wiring. |
 
-Runtime media services are mounted in the formal scene. 2026-05-13 smoke
-verified local token mint + LiveKit room join + Unity DataChannel heartbeat
-binding; full START still requires a Brain participant and a real-device
-mic/video pass.
+Runtime media services are mounted in the formal scene. 2026-05-15 non-phone
+Castle probes verified App HTTP RoomSetting save/apply, orchestrator prewrite,
+Mint, LiveKit room join, Brain participant, business RPC, and DataChannel
+heartbeat. Full completion still requires iQOO Neo9 mic/Bluetooth/app-switch,
+AR/video, reconnect, and ARSession evidence.
 
 ## Runtime Script Classification
 
@@ -63,15 +64,20 @@ every script in that tree is formal-scene completion evidence.
 | Script or group | Classification | Rule |
 |:--|:--|:--|
 | `Startup/ParrotAppStartupUiController.cs` | Formal startup shell. | Mounted by `ParrotApp_Startup.unity`; owns startup, RoomSetting whitebox, transition, and current main-ready placeholder. |
-| `Lifecycle/**`, `LiveKit/**`, `Ecp/**`, `Backend/**`, `Config/**`, `Health/**` | Formal runtime services. | May be mounted by `RuntimeServices` or resolved at runtime. These are the source for lifecycle, LiveKit, DataChannel, RoomSetting, token, orchestrator, mic/video, and health behavior. |
+| `Lifecycle/**`, `LiveKit/**`, `Ecp/**`, `Backend/**`, `Config/**`, `Health/**` | Formal runtime services. | May be mounted by `RuntimeServices` or resolved at runtime. These are the source for lifecycle, main-ready gate ownership, LiveKit, DataChannel, RoomSetting, token, orchestrator, mic/video, and health behavior. |
 | `Parrot/**`, `Attention/**`, `Photo/**`, `Hands/**`, `RPC/**` | Formal-capable runtime modules. | Useful for homepage/model/menu implementation only after the formal scene or a formal controller wires them and tests name that usage. |
-| `UI/AppV1MetaUiController.cs` | Legacy Smoke/reference UI controller. | It is currently mounted by `Assets/Tests/Smoke/Editor/ParrotSmokeSceneBuilder.cs`, not by the formal startup scene. It contains useful HUD/tool drawer/camera/workdesk/note/Focus/BBox ideas, but also legacy startup assumptions such as `Scene` RoomSetting labels and local preview flow. Do not cite it as formal homepage completion. |
+| `UI/FormalHomeHudController.cs` | Formal home HUD shell. | Runtime status HUD only. It reports `hud_loaded` to `FormalMainReadyGate`; menu/tool drawer/workspace/model/AR loaders remain separate. |
+| `Backend/AppHomeMenuClient.cs`, `UI/FormalHomeMenuLoader.cs` | Formal home menu snapshot loader. | Loads `/api/app/canvas` through App HTTP, requires a real workspace/menu shell payload, retries bounded failures, and reports `menu_snapshot_loaded`; it does not use LiveKit RPC for full canvas snapshots and does not build the final drawer yet. |
+| `Lifecycle/FormalModelReadyReporter.cs` | Formal model gate. | Resolves the selected `Resources/parrot_models/<id>` manifest and reports `model_resolved`; prefab placement/controller UX remains future work. |
+| `Lifecycle/FormalArRuntimeBootstrap.cs` | Formal AR runtime bootstrap. | Mounted in the formal scene but does not auto-start during the startup page; creates/mounts ARSession and attaches ARCameraManager/ARCameraBackground to the formal camera only when the AR baseline gate calls `EnsureArRuntime()`. |
+| `Lifecycle/FormalArSessionBaselineReporter.cs` | Formal AR/session gate. | Reports `ar_session_baseline_clean` only after mobile `ARSessionState.SessionTracking`; it does not replace `onSceneReady`/`onGosloPlaced`. Mobile FullAR mode still requires iQOO Neo9 AR/video proof. |
+| `UI/AppV1SmokeReferenceUiController.cs` | Legacy Smoke/reference UI controller. | It is mounted only by `Assets/Tests/Smoke/Editor/ParrotSmokeSceneBuilder.cs`, not by the formal startup scene. It preserves the old script GUID after the rename so test-scene references survive. It contains useful HUD/tool drawer/camera/workdesk/note/Focus/BBox ideas, but also legacy startup assumptions such as local preview flow. Do not cite it as formal homepage completion. |
 
-Planned cleanup: demote or rename `AppV1MetaUiController` to an explicit
-smoke/reference controller in a separate slice, preserving its `.meta`, updating
-the Smoke builder/tests, and copying only approved homepage patterns into the
-formal App controller. Until then, static tests guard that
-`ParrotApp_Startup.unity` does not mount this script.
+Cleanup status: `AppV1MetaUiController` has been renamed to
+`AppV1SmokeReferenceUiController` as an explicit smoke/reference controller,
+with `.meta` preserved. Static tests guard that `ParrotApp_Startup.unity` does
+not mount this script. Future formal homepage work may extract approved ideas,
+but must not mount or copy this controller wholesale.
 
 ## Resource Classes
 
@@ -90,6 +96,8 @@ formal App controller. Until then, static tests guard that
 |:--|:--|
 | `unity/ArSpike/ProjectSettings/EditorBuildSettings.asset` | Only `Assets/ParrotApp/Scenes/ParrotApp_Startup.unity` is enabled. `Assets/Scenes/SampleScene.unity` must not appear. |
 | `unity/ArSpike/ProjectSettings/ProjectSettings.asset` | `templateDefaultScene` points to `Assets/ParrotApp/Scenes/ParrotApp_Startup.unity`. |
+| `unity/ArSpike/Assets/XR/XRGeneralSettings.asset` | Android ARCore, iPhone ARKit, and Standalone XR Simulation providers must have `m_AutomaticLoading: 1` and `m_AutomaticRunning: 1`. |
+| `unity/ArSpike/Assets/csc.rsp` | Must define `UNITY_AR_FOUNDATION` so ARVideoPublisher and formal AR bootstrap compile the AR Foundation path. |
 | `unity/ArSpike/Packages/manifest.json` | Unity `2022.3.62f3`, AR Foundation/ARCore/ARKit `5.2.2`, LiveKit Unity SDK pinned to `7d868ef5cc5615c30a3ef4b73ae0dbb5cc4d6796`. |
 
 ## Test And Reference Directories

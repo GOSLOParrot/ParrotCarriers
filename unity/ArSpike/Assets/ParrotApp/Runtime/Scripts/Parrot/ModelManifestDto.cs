@@ -162,6 +162,15 @@ namespace ParrotApp.Parrot
             var ta = Resources.Load<TextAsset>(path);
             if (ta == null)
             {
+                var lowerPath = "parrot_models/" + modelId.ToLowerInvariant();
+                if (!string.Equals(lowerPath, path, StringComparison.Ordinal))
+                {
+                    ta = Resources.Load<TextAsset>(lowerPath);
+                    if (ta != null) path = lowerPath;
+                }
+            }
+            if (ta == null)
+            {
                 Debug.LogWarning($"[ModelManifest] Manifest TextAsset not found: Resources/{path}.json");
                 return null;
             }

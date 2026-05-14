@@ -208,6 +208,117 @@ namespace ParrotApp.Ecp
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Parse Brain/Unity wire JSON back into <see cref="EcpEventDto"/>.
+        ///
+        /// JsonUtility can read the scalar fields, but it silently drops the
+        /// embedded object field named <c>payload</c> because this DTO stores it
+        /// as <see cref="EcpEventDto.payload_json"/>. This parser keeps the
+        /// regular JsonUtility path for stable fields and extracts the raw
+        /// payload object literal with a small balanced-brace scanner.
+        /// </summary>
+        public static EcpEventDto FromWireJson(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+
+            var dto = JsonUtility.FromJson<EcpEventDto>(json);
+            if (dto == null) return null;
+
+            string payload = ExtractJsonValue(json, "payload");
+            if (string.IsNullOrWhiteSpace(payload)) payload = "{}";
+            dto.payload_json = payload;
+            if (dto.payload_bytes <= 0)
+                dto.payload_bytes = Encoding.UTF8.GetByteCount(payload);
+            return dto;
+        }
+
+        private static string ExtractJsonValue(string json, string propertyName)
+        {
+            string needle = "\"" + propertyName + "\"";
+            int key = json.IndexOf(needle, StringComparison.Ordinal);
+            if (key < 0) return "";
+
+            int colon = json.IndexOf(':', key + needle.Length);
+            if (colon < 0) return "";
+
+            int start = colon + 1;
+            while (start < json.Length && char.IsWhiteSpace(json[start])) start++;
+            if (start >= json.Length) return "";
+
+            char first = json[start];
+            if (first == '{' || first == '[')
+                return ExtractBalancedJson(json, start, first, first == '{' ? '}' : ']');
+            if (first == '"')
+                return ExtractJsonStringLiteral(json, start);
+
+            int end = start;
+            while (end < json.Length && json[end] != ',' && json[end] != '}') end++;
+            return json.Substring(start, Math.Max(0, end - start)).Trim();
+        }
+
+        private static string ExtractBalancedJson(string json, int start, char open, char close)
+        {
+            int depth = 0;
+            bool inString = false;
+            bool escaping = false;
+            for (int i = start; i < json.Length; i++)
+            {
+                char c = json[i];
+                if (inString)
+                {
+                    if (escaping)
+                    {
+                        escaping = false;
+                    }
+                    else if (c == '\\')
+                    {
+                        escaping = true;
+                    }
+                    else if (c == '"')
+                    {
+                        inString = false;
+                    }
+                    continue;
+                }
+
+                if (c == '"')
+                {
+                    inString = true;
+                    continue;
+                }
+                if (c == open) depth++;
+                else if (c == close)
+                {
+                    depth--;
+                    if (depth == 0)
+                        return json.Substring(start, i - start + 1);
+                }
+            }
+            return "";
+        }
+
+        private static string ExtractJsonStringLiteral(string json, int start)
+        {
+            bool escaping = false;
+            for (int i = start + 1; i < json.Length; i++)
+            {
+                char c = json[i];
+                if (escaping)
+                {
+                    escaping = false;
+                    continue;
+                }
+                if (c == '\\')
+                {
+                    escaping = true;
+                    continue;
+                }
+                if (c == '"')
+                    return json.Substring(start, i - start + 1);
+            }
+            return "";
+        }
+
         private static string Quote(string s)
         {
             if (s == null) return "\"\"";

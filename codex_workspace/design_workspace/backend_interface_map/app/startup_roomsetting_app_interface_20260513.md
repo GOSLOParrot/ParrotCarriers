@@ -48,7 +48,8 @@ Existing pieces that can compose the App V1 draft:
 - `RoomProfile` already stores model, persona, line, line profile,
   `scene_profile_id`, experience mode, workspace, `skin_id`, and setting refs.
 - Unity `AppStartupConfigDto` mirrors startup fields for START payloads.
-- Unity `AppV1MetaUiController` already has a runtime-built startup shell and local selector state.
+- Unity `AppV1SmokeReferenceUiController` preserves the old runtime-built shell
+  as Smoke/reference-only evidence.
 
 Existing pieces are enough for a first App UI pass except dynamic Agent Team
 selection.
@@ -100,10 +101,12 @@ RoomProfile.
   auto-restores `scene_id=ar_handheld` when the PlayMode lever returns to AR,
   and backend compatibility blocks `desktop_webcam + ar_companion` drafts from
   non-startup clients. This is runtime baseline policy, not a user Theme row.
-- `START` sends the current RoomSetting draft as `room_profile` to
-  `applyRoomProfile`, not just `room_profile_id`, so Model / Persona / Line /
-  `scene_profile_id` / `skin_id` / setting refs selected in Unity reach Brain before capability
-  policy sync.
+- `START` first applies the current RoomProfile through App HTTP, then sends
+  the same current RoomSetting draft as `room_profile` to Brain
+  `applyRoomProfile` after LiveKit connects. Model / Persona / Line /
+  `scene_profile_id` / `skin_id` / setting refs selected in Unity must reach
+  both the App backend active RoomProfile and Brain before capability policy
+  sync.
 
 ## Slice: START Transition And LiveKit / LineB Status
 
@@ -143,6 +146,9 @@ Possible later shared gap:
 ### D. Observable Completion Signal
 
 - START enters a transition surface before connection work begins.
+- START must not skip App HTTP RoomSetting apply. For Tier 1 settings such as
+  LineB, Unity writes the orchestrator runtime config first, then calls App
+  HTTP `/api/app/room-setting/apply`, then requests Mint/LiveKit.
 - Permission, token mint, LiveKit connect, Brain RPC sync, and failure states are visible.
 - Successful LiveKit connect stays silent.
 - Greeting waits until scene ready plus explicit placement.
@@ -179,7 +185,7 @@ Existing pieces:
 
 - `AppFirstVersionFacade.canvas_snapshot()` returns module statuses, workspaces, notes, photo refs, tool cabinet, and asset manifest.
 - `WorkspaceRegistry.apply_workspace()` switches the 2D workspace without tearing down LiveKit.
-- Unity has `AppV1MetaUiController` for HUD/tool drawer/workspace and controller bridges for photo/focus/BBox.
+- Unity has `AppV1SmokeReferenceUiController` for HUD/tool drawer/workspace reference patterns and controller bridges for photo/focus/BBox.
 - Unity model capability routing exists through `ModelDriver`, `ParrotRegistry`, and `play_capability` backend gating.
 
 ### C. Missing Core Surface
@@ -309,12 +315,12 @@ Related TODO: APP-013, APP-015, APP-016
 - Real phone tests are still required for AR camera, microphone permission
   prompts, Android audio route changes, Bluetooth SCO/A2DP behavior, OS
   background/resume, and the full voice/ASR/TTS loop.
-- `AppV1MetaUiController` is an older runtime-built App shell used by the Smoke
+- `AppV1SmokeReferenceUiController` is an older runtime-built App shell used by the Smoke
   builder and as a design reference. It is not mounted in
   `ParrotApp_Startup.unity`, still contains legacy terms such as `Scene` in
   RoomSetting and `LOCAL PREVIEW`, and should not be treated as formal homepage
   completion evidence.
-- The useful reference pieces inside `AppV1MetaUiController` are the HUD shape,
+- The useful reference pieces inside `AppV1SmokeReferenceUiController` are the HUD shape,
   low-occlusion tool drawer, settings panel, camera WYSIWYG overlay, photo
   entry, Focus/BBox draggable overlays, 2D workdesk, Nanobot paper note stack,
   placement gate buttons, and local capability-mode controls. They need to be
@@ -326,9 +332,10 @@ Related TODO: APP-013, APP-015, APP-016
 
 - `parrot_config.json` currently points Unity at ECS `mintUrl`,
   `liveKitUrl`, and `room`, but does not include `appApiUrl` or
-  `orchestratorUrl`. Unity would therefore use local fallback App API
-  `127.0.0.1:8790` and skip the orchestrator unless those fields are injected
-  for the phone/ECS run.
+  `orchestratorUrl`. Historical finding: before the 2026-05-15 client fix,
+  Unity could silently use local fallback App API `127.0.0.1:8790` and skip
+  the orchestrator unless those fields were injected for the phone/ECS run.
+  Current clients intentionally fail fast when `appApiUrl` is absent.
 - ECS token mint `/health` is reachable and authorized `/mint` returns a
   LiveKit token. A diagnostic LiveKit client joined `parrot-main`.
 - Without dispatch, the room showed only `scheduler`; there was no `agent-*`
@@ -483,8 +490,38 @@ Interpretation:
   participant is present. The `/mint` response exposes non-secret diagnostics:
   `agent_dispatch_active_attempted`, `agent_dispatch_active_created`,
   `agent_dispatch_active_already_present`, and `agent_dispatch_active_error`.
-- APP-013 remains blocked until this token-mint patch is deployed/restarted on
-  Castle and the full START chain is rerun through heartbeat and main-ready.
+- Historical status: this APP-013 blocker is superseded by the 2026-05-15
+  post-ECS-restart probe below. The newer probe closes the non-phone START
+  chain through heartbeat, while formal main-ready HUD/menu ownership remains
+  APP-015 work.
+
+### A6. 2026-05-15 Formal START Probe After ECS Restart
+
+Verification after the user restarted ECS:
+
+- The non-phone formal START probe used the gitignored Unity runtime config and
+  did not add Editor scenes or modify formal App state permanently.
+- Passed: App HTTP `GET /api/app/room-setting`, RoomSetting `save` and `apply`
+  for `ner_lineb_room`, orchestrator `/apply_room_profile` LineB prewrite,
+  token-mint `/mint`, LiveKit connect, Brain `agent-*` participant presence
+  without manual dispatch, Brain RPC `applyRoomProfile` business-ok, Brain RPC
+  `setAppCapabilityMode` business-ok, and `parrot.ecp.state` heartbeat publish.
+- A fresh temporary LiveKit room also spawned Brain from the Mint/LiveKit
+  dispatch path without manual server dispatch. This proves the phone-equivalent
+  no-manual-dispatch gate is no longer blocked at the connectivity layer.
+- Cleanup: active RoomSetting was restored to `default`, and temporary
+  orchestrator `runtime_config.json` was cleared back to env-backed runtime
+  selection.
+
+Important caveats:
+
+- Mint currently returns `agent_dispatch_requested` but not the newer
+  `agent_dispatch_active_*` diagnostics from the local follow-up patch. Treat
+  this as a deployment-diagnostics gap, not a START blocker, because the fresh
+  room probe proved Brain appears without manual dispatch.
+- This is still a non-phone script proof. It does not validate iQOO Neo9
+  microphone permission, Bluetooth/SCO/A2DP routing, app switch/resume,
+  AR/video publish, or the final formal HUD/menu main-ready owner.
 
 ### B. Existing Core Interfaces
 
@@ -522,20 +559,56 @@ Open implementation gaps:
   an already-live room.
 - After token-mint active dispatch is deployed, the remaining App-side blocker
   is the formal main-ready HUD/menu gate and device media/lifecycle pass.
-- Unity has local audio route detection and mic republish logic, but it does
-  not yet push route policy to Brain `session/audio_route_policy`. The backend
-  route policy endpoint/RPC exists; the Unity producer hook is intentionally
-  reserved.
-- `RoomManager.ReconnectUsingCachedCredentials()` is editor/debug level. A
-  production reconnect loop with fresh token re-mint, network flap handling,
-  and bounded retry/backoff is not complete.
+- Unity has local audio route detection and mic republish logic, and
+  `AudioRoutePolicyBrainReporter` now pushes the compact route policy to Brain
+  `setLineBAudioRoutePolicy`. This is code-complete for the static path, but
+  still needs iQOO Neo9 Bluetooth/SCO/A2DP proof before it can be called stable.
+- `RoomManager.ReconnectUsingCachedCredentials()` remains editor/debug level.
+  Production passive disconnects now have `LiveKitReconnectSupervisor`, which
+  remints a fresh token, applies bounded backoff, reconnects LiveKit, reruns
+  `applyRoomProfile` / `setAppCapabilityMode`, and rebinds heartbeat. Network
+  flap/background behavior still needs phone proof and degraded HUD surfacing.
 - `RoomManagerLifecycleBridge` reports room/Brain presence and passive
-  disconnects, but `ReportRunning()` still needs a formal main-ready owner that
-  waits for HUD/menu/model/media gates.
-- Formal homepage/menu is still a placeholder in
-  `ParrotAppStartupUiController`; the old `AppV1MetaUiController` should be
-  demoted/renamed in a separate cleanup slice after its reusable pieces are
-  copied into the formal homepage plan.
+  disconnects. `FormalMainReadyGate` now owns `ReportRunning()` and waits for
+  transport, Brain, heartbeat DataChannel, mic/video when required, HUD, menu,
+  model, and AR/session gates.
+- Formal homepage/menu is not designed yet. `ParrotAppStartupUiController`
+  may only show a main-ready hold screen after START; it must not grow a
+  predesigned HUD/menu before APP-018/APP-015 audit and responsibility split.
+  The old controller has been demoted/renamed to
+  `AppV1SmokeReferenceUiController`; its reusable pieces still need to be
+  copied into the formal homepage plan instead of mounting the controller.
+
+2026-05-15 START button repair:
+
+- `AppStartupFlowController` now owns App HTTP RoomSetting apply, so every
+  `StartFromConfig` caller follows the same formal path instead of only the UI
+  button being correct.
+- Fresh START order is now permission gate -> transition -> Tier 1 orchestrator
+  prewrite when required -> App HTTP `/api/app/room-setting/apply` -> token
+  mint -> LiveKit connect -> Brain `applyRoomProfile` -> Brain
+  `setAppCapabilityMode` -> main-ready hold screen.
+- If `AppRoomSettingClient` is missing or has no endpoint, START fails with
+  `room_setting_http_apply_required`. If the backend rejects the active
+  RoomProfile, START fails with `room_setting_http_apply_failed:<reason>`.
+  This prevents a phone build from silently treating a local draft as persisted
+  ECS state.
+
+2026-05-15 RoomSetting persistence proof:
+
+- Formal App HTTP persistence was verified against ECS using the same
+  RoomSetting endpoints as `AppRoomSettingClient`: `/new` returned an unsaved
+  `room_*` draft, `/save` persisted fixed probe
+  `room_codex_persistence_probe`, and a fresh snapshot listed that Room from
+  ECS. A snapshot without `room_profile_id` still reported active Room
+  `default`, proving save did not silently apply.
+- `BuildWritableRoomProfileForSave()` now treats built-in baseline ids
+  `default`, `ner_lineb_room`, `ephemeral`, and `workspace_only` as save-as-new
+  ids. This prevents the phone UI from overwriting the shipped default or Ner
+  LineB test profile when the user edits a preset and taps Save.
+- `AppRoomSettingClient` now rejects malformed save/apply responses that lack a
+  returned `room_profile.room_profile_id`, so HTTP 200 with an unusable body is
+  not considered a successful save/apply.
 
 ### D. Observable Completion Signal
 
@@ -547,10 +620,44 @@ Current completed facts:
 - Startup RoomSetting can load, preview, new, save, and build a full
   RoomProfile draft. Theme writes `skin_id`; `scene_profile_id` remains an
   internal baseline.
+- ECS persistence is proven for formal App HTTP `New` + `Save` path; saved Room
+  `room_codex_persistence_probe` appears after reload and active Room remains
+  unchanged unless apply is called.
 - Local smoke proves App API, token mint, LiveKit room join, and DataChannel
   heartbeat binding. The later Castle diagnostic proves Brain participant plus
   post-join `applyRoomProfile` / `setAppCapabilityMode`; production phone
   media and public HTTP endpoints remain separate.
+- Passive reconnect now has a formal Runtime service: `LiveKitReconnectSupervisor`
+  drives fresh-token reconnect/backoff after a post-main-ready passive drop and
+  uses the startup flow to re-sync Brain business RPCs. It is not phone-stable
+  until APP-024 evidence exists.
+- START while already connected to a Tier1/LineB-changing Room now uses the same
+  formal surfaces instead of a hard failure: orchestrator prewrite, App HTTP
+  RoomProfile apply, graceful chokepoint shutdown, fresh Mint token, LiveKit
+  reconnect, Brain `applyRoomProfile`, Brain `setAppCapabilityMode`, and
+  heartbeat rebinding. It waits for shutdown cool-down and `ReportDisconnected()`
+  to finish, then explicitly re-enters token/AR-starting gates before mint/connect
+  so the old shutdown cannot mark the fresh session disconnected and
+  `ReportRoomConnected()` / `ReportRunning()` can advance again. Startup and
+  reconnect failures can now call `ReportDegraded()` from token, AR-starting,
+  connecting, or reconnecting states instead of leaving the FSM optimistic.
+- Formal main-ready now has gate reporters:
+  `FormalMainReadyGate` blocks `ReportRunning()` until required gates are
+  satisfied and self-reevaluates while waiting, so one-shot loader failures
+  degrade instead of silently hanging. `FormalHomeHudController` reports
+  `hud_loaded`; `FormalHomeMenuLoader` reports `menu_snapshot_loaded` from App
+  HTTP `/api/app/canvas` only after a real workspace/menu shell payload is
+  parsed, using a JsonUtility-safe `float generated_at`; `FormalModelReadyReporter`
+  reports `model_resolved`; and
+  `FormalArRuntimeBootstrap` stays mounted but does not auto-start on the
+  startup page. `FormalArSessionBaselineReporter` calls it on demand for
+  video/AR modes to mount ARSession/ARCameraManager/ARCameraBackground before
+  owning `ar_session_baseline_clean`.
+  On mobile AR/video modes the baseline waits for `ARSessionState.SessionTracking`
+  instead of accepting `Ready` / `SessionInitializing`, and clears terminal
+  coroutine refs after clean or unsupported states.
+  `XRGeneralSettings` now auto-loads/runs the ARCore/ARKit/XR Simulation
+  loaders instead of leaving ARSession mounted but loaderless.
 - Shutdown quit drain was fixed so exiting Play Mode after a connected room no
   longer hangs on SDK unpublish waits.
 
@@ -560,13 +667,16 @@ Do not mark complete at phone/App level yet:
   expiry, reconnect, and long background.
 - Bluetooth/microphone route switching on iQOO Neo9 or other real Android
   hardware.
-- Formal homepage HUD/menu loading, canvas snapshot binding, model prefab
-  readiness, and `ReportRunning()` ownership.
+- Formal touch menu/tool drawer, production model prefab placement, and phone
+  evidence. AR runtime mounting now has a formal bootstrap, but it still needs
+  iQOO Neo9 AR/video logs before it can be marked stable. `ReportRunning()`
+  ownership and first-pass gate reporters exist, but they do not complete the
+  final homepage.
 
 Next TODO draft for the homepage/LiveKit continuation:
 
-1. Demote or rename the old `AppV1MetaUiController` to an explicit
-   smoke/reference controller, preserving `.meta` and updating Smoke tests.
+1. Extract useful patterns from `AppV1SmokeReferenceUiController` into the
+   formal homepage plan without mounting the Smoke/reference controller.
 2. Define formal homepage gates: RoomSetting applied, LiveKit connected, Brain
    present, RPC policy synced, heartbeat DataChannel ready, HUD loaded, menu
    snapshot loaded, model driver resolved, AR/session baseline clean.
@@ -669,17 +779,32 @@ Config/public endpoint status:
   only a normal participant token to Unity. Deploy/restart token-mint on Castle
   before rerunning the full START chain.
 
+2026-05-15 post-ECS-restart formal START script result:
+
+- Passed: RoomSetting snapshot/save/apply for `ner_lineb_room`, orchestrator
+  LineB prewrite, Mint, LiveKit connect, Brain `agent-*` presence without
+  manual dispatch, `applyRoomProfile` business-ok, `setAppCapabilityMode`
+  business-ok, and `parrot.ecp.state` heartbeat publish.
+- Fresh-room dispatch probe: a unique temporary room spawned Brain from the
+  Mint/LiveKit dispatch path without manual server dispatch.
+- Cleanup: active RoomSetting was restored to `default`, and temporary
+  orchestrator runtime config was cleared.
+- Caveat: Mint response exposes `agent_dispatch_requested` but not the newer
+  `agent_dispatch_active_*` diagnostic fields. This is a diagnostics/deploy
+  visibility gap, not a current START blocker.
+
 RPC payload budget:
 
 - Treat LiveKit RPC as a small control-plane surface, not a snapshot transport.
-  The current practical budget is guarded at `<15 KB` to stay below the
-  observed `Response payload too large` failure band.
-- Measured current payloads on 2026-05-14: full RoomSetting snapshot ~27.5 KB
-  (too large), `listMenuBlocks` ~4.5 KB (safe), full `canvas_snapshot` ~39.3 KB
-  (too large).
-- RoomSetting snapshots now stay on App HTTP facade. Full homepage/canvas data
-  must use App HTTP facade, paging, or a future compact read model; it must not
-  be pushed through LiveKit RPC.
+  The old compact-menu budget is superseded by the HTTP-first cleanup.
+- Measured payloads from the cleanup audit: full RoomSetting snapshot ~27.5 KB
+  and full `canvas_snapshot` ~39.3 KB, both too large for routine LiveKit RPC.
+- RoomSetting snapshots, full homepage/canvas data, selector lists, and
+  menu/preset persistence stay on App HTTP facade. LiveKit RPC is only for
+  compact post-join sync and real-time controls.
+- Old Brain menu RPC wrappers (`listMenuBlocks`, `applyMenuSelection`,
+  `applyPreset`, `saveAsPreset`) are no longer registered by the active room
+  job.
 
 Homepage readiness audit:
 
@@ -687,10 +812,15 @@ Homepage readiness audit:
   for RoomSetting, token mint, LiveKit, heartbeat, mic/video, lifecycle, and
   orchestrator.
 - `ParrotAppStartupUiController` is still a startup/RoomSetting/transition
-  controller with a main-ready placeholder. It is not the final HUD/menu home.
+  controller with a main-ready hold screen. It is not the final HUD/menu home,
+  and homepage/menu loading must be redesigned through APP-018/APP-015 before
+  implementation.
 - RoomSetting can load snapshot, preview, create a backend draft, save, and
-  build the START RoomProfile. If `appApiUrl` is absent, it falls back to local
-  draft state and must not be treated as saved backend state.
+  build the START RoomProfile. `AppRoomSettingClient` and `AppHomeMenuClient`
+  intentionally have an empty App API endpoint by default; if `appApiUrl` is
+  absent, START/menu loading fails fast instead of silently trying
+  `127.0.0.1:8790` on the phone. Editor/dev can still set a local endpoint via
+  gitignored `parrot_config.json` or the Inspector.
 - Phone config now has reachable App API and Orchestrator endpoints. A phone
   ECS build can proceed after token-mint active dispatch is deployed and the
   formal non-phone START chain passes Brain, RPC, heartbeat, and main-ready
@@ -706,12 +836,10 @@ Homepage readiness audit:
 - `RoomManager.ReconnectUsingCachedCredentials()` is still an editor/debug
   helper. Production mobile reconnect needs fresh token re-mint, bounded
   backoff, and app-switch/network-flap ownership.
-- `AppV1MetaUiController` remains a Smoke/reference controller. Reuse only its
+- `AppV1SmokeReferenceUiController` remains a Smoke/reference controller. Reuse only its
   HUD/tool drawer/camera/workdesk/note/Focus/BBox interaction ideas; do not
   mount it wholesale or let its local preview/mobile-incompatible assumptions
   define the formal App.
-- The next formal homepage implementation should introduce a main-ready gate
-  owner first, then a HUD/menu loader. `ReportRunning()` should move behind
-  RoomProfile applied, Brain present, RPC policy synced, heartbeat DataChannel
-  ready, HUD/menu snapshot loaded, model driver resolved, and AR/session
-  baseline clean.
+- The next formal homepage implementation should build the accepted touch
+  menu/tool drawer, persona/line-profile selector loaders, model placement, and
+  phone AR/video validation on top of the existing main-ready gate reporters.

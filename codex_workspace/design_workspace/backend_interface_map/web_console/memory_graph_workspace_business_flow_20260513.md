@@ -911,3 +911,210 @@ Open interface questions:
 3. Import/preload buttons need exact mappings for Google Calendar bucket,
    Obsidian setting buckets, WorkIntent subgraph/workflow, and selected
    Graphiti/Ref slices.
+
+## 2026-05-15 Three-Page Responsibility Split
+
+Owner: Web Console lane
+Status: in_progress
+Category: requirement / interface-boundary
+Scope: WEB-011, WEB-012, WEB-013, CORE-006, CORE-008, CORE-009, CORE-010
+Source: user clarification on Memory Graph, Runtime Flow, and new L2-B monitor
+
+The Web Console now has three deliberately separate work surfaces:
+
+1. **Memory Graph operation page (current React Flow page / WEB-011)**
+   - Bias: safe management and editing workflows.
+   - Owns L1.5 pool management, L2-B draft/edit preview, Node/Edge CRUD
+     completeness, label/tag/subgraph/cluster management, Node detail,
+     bound Ref/file/photo management, Graphiti/Ref link inspection, and
+     operator-safe receipts.
+   - May show the IntentWorkspace-related L2-B subgraph as context for
+     human guidance, but must not model that as direct IntentWorkspace
+     mutation. IntentWorkspace is a GOSLO Intent-layer workspace; actions that
+     guide or modify it must become GOSLO Intent/task/workspace-file/Plan-edit
+     requests with receipts.
+
+2. **Runtime Flow / collaboration-flow page (WEB-012)**
+   - Bias: whole-system collaboration state.
+   - Owns GOSLO Intent -> Plan/HITL -> Blackboard -> IntentWorkspace ->
+     Scheduler -> Nanobot -> Message/Trigger flow, manual Plan import,
+     manual Nanobot task dispatch, message send/receive, result-destination
+     choice, HITL gates, and simplified workflow wiring.
+   - Should feel closer to a simple ComfyUI-like workflow board than a dense
+     memory CRUD form.
+
+3. **Full-screen L2-B realtime graph monitor (new WEB-013 page)**
+   - Bias: realtime topology rendering and operator insight.
+   - Owns full-viewport L2-B graph visualization, animation, filtering,
+     source buckets, clusters, local graph depth, Graphiti natural-language
+     search-to-subgraph, selected Node/Edge inspection, and trigger/attention
+     visual effects.
+   - Does not own detailed Ref-file management, detailed Plan management,
+     Nanobot task workflow, or IntentWorkspace workflow editing.
+
+### React-Force-Graph / Obsidian Research Anchors
+
+Confirmed source references for the new WEB-013 renderer track:
+
+| Source | Useful For |
+|:--|:--|
+| `https://github.com/vasturiano/react-force-graph` | React bindings for 2D/3D/VR/AR force-directed graph components; API props for graph data, custom canvas nodes, link styling, particles, click/hover callbacks, and d3 force tuning. |
+| `https://github.com/vasturiano/react-force-graph/tree/master/example` | Example catalog including large graph, click-to-focus, dynamic data, expandable nodes, highlight, directional particles, image/text nodes, and fixed dragged nodes. |
+| `https://vasturiano.github.io/react-force-graph/example/large-graph/` | Large-graph rendering reference for the full-screen monitor direction. |
+| `https://reactflow.dev/learn/customization/handles` and `https://reactflow.dev/api-reference/types/connection-mode` | Current Memory Canvas connection/handle behavior; React Flow stays useful for editor/workflow canvases. |
+| `https://obsidian.md/help/plugins/graph` | Product interaction reference: filters, groups, local graph, node/link display controls, arrows, node size, link thickness, animation, and force controls. |
+| `https://d3js.org/d3-force` | Force simulation concepts for tuning center/repel/link forces and later exposing safe graph layout controls. |
+
+Repo-local draft skill:
+
+- `codex_workspace/codex_skills/react-force-graph-l2b/SKILL.md`
+
+### Interface Notes
+
+- WEB-013 needs a bounded L2-B graph read model that can feed multiple
+  renderers. Candidate shape stays under CORE-009 until shared consumers are
+  reviewed.
+- Graphiti natural-language search should return a bounded subgraph read slice
+  with provenance/partition info. It must not become direct FalkorDB mutation.
+- Attention, salience, activation, decay, spreading activation, and trigger
+  fire effects should start as renderer overlays over existing read fields.
+  Any semantic change to those fields requires the attention-schema skill and
+  candidate review.
+- Manual Node/Edge writes on any page remain receipt-first and operator-gated
+  where dangerous. L1.5 remains the safe default write path.
+
+## 2026-05-15 L1.5 / RolePlay / Source Import Conclusions
+
+Owner: Web Console lane
+Status: in_progress
+Category: requirement / interface-boundary
+Scope: WEB-011, WEB-014, CORE-006, CORE-008, CORE-009
+Source: user clarification, `src/parrot/dsg/l1_5/pool.py`,
+`src/parrot/dsg/ingest/user_tag_filter.py`,
+`src/parrot/dsg/triggers/calendar_trigger.py`, Graphiti skill, DSG L1.5/L2-B
+skills, PRTS/Graphiti/DeepSeek web research
+
+### RolePlay Meaning
+
+The design correction is important:
+
+- `roleplay` is currently an Obsidian ingest **profile**. In the existing code
+  it routes UUID-free roleplay setting notes to the roleplay setting bucket.
+- Product-wise, RolePlay is a **mode**. A mode can activate many source packs:
+  persona notes, scene notes, relationship notes, world rules, style rules,
+  temporary context, and future roleplay-specific refs.
+- Therefore the Web UI should not imply that there is only one "RolePlay
+  bucket". The L1.5 source board should show `profile=roleplay` plus multiple
+  source-pack cards or virtual groups. The backend can keep the current
+  compatibility bucket while the Web read model groups by source metadata.
+
+Practical rule:
+
+- `daily` and `roleplay`: setting profiles, UUID-free creation allowed.
+- `ref`: binding profile, must target an existing Node/Graphiti UUID/ref.
+- Multiple RolePlay imports should become multiple source instances under the
+  roleplay profile, not multiple hidden L2-B write paths.
+
+### L1.5 Source Board Direction
+
+The next L1.5 refactor should shift from "bucket form stack" to "source
+board":
+
+| Source card | Web intent | Write/read boundary |
+|:--|:--|:--|
+| Obsidian | Scan/preview/import `daily`, `roleplay`, and `ref` notes. | Existing Obsidian event/UserTagFilter/L1.5 path; no UUID required except `ref`. |
+| Google Calendar | Inspect raw event, normalized event, and Observation metadata. | Existing Calendar trigger/L1.5 path; preserve time/provenance fields. |
+| Graphiti | Search partition, preview bounded subgraph, export selected hits. | Graphiti API read first; export becomes L1.5 observations, not direct L2-B mutation. |
+| Manual Node | Create/update/delete/edit selected Node via receipts. | Existing Web-only L2-B draft/apply routes through L1.5 where applicable. |
+| Ref/file/photo | Bind or retarget external refs. | CORE-006-aligned drafts; Web-only repairs stay operator gated. |
+
+### 2026-05-15 Current Backend Slice
+
+- Graphiti source-card backend is now present as Web-only routes:
+  `/api/graphiti/subgraph/search`,
+  `/api/graphiti/subgraph/export-draft`, and
+  `/api/graphiti/subgraph/export`.
+- Exported hits are converted to `Observation(source=USER_EXPLICIT)` and
+  admitted through L1.5. Selected Graphiti provenance is preserved in source
+  metadata; there is still no direct L2-B or FalkorDB write in this path.
+- `arknights_test` is available as a test partition for Graphiti search/export
+  and future full-screen L2-B renderer tests.
+- The React source-board UI still needs to expose these routes alongside
+  Obsidian, Google Calendar, Manual Node, and Ref/file/photo cards.
+
+### 2026-05-15 Source Board UI Slice
+
+- React Memory page now exposes a first Source Board in the right drawer:
+  Graphiti, Obsidian, Google Calendar preview, and Manual Node guidance are
+  split into separate source cards instead of one dense L1.5 form stack.
+- Graphiti card supports partition selection, natural-language search,
+  read-only canvas preview of returned hits, and export-draft receipts.
+- 2026-05-15 continuation: Source Board now uses source tabs so only one source
+  work area is open at a time. Graphiti search results have explicit hit
+  selection, selected-hit counts, subgraph Node/Edge counts, canvas preview for
+  selected subgraph Nodes/Edges, export-draft receipts, and dry-run apply
+  receipts through `/api/graphiti/subgraph/export`.
+- Obsidian card keeps `daily` / `roleplay` / `ref` profile behavior. The copy
+  keeps RolePlay as a mode/profile, not a singleton bucket. The card can now
+  scan a vault, select ready notes, and request a batch import preview receipt.
+- Google Calendar card now uses the calendar preview route to show raw event,
+  normalized event, and Observation metadata. Real import/apply remains a later
+  operator-gated step.
+- Manual Node card points users back to the canvas toolbar, keeping direct
+  Node/Edge draft operations near the graph instead of mixing them with source
+  imports.
+
+### 2026-05-15 Source Preview Routes
+
+Implemented after the first UI slice:
+
+| Endpoint | Purpose | Safety |
+|:--|:--|:--|
+| `GET /api/l15/obsidian-vault/scan` | Scan a local vault path and classify ready/invalid Obsidian notes for `daily`, `roleplay`, and `ref` profiles. | Read-only; no file writes, no trigger publish, import remains operator-gated. |
+| `POST /api/l15/obsidian-vault/import-draft` | Rescan selected Obsidian note paths and convert them through `UserTagFilter` into reviewable L1.5 observations. | Draft only; no Redis publish and no L1.5/L2-B mutation. |
+| `POST /api/l15/obsidian-vault/import` | Apply selected Obsidian notes to L1.5 for Web operator testing. | Default dry-run; real import requires `operator_mode=true` and uses `L15Pool.admit`, not App DTOs. |
+| `POST /api/google/calendar/preview` | Show raw Google/Nanobot event, normalized `CalendarTrigger` event, and `GOOGLE_CALENDAR` Observation metadata. | Read-only; no L1.5 commit, no Google OAuth in browser. |
+
+The React Source Board now consumes these routes. Obsidian scan can load a
+single note into the existing draft form or select multiple notes for a batch
+import preview. Calendar preview renders normalized event and Observation rows
+directly in the Google Calendar source card.
+
+2026-05-15 boundary fix: Obsidian vault scan/import now treats selected note
+paths as explicit operator intent. A selected note filtered out by `profiles`
+returns `selected_profile_mismatch`; a selected note beyond the requested
+import `limit` returns `selected_path_over_limit`; invalid selected notes return
+`note_not_import_ready`; missing paths return `selected_path_not_found`.
+Invalid `limit` input returns a Web receipt error instead of raising a route
+exception. This is Web-only receipt semantics and does not change App DTOs or
+the runtime trigger protocol.
+
+### Graphiti / Arknights Temporal Import Principle
+
+The Arknights test data should not be modeled as one static encyclopedia state.
+Graphiti is useful because it can preserve evolving facts:
+
+- Use episode segmentation by chapter, arc, or major event.
+- Attach `reference_time` or deterministic chapter/order metadata to each
+  episode so Graphiti can extract temporal validity and superseded facts.
+- Store source URL when an individual source link is extractable. If a source
+  is an index or manually summarized aggregate, store the parent URL plus
+  chapter/section id in `source_description`.
+- Keep imported content as compact original summaries/facts, not long copied
+ 剧情 text. PRTS `剧情一览` is a source index anchor; the importer should use it
+  for links and chapter ordering, then store only concise derived summaries and
+  provenance.
+
+### Google Calendar Mapping Reminder
+
+Calendar data already has a strong shape for Node conversion. The source board
+should show these three levels side by side:
+
+1. Raw Nanobot/Google event payload.
+2. Normalized calendar event: `id`, `calendar_id`, `title`, `start_time`,
+   `end_time`, `timezone`, `location`, `description`, `html_link`, `etag`,
+   `updated`, `status`, and `ical_uid`.
+3. L2-B observation/source metadata after Calendar trigger conversion.
+
+This makes it visible whether a calendar event loses time, identity, or
+provenance before it becomes a Node.

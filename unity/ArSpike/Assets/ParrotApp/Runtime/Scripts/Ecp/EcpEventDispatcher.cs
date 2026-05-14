@@ -209,12 +209,7 @@ namespace ParrotApp.Ecp
             EcpEventDto dto;
             try
             {
-                // JsonUtility cannot deserialize the wire shape directly
-                // because of the `payload_json` ↔ `payload` (string vs
-                // object) trick on the publish side. Phase 4 W2 ships a
-                // small parser; for W1 we accept that downstream handlers
-                // see an empty payload until a Phase 4 parser lands.
-                dto = JsonUtility.FromJson<EcpEventDto>(json);
+                dto = EcpEventBuilder.FromWireJson(json);
                 if (dto == null)
                 {
                     MalformedCount++;

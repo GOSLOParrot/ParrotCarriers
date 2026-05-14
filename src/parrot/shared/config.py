@@ -67,10 +67,45 @@ class GeminiConfig:
 
 
 @dataclass(frozen=True)
+class GraphitiLLMConfig:
+    """Graphiti extraction/rerank LLM provider configuration.
+
+    Graphiti uses a separate provider choice from the live voice line. The
+    default is DeepSeek for the Web Graphiti test lane, but embeddings remain
+    on the existing Gemini embedder until a stable DeepSeek embedding path is
+    approved. Secrets are intentionally read from env at instantiation time so
+    tests and local services can override them without writing repo files.
+    """
+
+    provider: str = field(default_factory=lambda: (
+        os.getenv("GRAPHITI_LLM_PROVIDER")
+        or os.getenv("PARROT_GRAPHITI_LLM_PROVIDER")
+        or "deepseek"
+    ).strip().lower())
+    deepseek_api_key: str = field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY", ""))
+    deepseek_base_url: str = field(
+        default_factory=lambda: os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    )
+    deepseek_model: str = field(
+        default_factory=lambda: os.getenv(
+            "DEEPSEEK_MODEL",
+            os.getenv("GRAPHITI_DEEPSEEK_MODEL", "deepseek-v4-pro"),
+        )
+    )
+    deepseek_small_model: str = field(
+        default_factory=lambda: os.getenv(
+            "DEEPSEEK_SMALL_MODEL",
+            os.getenv("GRAPHITI_DEEPSEEK_SMALL_MODEL", "deepseek-v4-flash"),
+        )
+    )
+
+
+@dataclass(frozen=True)
 class ParrotConfig:
     redis: RedisConfig = field(default_factory=RedisConfig)
     livekit: LiveKitConfig = field(default_factory=LiveKitConfig)
     falkordb: FalkorDBConfig = field(default_factory=FalkorDBConfig)
     gemini: GeminiConfig = field(default_factory=GeminiConfig)
+    graphiti_llm: GraphitiLLMConfig = field(default_factory=GraphitiLLMConfig)
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
     debug: bool = os.getenv("PARROT_DEBUG", "false").lower() == "true"

@@ -34,7 +34,7 @@
 
 | 候选命名 | 落点模块 | 是否进协议 SSOT | 是否需要 Unity DTO 镜像 |
 |:--|:--|:--|:--|
-| `list_external_module_status()` | Brain / Menu | 是，作为 App menu RPC DTO | 是 |
+| `list_external_module_status()` | Brain / Menu | 是，作为 App HTTP read DTO / compact realtime DTO candidate | 是 |
 | `refresh_external_module(module_id)` | Brain -> Scheduler / DSG | 是，动作类型需要稳定 | 是 |
 | `create_intent_draft(kind, payload_ref)` | Brain / IntentWorkspace | 可能已有概念，需确认公开 DTO | 是 |
 | `set_goslo_policy(policy_patch)` | Brain / SessionPolicy | 是，不能直接写 BB | 是 |

@@ -242,9 +242,37 @@ def _copy_google_message_source_meta(obs: Observation) -> dict[str, Any]:
     return {key: obs.meta[key] for key in keys if key in obs.meta}
 
 
+def _copy_user_explicit_source_meta(obs: Observation) -> dict[str, Any]:
+    """Keep selected Web/operator provenance on manually admitted Nodes.
+
+    ``USER_EXPLICIT`` is broad, so this does not copy arbitrary operator JSON
+    wholesale. The first Graphiti-to-L2-B export path uses this to preserve
+    partition, fact text, source URL/description, and Graphiti endpoint UUIDs
+    while still avoiding a new shared ObservationSource before CORE-008 review.
+    """
+    keys = (
+        "source_tool",
+        "target_node_uuid",
+        "audit_note",
+        "graphiti_partition",
+        "graphiti_hit_uuid",
+        "graphiti_source_node_uuid",
+        "graphiti_target_node_uuid",
+        "graphiti_score",
+        "source_url",
+        "source_description",
+        "fact_text",
+    )
+    return {key: obs.meta[key] for key in keys if key in obs.meta}
+
+
 try:
     from parrot.dsg.l2b_types import register_source_meta_factory
 
+    register_source_meta_factory(
+        ObservationSource.USER_EXPLICIT.value,
+        _copy_user_explicit_source_meta,
+    )
     register_source_meta_factory(
         ObservationSource.USER_TAG_OBSIDIAN.value,
         _copy_obsidian_source_meta,

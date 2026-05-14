@@ -268,6 +268,31 @@ def build_app(
 
         return await build_l15_pool_snapshot()
 
+    @app.get("/api/l15/obsidian-vault/scan")
+    async def l15_obsidian_vault_scan(  # type: ignore[misc]
+        vault_path: str = "",
+        limit: str = "24",
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import scan_obsidian_vault
+
+        return scan_obsidian_vault({"vault_path": vault_path, "limit": limit})
+
+    @app.post("/api/l15/obsidian-vault/import-draft")
+    async def l15_obsidian_vault_import_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_obsidian_vault_import
+
+        return draft_obsidian_vault_import(payload or {})
+
+    @app.post("/api/l15/obsidian-vault/import")
+    async def l15_obsidian_vault_import(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_obsidian_vault_import
+
+        return await apply_obsidian_vault_import(payload or {})
+
     @app.post("/api/l15/bucket-op/draft")
     async def l15_bucket_op_draft(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -356,6 +381,14 @@ def build_app(
 
         return await push_test_message(payload or {})
 
+    @app.post("/api/google/calendar/preview")
+    async def google_calendar_preview(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import preview_google_calendar_events
+
+        return preview_google_calendar_events(payload or {})
+
     @app.get("/api/graphiti/status")
     async def graphiti_status_endpoint() -> dict[str, Any]:
         from parrot.brain.graphiti_console import graphiti_status
@@ -376,6 +409,35 @@ def build_app(
                 limit=int(body.get("limit") or 5),
             )
         ).as_json()
+
+    @app.post("/api/graphiti/subgraph/search")
+    async def graphiti_subgraph_search_endpoint(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.brain.graphiti_console import search_graphiti_subgraph
+
+        body = payload or {}
+        return await search_graphiti_subgraph(
+            query=str(body.get("query") or ""),
+            partition=str(body.get("partition") or "goslo"),
+            limit=int(body.get("limit") or 8),
+        )
+
+    @app.post("/api/graphiti/subgraph/export-draft")
+    async def graphiti_subgraph_export_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.brain.graphiti_console import draft_graphiti_subgraph_export
+
+        return draft_graphiti_subgraph_export(payload or {})
+
+    @app.post("/api/graphiti/subgraph/export")
+    async def graphiti_subgraph_export(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.brain.graphiti_console import export_graphiti_subgraph
+
+        return await export_graphiti_subgraph(payload or {})
 
     @app.post("/api/graphiti/episode/draft")
     async def graphiti_episode_draft(  # type: ignore[misc]

@@ -17,15 +17,16 @@ using UnityEngine.InputSystem.UI;
 namespace ParrotApp.UI
 {
     /// <summary>
-    /// Runtime-built App V1 Meta UI shell.
+    /// Runtime-built App V1 smoke/reference UI shell.
     ///
-    /// The shell owns only visible app controls: startup/menu surfaces, a
-    /// low-obstruction HUD, a wood pull-out tool cabinet, draggable Focus and
-    /// BBox overlays, the 2D workdesk, and Nanobot paper notes. Camera pixels,
-    /// attention events, and hand reflexes stay in the existing controllers.
+    /// This controller is intentionally kept for Smoke scene regression and
+    /// homepage reference extraction only. It is not mounted by the formal
+    /// ParrotApp startup scene and must not be treated as production homepage
+    /// evidence. Useful ideas here include the HUD, tool drawer, camera panel,
+    /// workdesk, notes, Focus/BBox overlays, and joystick interactions.
     /// </summary>
     [DisallowMultipleComponent]
-    public class AppV1MetaUiController : MonoBehaviour
+    public class AppV1SmokeReferenceUiController : MonoBehaviour
     {
         [Header("Startup and existing tool controllers")]
         [SerializeField] private AppStartupFlowController startupFlow;

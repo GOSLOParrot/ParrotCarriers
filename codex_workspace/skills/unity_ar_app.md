@@ -20,7 +20,7 @@ Use this route for Unity app startup, HUD, tool cabinet, AR scene wiring, runtim
 - Curated App art: `unity/ArSpike/Assets/ParrotApp/Art/AppV1/`
 - Models: `unity/ArSpike/Assets/ParrotApp/Models/`
 - Test evidence only: `unity/ArSpike/Assets/Tests/Smoke/` and `unity/ArSpike/Assets/Tests/NerTuning/`
-- Legacy Smoke/reference UI: `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/AppV1MetaUiController.cs`
+- Legacy Smoke/reference UI: `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/AppV1SmokeReferenceUiController.cs`
 
 ## Design Rules
 
@@ -37,7 +37,7 @@ Use this route for Unity app startup, HUD, tool cabinet, AR scene wiring, runtim
 - After changing Unity directories, scenes, resources, models, art, or Build
   Settings, update the project inventory SSOT and the App TODO board in the
   same turn.
-- `AppV1MetaUiController` is reference/test evidence, not formal homepage
+- `AppV1SmokeReferenceUiController` is reference/test evidence, not formal homepage
   completion. It can inform HUD/tool drawer/camera/workdesk/note/Focus/BBox
   design, but do not mount it wholesale into the formal startup scene or copy
   its legacy `Scene` / local-preview assumptions into the mobile startup flow.

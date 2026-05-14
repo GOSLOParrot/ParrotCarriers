@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -115,6 +116,8 @@ def test_livekit_web_token_mints_without_exposing_api_secret(monkeypatch) -> Non
 def test_graphiti_status_search_and_dry_run_routes_are_exposed(monkeypatch) -> None:
     from parrot.brain import graphiti_console
 
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-status-secret")
+    monkeypatch.setenv("GRAPHITI_LLM_PROVIDER", "deepseek")
     monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
     client = TestClient(build_app(status_fetcher=_fake_fetcher))
 
@@ -135,7 +138,17 @@ def test_graphiti_status_search_and_dry_run_routes_are_exposed(monkeypatch) -> N
 
     assert status["action"] == "graphiti_status"
     assert status["success"] is True
-    assert status["data"]["partitions"] == ["goslo", "maid", "scene", "user"]
+    assert status["data"]["partitions"] == [
+        "goslo",
+        "maid",
+        "scene",
+        "user",
+        "arknights_test",
+    ]
+    assert status["data"]["graphiti_llm"]["provider"] == "deepseek"
+    assert status["data"]["graphiti_llm"]["model"] == "deepseek-v4-pro"
+    assert status["data"]["graphiti_llm"]["secret_configured"] is True
+    assert "deepseek-status-secret" not in str(status)
     assert blank_search["success"] is False
     assert blank_search["message"] == "query is required"
     assert missing_search["success"] is False
@@ -147,6 +160,326 @@ def test_graphiti_status_search_and_dry_run_routes_are_exposed(monkeypatch) -> N
     assert dry_run["action"] == "add_episode"
     assert dry_run["success"] is True
     assert "dry_run=true" in dry_run["message"]
+
+
+def test_graphiti_subgraph_export_routes_are_l15_dry_run_and_secret_safe(monkeypatch) -> None:
+    from parrot.brain import graphiti_console
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-export-secret")
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    missing_search = client.post(
+        "/api/graphiti/subgraph/search",
+        json={"query": "Amiya Chernobog", "partition": "arknights_test", "limit": 3},
+    ).json()
+    hit = {
+        "text": "Amiya's field role changes during the Chernobog crisis.",
+        "uuid": "graphiti-hit-1",
+        "source_node_uuid": "source-amiya",
+        "target_node_uuid": "target-chernobog",
+        "score": 0.91,
+        "source_url": "https://prts.wiki/w/%E5%89%A7%E6%83%85%E4%B8%80%E8%A7%88",
+        "source_description": "arknights_test:main_00_01",
+    }
+    draft = client.post(
+        "/api/graphiti/subgraph/export-draft",
+        json={"partition": "arknights_test", "query": "Amiya", "hits": [hit]},
+    ).json()
+    export = client.post(
+        "/api/graphiti/subgraph/export",
+        json={
+            "partition": "arknights_test",
+            "query": "Amiya",
+            "hits": [hit],
+            "dry_run": True,
+            "operator_mode": False,
+        },
+    ).json()
+
+    assert missing_search["action"] == "graphiti.subgraph.search"
+    assert missing_search["success"] is False
+    assert missing_search["data"]["subgraph"]["partition"] == "arknights_test"
+    assert draft["action"] == "graphiti.subgraph.export_draft"
+    assert draft["success"] is True
+    assert draft["data"]["write_path"] == "L15Pool.admit(Observation(source=USER_EXPLICIT))"
+    observation = draft["data"]["observations"][0]
+    assert observation["graphiti_uuid"] == "graphiti-hit-1"
+    assert observation["meta"]["graphiti_partition"] == "arknights_test"
+    assert observation["meta"]["graphiti_source_node_uuid"] == "source-amiya"
+    assert observation["meta"]["source_description"] == "arknights_test:main_00_01"
+    assert export["action"] == "graphiti.subgraph.export"
+    assert export["data"]["would_apply"] is True
+    assert export["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
+    assert export["audit"]["direct_falkordb_write"] is False
+    assert "deepseek-export-secret" not in str(missing_search) + str(draft) + str(export)
+
+
+def test_arknights_graphiti_fixture_script_dry_run() -> None:
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "src/scripts/import_arknights_to_graphiti.py",
+            "--dry-run",
+            "--limit",
+            "2",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+
+    assert payload["dry_run"] is True
+    assert payload["partition"] == "arknights_test"
+    assert len(payload["episodes"]) == 2
+    assert payload["episodes"][0]["story_order"] == "main_00_01"
+    assert "copied" not in payload["episodes"][0]["episode_body"].lower()
+    assert "source_url" in payload["episodes"][0]["episode_body"]
+
+
+def test_obsidian_vault_scan_previews_three_profiles(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "daily.md").write_text(
+        "---\nprofile: daily\nlabel: Daily desk rule\nkind: object\ntags: daily,desk\n---\nKeep the desk clear.",
+        encoding="utf-8-sig",
+    )
+    (vault / "roleplay.md").write_text(
+        "---\nprofile: roleplay\nlabel: Harbor scene pack\nkind: object\n---\nScene mood and props.",
+        encoding="utf-8",
+    )
+    (vault / "ref.md").write_text(
+        "---\nprofile: ref\nlabel: Blue mug ref\nobsidian_uuid: mug-ref-1\ntarget_node_uuid: node-1\n---\nReference binding.",
+        encoding="utf-8",
+    )
+    (vault / "bad_ref.md").write_text(
+        "---\nprofile: ref\nlabel: Missing target\n---\nThis ref is intentionally invalid.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    body = client.get(
+        "/api/l15/obsidian-vault/scan",
+        params={"vault_path": str(vault), "limit": 8},
+    ).json()
+
+    assert body["action"] == "l15.obsidian_vault.scan"
+    assert body["success"] is True
+    assert body["data"]["vault"]["status"] == "ingest_ready"
+    profiles = {row["profile"] for row in body["data"]["notes"]}
+    assert {"daily", "roleplay", "ref"} <= profiles
+    roleplay = next(row for row in body["data"]["notes"] if row["profile"] == "roleplay")
+    assert roleplay["uuid_free_allowed"] is True
+    assert roleplay["target_bucket"] == "obsidian_setting_roleplay"
+    ref = next(row for row in body["data"]["notes"] if row["profile"] == "ref")
+    assert ref["payload"]["target_node_uuid"] == "node-1"
+    assert body["data"]["invalid_notes"][0]["reason"] == "missing_frontmatter_or_ref_target"
+
+
+def test_obsidian_vault_import_draft_uses_l15_observation_path(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "daily.md").write_text(
+        "---\nprofile: daily\nlabel: Daily desk rule\nkind: object\n---\nKeep the desk clear.",
+        encoding="utf-8",
+    )
+    (vault / "roleplay.md").write_text(
+        "---\nprofile: roleplay\nlabel: Harbor pack\nkind: object\n---\nRoleplay scene notes.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    draft = client.post(
+        "/api/l15/obsidian-vault/import-draft",
+        json={"vault_path": str(vault), "paths": ["roleplay.md"], "limit": 8},
+    ).json()
+    dry_apply = client.post(
+        "/api/l15/obsidian-vault/import",
+        json={
+            "vault_path": str(vault),
+            "paths": ["roleplay.md"],
+            "dry_run": True,
+            "operator_mode": False,
+        },
+    ).json()
+
+    assert draft["action"] == "l15.obsidian_vault.import_draft"
+    assert draft["success"] is True
+    assert draft["data"]["selected_count"] == 1
+    item = draft["data"]["items"][0]
+    assert item["profile"] == "roleplay"
+    assert item["target_bucket"] == "obsidian_setting_roleplay"
+    assert item["observation"]["source"] == "user_tag_obsidian"
+    assert item["observation"]["meta"]["profile"] == "roleplay"
+    assert draft["data"]["write_path"] == "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)"
+    assert dry_apply["action"] == "l15.obsidian_vault.import"
+    assert dry_apply["data"]["would_apply"] is True
+    assert dry_apply["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
+
+
+def test_obsidian_vault_import_draft_reports_selected_missing_or_invalid_paths(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "daily.md").write_text(
+        "---\nprofile: daily\nlabel: Daily desk rule\nkind: object\n---\nKeep the desk clear.",
+        encoding="utf-8",
+    )
+    (vault / "bad_ref.md").write_text(
+        "---\nprofile: ref\nlabel: Missing target\n---\nThis ref is intentionally invalid.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    draft = client.post(
+        "/api/l15/obsidian-vault/import-draft",
+        json={
+            "vault_path": str(vault),
+            "paths": ["daily.md", "bad_ref.md", "missing.md"],
+            "limit": 8,
+        },
+    ).json()
+
+    assert draft["action"] == "l15.obsidian_vault.import_draft"
+    assert draft["success"] is False
+    assert draft["data"]["selected_count"] == 1
+    errors = {row["path"]: row["error"] for row in draft["data"]["errors"]}
+    assert errors["bad_ref.md"] == "note_not_import_ready"
+    assert errors["missing.md"] == "selected_path_not_found"
+
+
+def test_obsidian_vault_import_draft_reports_profile_mismatch_for_selected_path(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "daily.md").write_text(
+        "---\nprofile: daily\nlabel: Daily desk rule\nkind: object\n---\nKeep the desk clear.",
+        encoding="utf-8",
+    )
+    (vault / "roleplay.md").write_text(
+        "---\nprofile: roleplay\nlabel: Harbor pack\nkind: object\n---\nRoleplay scene notes.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    draft = client.post(
+        "/api/l15/obsidian-vault/import-draft",
+        json={
+            "vault_path": str(vault),
+            "paths": ["daily.md", "roleplay.md"],
+            "profiles": ["roleplay"],
+            "limit": 8,
+        },
+    ).json()
+
+    assert draft["success"] is False
+    assert draft["data"]["selected_count"] == 1
+    assert draft["data"]["items"][0]["path"] == "roleplay.md"
+    assert draft["data"]["errors"] == [
+        {
+            "path": "daily.md",
+            "profile": "daily",
+            "error": "selected_profile_mismatch",
+            "expected_profiles": ["roleplay"],
+        }
+    ]
+
+
+def test_obsidian_vault_import_draft_reports_selected_paths_over_limit(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    for name in ("a.md", "b.md", "c.md"):
+        (vault / name).write_text(
+            f"---\nprofile: daily\nlabel: {name}\nkind: object\n---\n{name}",
+            encoding="utf-8",
+        )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    draft = client.post(
+        "/api/l15/obsidian-vault/import-draft",
+        json={
+            "vault_path": str(vault),
+            "paths": ["a.md", "b.md", "c.md"],
+            "limit": 2,
+        },
+    ).json()
+
+    assert draft["success"] is False
+    assert draft["data"]["selected_count"] == 2
+    assert [item["path"] for item in draft["data"]["items"]] == ["a.md", "b.md"]
+    assert draft["data"]["errors"] == [
+        {
+            "path": "c.md",
+            "profile": "daily",
+            "error": "selected_path_over_limit",
+            "limit": 2,
+        }
+    ]
+
+
+def test_obsidian_vault_scan_and_import_draft_reject_invalid_limit(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "daily.md").write_text(
+        "---\nprofile: daily\nlabel: Daily desk rule\nkind: object\n---\nKeep the desk clear.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    scan = client.get(
+        "/api/l15/obsidian-vault/scan",
+        params={"vault_path": str(vault), "limit": "abc"},
+    ).json()
+    draft = client.post(
+        "/api/l15/obsidian-vault/import-draft",
+        json={"vault_path": str(vault), "paths": ["daily.md"], "limit": "abc"},
+    ).json()
+
+    assert scan["success"] is False
+    assert scan["data"]["error"]["error"] == "invalid_limit"
+    assert draft["success"] is False
+    assert draft["data"]["errors"][0]["error"] == "invalid_limit"
+
+
+def test_google_calendar_preview_preserves_mapping_fields() -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    body = client.post(
+        "/api/google/calendar/preview",
+        json={
+            "events": [
+                {
+                    "id": "evt_preview",
+                    "calendar_id": "primary",
+                    "summary": "Calendar preview",
+                    "start": {"dateTime": "2026-05-15T10:00:00+08:00", "timeZone": "Asia/Shanghai"},
+                    "end": {"dateTime": "2026-05-15T10:30:00+08:00", "timeZone": "Asia/Shanghai"},
+                    "location": "Desk",
+                    "htmlLink": "https://calendar.google.com/event?eid=test",
+                    "etag": "etag-preview",
+                    "status": "confirmed",
+                    "iCalUID": "ical-preview",
+                    "objects": ["blue mug"],
+                }
+            ]
+        },
+    ).json()
+
+    assert body["action"] == "google.calendar.preview"
+    assert body["success"] is True
+    normalized = body["data"]["normalized_events"][0]
+    assert normalized["id"] == "evt_preview"
+    assert normalized["start_time"] == "2026-05-15T10:00:00+08:00"
+    assert normalized["timezone"] == "Asia/Shanghai"
+    assert normalized["html_link"].startswith("https://calendar.google.com/")
+    observation = body["data"]["observations"][0]
+    assert observation["source"] == "google_calendar"
+    assert observation["kind"] == "event"
+    assert observation["meta"]["calendar_event_id"] == "evt_preview"
+    assert observation["meta"]["etag"] == "etag-preview"
+    assert "operator_required_for_import" in body["data"]
 
 
 def test_runtime_monitor_route_is_web_only_read_surface() -> None:

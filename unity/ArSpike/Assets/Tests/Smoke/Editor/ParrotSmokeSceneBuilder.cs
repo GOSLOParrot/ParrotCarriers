@@ -145,10 +145,10 @@ namespace ParrotApp.EditorTools
             var photoRootGo = new GameObject("Photo");
             var photoController = photoRootGo.AddComponent<PhotoController>();
 
-            // ── App V1 Meta UI: startup page, HUD, tool cabinet, workdesk,
+            // ── App V1 Smoke Reference UI: startup page, HUD, tool cabinet, workdesk,
             // draggable magnifier Focus and resizable BoundaryBox overlays.
-            var uiRootGo = new GameObject("AppV1MetaUI");
-            var appUi = uiRootGo.AddComponent<AppV1MetaUiController>();
+            var uiRootGo = new GameObject("AppV1SmokeReferenceUI");
+            var appUi = uiRootGo.AddComponent<AppV1SmokeReferenceUiController>();
 
             // ── Wire references via SerializedObject ───────────────────────
             var perchSo = new SerializedObject(perch);
@@ -212,7 +212,7 @@ namespace ParrotApp.EditorTools
                 "    [PhotoController] HTTP POST attempt will fail (Brain not running) — expected\n" +
                 "► 'Debug: Capture With Test Candidate' → same + candidate_subject_uuid=obj_test_42\n" +
                 "► 'Debug: Capture With Active Refs' → same + bbox_refs/focus_refs from active controllers\n" +
-                "── App V1 Meta UI ─────────────────────────────\n" +
+                "── App V1 Smoke Reference UI ─────────────────\n" +
                 "► Play → StartupSurface appears. Choose LOCAL PREVIEW for offline UI smoke\n" +
                 "► HUD Tools opens a wood pull-out cabinet\n" +
                 "► Magnifier creates a draggable Focus overlay with x + gear\n" +
@@ -264,8 +264,8 @@ namespace ParrotApp.EditorTools
             var focusController = Object.FindObjectOfType<FocusController>() ?? GetOrAdd<FocusController>(attentionRoot);
             GetOrAdd<AttentionConfigEchoPublisher>(attentionRoot);
 
-            var uiRoot = FindOrCreateRoot("AppV1MetaUI");
-            var appUi = GetOrAdd<AppV1MetaUiController>(uiRoot);
+            var uiRoot = FindOrCreateRoot("AppV1SmokeReferenceUI");
+            var appUi = GetOrAdd<AppV1SmokeReferenceUiController>(uiRoot);
 
             SetObjectRef(appUi, "startupFlow", startupFlow);
             SetObjectRef(appUi, "photoController", photoController);
@@ -292,7 +292,7 @@ namespace ParrotApp.EditorTools
 
             Debug.Log(
                 "[ParrotSmokeSceneBuilder] Current scene upgraded for App V1: " +
-                "AppV1MetaUI, Mint startup flow, paper-note drag/drop UI, " +
+                "AppV1SmokeReferenceUI, Mint startup flow, paper-note drag/drop UI, " +
                 "parrot joystick wiring, Photo/Focus/BBox/XRHand references.");
         }
 
@@ -357,7 +357,7 @@ namespace ParrotApp.EditorTools
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
-        private static void SetOptionalAppSprites(AppV1MetaUiController appUi)
+        private static void SetOptionalAppSprites(AppV1SmokeReferenceUiController appUi)
         {
             SetObjectRef(appUi, "woodDrawerSprite", LoadSprite(ToolDrawerWoodSpritePath));
             SetObjectRef(appUi, "woodButtonSprite", LoadSprite(ToolButtonWoodSpritePath));

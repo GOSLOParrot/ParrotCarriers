@@ -14,6 +14,7 @@ scope, TODO list, and implementation flow with the user inside their own chats.
 | `codex_workspace/design_workspace/tasks/APP_WEB_PARALLEL_TODOLIST_20260513.md` | Coordinated high-level TODO board for both chats. | App chat edits App lane; Web chat edits Web lane; both may add cross-lane blockers. |
 | `codex_workspace/design_workspace/backend_interface_map/app/` | Unity App business-interface notes and A-D slices. | App chat owns. Web chat reads only unless asked. |
 | `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md` | Unity App directory/resource/scene inventory SSOT. | App chat owns. Any Unity directory, resource, scene, or Build Settings change must update this file in the same turn when the inventory changes. |
+| `codex_workspace/design_workspace/backend_interface_map/app/unity_livekit_ecp_sva_data_flow_map_20260515.md` | Unity App LiveKit/ECP/SVA data-flow SSOT for homepage prep. | App chat owns. Read before adding or moving App HTTP, Orchestrator, Mint, LiveKit media/RPC, ECP, SVA/video, Brain/DSG/GOSLO/Scheduler, or Unity local state responsibilities. |
 | `codex_workspace/design_workspace/backend_interface_map/web_console/` | Web Console business-interface notes and A-D slices. | Web chat owns. App chat reads only unless asked. |
 | `codex_workspace/design_workspace/backend_interface_map/core_interface_candidate_queue_20260513.md` | Staging queue for proposed shared core interfaces. | Either chat may propose; App/Web dual confirmation is required before moving shared contracts to core SSOT. |
 | `.cursor/memory/architecture/Interface/**` | Ratified core interface SSOT. | Update only after the required lane confirmation; include source/writer metadata. |
@@ -125,20 +126,49 @@ Each chat follows this loop:
     still fails correctly against a running LineB Brain. User repaired public
     ECS routing on 2026-05-14: `8790` RoomSetting returns 2 rooms and `7890`
     orchestrator health is ok. Castle LiveKit key alignment is now fixed:
-    mint-issued Unity tokens validate and LiveKit join succeeds. The formal
-    START script now passes RoomSetting save/apply, Tier 1 prewrite, Mint, and
-    LiveKit connect, then fails correctly at the Brain-present gate because no
-    Brain participant appears within 75s. The existing diagnostic script proves
-    manual server-side dispatch works and post-join `applyRoomProfile` /
-    `setAppCapabilityMode` are business-ok with `ner_lineb_room`. Completion is
-    blocked on deploying token-mint's active server-side dispatch fallback for
-    Unity identities, because token-only `roomConfig.agents=[{}]` does not
-    reliably fire when scheduler already keeps the room alive. Do not count
-    heartbeat or main-ready as passed from the failed formal run.
+    mint-issued Unity tokens validate and LiveKit join succeeds. After the
+    2026-05-15 ECS restart, the formal non-phone START probe passed
+    RoomSetting snapshot/save/apply for `ner_lineb_room`, Tier 1 prewrite,
+    Mint, LiveKit connect, Brain `agent-*` presence without manual dispatch,
+    `applyRoomProfile` business-ok, `setAppCapabilityMode` business-ok, and
+    `parrot.ecp.state` heartbeat publish. A fresh temporary room also spawned
+    Brain without manual server dispatch. Mint currently exposes
+    `agent_dispatch_requested` but not the newer active-dispatch diagnostic
+    fields, so keep that as a deployment-diagnostics gap, not a START blocker.
+    Do not count the startup hold screen as formal homepage completion.
+    `FormalMainReadyGate`, `FormalHomeHudController`, `FormalHomeMenuLoader`,
+    `FormalModelReadyReporter`, `FormalArRuntimeBootstrap`, and
+    `FormalArSessionBaselineReporter` now cover first-pass main-ready gates.
+    Current bug-fix checkpoint: main-ready self-reevaluates/degrades while
+    waiting, menu payloads must contain real workspace/menu shell data, mobile
+    AR baseline waits for `ARSessionState.SessionTracking`, and already-connected
+    Tier1/LineB START uses graceful shutdown plus fresh reconnect. The accepted
+    touch drawer, production model placement, and iQOO Neo9 evidence remain
+    APP-015/APP-024 work.
     App HTTP selector follow-up: `GET /api/app/line-profiles` is reachable,
     `GET /api/app/personas` was added for selector-safe persona metadata, and
     app-monitor POST routes can be protected by `PARROT_APP_MONITOR_SECRET`
     plus Unity's ignored `appApiSecret`.
+11. For Unity App transport choices, read
+    `backend_interface_map/app/unity_app_transport_interface_taxonomy_20260515.md`.
+    Durable load/save and large snapshots are App HTTP; Tier 1 runtime control
+    is Orchestrator HTTP; Mint owns short-lived tokens and server-side Brain
+    dispatch; LiveKit media owns audio/video; ECP is the broad embodied-control
+    protocol plane (`EcpCommand`/`EcpAck`, `EcpState`, `EcpEvent`, lossy tick,
+    command causality, snapshot/sighting/ref links); Brain RPC is a compact
+    in-room request/response transport under that larger model. Do not design a
+    formal homepage/menu from the startup hold screen or Smoke UI without the
+    APP-018 responsibility audit.
+    For channel-by-channel ownership and current gaps, also read
+    `backend_interface_map/app/unity_livekit_ecp_sva_data_flow_map_20260515.md`.
+    It marks APP-015.19 complete and records that formal Unity still lacks a
+    `captureSnapshot` RPC handler even though Brain has an SVA snapshot caller.
+    For the current homepage/menu and phone-stability handoff, also read
+    `backend_interface_map/app/unity_homepage_menu_livekit_audit_20260515.md`:
+    it records the 2026-05-15 audit that startup main-ready is not the final
+    homepage, menu persistence/full snapshots belong to App HTTP, compact
+    in-room controls may use RPC, and phone stability still requires 2D pause
+    policy, degraded HUD, ECP homepage consumers, and iQOO Neo9 evidence.
 
 ## 5. Skill Gate
 

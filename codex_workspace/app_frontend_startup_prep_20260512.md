@@ -16,7 +16,7 @@ Existing core surfaces, no new core API required for the first startup slice:
 | Runtime config | `src/parrot/castle/runtime_config.py` | Brain, orchestrator | `file > BB > env > default`; orchestrator is the intended file writer. |
 | Tier registry | `data/registries/setting_change_tier.json` | Brain, Unity | C# mirror already exists at `unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/UI/SettingChangeTierDto.cs`. |
 | RoomSetting read model | `src/parrot/brain/room_setting.py` | Unity startup/menu | `compatibility` now exposes `tier`, `tier_label`, `tier_summary`, `tier_summary_zh`, `tier_ui_action`. |
-| Existing Brain RPCs | `src/parrot/brain/agent.py` | Unity after LiveKit join | `applyRoomProfile`, `setAppCapabilityMode`, `applyWorkspace`, `onSceneReady`, `onGosloPlaced`, plus menu canvas RPC mirrors. |
+| Existing Brain RPCs | `src/parrot/brain/agent.py` | Unity after LiveKit join | Compact in-room controls only: `applyRoomProfile`, `setAppCapabilityMode`, `applyWorkspace`, scene/placement gates, media toggles, audio diagnostics, reconnect signal. Full menu/RoomSetting reads and writes are App HTTP. |
 
 ## 2. Route Split
 
@@ -26,7 +26,7 @@ Unity App first:
 |:---|:---|:---|
 | Startup Line / RoomProfile selection | RoomSetting compatibility + orchestrator `/apply_room_profile` or `/set_active_line` | Unity startup UI |
 | Startup Maid Team selection | Fixed `CatMaid Team` V1 placeholder first; future `agent_team_id` core field after approval | Unity startup UI |
-| Tier 0 menu action | Existing Brain RPC / BB-backed facade | Unity menu canvas |
+| Tier 0 menu action | App HTTP for persisted menu/RoomSetting, compact Brain RPC only for in-room controls | Unity menu canvas |
 | Tier 1 reconnect action | Orchestrator write with `force_reconnect=true` after confirm | Unity startup/menu |
 | Tier 2 process restart | Orchestrator `/restart_component` and `/status` polling | Unity menu, likely debug-gated |
 | Tier 3 operator-only | No App write | UI prompt only |
@@ -69,7 +69,7 @@ Tier policy:
 
 | Tier | Self-use App | Production direction |
 |:---:|:---|:---|
-| 0 | Direct menu RPC / BB-backed facade. | Same. |
+| 0 | App HTTP for durable read/write; compact LiveKit RPC only for latency-sensitive room controls. | Same. |
 | 1 | Confirm dialog, then call orchestrator with a dev-local secret. | Confirm dialog, then exchange for a short-lived token scoped to line/profile switching. |
 | 2 | Debug-folded action only. | Local unlock / admin confirmation before process restart. |
 | 3 | Not exposed in App. | Operator console only. |

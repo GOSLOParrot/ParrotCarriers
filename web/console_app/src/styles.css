@@ -145,6 +145,11 @@ select {
   font-size: 13px;
 }
 
+.button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
 .button.danger {
   border-color: #6f4747;
   color: #ffc4c4;
@@ -556,6 +561,7 @@ select {
 }
 
 .bucket-card,
+.source-card,
 .obsidian-card,
 .gate-card,
 .receipt {
@@ -598,25 +604,102 @@ select {
   background: linear-gradient(90deg, #6fdc97, #b8c17a);
 }
 
-.obsidian-card {
+.source-board {
+  display: grid;
+  gap: 8px;
   margin-bottom: 8px;
 }
 
-.obsidian-card-head {
+.source-board-tabs {
   display: grid;
-  gap: 3px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
 }
 
+.source-tab {
+  border: 1px solid #343842;
+  border-radius: 6px;
+  background: rgba(23, 25, 31, 0.62);
+  color: #cbd3df;
+  padding: 7px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.source-tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-tab.active {
+  border-color: #6d8f7a;
+  background: #203427;
+  color: #f0fff5;
+}
+
+.source-board-active {
+  min-width: 0;
+}
+
+.source-panel[hidden] {
+  display: none;
+}
+
+.source-board-note,
+.source-card-note {
+  margin: 0;
+  color: #9aa4b2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.source-card {
+  background: rgba(37, 40, 50, 0.82);
+}
+
+.source-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.source-card-head strong {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.source-card-head svg {
+  color: #7bd99f;
+}
+
+.source-card-head small {
+  max-width: 150px;
+  text-align: right;
+}
+
+.source-card label,
 .obsidian-card label {
   display: grid;
   gap: 5px;
 }
 
+.source-card label span,
 .obsidian-card label span {
   color: #9aa4b2;
   font-size: 12px;
 }
 
+.source-card input,
+.source-card select,
 .obsidian-card input,
 .obsidian-card select {
   min-width: 0;
@@ -626,6 +709,115 @@ select {
   background: #17191f;
   color: #e7e9ee;
   padding: 8px 10px;
+}
+
+.hit-list,
+.note-preview-list {
+  border-top: 1px solid rgba(58, 63, 74, 0.65);
+  padding-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.hit-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hit-list > strong,
+.hit-list-head > strong,
+.note-preview-list > strong {
+  color: #9aa4b2;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.hit-list-head small {
+  color: #9aa4b2;
+  white-space: nowrap;
+}
+
+.hit-row {
+  border: 1px solid #343842;
+  border-radius: 6px;
+  background: rgba(23, 25, 31, 0.78);
+  color: #e7e9ee;
+  padding: 7px 8px;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hit-row:hover {
+  border-color: #6d8f7a;
+  background: #26352d;
+}
+
+.hit-select-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+}
+
+.hit-select-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: #78d99f;
+}
+
+.hit-select-row.selected .hit-row {
+  border-color: #6d8f7a;
+  background: rgba(32, 52, 39, 0.78);
+}
+
+.note-select-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+}
+
+.note-select-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: #78d99f;
+}
+
+.hit-row span,
+.hit-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hit-row small {
+  color: #9aa4b2;
+}
+
+.preview-row {
+  border: 1px solid #343842;
+  border-radius: 6px;
+  background: rgba(23, 25, 31, 0.58);
+  padding: 7px 8px;
+  display: grid;
+  gap: 2px;
+}
+
+.preview-row span,
+.preview-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-row small {
+  color: #9aa4b2;
 }
 
 .edge-tools {
@@ -870,6 +1062,11 @@ select {
 .react-flow__edge.preview-edge path {
   stroke-dasharray: 7 5;
   stroke-width: 2;
+}
+
+.react-flow__edge.graphiti-preview-edge path {
+  stroke: #8bd1ff;
+  stroke-dasharray: 5 5;
 }
 
 .react-flow__edge.retarget-edge path {

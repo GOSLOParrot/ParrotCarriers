@@ -140,8 +140,8 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "dict[str, Any]",
         "brain.preset_loader",
         "Resolved active RoomProfile payload (full JSON) so unsaved drafts "
-        "applied via menu RPC keep their setting_file_refs / line_profile / "
-        "skin without forcing a disk save.",
+        "applied through App HTTP plus in-room Brain sync keep their "
+        "setting_file_refs / line_profile / skin without forcing a disk save.",
         event_driven=True,
     ),
     BlackboardKey(

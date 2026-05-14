@@ -212,12 +212,13 @@ def reset_session_context_bootstrap_for_test() -> None:
 def _load_room_profile(room_profile_id: str | None) -> RoomProfile:
     """Resolve the active RoomProfile.
 
-    FIX (2026-05-11 audit, Bug A): if Unity applied an *unsaved* RoomProfile
-    draft via the menu RPC, the on-disk ``data/presets/<id>.json`` doesn't
-    exist or is stale. ``preset_loader.apply_room_profile`` now also writes
-    the resolved payload to ``global/active_room_profile``; prefer that
-    payload when its id matches the active id, so ``setting_file_refs`` /
-    ``line_profile_id`` / ``skin_id`` from the draft survive the round trip.
+    FIX (2026-05-11 audit, Bug A): if Unity applies an *unsaved* RoomProfile
+    draft through App HTTP and then syncs Brain in-room, the on-disk
+    ``data/presets/<id>.json`` may not exist yet or may be stale.
+    ``preset_loader.apply_room_profile`` also writes the resolved payload to
+    ``global/active_room_profile``; prefer that payload when its id matches the
+    active id, so ``setting_file_refs`` / ``line_profile_id`` / ``skin_id``
+    from the draft survive the round trip.
     """
     active_id = room_profile_id or _active_room_profile_id()
 

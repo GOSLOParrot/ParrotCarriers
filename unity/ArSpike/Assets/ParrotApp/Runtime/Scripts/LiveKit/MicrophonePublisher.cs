@@ -45,9 +45,9 @@ namespace ParrotApp.LiveKit
     /// <b>Out of scope for Sprint4 Phase 3</b>:
     /// <list type="bullet">
     /// <item>UI device picker, manual push-to-talk, and speaker echo policy.</item>
-    /// <item>Writing <see cref="AudioRoutePolicy"/> into candidate BB key
-    ///   <c>session/audio_route_policy</c> or <c>EcpFrontendState</c>
-    ///   remains a later ECP upgrade.</item>
+        /// <item>This class still does not write Brain policy directly.
+        ///   <see cref="AudioRoutePolicyBrainReporter"/> owns the compact
+        ///   LiveKit RPC that mirrors the current route to Brain.</item>
     /// <item>iOS native <c>AVAudioSession</c> bridge; detector uses device-name fallback.</item>
     /// </list>
     /// // AudioRoutePolicy producer hook reserved for Sprint4 Phase 4
