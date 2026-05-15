@@ -455,6 +455,36 @@ def build_app(
 
         return await delete_l2b_edge(payload or {})
 
+    @app.post("/api/l2b/graph-policy/import-draft")
+    async def l2b_graph_policy_import_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.graph_policy import draft_import_destination
+
+        return draft_import_destination(payload or {})
+
+    @app.post("/api/l2b/subgraphs/draft")
+    async def l2b_subgraphs_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.graph_policy import draft_subgraph_overlay
+
+        return draft_subgraph_overlay(payload or {})
+
+    @app.post("/api/l2b/transforms/draft")
+    async def l2b_transforms_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.graph_policy import draft_graph_transform
+
+        return draft_graph_transform(payload or {})
+
+    @app.get("/api/l2b/analysis/health")
+    async def l2b_analysis_health() -> dict[str, Any]:
+        from parrot.web_console.graph_policy import graph_health_snapshot
+
+        return graph_health_snapshot()
+
     @app.post("/api/google/messages/check")
     async def google_messages_check(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),

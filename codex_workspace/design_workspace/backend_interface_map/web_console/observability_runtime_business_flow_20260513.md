@@ -738,6 +738,14 @@ Implemented:
   available it records a pending evidence request and continues L0/L1
   text/Graphiti matching. The old snapshot RPC path remains a disabled
   compatibility hook and is not called by this tool.
+- 2026-05-15 bugfix: BBox/Mag/Focus refs are now resolution anchors. A stored
+  asset linked by `bbox_ref_id` / `focus_ref_id` is preferred over the room's
+  latest unrelated frame; if only a `bbox_focus` event exists, its sample time
+  is used to find the nearest stored frame. 2026-05-15 review follow-up: if the
+  requested BBox/Focus ref is missing entirely and no explicit `target_time_ms`
+  was supplied, the resolver records a pending focus-linked request and returns
+  `None` instead of using the newest unrelated frame. This keeps a user's
+  selected region aligned with the evidence sent to VLM/search.
 - Added storage-backed `parrot.brain.vision.frame_cache` as the first producer
   ingress for auditable encoded frames. LiveKit/SVA processors can call
   `record_livekit_frame_bytes()` after selecting/rate-limiting a track frame;
@@ -789,9 +797,12 @@ Implemented:
 - React Runtime Flow includes a compact Time/Evidence panel for ledger status,
   recent evidence rows, manual evidence request, BBox/Focus test events, and a
   Web/operator `Cache Frame` smoke action.
-- React build output now uses hashed bundle names (`assets/app-[hash].js` and
-  `assets/styles-[hash].css`) so Windows file locks on the running console no
-  longer leave the browser on a stale `app.js` bundle.
+- React build output now writes stable tracked bundle names (`assets/app.js`
+  and `assets/styles.css`). The Web BFF serves `/` and `/assets/*` with
+  `Cache-Control: no-store`, so local reloads do not stay pinned to stale
+  bundles while deployments no longer depend on untracked hash files. The older
+  tracked hash bundles were removed on 2026-05-15; new builds should keep this
+  directory to the stable entrypoints unless the release strategy changes.
 
 Interface boundary:
 
@@ -809,6 +820,10 @@ Interface boundary:
   `attention.threshold.crossed`. Automatic "threshold crossed -> request
   nearest stored image -> stage visual evidence hint" is deliberately left as
   WEB-015.12 so the policy can be audited before it starts nudging GOSLO.
+- BBox/magnifier are evidence/ref tools, not NodeKind special cases. App/Web
+  should model their long-lived graph effect through CORE-012 evidence refs and
+  the new CORE-013 graph-link policy candidate instead of inventing
+  toolbar-specific L2-B node subclasses.
 - `POST /api/vision/evidence/frame-cache/upload` is a local Web/operator debug
   ingress; it is not the production LiveKit sampler and it does not belong in
   Unity/App DTOs.
@@ -919,8 +934,9 @@ Validation:
   typecheck/build passed with `assets/app-5b8dfb08.js`; browser smoke found the
   Runtime Time/Evidence panel and fresh/stale status with no dev-console logs.
 - `web/console_app/node_modules/.bin/tsc.cmd --noEmit` passed.
-- `web/console_app/node_modules/.bin/vite.cmd build` passed with hashed
-  assets; the live `http://127.0.0.1:7893/` page now serves the hashed bundle.
+- `web/console_app/node_modules/.bin/vite.cmd build` passed with stable tracked
+  assets; the live `http://127.0.0.1:7893/` page now serves
+  `assets/app.js` / `assets/styles.css` with no-store caching.
 - Local route smoke on `http://127.0.0.1:7893`: `POST
   /api/vision/evidence/frame-cache/upload` cached a PNG test frame as
   `video_frame`; `POST /api/vision/evidence/request` resolved the nearest
@@ -932,6 +948,12 @@ Validation:
   frame-cache upload, fake LiveKit sampler, photo upload/observer, snapshot
   metadata, BBox/Focus threshold evidence, Web evidence routes, safe photo
   asset reads, and `identify_object` no-snapshot-RPC behavior -> `58 passed`.
+- 2026-05-15 BBox/Mag ref-anchor bugfix validation:
+  `.venv\Scripts\python.exe -m pytest tests\test_brain\test_time_aligned_evidence.py tests\test_ecp_event\test_threshold_emit.py -q`
+  -> `23 passed`.
+- 2026-05-15 expanded evidence/Web route regression after the ref-anchor fix:
+  `.venv\Scripts\python.exe -m pytest tests\test_brain\test_time_aligned_evidence.py tests\test_ecp_event\test_threshold_emit.py tests\test_ecp_event\test_identify_object.py tests\test_web_console\test_web_console_server.py -q`
+  -> `71 passed`.
 - 2026-05-15 continuation: wired Photo Awareness notices into
   `ContextInjector` C3 delivery. Focused injector/photo/evidence tests ->
   `28 passed`; App facade/monitor regression tests -> `40 passed`;

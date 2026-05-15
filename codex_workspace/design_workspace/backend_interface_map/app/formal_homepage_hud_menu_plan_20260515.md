@@ -347,6 +347,31 @@ directly.
 - Static Unity guard updated and passing:
   `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q`.
 
+2026-05-15 BBox/Mag evidence-tool design intake:
+
+- BBox and magnifier are post-phone-stability active tools, not homepage V1
+  shortcuts. They must not call `captureSnapshot`, send inline image bytes over
+  RPC, or invoke `identify_object` directly from Unity UI.
+- The intended active flow mirrors the photo/evidence family: Unity creates a
+  compact ECP/ref packet with tool kind (`bbox`, `mag`, or `focus`), region,
+  pose/screen coordinates, optional `payload.timebase`, and any known
+  `bbox_ref_id` / `focus_ref_id`; rendered/cropped image bytes move through
+  HTTP/storage with matching metadata.
+- Backend evidence alignment owns the hard part: it resolves a BBox/Focus ref
+  to the matching stored asset or to the nearest time-aligned frame, then
+  stages compact evidence refs for GOSLO/IntentWorkspace according to
+  awareness policy. Unity should treat this as a backend receipt, not as a
+  local success guess.
+- Attention semantics stay separate from rendering. The tools may produce L3
+  attention hints and threshold-trigger candidates, but speaking/interrupting
+  GOSLO remains policy-owned by the awareness/trigger taxonomy.
+- Do not model MAG/BBox as new `NodeKind` values. The App-facing concept is a
+  UI/evidence tool that may create or link refs; later L2-B representation is
+  controlled by graph-link policy, not by the toolbar.
+- App animation note for the animation backlog: while listening, the parrot can
+  use a subtle head-tilt/listening posture. This is a model/body-language
+  behavior, not part of the evidence DTO.
+
 Remaining before marking phone-ready:
 
 - Unity Editor/phone visual pass for the new formal toolbar and panels.

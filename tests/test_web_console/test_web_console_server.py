@@ -61,13 +61,18 @@ def test_index_serves_static_console() -> None:
 
     assert response.status_code == 200
     assert "Parrot Web Console" in response.text
-    app_asset_match = re.search(r'src="(?P<asset>/assets/app[^"]+\.js)"', response.text)
+    app_asset_match = re.search(r'src="(?P<asset>/assets/app\.js)"', response.text)
+    style_asset_match = re.search(r'href="(?P<asset>/assets/styles\.css)"', response.text)
     assert app_asset_match is not None
+    assert style_asset_match is not None
     assert response.headers["Cache-Control"] == "no-store"
 
     asset = client.get(app_asset_match.group("asset"))
     assert asset.status_code == 200
     assert asset.headers["Cache-Control"] == "no-store"
+    style_asset = client.get(style_asset_match.group("asset"))
+    assert style_asset.status_code == 200
+    assert style_asset.headers["Cache-Control"] == "no-store"
 
     fallback = client.get("/memory")
     assert fallback.status_code == 200
@@ -1374,6 +1379,114 @@ def test_l2b_node_and_edge_routes_stay_dry_run_by_default() -> None:
     assert edge_delete["data"]["match_kind"] == "associated_with"
     assert self_edge["success"] is False
     assert self_edge["data"]["error"] == "self_edge_not_allowed"
+
+
+def test_l2b_graph_policy_draft_routes_are_core013_and_dry_run() -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    import_draft = client.post(
+        "/api/l2b/graph-policy/import-draft",
+        json={
+            "source_kind": "graphiti",
+            "source_id": "arknights_test",
+            "destination": "isolated_compartment",
+            "node_uuids": ["node_a", "node_b"],
+            "ref_ids": ["ref_a"],
+            "subgraph_label": "Arknights test slice",
+            "proposed_edges": [
+                {
+                    "source": "node_a",
+                    "target": "node_b",
+                    "kind": "graphiti_fact",
+                    "source_graphiti_uuid": "source-amiya",
+                    "target_graphiti_uuid": "target-chernobog",
+                    "label": "Amiya reaches Chernobog",
+                    "edge_source": "graphiti",
+                }
+            ],
+        },
+    ).json()
+    invalid_import = client.post(
+        "/api/l2b/graph-policy/import-draft",
+        json={"destination": "whole_graph_magic"},
+    ).json()
+    subgraph = client.post(
+        "/api/l2b/subgraphs/draft",
+        json={"label": "Work selection", "node_uuids": ["node_a", "node_b"]},
+    ).json()
+    transform = client.post(
+        "/api/l2b/transforms/draft",
+        json={
+            "transform_kind": "wrap_selection",
+            "node_uuids": ["node_a", "node_b"],
+            "label": "Wrapped work selection",
+        },
+    ).json()
+    llm_context = client.post(
+        "/api/l2b/transforms/draft",
+        json={"transform_kind": "send_context_to_llm", "node_uuids": ["node_a"]},
+    ).json()
+
+    assert import_draft["action"] == "l2b.graph_policy.import_draft"
+    assert import_draft["dry_run"] is True
+    assert import_draft["data"]["core_candidate"] == "CORE-013"
+    assert import_draft["data"]["audit"]["app_dto_pollution"] is False
+    assert import_draft["data"]["policy"]["destination"] == "isolated_compartment"
+    assert import_draft["data"]["policy"]["would_mutate_l2b_topology"] is True
+    assert import_draft["data"]["draft"]["proposed_overlay"]["overlay_kind"] == "isolated_compartment"
+    assert import_draft["data"]["draft"]["proposed_edges"][0]["edge_source"] == "graphiti"
+    assert (
+        import_draft["data"]["draft"]["proposed_edges"][0]["meta"]["source_graphiti_uuid"]
+        == "source-amiya"
+    )
+    assert (
+        import_draft["data"]["draft"]["proposed_edges"][0]["meta"]["target_graphiti_uuid"]
+        == "target-chernobog"
+    )
+    assert import_draft["data"]["apply_route"] == ""
+    assert invalid_import["success"] is False
+    assert invalid_import["data"]["error"] == "invalid_import_destination"
+    assert "connect_by_rule" in invalid_import["data"]["valid_destinations"]
+    assert subgraph["action"] == "l2b.subgraph.draft"
+    assert subgraph["data"]["overlay"]["label"] == "Work selection"
+    assert subgraph["data"]["overlay"]["member_node_uuids"] == ["node_a", "node_b"]
+    assert transform["action"] == "l2b.transform.draft"
+    assert transform["data"]["draft"]["transform_kind"] == "wrap_selection"
+    assert transform["data"]["draft"]["proposed_overlay"]["label"] == "Wrapped work selection"
+    assert llm_context["data"]["draft"]["requires_operator"] is False
+    assert llm_context["data"]["operator_required_for_apply"] is False
+
+
+def test_l2b_graph_health_route_is_read_only(monkeypatch) -> None:
+    import parrot.dsg.l2b_graph as l2b_graph_module
+    from parrot.dsg.l2b_graph import L2BGraph
+    from parrot.dsg.l2b_types import EdgeKind, NodeKind, SemanticEdge, SemanticNode
+
+    graph = L2BGraph()
+    graph.upsert_node(SemanticNode(uuid="health_a", kind=NodeKind.OBJECT, label="A"))
+    graph.upsert_node(SemanticNode(uuid="health_b", kind=NodeKind.EVENT, label="B"))
+    graph.upsert_node(SemanticNode(uuid="health_c", kind=NodeKind.PHOTO, label="C"))
+    graph.connect(
+        "health_a",
+        "health_b",
+        SemanticEdge(kind=EdgeKind.ASSOCIATED_WITH, source="test"),
+    )
+    monkeypatch.setattr(l2b_graph_module, "_instance", graph)
+
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    health = client.get("/api/l2b/analysis/health").json()
+
+    assert health["action"] == "l2b.analysis.health"
+    assert health["success"] is True
+    assert health["read_only"] is True
+    assert health["core_candidate"] == "CORE-013"
+    assert health["node_count"] == 3
+    assert health["edge_count"] == 1
+    assert health["orphan_count"] == 1
+    assert health["wcc_count"] == 2
+    assert health["largest_wcc_size"] == 2
+    assert health["kind_counts"]["object"] == 1
+    assert health["audit"]["unity_dto_pollution"] is False
 
 
 def test_google_message_routes_use_nanobot_and_trigger_drafts() -> None:

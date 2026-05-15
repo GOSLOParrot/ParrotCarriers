@@ -334,6 +334,47 @@ class TemporalEvidenceLedger:
             return None
         return best
 
+    def latest_for_refs(
+        self,
+        *,
+        bbox_ref_id: str = "",
+        focus_ref_id: str = "",
+        kinds: tuple[EvidenceKind, ...] = (),
+        require_asset: bool = False,
+    ) -> TimeAlignedSampleRef | None:
+        """Return the newest ready sample explicitly tied to a UI focus ref.
+
+        BBox/magnifier tools often produce a ref before the high-resolution
+        image or nearby video frame is available.  This lookup keeps that ref
+        as the anchor: if a later ``identify_object`` call mentions the same
+        BBox/Focus ref, we prefer evidence that was recorded with that ref
+        instead of accidentally using the room's newest unrelated frame.
+        """
+        if not bbox_ref_id and not focus_ref_id:
+            return None
+        normalized_kinds = {
+            kind.value if isinstance(kind, EvidenceKind) else str(kind)
+            for kind in kinds
+        }
+        with self._lock:
+            items = list(self._samples)
+        candidates = [
+            sample
+            for sample in items
+            if sample.status == EvidenceStatus.READY
+            and (not normalized_kinds or str(sample.kind) in normalized_kinds)
+            and (not require_asset or sample.has_asset)
+            and _sample_matches_focus_refs(
+                sample,
+                bbox_ref_id=bbox_ref_id,
+                focus_ref_id=focus_ref_id,
+            )
+        ]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda sample: sample.timebase.wall_time_ms, reverse=True)
+        return candidates[0]
+
 
 _LEDGER = TemporalEvidenceLedger()
 
@@ -404,15 +445,69 @@ async def resolve_identify_evidence(
         if sample is not None:
             return sample
 
+    resolved_target_time_ms = int(target_time_ms or 0)
+    if bbox_ref_id or focus_ref_id:
+        # Ref-linked evidence beats the generic "latest frame" path.  This is
+        # the BBox/Mag contract: the UI ref identifies the user's region of
+        # interest, and the ledger chooses the matching stored asset or uses
+        # the ref sample time to find the nearest stored frame.  No Unity
+        # snapshot RPC or inline image transport is involved here.
+        sample = ledger.latest_for_refs(
+            bbox_ref_id=bbox_ref_id,
+            focus_ref_id=focus_ref_id,
+            kinds=(EvidenceKind.VIDEO_FRAME, EvidenceKind.IMAGE_ASSET),
+            require_asset=True,
+        )
+        if sample is not None:
+            return sample
+
+        anchor = ledger.latest_for_refs(
+            bbox_ref_id=bbox_ref_id,
+            focus_ref_id=focus_ref_id,
+            kinds=(
+                EvidenceKind.BBOX_FOCUS,
+                EvidenceKind.VIDEO_FRAME,
+                EvidenceKind.IMAGE_ASSET,
+            ),
+        )
+        if anchor is not None and resolved_target_time_ms <= 0:
+            resolved_target_time_ms = anchor.timebase.wall_time_ms
+        if anchor is None and resolved_target_time_ms <= 0:
+            # A focus ref is a strong user intent anchor.  If that anchor is
+            # not in the ledger yet, falling back to the room's newest generic
+            # frame would attach the wrong visual evidence to the BBox/Mag
+            # action.  Record a pending request instead and let the sampler or
+            # upload path provide matching evidence later.
+            ledger.record_sample(
+                kind=EvidenceKind.EVIDENCE_REQUEST,
+                status=EvidenceStatus.PENDING,
+                timebase=TimebaseStamp.now(
+                    clock_domain=ClockDomain.BRAIN,
+                    source_id=request_source,
+                    estimated=True,
+                ),
+                related_refs=tuple(ref for ref in (bbox_ref_id, focus_ref_id) if ref),
+                bbox_refs=(bbox_ref_id,) if bbox_ref_id else (),
+                focus_refs=(focus_ref_id,) if focus_ref_id else (),
+                description=description,
+                meta={
+                    "request_source": request_source,
+                    "requested_evidence_id": evidence_id,
+                    "needs": "stored image/video frame linked to focus ref",
+                    "missing_focus_anchor": True,
+                },
+            )
+            return None
+
     sample = ledger.nearest(
-        target_time_ms=target_time_ms,
+        target_time_ms=resolved_target_time_ms,
         kinds=(EvidenceKind.VIDEO_FRAME,),
         require_asset=True,
         window_ms=15_000,
     )
     if sample is None:
         sample = ledger.nearest(
-            target_time_ms=target_time_ms,
+            target_time_ms=resolved_target_time_ms,
             kinds=(EvidenceKind.IMAGE_ASSET,),
             require_asset=True,
             window_ms=15_000,
@@ -425,7 +520,9 @@ async def resolve_identify_evidence(
         kind=EvidenceKind.EVIDENCE_REQUEST,
         status=EvidenceStatus.PENDING,
         timebase=TimebaseStamp.from_payload(
-            {"wall_time_ms": target_time_ms} if target_time_ms else {},
+            {"wall_time_ms": resolved_target_time_ms}
+            if resolved_target_time_ms
+            else {},
             default_domain=ClockDomain.BRAIN,
             default_source_id=request_source,
         ),
@@ -440,6 +537,28 @@ async def resolve_identify_evidence(
         },
     )
     return None
+
+
+def _sample_matches_focus_refs(
+    sample: TimeAlignedSampleRef,
+    *,
+    bbox_ref_id: str = "",
+    focus_ref_id: str = "",
+) -> bool:
+    related_refs = set(sample.related_refs)
+    if (
+        bbox_ref_id
+        and bbox_ref_id not in sample.bbox_refs
+        and bbox_ref_id not in related_refs
+    ):
+        return False
+    if (
+        focus_ref_id
+        and focus_ref_id not in sample.focus_refs
+        and focus_ref_id not in related_refs
+    ):
+        return False
+    return True
 
 
 def _clock_domain(raw: Any, default: ClockDomain) -> ClockDomain:

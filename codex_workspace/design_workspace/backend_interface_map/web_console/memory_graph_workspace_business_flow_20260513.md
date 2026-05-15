@@ -1168,6 +1168,162 @@ Core backend reality:
 | Intent boundary | `IntentEventBoundaryHandler` can open/close events, attach high-attention Nodes, optional simple decay, and list cross-event channels. | Runtime Flow owns collaboration state; Memory/L2-B pages may filter/visualize event subgraphs. |
 | Graphiti bridge | L2-B can preload/enrich/archive episodes through Graphiti; Web Graphiti subgraph export currently goes through L1.5 observations. | Graphiti search-to-subgraph should remain read/preview/export-through-L1.5, not FalkorDB direct mutation. |
 
+2026-05-15 App/Web policy clarification:
+
+- Do not solve IntentWorkspace/L2-B linkage by adding `WorkspaceNodeKind` or
+  making IntentWorkspace an L1.5 bucket. `NodeKind` stays semantic; workspace
+  membership, staged refs, source-pool state, attention/buff state, and
+  promotion policy are overlays or `source_meta`/`meta` until they deserve
+  typed models.
+- New candidate CORE-013 tracks the missing graph-link policy: per ref/source
+  item, choose workspace-only, pointer Node, isolated compartment, promotion to
+  main graph, or connect-by-rule. Web should render these as receipts and
+  filters while the backend keeps rustworkx as topology plus bounded rewrite
+  rules.
+- 2026-05-15 user clarification extends CORE-013 into a planned
+  graph-rewrite/transform/incremental-update policy. One-click import must be
+  able to choose main graph, isolated/foldable subgraph, workspace-only, or
+  connect-by-rule. Operators should be able to wrap selected Nodes or clusters
+  into a named subgraph, fold it, compare/aggregate it with another subgraph
+  such as a Calendar source slice, draft cross-subgraph links, and still choose
+  "send selected context to LLM" when graph mutation is not useful.
+
+Research / architecture gate for WEB-016:
+
+- Required source readback before implementation: `parrot-cursor-skill-bridge`,
+  `dsg-rustworkx-master`, `dsg-l2b-node-organization-options`,
+  `dsg-l1-5-l2a-conceptgraph-distilled`, `dsg-attention-schema-papers`,
+  Graphiti skill, and current `src/parrot/dsg/l2b_*` / `l1_5` code.
+- Key constraint from RustWorkX skill: topology is the skeleton; high-frequency
+  attention, buff, decay, and workspace activation belong to payload/overlay
+  state. Only real node/edge insertion/removal should mutate topology.
+- Key constraint from attention skills: avoid whole-graph attention by default;
+  prefer bounded ego-subgraphs, WCC/cluster overlays, and explicit call limits
+  for subgraph matching.
+- Key product constraint: graph analysis is valuable only when it gives a
+  stable audit trail, local neighborhood recall, health metrics, or reusable
+  import/link decisions. For broad semantic judgment, selected subgraph context
+  should be sent to an LLM instead of forcing a graph transform.
+
+WEB-016 first design vocabulary:
+
+| Concept | Meaning | First action |
+|:--|:--|:--|
+| Import destination | Where a source item lands: workspace-only, pointer, isolated compartment, main graph, or connect-by-rule. | Add receipt fields before real writes. |
+| Foldable subgraph overlay | Named visual/semantic wrapper over existing Node UUIDs. | Store as overlay, not `NodeKind`. |
+| Graph transform | Operator-audited operation such as wrap, aggregate, compare, split, promote, tombstone, or draft links. | Dry-run first; bounded affected set. |
+| Incremental update | Recompute only affected ego-subgraph and emit node/edge/subgraph deltas. | Reuse Memory changed-since vocabulary. |
+| Analysis preset | WCC/orphan/stale/degree/centrality/ego activation/PPR/VF2-style check. | Document when useful vs LLM. |
+
+WEB-016 research gate result (2026-05-15):
+
+Owner chat: Web Console
+Status: first_pass_complete
+Category: architecture gate / CORE-013 candidate preparation
+Scope: L2-B graph rewrite, L1.5 import destination policy, subgraph overlays,
+incremental memory deltas, and graph-analysis presets.
+Source readback: `parrot-cursor-skill-bridge`, `dsg-rustworkx-master`,
+`dsg-l2b-node-organization-options`,
+`dsg-l1-5-l2a-conceptgraph-distilled`,
+`dsg-attention-schema-papers`, plus current code in
+`src/parrot/dsg/l2b_types.py`, `src/parrot/dsg/l2b_graph.py`,
+`src/parrot/dsg/l2b/views.py`, `src/parrot/dsg/l2b/clustering.py`,
+`src/parrot/dsg/l2b/compartments.py`, `src/parrot/dsg/l1_5/pool.py`,
+`src/parrot/web_console/memory_live_state.py`, and
+`web/console_app/src/graphModel.ts`.
+
+Existing backend capability readback:
+
+| Area | Current implementation | Design consequence |
+|:--|:--|:--|
+| Topology owner | `L2BGraph` owns a RustWorkX `PyDiGraph` and a stable business `uuid -> rx_index` map. | Never expose RustWorkX integer indexes in Web/Core DTOs; use UUIDs plus receipts. |
+| Node semantics | `NodeKind` is intentionally small: object/surface/zone/person/event/photo. Source-specific extension lives in `source`, `source_meta`, and `meta`. | Do not add `WorkspaceNodeKind` for IntentWorkspace activation or pool membership. Use overlays and typed source-meta candidates only after fields stabilize. |
+| Edge payload | `SemanticEdge` already carries kind, strength, source, created_at, and free-form meta. Connect/update/delete exist by endpoints plus optional kind/source filters. | Edge UI can support edit/delete now, but exact parallel-edge surgery needs a future stable edge id in meta or a CORE-013/CORE-006 candidate. |
+| Compartments/views | Bucket/event/scene/location/kind are lazy filters and cross-compartment edge tags, not separate stored graphs. | Subgraph and pool UI must not pretend every filter is a semantic graph mutation. |
+| Clustering | Connected-components clustering is read-only WCC over filtered nodes. | Clusters are safe as visual overlays; writing synthetic Cluster nodes is deferred. |
+| Attention | Bounded BFS and iterative spreading activation are read-only and capped around local neighborhoods; cross-compartment edges can be downweighted. | Use activation animation/analysis as preview/receipt data, not as silent Node rewrites. |
+| L1.5 | `L15Pool` owns admission, bucket assignment, Ref binding, scene switch, and timeline; actual Node bytes live in L2-B. | Imports from Obsidian/Google/Graphiti/manual/photo should enter through L1.5 unless explicitly preview-only. |
+| Realtime read | Memory changed-since exists as Web-only stable-signature polling over live state. | Incremental graph deltas should reuse `sequence` / `changed` vocabulary before considering SSE/WebSocket. |
+
+Algorithm tiering for the first implementation:
+
+| Tier | Suitable operations | Not suitable |
+|:--|:--|:--|
+| Online / interaction-safe | Add/update/delete Node through L1.5, endpoint-based Edge draft/update/delete, WCC cluster read, orphan/stale health, bounded ego BFS, local spreading activation preview, direct source/bucket/event filters. | Whole-graph rewrites, unbounded semantic matching, long centrality sweeps on every UI tick. |
+| Background / operator-triggered | Degree distribution, centrality/PageRank/PPR experiments, community detection, graph health snapshots, import recommendation batches. | Blocking user drag/connect interactions or silently mutating topology. |
+| Gated / offline | VF2/subgraph-isomorphism, experience matching, large source-pack dedup, bulk merge/split plans. | Running without call limits, audit receipts, or operator review. |
+
+First implementation order after this gate:
+
+1. Add Web/backend-only typed draft models for `ImportDestinationPolicy`,
+   `GraphOverlay`, `GraphRewriteDraft`, `GraphTransformReceipt`, and
+   `GraphDeltaEvent`. Keep them out of Unity/App DTOs.
+2. Add dry-run BFF routes for import destination preview, subgraph overlay
+   preview, transform preview, and graph health readout. Suggested route family:
+   `/api/l2b/graph-policy/import-draft`, `/api/l2b/subgraphs/draft`,
+   `/api/l2b/transforms/draft`, and `/api/l2b/analysis/health`.
+3. Wire Source Board import controls so Google Calendar, Obsidian source packs,
+   Graphiti subgraphs, manual Nodes, and evidence/photo refs can choose
+   workspace-only, pointer, isolated/foldable subgraph, main graph promotion, or
+   connect-by-rule.
+4. Extend the React graph model with overlay rows and graph-health badges while
+   keeping React Flow as the edit canvas and React-Force-Graph as the future
+   full-screen monitor candidate.
+5. Only after dry-run receipts and tests pass, review which CORE-013 fields are
+   stable enough for shared SSOT wording.
+
+2026-05-15 WEB-016 first backend slice:
+
+Implemented Web-only CORE-013 draft/read routes:
+
+| Endpoint | Purpose | Safety |
+|:--|:--|:--|
+| `POST /api/l2b/graph-policy/import-draft` | Preview where a source item lands: workspace-only, index pointer, isolated compartment, main graph promotion, or bounded connect-by-rule. Returns `ImportDestinationPolicy`, optional `GraphOverlay`, proposed Edge drafts, write path, and reason. | Dry-run receipt only; no L1.5/L2-B mutation and no apply route yet. |
+| `POST /api/l2b/subgraphs/draft` | Preview a foldable/isolated subgraph overlay with id, label, membership, refs, source, collapse state, and meta. | Draft/read-model only; overlay persistence is still pending. |
+| `POST /api/l2b/transforms/draft` | Preview graph operations: wrap selection, aggregate/compare subgraphs, draft cross-links, promote, split, tombstone stale cluster, or send selected context to LLM. | Draft receipt only; no whole-graph rewrite and no operator apply route yet. |
+| `GET /api/l2b/analysis/health` | Read graph health: node/edge counts, orphan count, WCC count/largest WCC, and kind/bucket/source distributions. | Read-only online-safe preset; centrality/PPR/VF2 remain future operator/offline work. |
+
+2026-05-15 WEB-016 React wiring slice:
+
+- Memory Canvas subgraph tool now calls the CORE-013 import policy,
+  subgraph-overlay, and graph-transform draft routes. It uses the current
+  selected Node/Edge context and still produces dry-run receipts only.
+- The state tool now reads `GET /api/l2b/analysis/health` and renders a compact
+  health card for Node/Edge/orphan/WCC/largest-component/tier status.
+- Graphiti Source Board now exposes import-destination policy preview before
+  Graphiti export. This is separate from `/api/graphiti/subgraph/export*`: the
+  policy receipt answers "where should this selected result land?", while the
+  export receipt answers "what L1.5 observations and Graphiti Edge drafts would
+  be created?".
+- Validation for this slice: `npm run typecheck`, `npm run build`,
+  `tests/test_web_console/test_web_console_server.py -q` (`42 passed`), browser
+  smoke on `http://127.0.0.1:7893/`, and `git diff --check` all passed. The
+  browser smoke opened L1.5 Pool and confirmed Graphiti/policy controls with no
+  console errors.
+- 2026-05-15 bugfix: `GET /api/l2b/analysis/health` is a read-only health
+  payload, not a normal receipt envelope with `data`. React now stores it as
+  graph-health state and creates a local `l2b.analysis.health` record for the
+  receipt timeline, so the record rail no longer shows an empty generic
+  `receipt`. Graphiti policy previews also preserve selected Graphiti Edge
+  provenance (`source_graphiti_uuid`, `target_graphiti_uuid`, fact/label, and
+  write policy) in draft Edge `meta`.
+
+New Web-only typed model layer: `src/parrot/web_console/graph_policy.py`
+defines `ImportDestinationPolicy`, `GraphOverlay`, `GraphRewriteDraft`,
+`GraphTransformReceipt`, and `GraphDeltaEvent`. These are implementation
+prototypes for CORE-013, not ratified shared DTOs.
+
+When to use graph analysis vs LLM:
+
+- Use graph analysis when the answer depends on local neighborhood structure,
+  provenance/ref binding, repeated import policy, stale/orphan health, bounded
+  attention spread, or an auditable operator decision.
+- Use an LLM over selected context when the task is broad narrative judgment,
+  ambiguous semantic comparison, roleplay interpretation, or a one-off
+  synthesis that does not benefit from persistent topology.
+- The UI must offer "send selected subgraph/context to LLM" beside mutation
+  actions so graph transforms stay useful rather than decorative.
+
 Important gaps:
 
 - Memory changed-since V1 exists as a Web-only polling diff route over the
@@ -1177,6 +1333,9 @@ Important gaps:
   orphan count, WCC count, centrality, PageRank, or stale-node distribution.
 - No persistent subgraph/cluster storage model yet; current subgraph UI is
   visual preview only.
+- No `GraphRewritePolicy` / workspace overlay policy yet; L1.5 pools and
+  visual subgraphs can feel identical until bounded automatic link rules and
+  promotion/isolation receipts exist.
 - No stable first-class Edge id beyond endpoint/kind/source matching.
 - No typed per-source `source_meta` models yet; the current dict extension
   surface is intentional until source-specific fields stabilize.

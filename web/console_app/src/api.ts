@@ -155,6 +155,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  l2bGraphImportDraft: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l2b/graph-policy/import-draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  l2bSubgraphDraft: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l2b/subgraphs/draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  l2bTransformDraft: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l2b/transforms/draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  l2bGraphHealth: () => json<Record<string, unknown>>("/api/l2b/analysis/health"),
   triggerDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/dsg/triggers/draft-event", {
       method: "POST",

@@ -43,6 +43,7 @@ for the same module-level decision.
 | CORE-010 | draft | web-console | `RuntimeFlowTraceReadModel`: trace/span-like read model for Intent, Plan, HITL, Blackboard, IntentWorkspace, Scheduler, Nanobot, Trigger, Message, and Graphiti commit events | Web Console first; possible Unity/App status HUD later | Runtime Flow needs a single visual read shape so operators can follow one action across modules. Fields should stay observational: `sequence`, `trace_id`, `span_id`, `parent_span_id`, `entity_kind`, `entity_id`, `op`, `status`, `source`, `writer`, `summary`, `created_at`, and redacted payload/ref links. 2026-05-15 Runtime Flow adds a Web-first need to show manual Plan import, manual Nanobot task dispatch, result destination choices (`view_only`, `return_to_goslo`, `return_to_app`), and message/trigger collaboration receipts. | Runtime observability interface addendum only after dual-lane confirmation | Prototype implemented as Web-only `/api/runtime/flow` and `/api/runtime/flow/changes`; 2026-05-14 review added Web-only `trace_id`/`payload_ref` hints, graph id hygiene, and `source`/`writer` diff-signature coverage. WEB-012.15 now implements Web-only typed schema in `parrot.web_console.runtime_flow_models`. If promoted, clarify that edge `source`/`target` are graph endpoints while event `source` is writer/system. Do not make it a Unity DTO unless the App lane confirms a compact consumer. Nanobot result-destination routing remains a candidate gap until backend state/receipt fields are implemented and reviewed. |
 | CORE-011 | draft | web-console | `RuntimeHumanGate`: human-in-the-loop approval/revision gate for Plan, trigger, message, and resume actions | Web Console first; Unity/App may later consume compact confirmations | Web needs HITL V1 for approve/reject/revise/cancel/resume before side effects. Shared fields likely include gate id, trace id, target kind/id, action kind, state, prompt summary, options, expiry, receipt id, redacted payload pointer, and maybe `plan_state` / valid-actions hints if shared consumers need state-aware UI. | Plan/Scheduler/HITL interface addendum only after dual-lane confirmation | Prototype implemented as Web-only pending/draft/apply HITL routes with dry-run receipts; 2026-05-14 review made Plan decisions state-aware and made pending gate `options` reuse the same validation policy. WEB-012.16 now serializes HITL gates/receipts through Web-only typed models and exposes `core_candidate=CORE-011` on relevant receipts. Non-Plan targets return explicit `unsupported_hitl_target`; promote only if App also renders/writes human gates, and do not claim trigger/message gates until those target kinds are implemented. |
 | CORE-012 | draft | unity-app + web-console | `TimeAlignedEvidenceRef`: shared evidence/ref shape for GOSLO Intent `identify_object`, SVA frame sampling, camera/photo mode, Focus/BBox/magnifier attention, ASR/CV samples, and L2-B/Graphiti node creation | Unity App, Web Console, Brain Intent tools, SVA/video processor, DSG/L1.5/L2-B | `identify_object` should obtain a time-aligned frame from LiveKit background video, SVA frame cache, or HTTP/storage image asset, not from camera-mode inline RPC. Focus/BBox/magnifier, ASR, and CV workers should contribute evidence with coordinates/region, pose or producer id, sample timestamp, optional storage image ref, and trigger context so GOSLO can receive compact notifications and L2-B/IntentWorkspace can create/update evidence-linked nodes or refs. | Future SVA/ECP/RefBinding interface addendum, likely linked to CORE-006 and protocol snapshot only after dual-lane review | First Web/backend slices implemented as `parrot.brain.vision.evidence` with `TimebaseStamp` / `TimeAlignedSampleRef`, `parrot.brain.vision.frame_cache` with `record_livekit_frame_bytes()`, and `parrot.brain.vision.livekit_sampler` as the Brain room-scoped low-FPS LiveKit track consumer. ECP/RPC top-level schemas stay unchanged for V1; optional stamps live in `EcpEvent.payload["timebase"]`, `EcpCommand.meta["timebase"]`, or HTTP/upload/frame metadata. Candidate fields now include `evidence_id`, `kind`, `status`, `clock_domain`, `wall_time_ms`, `monotonic_ms`, `media_time_us`, `sequence`, `estimated`, `source_id`, `asset_uri`, `asset_path`, `region`, `bbox_refs`, `focus_refs`, `related_refs`, `room_id`, `track_sid`, `participant_id`, `description`, and redacted `meta`. The Web frame-cache upload route is debug/operator-only; live Unity/LiveKit smoke, crop/VLM comparison, and App lane shared-subset review still block SSOT promotion. |
+| CORE-013 | draft | unity-app + web-console | `L2BWorkspaceGraphOverlay` / `GraphRewritePolicy`: policy layer for staged refs, workspace files, L1.5 buckets, foldable subgraphs, isolated compartments, graph transforms, incremental updates, and automatic edge/link rules | Unity App, Web Console, Brain IntentWorkspace, DSG/L1.5, DSG/L2-B, RefBinding | App/Web need a way to decide whether an IntentWorkspace ref or source-pack item stays workspace-only, becomes a lightweight L2-B pointer Node, is isolated as a compartment/subgraph, is promoted into the L2-B main graph, or connects by bounded rules. Operators also need to wrap selections/clusters as foldable subgraphs, aggregate/compare subgraphs, draft cross-subgraph links, and choose LLM analysis instead of graph mutation when appropriate. This should not overload `NodeKind` with workspace/buff states and should not make IntentWorkspace itself an L1.5 bucket. | Future DSG/L1.5/L2-B + RefBinding addendum after App/Web review | Candidate fields include `workspace_id`, `subgraph_id`, `subgraph_label`, `staged_ref_id`, `related_node_uuid`, `pool_bucket_id`, `graph_view_mode`, `linkage_policy`, `promotion_policy`, `rewrite_rule_id`, `transform_kind`, `delta_sequence`, `edge_kind`, `confidence`, `attention_delta`, `source_event_id`, `evidence_id`, `asset_ref`, and audit receipt ids. Needs a mandatory research/architecture gate using RustWorkX/L2-B/L1.5/attention/Graphiti skills plus UI receipts before DTO/SSOT promotion. |
 
 ## 2026-05-15 Candidate Implementation Notes
 
@@ -165,6 +166,53 @@ for the same module-level decision.
   envelope-time fallback. Focused validation for timebase/frame/photo/snapshot/
   attention/Web-route/identify chains passed (`58 passed`). Shared promotion
   still waits for live screen-share smoke and App lane review.
+- CORE-012: 2026-05-15 bugfix pass adds ref-anchored evidence resolution for
+  BBox/magnifier/focus tools. `resolve_identify_evidence()` now prefers a
+  stored asset explicitly linked by `bbox_ref_id` / `focus_ref_id`; if no asset
+  is linked yet, it uses the focus sample time to choose the nearest stored
+  frame instead of defaulting to the room's newest unrelated frame. Follow-up
+  review fix: when the requested BBox/Focus ref is missing entirely and no
+  explicit `target_time_ms` exists, the resolver records a pending
+  focus-linked evidence request and returns no sample. This keeps BBox/Mag
+  analysis tied to the user's selected region while still avoiding the old
+  inline snapshot RPC path.
+- CORE-013: 2026-05-15 design intake records that L2-B, L1.5, and
+  IntentWorkspace need a graph-link policy layer. Keep semantic `NodeKind`
+  separate from workspace/buff/lifecycle overlays; use L1.5 for admission and
+  ref health, IntentWorkspace for rich working payloads, and bounded rustworkx
+  rewrite rules for automatic edges, isolated compartments, and main-graph
+  promotion. This is only a candidate until App/Web confirm the read/write
+  fields and receipts.
+- CORE-013: 2026-05-15 continuation adds the graph-transform and incremental
+  update scope. Planned operations include import destination selection,
+  foldable subgraph overlays, wrap-selection-as-subgraph,
+  aggregate/compare-subgraphs, draft cross-subgraph links, promote/merge into
+  main graph, split/tombstone stale clusters, and bounded ego-subgraph deltas.
+  Before any implementation or DTO promotion, run the documented
+  RustWorkX/L2-B/L1.5/attention/Graphiti research gate and state when graph
+  analysis is more useful than simply sending selected context to an LLM.
+- CORE-013: 2026-05-15 research gate first pass is complete. Current code
+  already provides the canonical RustWorkX topology, stable UUID mapping,
+  endpoint/kind/source Edge surgery, lazy compartment views, read-only WCC
+  clustering, bounded activation strategies, L1.5 admission/ref ownership, and
+  Web-only changed-since polling. The missing shared surface is therefore a
+  policy/read-model layer, not new semantic Node kinds: first prototype
+  Web/backend-only `ImportDestinationPolicy`, `GraphOverlay`,
+  `GraphRewriteDraft`, `GraphTransformReceipt`, and `GraphDeltaEvent` with
+  dry-run receipts. Keep CORE-013 in draft until typed schema, route tests,
+  UI receipts, and App/Web review prove which fields deserve SSOT promotion.
+- CORE-013: 2026-05-15 first implementation slice adds Web-only typed models
+  in `parrot.web_console.graph_policy` and draft/read routes:
+  `POST /api/l2b/graph-policy/import-draft`,
+  `POST /api/l2b/subgraphs/draft`,
+  `POST /api/l2b/transforms/draft`, and
+  `GET /api/l2b/analysis/health`. These routes deliberately have no apply
+  path and do not mutate L1.5/L2-B; they are candidate receipts for UI review.
+- CORE-013: 2026-05-15 React wiring slice exposes the draft routes in Memory
+  Canvas and Graphiti Source Board: operators can preview import destination,
+  foldable overlay, graph transform, and graph health receipts before export or
+  mutation. This is still Web-only review surface; no shared DTO or App/Unity
+  interface field is promoted by this slice.
 
 ## Trigger Protocol Audit Notes
 

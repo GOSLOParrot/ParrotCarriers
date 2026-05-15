@@ -763,3 +763,56 @@ Latest verification:
   including cache-root photo asset safety. `npm run typecheck`,
   `npm run build`, in-app browser reload smoke, and frontend/backend secret
   scan passed.
+
+## 2026-05-15 CORE-013 Graphiti / Source Board Policy Wiring
+
+Completed:
+
+- Graphiti Source Board now has an import-destination selector and a policy
+  preview button wired to `POST /api/l2b/graph-policy/import-draft`.
+- The policy preview uses selected Graphiti hits as `item_ids`, includes
+  bounded Graphiti Edge intent as proposed Edge drafts, and stays separate from
+  the existing Graphiti export/export-draft path.
+- Memory Canvas also exposes CORE-013 policy, overlay, transform, and health
+  previews, so Source Board imports and direct graph operations share the same
+  candidate vocabulary.
+
+Verification:
+
+- `npm run typecheck` -> passed.
+- `npm run build` -> passed and refreshed `web/console_dist`.
+- `.venv\Scripts\python.exe -m pytest tests\test_web_console\test_web_console_server.py -q`
+  -> 42 passed.
+- In-app browser smoke on `http://127.0.0.1:7893/`: opened L1.5 Pool, confirmed
+  Graphiti and policy controls exist, and found zero console errors.
+
+Remaining:
+
+- Real Graphiti/FalkorDB data and real L1.5 import smoke still need operator
+  credentials/service readiness.
+- Full-screen L2-B renderer and persistent overlay/fold state remain WEB-013 /
+  WEB-016 follow-ups.
+
+## 2026-05-15 CORE-013 UI Bugfix Pass
+
+Fixed:
+
+- `GET /api/l2b/analysis/health` returns a read-only health payload, not a
+  receipt envelope with `data`. The React state tool now stores that payload
+  directly and emits a local `l2b.analysis.health` record for the timeline,
+  avoiding an empty generic `receipt` row.
+- Graphiti policy preview Edge drafts now retain selected Graphiti provenance in
+  draft Edge `meta`: source/target Graphiti UUIDs, hit UUID, label/fact, and
+  write policy.
+
+Verification:
+
+- `npm run typecheck` -> passed.
+- `npm run build` -> passed and refreshed `web/console_dist`.
+- `.venv\Scripts\python.exe -m py_compile src\parrot\web_console\graph_policy.py`
+  -> passed.
+- `.venv\Scripts\python.exe -m pytest tests\test_web_console\test_web_console_server.py -q`
+  -> 42 passed, including the new Graphiti provenance assertion.
+- In-app browser smoke clicked `状态颜色` -> `Refresh health`; graph-health UI
+  refreshed, no empty generic `receipt` label appeared, and console errors
+  stayed at zero.

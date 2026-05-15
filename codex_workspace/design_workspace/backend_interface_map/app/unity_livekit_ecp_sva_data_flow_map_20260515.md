@@ -227,6 +227,31 @@ as `photo_id`, `captured_at`, route/source, pose, and related Focus/BBox refs.
   then an appropriate ECP/Ref/L1.5/L2-B upward channel into GOSLO. Do not invent
   a one-off RPC payload inside homepage UI.
 
+### BBox / Magnifier Evidence Tool Contract
+
+2026-05-15 App/Web design intake:
+
+- BBox and magnifier are UI evidence tools. They should emit small metadata
+  packets and upload optional rendered/cropped images through HTTP/storage; they
+  should not create a special App DTO that mutates L2-B directly.
+- The minimum metadata packet should include tool kind, local tool id,
+  `bbox_ref_id` or `focus_ref_id`, region coordinates, coordinate space,
+  optional camera/pose info, optional `payload.timebase`, and the source UI
+  surface. Image bytes are always out-of-band.
+- Backend evidence resolution now treats `bbox_ref_id` / `focus_ref_id` as
+  anchors. If a matching stored asset exists, it is preferred over the room's
+  latest unrelated video frame; otherwise the focus event's sample time is used
+  to find the nearest stored frame. This protects MAG/BBox from analyzing the
+  wrong moment.
+- The upward path is layered: ECP/ref evidence -> Temporal Evidence Ledger ->
+  attention threshold and blackboard hint -> optional IntentWorkspace staged
+  ref -> optional C3/C4 GOSLO awareness delivery according to session policy.
+- `IntentWorkspace` is passive working-set state unless a bridge injects it.
+  Placing a ref there is not the same as interrupting GOSLO. Strong notification
+  still requires an explicit awareness/trigger delivery level.
+- Unity App owns touch/AR affordances and animation; backend owns evidence
+  alignment, trigger policy, graph-link receipts, and VLM/search work.
+
 ### Phone Lifecycle / Audio Route
 
 Current split:

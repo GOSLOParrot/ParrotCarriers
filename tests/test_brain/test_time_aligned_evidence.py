@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import time
 from types import SimpleNamespace
 
 import py_trees
@@ -186,6 +187,108 @@ def test_identify_evidence_prefers_ready_video_frame_before_image_asset() -> Non
 
     assert resolved == frame
     assert resolved != image
+
+
+def test_identify_evidence_prefers_bbox_ref_asset_over_unrelated_frame() -> None:
+    ledger = get_evidence_ledger()
+    ledger.reset_for_tests()
+    now_ms = int(time.time() * 1000)
+
+    unrelated_frame = ledger.record_sample(
+        kind=EvidenceKind.VIDEO_FRAME,
+        status=EvidenceStatus.READY,
+        timebase=TimebaseStamp(
+            clock_domain=ClockDomain.LIVEKIT_TRACK,
+            wall_time_ms=now_ms,
+            source_id="room-track",
+        ),
+        asset_path="data/frame-cache/room/latest.jpg",
+    )
+    focused_asset = ledger.record_sample(
+        kind=EvidenceKind.IMAGE_ASSET,
+        status=EvidenceStatus.READY,
+        timebase=TimebaseStamp(
+            clock_domain=ClockDomain.UNITY,
+            wall_time_ms=now_ms - 5_000,
+            source_id="bbox-tool",
+        ),
+        asset_path="data/photos/focused-region.jpg",
+        bbox_refs=("bbox-red-mug",),
+    )
+
+    resolved = asyncio.run(resolve_identify_evidence(bbox_ref_id="bbox-red-mug"))
+
+    assert resolved == focused_asset
+    assert resolved != unrelated_frame
+
+
+def test_identify_evidence_uses_bbox_anchor_time_when_asset_is_not_linked() -> None:
+    ledger = get_evidence_ledger()
+    ledger.reset_for_tests()
+    now_ms = int(time.time() * 1000)
+
+    unrelated_frame = ledger.record_sample(
+        kind=EvidenceKind.VIDEO_FRAME,
+        status=EvidenceStatus.READY,
+        timebase=TimebaseStamp(
+            clock_domain=ClockDomain.LIVEKIT_TRACK,
+            wall_time_ms=now_ms,
+            source_id="room-track",
+        ),
+        asset_path="data/frame-cache/room/latest.jpg",
+    )
+    anchor = ledger.record_sample(
+        kind=EvidenceKind.BBOX_FOCUS,
+        status=EvidenceStatus.READY,
+        timebase=TimebaseStamp(
+            clock_domain=ClockDomain.UNITY,
+            wall_time_ms=now_ms - 9_000,
+            source_id="bbox-tool",
+        ),
+        bbox_refs=("bbox-blue-mug",),
+        description="user boxed the blue mug",
+    )
+    nearby_frame = ledger.record_sample(
+        kind=EvidenceKind.VIDEO_FRAME,
+        status=EvidenceStatus.READY,
+        timebase=TimebaseStamp(
+            clock_domain=ClockDomain.LIVEKIT_TRACK,
+            wall_time_ms=anchor.timebase.wall_time_ms + 80,
+            source_id="room-track",
+        ),
+        asset_path="data/frame-cache/room/near-bbox.jpg",
+    )
+
+    resolved = asyncio.run(resolve_identify_evidence(bbox_ref_id="bbox-blue-mug"))
+
+    assert resolved == nearby_frame
+    assert resolved != unrelated_frame
+
+
+def test_identify_evidence_missing_bbox_ref_does_not_use_unrelated_latest_frame() -> None:
+    ledger = get_evidence_ledger()
+    ledger.reset_for_tests()
+    now_ms = int(time.time() * 1000)
+
+    unrelated_frame = ledger.record_sample(
+        kind=EvidenceKind.VIDEO_FRAME,
+        status=EvidenceStatus.READY,
+        timebase=TimebaseStamp(
+            clock_domain=ClockDomain.LIVEKIT_TRACK,
+            wall_time_ms=now_ms,
+            source_id="room-track",
+        ),
+        asset_path="data/frame-cache/room/latest.jpg",
+    )
+
+    resolved = asyncio.run(resolve_identify_evidence(bbox_ref_id="missing-bbox"))
+    requests = ledger.timeline(kind=EvidenceKind.EVIDENCE_REQUEST)
+
+    assert resolved is None
+    assert requests
+    assert requests[0] != unrelated_frame
+    assert requests[0].bbox_refs == ("missing-bbox",)
+    assert requests[0].meta["missing_focus_anchor"] is True
 
 
 def test_frame_cache_records_livekit_frame_as_video_evidence(tmp_path) -> None:

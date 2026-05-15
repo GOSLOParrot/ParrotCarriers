@@ -121,6 +121,23 @@ const EDGE_KIND_OPTIONS = [
 ];
 
 const NODE_KIND_OPTIONS = ["object", "surface", "zone", "person", "event", "photo"];
+const GRAPH_IMPORT_DESTINATIONS = [
+  "workspace_only",
+  "index_pointer",
+  "isolated_compartment",
+  "promote_to_main_graph",
+  "connect_by_rule"
+];
+const GRAPH_TRANSFORM_OPTIONS = [
+  "wrap_selection",
+  "aggregate_subgraphs",
+  "compare_subgraphs",
+  "draft_cross_links",
+  "promote_to_main_graph",
+  "split_subgraph",
+  "tombstone_stale_cluster",
+  "send_context_to_llm"
+];
 
 const memoryNodeTypes: NodeTypes = {
   memory: MemoryNodeCard
@@ -187,6 +204,14 @@ const dict = {
     useAsEndpoints: "Use endpoints",
     addTagDraft: "Tag preview",
     createSubgraph: "New subgraph",
+    importDestination: "Import destination",
+    graphPolicy: "Graph policy",
+    previewPolicy: "Preview policy",
+    graphTransform: "Graph transform",
+    previewTransform: "Preview transform",
+    graphHealth: "Graph health",
+    refreshHealth: "Refresh health",
+    overlayDraft: "Overlay preview",
     statusColors: "Status color overlay",
     messageCheck: "Message Check",
     messagePush: "Message Push",
@@ -643,6 +668,9 @@ function MemoryGraphWorkspace({
   const [tagText, setTagText] = useState("");
   const [filterKind, setFilterKind] = useState("all");
   const [subgraphLabel, setSubgraphLabel] = useState("Work subgraph");
+  const [graphDestination, setGraphDestination] = useState("isolated_compartment");
+  const [graphTransformKind, setGraphTransformKind] = useState("wrap_selection");
+  const [graphHealth, setGraphHealth] = useState<Record<string, unknown> | null>(null);
   const [stateColors, setStateColors] = useState(true);
   const [manualPositions, setManualPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<MemoryNodeData> | null>(null);
@@ -1105,22 +1133,99 @@ function MemoryGraphWorkspace({
     }
   };
 
-  const createSubgraphPreview = () => {
+  const policyNodeSelection = () => uniqueStrings([
+    selectedNodeId,
+    edgeFrom,
+    edgeTo
+  ]).filter((id) => visibleNodeIds.has(id)).slice(0, 24);
+
+  const selectedRefIds = () => selectedNodeRefs
+    .map((row) => row.ref_id || row.id)
+    .filter(Boolean)
+    .slice(0, 24);
+
+  const draftImportPolicy = async () => {
+    const node_uuids = policyNodeSelection();
+    try {
+      pushReceipt(await api.l2bGraphImportDraft({
+        destination: graphDestination,
+        source_kind: "memory_canvas",
+        source_id: selectedNodeId || selectedEdgeId || "current_view",
+        workspace_id: "memory_graph",
+        subgraph_label: subgraphLabel,
+        node_uuids,
+        ref_ids: selectedRefIds(),
+        proposed_edges: edgeFrom && edgeTo && edgeFrom !== edgeTo
+          ? [{ source: edgeFrom, target: edgeTo, kind: edgeKind, strength: Number(edgeStrength) || 0.5 }]
+          : [],
+        dry_run: true,
+        operator_mode: false
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("l2b.graph_policy.import_draft", exc, { destination: graphDestination }));
+    }
+  };
+
+  const createSubgraphPreview = async () => {
     const label = subgraphLabel.trim() || "Work subgraph";
     const uuid = makeDraftId("subgraph");
+    const nodeSelection = policyNodeSelection();
     const nodeSource = {
       uuid,
       label,
       kind: "subgraph",
       preview: true,
       draftable: false,
-      description: "Visual grouping box. Backend subgraph persistence is a later operator-gated route.",
+      description: "Visual grouping box. Backend overlay persistence is a later operator-gated route.",
       tags: ["subgraph", "view"]
     };
-    setPreviewNodes((rows) => [...rows, nodeSource]);
-    setManualPositions((current) => ({ ...current, [uuid]: { x: 220, y: 180 } }));
-    setSelected({ selection_type: "node", ...nodeSource });
-    pushReceipt(localReceipt("l2b.subgraph.preview", true, { uuid, label, canvas_preview: true }));
+    try {
+      const receipt = await api.l2bSubgraphDraft({
+        subgraph_id: uuid,
+        label,
+        node_uuids: nodeSelection,
+        ref_ids: selectedRefIds(),
+        source_kind: "memory_canvas",
+        dry_run: true,
+        operator_mode: false
+      });
+      if (receipt.success !== false) {
+        setPreviewNodes((rows) => [...rows, nodeSource]);
+        setManualPositions((current) => ({ ...current, [uuid]: { x: 220, y: 180 } }));
+        setSelected({ selection_type: "node", ...nodeSource });
+      }
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("l2b.subgraph.draft", exc, { label }));
+    }
+  };
+
+  const draftGraphTransform = async () => {
+    try {
+      pushReceipt(await api.l2bTransformDraft({
+        transform_kind: graphTransformKind,
+        node_uuids: policyNodeSelection(),
+        subgraph_ids: selectedNodeId && String(selected?.kind || "") === "subgraph" ? [selectedNodeId] : [],
+        label: subgraphLabel,
+        proposed_edges: edgeFrom && edgeTo && edgeFrom !== edgeTo
+          ? [{ source: edgeFrom, target: edgeTo, kind: edgeKind, strength: Number(edgeStrength) || 0.5 }]
+          : [],
+        dry_run: true,
+        operator_mode: false
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("l2b.transform.draft", exc, { transform_kind: graphTransformKind }));
+    }
+  };
+
+  const refreshGraphHealth = async () => {
+    try {
+      const health = await api.l2bGraphHealth();
+      setGraphHealth(health);
+      pushReceipt(localReceipt("l2b.analysis.health", true, { health }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("l2b.analysis.health", exc));
+    }
   };
 
   const draftTagForSelection = () => {
@@ -1239,11 +1344,19 @@ function MemoryGraphWorkspace({
               setStateColors={setStateColors}
               subgraphLabel={subgraphLabel}
               setSubgraphLabel={setSubgraphLabel}
+              graphDestination={graphDestination}
+              setGraphDestination={setGraphDestination}
+              graphTransformKind={graphTransformKind}
+              setGraphTransformKind={setGraphTransformKind}
+              graphHealth={graphHealth}
               onDraftNode={() => void draftNode()}
               onDraftEdge={() => void draftEdgeBetween(edgeFrom, edgeTo, "toolbar")}
               onUpdateEdge={() => void updateSelectedEdgeDraft()}
               onDeleteEdge={() => void deleteSelectedEdgeDraft()}
-              onCreateSubgraph={createSubgraphPreview}
+              onDraftImportPolicy={() => void draftImportPolicy()}
+              onCreateSubgraph={() => void createSubgraphPreview()}
+              onDraftTransform={() => void draftGraphTransform()}
+              onRefreshHealth={() => void refreshGraphHealth()}
               onDraftTag={draftTagForSelection}
               poolHealth={poolHealth}
               buckets={buckets}
@@ -1370,11 +1483,19 @@ function MemoryToolPanel({
   setStateColors,
   subgraphLabel,
   setSubgraphLabel,
+  graphDestination,
+  setGraphDestination,
+  graphTransformKind,
+  setGraphTransformKind,
+  graphHealth,
   onDraftNode,
   onDraftEdge,
   onUpdateEdge,
   onDeleteEdge,
+  onDraftImportPolicy,
   onCreateSubgraph,
+  onDraftTransform,
+  onRefreshHealth,
   onDraftTag,
   poolHealth,
   buckets,
@@ -1407,11 +1528,19 @@ function MemoryToolPanel({
   setStateColors: (value: boolean) => void;
   subgraphLabel: string;
   setSubgraphLabel: (value: string) => void;
+  graphDestination: string;
+  setGraphDestination: (value: string) => void;
+  graphTransformKind: string;
+  setGraphTransformKind: (value: string) => void;
+  graphHealth: Record<string, unknown> | null;
   onDraftNode: () => void;
   onDraftEdge: () => void;
   onUpdateEdge: () => void;
   onDeleteEdge: () => void;
+  onDraftImportPolicy: () => void;
   onCreateSubgraph: () => void;
+  onDraftTransform: () => void;
+  onRefreshHealth: () => void;
   onDraftTag: () => void;
   poolHealth: Record<string, unknown>;
   buckets: Array<Record<string, unknown>>;
@@ -1455,7 +1584,23 @@ function MemoryToolPanel({
       <section className="tool-panel">
         <ToolPanelHead icon={<Layers size={16} />} title={t.subgraph} />
         <label><span>{t.nodeLabel}</span><input value={subgraphLabel} onChange={(event) => setSubgraphLabel(event.target.value)} /></label>
-        <button className="button primary" onClick={onCreateSubgraph}><Layers size={16} /> {t.createSubgraph}</button>
+        <label>
+          <span>{t.importDestination}</span>
+          <select value={graphDestination} onChange={(event) => setGraphDestination(event.target.value)}>
+            {GRAPH_IMPORT_DESTINATIONS.map((destination) => <option key={destination} value={destination}>{destination}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>{t.graphTransform}</span>
+          <select value={graphTransformKind} onChange={(event) => setGraphTransformKind(event.target.value)}>
+            {GRAPH_TRANSFORM_OPTIONS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
+          </select>
+        </label>
+        <div className="button-row">
+          <button className="button" onClick={onDraftImportPolicy}><Workflow size={16} /> {t.previewPolicy}</button>
+          <button className="button primary" onClick={onCreateSubgraph}><Layers size={16} /> {t.overlayDraft}</button>
+          <button className="button" onClick={onDraftTransform}><Activity size={16} /> {t.previewTransform}</button>
+        </div>
       </section>
     );
   }
@@ -1488,6 +1633,13 @@ function MemoryToolPanel({
           <span className="legend-dot confirmed" /> confirmed
           <span className="legend-dot tentative" /> tentative/expected
           <span className="legend-dot alert" /> alert
+        </div>
+        <div className="graph-health-card">
+          <div className="graph-health-head">
+            <strong>{t.graphHealth}</strong>
+            <button className="button small" onClick={onRefreshHealth}><RefreshCw size={14} /> {t.refreshHealth}</button>
+          </div>
+          {graphHealth ? <GraphHealthSummary health={graphHealth} /> : <p className="source-card-note">Read-only CORE-013 health preset.</p>}
         </div>
       </section>
     );
@@ -2679,15 +2831,16 @@ function relatedRefsForNode(
   const rows: Array<Record<string, string>> = [];
   const seen = new Set<string>();
   const pushRow = (row: Record<string, unknown>, source: string, fallbackKind = "ref") => {
-    const id = String(row.ref_id || row.photo_id || row.id || row.source_event_id || `${source}:${rows.length}`);
-    const stableKey = `${source}:${id}`;
+    const refId = String(row.ref_id || row.photo_id || row.source_event_id || row.id || `${source}:${rows.length}`);
+    const stableKey = `${source}:${refId}`;
     if (seen.has(stableKey)) return;
     seen.add(stableKey);
     const meta = recordFromUnknown(row.custom_meta || row.meta);
     const path = String(row.payload_source || row.asset_ref || row.reference_image_path || meta.asset_ref || meta.asset_path || "");
     rows.push({
       id: stableKey,
-      label: String(row.label || row.title || row.photo_id || row.ref_id || id),
+      ref_id: refId,
+      label: String(row.label || row.title || row.photo_id || row.ref_id || refId),
       kind: String(row.kind || row.role || meta.role || fallbackKind),
       source,
       path,
@@ -2794,6 +2947,27 @@ function L15HealthPanel({ health, t }: { health: Record<string, unknown>; t: Con
   );
 }
 
+function GraphHealthSummary({ health }: { health: Record<string, unknown> }) {
+  const rows = [
+    ["Node", health.node_count],
+    ["Edge", health.edge_count],
+    ["Orphan", health.orphan_count],
+    ["WCC", health.wcc_count],
+    ["Largest", health.largest_wcc_size],
+    ["Tier", health.analysis_tier]
+  ];
+  return (
+    <div className="graph-health-grid">
+      {rows.map(([label, value]) => (
+        <span key={String(label)}>
+          <small>{String(label)}</small>
+          <strong>{String(value ?? "-")}</strong>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function SourceBoard({
   liveState,
   pushReceipt,
@@ -2870,6 +3044,7 @@ function GraphitiSourceCard({
   const [exportObservations, setExportObservations] = useState<Array<Record<string, unknown>>>([]);
   const [edgeDrafts, setEdgeDrafts] = useState<Array<Record<string, unknown>>>([]);
   const [edgePolicy, setEdgePolicy] = useState("");
+  const [destination, setDestination] = useState("isolated_compartment");
   const selectedHits = useMemo(
     () => hits.filter((hit, index) => selectedHitKeys.includes(graphitiHitKey(hit, index))),
     [hits, selectedHitKeys]
@@ -2957,6 +3132,43 @@ function GraphitiSourceCard({
       pushReceipt(errorReceipt("graphiti.subgraph.export", exc, { partition, query }));
     }
   };
+  const previewImportPolicy = async () => {
+    if (!selectedHits.length) {
+      pushReceipt(localReceipt("l2b.graph_policy.import_draft", false, { error: "no_hits_selected", partition, query }));
+      return;
+    }
+    try {
+      const itemIds = selectedHits.map((hit, index) => graphitiHitKey(hit, index));
+      const edgeDraftPayload = subgraphEdges
+        .filter((edge) => {
+          const hitId = String(edge.hit_id || "");
+          return itemIds.includes(hitId) || itemIds.includes(String(edge.source || "")) || itemIds.includes(String(edge.target || ""));
+        })
+        .slice(0, 24)
+        .map((edge) => ({
+          source: edge.source,
+          target: edge.target,
+          kind: edge.kind || "graphiti_fact",
+          source_graphiti_uuid: edge.source_graphiti_uuid,
+          target_graphiti_uuid: edge.target_graphiti_uuid,
+          label: edge.label || edge.fact,
+          edge_source: "graphiti"
+        }));
+      pushReceipt(await api.l2bGraphImportDraft({
+        destination,
+        source_kind: "graphiti",
+        source_id: `${partition}:${query.trim()}`,
+        workspace_id: "memory_graph",
+        subgraph_label: query.trim() || partition,
+        item_ids: itemIds,
+        proposed_edges: edgeDraftPayload,
+        dry_run: true,
+        operator_mode: false
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("l2b.graph_policy.import_draft", exc, { partition, query, destination }));
+    }
+  };
 
   return (
     <article className="source-card graphiti-source-card">
@@ -2988,9 +3200,16 @@ function GraphitiSourceCard({
           onChange={(event) => setLimit(Math.max(1, Math.min(20, Number(event.target.value) || 1)))}
         />
       </label>
+      <label>
+        <span>{t.importDestination}</span>
+        <select value={destination} onChange={(event) => setDestination(event.target.value)}>
+          {GRAPH_IMPORT_DESTINATIONS.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+      </label>
       <div className="button-row">
         <button className="button primary" onClick={() => void search()}><Search size={16} /> {t.searchGraphiti}</button>
         <button className="button" onClick={() => onPreview(selectedPreview())} disabled={!selectedHits.length}><GitBranch size={16} /> {t.previewOnCanvas}</button>
+        <button className="button" onClick={() => void previewImportPolicy()} disabled={!selectedHits.length}><Workflow size={16} /> {t.previewPolicy}</button>
         <button className="button" onClick={() => void exportDraft()} disabled={!selectedHits.length}><UploadCloud size={16} /> {t.exportSubgraphDraft}</button>
         <button className="button ghost" onClick={() => void exportDryRun()} disabled={!selectedHits.length}><ShieldCheck size={16} /> {t.applyExportDryRun}</button>
       </div>
@@ -3832,6 +4051,18 @@ function recordArrayFrom(source: Record<string, unknown>, key: string): Array<Re
   const raw = source[key];
   if (!Array.isArray(raw)) return [];
   return raw.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  values.forEach((value) => {
+    const text = String(value || "").trim();
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    result.push(text);
+  });
+  return result;
 }
 
 function graphitiHitKey(hit: Record<string, unknown>, index: number): string {

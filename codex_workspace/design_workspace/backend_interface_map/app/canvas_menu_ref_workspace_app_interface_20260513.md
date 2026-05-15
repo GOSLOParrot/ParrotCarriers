@@ -174,3 +174,80 @@ Related TODO: APP-004, APP-015
   saves, RoomSetting load/new/save/apply, selector lists, and larger read
   models. These belong to the App HTTP facade or a future paged HTTP read
   model.
+
+## Slice: 2026-05-15 IntentWorkspace / L2-B Graph-Link Policy Intake
+
+Owner chat: Unity App + Web Console coordination
+Status: candidate policy, not App DTO
+Related TODO: APP-006, APP-015.29
+Core candidate: CORE-006, CORE-008, CORE-012, CORE-013
+
+### A. Design Conclusion
+
+The current best model is a canonical L2-B semantic graph plus overlays, not a
+new `WorkspaceNodeKind` subclass and not "IntentWorkspace is an L1.5 bucket."
+
+- `NodeKind` should answer what the thing is: object, person, event, photo,
+  zone, etc.
+- L1.5 should answer how an observation/ref is admitted, bucketed, refreshed,
+  or rejected before L2-B.
+- `IntentWorkspace` should hold rich/heavy working payloads, staged files,
+  temporary plans, and refs that GOSLO may use.
+- A workspace/subgraph view should answer how the App/Web renderer groups,
+  isolates, or filters the graph.
+- Attention/buff/lifecycle should be an overlay or metadata policy, not a
+  taxonomy explosion in `NodeKind`.
+
+### B. Policy Options To Preserve
+
+Future backend policy should be able to choose per staged ref or source pack:
+
+- `workspace_only`: keep the file/ref in IntentWorkspace without L2-B write.
+- `index_pointer`: create a lightweight L2-B pointer Node with Ref binding.
+- `isolated_compartment`: keep an L2-B compartment/subgraph separated until
+  enough evidence exists.
+- `promote_to_main_graph`: merge into the canonical L2-B graph.
+- `connect_by_rule`: create/update edges through bounded graph rewrite rules.
+
+The App renderer should show these choices as receipts/state, not as permanent
+hard-coded renderer assumptions.
+
+### C. Why Pool And Subgraph Feel Too Similar Today
+
+The current rustworkx-backed L2-B implementation is still close to a graph
+skeleton: if no rule creates edges, a bucket, source pack, or workspace view can
+look like a disconnected subgraph. The missing capability is a reviewed graph
+rewrite/link policy that can create, update, weaken, tombstone, or remove edges
+from evidence while keeping audit receipts.
+
+Candidate graph-link rules to review later:
+
+- same Ref/source/file family;
+- temporal co-occurrence;
+- spatial proximity or shared room/scene;
+- same L1.5 bucket/source pack;
+- Graphiti entity/fact match;
+- Obsidian setting membership;
+- Calendar/person/time relation;
+- BBox/Mag/Focus attention threshold;
+- manual user-confirmed edge from App/Web board.
+
+These rules should be bounded around affected nodes and use rustworkx as the
+topology engine. High-frequency attention/decay should stay in node/edge
+payload or overlay state instead of rewriting topology every tick.
+
+2026-05-15 continuation:
+
+- Pool/import UI should eventually let the operator choose whether a source
+  pack or selected refs enter the main L2-B graph, stay workspace-only, become
+  a pointer/index Node, or land in an isolated/foldable subgraph.
+- Subgraph is a grouping/overlay decision first. A cluster or important-event
+  collection can be wrapped visually and audited without changing the semantic
+  `NodeKind` of its members.
+- "Aggregate calendar subgraph with event subgraph" should start as a
+  dry-run graph transform: compare selected subgraphs, draft candidate links,
+  show why the policy thinks they relate, and let the user choose apply,
+  discard, or send selected context to LLM for analysis.
+- Any App-visible version should show receipts and reversible state. The heavy
+  rule engine and rustworkx operations remain backend/Web policy until a shared
+  App-safe subset is reviewed.
