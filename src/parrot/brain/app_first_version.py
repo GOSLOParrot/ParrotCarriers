@@ -590,22 +590,29 @@ class AppFirstVersionFacade:
             AppToolCard(
                 tool_id=AppToolId.MAGNIFIER_FOCUS,
                 label="Magnifier",
-                state="active" if refs_metrics.get("focus_refs", 0) else "ready",
-                enabled=True,
-                summary="Visual focus helper; Unity emits focus.anchored/focus.released EcpEvents.",
-                flow=("drag_magnifier", "focus.anchored", "RefBinding focus", "threshold may react"),
-                action_endpoints=("/api/app/test/focus",),
+                state="deferred_phone_stability",
+                enabled=False,
+                summary=(
+                    "Deferred until the phone stability pass. Unity must not emit "
+                    "focus ECP from the formal homepage before the SVA/ECP evidence "
+                    "contract is refreshed."
+                ),
+                flow=("todo_phone_stability", "then_sva_ecp_evidence_contract"),
+                action_endpoints=(),
                 asset_slot="magnifier_or_telescope_placeholder",
                 metrics={"focus_refs": refs_metrics.get("focus_refs", 0)},
             ),
             AppToolCard(
                 tool_id=AppToolId.BOUNDARY_BOX,
                 label="Boundary Box",
-                state="active" if refs_metrics.get("bbox_refs", 0) else "ready",
-                enabled=True,
-                summary="Explicit attention box; Unity emits bbox.placed/bbox.removed EcpEvents.",
-                flow=("drag_box", "bbox.placed", "RefBinding bbox", "threshold may react"),
-                action_endpoints=("/api/app/test/bbox",),
+                state="deferred_phone_stability",
+                enabled=False,
+                summary=(
+                    "Deferred until the phone stability pass. Formal Unity should "
+                    "not send bbox ECP while backend BBox/magnifier evidence is being upgraded."
+                ),
+                flow=("todo_phone_stability", "then_sva_ecp_evidence_contract"),
+                action_endpoints=(),
                 asset_slot="pixel_boundary_box_placeholder",
                 metrics={"bbox_refs": refs_metrics.get("bbox_refs", 0)},
             ),

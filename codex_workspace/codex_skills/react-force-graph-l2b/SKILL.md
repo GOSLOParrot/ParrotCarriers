@@ -48,6 +48,23 @@ the full-screen L2-B monitor.
 - D3 force simulation reference:
   https://d3js.org/d3-force
 
+## 2026-05-15 Source Notes
+
+- React-Force-Graph consumes `{ nodes, links }`; node identity defaults to `id`,
+  and link endpoints default to `source` / `target`. Keep backend/Web read
+  models on stable L2-B UUIDs so renderer engines can be swapped.
+- React-Force-Graph 2D supports `nodeCanvasObject` for custom canvas node
+  painting, `nodeVal` / `nodeColor` / `nodeLabel`, link labels, link width,
+  directional arrows/particles, hover/click/drag callbacks, `centerAt`,
+  `zoom`, `d3Force`, and `d3ReheatSimulation`.
+- React Flow remains the better editor/workflow tool. Its `ConnectionMode`
+  `Loose` allows source-to-source style connections, but target-to-target is
+  still not the intended interaction; use directional handles when exact side
+  attachment matters.
+- Obsidian Graph View's durable product pattern is not "show every field":
+  global graph plus filters, colored groups, display toggles, force sliders,
+  and local graph depth. Use that pattern for L2-B monitor overlays.
+
 ## Renderer Adapter Pattern
 
 Create a component boundary before adding a second graph engine:
@@ -68,6 +85,12 @@ Keep route/API shape engine-agnostic:
   provenance/ref ids, and optional visual fields.
 - Renderer-only fields such as color, pulse, particle count, and camera target
   stay in Web view state unless promoted through a core candidate.
+
+Repo-local starter:
+
+- `web/console_app/src/graphModel.ts` converts `/api/app/live-state` L2-B
+  snapshots into an engine-neutral `L2BRenderableGraph`. It is intentionally
+  dependency-free and can feed React Flow today or React-Force-Graph later.
 
 ## Interaction Pattern
 

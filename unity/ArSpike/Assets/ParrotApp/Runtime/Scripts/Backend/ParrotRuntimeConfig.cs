@@ -14,6 +14,9 @@ namespace ParrotApp.Backend
         public string appApiSecret = "";
         public string orchestratorUrl = "";
         public string orchestratorSecret = "";
+        public string photoUploadUrl = "";
+        public string photoUploadHost = "";
+        public int photoUploadPort = 0;
     }
 
     public static class ParrotRuntimeConfig

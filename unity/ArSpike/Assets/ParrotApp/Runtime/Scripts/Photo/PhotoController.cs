@@ -48,6 +48,9 @@ namespace ParrotApp.Photo
         // ─── Inspector fields ──────────────────────────────────────────
 
         [Header("Brain Upload Server")]
+        [Tooltip("Brain photo_upload_server scheme. Editor/dev defaults to http; production can set https through photoUploadUrl.")]
+        [SerializeField] private string brainScheme = "http";
+
         [Tooltip("Brain 端 photo_upload_server 主机（Editor: 127.0.0.1；真机: Castle 公网域名/内网IP）")]
         [SerializeField] private string brainHost = "127.0.0.1";
 
@@ -95,6 +98,46 @@ namespace ParrotApp.Photo
         private readonly Dictionary<string, PendingPhoto> _pendingPhotos = new();
 
         public int PendingCount => _pendingPhotos.Count;
+        public string UploadEndpointLabel => $"{brainScheme}://{brainHost}:{brainPort}";
+        public bool IsUploadEndpointLoopback => IsLoopbackHost(brainHost);
+
+        public void ConfigureUploadEndpoint(string host, int port)
+        {
+            if (string.IsNullOrWhiteSpace(host) || port <= 0)
+                return;
+
+            string normalizedHost = host.Trim();
+            if (normalizedHost.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || normalizedHost.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TryConfigureUploadEndpoint(normalizedHost))
+                    return;
+            }
+
+            brainScheme = "http";
+            brainHost = normalizedHost.TrimEnd('/');
+            brainPort = port;
+            Debug.Log($"[PhotoController] upload endpoint configured: {UploadEndpointLabel}");
+        }
+
+        public bool TryConfigureUploadEndpoint(string endpointUrl)
+        {
+            if (string.IsNullOrWhiteSpace(endpointUrl))
+                return false;
+            if (!Uri.TryCreate(endpointUrl.Trim(), UriKind.Absolute, out var uri))
+                return false;
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            brainScheme = string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+                ? "https"
+                : "http";
+            brainHost = uri.Host;
+            brainPort = uri.IsDefaultPort ? 7889 : uri.Port;
+            Debug.Log($"[PhotoController] upload endpoint configured: {UploadEndpointLabel}");
+            return true;
+        }
 
         // ─── Lifecycle ─────────────────────────────────────────────────
 
@@ -502,7 +545,7 @@ namespace ParrotApp.Photo
         /// </summary>
         private async Task UploadAssetAsync(string photoId, byte[] fullResJpeg, string previewEventId)
         {
-            string url = $"http://{brainHost}:{brainPort}/upload/photo/{photoId}";
+            string url = $"{brainScheme}://{brainHost}:{brainPort}/upload/photo/{photoId}";
             // 4 total attempts = initial attempt + 3 retries (1s / 2s / 4s backoff)
             int[] retryDelaysMs = { 1000, 2000, 4000 };
             bool success = false;
@@ -572,6 +615,16 @@ namespace ParrotApp.Photo
             // 命名空间与 bbox_id (bb_) / focus_id (fc_) 隔离
             string g = Guid.NewGuid().ToString("N").Substring(0, 8);
             return "ph_" + g;
+        }
+
+        private static bool IsLoopbackHost(string host)
+        {
+            if (string.IsNullOrWhiteSpace(host)) return true;
+            string normalized = host.Trim().TrimEnd('/').ToLowerInvariant();
+            return normalized == "127.0.0.1"
+                   || normalized == "localhost"
+                   || normalized == "::1"
+                   || normalized == "0.0.0.0";
         }
 
         // ─── JSON helpers ─────────────────────────────────────────────

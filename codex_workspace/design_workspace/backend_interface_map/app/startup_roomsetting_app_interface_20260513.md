@@ -491,9 +491,10 @@ Interpretation:
   `agent_dispatch_active_attempted`, `agent_dispatch_active_created`,
   `agent_dispatch_active_already_present`, and `agent_dispatch_active_error`.
 - Historical status: this APP-013 blocker is superseded by the 2026-05-15
-  post-ECS-restart probe below. The newer probe closes the non-phone START
-  chain through heartbeat, while formal main-ready HUD/menu ownership remains
-  APP-015 work.
+  post-ECS-restart probes below. The newer probes close the non-phone START
+  chain through LiveKit/Brain business RPC and DataChannel delivery, while
+  Brain-side ECP ingest visibility and formal main-ready HUD/menu ownership
+  remain separate APP-015/APP-023 work.
 
 ### A6. 2026-05-15 Formal START Probe After ECS Restart
 
@@ -505,13 +506,20 @@ Verification after the user restarted ECS:
   for `ner_lineb_room`, orchestrator `/apply_room_profile` LineB prewrite,
   token-mint `/mint`, LiveKit connect, Brain `agent-*` participant presence
   without manual dispatch, Brain RPC `applyRoomProfile` business-ok, Brain RPC
-  `setAppCapabilityMode` business-ok, and `parrot.ecp.state` heartbeat publish.
-- A fresh temporary LiveKit room also spawned Brain from the Mint/LiveKit
-  dispatch path without manual server dispatch. This proves the phone-equivalent
-  no-manual-dispatch gate is no longer blocked at the connectivity layer.
-- Cleanup: active RoomSetting was restored to `default`, and temporary
-  orchestrator `runtime_config.json` was cleared back to env-backed runtime
-  selection.
+  `setAppCapabilityMode` business-ok for script-safe `SessionOnlySilent`, and
+  a follow-up `FullARCompanion` capability RPC business-ok.
+- `parrot.ecp.state` heartbeat publish succeeds at the LiveKit DataChannel
+  layer. A second observer participant received the reliable topic packet in
+  the same room, proving the sender/topic path without adding a Unity scene.
+- Current visibility gap: `/api/app/live-state` did not show
+  `session/ecp_state` for the script heartbeat. That endpoint is served by the
+  App monitor process and is not a reliable proof of Brain's process-local
+  ECP ingest. Do not claim Brain ECP ingest/main-ready complete from this
+  script until a Brain-side diagnostic or phone Unity log proves it.
+- Current selected state is intentionally left on the formal LineB route:
+  active RoomSetting `ner_lineb_room`; orchestrator runtime config file has
+  `line_b`, `lineb_ner_ja_test`, and `ner_lineb_room`. This matches the next
+  phone/App START pass and is not cleanup drift.
 
 Important caveats:
 
@@ -521,7 +529,8 @@ Important caveats:
   room probe proved Brain appears without manual dispatch.
 - This is still a non-phone script proof. It does not validate iQOO Neo9
   microphone permission, Bluetooth/SCO/A2DP routing, app switch/resume,
-  AR/video publish, or the final formal HUD/menu main-ready owner.
+  AR/video publish, Brain ECP ingest observability, or the final formal
+  HUD/menu main-ready owner.
 
 ### B. Existing Core Interfaces
 
@@ -656,8 +665,11 @@ Current completed facts:
   On mobile AR/video modes the baseline waits for `ARSessionState.SessionTracking`
   instead of accepting `Ready` / `SessionInitializing`, and clears terminal
   coroutine refs after clean or unsupported states.
-  `XRGeneralSettings` now auto-loads/runs the ARCore/ARKit/XR Simulation
-  loaders instead of leaving ARSession mounted but loaderless.
+  `XRGeneralSettings` now leaves Android, iPhone, and Standalone automatic
+  loading/running disabled. `FormalArRuntimeBootstrap` initializes XR/AR
+  manually on mobile video START before LiveKit video publish, which avoids the
+  Editor Play Mode warning where XRManagerSettings calls `StopSubsystems`
+  before initialization has completed.
 - Shutdown quit drain was fixed so exiting Play Mode after a connected room no
   longer hangs on SDK unpublish waits.
 
@@ -784,14 +796,21 @@ Config/public endpoint status:
 - Passed: RoomSetting snapshot/save/apply for `ner_lineb_room`, orchestrator
   LineB prewrite, Mint, LiveKit connect, Brain `agent-*` presence without
   manual dispatch, `applyRoomProfile` business-ok, `setAppCapabilityMode`
-  business-ok, and `parrot.ecp.state` heartbeat publish.
+  business-ok, and `parrot.ecp.state` heartbeat publish. A second observer
+  participant received the heartbeat topic, proving LiveKit DataChannel
+  delivery.
 - Fresh-room dispatch probe: a unique temporary room spawned Brain from the
   Mint/LiveKit dispatch path without manual server dispatch.
-- Cleanup: active RoomSetting was restored to `default`, and temporary
-  orchestrator runtime config was cleared.
+- State after probe: the selected RoomSetting/runtime line was intentionally
+  left on `ner_lineb_room` / `line_b` / `lineb_ner_ja_test` for the next phone
+  START pass. Temporary probe rooms were cleaned separately.
 - Caveat: Mint response exposes `agent_dispatch_requested` but not the newer
   `agent_dispatch_active_*` diagnostic fields. This is a diagnostics/deploy
   visibility gap, not a current START blocker.
+- Caveat: `/api/app/live-state` did not expose Brain-side
+  `session/ecp_state` for the script heartbeat, so Brain ingest observability
+  is still a follow-up. Do not claim formal homepage/main-ready completion from
+  this non-phone probe.
 
 RPC payload budget:
 
@@ -822,20 +841,23 @@ Homepage readiness audit:
   `127.0.0.1:8790` on the phone. Editor/dev can still set a local endpoint via
   gitignored `parrot_config.json` or the Inspector.
 - Phone config now has reachable App API and Orchestrator endpoints. A phone
-  ECS build can proceed after token-mint active dispatch is deployed and the
-  formal non-phone START chain passes Brain, RPC, heartbeat, and main-ready
-  gates. Until then it can prove RoomSetting/App HTTP, orchestrator prewrite,
-  Mint, and LiveKit join, but may still fail before Brain RPC and heartbeat.
+  ECS build can proceed to formal App verification now that the non-phone chain
+  proves RoomSetting/App HTTP, orchestrator prewrite, Mint, LiveKit join, Brain
+  presence, business-ok RPCs, and LiveKit DataChannel delivery. This still does
+  not prove formal homepage HUD/menu, Brain-side ECP ingest visibility, or
+  iQOO Neo9 mic/Bluetooth/app-switch/AR/video stability.
 - `Scene` as a user-facing RoomSetting concept should stay out of the startup
   page. The visible row is `Theme` and writes `skin_id`; spatial/environment
   baseline remains `scene_profile_id` and should be automatic.
 - `AudioRouteDetector` + `MicrophonePublisher` implement route detection,
-  sample-rate selection, and mic unpublish/republish on route changes. They are
-  not yet verified on iQOO Neo9 Bluetooth/SCO/A2DP and they do not yet publish
-  `session/audio_route_policy` to Brain.
+  sample-rate selection, and mic unpublish/republish on route changes.
+  `AudioRoutePolicyBrainReporter` now publishes compact route-policy updates to
+  Brain after LiveKit/Brain presence. This is still not verified on iQOO Neo9
+  Bluetooth/SCO/A2DP and still lacks a manual phone device picker.
 - `RoomManager.ReconnectUsingCachedCredentials()` is still an editor/debug
-  helper. Production mobile reconnect needs fresh token re-mint, bounded
-  backoff, and app-switch/network-flap ownership.
+  helper. Production mobile reconnect is owned by `LiveKitReconnectSupervisor`
+  with fresh Mint tokens, bounded backoff, Brain RPC re-sync, and heartbeat
+  rebinding; app-switch/network-flap behavior still needs iQOO Neo9 proof.
 - `AppV1SmokeReferenceUiController` remains a Smoke/reference controller. Reuse only its
   HUD/tool drawer/camera/workdesk/note/Focus/BBox interaction ideas; do not
   mount it wholesale or let its local preview/mobile-incompatible assumptions
@@ -843,3 +865,16 @@ Homepage readiness audit:
 - The next formal homepage implementation should build the accepted touch
   menu/tool drawer, persona/line-profile selector loaders, model placement, and
   phone AR/video validation on top of the existing main-ready gate reporters.
+  Use `formal_homepage_hud_menu_plan_20260515.md` as the first-slice Ref before
+  implementing HUD/menu V1. First code slice is now present:
+  `FormalHomeMenuController` renders the App HTTP canvas into a formal drawer
+  and routes workspace plus quick camera/photo-awareness/XR-hand controls
+  through `AppStartupFlowController` compact RPC wrappers only after Brain is
+  present. The loader also reads App HTTP persona and line-profile catalogs for
+  read-only selector status rows; selector edit/apply still belongs to a later
+  owner flow. Workspace tabs now pass App HTTP `layout_kind` to the startup
+  flow; `2d_workspace` applies `VoiceOnlyNoVideo` before `applyWorkspace`, which
+  pauses AR/video without disconnecting the LiveKit room or Brain session.
+  `FormalHomeHudController` surfaces startup/menu/reconnect degraded state in
+  the home status line. Generic tool cards and durable save/edit affordances
+  stay read-only until their owner App HTTP/RPC action is explicitly wired.

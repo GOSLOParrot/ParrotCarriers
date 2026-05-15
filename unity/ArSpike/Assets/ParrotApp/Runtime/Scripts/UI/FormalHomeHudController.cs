@@ -22,6 +22,9 @@ namespace ParrotApp.UI
         [SerializeField] private AppLifecycleManager lifecycleManager;
         [SerializeField] private RoomManager roomManager;
         [SerializeField] private FormalMainReadyGate mainReadyGate;
+        [SerializeField] private FormalHomeMenuLoader menuLoader;
+        [SerializeField] private LiveKitReconnectSupervisor reconnectSupervisor;
+        [SerializeField] private AudioRoutePolicyBrainReporter audioRouteReporter;
 
         private Canvas _canvas;
         private Text _statusText;
@@ -62,6 +65,9 @@ namespace ParrotApp.UI
             if (lifecycleManager == null) lifecycleManager = FindObjectOfType<AppLifecycleManager>();
             if (roomManager == null) roomManager = RoomManager.Instance ?? FindObjectOfType<RoomManager>();
             if (mainReadyGate == null) mainReadyGate = FindObjectOfType<FormalMainReadyGate>();
+            if (menuLoader == null) menuLoader = FindObjectOfType<FormalHomeMenuLoader>();
+            if (reconnectSupervisor == null) reconnectSupervisor = FindObjectOfType<LiveKitReconnectSupervisor>();
+            if (audioRouteReporter == null) audioRouteReporter = FindObjectOfType<AudioRoutePolicyBrainReporter>();
 
             if (startupFlow != null)
             {
@@ -142,7 +148,7 @@ namespace ParrotApp.UI
             panelRect.anchorMax = new Vector2(0f, 1f);
             panelRect.pivot = new Vector2(0f, 1f);
             panelRect.anchoredPosition = new Vector2(24f, -20f);
-            panelRect.sizeDelta = new Vector2(560f, 168f);
+            panelRect.sizeDelta = new Vector2(610f, 196f);
             var panelImage = panel.AddComponent<Image>();
             panelImage.color = new Color(0.08f, 0.07f, 0.06f, 0.62f);
 
@@ -164,8 +170,8 @@ namespace ParrotApp.UI
             textRect.offsetMin = new Vector2(48f, 14f);
             textRect.offsetMax = new Vector2(-18f, -14f);
             _statusText = textGo.AddComponent<Text>();
-            _statusText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            _statusText.fontSize = 19;
+            _statusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _statusText.fontSize = 18;
             _statusText.alignment = TextAnchor.UpperLeft;
             _statusText.horizontalOverflow = HorizontalWrapMode.Wrap;
             _statusText.verticalOverflow = VerticalWrapMode.Truncate;
@@ -198,13 +204,70 @@ namespace ParrotApp.UI
 
             string missing = mainReadyGate != null ? mainReadyGate.LastMissingGates : "main_ready_gate_missing";
             if (string.IsNullOrWhiteSpace(missing)) missing = "none";
-            if (missing.Length > 74) missing = missing.Substring(0, 74) + "...";
+            string alert = missing;
+            if (startupFlow != null && !string.IsNullOrWhiteSpace(startupFlow.LastError) && !ready)
+                alert = "err " + startupFlow.LastError;
+            else if (menuLoader != null && !string.IsNullOrWhiteSpace(menuLoader.LastError))
+                alert = "menu " + menuLoader.LastError;
+            else if (reconnectSupervisor != null && reconnectSupervisor.ReconnectPending)
+                alert = "reconnecting";
+            if (alert.Length > 74) alert = alert.Substring(0, 74) + "...";
 
             _statusText.text =
                 $"LK {(connected ? "on" : "off")}  Brain {(health.BrainPresent ? "on" : "wait")}  "
                 + $"Mic {(health.AudioPublished ? "on" : "wait")}  Video {(health.VideoFreshFrame ? "fresh" : "wait")}\n"
                 + $"Room {_activeConfig.room_profile_id}  Line {_activeConfig.line_id}/{_activeConfig.line_profile_id}\n"
-                + $"Home {(ready ? "ready" : "loading")}  {missing}";
+                + $"Audio {AudioRouteHudLabel()}\n"
+                + $"Home {(ready ? "ready" : "loading")}  {alert}";
+        }
+
+        private string AudioRouteHudLabel()
+        {
+            if (audioRouteReporter == null)
+                return "route unknown";
+
+            string input = ShortRoute(audioRouteReporter.LastInputRoute);
+            string output = ShortRoute(audioRouteReporter.LastOutputRoute);
+            string source = ShortRouteSource(audioRouteReporter.LastDetectionSource);
+            string suffix = audioRouteReporter.ReportPending
+                ? " pending"
+                : (!string.IsNullOrWhiteSpace(audioRouteReporter.LastReportError)
+                    ? " fail " + ShortLabel(audioRouteReporter.LastReportError, 18)
+                    : "");
+            return "in " + input + " out " + output + " src " + source + suffix;
+        }
+
+        private static string ShortRouteSource(string source)
+        {
+            if (string.Equals(source, "get_devices", StringComparison.OrdinalIgnoreCase))
+                return "devices";
+            if (string.Equals(source, "legacy_flags", StringComparison.OrdinalIgnoreCase))
+                return "legacy";
+            if (string.Equals(source, "android_error", StringComparison.OrdinalIgnoreCase))
+                return "error";
+            return ShortLabel(source, 10);
+        }
+
+        private static string ShortRoute(string route)
+        {
+            if (string.Equals(route, "system_default_microphone", StringComparison.OrdinalIgnoreCase))
+                return "system";
+            if (string.Equals(route, "bluetooth_sco", StringComparison.OrdinalIgnoreCase))
+                return "bt-sco";
+            if (string.Equals(route, "bluetooth_a2dp", StringComparison.OrdinalIgnoreCase))
+                return "bt-a2dp";
+            if (string.Equals(route, "wired_headset", StringComparison.OrdinalIgnoreCase))
+                return "wired";
+            if (string.IsNullOrWhiteSpace(route))
+                return "unknown";
+            return ShortLabel(route, 12);
+        }
+
+        private static string ShortLabel(string value, int max)
+        {
+            string text = string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
+            if (text.Length <= max) return text;
+            return text.Substring(0, Mathf.Max(1, max - 3)) + "...";
         }
     }
 }

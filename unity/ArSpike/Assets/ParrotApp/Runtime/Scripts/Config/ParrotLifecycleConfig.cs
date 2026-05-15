@@ -90,25 +90,6 @@ namespace ParrotApp.Config
         [Tooltip("FULL 档 stale 阈值（秒，严格）。see IMPL_REF.md §10")]
         [Min(0f)] public float STALE_FRAME_THRESHOLD_HIGH_TIER = 0.5f;
 
-        // ─── Snapshot & ByteStream ─────────────────────────────────────────
-
-        // see livekit-unity-lifecycle/IMPL_REF.md §10 / spike S3
-        [Header("Snapshot & ByteStream")]
-        [Tooltip("大于此 byte 数的图片走 ByteStream/SendFile，否则走 RPC。see IMPL_REF.md §10 / spike S3")]
-        [Min(1024)] public int BYTESTREAM_RPC_THRESHOLD_BYTES = 15360;
-
-        // see livekit-unity-lifecycle/IMPL_REF.md §10 / spike S3 S4
-        [Tooltip("captureSnapshot 默认宽（像素）。see IMPL_REF.md §10 / spike S3 S4")]
-        [Min(64)] public int SNAPSHOT_DEFAULT_WIDTH = 480;
-
-        // see livekit-unity-lifecycle/IMPL_REF.md §10 / spike S3 S4
-        [Tooltip("captureSnapshot 默认高（像素）。see IMPL_REF.md §10 / spike S3 S4")]
-        [Min(64)] public int SNAPSHOT_DEFAULT_HEIGHT = 270;
-
-        // see livekit-unity-lifecycle/IMPL_REF.md §10
-        [Tooltip("captureSnapshot JPEG 压缩质量（0–100）。see IMPL_REF.md §10")]
-        [Range(1, 100)] public int SNAPSHOT_JPEG_QUALITY = 75;
-
         // ─── Publish options ───────────────────────────────────────────────
 
         // see livekit-unity-lifecycle/IMPL_REF.md §10 / video-publish skill 陷阱 #15

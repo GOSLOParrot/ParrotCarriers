@@ -109,10 +109,11 @@ async def search_graphiti(
     *,
     query: str,
     partition: str = PARTITIONS.GOSLO,
-    limit: int = 5,
+    limit: Any = 5,
 ) -> GraphitiConsoleResult:
     """Search Graphiti with a scoped partition and graceful failure."""
     installed = _graphiti_core_installed()
+    selected_limit = _safe_limit(limit, default=5, maximum=20)
     if not query.strip():
         return GraphitiConsoleResult(
             action="search_graphiti",
@@ -136,13 +137,13 @@ async def search_graphiti(
             query=query.strip(),
             group_ids=[_normalize_partition(partition)],
         )
-        rows = [_serialize_search_hit(hit) for hit in list(results)[: max(1, min(limit, 20))]]
+        rows = [_serialize_search_hit(hit) for hit in list(results)[:selected_limit]]
         return GraphitiConsoleResult(
             action="search_graphiti",
             success=True,
             available=True,
             message=f"{len(rows)} result(s)",
-            data={"query": query, "partition": partition, "results": rows},
+            data={"query": query, "partition": partition, "limit": selected_limit, "results": rows},
         )
     except Exception as exc:
         return GraphitiConsoleResult(
@@ -158,14 +159,15 @@ async def search_graphiti_subgraph(
     *,
     query: str,
     partition: str = PARTITIONS.GOSLO,
-    limit: int = 8,
+    limit: Any = 8,
 ) -> dict[str, Any]:
     """Return a bounded Graphiti search slice shaped for graph renderers."""
     selected_partition = _normalize_partition(partition)
+    selected_limit = _safe_limit(limit, default=8, maximum=20)
     search = await search_graphiti(
         query=query,
         partition=selected_partition,
-        limit=max(1, min(limit, 20)),
+        limit=selected_limit,
     )
     payload = search.as_json()
     if not search.success:
@@ -186,6 +188,7 @@ async def search_graphiti_subgraph(
         "data": {
             "query": query.strip(),
             "partition": selected_partition,
+            "limit": selected_limit,
             "hits": hits,
             "subgraph": subgraph,
         },
@@ -212,9 +215,13 @@ def draft_graphiti_subgraph_export(payload: dict[str, Any] | None = None) -> dic
         _hit_to_l15_observation_draft(hit, partition=partition, index=index)
         for index, hit in enumerate(hits)
     ]
+    subgraph = _hits_to_subgraph(hits, query=str(body.get("query") or ""), partition=partition)
+    edge_drafts = _hits_to_edge_drafts(hits, partition=partition)
     warnings: list[str] = []
     if not observations:
         warnings.append("no Graphiti hits selected for export")
+    if edge_drafts:
+        warnings.append("edge_drafts are preview-only until exported nodes resolve to L2-B UUIDs")
     return _graphiti_receipt(
         action="graphiti.subgraph.export_draft",
         success=bool(observations),
@@ -225,7 +232,13 @@ def draft_graphiti_subgraph_export(payload: dict[str, Any] | None = None) -> dic
             "query": str(body.get("query") or "").strip(),
             "selected_count": len(observations),
             "observations": observations,
+            "subgraph": subgraph,
+            "edge_drafts": edge_drafts,
             "write_path": "L15Pool.admit(Observation(source=USER_EXPLICIT))",
+            "edge_write_policy": (
+                "Graphiti fact nodes enter L1.5 first; fact edges require resolved "
+                "L2-B node UUIDs before any later operator-gated edge write."
+            ),
             "warnings": warnings,
             "operator_required_for_execute": True,
         },
@@ -283,6 +296,8 @@ async def export_graphiti_subgraph(payload: dict[str, Any] | None = None) -> dic
             "selected_count": len(observations),
             "admit_outcome": _jsonable(outcome),
             "write_path": "L15Pool.admit(Observation(source=USER_EXPLICIT))",
+            "edge_drafts": draft["data"].get("edge_drafts", []),
+            "edge_write_policy": draft["data"].get("edge_write_policy", ""),
         },
     )
 
@@ -467,6 +482,41 @@ def _hits_to_subgraph(
     }
 
 
+def _hits_to_edge_drafts(
+    hits: list[dict[str, Any]],
+    *,
+    partition: str,
+) -> list[dict[str, Any]]:
+    """Describe Graphiti fact edges without pretending they are L2-B edges yet."""
+
+    edge_drafts: list[dict[str, Any]] = []
+    for index, hit in enumerate(hits[:20]):
+        source_uuid = str(hit.get("source_node_uuid") or "").strip()
+        target_uuid = str(hit.get("target_node_uuid") or "").strip()
+        if not source_uuid or not target_uuid:
+            continue
+        text = str(hit.get("text") or hit.get("summary") or hit.get("label") or "").strip()
+        graphiti_uuid = str(hit.get("uuid") or hit.get("graphiti_uuid") or "").strip()
+        edge_drafts.append(
+            {
+                "kind": "graphiti_fact",
+                "label": _label_from_text(text, fallback=f"Graphiti fact {index + 1}"),
+                "source_graphiti_uuid": source_uuid,
+                "target_graphiti_uuid": target_uuid,
+                "hit_graphiti_uuid": graphiti_uuid,
+                "strength": _safe_float(hit.get("score"), 0.5),
+                "meta": {
+                    "source_tool": "web_console.graphiti_subgraph_export",
+                    "graphiti_partition": partition,
+                    "graphiti_hit_uuid": graphiti_uuid,
+                    "fact_text": text[:800],
+                },
+                "write_policy": "requires_resolved_l2b_node_uuid",
+            }
+        )
+    return edge_drafts
+
+
 def _extract_export_hits(body: dict[str, Any]) -> list[dict[str, Any]]:
     raw = body.get("hits")
     if raw is None:
@@ -546,6 +596,13 @@ def _safe_float(value: Any, fallback: float) -> float:
         return max(0.0, min(float(value), 1.0))
     except (TypeError, ValueError):
         return fallback
+
+
+def _safe_limit(value: Any, *, default: int, maximum: int) -> int:
+    try:
+        return max(1, min(int(value), maximum))
+    except (TypeError, ValueError):
+        return default
 
 
 def _body_bool(value: Any, default: bool) -> bool:

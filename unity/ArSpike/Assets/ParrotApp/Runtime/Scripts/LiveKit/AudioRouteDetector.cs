@@ -47,6 +47,8 @@ namespace ParrotApp.LiveKit
         [SerializeField] private bool pollInEditor = false;
 
         public AudioRoutePolicy CurrentPolicy { get; private set; } = AudioRoutePolicy.Default();
+        public string LastDetectionSource { get; private set; } = "unknown";
+        public string LastDeviceSummary { get; private set; } = "";
 
         /// <summary>(oldPolicy, newPolicy)；只在 <see cref="AudioRoutePolicy.Equals"/>
         /// 判定有变化时触发，避免 polling 抖动产生空事件。</summary>
@@ -132,6 +134,12 @@ namespace ParrotApp.LiveKit
 #endif
         }
 
+        public AudioRoutePolicy RefreshCurrentPolicy(string trigger = "manual_rescan")
+        {
+            ReevaluateAndFire(string.IsNullOrWhiteSpace(trigger) ? "manual_rescan" : trigger);
+            return CurrentPolicy;
+        }
+
 #if UNITY_ANDROID && !UNITY_EDITOR
         private AudioRoutePolicy DetectAndroid()
         {
@@ -141,25 +149,161 @@ namespace ParrotApp.LiveKit
                 using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
                 using (var audioManager = activity.Call<AndroidJavaObject>("getSystemService", "audio"))
                 {
-                    bool sco = SafeBool(audioManager, "isBluetoothScoOn");
-                    bool a2dp = SafeBool(audioManager, "isBluetoothA2dpOn");
-                    bool wired = SafeBool(audioManager, "isWiredHeadsetOn");
-                    bool speakerOn = SafeBool(audioManager, "isSpeakerphoneOn");
+                    AudioRoutePolicy policy;
+                    string summary;
+                    if (TryDetectAndroidDevices(audioManager, out policy, out summary))
+                    {
+                        LastDetectionSource = "get_devices";
+                        LastDeviceSummary = summary;
+                        return policy;
+                    }
 
-                    // 输入方向蓝牙优先：mic 录音时 SCO 才是真活跃；A2DP 单独存在意味着只走输出，
-                    // 但 Android 大多数 phone scenarios 录音会切到 SCO，所以 SCO 优先级 > A2DP。
-                    if (sco) return AudioRoutePolicy.ForKind(AudioRouteKind.BluetoothSco);
-                    if (a2dp) return AudioRoutePolicy.ForKind(AudioRouteKind.BluetoothA2dp);
-                    if (wired) return AudioRoutePolicy.ForKind(AudioRouteKind.WiredHeadset);
-                    if (speakerOn) return AudioRoutePolicy.ForKind(AudioRouteKind.Speaker);
-                    return AudioRoutePolicy.ForKind(AudioRouteKind.Earpiece);
+                    LastDetectionSource = "legacy_flags";
+                    policy = DetectAndroidLegacyFlags(audioManager, out summary);
+                    LastDeviceSummary = summary;
+                    return policy;
                 }
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"[AudioRouteDetector] Android detect failed: {e.Message}");
+                LastDetectionSource = "android_error";
+                LastDeviceSummary = e.Message;
                 return AudioRoutePolicy.Default();
             }
+        }
+
+        private static AudioRoutePolicy DetectAndroidLegacyFlags(AndroidJavaObject audioManager, out string summary)
+        {
+            bool sco = SafeBool(audioManager, "isBluetoothScoOn");
+            bool a2dp = SafeBool(audioManager, "isBluetoothA2dpOn");
+            bool wired = SafeBool(audioManager, "isWiredHeadsetOn");
+            bool speakerOn = SafeBool(audioManager, "isSpeakerphoneOn");
+            summary = $"legacy:sco={sco},a2dp={a2dp},wired={wired},speaker={speakerOn}";
+
+            // Input direction first: SCO is the real Bluetooth mic path. A2DP
+            // is output-only, so Brain should keep input as system default.
+            if (sco) return AudioRoutePolicy.ForKind(AudioRouteKind.BluetoothSco);
+            if (a2dp) return AudioRoutePolicy.ForKind(AudioRouteKind.BluetoothA2dp);
+            if (wired) return AudioRoutePolicy.ForKind(AudioRouteKind.WiredHeadset);
+            if (speakerOn) return AudioRoutePolicy.ForKind(AudioRouteKind.Speaker);
+            return AudioRoutePolicy.ForKind(AudioRouteKind.Earpiece);
+        }
+
+        private static bool TryDetectAndroidDevices(
+            AndroidJavaObject audioManager,
+            out AudioRoutePolicy policy,
+            out string summary)
+        {
+            policy = AudioRoutePolicy.Default();
+            summary = "";
+            try
+            {
+                using (var audioManagerClass = new AndroidJavaClass("android.media.AudioManager"))
+                using (var deviceInfoClass = new AndroidJavaClass("android.media.AudioDeviceInfo"))
+                {
+                    int getInputs = SafeStaticInt(audioManagerClass, "GET_DEVICES_INPUTS", 1);
+                    int getOutputs = SafeStaticInt(audioManagerClass, "GET_DEVICES_OUTPUTS", 2);
+                    var inputs = SafeGetDevices(audioManager, getInputs);
+                    var outputs = SafeGetDevices(audioManager, getOutputs);
+
+                    int typeBluetoothSco = SafeStaticInt(deviceInfoClass, "TYPE_BLUETOOTH_SCO", 7);
+                    int typeBluetoothA2dp = SafeStaticInt(deviceInfoClass, "TYPE_BLUETOOTH_A2DP", 8);
+                    int typeWiredHeadset = SafeStaticInt(deviceInfoClass, "TYPE_WIRED_HEADSET", 3);
+                    int typeWiredHeadphones = SafeStaticInt(deviceInfoClass, "TYPE_WIRED_HEADPHONES", 4);
+                    int typeUsbHeadset = SafeStaticInt(deviceInfoClass, "TYPE_USB_HEADSET", 22);
+                    int typeSpeaker = SafeStaticInt(deviceInfoClass, "TYPE_BUILTIN_SPEAKER", 2);
+                    int typeEarpiece = SafeStaticInt(deviceInfoClass, "TYPE_BUILTIN_EARPIECE", 1);
+
+                    summary = "inputs=[" + DeviceTypesSummary(inputs) + "],outputs=[" + DeviceTypesSummary(outputs) + "]";
+
+                    if (HasDeviceType(inputs, typeBluetoothSco))
+                    {
+                        policy = AudioRoutePolicy.ForKind(AudioRouteKind.BluetoothSco);
+                        return true;
+                    }
+                    if (HasAnyDeviceType(inputs, typeWiredHeadset, typeUsbHeadset))
+                    {
+                        policy = AudioRoutePolicy.ForKind(AudioRouteKind.WiredHeadset);
+                        return true;
+                    }
+                    if (HasDeviceType(outputs, typeBluetoothA2dp))
+                    {
+                        policy = AudioRoutePolicy.ForKind(AudioRouteKind.BluetoothA2dp);
+                        return true;
+                    }
+                    if (HasAnyDeviceType(outputs, typeWiredHeadset, typeWiredHeadphones, typeUsbHeadset))
+                    {
+                        policy = AudioRoutePolicy.ForKind(AudioRouteKind.WiredHeadset);
+                        return true;
+                    }
+                    if (HasDeviceType(outputs, typeSpeaker))
+                    {
+                        policy = AudioRoutePolicy.ForKind(AudioRouteKind.Speaker);
+                        return true;
+                    }
+                    if (HasDeviceType(outputs, typeEarpiece))
+                    {
+                        policy = AudioRoutePolicy.ForKind(AudioRouteKind.Earpiece);
+                        return true;
+                    }
+                    return false;
+                }
+            }
+            catch (Exception e)
+            {
+                summary = "getDevices_error:" + e.Message;
+                return false;
+            }
+        }
+
+        private static AndroidJavaObject[] SafeGetDevices(AndroidJavaObject audioManager, int flags)
+        {
+            try { return audioManager.Call<AndroidJavaObject[]>("getDevices", flags) ?? new AndroidJavaObject[0]; }
+            catch (Exception) { return new AndroidJavaObject[0]; }
+        }
+
+        private static bool HasAnyDeviceType(AndroidJavaObject[] devices, params int[] types)
+        {
+            for (int i = 0; i < types.Length; i++)
+                if (HasDeviceType(devices, types[i]))
+                    return true;
+            return false;
+        }
+
+        private static bool HasDeviceType(AndroidJavaObject[] devices, int type)
+        {
+            if (devices == null) return false;
+            for (int i = 0; i < devices.Length; i++)
+            {
+                var device = devices[i];
+                if (device == null) continue;
+                try
+                {
+                    if (device.Call<int>("getType") == type)
+                        return true;
+                }
+                catch (Exception) { }
+            }
+            return false;
+        }
+
+        private static string DeviceTypesSummary(AndroidJavaObject[] devices)
+        {
+            if (devices == null || devices.Length == 0) return "none";
+            var parts = new string[devices.Length];
+            for (int i = 0; i < devices.Length; i++)
+            {
+                try { parts[i] = devices[i] != null ? devices[i].Call<int>("getType").ToString() : "null"; }
+                catch (Exception) { parts[i] = "error"; }
+            }
+            return string.Join(",", parts);
+        }
+
+        private static int SafeStaticInt(AndroidJavaClass klass, string field, int fallback)
+        {
+            try { return klass.GetStatic<int>(field); }
+            catch (Exception) { return fallback; }
         }
 
         private static bool SafeBool(AndroidJavaObject obj, string method)

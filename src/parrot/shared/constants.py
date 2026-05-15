@@ -29,6 +29,11 @@ CH_TRIGGER_RESULTS = "parrot.trigger.results"
 
 # Redis Streams
 STREAM_NANOBOT_DISPATCH = "parrot.nanobot.dispatch"
+# Bounded Scheduler-owned ledger of trigger-result fan-out payloads. Pub/Sub
+# wakes the TriggerRunner, while this stream lets Web/ops inspect recent routed
+# results after the moment has passed. It is an observability read model, not a
+# new trigger command channel.
+STREAM_TRIGGER_RESULTS = "parrot.trigger.results.stream"
 
 # L0 Raw Event Stream — single source of truth for all state changes.
 # See sprint0_preflight.md §1.3 and shared/event_log.py. Sprint 0 locks the

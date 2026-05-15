@@ -33,21 +33,22 @@ the formal mobile App flow is complete.
   snapshots, or persistent RoomSetting saves through LiveKit RPC. RPC payloads
   stay compact control-plane messages.
 - SVA/video is a media/data-flow module. It should consume video tiers,
-  snapshots, and perception requests without becoming the owner of RoomSetting
+  background video frames, timestamp/ref aligned visual evidence, camera/photo
+  metadata, and perception requests without becoming the owner of RoomSetting
   or homepage UI state.
 
 ## B. Interface Classes
 
 | Class | Channel | Owner | Use For | Do Not Use For |
 |:--|:--|:--|:--|:--|
-| Durable App HTTP | `GET/POST /api/app/**` | App facade / app-monitor | RoomSetting load/new/save/apply, selector metadata, full canvas/menu read models, workspace read models, phone-safe bootstrap data. | Per-frame telemetry, synchronous Brain action dispatch, audio/video media. |
+| Durable App HTTP | `GET/POST /api/app/**` | App facade / app-monitor | RoomSetting load/new/save/apply, selector metadata, full canvas/menu read models, workspace read/apply, camera mode, photo awareness, XR-hand UI mode, phone-safe bootstrap data. | Per-frame telemetry, synchronous Brain action dispatch, audio/video media. |
 | Orchestrator HTTP | `POST /apply_room_profile`, `/set_active_line`, `/force_unity_reconnect` | Castle orchestrator | Tier 1 runtime config prewrite, line/profile control, reconnect governance. | Menu rendering, RoomSetting persistence, per-user UI state. |
 | Token Mint HTTP | `POST /mint` | Castle token-mint | Short-lived participant token, Unity identity dispatch diagnostics, server-side active Brain dispatch fallback. | Saving settings, listing menus, holding LiveKit API secrets in Unity. |
 | LiveKit Media | audio/video tracks | LiveKit + Unity publishers | Microphone, Brain TTS/audio, AR/video publish, camera tier. | Settings persistence, profile snapshots, menu data. |
 | ECP Protocol Plane | ECP command/ack/state/event schemas | Brain + Unity + DSG consumers | Embodied command causality, command lifecycle, frontend state, attention/photo/sighting events, snapshot/ref evidence links, connection health, lifecycle audit. | Durable RoomSetting persistence, full menu/canvas snapshots, Web-only admin state, raw Graphiti writes. |
 | ECP Reliable DataChannel | `parrot.ecp.state`, `parrot.ecp.event`, `parrot.ecp.health`, `parrot.ecp.intent_disconnect` | Unity publishers / Brain ingest | EcpState heartbeat, EcpEvent facts, connection health changes, explicit disconnect intent, small reliable evidence/status packets. | Full DSG snapshots, full menu/canvas payloads, persistent saves, binary assets. |
-| ECP Lossy DataChannel | `parrot.ecp.tick` | Unity interaction streams / Brain consumers | High-frequency transient pose, drag, focus/BBox motion, hand hints where only current tendency matters. | Final facts, placements/removals, photos, command completion, saved settings. |
-| LiveKit RPC / ECP Command Bridge | participant RPC, future `ecpCommand`, compact command wrappers | Unity + Brain | Small request/response controls: `flyTo`/`animate`/`setVideoTier`, post-join `applyRoomProfile`, `setAppCapabilityMode`, `onSceneReady`, `onGosloPlaced`, `applyWorkspace`, media/module toggles, audio-route policy, reconnect signal. | RoomSetting snapshot/read/write, full `canvas_snapshot`, large menu payloads, preset/menu persistence, long-running storage APIs. |
+| ECP Lossy DataChannel | `parrot.ecp.tick` | Unity interaction streams / Brain consumers | High-frequency transient pose, drag, future focus/BBox motion, hand hints where only current tendency matters. | Final facts, placements/removals, photos, command completion, saved settings. |
+| LiveKit RPC / ECP Command Bridge | participant RPC, future `ecpCommand`, compact command wrappers | Unity + Brain | Small request/response controls: `flyTo`/`animate`/`setVideoTier`, post-join `applyRoomProfile`, `setAppCapabilityMode`, `onSceneReady`, `onGosloPlaced`, audio-route policy, reconnect signal. | RoomSetting snapshot/read/write, full `canvas_snapshot`, large menu payloads, workspace/menu apply, preset/menu persistence, long-running storage APIs. |
 | Unity Local | C# services | Unity App | AR/session lifecycle, model/prefab resolution, input devices, Bluetooth/mic route switching, HUD/menu rendering. | Backend source of truth, Brain runtime decisions, secret storage beyond gitignored runtime config. |
 | Test/Smoke Scripts | Python/Editor scripts | Test evidence only | Fast non-phone verification of token, room join, Brain presence, RPC business-ok. | Completion evidence for iQOO Neo9 mic/Bluetooth/app-switch/AR/video production behavior. |
 
@@ -70,9 +71,22 @@ the formal mobile App flow is complete.
   `applyPreset`, `saveAsPreset`) are removed from the active Brain room RPC
   registration. Full `canvas_snapshot`, menu read models, and menu/preset
   persistence must come from App HTTP or a future paged HTTP read model.
+- Formal homepage menu apply is also HTTP-owned in V1: workspace apply,
+  camera mode, photo awareness, and XR-hand UI mode call `/api/app/**` through
+  `AppHomeMenuClient`. UI state updates only after HTTP business success.
 - Mint active dispatch is a token-mint/server concern. Unity waits for Brain
   presence and business-ok RPC payloads; it must not infer START success from a
   token response or LiveKit room join alone.
+- `identify_object` is not the camera-mode capture RPC. It is a GOSLO
+  Intent-layer behavior that should obtain time-aligned visual evidence from
+  the LiveKit video stream or an SVA frame cache. Camera/photo commands may
+  request or announce user-visible capture actions, but image bytes stay in
+  HTTP/storage and only metadata/refs travel through RPC/ECP.
+- Focus/BBox/magnifier tools are future attention/ref producers. They can later
+  emit coordinates, pose, timestamps, and evidence refs that trigger GOSLO or
+  L2-B updates, but formal homepage V1 keeps them disabled/deferred until
+  phone stability and the backend SVA/ECP visual-evidence contract are ready.
+  They must not become ad-hoc menu save/load or binary image transports.
 
 ## D. Observable Completion Signal
 

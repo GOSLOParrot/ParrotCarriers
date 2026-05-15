@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "model_id": "GOSLO_default",
   "display_name": "GOSLO (default parrot)",
-  "asset_path": "parrot_models/goslo_default",
+  "asset_path": "Models/GOSLO",
   "controller_type": "ParrotApp.Parrot.GosloLegacyController",
   "forward_axis": "+Z",
   "up_axis": "+Y",

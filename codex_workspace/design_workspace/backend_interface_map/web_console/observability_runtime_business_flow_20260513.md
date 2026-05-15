@@ -408,6 +408,26 @@ admin access.
 | `POST /api/dsg/triggers/fire-event` | Publish a DSG event for the running trigger listener. | `fire_trigger_event()` -> `CH_DSG_EVENTS` | Default dry-run; real publish requires `operator_mode=true` and `dry_run=false`. |
 | `POST /api/google/messages/check` | Draft/dispatch Nanobot Gmail/Workspace `message_check`. | `dispatch_message_check()` -> Scheduler dispatch | Default dry-run; browser never holds Gmail credentials. |
 | `POST /api/google/messages/push-test` | Draft/publish a synthetic `message_push` event. | `push_test_message()` -> trigger event path | Default dry-run; real event requires operator mode. |
+| `POST /api/google/calendar/fetch` | Draft/dispatch Nanobot Google Calendar `calendar_fetch`. | `dispatch_google_calendar_fetch()` -> Scheduler dispatch | Default dry-run; browser never holds Google OAuth; results return as `calendar_result` for `CalendarTrigger`. |
+| `GET /api/google/calendar/results` | Read recent Scheduler fan-out rows for `calendar_result`. | `google_calendar_result_history()` -> `STREAM_TRIGGER_RESULTS` | Read-only Web observability; payloads are bounded and secret-redacted. |
+
+2026-05-15 Google Calendar sync note:
+
+- Current runtime is manual/operator dispatch plus `CalendarTrigger` periodic
+  polling. It is not yet Google push/watch realtime.
+- Real fetch can work when Scheduler, Nanobot, Google Workspace MCP credentials,
+  and the result listener are running. Web only sends the safe dispatch receipt.
+- Scheduler now keeps a bounded `STREAM_TRIGGER_RESULTS` ledger when it fans
+  Nanobot results to `CH_TRIGGER_RESULTS`, so Web can show recent Calendar
+  result history without subscribing to Pub/Sub after the fact.
+- Calendar cancelled/deleted rows use the WEB-014.15 historical tombstone
+  policy: keep the Google identity and EVENT Node, set tombstone metadata, and
+  lower L2-B confirmation/salience/attention so stale reminders stop without
+  losing sync reconciliation state.
+- Backend realtime should be server-side Google Calendar `watch` plus
+  incremental syncToken storage. Web should observe the resulting
+  `calendar_result` / L1.5 / L2-B changes via changed-since or future
+  SSE/WebSocket, not browser OAuth.
 
 Current protocol status:
 
@@ -615,3 +635,69 @@ Data-model notes:
 - Durable trace gaps stay in CORE-010.
 - HITL/action-gate gaps stay in CORE-011 and should not be promoted beyond Plan
   gates until real trigger/message state machines exist.
+
+## 2026-05-15 Time-Aligned Evidence / identify_object Slice
+
+Owner: Web Console lane
+Status: in_progress
+Category: backend interface / observability / vision evidence
+Scope: WEB-015, CORE-012
+Source: user-approved Time-Aligned Evidence plan
+
+Implemented:
+
+- Added backend-first `parrot.brain.vision.evidence` with `TimebaseStamp`,
+  `TimeAlignedSampleRef`, `SampleRegion`, and a bounded in-process
+  `TemporalEvidenceLedger`.
+- V1 does not change ECP/RPC top-level schemas. It reads optional
+  `EcpEvent.payload["timebase"]`, `EcpCommand.meta["timebase"]`, and legacy
+  fields such as `ts_ms`, `timestamp`, and `observed_at`.
+- `observer.snapshot`, `observer.photo`, and `FocusBboxThreshold` mirror
+  storage-backed snapshot/photo/attention events into the ledger.
+- `identify_object` now resolves stored evidence by `evidence_id`,
+  `bbox_ref_id`, `focus_ref_id`, or `target_time_ms`; if no image/frame is
+  available it records a pending evidence request and continues L0/L1
+  text/Graphiti matching. The old snapshot RPC path remains a disabled
+  compatibility hook and is not called by this tool.
+- Added storage-backed `parrot.brain.vision.frame_cache` as the first producer
+  ingress for auditable encoded frames. LiveKit/SVA processors can call
+  `record_livekit_frame_bytes()` after selecting/rate-limiting a track frame;
+  the function writes an image asset, preserves room/track/participant/source
+  ids, sequence, media timestamp, and records a `VIDEO_FRAME` ledger row.
+- Web routes now expose:
+  - `GET /api/vision/evidence/status`
+  - `GET /api/vision/evidence/timeline`
+  - `POST /api/vision/evidence/request`
+  - `POST /api/vision/evidence/frame-cache/upload`
+  - `GET /api/vision/evidence/{evidence_id}`
+  - `POST /api/app/test/visual-attention`
+- React Runtime Flow includes a compact Time/Evidence panel for ledger status,
+  recent evidence rows, manual evidence request, BBox/Focus test events, and a
+  Web/operator `Cache Frame` smoke action.
+- React build output now uses hashed bundle names (`assets/app-[hash].js` and
+  `assets/styles-[hash].css`) so Windows file locks on the running console no
+  longer leave the browser on a stale `app.js` bundle.
+
+Interface boundary:
+
+- `EcpEvent.created_at` is envelope creation time, not producer sample time.
+- `TimebaseStamp.estimated=true` is used when falling back from missing
+  sample-time metadata.
+- Image bytes are not embedded in ECP/DataChannel payloads. VLM and Web debug
+  surfaces must dereference HTTP/storage assets or future frame-cache files.
+- `POST /api/vision/evidence/frame-cache/upload` is a local Web/operator debug
+  ingress; it is not the production LiveKit sampler and it does not belong in
+  Unity/App DTOs.
+- CORE-012 remains draft until the automatic LiveKit/SVA track sampler,
+  crop/VLM comparison, and App/Web field review are complete.
+
+Validation:
+
+- `.venv\Scripts\python.exe -m pytest tests\test_brain\test_time_aligned_evidence.py tests\test_ecp_event\test_identify_object.py tests\test_web_console\test_web_console_server.py -q` -> `51 passed`.
+- 2026-05-15 continuation: same focused pytest set now includes frame-cache
+  route/ledger tests -> `53 passed`.
+- `web/console_app/node_modules/.bin/tsc.cmd --noEmit` passed.
+- `web/console_app/node_modules/.bin/vite.cmd build` passed with hashed
+  assets; the live `http://127.0.0.1:7893/` page now serves the hashed bundle.
+- Browser smoke: Runtime Flow shows Time/Evidence panel, reads the pending
+  evidence timeline, and reports no console errors.

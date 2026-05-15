@@ -56,6 +56,18 @@ namespace ParrotApp.Parrot
         public string EffectiveModelId =>
             !string.IsNullOrEmpty(modelId) ? modelId : "GOSLO_default";
 
+        /// <summary>
+        /// Runtime placement owners call this before Start so a white-box
+        /// placeholder can still use the selected RoomSetting model manifest.
+        /// Existing hand-wired prefabs can keep the serialized modelId path.
+        /// </summary>
+        public void ConfigureModelId(string newModelId)
+        {
+            modelId = string.IsNullOrWhiteSpace(newModelId) ? "" : newModelId.Trim();
+            ParrotRegistry.EnsureInstance();
+            Manifest = ModelManifestDto.LoadFromResources(EffectiveModelId);
+        }
+
         void Awake()
         {
             // Make sure the registry exists before any controller calls Register.

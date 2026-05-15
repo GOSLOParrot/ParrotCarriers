@@ -27,6 +27,7 @@ from parrot.shared.constants import (
     CH_SCHEDULER_TO_BRAIN,
     CH_TRIGGER_RESULTS,
     STREAM_NANOBOT_DISPATCH,
+    STREAM_TRIGGER_RESULTS,
 )
 from parrot.shared.redis_client import get_redis
 from parrot.shared.types import Layer, ModuleType
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 NANOBOT_TASK_TIMEOUT = 120.0
 TIMEOUT_CHECK_INTERVAL = 15.0
+TRIGGER_RESULT_LEDGER_MAXLEN = 200
 
 
 class SchedulerService:
@@ -175,17 +177,13 @@ class SchedulerService:
                     result.get("result_channel")
                     or task_meta.get("result_channel", "")
                 )
-                if result_channel:
-                    trigger_payload = dict(result)
-                    trigger_payload["type"] = result_channel
-                    trigger_payload.setdefault("original_type", task_type)
-                    await r.publish(CH_TRIGGER_RESULTS, json.dumps(trigger_payload))
-                    logger.info(
-                        "Scheduler fanned Nanobot result to TriggerRunner: "
-                        "task=%s channel=%s",
-                        task_id,
-                        result_channel,
-                    )
+                await self._publish_trigger_result(
+                    r,
+                    result=result,
+                    result_channel=str(result_channel or ""),
+                    task_id=str(task_id),
+                    task_type=str(task_type),
+                )
 
                 summary = {
                     "task_id": task_id,
@@ -297,6 +295,77 @@ class SchedulerService:
                 "Scheduler failed to report Plan step timeout: plan=%s step=%s",
                 plan_id,
                 step_id,
+            )
+
+    async def _publish_trigger_result(
+        self,
+        r,
+        *,
+        result: dict,
+        result_channel: str,
+        task_id: str,
+        task_type: str,
+    ) -> str:
+        """Fan a Nanobot result back to triggers and keep a bounded ledger.
+
+        The Scheduler owns this bridge because it knows the dispatch-time
+        ``result_channel``. Nanobot can stay a plain worker that reports one
+        result shape, while DSG triggers receive a rewritten payload on
+        ``CH_TRIGGER_RESULTS`` and Web can inspect recent fan-out through
+        ``STREAM_TRIGGER_RESULTS``. Ledger failure is logged but does not block
+        Pub/Sub delivery to the TriggerRunner.
+        """
+
+        if not result_channel:
+            return ""
+
+        trigger_payload = dict(result)
+        trigger_payload["type"] = result_channel
+        trigger_payload.setdefault("original_type", task_type)
+        trigger_payload.setdefault("task_id", task_id)
+
+        await self._write_trigger_result_ledger(
+            r,
+            trigger_payload=trigger_payload,
+            result_channel=result_channel,
+            task_id=task_id,
+        )
+        await r.publish(CH_TRIGGER_RESULTS, json.dumps(trigger_payload))
+        logger.info(
+            "Scheduler fanned Nanobot result to TriggerRunner: task=%s channel=%s",
+            task_id,
+            result_channel,
+        )
+        return result_channel
+
+    async def _write_trigger_result_ledger(
+        self,
+        r,
+        *,
+        trigger_payload: dict,
+        result_channel: str,
+        task_id: str,
+    ) -> None:
+        """Best-effort durable trace for Web Runtime/Memory observability."""
+
+        try:
+            await r.xadd(
+                STREAM_TRIGGER_RESULTS,
+                {
+                    "payload": json.dumps(trigger_payload, ensure_ascii=False),
+                    "result_channel": result_channel,
+                    "task_id": task_id,
+                    "created_at": str(time.time()),
+                },
+                maxlen=TRIGGER_RESULT_LEDGER_MAXLEN,
+                approximate=True,
+            )
+        except Exception:
+            logger.debug(
+                "Scheduler could not write trigger-result ledger: task=%s channel=%s",
+                task_id,
+                result_channel,
+                exc_info=True,
             )
 
 

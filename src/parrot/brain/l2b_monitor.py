@@ -60,7 +60,11 @@ def _node_payload(node: Any) -> dict[str, Any]:
         "uuid": node.uuid,
         "label": node.label,
         "kind": getattr(node.kind, "value", str(node.kind)),
+        "description": node.description,
+        "tags": list(node.tags or []),
         "attention": float(node.attention),
+        "novelty": float(node.novelty),
+        "evidence_score": float(node.evidence_score),
         "salience": getattr(node.salience, "value", str(node.salience)),
         "confirmation": getattr(node.confirmation, "value", str(node.confirmation)),
         "bucket_id": node.bucket_id,
@@ -68,17 +72,22 @@ def _node_payload(node: Any) -> dict[str, Any]:
         "scene_type": node.scene_type,
         "location_tag": node.location_tag,
         "source": node.source,
+        "source_meta": dict(node.source_meta or {}),
+        "meta": dict(node.meta or {}),
     }
 
 
 def _edge_payload(src: Any, dst: Any, edge: Any) -> dict[str, Any]:
+    meta = dict(edge.meta or {})
     return {
         "source": src.uuid,
         "target": dst.uuid,
         "kind": getattr(edge.kind, "value", str(edge.kind)),
         "strength": float(edge.strength),
         "edge_source": edge.source,
-        "cross_compartment": dict(edge.meta or {}).get("cross_compartment", ""),
+        "created_at": float(edge.created_at),
+        "cross_compartment": meta.get("cross_compartment", ""),
+        "meta": meta,
     }
 
 

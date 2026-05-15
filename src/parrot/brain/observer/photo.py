@@ -177,6 +177,14 @@ def _on_photo_asset_uploaded(event: EcpEvent) -> None:
     asset_path = str(payload.get("asset_path", "") or "")
     asset_bytes = int(payload.get("asset_bytes", 0) or 0)
     storage_ref = asset_path or asset_ref
+    _record_photo_asset_evidence(
+        event=event,
+        photo_id=photo_id,
+        asset_ref=asset_ref,
+        asset_path=asset_path,
+        asset_bytes=asset_bytes,
+        payload=payload,
+    )
 
     # Find the existing PhotoNode created on preview.
     updated = _update_photo_node_asset(
@@ -379,6 +387,41 @@ def _stage_photo_asset_ref(
         asyncio.run(_stage())
     else:
         loop.create_task(_stage())
+
+
+def _record_photo_asset_evidence(
+    *,
+    event: EcpEvent,
+    photo_id: str,
+    asset_ref: str,
+    asset_path: str,
+    asset_bytes: int,
+    payload: dict[str, Any],
+) -> None:
+    """Mirror full-resolution photo uploads into the temporal evidence ledger."""
+    try:
+        from parrot.brain.vision.evidence import (
+            EvidenceKind,
+            record_ecp_evidence_sample,
+        )
+
+        record_ecp_evidence_sample(
+            event,
+            kind=EvidenceKind.IMAGE_ASSET,
+            asset_path=asset_path,
+            asset_uri=asset_ref,
+            related_refs=(photo_id,),
+            bbox_refs=tuple(str(x) for x in payload.get("bbox_refs") or ()),
+            focus_refs=tuple(str(x) for x in payload.get("focus_refs") or ()),
+            description=f"photo asset {photo_id}",
+            meta={
+                "source": "observer.photo",
+                "photo_id": photo_id,
+                "asset_bytes": asset_bytes,
+            },
+        )
+    except Exception:
+        logger.debug("[observer.photo] evidence ledger write failed", exc_info=True)
 
 
 def _build_bb_payload(

@@ -59,7 +59,7 @@ if os.getenv("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", "0").lower() in {"1", "true",
     # observer.sighting wiring confirmation in identify_object/Phase 4 W5.
     # Un-gate (move to ALL_TOOLS unconditionally) when:
     #   1. P2.5 真机 spike confirms 1.9s budget holds end-to-end (entry doc §8.1 L11)
-    #   2. Unity captureSnapshot RPC ECP-化 lands (audit DRIFT NOTE / def-1)
+    #   2. Formal photo evidence path lands (ECP metadata + HTTP/storage asset)
     #   3. observer.sighting archiver path verified against Graphiti live
     from parrot.brain.tools.identify_object import identify_object
     ALL_TOOLS.append(identify_object)

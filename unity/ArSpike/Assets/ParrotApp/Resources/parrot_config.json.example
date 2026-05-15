@@ -6,5 +6,6 @@
   "appApiUrl": "http://YOUR_CASTLE_IP:8790",
   "appApiSecret": "dev-only-same-as-PARROT_APP_MONITOR_SECRET-when-enabled",
   "orchestratorUrl": "http://YOUR_CASTLE_IP:7890",
-  "orchestratorSecret": "dev-only-same-as-PARROT_ORCH_SECRET"
+  "orchestratorSecret": "dev-only-same-as-PARROT_ORCH_SECRET",
+  "photoUploadUrl": "http://YOUR_CASTLE_IP:7889"
 }

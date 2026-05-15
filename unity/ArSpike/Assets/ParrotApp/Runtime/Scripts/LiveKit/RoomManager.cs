@@ -121,7 +121,14 @@ namespace ParrotApp.LiveKit
                 return;
             }
             Instance = this;
-            DontDestroyOnLoad(gameObject);
+            // Unity only allows DontDestroyOnLoad on root GameObjects. In the
+            // formal scene RoomManager lives on RuntimeServices, which may be
+            // nested under the startup root; detach this service container
+            // instead of accidentally preserving the whole startup UI tree.
+            var persistentRoot = gameObject;
+            if (transform.parent != null)
+                transform.SetParent(null, true);
+            DontDestroyOnLoad(persistentRoot);
         }
 
         void Start()

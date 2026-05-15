@@ -410,6 +410,10 @@ class FocusBboxThreshold:
             "source_event_id": source_event.event_id,
             "ts_ms": int(time.time() * 1000),
         }
+        self._record_attention_evidence(
+            payload=hint_payload,
+            source_event=source_event,
+        )
 
         # 1) Publish attention.threshold.crossed EcpEvent (brain source).
         self._publish_attention_event(
@@ -479,6 +483,49 @@ class FocusBboxThreshold:
         except Exception:
             logger.debug(
                 "[attention.threshold] BB write failed", exc_info=True,
+            )
+
+    def _record_attention_evidence(
+        self,
+        *,
+        payload: dict[str, Any],
+        source_event: EcpEvent,
+    ) -> None:
+        """Mirror threshold crossings into the time-aligned evidence ledger.
+
+        This is observability-only: the threshold math and public ECP/BB
+        contracts stay unchanged.  Future frame workers can use the ledger row
+        to request a nearby image for GOSLO/identify_object.
+        """
+        try:
+            from parrot.brain.vision.evidence import (
+                EvidenceKind,
+                record_ecp_evidence_sample,
+            )
+
+            ref_id = str(payload.get("ref_id", "") or "")
+            subject_kind = str(payload.get("subject_kind", "") or "")
+            bbox_refs = (ref_id,) if ref_id and subject_kind == "bbox" else ()
+            focus_refs = (ref_id,) if ref_id and subject_kind == "focus" else ()
+            record_ecp_evidence_sample(
+                source_event,
+                kind=EvidenceKind.BBOX_FOCUS,
+                related_refs=(ref_id,) if ref_id else (),
+                bbox_refs=bbox_refs,
+                focus_refs=focus_refs,
+                description=str(payload.get("label", "") or "attention threshold"),
+                meta={
+                    "source": "dsg.attention.threshold",
+                    "subject_kind": subject_kind,
+                    "subject_id": str(payload.get("subject_id", "") or ""),
+                    "weight": float(payload.get("weight", 0.0) or 0.0),
+                    "delta_applied": float(payload.get("delta_applied", 0.0) or 0.0),
+                },
+            )
+        except Exception:
+            logger.debug(
+                "[attention.threshold] evidence ledger write failed",
+                exc_info=True,
             )
 
     def _dispatch_to_hint_writer(self, *, ref_id: str, delta: float) -> None:

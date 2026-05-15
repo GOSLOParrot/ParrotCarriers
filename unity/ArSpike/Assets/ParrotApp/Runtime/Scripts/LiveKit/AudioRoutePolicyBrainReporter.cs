@@ -28,6 +28,13 @@ namespace ParrotApp.LiveKit
         public int ReportSuccessCount { get; private set; }
         public string LastReportError { get; private set; } = "";
         public string LastPayload { get; private set; } = "";
+        public string LastInputRoute { get; private set; } = "system_default_microphone";
+        public string LastOutputRoute { get; private set; } = "unknown";
+        public int LastPreferredSampleRate { get; private set; } = 48000;
+        public string LastReportReason { get; private set; } = "";
+        public string LastDetectionSource { get; private set; } = "unknown";
+        public string LastDeviceSummary { get; private set; } = "";
+        public bool ReportPending => _reportCoroutine != null;
 
         private Coroutine _reportCoroutine;
         private Action<RemoteParticipant> _participantConnectedHandler;
@@ -36,7 +43,10 @@ namespace ParrotApp.LiveKit
         {
             ResolveServices();
             if (routeDetector != null)
+            {
+                CachePolicy(routeDetector.CurrentPolicy);
                 routeDetector.OnRouteChanged += OnRouteChanged;
+            }
             if (roomManager != null)
             {
                 roomManager.OnConnected += OnRoomConnected;
@@ -64,6 +74,14 @@ namespace ParrotApp.LiveKit
             QueueReport(reason);
         }
 
+        public void RefreshAndReportCurrentPolicy(string reason = "manual_rescan")
+        {
+            ResolveServices();
+            if (routeDetector != null)
+                CachePolicy(routeDetector.RefreshCurrentPolicy(reason));
+            QueueReport(reason);
+        }
+
         private void OnRoomConnected()
         {
             QueueReport("room_connected");
@@ -71,6 +89,7 @@ namespace ParrotApp.LiveKit
 
         private void OnRouteChanged(AudioRoutePolicy oldPolicy, AudioRoutePolicy newPolicy)
         {
+            CachePolicy(newPolicy);
             QueueReport($"route_changed:{oldPolicy.RouteName}_to_{newPolicy.RouteName}");
         }
 
@@ -114,6 +133,8 @@ namespace ParrotApp.LiveKit
             }
 
             var policy = routeDetector != null ? routeDetector.DetectNow() : AudioRoutePolicy.Default();
+            CachePolicy(policy);
+            LastReportReason = reason;
             LastPayload = BuildPayload(policy, reason);
 
             var rpcCall = room.LocalParticipant.PerformRpc(new PerformRpcParams
@@ -161,6 +182,18 @@ namespace ParrotApp.LiveKit
                    + "\"source\":\"unity_audio_route_policy\","
                    + "\"reason\":" + Quote(reason)
                    + "}";
+        }
+
+        private void CachePolicy(AudioRoutePolicy policy)
+        {
+            LastInputRoute = InputRouteFor(policy);
+            LastOutputRoute = policy.RouteName;
+            LastPreferredSampleRate = policy.PreferredSampleRate;
+            if (routeDetector != null)
+            {
+                LastDetectionSource = routeDetector.LastDetectionSource;
+                LastDeviceSummary = routeDetector.LastDeviceSummary;
+            }
         }
 
         private static string InputRouteFor(AudioRoutePolicy policy)

@@ -136,6 +136,7 @@ def test_console_action_endpoints_drive_app_tool_flows() -> None:
         "/api/app/camera/capture-request",
         json={"candidate_subject_uuid": "obj_console"},
     )
+    xrhand = client.post("/api/app/xrhand/mode", json={"mode": "gesture_select"})
     focus = client.post("/api/app/test/focus", json={"focus_id": "fc_console"})
     bbox = client.post("/api/app/test/bbox", json={"bbox_id": "bb_console"})
     photo = client.post(
@@ -152,6 +153,7 @@ def test_console_action_endpoints_drive_app_tool_flows() -> None:
 
     assert before.status_code == 200
     assert camera.status_code == 200 and camera.json()["success"] is True
+    assert xrhand.status_code == 200 and xrhand.json()["success"] is True
     assert focus.status_code == 200 and focus.json()["success"] is True
     assert bbox.status_code == 200 and bbox.json()["success"] is True
     assert photo.status_code == 200 and photo.json()["success"] is True

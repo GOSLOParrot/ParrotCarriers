@@ -232,3 +232,42 @@ def test_clustering_module_does_not_export_attention_symbol() -> None:
 
     public = {n for n in dir(mod) if not n.startswith("_")}
     assert "Attention" not in public, public
+
+
+def test_edge_update_and_remove_use_endpoint_filters_not_rustworkx_indexes() -> None:
+    g = L2BGraph()
+    a = _node("a")
+    b = _node("b")
+    g.upsert_node(a)
+    g.upsert_node(b)
+    assert g.connect(
+        a.uuid,
+        b.uuid,
+        SemanticEdge(kind=EdgeKind.ASSOCIATED_WITH, strength=0.4, source="web_console"),
+    )
+
+    updated = g.update_edge_between(
+        a.uuid,
+        b.uuid,
+        SemanticEdge(
+            kind=EdgeKind.REMINDS_OF,
+            strength=0.9,
+            source="web_console",
+            meta={"operator_note": "preview_update"},
+        ),
+        match_kind="associated_with",
+        match_source="web_console",
+    )
+    assert updated is True
+    edges = g.all_edges()
+    assert len(edges) == 1
+    _, _, edge = edges[0]
+    assert edge.kind == EdgeKind.REMINDS_OF
+    assert edge.strength == 0.9
+    assert edge.meta["operator_note"] == "preview_update"
+
+    # The previous filter no longer matches after update; callers must match
+    # on the current payload, not stale UI text or a RustWorkX edge index.
+    assert g.remove_edge_between(a.uuid, b.uuid, match_kind="associated_with") is False
+    assert g.remove_edge_between(a.uuid, b.uuid, match_kind="reminds_of") is True
+    assert g.all_edges() == []

@@ -3,7 +3,7 @@
 Owner: Unity App chat
 Status: active map
 Category: App business interface
-Related TODO: APP-015.19, APP-018, APP-022, APP-023, APP-024
+Related TODO: APP-015.19, APP-015.20, APP-015.21, APP-018, APP-022, APP-023, APP-024
 
 This map is the homepage-prep guardrail. New Unity homepage, HUD, menu,
 LiveKit, SVA, and device-lifecycle work must cite this file before adding a new
@@ -58,23 +58,23 @@ flowchart LR
     B -->|"DSG / GOSLO / Scheduler / Observer"| D["Brain internal state"]
     D -->|"HTTP read models / compact RPC controls"| U
 
-    B -->|"SVA request: captureSnapshot RPC"| U
-    U -->|"photo preview EcpEvent + photo asset HTTP"| B
+    B -->|"SVA/photo command metadata request"| U
+    U -->|"photo metadata EcpEvent + photo asset HTTP/storage"| B
 ```
 
 ## C. Ownership Rules
 
 | Surface | Current code | Owns | Must not own |
 |:--|:--|:--|:--|
-| App HTTP | `app_monitor_server.py`, `AppFirstVersionFacade`, `AppRoomSettingClient` | RoomSetting load/new/save/apply, personas, line profiles, modules, tool cabinet, assets, canvas read model, live-state read model, camera/photo operator requests. | Per-frame telemetry, room media, full Brain command lifecycle, secret-bearing LiveKit API operations. |
+| App HTTP | `app_monitor_server.py`, `AppFirstVersionFacade`, `AppRoomSettingClient`, `AppHomeMenuClient` | RoomSetting load/new/save/apply, personas, line profiles, modules, tool cabinet, assets, canvas read model, live-state read model, workspace apply, camera mode, photo awareness, XR-hand UI mode, camera/photo operator requests. | Per-frame telemetry, room media, full Brain command lifecycle, secret-bearing LiveKit API operations. |
 | Orchestrator HTTP | `orchestrator/server.py`, `OrchestratorClient` | Tier 1 runtime prewrite, active Line/Profile governance, forced reconnect requests, component restart control. | Menu rendering, RoomSetting persistence, Unity local device state. |
 | Token Mint HTTP | `token_mint.py`, `LiveKitTokenMintClient` | Short-lived LiveKit token, Unity identity, server-side Brain dispatch when configured. | Settings saves, menu snapshots, durable user state, exposing LiveKit API secret to Unity. |
 | LiveKit media | `RoomManager`, `MicrophonePublisher`, `ARVideoPublisher` | Mic input, remote Brain audio, AR/video track, video tier rebuild. | Room/Profile persistence, menu payloads, app config snapshots. |
-| LiveKit RPC | `AppStartupFlowController`, `agent.py`, `_rpc_bridge.py`, `ParrotRpcHandler`, `VideoTierReceiver` | Compact in-room request/response: post-join Brain sync, capability mode, workspace switch, video tier, GOSLO fly/animate, placement gates, small menu/control toggles. | Full RoomSetting snapshot, full canvas/menu load, large or durable saves, binary assets. |
+| LiveKit RPC | `AppStartupFlowController`, `agent.py`, `_rpc_bridge.py`, `ParrotRpcHandler`, `VideoTierReceiver` | Compact in-room request/response: post-join Brain sync, capability mode, video tier, GOSLO fly/animate, placement gates, audio-route session diagnostics, reconnect signal. | Full RoomSetting snapshot, full canvas/menu load, workspace/menu apply, large or durable saves, binary assets or full photos. |
 | ECP protocol plane | `parrot.shared.ecp*`, `EcpEvent*`, `LifecycleHeartbeatPublisher`, `event_ingest.py` | Command/ack causality, frontend state, lifecycle health, attention/photo/sighting events, lossy interaction ticks, snapshot/ref evidence links, L0 auditability. | A generic dump pipe for all App UI data, Web admin state, Graphiti direct writes, persistent RoomSetting CRUD. |
 | ECP reliable DataChannel | `parrot.ecp.state`, `parrot.ecp.event`, `parrot.ecp.health`, `parrot.ecp.intent_disconnect` | Small reliable state/fact/health envelopes. | Full menu/canvas snapshots, assets, long documents. |
 | ECP lossy DataChannel | `parrot.ecp.tick` | High-frequency transient gesture/pose/focus drag tendency. | Final facts, photos, command completion, saved settings. |
-| SVA / vision | `ARVideoPublisher`, `VideoTierReceiver`, `vision/snapshot.py`, perception supervisor | Video tiers, snapshot requests, visual state, identify-object/photo evidence pipeline. | Homepage menu ownership, RoomSetting selection semantics. |
+| SVA / vision | `ARVideoPublisher`, `VideoTierReceiver`, `vision/snapshot.py`, perception supervisor | Video tiers, background video sampling, timestamp/ref aligned visual evidence, identify-object/photo evidence pipeline. | Homepage menu ownership, RoomSetting selection semantics, inline photo-byte RPC. |
 | Unity local | Unity C# services | Rendering, AR Foundation session, prefab/model driver, HUD/menu presentation, permissions, Android mic/Bluetooth route detection, app background/resume handling. | Backend source of truth, Brain policy truth, secrets beyond ignored runtime config. |
 | Smoke/test | `Assets/Tests/**`, test scripts | Fast evidence and regression checks. | Production completion proof for phone mic, Bluetooth, app switch, AR/video, reconnect. |
 
@@ -123,12 +123,17 @@ by `FormalHomeMenuLoader` using App HTTP `/api/app/canvas` with bounded retry
 and real payload validation; model resolution is owned by
 `FormalModelReadyReporter`; AR runtime mounting is owned by
 `FormalArRuntimeBootstrap`, which stays mounted but does not auto-start on the
-startup page. The AR baseline gate calls it on demand for video/AR modes, with
-XRGeneralSettings auto-loading/running the ARCore/ARKit/XR Simulation loaders;
-and AR/session baseline is owned by `FormalArSessionBaselineReporter`, which waits for mobile
+startup page. START initializes XR/AR manually on mobile video modes before
+LiveKit video publish, while XRGeneralSettings automatic loading/running stays
+disabled for ARCore, ARKit, and Standalone so Editor Android Play does not
+auto-stop an uninitialized manager. The bootstrap now also mounts XROrigin,
+ARRaycastManager, ARPlaneManager, ARInputManager, and Input System
+TrackedPoseDriver for formal placement and camera pose. AR/session baseline is owned by
+`FormalArSessionBaselineReporter`, which waits for mobile
 `ARSessionState.SessionTracking`. `FormalMainReadyGate` self-reevaluates while
 waiting so missing one-shot loader events degrade instead of silently hanging.
-The final drawer UI, production model placement, and phone proof remain pending.
+The placement owner can use AR plane raycast or preview fallback; final
+tool-owner UI, production model visuals, and phone proof remain pending.
 
 ### Homepage / Menu
 
@@ -141,14 +146,14 @@ Homepage menu loading should use App HTTP for larger data:
 - `GET /api/app/personas`
 - `GET /api/app/line-profiles`
 - `GET /api/app/live-state`
+- `POST /api/app/workspace/apply`
+- `POST /api/app/camera/mode`
+- `POST /api/app/awareness`
+- `POST /api/app/xrhand/mode`
 
 Compact in-room actions can use RPC after Brain is present:
 
-- `applyWorkspace`
 - `setAppCapabilityMode`
-- `setPhotoAwareness`
-- `setCameraMode`
-- `setXrHandMode`
 - `setLineBAudioRoutePolicy`
 
 Legacy menu RPC wrappers (`listMenuBlocks`, `applyMenuSelection`,
@@ -178,14 +183,49 @@ Current split:
 - `VideoTierReceiver` receives Brain `setVideoTier` intent.
 - `PhotoController` builds `photo.taken_preview` EcpEvents and uploads full
   photo assets by HTTP.
-- Brain `vision/snapshot.py` calls Unity `captureSnapshot` RPC for identify
-  object / snapshot work.
+- `PhotoController` is the accepted camera/photo owner today: it sends a
+  compact `photo.taken_preview` ECP event with `photo_id`, capture time,
+  pose/Focus/BBox refs, then uploads the full image through HTTP.
+- Backend `vision/snapshot.py` is now a disabled compatibility hook, not a
+  frame transport. It must stay disabled until the App photo-notification
+  semantics are re-audited.
 
-Gap: formal Unity runtime currently has `capturePhoto` code, but no formal
-`captureSnapshot` RPC handler was found under
-`unity/ArSpike/Assets/ParrotApp/Runtime/Scripts/**`. Do not claim SVA snapshot
-completion until that handler is implemented or the Brain caller is rerouted to
-the photo pipeline.
+Current gap: do not implement an inline image `captureSnapshot` RPC in formal
+Unity. The next design task is to align camera mode/photo capture naming:
+photo bytes stay HTTP/storage; any RPC/ECP signal may only carry metadata such
+as `photo_id`, `captured_at`, route/source, pose, and related Focus/BBox refs.
+
+### identify_object / Attention / Camera Capture Clarification
+
+2026-05-15 user correction:
+
+- `identify_object` is a GOSLO Intent-layer behavior. It should not depend on
+  the camera-mode capture RPC and should not pull inline photos through
+  LiveKit RPC.
+- The target design is to sample the background LiveKit video stream, or read a
+  frame from an SVA/video frame cache, using a timestamp/ref that can be
+  correlated with GOSLO's tool execution time. The evidence then feeds a fast
+  visual category comparison, deeper visual search, and L2-B/Graphiti node
+  creation or update.
+- The hard part is the time-alignment contract: when GOSLO decides to run the
+  tool, backend must quickly find the right frame, or ask Unity for a render
+  evidence action that returns metadata plus an HTTP/storage asset ref. This is
+  a backend/Web/SVA upgrade item, not a homepage UI shortcut.
+- Camera/photo mode may still have a compact backend-to-frontend command, but
+  that command is for taking/announcing a user-visible photo action. It must
+  carry metadata and refs, not image bytes.
+- Focus/BBox/magnifier tools are attention/ref tools. They should increase or
+  annotate L2-B/attention evidence with screen/AR coordinates, time, pose, and
+  optional rendered-frame refs. If attention is strong enough, triggers may
+  notify GOSLO with a compact summary and evidence refs. The exact trigger
+  payload is not yet designed.
+- Formal homepage V1 keeps BBox/magnifier disabled/deferred. Do not emit
+  Focus/BBox ECP from the formal toolbar until the iQOO phone stability pass
+  and backend SVA/ECP evidence report are complete.
+- Preferred future packet shape is a paired bundle: backend command/ref +
+  frontend boxed region/pose/time metadata + optional HTTP/storage image ref,
+  then an appropriate ECP/Ref/L1.5/L2-B upward channel into GOSLO. Do not invent
+  a one-off RPC payload inside homepage UI.
 
 ### Phone Lifecycle / Audio Route
 
@@ -199,8 +239,11 @@ Current split:
   speaker/A2DP output does not masquerade as the microphone input.
 - Brain writes the accepted policy to `session/audio_route_policy`.
 
-Gap: Android API 31+ route detection still needs phone proof and likely a native
-`AudioManager.getDevices(...)` upgrade. This remains APP-015.15 / APP-024.
+Current gap: Android now tries native `AudioManager.getDevices(...)` before
+legacy route flags and surfaces the detection source/device summary in the
+formal HUD/menu. This still needs APP-024 phone proof on iQOO Neo9 for
+Bluetooth SCO, Bluetooth A2DP, wired/USB headset, speaker, and background
+resume transitions; a manual device picker is not built.
 
 ## E. Registered Surfaces
 
@@ -231,6 +274,7 @@ Active app-monitor routes include:
 - `POST /api/app/camera/mode`
 - `POST /api/app/camera/capture-request`
 - `POST /api/app/awareness`
+- `POST /api/app/xrhand/mode`
 - test/self-check/admin-style routes that must not be treated as formal mobile
   menu completion evidence.
 
@@ -280,8 +324,9 @@ Current formal Unity handlers include:
 
 Known gap:
 
-- Brain can call `captureSnapshot`, but formal Unity runtime does not yet expose
-  a matching handler in `Assets/ParrotApp/Runtime/Scripts/**`.
+- Formal Unity currently does not register a production still-frame request.
+  The legacy Brain helper is disabled until the photo notification contract is
+  clarified.
 
 ## F. Phone Config Rule
 
@@ -306,12 +351,12 @@ Bearer values are acceptable only in ignored local config.
 |:--|:--|:--|
 | Old AppV1/Smoke controller can be confused with formal home | APP-016, APP-016.1 | Demote/rename as test/reference-only while preserving `.meta`. |
 | Legacy menu RPC active surface removed | APP-015.18 | Old menu/preset RPCs are no longer registered; build formal menu load/save on App HTTP and add only compact in-room controls through RPC. |
-| Formal menu DTO/load/save design is not finished | APP-022, APP-015.16 | `/api/app/canvas` loading exists in Unity. Add persona/line-profile selector loaders, accepted drawer controls, and persistence actions through App HTTP; keep compact RPC controls small. |
+| Formal menu DTO/load/save design is not finished | APP-022, APP-015.16 | `/api/app/canvas` loading exists in Unity, and the first toolbar/menu/settings shell is in place. Add persona/line-profile selector edit/apply, accepted tool owner controls, and persistence actions through App HTTP; keep compact RPC controls small. |
 | Fresh-token reconnect/backoff needs phone proof | APP-015.14, APP-023, APP-024 | `LiveKitReconnectSupervisor` now remints, reconnects, waits for Brain via startup RPC sync, and rebinds heartbeat after passive post-main-ready drops; START while already connected to a Tier1/LineB-changing Room now runs graceful shutdown plus fresh reconnect instead of hard-failing, waits for shutdown cool-down/`ReportDisconnected()`, then re-enters token/AR-starting lifecycle gates so the old shutdown cannot mark the fresh session disconnected. Reconnect/startup failures can now report degraded from token/AR/connecting/reconnecting states. Validate network flap/background behavior on iQOO Neo9. |
-| Audio route policy phone proof missing | APP-015.15, APP-024 | `AudioRoutePolicyBrainReporter` now publishes accepted Brain RPC payloads with separate input/output routes. Add iQOO Neo9 SCO/A2DP/wired/speaker logs before calling it stable. |
+| Audio route policy phone proof missing | APP-015.15, APP-024 | `AudioRoutePolicyBrainReporter` now publishes accepted Brain RPC payloads with separate input/output routes, and Unity reports whether detection came from Android `getDevices` or legacy flags. Unity mic selection treats only SCO as Bluetooth microphone input; A2DP stays output-only. Add iQOO Neo9 SCO/A2DP/wired/speaker logs before calling it stable. |
 | Downstream ECP UI not yet built | APP-015.17, APP-015.4 | The Unity dispatcher now extracts object payloads into `payload_json`; homepage consumers and runtime phone evidence are still future work. |
-| Formal `captureSnapshot` RPC missing in Unity | APP-022 / SVA follow-up | Implement a handler or reroute Brain snapshot requests to an accepted photo/video path. |
-| Formal drawer/model placement and AR phone proof not yet built | APP-015.6, APP-015.7, APP-015.16 | Gate reporters and AR runtime bootstrap now exist. Add actual touch drawer, production model mount/placement, and iQOO Neo9 AR/video evidence before marking homepage complete. |
+| Photo/camera capture semantics mismatch | APP-022 / SVA follow-up | `PhotoController` already owns photo metadata ECP + HTTP upload. The old backend frame-request helper is disabled; do not send photo bytes through RPC. |
+| Formal model placement and AR phone proof not yet built | APP-015.6, APP-015.7, APP-015.16 | Gate reporters, AR runtime bootstrap, and the first HUD/toolbar/menu shell now exist. Add production model mount/placement, accepted tool owner controls, and iQOO Neo9 AR/video evidence before marking homepage complete. |
 | Phone proof missing | APP-015.8, APP-015.13, APP-024 | Verify iQOO Neo9 mic/Bluetooth/app switch/network/AR/video/reconnect in the formal App. |
 
 ## H. Completion Signal

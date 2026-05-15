@@ -42,9 +42,20 @@ namespace ParrotApp.LiveKit
     ///   it to mean the current route is healthy.</item>
     /// </list>
     ///
+    /// <b>Manual device preference (formal App V1)</b>:
+    /// <list type="bullet">
+    /// <item>The Settings page may call <see cref="CyclePreferredDevice"/> or
+    ///   <see cref="ClearPreferredDevice"/>. The preference is local to Unity
+    ///   and only changes the <see cref="UnityEngine.Microphone"/> device name
+    ///   used for the next LiveKit source rebuild.</item>
+    /// <item>Route policy still comes from <see cref="AudioRouteDetector"/>.
+    ///   A2DP remains output-only; selecting a named mic does not magically
+    ///   make A2DP a Bluetooth microphone route.</item>
+    /// </list>
+    ///
     /// <b>Out of scope for Sprint4 Phase 3</b>:
     /// <list type="bullet">
-    /// <item>UI device picker, manual push-to-talk, and speaker echo policy.</item>
+    /// <item>Native OS audio-session routing, manual push-to-talk, and speaker echo policy.</item>
         /// <item>This class still does not write Brain policy directly.
         ///   <see cref="AudioRoutePolicyBrainReporter"/> owns the compact
         ///   LiveKit RPC that mirrors the current route to Brain.</item>
@@ -100,6 +111,9 @@ namespace ParrotApp.LiveKit
         public int UnityOutputSampleRate => _unityOutputSampleRate;
         public AudioRoutePolicy ActivePolicy => _activePolicy;
         public bool PublishIntentEnabled => publishIntentEnabled;
+        public string PreferredDevice => preferredDevice ?? "";
+        public string LastManualDeviceStatus { get; private set; } = "auto";
+        public int AvailableDeviceCount => Microphone.devices != null ? Microphone.devices.Length : 0;
 
         // IGracefulShutdownParticipant.
 
@@ -378,7 +392,9 @@ namespace ParrotApp.LiveKit
                     $"falling back to route-aware selection");
             }
 
-            if (policy.IsBluetooth)
+            // A2DP is output-only. Only SCO should make us prefer a Bluetooth
+            // microphone device name; otherwise keep Android's default input.
+            if (policy.Kind == AudioRouteKind.BluetoothSco)
             {
                 foreach (var d in devices)
                 {
@@ -390,11 +406,78 @@ namespace ParrotApp.LiveKit
                     }
                 }
                 Debug.Log(
-                    "[MicrophonePublisher] BT policy active but no BT device name in Microphone.devices; " +
+                    "[MicrophonePublisher] SCO policy active but no BT device name in Microphone.devices; " +
                     "using default[0] (Android usually maps default input to the SCO route)");
             }
 
             return devices[0];
+        }
+
+        public bool CyclePreferredDevice(string reason = "manual_device_cycle")
+        {
+            var devices = Microphone.devices;
+            if (devices == null || devices.Length == 0)
+            {
+                LastManualDeviceStatus = "no_microphone_devices";
+                return false;
+            }
+
+            int currentIndex = -1;
+            if (!string.IsNullOrEmpty(preferredDevice))
+            {
+                for (int i = 0; i < devices.Length; i++)
+                {
+                    if (devices[i] == preferredDevice)
+                    {
+                        currentIndex = i;
+                        break;
+                    }
+                }
+            }
+            else if (!string.IsNullOrEmpty(_selectedDevice))
+            {
+                for (int i = 0; i < devices.Length; i++)
+                {
+                    if (devices[i] == _selectedDevice)
+                    {
+                        currentIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (currentIndex >= 0 && currentIndex >= devices.Length - 1)
+            {
+                preferredDevice = "";
+                LastManualDeviceStatus = "auto";
+            }
+            else
+            {
+                preferredDevice = devices[Mathf.Clamp(currentIndex + 1, 0, devices.Length - 1)] ?? "";
+                LastManualDeviceStatus = string.IsNullOrEmpty(preferredDevice)
+                    ? "auto"
+                    : "manual:" + preferredDevice;
+            }
+
+            QueueManualDeviceRepublish(reason);
+            return true;
+        }
+
+        public void ClearPreferredDevice(string reason = "manual_device_auto")
+        {
+            preferredDevice = "";
+            LastManualDeviceStatus = "auto";
+            QueueManualDeviceRepublish(reason);
+        }
+
+        public string AvailableDevicesLabel(int maxChars = 96)
+        {
+            var devices = Microphone.devices;
+            if (devices == null || devices.Length == 0) return "none";
+            string joined = string.Join("|", devices);
+            if (maxChars > 0 && joined.Length > maxChars)
+                joined = joined.Substring(0, maxChars);
+            return joined;
         }
 
         // Route changes.
@@ -465,6 +548,44 @@ namespace ParrotApp.LiveKit
             }
 
             _routeRepublishCoroutine = StartCoroutine(RouteRepublishLoop());
+        }
+
+        private void QueueManualDeviceRepublish(string reason)
+        {
+            if (routeDetector != null)
+                RefreshActivePolicy(routeDetector.DetectNow(), "manual_mic_device_preference");
+
+            string safeReason = string.IsNullOrWhiteSpace(reason)
+                ? "manual_mic_device_preference"
+                : reason.Trim();
+
+            if (!publishIntentEnabled)
+            {
+                Debug.Log($"[MicrophonePublisher] mic device preference cached while publish disabled ({safeReason})");
+                return;
+            }
+            if (_shutdownInitiated)
+            {
+                Debug.Log($"[MicrophonePublisher] mic device preference cached during shutdown ({safeReason})");
+                return;
+            }
+            if (RoomManager.Instance?.Room == null || RoomManager.Instance?.IsConnected != true)
+            {
+                Debug.Log($"[MicrophonePublisher] mic device preference cached until next room connect ({safeReason})");
+                return;
+            }
+            if (_publishInProgress)
+            {
+                QueueRouteRepublish(_activePolicy, "mic_device_changed_during_publish");
+                return;
+            }
+            if (!_isPublishing && _audioTrack == null && _micSource == null)
+            {
+                StartCoroutine(RequestAndPublish(initialReason: "mic_device_changed:" + safeReason));
+                return;
+            }
+
+            QueueRouteRepublish(_activePolicy, "mic_device_changed:" + safeReason);
         }
 
         private IEnumerator RouteRepublishLoop()

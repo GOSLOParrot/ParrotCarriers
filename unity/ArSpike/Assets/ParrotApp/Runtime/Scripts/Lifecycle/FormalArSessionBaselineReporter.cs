@@ -125,8 +125,10 @@ namespace ParrotApp.Lifecycle
 
             while (true)
             {
-                arRuntimeBootstrap?.EnsureArRuntime();
-                yield return null;
+                if (arRuntimeBootstrap != null)
+                    yield return arRuntimeBootstrap.EnsureArRuntimeReady();
+                else
+                    yield return null;
 
                 var arSession = FindObjectOfType<ARSession>();
                 if (arSession == null)

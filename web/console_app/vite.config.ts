@@ -5,17 +5,18 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: "../console_dist",
-    emptyOutDir: true,
+    emptyOutDir: false,
     sourcemap: false,
     rollupOptions: {
+      input: "index.html",
       output: {
-        entryFileNames: "assets/app.js",
-        chunkFileNames: "assets/[name].js",
+        entryFileNames: "assets/app-[hash].js",
+        chunkFileNames: "assets/[name]-[hash].js",
         assetFileNames: (assetInfo) => {
           if (assetInfo.name && assetInfo.name.endsWith(".css")) {
-            return "assets/styles.css";
+            return "assets/styles-[hash][extname]";
           }
-          return "assets/[name][extname]";
+          return "assets/[name]-[hash][extname]";
         }
       }
     }

@@ -32,10 +32,16 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private AppRoomSettingClient roomSettingClient;
         [SerializeField] private AppHomeMenuClient homeMenuClient;
         [SerializeField] private LifecycleHeartbeatPublisher heartbeatPublisher;
+        [SerializeField] private EcpEventPublisher ecpEventPublisher;
         [SerializeField] private FormalMainReadyGate mainReadyGate;
         [SerializeField] private FormalHomeHudController homeHudController;
         [SerializeField] private FormalHomeMenuLoader homeMenuLoader;
+        [SerializeField] private FormalHomeMenuController homeMenuController;
+        [SerializeField] private FormalHomeToolController homeToolController;
         [SerializeField] private FormalModelReadyReporter modelReadyReporter;
+        [SerializeField] private FormalModelPlacementController modelPlacementController;
+        [SerializeField] private FormalModelRemoteController modelRemoteController;
+        [SerializeField] private FormalXrHandPerchController xrHandPerchController;
         [SerializeField] private FormalArRuntimeBootstrap arRuntimeBootstrap;
         [SerializeField] private FormalArSessionBaselineReporter arSessionBaselineReporter;
 
@@ -56,9 +62,19 @@ namespace ParrotApp.Lifecycle
         public event Action<AppStartupConfigDto> OnTransitionStarted;
         public event Action<AppStartupConfigDto> OnMainUiReady;
         public event Action<string> OnStartupFailed;
+        public event Action<string> OnWorkspaceSwitchApplied;
+        public event Action<string> OnWorkspaceSwitchFailed;
+        public event Action<string, string> OnCompactControlApplied;
+        public event Action<string, string> OnCompactControlFailed;
 
         private Coroutine _startupCoroutine;
         private Coroutine _freshReconnectCoroutine;
+        private Coroutine _workspaceSwitchCoroutine;
+        private bool _hasQueuedWorkspaceSwitch;
+        private string _queuedWorkspaceId = "";
+        private string _queuedWorkspaceLayoutKind = "";
+        private string _confirmedWorkspaceId = "";
+        private string _confirmedCapabilityMode = "";
         private bool _mainUiReadyOnce;
 
         void Awake()
@@ -66,6 +82,7 @@ namespace ParrotApp.Lifecycle
             ResolveServices();
             defaultConfig.Normalize();
             ActiveConfig = defaultConfig;
+            RecordConfirmedSessionState();
         }
 
         public void StartDefault()
@@ -201,16 +218,191 @@ namespace ParrotApp.Lifecycle
 
         public void SwitchWorkspace(string workspaceId)
         {
-            if (ActiveConfig == null) ActiveConfig = AppStartupConfigDto.Default();
-            ActiveConfig.workspace_id = string.IsNullOrWhiteSpace(workspaceId) ? "mansion_hub" : workspaceId;
+            SwitchWorkspace(workspaceId, "");
+        }
 
-            // reason: 2DWorkspace is an in-session surface switch. It must not
-            // call LifecycleShutdownService or RoomManager.Disconnect.
-            StartCoroutine(CallBrainRpc(
+        public void SwitchWorkspace(string workspaceId, string layoutKind)
+        {
+            if (_workspaceSwitchCoroutine != null)
+            {
+                _queuedWorkspaceId = workspaceId ?? "";
+                _queuedWorkspaceLayoutKind = layoutKind ?? "";
+                _hasQueuedWorkspaceSwitch = true;
+                Debug.Log("[AppStartupFlow] workspace switch queued: " + NormalizeWorkspaceId(workspaceId));
+                return;
+            }
+            _workspaceSwitchCoroutine = StartCoroutine(SwitchWorkspaceRoutine(workspaceId, layoutKind));
+        }
+
+        private IEnumerator SwitchWorkspaceRoutine(string workspaceId, string layoutKind)
+        {
+            if (ActiveConfig == null) ActiveConfig = AppStartupConfigDto.Default();
+            ActiveConfig.Normalize();
+            EnsureConfirmedSessionState();
+            string previousWorkspaceId = _confirmedWorkspaceId;
+            string previousCapabilityMode = _confirmedCapabilityMode;
+            string targetWorkspaceId = NormalizeWorkspaceId(workspaceId);
+
+            // reason: Workspace switching is an in-session surface change. It
+            // may pause AR/video for 2D desks, but it must not call
+            // LifecycleShutdownService or RoomManager.Disconnect.
+            string policyMode = CapabilityModeForWorkspace(layoutKind);
+            bool policyChanged = false;
+            if (!string.IsNullOrWhiteSpace(policyMode)
+                && !string.Equals(policyMode, previousCapabilityMode, StringComparison.Ordinal))
+            {
+                policyChanged = true;
+                ActiveConfig.capability_mode = ApplyCapabilityModeLocal(policyMode);
+                bool policyOk = false;
+                yield return CallBrainRpc(
+                    "setAppCapabilityMode",
+                    $"{{\"mode\":{Quote(ActiveConfig.capability_mode)}}}",
+                    "workspace_session_policy",
+                    waitForBrain: true,
+                    onComplete: ok => policyOk = ok);
+                if (!policyOk)
+                {
+                    ActiveConfig.workspace_id = previousWorkspaceId;
+                    ActiveConfig.capability_mode = ApplyCapabilityModeLocal(previousCapabilityMode);
+                    lifecycleManager?.ReportDegraded("workspace_session_policy_failed:" + targetWorkspaceId);
+                    OnWorkspaceSwitchFailed?.Invoke(targetWorkspaceId);
+                    CompleteWorkspaceSwitchRoutine();
+                    yield break;
+                }
+            }
+
+            bool workspaceOk = false;
+            yield return CallBrainRpc(
                 "applyWorkspace",
-                $"{{\"workspace_id\":{Quote(ActiveConfig.workspace_id)}}}",
+                $"{{\"workspace_id\":{Quote(targetWorkspaceId)}}}",
                 "workspace_switch",
-                waitForBrain: true));
+                waitForBrain: true,
+                onComplete: ok => workspaceOk = ok);
+            if (!workspaceOk)
+            {
+                ActiveConfig.workspace_id = previousWorkspaceId;
+                if (policyChanged)
+                {
+                    ActiveConfig.capability_mode = ApplyCapabilityModeLocal(previousCapabilityMode);
+                    yield return CallBrainRpc(
+                        "setAppCapabilityMode",
+                        $"{{\"mode\":{Quote(ActiveConfig.capability_mode)}}}",
+                        "workspace_session_policy_rollback",
+                        waitForBrain: true);
+                }
+
+                lifecycleManager?.ReportDegraded("workspace_switch_failed:" + targetWorkspaceId);
+                OnWorkspaceSwitchFailed?.Invoke(targetWorkspaceId);
+                CompleteWorkspaceSwitchRoutine();
+                yield break;
+            }
+
+            ActiveConfig.workspace_id = targetWorkspaceId;
+            RecordConfirmedSessionState();
+            OnWorkspaceSwitchApplied?.Invoke(ActiveConfig.workspace_id);
+            CompleteWorkspaceSwitchRoutine();
+        }
+
+        private void CompleteWorkspaceSwitchRoutine()
+        {
+            _workspaceSwitchCoroutine = null;
+            if (!_hasQueuedWorkspaceSwitch)
+                return;
+
+            string nextWorkspaceId = _queuedWorkspaceId;
+            string nextLayoutKind = _queuedWorkspaceLayoutKind;
+            _queuedWorkspaceId = "";
+            _queuedWorkspaceLayoutKind = "";
+            _hasQueuedWorkspaceSwitch = false;
+            SwitchWorkspace(nextWorkspaceId, nextLayoutKind);
+        }
+
+        private void EnsureConfirmedSessionState()
+        {
+            if (ActiveConfig == null)
+                ActiveConfig = AppStartupConfigDto.Default();
+            ActiveConfig.Normalize();
+            if (string.IsNullOrWhiteSpace(_confirmedWorkspaceId))
+                _confirmedWorkspaceId = ActiveConfig.workspace_id;
+            if (string.IsNullOrWhiteSpace(_confirmedCapabilityMode))
+                _confirmedCapabilityMode = ActiveConfig.capability_mode;
+        }
+
+        private void RecordConfirmedSessionState()
+        {
+            if (ActiveConfig == null)
+                return;
+            ActiveConfig.Normalize();
+            _confirmedWorkspaceId = ActiveConfig.workspace_id;
+            _confirmedCapabilityMode = ActiveConfig.capability_mode;
+        }
+
+        private static string NormalizeWorkspaceId(string workspaceId)
+        {
+            return string.IsNullOrWhiteSpace(workspaceId) ? "mansion_hub" : workspaceId.Trim();
+        }
+
+        private static string CapabilityModeForWorkspace(string layoutKind)
+        {
+            if (string.Equals(layoutKind, "2d_workspace", StringComparison.OrdinalIgnoreCase))
+                return AppCapabilityModeNames.VoiceOnlyNoVideo;
+            if (string.Equals(layoutKind, "ar_workspace", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(layoutKind, "ar_companion", StringComparison.OrdinalIgnoreCase))
+                return AppCapabilityModeNames.FullARCompanion;
+            return "";
+        }
+
+        private IEnumerator ApplyCompactControlRoutine(
+            string controlName,
+            string method,
+            string payload,
+            string value)
+        {
+            bool ok = false;
+            yield return CallBrainRpc(
+                method,
+                payload,
+                controlName,
+                waitForBrain: true,
+                onComplete: success => ok = success);
+            if (ok)
+            {
+                OnCompactControlApplied?.Invoke(controlName, value);
+                yield break;
+            }
+
+            lifecycleManager?.ReportDegraded(controlName + "_failed:" + value);
+            OnCompactControlFailed?.Invoke(controlName, value);
+        }
+
+        public void SetPhotoAwarenessPolicy(string policy)
+        {
+            string normalized = string.IsNullOrWhiteSpace(policy) ? "AWARE_SILENT" : policy.Trim();
+            StartCoroutine(ApplyCompactControlRoutine(
+                "photo_awareness",
+                "setPhotoAwareness",
+                $"{{\"policy\":{Quote(normalized)},\"enabled\":true,\"preview_ttl_seconds\":900}}",
+                normalized));
+        }
+
+        public void SetCameraMode(string mode)
+        {
+            string normalized = string.IsNullOrWhiteSpace(mode) ? "preview" : mode.Trim();
+            StartCoroutine(ApplyCompactControlRoutine(
+                "camera_mode",
+                "setCameraMode",
+                $"{{\"mode\":{Quote(normalized)}}}",
+                normalized));
+        }
+
+        public void SetXrHandMode(string mode)
+        {
+            string normalized = string.IsNullOrWhiteSpace(mode) ? "tracking" : mode.Trim();
+            StartCoroutine(ApplyCompactControlRoutine(
+                "xrhand_mode",
+                "setXrHandMode",
+                $"{{\"mode\":{Quote(normalized)}}}",
+                normalized));
         }
 
         public void ReportSceneReady()
@@ -317,6 +509,14 @@ namespace ParrotApp.Lifecycle
                     yield break;
                 }
 
+                yield return PrepareArRuntimeForVideoIfNeeded();
+                if (!string.IsNullOrEmpty(LastError))
+                {
+                    StartupInProgress = false;
+                    _startupCoroutine = null;
+                    yield break;
+                }
+
                 BindHeartbeatTransport();
                 MarkMainUiReady();
                 StartupInProgress = false;
@@ -363,6 +563,13 @@ namespace ParrotApp.Lifecycle
             }
 
             lifecycleManager?.EnterArSessionStarting();
+            yield return PrepareArRuntimeForVideoIfNeeded();
+            if (!string.IsNullOrEmpty(LastError))
+            {
+                StartupInProgress = false;
+                _startupCoroutine = null;
+                yield break;
+            }
             roomManager.Connect(token, string.IsNullOrWhiteSpace(url) ? null : url);
 
             float deadline = Time.realtimeSinceStartup + connectTimeoutSeconds;
@@ -459,6 +666,12 @@ namespace ParrotApp.Lifecycle
             string url = string.IsNullOrWhiteSpace(mint.Response.url)
                 ? ActiveConfig.livekit_url
                 : mint.Response.url;
+            yield return PrepareArRuntimeForVideoIfNeeded();
+            if (!string.IsNullOrEmpty(LastError))
+            {
+                CompleteFreshReconnect();
+                yield break;
+            }
             roomManager.Connect(mint.Response.token, string.IsNullOrWhiteSpace(url) ? null : url);
 
             float deadline = Time.realtimeSinceStartup + connectTimeoutSeconds;
@@ -591,6 +804,12 @@ namespace ParrotApp.Lifecycle
                 ? ActiveConfig.livekit_url
                 : mint.Response.url;
             lifecycleManager?.EnterArSessionStarting();
+            yield return PrepareArRuntimeForVideoIfNeeded();
+            if (!string.IsNullOrEmpty(LastError))
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
             roomManager.Connect(mint.Response.token, string.IsNullOrWhiteSpace(url) ? null : url);
 
             float connectDeadline = Time.realtimeSinceStartup + connectTimeoutSeconds;
@@ -666,6 +885,31 @@ namespace ParrotApp.Lifecycle
             else if (!snap.camera_authorized) snap.failure_reason = "camera_permission_denied";
 
             LastPermissionSnapshot = snap;
+        }
+
+        private IEnumerator PrepareArRuntimeForVideoIfNeeded()
+        {
+            ResolveServices();
+            if (ActiveConfig == null)
+                ActiveConfig = AppStartupConfigDto.Default();
+            ActiveConfig.Normalize();
+
+            if (!AppCapabilityModeNames.VideoEnabled(ActiveConfig.capability_mode))
+                yield break;
+            if (Application.isEditor || !Application.isMobilePlatform)
+                yield break;
+            if (arRuntimeBootstrap == null)
+                yield break;
+
+            yield return arRuntimeBootstrap.EnsureArRuntimeReady();
+            if (arRuntimeBootstrap.XrLifecycleFailed)
+            {
+                string detail = string.IsNullOrWhiteSpace(arRuntimeBootstrap.LastStatus)
+                    ? "unknown"
+                    : arRuntimeBootstrap.LastStatus;
+                lifecycleManager?.ReportDegraded("ar_runtime_prepare_failed:" + detail);
+                Fail("ar_runtime_prepare_failed:" + detail);
+            }
         }
 
         private IEnumerator CallBrainRpc(
@@ -949,6 +1193,14 @@ namespace ParrotApp.Lifecycle
             if (heartbeatPublisher == null) heartbeatPublisher = FindObjectOfType<LifecycleHeartbeatPublisher>();
             if (heartbeatPublisher == null && lifecycleManager != null)
                 heartbeatPublisher = lifecycleManager.gameObject.AddComponent<LifecycleHeartbeatPublisher>();
+            if (ecpEventPublisher == null) ecpEventPublisher = EcpEventPublisher.Instance ?? FindObjectOfType<EcpEventPublisher>();
+            if (ecpEventPublisher == null)
+            {
+                var host = roomManager != null
+                    ? roomManager.gameObject
+                    : (lifecycleManager != null ? lifecycleManager.gameObject : gameObject);
+                ecpEventPublisher = host.AddComponent<EcpEventPublisher>();
+            }
             if (mainReadyGate == null) mainReadyGate = FindObjectOfType<FormalMainReadyGate>();
             if (mainReadyGate == null)
             {
@@ -973,6 +1225,22 @@ namespace ParrotApp.Lifecycle
                     : (roomManager != null ? roomManager.gameObject : gameObject);
                 homeMenuLoader = host.AddComponent<FormalHomeMenuLoader>();
             }
+            if (homeMenuController == null) homeMenuController = FindObjectOfType<FormalHomeMenuController>();
+            if (homeMenuController == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                homeMenuController = host.AddComponent<FormalHomeMenuController>();
+            }
+            if (homeToolController == null) homeToolController = FindObjectOfType<FormalHomeToolController>();
+            if (homeToolController == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                homeToolController = host.AddComponent<FormalHomeToolController>();
+            }
             if (modelReadyReporter == null) modelReadyReporter = FindObjectOfType<FormalModelReadyReporter>();
             if (modelReadyReporter == null)
             {
@@ -980,6 +1248,30 @@ namespace ParrotApp.Lifecycle
                     ? lifecycleManager.gameObject
                     : (roomManager != null ? roomManager.gameObject : gameObject);
                 modelReadyReporter = host.AddComponent<FormalModelReadyReporter>();
+            }
+            if (modelPlacementController == null) modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
+            if (modelPlacementController == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                modelPlacementController = host.AddComponent<FormalModelPlacementController>();
+            }
+            if (modelRemoteController == null) modelRemoteController = FindObjectOfType<FormalModelRemoteController>();
+            if (modelRemoteController == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                modelRemoteController = host.AddComponent<FormalModelRemoteController>();
+            }
+            if (xrHandPerchController == null) xrHandPerchController = FindObjectOfType<FormalXrHandPerchController>();
+            if (xrHandPerchController == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                xrHandPerchController = host.AddComponent<FormalXrHandPerchController>();
             }
             if (arRuntimeBootstrap == null) arRuntimeBootstrap = FindObjectOfType<FormalArRuntimeBootstrap>();
             if (arRuntimeBootstrap == null)
@@ -1016,6 +1308,7 @@ namespace ParrotApp.Lifecycle
 
         private void MarkMainUiReady()
         {
+            RecordConfirmedSessionState();
             _mainUiReadyOnce = true;
             OnMainUiReady?.Invoke(ActiveConfig);
         }

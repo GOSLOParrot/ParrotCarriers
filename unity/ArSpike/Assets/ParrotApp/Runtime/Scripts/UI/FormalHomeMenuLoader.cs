@@ -25,8 +25,16 @@ namespace ParrotApp.UI
         private AppStartupConfigDto _activeConfig = AppStartupConfigDto.Default();
 
         public AppCanvasSnapshotDto LastSnapshot { get; private set; }
+        public AppPersonaOptionDto[] LastPersonas { get; private set; } = Array.Empty<AppPersonaOptionDto>();
+        public AppLineProfileOptionDto[] LastLineProfiles { get; private set; } = Array.Empty<AppLineProfileOptionDto>();
         public string LastError { get; private set; } = "";
+        public string LastSelectorError { get; private set; } = "";
         public bool Loaded => LastSnapshot != null && string.IsNullOrWhiteSpace(LastError);
+
+        public event Action<AppCanvasSnapshotDto> OnSnapshotLoaded;
+        public event Action<string> OnSnapshotLoadFailed;
+        public event Action<AppPersonaOptionDto[], AppLineProfileOptionDto[]> OnSelectorCatalogLoaded;
+        public event Action<string> OnSelectorCatalogLoadFailed;
 
         private void OnEnable()
         {
@@ -83,7 +91,10 @@ namespace ParrotApp.UI
             _activeConfig = config ?? AppStartupConfigDto.Default();
             _activeConfig.Normalize();
             LastSnapshot = null;
+            LastPersonas = Array.Empty<AppPersonaOptionDto>();
+            LastLineProfiles = Array.Empty<AppLineProfileOptionDto>();
             LastError = "";
+            LastSelectorError = "";
             mainReadyGate?.ReportGateInvalidated("menu_snapshot_loaded");
             StopLoad();
         }
@@ -110,6 +121,7 @@ namespace ParrotApp.UI
             {
                 LastError = "app_home_menu_http_required";
                 Debug.LogWarning("[FormalHomeMenuLoader] " + LastError);
+                OnSnapshotLoadFailed?.Invoke(LastError);
                 _loadCoroutine = null;
                 yield break;
             }
@@ -124,8 +136,10 @@ namespace ParrotApp.UI
                 {
                     LastSnapshot = result.Value;
                     LastError = "";
+                    OnSnapshotLoaded?.Invoke(LastSnapshot);
                     mainReadyGate?.ReportMenuSnapshotLoaded(
                         "app_http_canvas_snapshot:" + (_activeConfig.workspace_id ?? ""));
+                    yield return LoadSelectorCatalogs();
                     _loadCoroutine = null;
                     yield break;
                 }
@@ -141,6 +155,39 @@ namespace ParrotApp.UI
             }
 
             _loadCoroutine = null;
+            OnSnapshotLoadFailed?.Invoke(LastError);
+        }
+
+        private IEnumerator LoadSelectorCatalogs()
+        {
+            LastSelectorError = "";
+
+            RequestResult<AppPersonaOptionDto[]> personaResult = default;
+            yield return menuClient.LoadPersonas(r => personaResult = r);
+            if (personaResult.Success)
+                LastPersonas = personaResult.Value ?? Array.Empty<AppPersonaOptionDto>();
+            else
+                LastSelectorError = string.IsNullOrWhiteSpace(personaResult.Error) ? "personas_load_failed" : personaResult.Error;
+
+            RequestResult<AppLineProfileOptionDto[]> lineProfileResult = default;
+            yield return menuClient.LoadLineProfiles(r => lineProfileResult = r);
+            if (lineProfileResult.Success)
+                LastLineProfiles = lineProfileResult.Value ?? Array.Empty<AppLineProfileOptionDto>();
+            else
+                LastSelectorError = string.IsNullOrWhiteSpace(LastSelectorError)
+                    ? (string.IsNullOrWhiteSpace(lineProfileResult.Error) ? "line_profiles_load_failed" : lineProfileResult.Error)
+                    : LastSelectorError + "; " + (string.IsNullOrWhiteSpace(lineProfileResult.Error) ? "line_profiles_load_failed" : lineProfileResult.Error);
+
+            if (string.IsNullOrWhiteSpace(LastSelectorError))
+            {
+                OnSelectorCatalogLoaded?.Invoke(LastPersonas, LastLineProfiles);
+            }
+            else
+            {
+                Debug.LogWarning("[FormalHomeMenuLoader] selector catalog degraded: " + LastSelectorError);
+                OnSelectorCatalogLoadFailed?.Invoke(LastSelectorError);
+                OnSelectorCatalogLoaded?.Invoke(LastPersonas, LastLineProfiles);
+            }
         }
 
         private void StopLoad()

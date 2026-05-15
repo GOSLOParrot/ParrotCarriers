@@ -324,6 +324,8 @@ flows can be audited without inventing a second memory write path.
 | `POST /api/l2b/node/delete` | Draft/execute L2-B node eviction. | `delete_l2b_node()` -> `L15Pool.evict` | Default dry-run; real eviction is operator-only. |
 | `POST /api/l2b/edge/draft` | Draft source/target/kind/strength/source/meta for a semantic edge. | `draft_l2b_edge()` | Validates edge shape and rejects same-node self-edge drafts. |
 | `POST /api/l2b/edge` | Connect two L2-B nodes with a `SemanticEdge`. | `apply_l2b_edge()` -> `L2BGraph.connect` | Operator-only real write; receipt includes audit hints. |
+| `POST /api/l2b/edge/update` | Draft/execute replacement of an existing L2-B edge payload. | `apply_l2b_edge_update()` -> `L2BGraph.update_edge_between` | Default dry-run; matches by endpoints plus optional `match_kind` / `match_source`, not by RustWorkX edge index. |
+| `POST /api/l2b/edge/delete` | Draft/execute L2-B edge removal. | `delete_l2b_edge()` -> `L2BGraph.remove_edge_between` | Default dry-run; real delete requires operator mode and removes the first matching directed edge. |
 | `GET /api/memory/blackboard/activity` | Inspect recent py-trees Blackboard activity. | `build_blackboard_activity_snapshot()` -> `Blackboard.activity_stream` | Read-only, Web-only, bounded, summaries-only; starts activity capture if py-trees has not enabled it yet. |
 
 ### Audit: 2026-05-13 Requirement Alignment
@@ -390,9 +392,11 @@ Existing fields are enough for the first visual pass:
 
 Gaps to handle in the Web lane first:
 
-- No server-side `changed_since` or event stream exists yet. Start with the
-  current polling `sequence`; add a Web-only diff endpoint only when the visual
-  base needs less noise or lower latency.
+- Web-only Memory changed-since V1 now exists as
+  `GET /api/memory/live-state/changes?since=...&limit=...`. It wraps the
+  current live-state snapshot, keeps a stable content sequence for Web, and
+  lets React skip no-op repainting. It is still polling/diff, not an event
+  stream.
 - py-trees Blackboard activity is now visible through a bounded Web drawer, but
   it remains an in-process recent activity stream, not durable history.
 - Plan rendering now has a Web-only DAG, ready/blocked/critical hints, and
@@ -406,9 +410,10 @@ Gaps to handle in the Web lane first:
 
 Next implementation order:
 
-1. Only after these polling views are useful, evaluate a Web-only `changed_since`
-   endpoint or SSE lane. Do not promote this to core unless the App needs the
-   same stream.
+1. Use the Web-only changed-since route as the Memory polling baseline. Only
+   after the monitor design is stable, evaluate SSE/WebSocket over the same
+   sequence/event vocabulary. Do not promote this to core unless the App needs
+   the same stream.
 2. Add L2-B graph-health metrics when the server can compute bounded component,
    traversal-depth, or top-attention path summaries safely.
 
@@ -1054,15 +1059,166 @@ board":
   selection, selected-hit counts, subgraph Node/Edge counts, canvas preview for
   selected subgraph Nodes/Edges, export-draft receipts, and dry-run apply
   receipts through `/api/graphiti/subgraph/export`.
+- 2026-05-15 Graphiti export-plan continuation: Graphiti export receipts now
+  include `subgraph`, `edge_drafts`, and `edge_write_policy`. The Source Board
+  shows an inline Export plan so operators can distinguish L1.5 observations
+  from preview-only Graphiti Edge drafts that still require resolved L2-B UUIDs.
 - Obsidian card keeps `daily` / `roleplay` / `ref` profile behavior. The copy
   keeps RolePlay as a mode/profile, not a singleton bucket. The card can now
   scan a vault, select ready notes, and request a batch import preview receipt.
+- 2026-05-15 Obsidian import-plan continuation: selected-note import receipts
+  now render an inline Import plan in the Source Board. Operators can see the
+  target L1.5 bucket, bind policy, Observation source/kind/tags, original note
+  path, and explicit selected-note errors before dry-run apply. This is a UI
+  clarity change over the existing `UserTagFilter -> L15Pool.admit` route; it
+  does not add a new App DTO or bypass runtime `ObsidianIngestTrigger`.
+- 2026-05-15 Ref/photo source-card continuation: Source Board now has a
+  `Refs/Photos` tab. It reads current RefBinding registry rows, session PHOTO
+  RefBindings, IntentWorkspace PHOTO refs, and L2-B Photo Nodes from live-state
+  and can produce `refs.binding.draft` receipts for a target kind/id. A follow-up
+  bugfix makes `target_kind=unresolved` explicit: the receipt reports
+  `operation=unresolve_ref`, `would_resolve=false`, and `would_unresolve=true`
+  instead of pretending to resolve to a durable target. This is draft-only and
+  labeled `CORE-006`; no Web apply route is exposed until the shared RefBinding
+  API and App-safe subset are reviewed.
+- 2026-05-15 selected Node detail continuation: the floating Node inspector now
+  includes a read-only `Refs / Photos` section when the selected L2-B Node has
+  matching RefBinding rows, IntentWorkspace refs, or Photo asset/episode fields
+  in its snapshot metadata. This keeps Ref/file/photo evidence visible near the
+  Node while preserving the existing Web-only draft boundary for mutations.
+- 2026-05-15 photo thumbnail continuation: Web Console now exposes
+  `GET /api/photos/asset/{day}/{photo_id}` as a read-only preview route for
+  cached photo uploads. The route resolves only under `PARROT_PHOTO_CACHE_ROOT`,
+  validates the day and photo id, and returns `no-store` JPEG responses. React
+  converts existing `/upload/photo/...` refs or cache paths into this route for
+  selected Node and Source Board thumbnails; it does not expose local file paths
+  directly and does not add any bind/unbind write surface.
 - Google Calendar card now uses the calendar preview route to show raw event,
   normalized event, and Observation metadata. Real import/apply remains a later
   operator-gated step.
 - Manual Node card points users back to the canvas toolbar, keeping direct
   Node/Edge draft operations near the graph instead of mixing them with source
   imports.
+
+### 2026-05-15 Memory Toolbar / Edge Surgery Slice
+
+- React Memory page now uses an icon toolbar over the graph instead of a wide
+  form strip. Tools are grouped as Node, Edge, Subgraph, Filter, Tag, State
+  color, L1.5 Pool, and Settings, with hover tooltips and a single expanding
+  tool dock.
+- L1.5 Pool / Source Board moved into the Pool tool dock, so selected
+  Node/Edge inspection no longer shares the same static right drawer as pool
+  management.
+- Selected Node/Edge details now render as a floating canvas inspector. It
+  shows Node status/source/bucket/tags or Edge endpoints/kind/strength/source
+  and raw JSON details, with preview delete/update actions nearby.
+- Node state visualization is still simple but explicit: confirmed,
+  tentative/expected, uncertain/ghost, and alert states map to small color
+  markers. This is renderer-only and can later bind to attention/decay fields.
+- Subgraph creation is currently a visual grouping preview box on the canvas.
+  It is intentionally not a persistent L2-B core model yet; backend subgraph
+  storage remains a future candidate after the user finalizes the UI design.
+- RustWorkX capability audit for this slice: L2-B keeps stable business UUIDs
+  and does not expose RustWorkX edge indexes in Web DTOs. Edge update/delete
+  routes identify the target by endpoints plus optional kind/source filters.
+  If parallel-edge surgery needs exact selection, promote a stable edge id
+  into `SemanticEdge.meta` before exposing it as a shared interface.
+- Current Edge payload is not just from/to: snapshot and receipts include
+  `kind`, `strength`, `edge_source`, `created_at`, `cross_compartment`, and
+  free-form `meta`. This matches the existing `SemanticEdge` extension surface.
+- Bugfix continuation: Tag draft input is now independent from Edge `meta`
+  state, the floating inspector close glyph is ASCII-stable, and the
+  endpoint/kind/source Edge update/delete path has direct L2-B regression
+  coverage.
+- Filter continuation: React Flow Edge rendering now filters out any Edge whose
+  source or target Node is hidden by the active Node-kind filter, preventing
+  dangling React Flow edges and the warnings/layout oddities they cause.
+- Selection continuation: if the active Filter hides the currently selected
+  Node or Edge, the floating inspector clears itself instead of showing stale
+  details for an item that is no longer visible on the canvas.
+
+### 2026-05-15 L2-B / RustWorkX Capability Inventory
+
+Owner: Web Console lane
+Status: first_pass_complete
+Category: backend-capability / renderer-prep
+Scope: WEB-011.12, WEB-011.15, WEB-013.1, WEB-013.3, WEB-013.7
+Source: `dsg-rustworkx-master`, `dsg-l2b-node-organization-options`,
+`dsg-l1-5-l2a-conceptgraph-distilled`, `dsg-attention-schema-papers`,
+Graphiti skill, `src/parrot/dsg/l2b_graph.py`,
+`src/parrot/dsg/l2b_types.py`, `src/parrot/dsg/l2b/*`,
+`src/parrot/brain/l2b_monitor.py`, and official React-Force-Graph /
+React Flow / Obsidian Graph / D3 force docs.
+
+Core backend reality:
+
+| Area | Current capability | Web rendering implication |
+|:--|:--|:--|
+| Identity | `SemanticNode.uuid` is the stable business id; `_rx_index` is internal to `L2BGraph`. | Web and future renderer adapters must never persist or expose RustWorkX node/edge indexes. |
+| Node kind | `object`, `surface`, `zone`, `person`, `event`, `photo`. | Use kind filters and distinct visual markers, but keep shapes configurable. |
+| Node semantic payload | `label`, `category`, `description`, `known_facts`, `tags`, `typical_location`, `graphiti_uuid`, `obsidian_uuid`. | Detail drawer can show useful semantic data today; large content remains a Ref/Graphiti/Obsidian pointer. |
+| Node runtime state | `attention`, `novelty`, `habituation_count`, `salience`, `last_attended`, `confirmation`, `evidence_score`. | Full-screen monitor can map this to size, color, opacity, glow, pulse, and stale/fresh badges without changing semantics. |
+| Node grouping labels | `bucket_id`, `event_id`, `scene_type`, `location_tag`, `source`, `source_meta`, `meta`. | Primary filters/groups should be source bucket, event, scene, location, kind, attention, and ref-bound status. |
+| Image/provenance | `provenance_stream_id`, `time_span`, `reference_image_path`, `last_sighting_path`. | Photo/ref panels and Node badges can show provenance and image binding; detailed file repair stays Web operator-only. |
+| Edge payload | `kind`, `strength`, `source`, `created_at`, `meta`; `connect()` stamps `cross_compartment` / axes when event/bucket/scene/location differ. | Edge visuals should support kind color, strength width, source/provenance label, age, and cross-compartment styling. |
+| Edge surgery | Web-only update/delete matches by endpoints plus optional kind/source filters. | Good enough for first operator UI; exact parallel-edge selection needs a stable edge id in `SemanticEdge.meta` or candidate DTO. |
+| Views | `view_by_bucket`, `view_by_event`, `view_by_scene`, `view_by_location`, `view_by_kind` are filtered node lists, not RustWorkX subgraphs. | Treat these as filter views, not persisted subgraph models. |
+| Clustering | `ConnectedComponentsClusterStrategy` produces read-only WCC clusters; `NoOpClusterStrategy` exists. | Cluster overlays can be shown now; persistent cluster Nodes remain future design. |
+| Attention | `BoundedBfsActivation` and `IterativeSpreadingActivation` are read-only strategies with max-depth capped at 4; cross-compartment edges can be downweighted. | Local graph / ego expansion and trigger animation can visualize activation without mutating Node attention. |
+| Intent boundary | `IntentEventBoundaryHandler` can open/close events, attach high-attention Nodes, optional simple decay, and list cross-event channels. | Runtime Flow owns collaboration state; Memory/L2-B pages may filter/visualize event subgraphs. |
+| Graphiti bridge | L2-B can preload/enrich/archive episodes through Graphiti; Web Graphiti subgraph export currently goes through L1.5 observations. | Graphiti search-to-subgraph should remain read/preview/export-through-L1.5, not FalkorDB direct mutation. |
+
+Important gaps:
+
+- Memory changed-since V1 exists as a Web-only polling diff route over the
+  full live-state snapshot, but there is still no SSE/WebSocket stream and no
+  durable per-edge/per-node delta ledger for L2-B graph deltas.
+- No built-in graph health metrics in the read model yet: degree, density,
+  orphan count, WCC count, centrality, PageRank, or stale-node distribution.
+- No persistent subgraph/cluster storage model yet; current subgraph UI is
+  visual preview only.
+- No stable first-class Edge id beyond endpoint/kind/source matching.
+- No typed per-source `source_meta` models yet; the current dict extension
+  surface is intentional until source-specific fields stabilize.
+- No PPR implementation yet; current recall uses bounded BFS or iterative
+  spreading activation. PPR remains a later HippoRAG-style candidate.
+- No VF2/subgraph-isomorphism operator path yet; if added, it must use strict
+  call limits and stay offline or explicitly bounded.
+
+Renderer preparation:
+
+- Added `web/console_app/src/graphModel.ts`, a dependency-free adapter that
+  converts `/api/app/live-state` L2-B snapshots into `L2BRenderableGraph`.
+- The adapter keeps `nodes` and `links` engine-neutral for React Flow,
+  React-Force-Graph, or a future dense graph engine.
+- It maps Node visual states from current backend fields:
+  `alert`, `confirmed`, `tentative/expected`, `uncertain`, `ghost`, `default`.
+- It filters Nodes by kind/source/bucket/event/min-attention/ref-bound and
+  removes Links whose endpoints are not visible, matching the recent canvas
+  bugfix.
+
+Official renderer research distilled:
+
+- React-Force-Graph supports 2D/3D/VR/AR force graphs with `nodes` / `links`,
+  custom canvas Node rendering, link width/color/labels/arrows, directional
+  particles, click/hover/drag callbacks, camera centering/zoom, and d3 force
+  tuning. This fits WEB-013's full-screen monitor.
+- React Flow remains the editing/workflow canvas. Its official docs confirm
+  controlled `nodes` / `edges`, custom node/edge types, edge reconnect, loose
+  connection mode, and keyboard delete/select behavior, which fit WEB-011 and
+  Runtime Flow better than a force graph.
+- Obsidian Graph View's relevant pattern is global graph plus filters, groups,
+  display toggles, force controls, and local graph depth. L2-B monitor should
+  borrow that interaction model instead of permanent dense panels.
+- D3 force concepts should be exposed as safe view controls only: center,
+  repel/charge, link force, and link distance. They must not change L2-B
+  semantics.
+
+Shared-interface rule:
+
+- The adapter and renderer fields are Web-only. If multiple consumers need a
+  streamed graph delta or stable Edge id, record it in CORE-009 / candidate
+  queue before promoting it to shared SSOT.
 
 ### 2026-05-15 Source Preview Routes
 
@@ -1073,12 +1229,16 @@ Implemented after the first UI slice:
 | `GET /api/l15/obsidian-vault/scan` | Scan a local vault path and classify ready/invalid Obsidian notes for `daily`, `roleplay`, and `ref` profiles. | Read-only; no file writes, no trigger publish, import remains operator-gated. |
 | `POST /api/l15/obsidian-vault/import-draft` | Rescan selected Obsidian note paths and convert them through `UserTagFilter` into reviewable L1.5 observations. | Draft only; no Redis publish and no L1.5/L2-B mutation. |
 | `POST /api/l15/obsidian-vault/import` | Apply selected Obsidian notes to L1.5 for Web operator testing. | Default dry-run; real import requires `operator_mode=true` and uses `L15Pool.admit`, not App DTOs. |
+| `POST /api/google/calendar/fetch` | Draft/dispatch a Scheduler/Nanobot `calendar_fetch` task that should return `calendar_result`. | Default dry-run; real dispatch requires operator mode. Browser never holds Google OAuth. |
 | `POST /api/google/calendar/preview` | Show raw Google/Nanobot event, normalized `CalendarTrigger` event, and `GOOGLE_CALENDAR` Observation metadata. | Read-only; no L1.5 commit, no Google OAuth in browser. |
+| `POST /api/google/calendar/import-draft` | Convert selected/test Calendar events into reviewable `GOOGLE_CALENDAR` observations for L1.5 import. | Draft only; no L1.5/L2-B mutation. |
+| `POST /api/google/calendar/import` | Apply Calendar observations to L1.5 for Web operator testing. | Default dry-run; real import requires `operator_mode=true` and `dry_run=false`, then uses `L15Pool.admit`. |
 
 The React Source Board now consumes these routes. Obsidian scan can load a
 single note into the existing draft form or select multiple notes for a batch
-import preview. Calendar preview renders normalized event and Observation rows
-directly in the Google Calendar source card.
+import preview or import-apply preview. Calendar preview/import preview renders
+normalized event and Observation rows directly in the Google Calendar source
+card.
 
 2026-05-15 boundary fix: Obsidian vault scan/import now treats selected note
 paths as explicit operator intent. A selected note filtered out by `profiles`
@@ -1088,6 +1248,21 @@ import `limit` returns `selected_path_over_limit`; invalid selected notes return
 Invalid `limit` input returns a Web receipt error instead of raising a route
 exception. This is Web-only receipt semantics and does not change App DTOs or
 the runtime trigger protocol.
+
+2026-05-15 Calendar import boundary: Google Calendar now has the same two-step
+Web operator shape as Obsidian and Graphiti. The draft route returns raw events,
+normalized events, and observations for review. The import route defaults to
+apply preview and only admits observations into L1.5 when both operator mode
+and non-dry-run execution are explicit. The React Source Board labels this as
+preview/import preview rather than exposing raw dry-run jargon.
+
+2026-05-15 Calendar fetch/source-card continuation: the Source Board no longer
+only uses a fixed synthetic event. It accepts pasted Google API or Nanobot JSON
+(`items`, `events`, or `calendar_events`) and sends that raw payload to the same
+preview/import routes. `POST /api/google/calendar/fetch` drafts the real
+Scheduler/Nanobot fetch task shape and returns the `calendar_result` flow so an
+operator can verify the Google Workspace MCP path without putting OAuth in the
+browser.
 
 ### Graphiti / Arknights Temporal Import Principle
 
@@ -1118,3 +1293,155 @@ should show these three levels side by side:
 
 This makes it visible whether a calendar event loses time, identity, or
 provenance before it becomes a Node.
+
+2026-05-15 bugfix: the Web import route now preserves `observed_at` and
+`time_span` when it rehydrates draft Observations for real operator import. This
+matters because Calendar EVENT nodes should render on a timeline and later
+refresh by `calendar_id` + `calendar_event_id`, not become timeless generic
+notes.
+
+2026-05-15 continuation: Calendar preview/import receipts now include Web-only
+`mapping_rows`. Each row is a readable operator mapping from raw Google/Nanobot
+event identity to L1.5 `google_calendar`, L2-B EVENT action, merge key, provider
+Ref key, and IntentWorkspace policy. This is only a receipt/readability layer;
+it does not promote a new App DTO. WEB-014.15 now uses a historical tombstone
+policy for cancelled/deleted rows: keep the provider identity and L2-B EVENT
+Node, set `calendar_lifecycle=cancelled/deleted`, `is_tombstone=true`, and lower
+the node to GHOST/peripheral/low-attention state instead of default eviction.
+
+### Google Calendar True Sync Boundary
+
+Current implemented path:
+
+1. Web Source Board operator clicks fetch preview or real dispatch.
+2. `POST /api/google/calendar/fetch` drafts or dispatches `calendar_fetch`.
+3. Scheduler routes `calendar_fetch` to Nanobot.
+4. Nanobot uses the Google Workspace MCP / Google Calendar credentials outside
+   the browser and returns `calendar_result`.
+5. Scheduler rewrites that result for `CH_TRIGGER_RESULTS` and writes a bounded
+   `STREAM_TRIGGER_RESULTS` observability row for Web/result-history reads.
+6. `CalendarTrigger` normalizes the result and emits
+   `TriggerOutcome.commit_observations`.
+7. Trigger runner admits `GOOGLE_CALENDAR` Observations into the L1.5
+   `google_calendar` bucket.
+8. L1.5 / Ingest merges by stable provider identity into L2-B EVENT nodes and
+   binds a lightweight Ref key: `google_calendar:{calendar_id}:{event_id}`.
+
+This means Web can truly request a Google Calendar fetch when Scheduler,
+Nanobot, credentials, and the result listener are running. It cannot and should
+not fetch Google directly from the browser.
+
+2026-05-15 continuation: `GET /api/google/calendar/results` reads the bounded
+Scheduler-owned `STREAM_TRIGGER_RESULTS` ledger and filters for
+`calendar_result`. The Web Source Board uses this as a recent result-history
+view; it is an observability read model, not a replacement for
+`CH_TRIGGER_RESULTS` or the L1.5 commit path. Payloads are secret-redacted before
+returning to the browser.
+
+Realtime target:
+
+- Google Calendar official push notifications use service-side `watch`
+  channels and webhook callbacks. The notification says a watched resource
+  changed; it is not the event body itself.
+- Google Calendar official incremental sync uses an initial full sync to store
+  `nextSyncToken`, then repeated sync requests with the previous token to pull
+  changed and deleted entries.
+- Therefore the next backend upgrade should be: service-side watch/webhook or
+  scheduled delta fetch -> persisted sync token/result receipt -> `calendar_result`
+  event -> CalendarTrigger -> L1.5. Web should render this through the Memory
+  change stream / future SSE-WebSocket layer, not hold Google OAuth.
+- Deletion/cancellation policy is now a Web-first backend model: incremental
+  sync cancelled/deleted entries become historical tombstone EVENT nodes. This
+  keeps Google reconciliation identity visible while preventing stale reminders.
+  Eviction can still be added later as an explicit operator repair action, not
+  as the default sync behavior.
+
+References:
+
+- [Google Calendar push notifications](https://developers.google.com/workspace/calendar/api/guides/push)
+- [Google Calendar incremental synchronization](https://developers.google.com/workspace/calendar/api/guides/sync)
+
+IntentWorkspace boundary:
+
+- Plain Calendar read/sync data belongs to L1.5 -> L2-B as EVENT memory.
+- IntentWorkspace is for GOSLO Intent-layer drafts, edit plans, confirmations,
+  rich temporary reports, and user-guided changes. A calendar fetch should not
+  silently mutate IntentWorkspace.
+- If a user/GOSLO plan says “prepare for this event,” “change this schedule,”
+  or “send this to a worker,” Web should submit a GOSLO/Plan/HITL request or
+  an IntentWorkspace guidance draft. Nanobot does the tool work; GOSLO/Plan
+  owns the decision about whether the result returns to the user, GOSLO,
+  App, L2-B memory, or a pending HITL gate.
+
+## Implementation Round: WEB-011.19 Memory Changed-Since V1
+
+Owner chat: Web Console
+Status: done
+Category: business-interface implementation note
+Scope: WEB-010, WEB-011.2, WEB-011.18, WEB-011.19, CORE-009 candidate
+Source: `parrot-cursor-skill-bridge`, `dsg-rustworkx-master`,
+`dsg-l1-5-l2a-conceptgraph-distilled`, `src/parrot/brain/app_live_state.py`,
+`src/parrot/web_console/memory_live_state.py`,
+`src/parrot/web_console/server.py`, and `web/console_app/src/App.tsx`.
+
+What changed:
+
+- Added Web-only route `GET /api/memory/live-state/changes?since=...&limit=...`.
+- The route consumes the existing `build_app_live_state()` snapshot but keeps a
+  Web-specific stable content sequence. The root snapshot `sequence`,
+  `generated_at`, and expiry bookkeeping are treated as transport noise, while
+  nested business fields remain part of the signature.
+- `changed=false` responses intentionally omit the full snapshot so the React
+  Memory page can keep its current canvas state without repainting every poll.
+- `changed=true` responses include the full snapshot plus a bounded operator
+  event summary for L2-B, Blackboard, IntentWorkspace, Ref registry, and top
+  attention Nodes.
+- React Memory now calls this changed-since route in its active refresh loop.
+  Runtime Flow already uses its own `/api/runtime/flow/changes` route.
+
+Boundaries:
+
+- This is polling/diff, not SSE/WebSocket and not a promise of true realtime.
+- No Web operator action fields were added to Unity/App DTOs.
+- CORE-009 remains a candidate. If the future full-screen L2-B monitor moves to
+  SSE/WebSocket, it should reuse this `since` / `sequence` / `changed` /
+  `events` / `snapshot` envelope instead of inventing another shape.
+
+Validation:
+
+- Focused route test covers initial changed response, no-op poll, content
+  change after an L2-B Node insert, Web-only audit flags, and snapshot omission
+  on no-op.
+- Frontend typecheck/build pass after switching React Memory to the new route.
+
+## Implementation Round: WEB-015 Time-Aligned Evidence Linkage
+
+Owner chat: Web Console
+Status: in_progress
+Category: memory/vision evidence interface note
+Scope: WEB-015, CORE-006, CORE-012
+Source: user Time-Aligned Evidence plan, LiveKit/SVA/DSG attention skills,
+`src/parrot/brain/vision/evidence.py`, `identify_object`, and Web BFF routes.
+
+Memory impact:
+
+- Photo uploads and snapshot metadata now register storage-backed evidence rows
+  with the temporal ledger. This gives future L2-B/Ref/Graphiti operations a
+  stable `evidence_id` and asset pointer instead of relying on inline image
+  payloads.
+- BBox/Focus threshold crossings now register `bbox_focus` evidence rows with
+  subject/ref metadata and attention weight. This is observability-only today;
+  it does not mutate L2-B directly.
+- `identify_object` can attach `evidence_id` and storage asset pointers to
+  sighting matched/unmatched events. L2-B text matching still works when no
+  stored visual sample exists.
+
+Boundary:
+
+- `TimeAlignedSampleRef` is not yet a ratified App DTO. It is a Web/backend
+  prototype feeding CORE-012.
+- Evidence Board / Ref binding should reference evidence ids and storage refs
+  through CORE-006/CORE-012 once reviewed; no separate Web-only board storage
+  model should be invented.
+- Real frame cache, crop/region persistence, and VLM image comparison remain
+  pending WEB-015 follow-ups before L2-B can safely promote visual detections.

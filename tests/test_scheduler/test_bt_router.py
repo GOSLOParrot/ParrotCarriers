@@ -1,9 +1,13 @@
 """Tests for py-trees BT Scheduler router."""
 
+import json
+
 import py_trees
 import pytest
 
 from parrot.scheduler.router import BTRouter
+from parrot.scheduler.service import SchedulerService
+from parrot.shared.constants import CH_TRIGGER_RESULTS, STREAM_TRIGGER_RESULTS
 from parrot.shared.parrot_actions import BehaviorMode
 
 
@@ -88,3 +92,50 @@ def test_default_behavior_mode(router):
     mode = bb.behavior_mode
     assert BehaviorMode.BASE in mode
     assert BehaviorMode.COMPANION in mode
+
+
+@pytest.mark.asyncio
+async def test_scheduler_trigger_result_fanout_writes_bounded_ledger():
+    class FakeRedis:
+        def __init__(self):
+            self.xadded: list[dict] = []
+            self.published: list[tuple[str, str]] = []
+
+        async def xadd(self, stream, fields, *, maxlen=None, approximate=False):
+            self.xadded.append({
+                "stream": stream,
+                "fields": fields,
+                "maxlen": maxlen,
+                "approximate": approximate,
+            })
+
+        async def publish(self, channel, payload):
+            self.published.append((channel, payload))
+
+    redis = FakeRedis()
+    service = SchedulerService()
+
+    channel = await service._publish_trigger_result(
+        redis,
+        result={
+            "task_id": "task_calendar",
+            "type": "calendar_fetch",
+            "status": "completed",
+            "result": "[]",
+        },
+        result_channel="calendar_result",
+        task_id="task_calendar",
+        task_type="calendar_fetch",
+    )
+
+    assert channel == "calendar_result"
+    assert redis.xadded[0]["stream"] == STREAM_TRIGGER_RESULTS
+    assert redis.xadded[0]["maxlen"] == 200
+    assert redis.xadded[0]["approximate"] is True
+    ledger_payload = json.loads(redis.xadded[0]["fields"]["payload"])
+    assert ledger_payload["type"] == "calendar_result"
+    assert ledger_payload["original_type"] == "calendar_fetch"
+    assert ledger_payload["task_id"] == "task_calendar"
+    assert redis.published[0][0] == CH_TRIGGER_RESULTS
+    published_payload = json.loads(redis.published[0][1])
+    assert published_payload["type"] == "calendar_result"

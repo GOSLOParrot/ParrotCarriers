@@ -3,10 +3,13 @@ using System;
 namespace ParrotApp.LiveKit
 {
     /// <summary>
-    /// 当前音频路由分类。命名与 Android <c>AudioManager</c> 的 is*On 系列、iOS
-    /// <c>AVAudioSession.currentRoute.outputs[].portType</c> 大致对齐，但只保留 Sprint4
-    /// 真机 spike 实际需要区分的几档；细分（USB / HDMI / CarAudio …）等到 Phase 4
-    /// 协议升级时再加。
+    /// Coarse audio route categories used by the formal phone app.
+    ///
+    /// The names line up with Android AudioManager route concepts and the
+    /// future iOS AVAudioSession bridge, but the enum deliberately stays small:
+    /// it only covers the routes needed for the current LiveKit/LineB phone
+    /// work. More detailed USB/HDMI/car routes should be added with a protocol
+    /// upgrade, not as one-off UI strings.
     /// </summary>
     public enum AudioRouteKind
     {
@@ -14,33 +17,32 @@ namespace ParrotApp.LiveKit
         Speaker,
         Earpiece,
         WiredHeadset,
-        /// <summary>蓝牙双向链路（mic 录音用）。Android 大多数 headset 的输入只能通过 SCO。</summary>
+        /// <summary>Bluetooth bidirectional headset path; Android headset microphones usually require SCO.</summary>
         BluetoothSco,
-        /// <summary>蓝牙仅输出（A2DP）。如果 mic 同时活跃，系统通常 fallback 到 SCO；
-        /// 这里保留 A2DP 档位是为了让外层 detect 到"只放不录"路由也能告知 publisher。</summary>
+        /// <summary>
+        /// Bluetooth output-only route. It must not be treated as a Bluetooth
+        /// microphone input unless the OS also exposes a SCO input route.
+        /// </summary>
         BluetoothA2dp,
     }
 
     /// <summary>
-    /// 当前会话的音频路由策略快照（不可变 struct）。
+    /// Immutable snapshot of Unity's local audio route policy.
     ///
-    /// <b>Sprint4 范围说明</b>：本 struct 是 Unity 本地 route 快照，用于
-    /// <see cref="MicrophonePublisher"/> 决定 native source 采样率与 republish 触发。
-    /// 它本身不写 ConnectionHealth、不写 ECP state，也不直接写 Blackboard。
-    /// <see cref="AudioRoutePolicyBrainReporter"/> 会在 LiveKit 连接后把压缩后的
-    /// input/output route policy 通过 Brain RPC 同步到后端。
+    /// This struct is a local runtime input for <see cref="MicrophonePublisher"/>
+    /// sample-rate selection and route-change republish decisions. It does not
+    /// write health, ECP, or Blackboard directly. <see cref="AudioRoutePolicyBrainReporter"/>
+    /// mirrors the compact input/output route policy to Brain after LiveKit and
+    /// Brain presence are available.
     /// </summary>
     public readonly struct AudioRoutePolicy : IEquatable<AudioRoutePolicy>
     {
         public AudioRouteKind Kind { get; }
 
-        /// <summary>对外稳定字符串：speaker / earpiece / wired_headset / bluetooth_sco /
-        /// bluetooth_a2dp / unknown。用于日志、health <c>audio_last_error</c> 透传、
-        /// 以及未来 EcpState <c>audio_route</c> 字段。</summary>
+        /// <summary>Stable external value: speaker, earpiece, wired_headset, bluetooth_sco, bluetooth_a2dp, or unknown.</summary>
         public string RouteName { get; }
 
-        /// <summary>本路由推荐的 LiveKit native source sample rate（Hz）。允许域 {16000,
-        /// 24000, 48000}（Sprint4 用户口径）；具体映射见 <see cref="ForKind"/>。</summary>
+        /// <summary>Recommended LiveKit native microphone sample rate for this route.</summary>
         public int PreferredSampleRate { get; }
 
         public bool IsBluetooth =>
@@ -57,17 +59,14 @@ namespace ParrotApp.LiveKit
             => new AudioRoutePolicy(AudioRouteKind.Unknown, "unknown", 48000);
 
         /// <summary>
-        /// 根据 <paramref name="kind"/> 返回标准 policy。
+        /// Returns the standard policy for <paramref name="kind"/>.
         ///
-        /// <b>采样率口径</b>（与 <c>livekit-unity-sdk.mdc</c> §"Android 麦克风采样率不要跟随
-        /// 不稳定路由漂移" + Sprint3 brain_connected_black_video 修复一致）：
-        /// <list type="bullet">
-        /// <item><b>speaker / earpiece / wired_headset</b>: 48000 Hz（baseline，不破坏非蓝牙音质）。</item>
-        /// <item><b>bluetooth_sco</b>: 16000 Hz（SCO 物理上限，强行 48k 会跑出
-        ///   <c>actualRate=16000 expectedRate=48000</c> InvalidState）。</item>
-        /// <item><b>bluetooth_a2dp</b>: 16000 Hz（mic 路径系统通常 fallback SCO，按 SCO 处理）。</item>
-        /// <item><b>unknown</b>: 48000 Hz（安全默认，比 16k 误判破坏面更小）。</item>
-        /// </list>
+        /// Speaker, earpiece, and wired headset stay at 48 kHz. SCO uses 16 kHz
+        /// to avoid LiveKit native source mismatches on Android. A2DP is output
+        /// only, but the sample-rate policy remains conservative because Android
+        /// may switch the active microphone path through SCO when capture starts.
+        /// Device selection still treats only <see cref="AudioRouteKind.BluetoothSco"/>
+        /// as a Bluetooth microphone input.
         /// </summary>
         public static AudioRoutePolicy ForKind(AudioRouteKind kind)
         {

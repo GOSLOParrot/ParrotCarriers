@@ -15,6 +15,7 @@ scope, TODO list, and implementation flow with the user inside their own chats.
 | `codex_workspace/design_workspace/backend_interface_map/app/` | Unity App business-interface notes and A-D slices. | App chat owns. Web chat reads only unless asked. |
 | `codex_workspace/design_workspace/backend_interface_map/app/unity_project_inventory_app_ssot_20260513.md` | Unity App directory/resource/scene inventory SSOT. | App chat owns. Any Unity directory, resource, scene, or Build Settings change must update this file in the same turn when the inventory changes. |
 | `codex_workspace/design_workspace/backend_interface_map/app/unity_livekit_ecp_sva_data_flow_map_20260515.md` | Unity App LiveKit/ECP/SVA data-flow SSOT for homepage prep. | App chat owns. Read before adding or moving App HTTP, Orchestrator, Mint, LiveKit media/RPC, ECP, SVA/video, Brain/DSG/GOSLO/Scheduler, or Unity local state responsibilities. |
+| `codex_workspace/design_workspace/backend_interface_map/app/formal_homepage_hud_menu_plan_20260515.md` | Unity App formal homepage HUD/menu V1 implementation prep. | App chat owns. Read before implementing the formal home HUD/menu drawer, reusing AppV1 assets, or extracting reference ideas from Smoke/Ner tuning scripts. |
 | `codex_workspace/design_workspace/backend_interface_map/web_console/` | Web Console business-interface notes and A-D slices. | Web chat owns. App chat reads only unless asked. |
 | `codex_workspace/design_workspace/backend_interface_map/core_interface_candidate_queue_20260513.md` | Staging queue for proposed shared core interfaces. | Either chat may propose; App/Web dual confirmation is required before moving shared contracts to core SSOT. |
 | `.cursor/memory/architecture/Interface/**` | Ratified core interface SSOT. | Update only after the required lane confirmation; include source/writer metadata. |
@@ -137,13 +138,38 @@ Each chat follows this loop:
     fields, so keep that as a deployment-diagnostics gap, not a START blocker.
     Do not count the startup hold screen as formal homepage completion.
     `FormalMainReadyGate`, `FormalHomeHudController`, `FormalHomeMenuLoader`,
-    `FormalModelReadyReporter`, `FormalArRuntimeBootstrap`, and
-    `FormalArSessionBaselineReporter` now cover first-pass main-ready gates.
+    `FormalModelReadyReporter`, `FormalModelPlacementController`,
+    `FormalArRuntimeBootstrap`, and `FormalArSessionBaselineReporter` now cover
+    first-pass main-ready gates. The placement controller is the current
+    `onGosloPlaced` owner, waits for `FormalMainReadyGate.IsReady`, tries AR
+    plane raycast placement, loads the selected runtime visual from
+    `Resources/Models/**` when available, and falls back to whitebox/manual
+    preview placement only when that runtime asset cannot load.
+    `FormalModelRemoteController` is the first local joystick owner after
+    placement; it routes Ner to `spine_walk` and GOSLO to local walk handlers
+    without Brain RPC or menu persistence.
+    `FormalXrHandPerchController` is now mounted by runtime resolution as the
+    formal local XRHand/perch owner, but it only enables `PerchOnHand` when
+    main-ready, placed model, manifest `perch` support, and `AnimationDriver`
+    gates pass. Because `com.unity.xr.hands` / `UNITY_XR_HANDS` is not enabled,
+    this remains debug-only/package-missing until a real iQOO Neo9 build proves
+    hand tracking.
+    Formal Settings now also includes `MIC NEXT` / `MIC AUTO` local input
+    preference controls. They update `MicrophonePublisher`'s Unity device-name
+    preference and trigger a LiveKit mic republish when connected; they do not
+    change RoomSetting or pretend to force the native Android audio route.
+    `FormalHomeToolController` is the first CAM formal owner: camera delegates
+    to `PhotoController` ECP-preview + HTTP-upload only when the phone config
+    has a non-loopback upload endpoint. MAG/BBox are now deliberately deferred
+    until after phone stability and the backend SVA/ECP visual-evidence
+    contract update; the formal homepage must not emit Focus/BBox ECP yet. It
+    must not use Brain RPC, `captureSnapshot`, `identify_object`, menu
+    persistence, or Smoke UI.
     Current bug-fix checkpoint: main-ready self-reevaluates/degrades while
     waiting, menu payloads must contain real workspace/menu shell data, mobile
     AR baseline waits for `ARSessionState.SessionTracking`, and already-connected
     Tier1/LineB START uses graceful shutdown plus fresh reconnect. The accepted
-    touch drawer, production model placement, and iQOO Neo9 evidence remain
+    touch drawer, model animation expansion, and iQOO Neo9 evidence remain
     APP-015/APP-024 work.
     App HTTP selector follow-up: `GET /api/app/line-profiles` is reachable,
     `GET /api/app/personas` was added for selector-safe persona metadata, and
@@ -166,9 +192,16 @@ Each chat follows this loop:
     For the current homepage/menu and phone-stability handoff, also read
     `backend_interface_map/app/unity_homepage_menu_livekit_audit_20260515.md`:
     it records the 2026-05-15 audit that startup main-ready is not the final
-    homepage, menu persistence/full snapshots belong to App HTTP, compact
-    in-room controls may use RPC, and phone stability still requires 2D pause
-    policy, degraded HUD, ECP homepage consumers, and iQOO Neo9 evidence.
+    homepage, menu persistence/full snapshots belong to App HTTP, formal
+    homepage workspace/camera/photo-awareness/XR-hand menu apply now also uses
+    App HTTP, and phone stability still requires 2D pause policy, degraded HUD,
+    ECP homepage consumers, and iQOO Neo9 evidence. MAG/BBox stay delayed until
+    after that stability pass.
+    Before building the first formal HUD/menu drawer, read
+    `backend_interface_map/app/formal_homepage_hud_menu_plan_20260515.md`; it
+    records reusable formal scripts/assets, reference-only Smoke/Ner boundaries,
+    the first implementation TODO order, placement-owner status, and acceptance
+    gates.
 
 ## 5. Skill Gate
 

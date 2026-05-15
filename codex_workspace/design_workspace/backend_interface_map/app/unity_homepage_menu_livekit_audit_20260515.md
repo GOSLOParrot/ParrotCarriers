@@ -11,6 +11,9 @@ not only a DataChannel heartbeat or one RPC transport.
 The detailed channel map for implementation planning is
 `unity_livekit_ecp_sva_data_flow_map_20260515.md`.
 
+The concrete first-slice formal homepage HUD/menu implementation prep is
+`formal_homepage_hud_menu_plan_20260515.md`.
+
 ## A. Source Readback
 
 - Formal Unity entry remains `Assets/ParrotApp/Scenes/ParrotApp_Startup.unity`.
@@ -129,8 +132,8 @@ This table is now applied to the active Brain room RPC surface.
 | 2D workspace pause | `applyWorkspace` switches in-session without disconnect. | Need explicit mic/video/tier pause rules for 2D workspace and resume. |
 | Reconnect | `LiveKitReconnectSupervisor` exists for passive post-main-ready drops: it uses fresh Mint tokens, bounded backoff, LiveKit reconnect, Brain RPC re-sync, and heartbeat rebinding. START while already connected to a Tier1/LineB-changing Room uses graceful shutdown plus fresh reconnect instead of hard-failing. FSM degraded reporting now works from token/AR/connecting/reconnecting failure paths. Debug cached-token reconnect remains Editor-only. | Need user-visible degraded HUD and iQOO Neo9 network/background proof. |
 | Background / resume | Lifecycle FSM handles short/long background and AR video blit pause. | Must be validated on iQOO Neo9; reconnect behavior after long background is not production-proven. |
-| Bluetooth / mic route | `AudioRouteDetector` plus `MicrophonePublisher` republish mic on route changes and adjust sample rate. | Android API 31+ route detection still uses deprecated flags; no manual device picker; needs real phone proof. |
-| Audio route policy to Brain | Brain RPC `setLineBAudioRoutePolicy` exists, and `AudioRoutePolicyBrainReporter` now publishes Unity route policy after Brain presence with separate `input_route` / `output_route`. | Needs iQOO Neo9 Bluetooth/SCO/A2DP logs; no manual device picker yet. |
+| Bluetooth / mic route | `AudioRouteDetector` plus `MicrophonePublisher` republish mic on route changes and adjust sample rate. Android now tries `AudioManager.getDevices(...)` first and falls back to legacy flags, while exposing the detection source/device summary to HUD/menu. | Needs iQOO Neo9 Bluetooth/SCO/A2DP logs; no manual device picker yet. |
+| Audio route policy to Brain | Brain RPC `setLineBAudioRoutePolicy` exists, and `AudioRoutePolicyBrainReporter` now publishes Unity route policy after Brain presence with separate `input_route` / `output_route`. | Needs phone proof that the device summary matches actual Bluetooth/mic transitions; no manual device picker yet. |
 | AR/video | `ARVideoPublisher` publishes AR or fallback video and supports tiers/mute/rebuild. | Real ARCore camera/video publish needs phone proof; final homepage must show video health. |
 | ECP downstream events | Unity can publish `EcpEvent` and `EcpState`; incoming dispatcher now parses object payloads into `payload_json`. | Do not depend on full downstream menu/event UI until formal homepage consumers are built. |
 
@@ -145,7 +148,10 @@ Formal sources to build from:
   future homepage tool integration.
 - `Art/Startup/Resources/StartupPaperCraft/**` for startup sprites.
 - `Art/AppV1/**` for curated future homepage slots.
-- `Models/GOSLO.glb` and `Models/Ner/**` for model work.
+- `Resources/Models/GOSLO.glb` and `Resources/Models/Ner/**` for current
+  runtime-loadable model visuals.
+- `Models/**` remains source/import staging only until a future formal prefab
+  or addressing path is explicitly wired.
 
 Reference/test only:
 
@@ -170,7 +176,8 @@ curated pixel/wood/paper AppV1 slots and Ner Spine capability actions.
    `unity_livekit_ecp_sva_data_flow_map_20260515.md`. Treat that map as the
    homepage-prep gate.
 1. Extract useful reference patterns from `AppV1SmokeReferenceUiController`
-   into a formal homepage plan without mounting the old controller.
+   into a formal homepage plan without mounting the old controller. This is
+   now recorded in `formal_homepage_hud_menu_plan_20260515.md`.
 2. Build formal menu load/save on App HTTP. The old Brain menu RPC wrappers
    have been removed; add only specific compact in-room controls under the
    ECP/RPC command bridge when latency requires it.

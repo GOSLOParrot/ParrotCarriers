@@ -11,8 +11,8 @@ Pipeline (entry doc §8.1 L11 修订, audit §9.5 表):
     LLM 调 identify_object(description, category, action="match")
       │
       ▼
-    [Phase 0] capture_current_frame (≤ 800ms)
-        — gives sighting evidence; failure does not block L0 / L1
+    [Phase 0] time-aligned evidence lookup (≤ 800ms)
+        — finds a stored visual sample; failure does not block L0 / L1
       │
       ▼
     [L0] text fast match across L2-B (+ L1.5 hook) (≤ 200ms)
@@ -58,12 +58,12 @@ from livekit.agents import RunContext, function_tool
 from parrot.brain.event_publisher import get_ecp_event_publisher
 from parrot.brain.tools._budget import SegmentResult, with_budget
 from parrot.brain.tools._state_context import attach_state_header
-from parrot.brain.vision.snapshot import capture_current_frame
+from parrot.brain.vision.evidence import resolve_identify_evidence
 from parrot.shared.ecp_event import EcpEventType
 
 if TYPE_CHECKING:
     from parrot.dsg.l2b_types import SemanticNode
-    from parrot.shared.snapshot import SnapshotEnvelope
+    from parrot.brain.vision.evidence import TimeAlignedSampleRef
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +91,10 @@ async def identify_object(
     description: str,
     category: str = "",
     action: str = "match",
+    evidence_id: str = "",
+    bbox_ref_id: str = "",
+    focus_ref_id: str = "",
+    target_time_ms: int = 0,
 ) -> str:
     """Identify, match, or save an object you see in the camera feed.
 
@@ -125,13 +129,30 @@ async def identify_object(
             "correct '我派出去查了' felt experience."
         )
     # action == 'match' is the default; fall through.
-    return attach_state_header(await _match_staged(description, category))
+    return attach_state_header(
+        await _match_staged(
+            description,
+            category,
+            evidence_id=evidence_id,
+            bbox_ref_id=bbox_ref_id,
+            focus_ref_id=focus_ref_id,
+            target_time_ms=target_time_ms,
+        )
+    )
 
 
 # ─── orchestrator ────────────────────────────────────────────────────
 
 
-async def _match_staged(description: str, category: str) -> str:
+async def _match_staged(
+    description: str,
+    category: str,
+    *,
+    evidence_id: str = "",
+    bbox_ref_id: str = "",
+    focus_ref_id: str = "",
+    target_time_ms: int = 0,
+) -> str:
     """Phase 0 + L0 + L1 + L2 staged orchestrator.
 
     Returns a single LLM-facing string with stage info inline so the LLM's
@@ -139,26 +160,41 @@ async def _match_staged(description: str, category: str) -> str:
     """
     stages: list[str] = []
     snapshot_id = ""
-    snapshot_env: "SnapshotEnvelope | None" = None
+    evidence_sample: "TimeAlignedSampleRef | None" = None
 
-    # ─── Phase 0: capture (parallel-friendly with L0; we await first
-    # because L0 wants to write a sighting which references snapshot_id)
-    cap_seg = await with_budget(
-        capture_current_frame(timeout=_BUDGET_CAPTURE_S),
+    # Phase 0: time-aligned evidence lookup. We await first because L0/L1
+    # side effects should carry the selected evidence id when one exists.
+    # Formal design note: this must not revive the old Unity snapshot RPC.
+    # identify_object is a GOSLO Intent-layer behavior; visual evidence should
+    # come from the LiveKit background video stream or an SVA frame cache using
+    # a timestamp/ref, then feed L2-B/Graphiti as storage-backed evidence.
+    # Missing evidence records a pending request instead of calling Unity.
+    evidence_seg = await with_budget(
+        resolve_identify_evidence(
+            evidence_id=evidence_id,
+            bbox_ref_id=bbox_ref_id,
+            focus_ref_id=focus_ref_id,
+            target_time_ms=target_time_ms,
+            description=description,
+        ),
         timeout_s=_BUDGET_CAPTURE_S + 0.1,  # +100ms cushion for the wrapper
-        segment="captureSnapshot",
+        segment="visual_evidence_lookup",
     )
-    if cap_seg.ok and cap_seg.value is not None:
-        snapshot_env = cap_seg.value
-        # SnapshotEnvelope.request_id is a short hex tag suitable as a
-        # cross-channel correlation id (audit §5.1 B1 / shared/snapshot.py).
-        snapshot_id = getattr(snapshot_env, "request_id", "") or ""
-        stages.append(f"[capture] ok ({cap_seg.elapsed_ms}ms)")
+    if evidence_seg.ok and evidence_seg.value is not None:
+        evidence_sample = evidence_seg.value
+        # The evidence id is the sighting correlation id until CORE-012
+        # promotes a shared top-level field for visual evidence.
+        snapshot_id = evidence_sample.evidence_id
+        asset_label = evidence_sample.asset_uri or evidence_sample.asset_path or "asset"
+        stages.append(
+            f"[evidence] ready kind={evidence_sample.kind} id={snapshot_id} "
+            f"asset={asset_label} ({evidence_seg.elapsed_ms}ms)"
+        )
     else:
-        # Capture failure does not block L0 / L1 — text search still works
-        # from description alone. Future visual_match upgrades will need a
-        # snapshot, so we surface the miss in the stage info.
-        stages.append(f"[capture] failed: {cap_seg.error} ({cap_seg.elapsed_ms}ms)")
+        # Missing visual evidence does not block L0 / L1. The resolver records
+        # a pending request; frame workers or HTTP uploads can satisfy it later.
+        reason = evidence_seg.error or "pending"
+        stages.append(f"[evidence] pending: {reason} ({evidence_seg.elapsed_ms}ms)")
 
     # ─── L0: text fast match across L2-B (+ L1.5 hook)
     l0_seg = await with_budget(
@@ -185,6 +221,7 @@ async def _match_staged(description: str, category: str) -> str:
                 category=category,
                 confidence=best_conf,
                 snapshot_id=snapshot_id,
+                evidence_sample=evidence_sample,
             )
             return _format_match_reply(
                 stages=stages,
@@ -232,6 +269,7 @@ async def _match_staged(description: str, category: str) -> str:
                 category=category,
                 confidence=0.7,  # nominal — Graphiti search lacks numeric score
                 snapshot_id=snapshot_id,
+                evidence_sample=evidence_sample,
             )
             return _format_match_reply(
                 stages=stages,
@@ -251,6 +289,7 @@ async def _match_staged(description: str, category: str) -> str:
         description=description,
         category=category,
         snapshot_id=snapshot_id,
+        evidence_sample=evidence_sample,
         l0_candidates=l0_candidates,
         l1_results=l1_results,
     )
@@ -258,6 +297,7 @@ async def _match_staged(description: str, category: str) -> str:
         stages=stages,
         description=description,
         snapshot_id=snapshot_id,
+        evidence_sample=evidence_sample,
         l0_candidates=l0_candidates,
         l1_results=l1_results,
     )
@@ -409,6 +449,7 @@ async def _on_match(
     category: str,
     confidence: float,
     snapshot_id: str,
+    evidence_sample: "TimeAlignedSampleRef | None" = None,
 ) -> None:
     """Synchronous L2-B attention bump + async sighting.matched event.
 
@@ -427,6 +468,7 @@ async def _on_match(
     publisher = get_ecp_event_publisher()
     if publisher is not None:
         try:
+            evidence_payload = _evidence_payload(evidence_sample)
             event = publisher.make_brain_event(
                 event_type=EcpEventType.SIGHTING_MATCHED,
                 payload={
@@ -434,10 +476,13 @@ async def _on_match(
                     "label": label,
                     "confidence": confidence,
                     "snapshot_uuid": snapshot_id,
+                    "evidence_id": evidence_payload.get("evidence_id", ""),
+                    "evidence_asset_uri": evidence_payload.get("asset_uri", ""),
+                    "evidence_asset_path": evidence_payload.get("asset_path", ""),
                     "match_source": source,
                     "category": category,
                 },
-                correlation_id=snapshot_id,
+                correlation_id=snapshot_id or uuid,
             )
             publisher.publish_nowait(event)
         except Exception:
@@ -451,6 +496,7 @@ async def _on_unmatched(
     snapshot_id: str,
     l0_candidates: list[tuple[str, str, float]],
     l1_results: list[dict[str, Any]],
+    evidence_sample: "TimeAlignedSampleRef | None" = None,
 ) -> None:
     """Async sighting.unmatched event. No L2-B / archiver side effects.
 
@@ -462,12 +508,16 @@ async def _on_unmatched(
     if publisher is None:
         return
     try:
+        evidence_payload = _evidence_payload(evidence_sample)
         event = publisher.make_brain_event(
             event_type=EcpEventType.SIGHTING_UNMATCHED,
             payload={
                 "description": description,
                 "category": category,
                 "snapshot_uuid": snapshot_id,
+                "evidence_id": evidence_payload.get("evidence_id", ""),
+                "evidence_asset_uri": evidence_payload.get("asset_uri", ""),
+                "evidence_asset_path": evidence_payload.get("asset_path", ""),
                 "top_l2b_candidates": [
                     {"uuid": uid, "label": lbl, "score": score}
                     for uid, lbl, score in l0_candidates
@@ -669,6 +719,17 @@ def _format_match_reply(
     )
 
 
+def _evidence_payload(sample: "TimeAlignedSampleRef | None") -> dict[str, str]:
+    """Small, secret-free event payload view of a visual evidence sample."""
+    if sample is None:
+        return {"evidence_id": "", "asset_uri": "", "asset_path": ""}
+    return {
+        "evidence_id": sample.evidence_id,
+        "asset_uri": sample.asset_uri,
+        "asset_path": sample.asset_path,
+    }
+
+
 def _format_unknown_reply(
     *,
     stages: list[str],
@@ -676,6 +737,7 @@ def _format_unknown_reply(
     snapshot_id: str,
     l0_candidates: list[tuple[str, str, float]],
     l1_results: list[dict[str, Any]],
+    evidence_sample: "TimeAlignedSampleRef | None" = None,
 ) -> str:
     """Option α unknown reply — surfaces top candidates so the LLM can
     decide its next move (audit §9.4)."""
@@ -685,6 +747,11 @@ def _format_unknown_reply(
         f"unknown: '{description}' did not match anything in working memory or Graphiti.",
         f"snapshot_id: {snapshot_id or '(none)'}",
     ]
+    if evidence_sample is not None:
+        pieces.append(
+            f"evidence_id: {evidence_sample.evidence_id} "
+            f"({evidence_sample.kind}, asset={'yes' if evidence_sample.has_asset else 'no'})"
+        )
     if l0_candidates:
         top_l0 = ", ".join(
             f"{lbl}({score:.2f})" for _u, lbl, score in l0_candidates[:_L0_TOP_K]

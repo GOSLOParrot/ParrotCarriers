@@ -23,6 +23,22 @@ The formal App frontend is **not complete**.
   `codex_workspace/design_workspace/backend_interface_map/app/unity_app_transport_interface_taxonomy_20260515.md`.
 - Unity App LiveKit/ECP/SVA data-flow map:
   `codex_workspace/design_workspace/backend_interface_map/app/unity_livekit_ecp_sva_data_flow_map_20260515.md`.
+- Unity App formal homepage HUD/menu V1 implementation prep:
+  `codex_workspace/design_workspace/backend_interface_map/app/formal_homepage_hud_menu_plan_20260515.md`.
+- 2026-05-15 formal homepage status: HUD/menu shell and App HTTP canvas load
+  exist; workspace apply, camera mode, photo awareness, and XR-hand UI mode now
+  apply through App HTTP. CAM is the only active toolbar tool owner. MAG/BBox
+  are disabled/deferred until after iQOO phone stability and backend SVA/ECP
+  visual-evidence design. The new XR-hand HTTP route and deferred MAG/BBox
+  canvas state are local until the next ECS deploy.
+- 2026-05-15 iQOO Neo9 phone START pass has started. Formal package identity is
+  now `com.parrotcarriers.app` / `ParrotApp` / `ParrotCarriers`; Android
+  orientation is locked to landscape for the phone UI. The first formal phone
+  run proved the app process starts and loads `parrot_config`, but Release
+  builds blocked `http://8.216.45.45` App HTTP with Unity cleartext policy.
+  `ProjectSettings.asset` now uses `insecureHttpOption: 2` as a dev-local bridge
+  until Castle endpoints move to HTTPS/WSS. Rebuild/re-run is required before
+  calling phone START complete.
 - Unity App RoomSetting ECS persistence is verified as of 2026-05-15:
   `New` returns an unsaved draft, `Save` persists a user Room through App HTTP,
   reload lists it from ECS, and save does not apply or change active Room.
@@ -97,7 +113,9 @@ Completed or selected assets:
   These are curated/selected App V1 assets, but most are not yet wired into
   the formal startup scene; current direct usage is mostly smoke/test builder
   evidence until formal controllers load them.
-- Ner raw Spine assets exist under `unity/ArSpike/Assets/ParrotApp/Models/Ner`.
+- Ner/GOSLO runtime-loaded visuals now live under
+  `unity/ArSpike/Assets/ParrotApp/Resources/Models/**`; `Assets/ParrotApp/Models/**`
+  is source/import staging only and is not completion evidence by itself.
 - Ner is now a selectable backend/model-menu candidate through
   `unity/ArSpike/Assets/ParrotApp/Resources/parrot_models/ner_skin2.json`.
 - Ner has first-pass Unity controller probes for Spine capabilities, cheek
@@ -240,8 +258,8 @@ These are useful test evidence only. They must not be used as App completion evi
   `AssetPreviewStage`. Startup UI, lifecycle, token mint, RoomManager, shutdown
   bridge, startup flow, AppRoomSettingClient, OrchestratorClient,
   LifecycleHeartbeatPublisher, AudioRouteDetector, MicrophonePublisher,
-  ARVideoPublisher, VideoStateReporter, and VideoTierReceiver are mounted under
-  formal scene services.
+  ARVideoPublisher, VideoStateReporter, VideoTierReceiver, and formal home
+  services are mounted or runtime-resolved under formal scene services.
 - 2026-05-13 runtime audit update: local App API `127.0.0.1:8790`, token
   mint `127.0.0.1:7888`, and LiveKit dev server `127.0.0.1:7880` were brought
   up for smoke verification. RoomSetting snapshot/new/save/reload works through
@@ -381,17 +399,60 @@ These are useful test evidence only. They must not be used as App completion evi
   FormalHomeHudController reports `hud_loaded`, FormalHomeMenuLoader reports
   `menu_snapshot_loaded` from App HTTP `/api/app/canvas` only after a real
   workspace/menu shell payload is parsed, FormalModelReadyReporter reports
-  `model_resolved` from Resources manifests, FormalArRuntimeBootstrap mounts
-  ARSession plus ARCameraManager/ARCameraBackground for the formal scene,
-  XRGeneralSettings auto-loads/runs Android ARCore and Standalone XR Simulation
-  loaders, and FormalArSessionBaselineReporter owns `ar_session_baseline_clean`
-  by waiting for mobile `ARSessionState.SessionTracking`. The home menu/model/AR
+  `model_resolved` from Resources manifests, FormalModelPlacementController
+  owns first placement plus `onGosloPlaced`, waits for
+  `FormalMainReadyGate.IsReady`, tries AR plane raycast placement first, and
+  loads the selected runtime visual from `Resources/Models/**` when available
+  before falling back to whitebox/manual preview placement under
+  `AssetPreviewStage`,
+  FormalArRuntimeBootstrap mounts ARSession, XROrigin, ARRaycastManager,
+  ARPlaneManager, TrackedPoseDriver, and ARCameraManager/ARCameraBackground for the formal scene,
+  XRGeneralSettings automatic init/loading/running stays disabled for Android,
+  iPhone, and Standalone while the formal bootstrap owns mobile AR startup, and
+  FormalArSessionBaselineReporter owns
+  `ar_session_baseline_clean` by waiting for mobile `ARSessionState.SessionTracking`. The home menu/model/AR
   reporters catch up if mounted after `OnMainUiReady`, so dynamic service
   resolution does not leave the App stuck on missing gates. START while already
   connected to a Tier1/LineB-changing Room now uses graceful shutdown plus fresh
   Mint reconnect instead of hard-failing. Next App
-  work should build the accepted touch menu/tool drawer and production model
-  placement from the App HTTP/RPC/ECP boundaries, not from Smoke UI.
+  work should verify and extend the first formal touch menu/tool drawer, then
+  add production model placement from the App HTTP/RPC/ECP boundaries, not from
+  Smoke UI. Runtime-used model visuals are separated from source/import
+  staging: manifests resolve `Resources/Models/**`, while
+  `Assets/ParrotApp/Models/**` is not a completion signal by itself. The first
+  formal HUD/menu implementation Ref is
+  `backend_interface_map/app/formal_homepage_hud_menu_plan_20260515.md`.
+  Current first slices: `FormalHomeMenuController` renders App HTTP canvas
+  modules/workspaces/tools/notes into a formal landscape drawer; workspace tabs
+  and quick camera/photo-awareness/XR-hand controls delegate through
+  `AppStartupFlowController` compact RPC wrappers only after Brain is present.
+  `FormalHomeHudController` now shows startup failure, menu loader failure, and
+  reconnect-pending state in the home status line. The menu loader now also
+  reads `/api/app/personas` and `/api/app/line-profiles` for read-only selector
+  status rows; selector edit/apply still needs an owner flow. Workspace tabs
+  pass App HTTP `layout_kind` into `AppStartupFlowController`, and
+  `2d_workspace` now applies `VoiceOnlyNoVideo` before `applyWorkspace`, pausing
+  AR/video without disconnecting the LiveKit room. `FormalHomeToolController`
+  now owns the first CAM/MAG/BOX toolbar slice: CAM delegates to
+  `PhotoController` only when `photoUploadUrl` (or host/port) is phone-safe,
+  MAG emits Focus ECP events, and BOX emits BBox ECP events. It does not call
+  Brain RPC, `captureSnapshot`, `identify_object`, menu persistence, or Smoke
+  UI. Generic tool cards and durable save/edit affordances remain read-only
+  until their owner action is explicitly wired. The Settings quick actions now include a model placement
+  button that delegates to `FormalModelPlacementController`; runtime GOSLO/Ner
+  visuals are attempted before whitebox fallback. `FormalModelRemoteController`
+  now provides a local-only bottom-left joystick after placement, routing Ner to
+  `spine_walk` and GOSLO to local walk handlers without Brain RPC.
+  `FormalXrHandPerchController` now mounts the formal local hand-perch owner
+  after main-ready and placement, but it degrades to package-missing/debug-only
+  until `com.unity.xr.hands` / `UNITY_XR_HANDS` and phone proof exist. Model
+  animation expansion remains pending.
+- 2026-05-15 input-device continuation: formal Settings now exposes local
+  `MIC NEXT` / `MIC AUTO` controls that update `MicrophonePublisher`'s Unity
+  `Microphone.devices` preference and republish the LiveKit mic track when
+  connected. This remains a Unity device-name preference, not native Android
+  route forcing; iQOO Neo9 SCO/A2DP/wired/speaker logs are still required before
+  calling audio switching stable.
 - 2026-05-13 homepage/LiveKit continuation audit: Brain RPC testing does not
   require phone or voice, but it does require a Brain / LiveKit Agents
   participant in the same room. Phone/device testing is still required for AR

@@ -1,15 +1,4 @@
-"""Sprint4 Phase 4 — `snapshot.captured` observer (skeleton).
-
-Authoritative spec: ``architecture/sprint4_phase4_entry_20260430.md §8.3``
-(event_type registry) + §8.4 (Observer code routing).
-
-Phase 4 W4-5 wires the real handler that mirrors ``snapshot.captured``
-payloads to the Blackboard ``transient/just_captured_photo`` key (writer
-stays ``brain.vision.snapshot`` per ``bb_schema.py`` — this observer is a
-**read-side** projection, not the BB key's producer). Phase 4 W1-2 (current)
-just provides the registration hookpoint so the package's wiring graph is
-complete.
-"""
+"""Observer for storage-backed snapshot/photo metadata events."""
 
 from __future__ import annotations
 
@@ -23,16 +12,29 @@ logger = logging.getLogger(__name__)
 
 
 def _on_snapshot_captured(event: EcpEvent) -> None:
-    """Phase 4 W1-2 skeleton: log + drop. W4-5 wires BB transient mirror.
-
-    Not implementing the BB write yet because Phase 4 W3 introduces the
-    captureSnapshot RPC end-to-end (tool ② chain) and the BB write should
-    be tested against a real producer, not synthesized payload shapes.
-    """
+    """Log snapshot metadata without assuming inline image transport."""
     logger.debug(
         "[observer.snapshot] event_id=%s payload_keys=%s",
-        event.event_id, sorted(event.payload.keys()),
+        event.event_id,
+        sorted(event.payload.keys()),
     )
+    try:
+        from parrot.brain.vision.evidence import (
+            EvidenceKind,
+            record_ecp_evidence_sample,
+        )
+
+        payload = event.payload or {}
+        record_ecp_evidence_sample(
+            event,
+            kind=EvidenceKind.IMAGE_ASSET,
+            asset_path=str(payload.get("asset_path", "") or ""),
+            asset_uri=str(payload.get("asset_ref", "") or payload.get("asset_uri", "") or ""),
+            description=str(payload.get("description", "") or "snapshot.captured"),
+            meta={"source": "observer.snapshot"},
+        )
+    except Exception:
+        logger.debug("[observer.snapshot] evidence ledger write failed", exc_info=True)
 
 
 def register(ingest: EcpEventIngest) -> None:

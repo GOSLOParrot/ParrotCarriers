@@ -259,6 +259,10 @@ class IngestRunner:
             # Calendar refreshes should update the runtime event view in place
             # without creating a duplicate node. Source meta keeps the Google
             # identity/version tokens needed for later write-back.
+            lifecycle_state = str(
+                (obs.meta or {}).get("calendar_lifecycle", "") or ""
+            ).lower()
+            was_tombstone = bool(existing.source_meta.get("is_tombstone"))
             if obs.label and existing.label != obs.label:
                 existing.label = obs.label
                 changed = True
@@ -271,6 +275,34 @@ class IngestRunner:
             for key, value in obs.meta.items():
                 if existing.source_meta.get(key) != value:
                     existing.source_meta[key] = value
+                    changed = True
+            if lifecycle_state in {"cancelled", "deleted"}:
+                # WEB-014.15 policy: never silently evict external calendar
+                # history. A cancelled/deleted provider row becomes a
+                # tombstone-like EVENT node with low attention so the Web
+                # operator can see reconciliation state without getting false
+                # reminders or losing the Google identity anchor.
+                if existing.confirmation != ConfirmationStatus.GHOST:
+                    existing.confirmation = ConfirmationStatus.GHOST
+                    changed = True
+                if existing.salience != Salience.PERIPHERAL:
+                    existing.salience = Salience.PERIPHERAL
+                    changed = True
+                if existing.attention != 0.1:
+                    existing.attention = 0.1
+                    changed = True
+            elif was_tombstone:
+                # If Google later returns the same provider id as active again,
+                # restore the node to a normal calendar event. This keeps the
+                # sync path idempotent across provider retries/undo flows.
+                if existing.confirmation != obs.confirmation:
+                    existing.confirmation = obs.confirmation
+                    changed = True
+                if existing.salience == Salience.PERIPHERAL:
+                    existing.salience = Salience.ACTIVE
+                    changed = True
+                if existing.attention < 0.6:
+                    existing.attention = 0.6
                     changed = True
 
         if obs.source == ObservationSource.GOOGLE_MESSAGE:
@@ -320,6 +352,15 @@ class IngestRunner:
             ObservationSource.USER_TAG_OBSIDIAN,
         ):
             node.salience = Salience.FOREGROUND
+        if (
+            obs.source == ObservationSource.GOOGLE_CALENDAR
+            and str((obs.meta or {}).get("calendar_lifecycle", "") or "").lower()
+            in {"cancelled", "deleted"}
+        ):
+            # New tombstone rows should start quiet; later active refreshes can
+            # restore salience through the calendar merge branch above.
+            node.salience = Salience.PERIPHERAL
+            node.attention = 0.1
         return node
 
 

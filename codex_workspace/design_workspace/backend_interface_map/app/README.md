@@ -31,6 +31,7 @@ workspace entry.
 | `unity_app_transport_interface_taxonomy_20260515.md` | APP-018 | active | Channel ownership for App HTTP, orchestrator HTTP, token mint, LiveKit media, DataChannel/ECP, RPC, Unity local state, SVA/video, and smoke evidence boundaries. |
 | `unity_homepage_menu_livekit_audit_20260515.md` | APP-015, APP-018, APP-021, APP-022, APP-023, APP-024 | active | Formal homepage/menu readiness, menu save/load boundaries, Mint/config phone suitability, LiveKit lifecycle stability gaps, ECP protocol correction, and reference/test script guardrails. |
 | `unity_livekit_ecp_sva_data_flow_map_20260515.md` | APP-015.19, APP-018, APP-022, APP-023, APP-024 | active map | Formal Unity App data-flow map across App HTTP, orchestrator, token mint, LiveKit media/RPC, ECP, SVA/video, Brain/DSG/GOSLO/Scheduler, Unity local state, and phone config rules. |
+| `formal_homepage_hud_menu_plan_20260515.md` | APP-015.20, APP-015.21, APP-015.25, APP-021, APP-022 | active plan | Formal homepage HUD/menu/model V1 implementation prep: reusable formal scripts/assets, reference-only Smoke/Ner boundaries, App HTTP/RPC/ECP responsibilities, first-slice TODO order, placement-owner status, and acceptance gates. |
 
 ## Suggested Slice Header
 

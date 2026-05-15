@@ -1,98 +1,45 @@
-"""Brain vision helpers: Snapshot capture.
+"""Brain vision helpers: snapshot capture compatibility.
 
-Implements `capture_current_frame` via LiveKit RPC to Unity.
-Follows S4.A (audit_identify_object_no_screenshot_20260420.md).
+The old Sprint4 helper pulled inline JPEG bytes through a Unity
+``captureSnapshot`` LiveKit RPC. Formal Unity no longer exposes that path:
+camera-mode photos are owned by ``PhotoController`` and flow as small ECP
+metadata plus HTTP/storage assets. ``identify_object`` should be rebuilt on a
+separate Intent/SVA path that samples the LiveKit background video stream or a
+timestamped frame cache. Keep ``capture_current_frame`` as a non-crashing
+compatibility hook for tools that still import it, but do not send image bytes
+through RPC here.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
-from livekit.agents import get_job_context
-
-from parrot.brain.tools._rpc_bridge import call_unity_rpc
-from parrot.shared.snapshot import (
-    CameraPose,
-    SnapshotEnvelope,
-    SnapshotPayloadKind,
-    SnapshotSource,
-)
+if TYPE_CHECKING:
+    from parrot.shared.snapshot import SnapshotEnvelope
 
 logger = logging.getLogger(__name__)
+_warned_disabled_capture = False
 
 
 async def capture_current_frame(
     timeout: float = 2.0, max_kb: int = 120, resolution: int = 720
-) -> SnapshotEnvelope | None:
-    """Capture the current frame from the AR camera or webcam via RPC.
+) -> "SnapshotEnvelope | None":
+    """Return no frame until the formal photo/SVA capture contract is rebuilt.
 
-    Returns:
-        SnapshotEnvelope with the inline base64 JPEG payload, or None if failed.
-
-    DRIFT NOTE (Sprint4 ECP-minimal, 2026-04-29):
-        Unity's ``SnapshotService.cs`` still replies with the Sprint3-era
-        ``{"success": bool, "width": ..., "b64_data": ...}`` shape, NOT an
-        ``EcpAck``. ``_rpc_bridge._classify_response`` therefore stamps every
-        successful snapshot as ``malformed`` in ``tick/last_rpc_ack``, which is
-        cosmetically wrong but does not affect this caller (we parse the raw
-        JSON ourselves). Phase 4 (`snapshot-identify` task in
-        ``sprint4_协议升级_31652b8a.plan.md``) will rebuild the Unity reply as
-        a real ECP ack with ``detail = SnapshotEnvelope`` and route the
-        envelope to ``transient/just_captured_photo`` plus a
-        ``snapshot.captured`` L0 event. Until then, do not chain felt-
-        experience reasoning off ``last_rpc_ack`` for ``captureSnapshot``.
+    Args are retained for callers/tests from the old ``identify_object`` path.
+    The function intentionally does not call Unity RPC, LiveKit ByteStream, or
+    any inline image transport.
     """
-    try:
-        room = get_job_context().room
-        if not room:
-            return None
-
-        # Call the Unity RPC endpoint `captureSnapshot`
-        # Using the standard bridge wrapper for LiveKit perform_rpc
-        logger.debug("Requesting captureSnapshot RPC (timeout=%s)", timeout)
-        
-        response_str = await call_unity_rpc(
-            method="captureSnapshot",
-            payload={"max_kb": max_kb, "resolution": resolution},
-            timeout=timeout,
+    del timeout, max_kb, resolution
+    global _warned_disabled_capture
+    if not _warned_disabled_capture:
+        logger.warning(
+            "capture_current_frame is disabled: formal Unity uses "
+            "PhotoController ECP metadata plus HTTP/storage assets, not "
+            "inline image RPC."
         )
-
-        import json
-        resp_data = json.loads(response_str)
-
-        # Expected response format from Unity SnapshotService.cs
-        # {
-        #   "success": true,
-        #   "width": 1280,
-        #   "height": 720,
-        #   "format": "jpeg",
-        #   "b64_data": "...",
-        #   "pose": {"px": ..., "py": ..., "pz": ..., "qx": ..., "qy": ..., "qz": ..., "qw": ...}
-        # }
-        if not resp_data.get("success"):
-            logger.warning("captureSnapshot failed: %s", resp_data.get("error", "unknown error"))
-            return None
-
-        pose_data = resp_data.get("pose")
-        pose = None
-        if pose_data:
-            pose = CameraPose(**pose_data)
-
-        env = SnapshotEnvelope(
-            source=SnapshotSource.UNITY_AR if pose else SnapshotSource.UNITY_WEBCAM,
-            width=resp_data.get("width", 720),
-            height=resp_data.get("height", 720),
-            format=resp_data.get("format", "jpeg"),
-            payload_kind=SnapshotPayloadKind.INLINE_JPEG_B64,
-            payload_inline_b64=resp_data.get("b64_data", ""),
-            camera_pose=pose,
-        )
-        return env
-
-    except asyncio.TimeoutError:
-        logger.warning("captureSnapshot RPC timed out after %ss", timeout)
-        return None
-    except Exception as e:
-        logger.exception("capture_current_frame failed: %s", e)
-        return None
+        _warned_disabled_capture = True
+    await asyncio.sleep(0)
+    return None

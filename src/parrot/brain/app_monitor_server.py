@@ -286,6 +286,11 @@ def build_app():  # type: ignore[no-untyped-def]
             preview_ttl_seconds=int(body.get("preview_ttl_seconds") or 15 * 60),
         ).as_json()
 
+    @app.post("/api/app/xrhand/mode")
+    async def set_xrhand_mode(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return AppFirstVersionFacade().set_xrhand_mode(str(body.get("mode") or "tracking")).as_json()
+
     @app.post("/api/app/nanobot/report")
     async def nanobot_report(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         body = payload or {}

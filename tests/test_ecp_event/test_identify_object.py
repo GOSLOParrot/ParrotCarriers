@@ -43,6 +43,20 @@ def _ctx():
 
 # Helper: directly invoke the staged orchestrator (skips the
 # function_tool wrapping that we test elsewhere).
+def _fake_evidence(evidence_id: str):
+    return type(
+        "FakeEvidence",
+        (),
+        {
+            "evidence_id": evidence_id,
+            "kind": "image_asset",
+            "asset_uri": f"/asset/{evidence_id}.jpg",
+            "asset_path": "",
+            "has_asset": True,
+        },
+    )()
+
+
 _match_staged = id_module._match_staged
 
 
@@ -72,9 +86,8 @@ async def test_deep_search_action_returns_removal_banner():
 
 @pytest.mark.asyncio
 async def test_l0_hit_does_not_call_graphiti():
-    async def fake_capture(timeout: float = 0.8):
-        env = type("FakeEnv", (), {"request_id": "snap_l0hit"})()
-        return env
+    async def fake_capture(**kwargs):
+        return _fake_evidence("snap_l0hit")
 
     async def fake_l0(description: str, category: str):
         return [("uuid_blue_mug", "blue ceramic mug", 0.85)]
@@ -87,7 +100,7 @@ async def test_l0_hit_does_not_call_graphiti():
         return None
 
     with (
-        patch.object(id_module, "capture_current_frame", new=fake_capture),
+        patch.object(id_module, "resolve_identify_evidence", new=fake_capture),
         patch.object(id_module, "_l0_text_fast_match", new=fake_l0),
         patch.object(id_module, "_l1_graphiti_search", new=fake_l1),
         patch.object(id_module, "_on_match", new=fake_on_match),
@@ -107,9 +120,8 @@ async def test_l0_hit_does_not_call_graphiti():
 
 @pytest.mark.asyncio
 async def test_l0_miss_then_l1_hit():
-    async def fake_capture(timeout: float = 0.8):
-        env = type("FakeEnv", (), {"request_id": "snap_l1hit"})()
-        return env
+    async def fake_capture(**kwargs):
+        return _fake_evidence("snap_l1hit")
 
     async def fake_l0(description: str, category: str):
         return []  # miss
@@ -121,7 +133,7 @@ async def test_l0_miss_then_l1_hit():
         return None
 
     with (
-        patch.object(id_module, "capture_current_frame", new=fake_capture),
+        patch.object(id_module, "resolve_identify_evidence", new=fake_capture),
         patch.object(id_module, "_l0_text_fast_match", new=fake_l0),
         patch.object(id_module, "_l1_graphiti_search", new=fake_l1),
         patch.object(id_module, "_on_match", new=fake_on_match),
@@ -139,9 +151,8 @@ async def test_l0_miss_then_l1_hit():
 
 @pytest.mark.asyncio
 async def test_both_miss_returns_option_alpha_unknown():
-    async def fake_capture(timeout: float = 0.8):
-        env = type("FakeEnv", (), {"request_id": "snap_unknown"})()
-        return env
+    async def fake_capture(**kwargs):
+        return _fake_evidence("snap_unknown")
 
     async def fake_l0(description: str, category: str):
         return [("uuid_near", "blue cup", 0.40)]  # below threshold (0.5)
@@ -153,7 +164,7 @@ async def test_both_miss_returns_option_alpha_unknown():
         return None
 
     with (
-        patch.object(id_module, "capture_current_frame", new=fake_capture),
+        patch.object(id_module, "resolve_identify_evidence", new=fake_capture),
         patch.object(id_module, "_l0_text_fast_match", new=fake_l0),
         patch.object(id_module, "_l1_graphiti_search", new=fake_l1),
         patch.object(id_module, "_on_unmatched", new=fake_on_unmatched),
@@ -174,8 +185,8 @@ async def test_both_miss_returns_option_alpha_unknown():
 
 @pytest.mark.asyncio
 async def test_capture_failure_does_not_block_l0_l1():
-    async def fake_capture(timeout: float = 0.8):
-        return None  # capture_current_frame returns None on failure
+    async def fake_capture(**kwargs):
+        return None
 
     l0_called = False
     l1_called = False
@@ -194,7 +205,7 @@ async def test_capture_failure_does_not_block_l0_l1():
         return None
 
     with (
-        patch.object(id_module, "capture_current_frame", new=fake_capture),
+        patch.object(id_module, "resolve_identify_evidence", new=fake_capture),
         patch.object(id_module, "_l0_text_fast_match", new=fake_l0),
         patch.object(id_module, "_l1_graphiti_search", new=fake_l1),
         patch.object(id_module, "_on_unmatched", new=fake_on_unmatched),
@@ -204,7 +215,7 @@ async def test_capture_failure_does_not_block_l0_l1():
     # capture failure tagged in stage info (None return → with_budget
     # treats as success ok=True with value=None, then orchestrator's
     # explicit None check tags it as failed).
-    assert "[capture]" in out
+    assert "[evidence]" in out
     assert l0_called is True
     assert l1_called is True
     # Final reply still reaches option α path
@@ -216,8 +227,8 @@ async def test_capture_failure_does_not_block_l0_l1():
 
 @pytest.mark.asyncio
 async def test_l0_timeout_does_not_kill_l1():
-    async def fake_capture(timeout: float = 0.8):
-        return type("FakeEnv", (), {"request_id": "snap_timeout"})()
+    async def fake_capture(**kwargs):
+        return _fake_evidence("snap_timeout")
 
     async def slow_l0(description: str, category: str):
         await asyncio.sleep(2.0)  # well over the 0.2s budget
@@ -230,7 +241,7 @@ async def test_l0_timeout_does_not_kill_l1():
         return None
 
     with (
-        patch.object(id_module, "capture_current_frame", new=fake_capture),
+        patch.object(id_module, "resolve_identify_evidence", new=fake_capture),
         patch.object(id_module, "_l0_text_fast_match", new=slow_l0),
         patch.object(id_module, "_l1_graphiti_search", new=fake_l1),
         patch.object(id_module, "_on_match", new=fake_on_match),

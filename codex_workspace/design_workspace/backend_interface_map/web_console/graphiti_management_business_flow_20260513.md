@@ -85,14 +85,19 @@ These routes remain Web-only business interfaces until reviewed:
 
 | Endpoint | Purpose | Safety rule |
 |:--|:--|:--|
-| `POST /api/graphiti/subgraph/search` | Natural-language Graphiti search returning bounded hits/subgraph candidates from one partition. | Read-only; bounded limit; partition allowlist includes `arknights_test`. |
-| `POST /api/graphiti/subgraph/export-draft` | Convert selected Graphiti hits into a planned L1.5/L2-B export receipt. | Draft only; no Graphiti or L2-B mutation. |
+| `POST /api/graphiti/subgraph/search` | Natural-language Graphiti search returning bounded hits/subgraph candidates from one partition. | Read-only; tolerant bounded limit; partition allowlist includes `arknights_test`. |
+| `POST /api/graphiti/subgraph/export-draft` | Convert selected Graphiti hits into a planned L1.5/L2-B export receipt with observations, `subgraph`, `edge_drafts`, and edge write policy. | Draft only; no Graphiti or L2-B mutation. Edge drafts are preview-only until L1.5-admitted nodes resolve to L2-B UUIDs. |
 | `POST /api/graphiti/subgraph/export` | Export selected hits to L2-B by admitting observations through L1.5. | Default dry-run; real apply requires `operator_mode=true`; no direct FalkorDB or direct L2-B write. |
 
 Exported observations should use `ObservationSource.USER_EXPLICIT` for the
 first Web operator path and preserve Graphiti provenance in source metadata:
 partition/group id, hit/fact text, score, Graphiti UUIDs when present,
 source node UUID, target node UUID, source description, and source URL.
+
+`edge_drafts` in the export receipt are not persisted L2-B edges. They describe
+Graphiti fact source/target UUIDs so the operator can see the intended
+subgraph, but actual L2-B edge writes require resolved L2-B node UUIDs after
+L1.5 admission and must remain operator-gated.
 
 ### 2026-05-15 Implementation Checkpoint
 
@@ -110,6 +115,10 @@ source node UUID, target node UUID, source description, and source URL.
 - Export is dry-run/operator-gated and writes only through
   `L15Pool.admit(Observation(source=USER_EXPLICIT))`. It does not directly
   write FalkorDB or bypass Graphiti/L1.5 audit receipts.
+- 2026-05-15 continuation: Graphiti search routes now tolerate bad `limit`
+  values instead of route-level 500s. Export receipts include `subgraph`,
+  `edge_drafts`, and `edge_write_policy`, making the source/target/fact shape
+  visible while preserving the L1.5-first write boundary.
 - Added `src/scripts/import_arknights_to_graphiti.py` as a dry-run-first
   fixture importer for compact original Arknights temporal episodes with
   source URL/source description and chapter-order metadata.
@@ -129,6 +138,9 @@ source node UUID, target node UUID, source description, and source URL.
   calls `/api/graphiti/subgraph/export` with `dry_run=true` and
   `operator_mode=false`. Real apply remains operator-gated and is not exposed as
   a casual primary action.
+- Export receipts now render an inline Export plan in the Source Board: selected
+  hits become L1.5 observations, and Graphiti source/target pairs appear as
+  Edge drafts with `requires_resolved_l2b_node_uuid` policy.
 - The canvas preview is still a Memory operation aid, not the final full-screen
   L2-B graph monitor. WEB-013 owns the later React-Force-Graph/Cytoscape-style
   renderer evaluation.

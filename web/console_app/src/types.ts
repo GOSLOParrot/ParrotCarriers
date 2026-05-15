@@ -36,6 +36,17 @@ export type LiveState = {
   };
 };
 
+export type MemoryLiveStateChanges = {
+  success?: boolean;
+  action?: string;
+  since?: number;
+  sequence?: number;
+  changed?: boolean;
+  events?: Array<Record<string, unknown>>;
+  snapshot?: LiveState | null;
+  audit?: Record<string, unknown>;
+};
+
 export type L15Pool = {
   success?: boolean;
   health?: Record<string, unknown>;
@@ -59,6 +70,30 @@ export type TriggerCatalog = {
   action?: string;
   triggers?: Array<Record<string, unknown>>;
   audit?: Record<string, unknown>;
+};
+
+export type VisionEvidenceStatus = {
+  action?: string;
+  sample_count?: number;
+  by_kind?: Record<string, number>;
+  latest_by_kind?: Record<string, Record<string, unknown>>;
+  visual_asset_count?: number;
+  frame_cache?: {
+    frame_count?: number;
+    latest_frame?: Record<string, unknown> | null;
+    root?: string;
+  };
+  now_ms?: number;
+  schema?: string;
+};
+
+export type VisionEvidenceTimeline = {
+  action?: string;
+  success?: boolean;
+  items?: Array<Record<string, unknown>>;
+  limit?: number;
+  kind?: string;
+  now_ms?: number;
 };
 
 export type ConsoleConfig = {

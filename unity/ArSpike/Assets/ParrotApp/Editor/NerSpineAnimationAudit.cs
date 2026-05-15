@@ -16,7 +16,7 @@ namespace ParrotApp.Editor
     /// </summary>
     public static class NerSpineAnimationAudit
     {
-        private const string SkeletonDataPath = "Assets/ParrotApp/Models/Ner/NerSkin2_SkeletonData.asset";
+        private const string SkeletonDataPath = "Assets/ParrotApp/Resources/Models/Ner/NerSkin2_SkeletonData.asset";
         private const string ManifestPath = "Assets/ParrotApp/Resources/parrot_models/ner_skin2.json";
 
         [MenuItem("ParrotApp/Ner/Log NerSkin2 Animations")]

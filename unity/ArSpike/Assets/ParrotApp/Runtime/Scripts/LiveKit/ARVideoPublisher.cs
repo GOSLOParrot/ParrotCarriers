@@ -70,6 +70,7 @@ namespace ParrotApp.LiveKit
 
         [Header("AR Components (assign if AR Foundation available)")]
         [SerializeField] private Camera arCamera;
+        [SerializeField] private FormalArRuntimeBootstrap arRuntimeBootstrap;
 
         [Header("Dev Fallback")]
         [Tooltip("AR 路径不可用时回落 WebCamTexture（spike / Editor 用，正式 AR build 走真 ARCore）。")]
@@ -249,6 +250,7 @@ namespace ParrotApp.LiveKit
             _firstFrameHealthReported = false;
             _lastFreshState = false;
 
+            yield return EnsureArRuntimeForPublish();
             bool arAvailable = TrySetupAR();
             bool useWebcam = useWebcamFallback;
 
@@ -444,6 +446,28 @@ namespace ParrotApp.LiveKit
 #else
             return false;
 #endif
+        }
+
+        private IEnumerator EnsureArRuntimeForPublish()
+        {
+            if (_currentTier == VideoTierLocal.Off)
+                yield break;
+            if (Application.isEditor || !Application.isMobilePlatform)
+                yield break;
+
+            if (arRuntimeBootstrap == null)
+                arRuntimeBootstrap = FindObjectOfType<FormalArRuntimeBootstrap>();
+            if (arRuntimeBootstrap == null)
+                yield break;
+
+            yield return arRuntimeBootstrap.EnsureArRuntimeReady();
+            if (arRuntimeBootstrap.XrLifecycleFailed)
+            {
+                _lastPublishError = string.IsNullOrWhiteSpace(arRuntimeBootstrap.LastStatus)
+                    ? "ar_runtime_prepare_failed"
+                    : "ar_runtime_prepare_failed:" + arRuntimeBootstrap.LastStatus;
+                Debug.LogWarning("[ARVideoPublisher] " + _lastPublishError);
+            }
         }
 
 #if UNITY_AR_FOUNDATION

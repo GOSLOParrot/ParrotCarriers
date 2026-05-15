@@ -228,6 +228,125 @@ async def build_l15_pool_snapshot() -> dict[str, Any]:
     }
 
 
+def draft_ref_binding(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft a RefBinding retarget/bind operation for the Web Source Board.
+
+    This is intentionally draft-only in the current Web Console. ``RefBinding``
+    is the emerging shared boundary for UI artifacts, photos, documents, L2-B,
+    Graphiti, and board renderers, but CORE-006 is not ratified yet. Returning
+    a typed receipt lets operators see the exact target and write path without
+    silently mutating the Brain session registry or leaking Web-only repair
+    actions into Unity/App DTOs.
+    """
+
+    from parrot.brain import refs as refs_registry
+    from parrot.shared.ref_binding import RefTargetKind
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    ref_id = str(body.get("ref_id") or "").strip()
+    target_kind_raw = str(body.get("target_kind") or RefTargetKind.L2B_NODE.value).strip()
+    target_id = str(body.get("target_id") or body.get("target_uuid") or "").strip()
+    valid_target_kinds = [item.value for item in RefTargetKind]
+    target_kind = _parse_enum(RefTargetKind, target_kind_raw)
+
+    if not ref_id:
+        return _receipt(
+            action="refs.binding.draft",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "error": "missing_ref_id",
+                "valid_target_kinds": valid_target_kinds,
+                "core_candidate": "CORE-006",
+            },
+        )
+    if target_kind is None:
+        return _receipt(
+            action="refs.binding.draft",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "ref_id": ref_id,
+                "error": "invalid_target_kind",
+                "target_kind": target_kind_raw,
+                "valid_target_kinds": valid_target_kinds,
+                "core_candidate": "CORE-006",
+            },
+        )
+    if target_kind is not RefTargetKind.UNRESOLVED and not target_id:
+        return _receipt(
+            action="refs.binding.draft",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "ref_id": ref_id,
+                "target_kind": target_kind.value,
+                "error": "missing_target_id",
+                "core_candidate": "CORE-006",
+            },
+        )
+
+    current_ref = refs_registry.get_ref(ref_id)
+    if current_ref is None:
+        return _receipt(
+            action="refs.binding.draft",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "ref_id": ref_id,
+                "target_kind": target_kind.value,
+                "target_id": target_id,
+                "error": "ref_not_found",
+                "write_path": "RefBindingRegistry.resolve_ref(ref_id, target_kind, target_id)",
+                "operator_required_for_execute": True,
+                "apply_route": "",
+                "core_candidate": "CORE-006",
+                "shared_status": "candidate_only",
+            },
+        )
+
+    is_unresolved_target = target_kind is RefTargetKind.UNRESOLVED
+    operation = "unresolve_ref" if is_unresolved_target else "resolve_ref"
+    write_path = (
+        "RefBinding.with_resolved_target(target_kind=unresolved, target_id='')"
+        if is_unresolved_target
+        else "RefBindingRegistry.resolve_ref(ref_id, target_kind, target_id)"
+    )
+
+    return _receipt(
+        action="refs.binding.draft",
+        success=True,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            "ref_id": ref_id,
+            "current_ref": _jsonable(current_ref),
+            "operation": operation,
+            "draft_target": {
+                "target_kind": target_kind.value,
+                "target_id": target_id,
+            },
+            "would_resolve": not is_unresolved_target,
+            "would_unresolve": is_unresolved_target,
+            "write_path": write_path,
+            "operator_required_for_execute": True,
+            "apply_route": "",
+            "core_candidate": "CORE-006",
+            "shared_status": "candidate_only",
+            "policy": (
+                "draft_only_until_CORE_006_is_ratified; Web operator apply must "
+                "remain separate from Unity/App DTOs"
+            ),
+        },
+    )
+
+
 def scan_obsidian_vault(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Scan an Obsidian vault and preview L1.5-ready note payloads.
 
@@ -424,6 +543,7 @@ def preview_google_calendar_events(payload: dict[str, Any] | None = None) -> dic
         start_ts = trigger._parse_time(str(event.get("start_time") or ""))
         end_ts = trigger._parse_time(str(event.get("end_time") or ""))
         observations.append(trigger._event_to_observation(event, start_ts, end_ts))
+    mapping_rows = _calendar_mapping_rows(normalized, observations)
 
     return _receipt(
         action="google.calendar.preview",
@@ -434,6 +554,7 @@ def preview_google_calendar_events(payload: dict[str, Any] | None = None) -> dic
             "raw_events": raw_dicts,
             "normalized_events": normalized,
             "observations": observations,
+            "mapping_rows": mapping_rows,
             "write_path": "CalendarTrigger -> TriggerOutcome.commit_observations -> L15Pool.admit",
             "preserved_fields": [
                 "calendar_id",
@@ -450,6 +571,228 @@ def preview_google_calendar_events(payload: dict[str, Any] | None = None) -> dic
                 "objects",
             ],
             "operator_required_for_import": True,
+        },
+    )
+
+
+def draft_google_calendar_fetch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft a Scheduler/Nanobot Google Calendar fetch task.
+
+    Browser code must not own Google OAuth. The real fetch path is the existing
+    Scheduler -> Nanobot -> Google Workspace MCP route, and this receipt shows
+    the exact task that would be dispatched.
+    """
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    params = _calendar_fetch_params(body)
+    return _receipt(
+        action="google.calendar.fetch.draft",
+        success=True,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            "task_type": "calendar_fetch",
+            "priority": str(body.get("priority") or "normal"),
+            "params": params,
+            "operator_required_for_execute": True,
+            "result_flow": "Scheduler -> Nanobot -> Google Workspace MCP -> calendar_result -> CalendarTrigger -> L1.5",
+        },
+    )
+
+
+async def dispatch_google_calendar_fetch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Dispatch a Google Calendar fetch only under explicit operator mode."""
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    draft = draft_google_calendar_fetch(
+        {**body, "dry_run": dry_run, "operator_mode": operator_mode}
+    )
+    draft["action"] = "google.calendar.fetch.dispatch"
+    if dry_run or not operator_mode:
+        draft["data"]["would_dispatch"] = True
+        draft["data"]["dispatch_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        return draft
+
+    try:
+        from parrot.brain.tools.dispatch_task import do_dispatch_task
+
+        task_id = await do_dispatch_task(
+            "calendar_fetch",
+            params=draft["data"]["params"],
+            priority=draft["data"]["priority"],
+        )
+        return _receipt(
+            action="google.calendar.fetch.dispatch",
+            success=True,
+            dry_run=False,
+            operator_mode=True,
+            data={**draft["data"], "task_id": task_id, "dispatched": True},
+        )
+    except Exception as exc:
+        return _receipt(
+            action="google.calendar.fetch.dispatch",
+            success=False,
+            dry_run=False,
+            operator_mode=True,
+            data={**draft["data"], "error": f"{type(exc).__name__}: {exc}"},
+        )
+
+
+async def google_calendar_result_history(limit: int = 20) -> dict[str, Any]:
+    """Read the Scheduler-owned trigger-result ledger for Calendar results.
+
+    This endpoint is intentionally read-only and Web-only. The authoritative
+    runtime path is still Pub/Sub:
+    Scheduler -> ``CH_TRIGGER_RESULTS`` -> TriggerRunner -> L1.5/L2-B. The
+    Redis stream is a bounded observability ledger so operators can understand
+    what recently returned from Nanobot after the Pub/Sub moment has passed.
+    """
+
+    limit, limit_error = _body_int_limit(limit, default=20, maximum=50)
+    if limit_error:
+        return _receipt(
+            action="google.calendar.results",
+            success=False,
+            dry_run=True,
+            operator_mode=False,
+            data={"rows": [], "error": limit_error},
+        )
+
+    from parrot.shared.constants import CH_TRIGGER_RESULTS, STREAM_TRIGGER_RESULTS
+
+    try:
+        from parrot.shared.redis_client import get_redis
+
+        redis = await get_redis()
+        raw_rows = await redis.xrevrange(STREAM_TRIGGER_RESULTS, count=limit * 3)
+    except Exception as exc:
+        return _receipt(
+            action="google.calendar.results",
+            success=True,
+            dry_run=True,
+            operator_mode=False,
+            data={
+                "available": False,
+                "stream": STREAM_TRIGGER_RESULTS,
+                "channel": CH_TRIGGER_RESULTS,
+                "rows": [],
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        )
+
+    rows: list[dict[str, Any]] = []
+    for stream_id, fields in raw_rows:
+        if not isinstance(fields, dict):
+            continue
+        row = _calendar_result_history_row(str(stream_id), fields)
+        if row:
+            rows.append(row)
+        if len(rows) >= limit:
+            break
+
+    return _receipt(
+        action="google.calendar.results",
+        success=True,
+        dry_run=True,
+        operator_mode=False,
+        data={
+            "available": True,
+            "stream": STREAM_TRIGGER_RESULTS,
+            "channel": CH_TRIGGER_RESULTS,
+            "rows": rows,
+            "count": len(rows),
+            "read_model": "Scheduler trigger-result ledger",
+            "web_only": True,
+        },
+    )
+
+
+def draft_google_calendar_import(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft Google Calendar observations for L1.5 import.
+
+    This stays Web-only and mirrors the real CalendarTrigger conversion path.
+    The receipt lets the operator inspect raw event fields, normalized event
+    fields, and the exact Observation objects before any L1.5 admission.
+    """
+
+    body = payload or {}
+    preview = preview_google_calendar_events(body)
+    data = dict(preview.get("data") or {})
+    observations = [
+        item for item in data.get("observations", []) if isinstance(item, dict)
+    ]
+    normalized_events = [
+        item for item in data.get("normalized_events", []) if isinstance(item, dict)
+    ]
+    mapping_rows = [
+        item for item in data.get("mapping_rows", []) if isinstance(item, dict)
+    ]
+    errors: list[dict[str, Any]] = []
+    if not observations:
+        errors.append({"error": "no_calendar_observations"})
+    return _receipt(
+        action="google.calendar.import_draft",
+        success=bool(observations),
+        dry_run=True,
+        operator_mode=False,
+        data={
+            "raw_events": data.get("raw_events", []),
+            "normalized_events": normalized_events,
+            "observations": observations,
+            "mapping_rows": mapping_rows,
+            "observation_count": len(observations),
+            "errors": errors,
+            "write_path": "CalendarTrigger._event_to_observation -> L15Pool.admit(GOOGLE_CALENDAR)",
+            "operator_required_for_import": True,
+        },
+    )
+
+
+async def apply_google_calendar_import(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Admit Google Calendar observations into L1.5 under operator gate.
+
+    The default mode is an apply preview: it reports the exact observations that
+    would be admitted and marks the write as skipped. A real import requires
+    both ``dry_run=false`` and ``operator_mode=true``.
+    """
+
+    from parrot.dsg.l1_5.pool import get_l1_5_pool
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    draft = draft_google_calendar_import(body)
+    draft["action"] = "google.calendar.import"
+    draft["dry_run"] = dry_run
+    draft["operator_mode"] = operator_mode
+    draft["receipt"]["audit_level"] = "operator" if operator_mode else "draft"
+    if not draft.get("success"):
+        return draft
+    if dry_run or not operator_mode:
+        draft["data"]["would_apply"] = True
+        draft["data"]["apply_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        return draft
+
+    observations = tuple(
+        _observation_from_json(item)
+        for item in draft["data"]["observations"]
+        if isinstance(item, dict)
+    )
+    outcome = await get_l1_5_pool().admit(observations)
+    return _receipt(
+        action="google.calendar.import",
+        success=not bool(outcome.rejected),
+        dry_run=False,
+        operator_mode=True,
+        data={
+            "imported_count": len(observations),
+            "admit_outcome": _jsonable(outcome),
+            "mapping_rows": draft["data"].get("mapping_rows", []),
+            "write_path": "CalendarTrigger._event_to_observation -> L15Pool.admit(GOOGLE_CALENDAR)",
         },
     )
 
@@ -726,12 +1069,7 @@ def draft_l2b_edge(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     edge = {
         "from_uuid": from_uuid,
         "to_uuid": to_uuid,
-        "edge": {
-            "kind": kind.value,
-            "strength": _body_float(body.get("strength"), 0.5),
-            "source": str(body.get("source") or "web_console"),
-            "meta": body.get("meta") if isinstance(body.get("meta"), dict) else {},
-        },
+        "edge": _edge_payload_from_body(body, kind.value),
         "operator_required_for_execute": True,
     }
     return _receipt(
@@ -740,6 +1078,50 @@ def draft_l2b_edge(payload: dict[str, Any] | None = None) -> dict[str, Any]:
         dry_run=dry_run,
         operator_mode=operator_mode,
         data=edge,
+    )
+
+
+def draft_l2b_edge_update(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft an update to an existing L2-B edge payload.
+
+    The console identifies an edge by endpoints plus optional match_kind/source.
+    That is deliberate: RustWorkX edge indexes are runtime-local and should not
+    become Web DTOs. If exact parallel-edge surgery becomes common, the next
+    step is to store a stable edge id inside ``SemanticEdge.meta``.
+    """
+    from parrot.dsg.l2b_types import EdgeKind
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    from_uuid = str(body.get("from_uuid") or body.get("source_uuid") or "").strip()
+    to_uuid = str(body.get("to_uuid") or body.get("target_uuid") or "").strip()
+    kind = _parse_enum(EdgeKind, str(body.get("kind") or EdgeKind.ASSOCIATED_WITH.value))
+    if not from_uuid or not to_uuid or kind is None:
+        return _receipt(
+            action="l2b.edge.update_draft",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "error": "missing_or_invalid_edge_fields",
+                "valid_kinds": [item.value for item in EdgeKind],
+            },
+        )
+    return _receipt(
+        action="l2b.edge.update_draft",
+        success=True,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            "from_uuid": from_uuid,
+            "to_uuid": to_uuid,
+            "match_kind": str(body.get("match_kind") or ""),
+            "match_source": str(body.get("match_source") or ""),
+            "edge": _edge_payload_from_body(body, kind.value),
+            "would_update": True,
+            "operator_required_for_execute": True,
+        },
     )
 
 
@@ -792,6 +1174,96 @@ async def apply_l2b_edge(payload: dict[str, Any] | None = None) -> dict[str, Any
         dry_run=False,
         operator_mode=True,
         data={**draft["data"], "connected": ok},
+    )
+
+
+async def apply_l2b_edge_update(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Update an existing edge only under explicit operator execution."""
+    from parrot.dsg.l2b_graph import get_l2b_graph
+    from parrot.dsg.l2b_types import EdgeKind, SemanticEdge
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    draft = draft_l2b_edge_update({**body, "dry_run": dry_run, "operator_mode": operator_mode})
+    draft["action"] = "l2b.edge.update"
+    if not draft.get("success"):
+        return draft
+    if dry_run or not operator_mode:
+        draft["data"]["would_apply"] = True
+        draft["data"]["apply_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        return draft
+
+    edge_data = draft["data"]["edge"]
+    ok = get_l2b_graph().update_edge_between(
+        str(draft["data"]["from_uuid"]),
+        str(draft["data"]["to_uuid"]),
+        SemanticEdge(
+            kind=EdgeKind(edge_data["kind"]),
+            strength=float(edge_data["strength"]),
+            source=str(edge_data["source"]),
+            meta=dict(edge_data.get("meta") or {}),
+        ),
+        match_kind=str(draft["data"].get("match_kind") or ""),
+        match_source=str(draft["data"].get("match_source") or ""),
+    )
+    return _receipt(
+        action="l2b.edge.update",
+        success=ok,
+        dry_run=False,
+        operator_mode=True,
+        data={**draft["data"], "updated": ok},
+    )
+
+
+async def delete_l2b_edge(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Delete an L2-B edge by endpoints, defaulting to dry-run.
+
+    This is Web-operator surgery. Runtime graph writes remain explicit and
+    auditable; the default response only reports what would be removed.
+    """
+    from parrot.dsg.l2b_graph import get_l2b_graph
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    from_uuid = str(body.get("from_uuid") or body.get("source_uuid") or "").strip()
+    to_uuid = str(body.get("to_uuid") or body.get("target_uuid") or "").strip()
+    if not from_uuid or not to_uuid:
+        return _receipt(
+            action="l2b.edge.delete",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={"error": "missing_edge_endpoint"},
+        )
+    data = {
+        "from_uuid": from_uuid,
+        "to_uuid": to_uuid,
+        "match_kind": str(body.get("match_kind") or ""),
+        "match_source": str(body.get("match_source") or ""),
+        "operator_required_for_execute": True,
+    }
+    if dry_run or not operator_mode:
+        return _receipt(
+            action="l2b.edge.delete",
+            success=True,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={**data, "would_delete": True, "apply_skipped_reason": "dry_run_or_operator_mode_missing"},
+        )
+    ok = get_l2b_graph().remove_edge_between(
+        from_uuid,
+        to_uuid,
+        match_kind=str(data["match_kind"]),
+        match_source=str(data["match_source"]),
+    )
+    return _receipt(
+        action="l2b.edge.delete",
+        success=ok,
+        dry_run=False,
+        operator_mode=True,
+        data={**data, "deleted": ok},
     )
 
 
@@ -1079,7 +1551,13 @@ def _obsidian_vault_import_items(
 
 
 def _observation_from_json(data: dict[str, Any]) -> Any:
-    """Rehydrate a Web receipt observation for the final L1.5 admit call."""
+    """Rehydrate a Web receipt observation for the final L1.5 admit call.
+
+    Web receipts are JSON snapshots of the Observation produced by source
+    normalizers such as CalendarTrigger. Keep temporal fields intact here:
+    EVENT nodes need ``observed_at`` / ``time_span`` for timeline rendering and
+    for later refreshes to update the right L2-B event view in place.
+    """
 
     from parrot.dsg.ingest.base import Observation, ObservationSource
     from parrot.dsg.l2b_types import ConfirmationStatus, NodeKind
@@ -1099,7 +1577,8 @@ def _observation_from_json(data: dict[str, Any]) -> Any:
         confirmation = ConfirmationStatus(confirmation_raw)
     except ValueError:
         confirmation = ConfirmationStatus.CONFIRMED
-    return Observation(
+
+    observation_kwargs: dict[str, Any] = dict(
         source=source,
         provenance_stream_id=str(data.get("provenance_stream_id") or ""),
         obsidian_uuid=str(data.get("obsidian_uuid") or ""),
@@ -1111,6 +1590,16 @@ def _observation_from_json(data: dict[str, Any]) -> Any:
         confirmation=confirmation,
         meta=dict(data.get("meta") or {}),
     )
+    obs_id = str(data.get("obs_id") or "").strip()
+    if obs_id:
+        observation_kwargs["obs_id"] = obs_id
+    observed_at = _optional_body_float(data.get("observed_at"))
+    if observed_at is not None:
+        observation_kwargs["observed_at"] = observed_at
+    time_span = _time_span_from_json(data.get("time_span"))
+    if time_span is not None:
+        observation_kwargs["time_span"] = time_span
+    return Observation(**observation_kwargs)
 
 
 def _obsidian_event(node_payload: dict[str, Any]) -> dict[str, Any]:
@@ -1145,6 +1634,174 @@ def _obsidian_profile_descriptions() -> dict[str, str]:
         "roleplay": "UUID-free mode/profile; may contain many source packs",
         "ref": "binding profile; requires existing target UUID",
     }
+
+
+def _calendar_fetch_params(body: dict[str, Any]) -> dict[str, Any]:
+    """Build the Nanobot task params shared by draft and dispatch receipts."""
+
+    return {
+        "query": str(body.get("query") or "Fetch today's Google Calendar events for the user"),
+        "instructions": str(
+            body.get("instructions")
+            or (
+                "Use the Google Calendar API or MCP tool to get today's events. "
+                "For each event, extract: id, title, start_time (ISO 8601), "
+                "end_time, location, description, html_link, etag, updated, "
+                "status, iCalUID, and any mentioned objects or items to prepare. "
+                "Also flag if the event is marked urgent/important. Return as "
+                "JSON only: "
+                '[{"id": str, "title": str, "start_time": str, "end_time": str, '
+                '"location": str, "description": str, "objects": [str], '
+                '"is_urgent": bool, "html_link": str, "etag": str, '
+                '"updated": str, "status": str, "iCalUID": str}]'
+            )
+        ),
+        "result_channel": str(body.get("result_channel") or "calendar_result"),
+    }
+
+
+def _calendar_mapping_rows(
+    events: list[dict[str, Any]],
+    observations: list[Any],
+) -> list[dict[str, Any]]:
+    """Explain how Calendar events will flow through source -> L1.5 -> L2-B.
+
+    This is a Web-only readability layer. It deliberately does not add a shared
+    DTO: the authoritative write still happens through
+    ``CalendarTrigger._event_to_observation`` and ``L15Pool.admit``.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        observation = observations[index] if index < len(observations) else None
+        meta = getattr(observation, "meta", {}) or {}
+        calendar_id = str(
+            event.get("calendar_id")
+            or meta.get("calendar_id")
+            or "primary"
+        )
+        event_id = str(
+            event.get("id")
+            or event.get("calendar_event_id")
+            or meta.get("calendar_event_id")
+            or ""
+        )
+        status = str(event.get("status") or meta.get("status") or "").lower()
+        l2b_action = "upsert_event"
+        policy_note = "merge_by_google_event_identity"
+        if status in {"cancelled", "canceled", "deleted"}:
+            l2b_action = "mark_historical_tombstone"
+            policy_note = "keep_google_identity_and_set_ghost_state"
+        rows.append(
+            {
+                "raw_index": index,
+                "title": str(event.get("title") or getattr(observation, "label", "") or ""),
+                "status": status or "confirmed_or_unspecified",
+                "calendar_id": calendar_id,
+                "calendar_event_id": event_id,
+                "provider_ref": f"google_calendar:{calendar_id}:{event_id}" if event_id else "",
+                "l15_bucket": "google_calendar",
+                "l2b_kind": "event",
+                "l2b_action": l2b_action,
+                "merge_key": f"{calendar_id}:{event_id}" if event_id else "",
+                "intent_workspace_policy": "not_used_for_read_sync",
+                "nanobot_result_channel": "calendar_result",
+                "policy_note": policy_note,
+            }
+        )
+    return rows
+
+
+def _calendar_result_history_row(
+    stream_id: str,
+    fields: dict[str, Any],
+) -> dict[str, Any] | None:
+    payload = _load_result_payload(fields.get("payload"))
+    result_channel = str(
+        payload.get("type")
+        or fields.get("result_channel")
+        or ""
+    )
+    if result_channel != "calendar_result":
+        return None
+
+    events = _calendar_events_from_result_payload(payload)
+    return {
+        "stream_id": stream_id,
+        "created_at": _body_float(fields.get("created_at"), 0.0),
+        "task_id": str(payload.get("task_id") or fields.get("task_id") or ""),
+        "result_channel": result_channel,
+        "original_type": str(payload.get("original_type") or ""),
+        "status": str(payload.get("status") or ""),
+        "event_count": len(events),
+        "event_sample": [
+            {
+                "id": str(event.get("id") or event.get("calendar_event_id") or ""),
+                "title": str(event.get("title") or event.get("summary") or event.get("label") or ""),
+                "status": str(event.get("status") or ""),
+                "start": _calendar_event_start(event),
+            }
+            for event in events[:4]
+            if isinstance(event, dict)
+        ],
+        "result_summary": _calendar_result_summary(payload, events),
+        "payload": _redact_secrets(payload),
+    }
+
+
+def _load_result_payload(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    try:
+        decoded = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"result": raw}
+    return dict(decoded) if isinstance(decoded, dict) else {"result": decoded}
+
+
+def _calendar_events_from_result_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        from parrot.dsg.triggers.calendar_trigger import _extract_event_list, _loads_jsonish
+
+        raw_result = payload.get("result")
+        source = raw_result if "result" in payload else payload
+        return [
+            dict(item)
+            for item in _extract_event_list(_loads_jsonish(source))
+            if isinstance(item, dict)
+        ]
+    except Exception:
+        return []
+
+
+def _calendar_result_summary(
+    payload: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> str:
+    summary = str(payload.get("summary") or "").strip()
+    if summary:
+        return summary[:180]
+    result = payload.get("result")
+    if isinstance(result, str) and result.strip():
+        return result.strip().replace("\n", " ")[:180]
+    if events:
+        titles = [
+            str(event.get("title") or event.get("summary") or event.get("id") or "")
+            for event in events[:3]
+        ]
+        return ", ".join(item for item in titles if item)[:180]
+    return str(payload.get("status") or "")[:180]
+
+
+def _calendar_event_start(event: dict[str, Any]) -> str:
+    start = event.get("start")
+    if isinstance(start, dict):
+        return str(event.get("start_time") or start.get("dateTime") or start.get("date") or "")
+    return str(event.get("start_time") or start or "")
 
 
 def _obsidian_selected_paths(raw: Any) -> set[str]:
@@ -1201,6 +1858,23 @@ def _l2b_observation_draft(body: dict[str, Any]) -> dict[str, Any]:
             "target_node_uuid": str(body.get("node_uuid") or ""),
             "audit_note": str(body.get("audit_note") or ""),
         },
+    }
+
+
+def _edge_payload_from_body(body: dict[str, Any], kind: str) -> dict[str, Any]:
+    """Normalize a Web edge form into the current SemanticEdge payload.
+
+    The backend intentionally preserves the free-form ``meta`` dict. RustWorkX
+    only needs the topology and edge payload object; source-specific tags,
+    relation evidence, visual styles, or future attention hints can live inside
+    ``meta`` until a field proves stable enough for promotion.
+    """
+    meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
+    return {
+        "kind": kind,
+        "strength": max(0.0, min(_body_float(body.get("strength"), 0.5), 1.0)),
+        "source": str(body.get("source") or "web_console"),
+        "meta": meta,
     }
 
 
@@ -1266,6 +1940,25 @@ def _body_float(value: Any, default: float) -> float:
         return default
 
 
+def _optional_body_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _time_span_from_json(value: Any) -> tuple[float, float | None] | None:
+    if not isinstance(value, (list, tuple)) or not value:
+        return None
+    start = _optional_body_float(value[0])
+    if start is None:
+        return None
+    end = _optional_body_float(value[1]) if len(value) > 1 else None
+    return (start, end)
+
+
 def _body_int_limit(
     value: Any,
     *,
@@ -1312,4 +2005,26 @@ def _jsonable(value: Any) -> Any:
         return sorted(_jsonable(item) for item in value)
     if hasattr(value, "model_dump"):
         return _jsonable(value.model_dump())
+    return value
+
+
+def _redact_secrets(value: Any) -> Any:
+    """Redact obvious secrets before returning operator history rows."""
+
+    secret_markers = ("secret", "token", "authorization", "api_key", "apikey", "password")
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if any(marker in key_text.lower() for marker in secret_markers):
+                out[key_text] = "<redacted>"
+            else:
+                out[key_text] = _redact_secrets(item)
+        return out
+    if isinstance(value, list):
+        return [_redact_secrets(item) for item in value]
+    if isinstance(value, str):
+        lowered = value.lower()
+        if value.startswith("sk-") or lowered.startswith("bearer "):
+            return "<redacted>"
     return value

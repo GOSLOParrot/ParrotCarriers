@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from datetime import timedelta
@@ -194,11 +195,68 @@ def build_app(
 
         return build_app_live_state(l2b_limit=max(1, min(limit, 200))).as_json()
 
+    @app.get("/api/memory/live-state/changes")
+    async def memory_live_state_changes(
+        since: int = 0,
+        limit: int = 120,
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_live_state import build_memory_live_state_changes
+
+        return build_memory_live_state_changes(
+            since=since,
+            limit=max(1, min(limit, 200)),
+        )
+
     @app.get("/api/memory/blackboard/activity")
     async def memory_blackboard_activity(limit: int = 40) -> dict[str, Any]:
         from parrot.web_console.blackboard_activity import build_blackboard_activity_snapshot
 
         return build_blackboard_activity_snapshot(limit=max(1, min(limit, 120)))
+
+    @app.get("/api/vision/evidence/status")
+    async def vision_evidence_status() -> dict[str, Any]:
+        from parrot.web_console.vision_evidence import evidence_status
+
+        return evidence_status()
+
+    @app.get("/api/vision/evidence/timeline")
+    async def vision_evidence_timeline(
+        limit: int = 50,
+        kind: str = "",
+    ) -> dict[str, Any]:
+        from parrot.web_console.vision_evidence import evidence_timeline
+
+        return evidence_timeline(limit=max(1, min(limit, 200)), kind=kind)
+
+    @app.post("/api/vision/evidence/request")
+    async def vision_evidence_request(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.vision_evidence import request_evidence
+
+        return request_evidence(payload or {})
+
+    @app.post("/api/vision/evidence/frame-cache/upload")
+    async def vision_evidence_frame_cache_upload(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.vision_evidence import upload_frame_cache
+
+        return upload_frame_cache(payload or {})
+
+    @app.get("/api/vision/evidence/{evidence_id}")
+    async def vision_evidence_detail(evidence_id: str) -> dict[str, Any]:
+        from parrot.web_console.vision_evidence import evidence_detail
+
+        return evidence_detail(evidence_id)
+
+    @app.post("/api/app/test/visual-attention")
+    async def app_test_visual_attention(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.vision_evidence import simulate_visual_attention
+
+        return simulate_visual_attention(payload or {})
 
     @app.get("/api/runtime/monitor")
     async def runtime_monitor() -> dict[str, Any]:
@@ -309,6 +367,14 @@ def build_app(
 
         return await apply_l15_bucket_op(payload or {})
 
+    @app.post("/api/refs/binding/draft")
+    async def refs_binding_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_ref_binding
+
+        return draft_ref_binding(payload or {})
+
     @app.post("/api/l15/obsidian-node/draft")
     async def l15_obsidian_node_draft(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -365,6 +431,22 @@ def build_app(
 
         return await apply_l2b_edge(payload or {})
 
+    @app.post("/api/l2b/edge/update")
+    async def l2b_edge_update(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_l2b_edge_update
+
+        return await apply_l2b_edge_update(payload or {})
+
+    @app.post("/api/l2b/edge/delete")
+    async def l2b_edge_delete(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import delete_l2b_edge
+
+        return await delete_l2b_edge(payload or {})
+
     @app.post("/api/google/messages/check")
     async def google_messages_check(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -389,6 +471,36 @@ def build_app(
 
         return preview_google_calendar_events(payload or {})
 
+    @app.post("/api/google/calendar/fetch")
+    async def google_calendar_fetch(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import dispatch_google_calendar_fetch
+
+        return await dispatch_google_calendar_fetch(payload or {})
+
+    @app.get("/api/google/calendar/results")
+    async def google_calendar_results(limit: int = 20) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import google_calendar_result_history
+
+        return await google_calendar_result_history(limit=limit)
+
+    @app.post("/api/google/calendar/import-draft")
+    async def google_calendar_import_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_google_calendar_import
+
+        return draft_google_calendar_import(payload or {})
+
+    @app.post("/api/google/calendar/import")
+    async def google_calendar_import(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_google_calendar_import
+
+        return await apply_google_calendar_import(payload or {})
+
     @app.get("/api/graphiti/status")
     async def graphiti_status_endpoint() -> dict[str, Any]:
         from parrot.brain.graphiti_console import graphiti_status
@@ -406,7 +518,7 @@ def build_app(
             await search_graphiti(
                 query=str(body.get("query") or ""),
                 partition=str(body.get("partition") or "goslo"),
-                limit=int(body.get("limit") or 5),
+                limit=body.get("limit") or 5,
             )
         ).as_json()
 
@@ -420,7 +532,7 @@ def build_app(
         return await search_graphiti_subgraph(
             query=str(body.get("query") or ""),
             partition=str(body.get("partition") or "goslo"),
-            limit=int(body.get("limit") or 8),
+            limit=body.get("limit") or 8,
         )
 
     @app.post("/api/graphiti/subgraph/export-draft")
@@ -469,6 +581,13 @@ def build_app(
                 dry_run=_body_bool(body.get("dry_run"), True),
             )
         ).as_json()
+
+    @app.get("/api/photos/asset/{day}/{photo_id}")
+    async def photo_asset(day: str, photo_id: str):  # type: ignore[no-untyped-def]
+        path = _safe_photo_asset_path(day=day, photo_id=photo_id)
+        response = FileResponse(str(path), media_type="image/jpeg", filename=path.name)
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/api/livekit/config")
     async def livekit_config() -> dict[str, Any]:
@@ -697,6 +816,34 @@ def _mint_livekit_join_token(*, room: str, identity: str, ttl_s: int) -> str:
 def _clean_livekit_value(value: str, default: str) -> str:
     cleaned = "".join(ch for ch in str(value or "").strip() if ch.isalnum() or ch in "-_.")
     return (cleaned or default)[:80]
+
+
+def _safe_photo_asset_path(*, day: str, photo_id: str) -> Path:
+    """Resolve a Web Console photo preview without exposing arbitrary files.
+
+    Unity/App uploads store photo bytes in ``PARROT_PHOTO_CACHE_ROOT/day/id.jpg``.
+    The Web route is intentionally read-only: it only serves files that resolve
+    under that cache root and it reuses the upload server's photo id guard.
+    """
+    from parrot.brain.photo_upload_server import get_cache_root, is_safe_photo_id
+
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(day or "")):
+        raise HTTPException(status_code=400, detail="invalid photo day")
+    clean_id = str(photo_id or "").strip()
+    if clean_id.lower().endswith(".jpg"):
+        clean_id = clean_id[:-4]
+    if not is_safe_photo_id(clean_id):
+        raise HTTPException(status_code=400, detail="invalid photo id")
+
+    root = get_cache_root().resolve()
+    path = (root / day / f"{clean_id}.jpg").resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="photo path escapes cache root") from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="photo asset not found")
+    return path
 
 
 def _proxy_envelope(

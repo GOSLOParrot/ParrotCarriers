@@ -143,6 +143,83 @@ class L2BGraph:
         self._graph.add_edge(src, dst, edge)
         return True
 
+    def update_edge_between(
+        self,
+        from_uuid: str,
+        to_uuid: str,
+        edge: SemanticEdge,
+        *,
+        match_kind: str = "",
+        match_source: str = "",
+    ) -> bool:
+        """Replace the first matching edge payload between two UUIDs.
+
+        RustworkX owns the directed topology and stores edge payloads by
+        integer edge index. L2-B callers should not persist those transient
+        indexes, so the Web/operator path identifies an edge by endpoints plus
+        optional kind/source filters and updates the first matching payload.
+        Parallel edges are still possible; when UI needs exact parallel-edge
+        surgery, promote a stable edge id into ``SemanticEdge.meta`` first.
+        """
+        edge_idx = self._first_matching_edge_index(
+            from_uuid,
+            to_uuid,
+            match_kind=match_kind,
+            match_source=match_source,
+        )
+        if edge_idx is None:
+            return False
+        self._graph.update_edge_by_index(edge_idx, edge)
+        return True
+
+    def remove_edge_between(
+        self,
+        from_uuid: str,
+        to_uuid: str,
+        *,
+        match_kind: str = "",
+        match_source: str = "",
+    ) -> bool:
+        """Remove the first matching directed edge between two UUIDs.
+
+        This is intentionally endpoint-based instead of exposing RustworkX's
+        edge index through Web DTOs. It keeps the backend free to rebuild the
+        graph while giving the operator console a safe, auditable delete path.
+        """
+        edge_idx = self._first_matching_edge_index(
+            from_uuid,
+            to_uuid,
+            match_kind=match_kind,
+            match_source=match_source,
+        )
+        if edge_idx is None:
+            return False
+        self._graph.remove_edge_from_index(edge_idx)
+        return True
+
+    def _first_matching_edge_index(
+        self,
+        from_uuid: str,
+        to_uuid: str,
+        *,
+        match_kind: str = "",
+        match_source: str = "",
+    ) -> int | None:
+        """Return a RustworkX edge index for endpoint/kind/source filters."""
+        src = self._uuid_to_idx.get(from_uuid)
+        dst = self._uuid_to_idx.get(to_uuid)
+        if src is None or dst is None:
+            return None
+        try:
+            edge_indices = list(self._graph.edge_indices_from_endpoints(src, dst))
+        except Exception:
+            return None
+        for edge_idx in edge_indices:
+            edge = self._graph.get_edge_data_by_index(edge_idx)
+            if _edge_matches(edge, match_kind=match_kind, match_source=match_source):
+                return int(edge_idx)
+        return None
+
     def get_neighbors(self, uuid: str) -> list[SemanticNode]:
         """Get nodes connected TO this node (successors)."""
         idx = self._uuid_to_idx.get(uuid)
@@ -448,3 +525,14 @@ def get_l2b_graph() -> L2BGraph:
     if _instance is None:
         _instance = L2BGraph()
     return _instance
+
+
+def _edge_matches(edge: SemanticEdge, *, match_kind: str, match_source: str) -> bool:
+    """Match a semantic edge without leaking RustworkX internals to callers."""
+    if match_kind:
+        kind = getattr(edge.kind, "value", str(edge.kind))
+        if kind != match_kind:
+            return False
+    if match_source and str(edge.source) != match_source:
+        return False
+    return True

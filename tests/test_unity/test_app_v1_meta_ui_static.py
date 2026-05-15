@@ -14,6 +14,8 @@ PACKAGE_MANIFEST = ROOT / "unity" / "ArSpike" / "Packages" / "manifest.json"
 CSC_RSP = ROOT / "unity" / "ArSpike" / "Assets" / "csc.rsp"
 XR_GENERAL_SETTINGS = ROOT / "unity" / "ArSpike" / "Assets" / "XR" / "XRGeneralSettings.asset"
 PARROT_APP = UNITY_ROOT / "ParrotApp"
+RUNTIME_MODELS = PARROT_APP / "Resources" / "Models"
+NER_SKIN2_TEXTURE_META = RUNTIME_MODELS / "Ner" / "NerSkin2.png.meta"
 FORMAL_STARTUP_SCENE = PARROT_APP / "Scenes" / "ParrotApp_Startup.unity"
 SCRIPT_ROOT = PARROT_APP / "Runtime" / "Scripts"
 SMOKE_REFERENCE_UI = SCRIPT_ROOT / "UI" / "AppV1SmokeReferenceUiController.cs"
@@ -40,6 +42,18 @@ FORMAL_HOME_HUD = (
 )
 FORMAL_HOME_MENU_LOADER = (
     SCRIPT_ROOT / "UI" / "FormalHomeMenuLoader.cs"
+)
+FORMAL_HOME_MENU_CONTROLLER = (
+    SCRIPT_ROOT / "UI" / "FormalHomeMenuController.cs"
+)
+FORMAL_HOME_TOOL_CONTROLLER = (
+    SCRIPT_ROOT / "UI" / "FormalHomeToolController.cs"
+)
+FORMAL_MODEL_REMOTE_CONTROLLER = (
+    SCRIPT_ROOT / "UI" / "FormalModelRemoteController.cs"
+)
+FORMAL_XRHAND_PERCH_CONTROLLER = (
+    SCRIPT_ROOT / "Lifecycle" / "FormalXrHandPerchController.cs"
 )
 ROOM_SETTING_CLIENT = (
     SCRIPT_ROOT / "Backend" / "AppRoomSettingClient.cs"
@@ -71,6 +85,9 @@ MODEL_MANIFEST_DTO = (
 FORMAL_MODEL_READY_REPORTER = (
     SCRIPT_ROOT / "Lifecycle" / "FormalModelReadyReporter.cs"
 )
+FORMAL_MODEL_PLACEMENT_CONTROLLER = (
+    SCRIPT_ROOT / "Lifecycle" / "FormalModelPlacementController.cs"
+)
 FORMAL_AR_SESSION_BASELINE_REPORTER = (
     SCRIPT_ROOT / "Lifecycle" / "FormalArSessionBaselineReporter.cs"
 )
@@ -98,8 +115,26 @@ TOKEN_MINT_CLIENT = (
 AUDIO_ROUTE_POLICY_REPORTER = (
     SCRIPT_ROOT / "LiveKit" / "AudioRoutePolicyBrainReporter.cs"
 )
+AUDIO_ROUTE_DETECTOR = (
+    SCRIPT_ROOT / "LiveKit" / "AudioRouteDetector.cs"
+)
 RECONNECT_SUPERVISOR = (
     SCRIPT_ROOT / "LiveKit" / "LiveKitReconnectSupervisor.cs"
+)
+ROOM_MANAGER = (
+    SCRIPT_ROOT / "LiveKit" / "RoomManager.cs"
+)
+ECP_EVENT_PUBLISHER = (
+    SCRIPT_ROOT / "Ecp" / "EcpEventPublisher.cs"
+)
+PHOTO_CONTROLLER = (
+    SCRIPT_ROOT / "Photo" / "PhotoController.cs"
+)
+FOCUS_CONTROLLER = (
+    SCRIPT_ROOT / "Attention" / "FocusController.cs"
+)
+BBOX_CONTROLLER = (
+    SCRIPT_ROOT / "Attention" / "BBoxController.cs"
 )
 SMOKE_BUILDER = (
     UNITY_ROOT
@@ -111,6 +146,7 @@ SMOKE_BUILDER = (
 ASSET_MANIFEST = PARROT_APP / "Art" / "AppV1" / "app_v1_asset_manifest.json"
 STARTUP_PAPER_RESOURCES = PARROT_APP / "Art" / "Startup" / "Resources" / "StartupPaperCraft"
 NER_MODEL_MANIFEST = PARROT_APP / "Resources" / "parrot_models" / "ner_skin2.json"
+GOSLO_MODEL_MANIFEST = PARROT_APP / "Resources" / "parrot_models" / "goslo_default.json"
 
 
 def _unity_guid(asset: Path) -> str:
@@ -200,11 +236,48 @@ def test_unity_ar_foundation_and_livekit_version_locks_are_pinned() -> None:
     assert "-define:UNITY_AR_FOUNDATION" in CSC_RSP.read_text(encoding="utf-8")
 
     xr = XR_GENERAL_SETTINGS.read_text(encoding="utf-8")
-    for provider in ["Android Providers", "Standalone Providers", "iPhone Providers"]:
+    for provider in ["Android Providers", "iPhone Providers"]:
         assert re.search(
-            rf"m_Name: {provider}[\s\S]{{0,260}}m_AutomaticLoading: 1[\s\S]{{0,80}}m_AutomaticRunning: 1",
+            rf"m_Name: {provider}[\s\S]{{0,260}}m_AutomaticLoading: 0[\s\S]{{0,80}}m_AutomaticRunning: 0",
             xr,
         ), provider
+    for settings in ["Android Settings", "iPhone Settings"]:
+        assert re.search(
+            rf"m_Name: {settings}[\s\S]{{0,220}}m_InitManagerOnStart: 0",
+            xr,
+        ), settings
+    assert re.search(
+        r"m_Name: Standalone Settings[\s\S]{0,220}m_InitManagerOnStart: 0",
+        xr,
+    )
+    assert re.search(
+        r"m_Name: Standalone Providers[\s\S]{0,260}m_AutomaticLoading: 0[\s\S]{0,80}m_AutomaticRunning: 0",
+        xr,
+    )
+
+
+def test_ner_spine_texture_importer_uses_alpha_transparency() -> None:
+    meta = NER_SKIN2_TEXTURE_META.read_text(encoding="utf-8")
+
+    assert "alphaIsTransparency: 1" in meta
+
+
+def test_formal_model_runtime_assets_are_resources_loadable() -> None:
+    goslo_manifest = json.loads(GOSLO_MODEL_MANIFEST.read_text(encoding="utf-8"))
+    ner_manifest = json.loads(NER_MODEL_MANIFEST.read_text(encoding="utf-8"))
+    audit = NER_SPINE_AUDIT.read_text(encoding="utf-8")
+
+    assert goslo_manifest["asset_path"] == "Models/GOSLO"
+    assert ner_manifest["asset_path"] == "Models/Ner/NerSkin2_SkeletonData"
+    assert (RUNTIME_MODELS / "GOSLO.glb").is_file()
+    assert (RUNTIME_MODELS / "GOSLO.glb.meta").is_file()
+    assert (RUNTIME_MODELS / "Ner" / "NerSkin2_SkeletonData.asset").is_file()
+    assert (RUNTIME_MODELS / "Ner" / "NerSkin2_SkeletonData.asset.meta").is_file()
+    assert (RUNTIME_MODELS / "Ner" / "NerSkin2.png.meta").is_file()
+    assert (PARROT_APP / "Models" / "README.md").is_file()
+    assert (PARROT_APP / "Models" / "README.md.meta").is_file()
+    assert "Assets/ParrotApp/Resources/Models/Ner/NerSkin2_SkeletonData.asset" in audit
+    assert "Assets/ParrotApp/Models/Ner/NerSkin2_SkeletonData.asset" not in audit
 
 
 def test_startup_room_setting_selection_syncs_to_brain_before_capability() -> None:
@@ -287,6 +360,7 @@ def test_formal_startup_scene_explicitly_mounts_runtime_services() -> None:
         HOME_MENU_CLIENT,
         FORMAL_HOME_MENU_LOADER,
         FORMAL_MODEL_READY_REPORTER,
+        FORMAL_MODEL_PLACEMENT_CONTROLLER,
         FORMAL_AR_SESSION_BASELINE_REPORTER,
         FORMAL_AR_RUNTIME_BOOTSTRAP,
     ]:
@@ -303,12 +377,16 @@ def test_formal_startup_scene_explicitly_mounts_runtime_services() -> None:
         "homeHudController",
         "homeMenuLoader",
         "modelReadyReporter",
+        "modelPlacementController",
         "arRuntimeBootstrap",
         "arSessionBaselineReporter",
     ]:
         assert f"{field}: {{fileID:" in text
         assert f"{field}: {{fileID: 0}}" not in text
     assert "bootstrapOnAwake: 0" in text
+    assert "modelRoot: {fileID: 1775703627}" in text
+    assert "placementCamera: {fileID: 275410333}" in text
+    assert "mountXrOriginAndPlacementManagers: 1" in text
     assert "appApiBaseUrl: http://127.0.0.1:8790" not in text
     assert "appApiBaseUrl: http://localhost:8790" not in text
 
@@ -318,6 +396,25 @@ def test_project_settings_default_scene_is_formal_startup_scene() -> None:
 
     assert "templateDefaultScene: Assets/ParrotApp/Scenes/ParrotApp_Startup.unity" in text
     assert "templateDefaultScene: Assets/Scenes/SampleScene.unity" not in text
+
+
+def test_project_settings_are_formal_landscape_android_app() -> None:
+    text = PROJECT_SETTINGS.read_text(encoding="utf-8")
+
+    assert "companyName: ParrotCarriers" in text
+    assert "productName: ParrotApp" in text
+    assert "Android: com.parrotcarriers.app" in text
+    assert "com.unity.template.ar_mobile" not in text
+    assert "companyName: DefaultCompany" not in text
+
+    assert "defaultScreenOrientation: 3" in text
+    assert "allowedAutorotateToPortrait: 0" in text
+    assert "allowedAutorotateToPortraitUpsideDown: 0" in text
+    assert "allowedAutorotateToLandscapeRight: 1" in text
+    assert "allowedAutorotateToLandscapeLeft: 1" in text
+    assert "androidDefaultWindowWidth: 1920" in text
+    assert "androidDefaultWindowHeight: 1080" in text
+    assert "insecureHttpOption: 2" in text
 
 
 def test_formal_startup_roomsetting_cold_load_uses_app_http_facade() -> None:
@@ -362,6 +459,8 @@ def test_formal_startup_roomsetting_cold_load_uses_app_http_facade() -> None:
 def test_formal_startup_layout_targets_landscape_phone_and_theme_selector() -> None:
     text = FORMAL_STARTUP_UI.read_text(encoding="utf-8")
 
+    assert 'Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")' in text
+    assert "Arial.ttf" not in text
     assert "private const float ReferenceWidth = 2800f" in text
     assert "private const float ReferenceHeight = 1260f" in text
     assert "iQOO Neo9 landscape target" in text
@@ -372,6 +471,8 @@ def test_formal_startup_layout_targets_landscape_phone_and_theme_selector() -> N
     assert "FormalMainReadyGate mainReadyGate" in text
     assert "Loading home gates" in text
     assert "MainReadyMissingText" in text
+    assert "ReportGosloPlaced" not in text
+    assert '"PLACED"' not in text
     assert 'Tr("Scene", "Scene")' not in text
     assert 'Tr("AR 就绪", "AR READY")' in text
     assert 'Tr("新建", "NEW")' in text
@@ -384,9 +485,11 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     home_hud = FORMAL_HOME_HUD.read_text(encoding="utf-8")
     orch = ORCHESTRATOR_CLIENT.read_text(encoding="utf-8")
     shutdown = SHUTDOWN_SERVICE.read_text(encoding="utf-8")
+    room_manager = ROOM_MANAGER.read_text(encoding="utf-8")
     video = (SCRIPT_ROOT / "LiveKit" / "ARVideoPublisher.cs").read_text(encoding="utf-8")
     mic = (SCRIPT_ROOT / "LiveKit" / "MicrophonePublisher.cs").read_text(encoding="utf-8")
     route_reporter = AUDIO_ROUTE_POLICY_REPORTER.read_text(encoding="utf-8")
+    route_detector = AUDIO_ROUTE_DETECTOR.read_text(encoding="utf-8")
     reconnect_supervisor = RECONNECT_SUPERVISOR.read_text(encoding="utf-8")
     lifecycle = APP_LIFECYCLE_MANAGER.read_text(encoding="utf-8")
     ecp_dto = (SCRIPT_ROOT / "Ecp" / "EcpEventDto.cs").read_text(encoding="utf-8")
@@ -421,10 +524,56 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "AddComponent<AppHomeMenuClient>()" in flow
     assert "FormalHomeMenuLoader homeMenuLoader" in flow
     assert "host.AddComponent<FormalHomeMenuLoader>()" in flow
+    assert "FormalHomeMenuController homeMenuController" in flow
+    assert "host.AddComponent<FormalHomeMenuController>()" in flow
+    assert "EcpEventPublisher ecpEventPublisher" in flow
+    assert "host.AddComponent<EcpEventPublisher>()" in flow
+    assert "FormalHomeToolController homeToolController" in flow
+    assert "host.AddComponent<FormalHomeToolController>()" in flow
+    assert "FormalModelRemoteController modelRemoteController" in flow
+    assert "host.AddComponent<FormalModelRemoteController>()" in flow
+    assert "FormalXrHandPerchController xrHandPerchController" in flow
+    assert "host.AddComponent<FormalXrHandPerchController>()" in flow
+    assert "SwitchWorkspace(string workspaceId, string layoutKind)" in flow
+    assert "_workspaceSwitchCoroutine" in flow
+    assert "_hasQueuedWorkspaceSwitch" in flow
+    assert "_queuedWorkspaceId" in flow
+    assert "workspace switch queued" in flow
+    assert "EnsureConfirmedSessionState" in flow
+    assert "RecordConfirmedSessionState" in flow
+    assert "NormalizeWorkspaceId" in flow
+    assert "SwitchWorkspaceRoutine" in flow
+    assert "CapabilityModeForWorkspace" in flow
+    assert '"2d_workspace"' in flow
+    assert "AppCapabilityModeNames.VoiceOnlyNoVideo" in flow
+    assert "workspace_session_policy" in flow
+    assert flow.index('"workspace_session_policy"') < flow.index('"workspace_switch"')
+    assert "workspace_session_policy_failed" in flow
+    policy_failure_block = flow[flow.index("workspace_session_policy_failed"):flow.index('"workspace_switch"')]
+    assert "yield break;" in policy_failure_block
+    assert "workspace_session_policy_rollback" in flow
+    assert "workspace_switch_failed" in flow
+    assert "OnWorkspaceSwitchApplied" in flow
+    assert "OnWorkspaceSwitchFailed" in flow
+    assert "OnCompactControlApplied" in flow
+    assert "OnCompactControlFailed" in flow
+    assert "ApplyCompactControlRoutine" in flow
+    assert "SetPhotoAwarenessPolicy" in flow
+    assert '"setPhotoAwareness"' in flow
+    assert "SetCameraMode" in flow
+    assert '"setCameraMode"' in flow
+    assert "SetXrHandMode" in flow
+    assert '"setXrHandMode"' in flow
     assert "FormalModelReadyReporter modelReadyReporter" in flow
     assert "host.AddComponent<FormalModelReadyReporter>()" in flow
+    assert "FormalModelPlacementController modelPlacementController" in flow
+    assert "host.AddComponent<FormalModelPlacementController>()" in flow
     assert "FormalArRuntimeBootstrap arRuntimeBootstrap" in flow
     assert "host.AddComponent<FormalArRuntimeBootstrap>()" in flow
+    assert "PrepareArRuntimeForVideoIfNeeded" in flow
+    assert "yield return arRuntimeBootstrap.EnsureArRuntimeReady()" in flow
+    assert flow.index('"startup_reuse_capability_mode"') < flow.index("PrepareArRuntimeForVideoIfNeeded")
+    assert "ar_runtime_prepare_failed" in flow
     assert "FormalArSessionBaselineReporter arSessionBaselineReporter" in flow
     assert "host.AddComponent<FormalArSessionBaselineReporter>()" in flow
     assert "RequestFreshTokenReconnect" in flow
@@ -439,10 +588,30 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert '"setLineBAudioRoutePolicy"' in route_reporter
     assert "unity_audio_route_policy" in route_reporter
     assert "BrainParticipantResolver.FindBrainParticipantId" in route_reporter
+    assert "RefreshAndReportCurrentPolicy" in route_reporter
+    assert "ReportPending" in route_reporter
+    assert "LastInputRoute" in route_reporter
+    assert "LastOutputRoute" in route_reporter
+    assert "LastPreferredSampleRate" in route_reporter
+    assert "LastDetectionSource" in route_reporter
+    assert "LastDeviceSummary" in route_reporter
+    assert "LastReportReason" in route_reporter
+    assert "CachePolicy" in route_reporter
     assert "InputRouteFor" in route_reporter
     assert "system_default_microphone" in route_reporter
     assert "input_route" in route_reporter
     assert "output_route" in route_reporter
+    assert "RefreshCurrentPolicy" in route_detector
+    assert "ReevaluateAndFire" in route_detector
+    assert "TryDetectAndroidDevices" in route_detector
+    assert '"getDevices"' in route_detector
+    assert "GET_DEVICES_INPUTS" in route_detector
+    assert "GET_DEVICES_OUTPUTS" in route_detector
+    assert "TYPE_BLUETOOTH_SCO" in route_detector
+    assert "TYPE_BLUETOOTH_A2DP" in route_detector
+    assert "DetectAndroidLegacyFlags" in route_detector
+    assert "LastDetectionSource" in route_detector
+    assert "LastDeviceSummary" in route_detector
     assert "RequestFreshTokenReconnect" in reconnect_supervisor
     assert "Mathf.Pow(2f" in reconnect_supervisor
     assert "IsBackgroundState" in reconnect_supervisor
@@ -476,6 +645,25 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "FormalHomeHudCanvas" in home_hud
     assert "OnMainUiReady += HandleStartupMainReady" in home_hud
     assert "LastMissingGates" in home_hud
+    assert "FormalHomeMenuLoader menuLoader" in home_hud
+    assert "LiveKitReconnectSupervisor reconnectSupervisor" in home_hud
+    assert "AudioRoutePolicyBrainReporter audioRouteReporter" in home_hud
+    assert "AudioRouteHudLabel" in home_hud
+    assert "audioRouteReporter.LastInputRoute" in home_hud
+    assert "audioRouteReporter.LastOutputRoute" in home_hud
+    assert "audioRouteReporter.LastDetectionSource" in home_hud
+    assert "audioRouteReporter.ReportPending" in home_hud
+    assert "ShortRoute" in home_hud
+    assert "ShortRouteSource" in home_hud
+    assert "menuLoader.LastError" in home_hud
+    assert "reconnectSupervisor.ReconnectPending" in home_hud
+    assert "startupFlow.LastError" in home_hud
+    assert 'Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")' in home_hud
+    assert "Arial.ttf" not in home_hud
+
+    assert "var persistentRoot = gameObject" in room_manager
+    assert "transform.SetParent(null, true)" in room_manager
+    assert "DontDestroyOnLoad(persistentRoot)" in room_manager
 
     assert '"/apply_room_profile"' in orch
     assert '"/set_active_line"' in orch
@@ -489,23 +677,65 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "IsSynchronousQuitDrain" in mic
     assert "sync quit drain skips waiting for UnpublishTrack" in video
     assert "sync quit drain skips waiting for UnpublishTrack" in mic
+    assert "A2DP is output-only" in mic
+    assert "policy.Kind == AudioRouteKind.BluetoothSco" in mic
+    assert "CyclePreferredDevice" in mic
+    assert "ClearPreferredDevice" in mic
+    assert "PreferredDevice" in mic
+    assert "_selectedDevice" in mic
+    assert "LastManualDeviceStatus" in mic
+    assert "QueueManualDeviceRepublish" in mic
+    assert "mic_device_changed" in mic
+    assert "AvailableDevicesLabel" in mic
+    assert "SnapshotRpcHandler" not in flow
+    assert "CaptureSnapshotForRpc" not in video
+    assert "AsyncGPUReadback.Request" not in video
 
 
 def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     menu_client = HOME_MENU_CLIENT.read_text(encoding="utf-8")
     room_client = ROOM_SETTING_CLIENT.read_text(encoding="utf-8")
     menu_loader = FORMAL_HOME_MENU_LOADER.read_text(encoding="utf-8")
+    menu_controller = FORMAL_HOME_MENU_CONTROLLER.read_text(encoding="utf-8")
+    tool_controller = FORMAL_HOME_TOOL_CONTROLLER.read_text(encoding="utf-8")
+    model_remote = FORMAL_MODEL_REMOTE_CONTROLLER.read_text(encoding="utf-8")
+    xrhand_perch = FORMAL_XRHAND_PERCH_CONTROLLER.read_text(encoding="utf-8")
     model_reporter = FORMAL_MODEL_READY_REPORTER.read_text(encoding="utf-8")
+    model_placement = FORMAL_MODEL_PLACEMENT_CONTROLLER.read_text(encoding="utf-8")
     ar_reporter = FORMAL_AR_SESSION_BASELINE_REPORTER.read_text(encoding="utf-8")
     ar_bootstrap = FORMAL_AR_RUNTIME_BOOTSTRAP.read_text(encoding="utf-8")
     manifest = MODEL_MANIFEST_DTO.read_text(encoding="utf-8")
+    model_driver = MODEL_DRIVER.read_text(encoding="utf-8")
+    runtime_config = RUNTIME_CONFIG.read_text(encoding="utf-8")
+    photo_controller = PHOTO_CONTROLLER.read_text(encoding="utf-8")
 
     assert "class AppHomeMenuClient" in menu_client
     assert '"/api/app/canvas"' in menu_client
-    assert "compact in-room control" in menu_client
+    assert "latency-sensitive in-room control" in menu_client
     assert "AppCanvasSnapshotDto" in menu_client
+    assert "AppActionResultDto" in menu_client
+    assert "public string layout_kind" in menu_client
     assert "public float generated_at" in menu_client
     assert "public double generated_at" not in menu_client
+    assert "public string[] action_endpoints" in menu_client
+    assert "AppPersonaOptionDto" in menu_client
+    assert "AppLineProfileOptionDto" in menu_client
+    assert '"/api/app/personas"' in menu_client
+    assert '"/api/app/line-profiles"' in menu_client
+    assert '"/api/app/workspace/apply"' in menu_client
+    assert '"/api/app/camera/mode"' in menu_client
+    assert '"/api/app/awareness"' in menu_client
+    assert '"/api/app/xrhand/mode"' in menu_client
+    assert "LoadPersonas" in menu_client
+    assert "LoadLineProfiles" in menu_client
+    assert "ApplyWorkspace" in menu_client
+    assert "SetCameraMode" in menu_client
+    assert "SetPhotoAwarenessPolicy" in menu_client
+    assert "SetXrHandMode" in menu_client
+    assert "PostActionJson" in menu_client
+    assert "_rejected:" in menu_client
+    assert "AppPersonaOptionArrayEnvelope" in menu_client
+    assert "AppLineProfileOptionArrayEnvelope" in menu_client
     assert "HasUsableHomePayload" in menu_client
     assert "hasMenuShell" in menu_client
     assert "&& !string.IsNullOrWhiteSpace(active_workspace_id)" in menu_client
@@ -527,18 +757,244 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "ReportMenuSnapshotLoaded" in menu_loader
     assert "app_http_canvas_snapshot" in menu_loader
     assert "ReportGateInvalidated(\"menu_snapshot_loaded\")" in menu_loader
+    assert "OnSnapshotLoaded?.Invoke(LastSnapshot)" in menu_loader
+    assert "OnSnapshotLoadFailed?.Invoke(LastError)" in menu_loader
+    assert "LastPersonas" in menu_loader
+    assert "LastLineProfiles" in menu_loader
+    assert "LastSelectorError" in menu_loader
+    assert "LoadSelectorCatalogs" in menu_loader
+    assert "menuClient.LoadPersonas" in menu_loader
+    assert "menuClient.LoadLineProfiles" in menu_loader
+    assert "OnSelectorCatalogLoaded?.Invoke" in menu_loader
+    assert "OnSelectorCatalogLoadFailed?.Invoke" in menu_loader
     assert "AppV1SmokeReferenceUiController" not in menu_loader
+
+    assert "class FormalHomeMenuController" in menu_controller
+    assert "FormalHomeMenuCanvas" in menu_controller
+    assert "FormalHomeToolbar" in menu_controller
+    assert "ToolButtonCamera" in menu_controller
+    assert "ToolButtonMagnifier" in menu_controller
+    assert "ToolButtonBBox" in menu_controller
+    assert "ToolButtonCanvasMenu" in menu_controller
+    assert "ToolButtonWorkspace" in menu_controller
+    assert "ToolButtonSettings" in menu_controller
+    assert "AppHomeMenuClient homeMenuClient" in menu_controller
+    assert "FormalHomeToolController homeToolController" in menu_controller
+    assert "CapturePhotoTool" in menu_controller
+    assert "DeferMagnifierTool" in menu_controller
+    assert "DeferBBoxTool" in menu_controller
+    assert "homeToolController.CapturePhoto()" in menu_controller
+    assert "homeToolController.ToggleMagnifier()" not in menu_controller
+    assert "homeToolController.ToggleBBox()" not in menu_controller
+    assert "MAG after phone stability" in menu_controller
+    assert "BOX after phone stability" in menu_controller
+    assert "OpenMagnifierPlaceholder" not in menu_controller
+    assert "OpenBBoxPlaceholder" not in menu_controller
+    assert "TryOpen2DWorkspace" in menu_controller
+    assert "openDrawerOnLoad = false" in menu_controller
+    assert "SettingsAudioRouteStatus" in menu_controller
+    assert "FormalHomeMenuDrawer" in menu_controller
+    assert "FormalHomeWorkspaceStrip" in menu_controller
+    assert "OnSnapshotLoaded += HandleSnapshotLoaded" in menu_controller
+    assert "OnSelectorCatalogLoaded += HandleSelectorCatalogLoaded" in menu_controller
+    assert "RenderSnapshot" in menu_controller
+    assert "AppCanvasSnapshotDto" in menu_controller
+    assert "RenderSelectorRows" in menu_controller
+    assert "SelectorPersona" in menu_controller
+    assert "SelectorLineProfile" in menu_controller
+    assert "SelectorCatalogDegraded" in menu_controller
+    assert "FindPersonaLabel" in menu_controller
+    assert "FindLineProfileLabel" in menu_controller
+    assert "homeMenuClient.ApplyWorkspace(workspaceId" in menu_controller
+    assert "ApplyWorkspaceHttp" in menu_controller
+    assert "OnWorkspaceSwitchApplied += HandleWorkspaceSwitchApplied" not in menu_controller
+    assert "OnWorkspaceSwitchFailed += HandleWorkspaceSwitchFailed" not in menu_controller
+    assert "OnCompactControlApplied += HandleCompactControlApplied" not in menu_controller
+    assert "OnCompactControlFailed += HandleCompactControlFailed" not in menu_controller
+    assert "HandleWorkspaceSwitchApplied" not in menu_controller
+    assert "HandleWorkspaceSwitchFailed" not in menu_controller
+    assert "HandleCompactControlApplied" not in menu_controller
+    assert "HandleCompactControlFailed" not in menu_controller
+    try_switch_block = menu_controller[
+        menu_controller.index("private void TrySwitchWorkspace"):
+        menu_controller.index("private IEnumerator ApplyWorkspaceHttp")
+    ]
+    assert "Workspace HTTP " in try_switch_block
+    assert "_snapshot.active_workspace_id = workspaceId" not in try_switch_block
+    assert "WorkspacePolicyLabel" in menu_controller
+    assert "CanApplyMenuHttp()" in menu_controller
+    assert "CanSendCompactControl()" in menu_controller
+    assert "FormalHomeQuickActionStrip" in menu_controller
+    assert "QuickCameraMode" in menu_controller
+    assert "QuickPhotoAwareness" in menu_controller
+    assert "QuickXrHandMode" in menu_controller
+    assert "ModelPlacementPlaceButton" in menu_controller
+    assert "QuickAudioRouteRefresh" in menu_controller
+    assert "MicDeviceCycleButton" in menu_controller
+    assert "MicDeviceAutoButton" in menu_controller
+    assert "AudioRouteDetector audioRouteDetector" in menu_controller
+    assert "AudioRoutePolicyBrainReporter audioRouteReporter" in menu_controller
+    assert "MicrophonePublisher microphonePublisher" in menu_controller
+    assert "RenderAudioRouteRow" in menu_controller
+    assert "AudioRouteStatus" in menu_controller
+    assert "AudioRouteStatusLabel" in menu_controller
+    assert "MicrophoneStatusLabel" in menu_controller
+    assert "CycleMicrophoneDevicePreference" in menu_controller
+    assert "ClearMicrophoneDevicePreference" in menu_controller
+    assert "microphonePublisher.CyclePreferredDevice" in menu_controller
+    assert "microphonePublisher.ClearPreferredDevice" in menu_controller
+    assert "MicrophonePreferenceShortLabel" in menu_controller
+    assert "RefreshAudioRoutePolicy" in menu_controller
+    assert 'audioRouteReporter.RefreshAndReportCurrentPolicy("formal_home_manual_rescan")' in menu_controller
+    assert "modelPlacementController.PlaceAtDefaultPreview()" in menu_controller
+    assert "modelPlacementController.CanPlaceNow" in menu_controller
+    assert "PlaceModelPreview" in menu_controller
+    assert "PlacementShortLabel" in menu_controller
+    assert "audioRouteReporter.ReportPending" in menu_controller
+    assert "audioRouteReporter.LastReportError" in menu_controller
+    assert "audioRouteReporter.LastDetectionSource" in menu_controller
+    assert "AudioRouteSourceLabel" in menu_controller
+    assert "AudioRouteShortLabel" in menu_controller
+    assert "_pendingCameraMode" in menu_controller
+    assert "_pendingAwarenessPolicy" in menu_controller
+    assert "_pendingXrHandMode" in menu_controller
+    assert "_workspaceApplyPending" in menu_controller
+    assert "_audioRouteReportPending" in menu_controller
+    assert "homeMenuClient.SetCameraMode(mode" in menu_controller
+    assert "homeMenuClient.SetPhotoAwarenessPolicy(policy" in menu_controller
+    assert "homeMenuClient.SetXrHandMode(mode" in menu_controller
+    assert "Camera HTTP " in menu_controller
+    assert "Photo HTTP " in menu_controller
+    assert "Hands HTTP " in menu_controller
+    assert "PendingOrCurrentLabel" in menu_controller
+    assert "NextCameraMode" in menu_controller
+    assert "NextXrHandMode" in menu_controller
+    assert "AWARE_SILENT" in menu_controller
+    assert "UNAWARE_RECORDED" in menu_controller
+    assert "PerformRpc" not in menu_controller
+    assert 'Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")' in menu_controller
+    assert "Arial.ttf" not in menu_controller
+    assert "AppV1SmokeReferenceUiController" not in menu_controller
+
+    assert "class FormalHomeToolController" in tool_controller
+    assert "FormalHomeToolCanvas" in tool_controller
+    assert "PhotoController photoController" in tool_controller
+    assert "FocusController focusController" not in tool_controller
+    assert "BBoxController bboxController" not in tool_controller
+    assert "EcpEventPublisher ecpEventPublisher" not in tool_controller
+    assert "AddComponent<EcpEventPublisher>()" not in tool_controller
+    assert "AddComponent<FocusController>()" not in tool_controller
+    assert "AddComponent<BBoxController>()" not in tool_controller
+    assert "AddComponent<PhotoController>()" in tool_controller
+    assert "AnchorFocus" not in tool_controller
+    assert "ReleaseFocus" not in tool_controller
+    assert "PlaceBBox" not in tool_controller
+    assert "RemoveBBox" not in tool_controller
+    assert "magnifier_deferred_phone_stability" in tool_controller
+    assert "bbox_deferred_phone_stability" in tool_controller
+    assert "photoController.CapturePhoto()" in tool_controller
+    assert "photo_upload_endpoint_not_phone_safe" in tool_controller
+    assert "!Application.isEditor" in tool_controller
+    assert "config.photoUploadUrl" in tool_controller
+    assert "config.photoUploadHost" in tool_controller
+    assert "TryConfigureUploadEndpoint" in tool_controller
+    assert "ConfigureUploadEndpoint" in tool_controller
+    assert "PerformRpc" not in tool_controller
+    assert "captureSnapshot" not in tool_controller
+    assert "CaptureSnapshot" not in tool_controller
+    assert "identify_object" not in tool_controller
+    assert "AppV1SmokeReferenceUiController" not in tool_controller
+
+    assert "public string photoUploadUrl" in runtime_config
+    assert "public string photoUploadHost" in runtime_config
+    assert "public int photoUploadPort" in runtime_config
+    assert "public string UploadEndpointLabel" in photo_controller
+    assert 'brainScheme = "http"' in photo_controller
+    assert 'brainScheme = string.Equals(uri.Scheme, Uri.UriSchemeHttps' in photo_controller
+    assert 'string url = $"{brainScheme}://{brainHost}:{brainPort}/upload/photo/{photoId}"' in photo_controller
+    assert "public bool IsUploadEndpointLoopback" in photo_controller
+    assert "public void ConfigureUploadEndpoint" in photo_controller
+    assert "public bool TryConfigureUploadEndpoint" in photo_controller
 
     assert "class FormalModelReadyReporter" in model_reporter
     assert "ModelManifestDto.LoadFromResources" in model_reporter
     assert "startupFlow.MainUiReadyOnce" in model_reporter
     assert "ReportModelResolved" in model_reporter
     assert "model_manifest_missing" in model_reporter
+    assert "public void ConfigureModelId" in model_driver
+    assert "ModelManifestDto.LoadFromResources(EffectiveModelId)" in model_driver
     assert "ToLowerInvariant()" in manifest
+
+    assert "class FormalModelPlacementController" in model_placement
+    assert "This component deliberately owns the first real onGosloPlaced trigger" in model_placement
+    assert "FormalMainReadyGate mainReadyGate" in model_placement
+    assert "public bool CanPlaceNow" in model_placement
+    assert "mainReadyGate.IsReady" in model_placement
+    assert "home_gates_wait" in model_placement
+    assert "ARRaycastManager arRaycastManager" in model_placement
+    assert "TrackableType.PlaneWithinPolygon" in model_placement
+    assert "TryResolveArRaycastPose" in model_placement
+    assert "public void PlaceAtScreenPoint(Vector2 screenPoint)" in model_placement
+    assert "LastPlacementMode" in model_placement
+    assert "fallbackToPreviewWhenArMisses" in model_placement
+    assert "startupFlow.OnMainUiReady += HandleMainUiReady" in model_placement
+    assert "public void PlaceAtDefaultPreview()" in model_placement
+    assert "public void PlaceAt(Vector3 position, Quaternion rotation, string reason)" in model_placement
+    assert "GameObject.Find(\"AssetPreviewStage\")" in model_placement
+    assert "Resources.Load<GameObject>(path)" in model_placement
+    assert "Resources.Load<UnityEngine.Object>(path)" in model_placement
+    assert "TryCreateSpineSkeletonVisual" in model_placement
+    assert "Spine.Unity.SkeletonDataAsset" in model_placement
+    assert "LastVisualSource" in model_placement
+    assert "FormalPlacedModelWhitebox" in model_placement
+    assert "driver.ConfigureModelId(ActiveModelId)" in model_placement
+    assert "startupFlow?.ReportGosloPlaced()" in model_placement
+    assert "ReportGosloPlaced()" not in model_reporter
+
+    assert "class FormalModelRemoteController" in model_remote
+    assert "using ParrotApp.Config;" in model_remote
+    assert "IPointerDownHandler" in model_remote
+    assert "IDragHandler" in model_remote
+    assert "IPointerUpHandler" in model_remote
+    assert "FormalModelRemoteCanvas" in model_remote
+    assert "placementController.HasPlacedModel" in model_remote
+    assert "placementController.PlacedModel" in model_remote
+    assert 'LastRemoteStatus = "idle";' in model_remote
+    assert "WalkOnPlane(input, deltaTime)" in model_remote
+    assert "ApplyCapability(\"spine_walk\"" in model_remote
+    assert "ParrotRegistry.Instance.Resolve(modelId)" in model_remote
+    assert "fallback_translate" in model_remote
+    assert "CallBrainRpc" not in model_remote
+    assert "PerformRpc" not in model_remote
+    assert "AppV1SmokeReferenceUiController" not in model_remote
+    assert 'Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")' in model_remote
+
+    assert "class FormalXrHandPerchController" in xrhand_perch
+    assert "using ParrotApp.Hands;" in xrhand_perch
+    assert "FormalMainReadyGate mainReadyGate" in xrhand_perch
+    assert "FormalModelPlacementController placementController" in xrhand_perch
+    assert "HandGestureSource handGestureSource" in xrhand_perch
+    assert "PerchOnHand" in xrhand_perch
+    assert "RealXrHandsCompiled" in xrhand_perch
+    assert "UNITY_XR_HANDS" in xrhand_perch
+    assert "startupFlow.MainUiReadyOnce" in xrhand_perch
+    assert "mainReadyGate.IsReady" in xrhand_perch
+    assert "placementController.HasPlacedModel" in xrhand_perch
+    assert "model_perch_unsupported" in xrhand_perch
+    assert "model_no_animation_driver" in xrhand_perch
+    assert "SupportsPerch" in xrhand_perch
+    assert "AnimationDriver" in xrhand_perch
+    assert "xrhand_debug_only_package_missing" in xrhand_perch
+    assert "xrhand_owner_mounted_waiting_tracking" in xrhand_perch
+    assert "xrhand_tracking_active_perch_owner_mounted" in xrhand_perch
+    assert "DebugFireBranchGesture" in xrhand_perch
+    assert "CallBrainRpc" not in xrhand_perch
+    assert "PerformRpc" not in xrhand_perch
+    assert "AppV1SmokeReferenceUiController" not in xrhand_perch
 
     assert "class FormalArSessionBaselineReporter" in ar_reporter
     assert "FormalArRuntimeBootstrap arRuntimeBootstrap" in ar_reporter
-    assert "arRuntimeBootstrap?.EnsureArRuntime()" in ar_reporter
+    assert "yield return arRuntimeBootstrap.EnsureArRuntimeReady()" in ar_reporter
     assert "startupFlow.MainUiReadyOnce" in ar_reporter
     assert "ReportArSessionBaselineClean" in ar_reporter
     assert "ARSessionState.SessionTracking" in ar_reporter
@@ -553,8 +1009,27 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
 
     assert "class FormalArRuntimeBootstrap" in ar_bootstrap
     assert "UNITY_AR_FOUNDATION" in ar_bootstrap
+    assert "using Unity.XR.CoreUtils" in ar_bootstrap
+    assert "mountXrOriginAndPlacementManagers" in ar_bootstrap
+    assert "XrOriginMounted" in ar_bootstrap
+    assert "PlacementManagersMounted" in ar_bootstrap
+    assert "EnsureXrOrigin" in ar_bootstrap
+    assert "EnsurePlacementManagers" in ar_bootstrap
+    assert "AddComponent<XROrigin>()" in ar_bootstrap
+    assert "AddComponent<ARRaycastManager>()" in ar_bootstrap
+    assert "AddComponent<ARPlaneManager>()" in ar_bootstrap
+    assert "EnsureTrackedPoseDriver" in ar_bootstrap
+    assert "AddComponent<TrackedPoseDriver>()" in ar_bootstrap
+    assert '"<HandheldARInputDevice>/devicePosition"' in ar_bootstrap
+    assert '"<HandheldARInputDevice>/deviceRotation"' in ar_bootstrap
     assert "bootstrapOnAwake = false" in ar_bootstrap
     assert "if (bootstrapOnAwake)" in ar_bootstrap
+    assert "XRGeneralSettings.Instance" in ar_bootstrap
+    assert "InitializeLoader()" in ar_bootstrap
+    assert "StartSubsystems()" in ar_bootstrap
+    assert "StopSubsystems()" in ar_bootstrap
+    assert "manager.DeinitializeLoader();\n            else if (_startedXrSubsystems)" in ar_bootstrap
+    assert "skipXrLifecycleInEditor = true" in ar_bootstrap
     assert "ARSession" in ar_bootstrap
     assert "ARCameraManager" in ar_bootstrap
     assert "ARCameraBackground" in ar_bootstrap
@@ -834,6 +1309,7 @@ def test_arspike_mint_client_uses_gitignored_runtime_config_without_logging_secr
     assert config["orchestratorUrl"].endswith(":7890")
     assert config["orchestratorUrl"].startswith("http://YOUR_CASTLE_IP:")
     assert config["orchestratorSecret"] == "dev-only-same-as-PARROT_ORCH_SECRET"
+    assert config["photoUploadUrl"].endswith(":7889")
 
 
 def test_unity_project_has_no_legacy_duplicate_app_roots() -> None:
@@ -855,6 +1331,7 @@ def test_unity_project_has_no_legacy_duplicate_app_roots() -> None:
 
     assert SCRIPT_ROOT.is_dir()
     assert (PARROT_APP / "Resources" / "parrot_models").is_dir()
+    assert (PARROT_APP / "Resources" / "Models").is_dir()
     assert (PARROT_APP / "Art" / "AppV1").is_dir()
     assert (PARROT_APP / "Models").is_dir()
 

@@ -31,6 +31,7 @@ QUIET_HOUR_END = 7
 TIER_DIGEST = "digest"
 TIER_PREP = "prep"
 TIER_IMMINENT = "imminent"
+CALENDAR_INACTIVE_STATES = frozenset({"cancelled", "canceled", "deleted"})
 
 PREP_MINUTES = 30
 IMMINENT_MINUTES = 5
@@ -129,8 +130,14 @@ class CalendarTrigger(BaseTrigger):
             event_key = _event_key(ev)
             start_ts = self._parse_time(str(ev.get("start_time", "") or ""))
             end_ts = self._parse_time(str(ev.get("end_time", "") or ""))
+            lifecycle_state = _calendar_lifecycle_state(ev)
 
             observations.append(self._event_to_observation(ev, start_ts, end_ts))
+            if lifecycle_state in CALENDAR_INACTIVE_STATES:
+                # Deleted/cancelled rows from Google incremental sync are still
+                # important provenance, but they must not generate user-facing
+                # reminders or near-term prep notifications.
+                continue
 
             self._notified.setdefault(event_key, set())
             time_display = self._format_time(str(ev.get("start_time", "") or ""))
@@ -186,9 +193,21 @@ class CalendarTrigger(BaseTrigger):
         end_time = str(ev.get("end_time", "") or "")
         location = str(ev.get("location", "") or "")
         description = str(ev.get("description", "") or "")
+        lifecycle_state = _calendar_lifecycle_state(ev)
+        is_inactive = lifecycle_state in CALENDAR_INACTIVE_STATES
 
         detail_parts = [p for p in (start_time, end_time, location, description) if p]
         obs_description = " | ".join(detail_parts)[:400]
+        if is_inactive:
+            # WEB-014.15 policy: keep a historical tombstone EVENT instead of
+            # deleting L2-B state. Google incremental sync may only provide an
+            # id/status for deleted events, so preserving provider identity is
+            # safer than evicting and losing the reconciliation anchor.
+            obs_description = (
+                f"Google Calendar event is {lifecycle_state}; retained as a "
+                "historical tombstone."
+                + (f" {obs_description}" if obs_description else "")
+            )[:400]
         begin = start_ts or time.time()
 
         return Observation(
@@ -197,7 +216,11 @@ class CalendarTrigger(BaseTrigger):
             kind=NodeKind.EVENT,
             description=obs_description,
             confidence=1.0,
-            confirmation=ConfirmationStatus.CONFIRMED,
+            confirmation=(
+                ConfirmationStatus.GHOST
+                if is_inactive
+                else ConfirmationStatus.CONFIRMED
+            ),
             observed_at=begin,
             time_span=(begin, end_ts),
             meta={
@@ -214,6 +237,9 @@ class CalendarTrigger(BaseTrigger):
                 "updated": str(ev.get("updated", "") or ""),
                 "objects": list(ev.get("objects", []) or []),
                 "is_urgent": bool(ev.get("is_urgent")),
+                "calendar_lifecycle": lifecycle_state,
+                "is_tombstone": is_inactive,
+                "tombstone_policy": "historical_event" if is_inactive else "",
             },
         )
 
@@ -221,6 +247,8 @@ class CalendarTrigger(BaseTrigger):
         """Promote attention on existing L2-B calendar nodes as time approaches."""
         now = time.time()
         for ev in self._events_cache:
+            if _calendar_lifecycle_state(ev) in CALENDAR_INACTIVE_STATES:
+                continue
             start_ts = self._parse_time(str(ev.get("start_time", "") or ""))
             if not start_ts:
                 continue
@@ -406,6 +434,14 @@ def _event_key(ev: dict[str, Any]) -> str:
     calendar_id = str(ev.get("calendar_id", "primary") or "primary")
     event_id = str(ev.get("id") or ev.get("calendar_event_id") or "")
     return f"{calendar_id}:{event_id}"
+
+
+def _calendar_lifecycle_state(ev: dict[str, Any]) -> str:
+    """Normalize provider status into the small lifecycle vocabulary L2-B uses."""
+    status = str(ev.get("status") or "").strip().lower()
+    if status in CALENDAR_INACTIVE_STATES:
+        return "cancelled" if status == "canceled" else status
+    return "active"
 
 
 def _coerce_bool(value: Any) -> bool:

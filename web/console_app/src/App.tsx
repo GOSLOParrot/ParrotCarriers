@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useReducer, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import ReactFlow, {
   Background,
   type Connection,
@@ -19,16 +19,19 @@ import ReactFlow, {
 import {
   Activity,
   Bell,
+  Camera,
   CalendarDays,
-  ChevronDown,
-  ChevronUp,
   CheckCircle2,
   CircleDot,
   Database,
   FileText,
+  Filter,
   GitBranch,
   Languages,
+  Layers,
+  Link2,
   PanelRightOpen,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -36,12 +39,23 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Tags,
   Trash2,
   UploadCloud,
   Workflow
 } from "lucide-react";
 import { api } from "./api";
-import type { ConsoleConfig, L15Pool, Language, LiveState, Receipt, RuntimeFlow, TriggerCatalog } from "./types";
+import type {
+  ConsoleConfig,
+  L15Pool,
+  Language,
+  LiveState,
+  Receipt,
+  RuntimeFlow,
+  TriggerCatalog,
+  VisionEvidenceStatus,
+  VisionEvidenceTimeline
+} from "./types";
 
 type ViewId = "memory" | "runtime";
 type RuntimeAction =
@@ -72,11 +86,25 @@ type GraphitiPreviewPayload = {
   query?: string;
 };
 
-type SourceBoardId = "graphiti" | "obsidian" | "calendar" | "manual";
+type SourceBoardId = "graphiti" | "obsidian" | "calendar" | "refs" | "manual";
+type MemoryToolId = "node" | "edge" | "filter" | "tags" | "subgraph" | "state" | "pool" | "settings";
 
 type HandleSide = "top" | "right" | "bottom" | "left";
 
 type NodePositionMap = Map<string, { x: number; y: number }>;
+
+const EDGE_KIND_OPTIONS = [
+  "associated_with",
+  "reminds_of",
+  "co_occurred",
+  "spatial_context",
+  "part_of_episode",
+  "has_photo",
+  "captured_via",
+  "candidate_subject"
+];
+
+const NODE_KIND_OPTIONS = ["object", "surface", "zone", "person", "event", "photo"];
 
 const memoryNodeTypes: NodeTypes = {
   memory: MemoryNodeCard
@@ -115,9 +143,28 @@ const dict = {
     receiptTimeline: "Records",
     selected: "Selection",
     createNode: "New Node",
+    updateNode: "Update Node",
+    deleteNode: "Delete Node",
     draftEdge: "Connect Edge",
+    updateEdge: "Update Edge",
+    deleteEdge: "Delete Edge",
     tools: "Tools",
     closeTools: "Close Tools",
+    filters: "Filters",
+    tags: "Tags",
+    subgraph: "Subgraph",
+    stateView: "State colors",
+    pool: "Pool",
+    nodeKind: "Node kind",
+    edgeKind: "Edge kind",
+    edgeStrength: "Edge strength",
+    edgeMeta: "Edge meta JSON",
+    selectedNode: "Node details",
+    selectedEdge: "Edge details",
+    useAsEndpoints: "Use endpoints",
+    addTagDraft: "Tag preview",
+    createSubgraph: "New subgraph",
+    statusColors: "Status color overlay",
     messageCheck: "Message Check",
     messagePush: "Message Push",
     actionGroupMessage: "Message",
@@ -166,6 +213,15 @@ const dict = {
     intentScope: "Intent",
     runtimeSummary: "Intent, Plan, HITL, Blackboard, Scheduler, Nanobot, and messages.",
     memorySummary: "L1.5, L2-B, Graphiti, Refs, Evidence Board, and safe graph previews.",
+    evidenceConsole: "Time / Evidence",
+    evidenceSamples: "Samples",
+    evidenceAssets: "Assets",
+    frameCache: "Frame cache",
+    requestEvidence: "Request Evidence",
+    cacheFrameTest: "Cache Frame",
+    bboxTest: "BBox Test",
+    focusTest: "Focus Test",
+    noEvidence: "No evidence samples yet.",
     sourceBoard: "Source Board",
     graphiti: "Graphiti",
     graphitiQuery: "Natural-language search",
@@ -183,7 +239,14 @@ const dict = {
     writeThroughL15: "writes through L1.5",
     sourceBoardHint: "Sources become previews or L1.5 observations before L2-B.",
     googleCalendar: "Google Calendar",
+    calendarFetch: "Fetch Preview",
+    calendarFetchExecute: "Dispatch Fetch",
     calendarPreview: "Calendar Preview",
+    calendarPayload: "Google/Nanobot JSON",
+    calendarImportExecute: "Import to L1.5",
+    calendarResults: "Result History",
+    calendarResultEmpty: "No recent calendar_result rows.",
+    calendarResultUnavailable: "Result ledger unavailable. Start Redis, Scheduler, and Nanobot to see real calendar_result rows.",
     manualNode: "Manual Node",
     manualNodeHint: "Use the canvas toolbar for direct Node and Edge drafts.",
     roleplayModeHint: "RolePlay is a mode/profile; it can contain many source packs.",
@@ -199,7 +262,10 @@ const dict = {
     vaultStatus: "Vault status",
     readyCount: "Ready",
     normalizedPreview: "Normalized preview",
-    observationPreview: "Observation preview"
+    observationPreview: "Observation preview",
+    calendarMapping: "Mapping preview",
+    calendarTarget: "Target",
+    calendarPolicy: "Policy"
   },
   zh: {
     memory: "记忆图谱",
@@ -284,6 +350,15 @@ const dict = {
     intentScope: "Intent",
     runtimeSummary: "Intent、Plan、HITL、黑板、Scheduler、Nanobot 和消息流。",
     memorySummary: "L1.5、L2-B、Graphiti、Refs、Evidence Board 和图上安全预演操作。",
+    evidenceConsole: "时间 / Evidence",
+    evidenceSamples: "样本",
+    evidenceAssets: "资产",
+    frameCache: "帧缓存",
+    requestEvidence: "请求 Evidence",
+    cacheFrameTest: "缓存测试帧",
+    bboxTest: "BBox 测试",
+    focusTest: "Focus 测试",
+    noEvidence: "暂无 evidence 样本。",
     sourceBoard: "Source Board",
     graphiti: "Graphiti",
     graphitiQuery: "自然语言检索",
@@ -301,7 +376,14 @@ const dict = {
     writeThroughL15: "通过 L1.5 写入",
     sourceBoardHint: "来源数据先变成预览或 L1.5 Observation，再进入 L2-B。",
     googleCalendar: "Google 日程",
+    calendarFetch: "请求获取",
+    calendarFetchExecute: "真实请求",
     calendarPreview: "日程预览",
+    calendarPayload: "Google/Nanobot JSON",
+    calendarImportExecute: "导入 L1.5",
+    calendarResults: "结果记录",
+    calendarResultEmpty: "暂无 calendar_result 记录。",
+    calendarResultUnavailable: "结果记录不可用：需要 Redis、Scheduler 和 Nanobot 运行后才会出现 calendar_result。",
     manualNode: "手动 Node",
     manualNodeHint: "直接 Node / Edge 草稿放在画布工具栏里操作。",
     roleplayModeHint: "RolePlay 是模式/Profile，可以包含很多来源包。",
@@ -317,11 +399,36 @@ const dict = {
     vaultStatus: "Vault 状态",
     readyCount: "可导入",
     normalizedPreview: "标准化预览",
-    observationPreview: "Observation 预览"
+    observationPreview: "Observation 预览",
+    calendarMapping: "映射预览",
+    calendarTarget: "目标",
+    calendarPolicy: "策略"
   }
 };
 
 type ConsoleCopy = typeof dict.en;
+
+const zhRuntimeCopy: Partial<ConsoleCopy> = {
+  updateNode: "更新 Node",
+  deleteNode: "删除 Node",
+  updateEdge: "更新 Edge",
+  deleteEdge: "删除 Edge",
+  filters: "过滤",
+  tags: "Tag",
+  subgraph: "子图",
+  stateView: "状态颜色",
+  pool: "Pool",
+  nodeKind: "Node 类型",
+  edgeKind: "Edge 类型",
+  edgeStrength: "Edge 强度",
+  edgeMeta: "Edge meta JSON",
+  selectedNode: "Node 详情",
+  selectedEdge: "Edge 详情",
+  useAsEndpoints: "使用端点",
+  addTagDraft: "Tag 预演",
+  createSubgraph: "新建子图",
+  statusColors: "状态颜色开关"
+};
 
 function receiptReducer(state: Receipt[], receipt: Receipt | null): Receipt[] {
   if (!receipt) return [];
@@ -341,7 +448,9 @@ export function App() {
   const [receipts, pushReceipt] = useReducer(receiptReducer, []);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [recordsOpen, setRecordsOpen] = useState(false);
-  const t = dict[language];
+  const memorySequenceRef = useRef(0);
+  const runtimeSequenceRef = useRef(0);
+  const t = { ...dict.en, ...dict[language], ...(language === "zh" ? zhRuntimeCopy : {}) };
   const configuredRefreshIntervalS = Math.max(3, Math.round(Number(config.refresh_interval_s ?? 5)));
   const refreshIntervalS = view === "memory" ? Math.min(configuredRefreshIntervalS, 5) : configuredRefreshIntervalS;
 
@@ -349,17 +458,27 @@ export function App() {
     setLoading(true);
     setError("");
     try {
-      const [nextConfig, nextLive, nextPool, nextFlow, nextTriggerCatalog] = await Promise.all([
+      const [nextConfig, memoryChanges, nextPool, flowChanges, nextTriggerCatalog] = await Promise.all([
         api.config(),
-        api.liveState(),
+        api.memoryLiveChanges(memorySequenceRef.current),
         api.l15Pool(),
-        api.runtimeFlow(),
+        api.runtimeFlowChanges(runtimeSequenceRef.current),
         api.triggerCatalog()
       ]);
       setConfig(nextConfig);
-      setLiveState(nextLive);
+      if (typeof memoryChanges.sequence === "number") {
+        memorySequenceRef.current = memoryChanges.sequence;
+      }
+      if (memoryChanges.changed && memoryChanges.snapshot) {
+        setLiveState(memoryChanges.snapshot);
+      }
       setL15Pool(nextPool);
-      setRuntimeFlow(nextFlow);
+      if (typeof flowChanges.sequence === "number") {
+        runtimeSequenceRef.current = flowChanges.sequence;
+      }
+      if (flowChanges.changed && flowChanges.snapshot) {
+        setRuntimeFlow(flowChanges.snapshot);
+      }
       setTriggerCatalog(nextTriggerCatalog);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc));
@@ -456,33 +575,49 @@ function MemoryGraphWorkspace({
   const [edgeFrom, setEdgeFrom] = useState("");
   const [edgeTo, setEdgeTo] = useState("");
   const [nodeLabel, setNodeLabel] = useState("Web Test Node");
+  const [nodeKind, setNodeKind] = useState("object");
+  const [edgeKind, setEdgeKind] = useState("associated_with");
+  const [edgeStrength, setEdgeStrength] = useState("0.5");
+  const [edgeMetaText, setEdgeMetaText] = useState("{}");
+  const [tagText, setTagText] = useState("");
+  const [filterKind, setFilterKind] = useState("all");
+  const [subgraphLabel, setSubgraphLabel] = useState("Work subgraph");
+  const [stateColors, setStateColors] = useState(true);
   const [manualPositions, setManualPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<MemoryNodeData> | null>(null);
-  const [toolsOpen, setToolsOpen] = useState(false);
+  const [activeTool, setActiveTool] = useState<MemoryToolId | null>("node");
 
   const l2bNodes = liveState.l2b?.nodes ?? [];
   const l2bEdges = liveState.l2b?.edges ?? [];
   const selectedNodeId = selected?.selection_type === "node" ? String(selected.uuid || selected.id || "") : "";
   const selectedEdgeId = selected?.selection_type === "edge" ? String(selected.id || "") : "";
+  const selectedNodeRefs = useMemo(
+    () => relatedRefsForNode(liveState, selectedNodeId, selected),
+    [liveState, selected, selectedNodeId]
+  );
   const graphNodes = useMemo<Node[]>(() => {
     const real = l2bNodes.length
-      ? l2bNodes.map((row, index) => memoryNode(row, index))
+      ? l2bNodes.map((row, index) => memoryNode(row, index, stateColors))
       : [];
     const previews = previewNodes.map((row, index) => ({
       id: String(row.uuid),
       position: { x: 260 + (index % 4) * 170, y: 230 + Math.floor(index / 4) * 96 },
       type: "memory",
       data: { label: String(row.label), source: row, preview: true },
-      className: "preview-node",
+      className: `preview-node${row.kind === "subgraph" ? " subgraph-node" : ""}`,
       connectable: row.draftable !== false
     }));
-    return [...real, ...previews].map((node) => ({
+    return [...real, ...previews].filter((node) => {
+      if (filterKind === "all") return true;
+      const source = (node.data as MemoryNodeData | undefined)?.source;
+      return String(source?.kind || "node") === filterKind;
+    }).map((node) => ({
       ...node,
       draggable: true,
       position: manualPositions[node.id] ?? node.position,
       selected: node.id === selectedNodeId
     }));
-  }, [l2bNodes, manualPositions, previewNodes, selectedNodeId]);
+  }, [filterKind, l2bNodes, manualPositions, previewNodes, selectedNodeId, stateColors]);
   const draftableNodeIds = useMemo(
     () => new Set(graphNodes
       .filter((node) => {
@@ -496,6 +631,10 @@ function MemoryGraphWorkspace({
     () => new Map(graphNodes.map((node) => [node.id, node.position])),
     [graphNodes]
   );
+  const visibleNodeIds = useMemo(
+    () => new Set(graphNodes.map((node) => node.id)),
+    [graphNodes]
+  );
 
   const graphEdges = useMemo<Edge[]>(() => {
     const persisted: Edge[] = [];
@@ -503,6 +642,7 @@ function MemoryGraphWorkspace({
       const source = edgeEndpoint(row, "source");
       const target = edgeEndpoint(row, "target");
       if (!source || !target) return;
+      if (!visibleNodeIds.has(source) || !visibleNodeIds.has(target)) return;
       const handles = inferEdgeHandles(source, target, nodePositions);
       persisted.push({
         id: `edge-${index}-${source}-${target}`,
@@ -516,12 +656,25 @@ function MemoryGraphWorkspace({
         data: { source: row }
       });
     });
-    return [...persisted, ...previewEdges].map((edge) => ({
-      ...edge,
-      ...(edge.sourceHandle && edge.targetHandle ? {} : inferEdgeHandles(edge.source, edge.target, nodePositions)),
-      selected: edge.id === selectedEdgeId
-    }));
-  }, [l2bEdges, nodePositions, previewEdges, selectedEdgeId]);
+    return [...persisted, ...previewEdges]
+      .filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
+      .map((edge) => ({
+        ...edge,
+        ...(edge.sourceHandle && edge.targetHandle ? {} : inferEdgeHandles(edge.source, edge.target, nodePositions)),
+        selected: edge.id === selectedEdgeId
+      }));
+  }, [l2bEdges, nodePositions, previewEdges, selectedEdgeId, visibleNodeIds]);
+
+  useEffect(() => {
+    if (!selected) return;
+    if (selectedNodeId && !visibleNodeIds.has(selectedNodeId)) {
+      setSelected(null);
+      return;
+    }
+    if (selectedEdgeId && !graphEdges.some((edge) => edge.id === selectedEdgeId)) {
+      setSelected(null);
+    }
+  }, [graphEdges, selected, selectedEdgeId, selectedNodeId, visibleNodeIds]);
 
   const onNodeClick: NodeMouseHandler = (_, node) => {
     const source = (node.data as { source?: Record<string, unknown> }).source ?? {};
@@ -548,7 +701,7 @@ function MemoryGraphWorkspace({
   };
 
   const stagePreviewNode = (uuid: string, label: string, position?: { x: number; y: number }) => {
-    const nodeSource = { uuid, label, kind: "object", preview: true };
+    const nodeSource = { uuid, label, kind: nodeKind, preview: true, confirmation: "confirmed", salience: "active", tags: [] };
     setPreviewNodes((rows) => [...rows, nodeSource]);
     if (position) {
       setManualPositions((current) => ({ ...current, [uuid]: position }));
@@ -631,7 +784,7 @@ function MemoryGraphWorkspace({
     try {
       const receipt = await api.l2bNodeDraft({
         label,
-        kind: "object",
+        kind: nodeKind,
         description: `Created from React Memory Graph Workspace (${origin}).`,
         dry_run: true,
         operator_mode: false
@@ -662,6 +815,12 @@ function MemoryGraphWorkspace({
     void draftNode(position, "canvas_double_click");
   };
 
+  const edgeMetaPayload = (reason: string, extra: Record<string, unknown> = {}) => ({
+    ...parseJsonObject(edgeMetaText),
+    reason,
+    ...extra
+  });
+
   const draftEdgeBetween = async (
     from: string,
     to: string,
@@ -685,7 +844,9 @@ function MemoryGraphWorkspace({
       const receipt = await api.l2bEdgeDraft({
         from_uuid: source,
         to_uuid: target,
-        kind: "associated_with",
+        kind: edgeKind,
+        strength: Number(edgeStrength) || 0.5,
+        meta: edgeMetaPayload(reason, meta),
         dry_run: true,
         operator_mode: false
       });
@@ -699,7 +860,7 @@ function MemoryGraphWorkspace({
             target,
             sourceHandle: resolvedHandles.sourceHandle,
             targetHandle: resolvedHandles.targetHandle,
-            label: "associated_with",
+            label: edgeKind,
             className: reason === "edge_retarget" || reason === "edge_reconnect" ? "preview-edge retarget-edge" : "preview-edge",
             animated: true,
             reconnectable: true,
@@ -707,7 +868,8 @@ function MemoryGraphWorkspace({
             style: { strokeWidth: 3 },
             data: {
               source: {
-                kind: "associated_with",
+                kind: edgeKind,
+                strength: Number(edgeStrength) || 0.5,
                 reason,
                 preview: true,
                 ...meta,
@@ -816,6 +978,103 @@ function MemoryGraphWorkspace({
     }
   };
 
+  const updateSelectedEdgeDraft = async () => {
+    const source = edgeFrom.trim();
+    const target = edgeTo.trim();
+    if (!source || !target) {
+      pushReceipt(localReceipt("l2b.edge.update", false, { error: "missing_endpoint" }));
+      return;
+    }
+    try {
+      pushReceipt(await api.l2bEdgeUpdate({
+        from_uuid: source,
+        to_uuid: target,
+        kind: edgeKind,
+        strength: Number(edgeStrength) || 0.5,
+        meta: edgeMetaPayload("edge_update"),
+        match_kind: isSelectedEdge(selected) ? String(selected.kind || "") : "",
+        match_source: isSelectedEdge(selected) ? String(selected.edge_source || selected.source_tool || "") : "",
+        dry_run: true,
+        operator_mode: false
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("l2b.edge.update", exc, { from_uuid: source, to_uuid: target }));
+    }
+  };
+
+  const deleteSelectedEdgeDraft = async () => {
+    const source = edgeFrom.trim();
+    const target = edgeTo.trim();
+    if (!source || !target) {
+      pushReceipt(localReceipt("l2b.edge.delete", false, { error: "missing_endpoint" }));
+      return;
+    }
+    if (selectedEdgeId && previewEdges.some((edge) => edge.id === selectedEdgeId)) {
+      setPreviewEdges((rows) => rows.filter((edge) => edge.id !== selectedEdgeId));
+    }
+    try {
+      pushReceipt(await api.l2bEdgeDelete({
+        from_uuid: source,
+        to_uuid: target,
+        match_kind: isSelectedEdge(selected) ? String(selected.kind || "") : "",
+        match_source: isSelectedEdge(selected) ? String(selected.edge_source || selected.source_tool || "") : "",
+        dry_run: true,
+        operator_mode: false
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("l2b.edge.delete", exc, { from_uuid: source, to_uuid: target }));
+    }
+  };
+
+  const deleteSelectedNodeDraft = async () => {
+    const uuid = selectedNodeId;
+    if (!uuid) {
+      pushReceipt(localReceipt("l2b.node.delete", false, { error: "missing_node_uuid" }));
+      return;
+    }
+    if (previewNodes.some((row) => String(row.uuid) === uuid)) {
+      setPreviewNodes((rows) => rows.filter((row) => String(row.uuid) !== uuid));
+      setPreviewEdges((rows) => rows.filter((edge) => edge.source !== uuid && edge.target !== uuid));
+      setSelected(null);
+    }
+    try {
+      pushReceipt(await api.l2bNodeDelete({ node_uuid: uuid, dry_run: true, operator_mode: false }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("l2b.node.delete", exc, { node_uuid: uuid }));
+    }
+  };
+
+  const createSubgraphPreview = () => {
+    const label = subgraphLabel.trim() || "Work subgraph";
+    const uuid = makeDraftId("subgraph");
+    const nodeSource = {
+      uuid,
+      label,
+      kind: "subgraph",
+      preview: true,
+      draftable: false,
+      description: "Visual grouping box. Backend subgraph persistence is a later operator-gated route.",
+      tags: ["subgraph", "view"]
+    };
+    setPreviewNodes((rows) => [...rows, nodeSource]);
+    setManualPositions((current) => ({ ...current, [uuid]: { x: 220, y: 180 } }));
+    setSelected({ selection_type: "node", ...nodeSource });
+    pushReceipt(localReceipt("l2b.subgraph.preview", true, { uuid, label, canvas_preview: true }));
+  };
+
+  const draftTagForSelection = () => {
+    if (!selected) {
+      pushReceipt(localReceipt("l2b.tag.draft", false, { error: "no_selection" }));
+      return;
+    }
+    pushReceipt(localReceipt("l2b.tag.draft", true, {
+      target: selectedNodeId || selectedEdgeId,
+      selection_type: String(selected.selection_type || ""),
+      tags: parseTags(tagText),
+      note: "UI-only draft until Node/Edge tag mutation policy is promoted."
+    }));
+  };
+
   const clearPreview = () => {
     setPreviewNodes([]);
     setPreviewEdges([]);
@@ -868,7 +1127,7 @@ function MemoryGraphWorkspace({
 
   return (
     <section className="workspace memory-layout">
-      <div className="metric-row">
+      <div className="metric-row compact">
         <Metric label={t.nodes} value={String(liveState.l2b?.node_count ?? 0)} />
         <Metric label={t.edges} value={String(liveState.l2b?.edge_count ?? 0)} />
         <Metric label={t.blackboard} value={`${liveState.blackboard?.present_count ?? 0}/${liveState.blackboard?.declared_count ?? 0}`} />
@@ -876,26 +1135,91 @@ function MemoryGraphWorkspace({
       </div>
 
       <div className="canvas-panel">
-        <div className={toolsOpen ? "canvas-toolbar expanded" : "canvas-toolbar compact"}>
-          <div className="toolbar-main">
-            <span className="toolbar-hint"><GitBranch size={15} /> {t.connectHint}</span>
-            <input className="node-label-input" value={nodeLabel} onChange={(event) => setNodeLabel(event.target.value)} placeholder={t.nodeLabel} />
-            <button className="button primary" onClick={() => void draftNode()}><Plus size={16} /> {t.createNode}</button>
-            <button className="button ghost" onClick={focusSelection}><CircleDot size={16} /> {t.focusSelection}</button>
-            <button className="button ghost" onClick={layoutGraph}><Workflow size={16} /> {t.layoutGraph}</button>
-            <button className="button ghost" onClick={() => setToolsOpen((open) => !open)}>
-              {toolsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              {toolsOpen ? t.closeTools : t.tools}
-            </button>
+        <div className="canvas-toolbar icon-toolbar">
+          <IconToolButton active={activeTool === "node"} label={t.createNode} onClick={() => setActiveTool(activeTool === "node" ? null : "node")}><Plus size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "edge"} label={t.draftEdge} onClick={() => setActiveTool(activeTool === "edge" ? null : "edge")}><GitBranch size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "subgraph"} label={t.subgraph} onClick={() => setActiveTool(activeTool === "subgraph" ? null : "subgraph")}><Layers size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "filter"} label={t.filters} onClick={() => setActiveTool(activeTool === "filter" ? null : "filter")}><Filter size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "tags"} label={t.tags} onClick={() => setActiveTool(activeTool === "tags" ? null : "tags")}><Tags size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "state"} label={t.stateView} onClick={() => setActiveTool(activeTool === "state" ? null : "state")}><Activity size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "pool"} label={t.l15} onClick={() => setActiveTool(activeTool === "pool" ? null : "pool")}><Database size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "settings"} label={t.settings} onClick={() => setActiveTool(activeTool === "settings" ? null : "settings")}><Settings size={18} /></IconToolButton>
+          <span className="tool-divider" />
+          <IconToolButton label={t.focusSelection} onClick={focusSelection}><CircleDot size={18} /></IconToolButton>
+          <IconToolButton label={t.layoutGraph} onClick={layoutGraph}><Workflow size={18} /></IconToolButton>
+          <IconToolButton label={t.clear} danger onClick={clearPreview}><Trash2 size={18} /></IconToolButton>
+        </div>
+
+        {activeTool ? (
+          <div className="tool-dock">
+            <MemoryToolPanel
+              activeTool={activeTool}
+              liveState={liveState}
+              t={t}
+              nodeLabel={nodeLabel}
+              setNodeLabel={setNodeLabel}
+              nodeKind={nodeKind}
+              setNodeKind={setNodeKind}
+              edgeFrom={edgeFrom}
+              setEdgeFrom={setEdgeFrom}
+              edgeTo={edgeTo}
+              setEdgeTo={setEdgeTo}
+              edgeKind={edgeKind}
+              setEdgeKind={setEdgeKind}
+              edgeStrength={edgeStrength}
+              setEdgeStrength={setEdgeStrength}
+              edgeMetaText={edgeMetaText}
+              setEdgeMetaText={setEdgeMetaText}
+              tagText={tagText}
+              setTagText={setTagText}
+              filterKind={filterKind}
+              setFilterKind={setFilterKind}
+              stateColors={stateColors}
+              setStateColors={setStateColors}
+              subgraphLabel={subgraphLabel}
+              setSubgraphLabel={setSubgraphLabel}
+              onDraftNode={() => void draftNode()}
+              onDraftEdge={() => void draftEdgeBetween(edgeFrom, edgeTo, "toolbar")}
+              onUpdateEdge={() => void updateSelectedEdgeDraft()}
+              onDeleteEdge={() => void deleteSelectedEdgeDraft()}
+              onCreateSubgraph={createSubgraphPreview}
+              onDraftTag={draftTagForSelection}
+              poolHealth={poolHealth}
+              buckets={buckets}
+              maxBucketCount={maxBucketCount}
+              pushReceipt={pushReceipt}
+              onGraphitiPreview={stageGraphitiPreview}
+            />
           </div>
-          {toolsOpen ? (
-            <div className="toolbar-drawer">
-              <input value={edgeFrom} onChange={(event) => setEdgeFrom(event.target.value)} placeholder={t.fromUuid} />
-              <input value={edgeTo} onChange={(event) => setEdgeTo(event.target.value)} placeholder={t.toUuid} />
-              <button className="button" onClick={() => void draftEdgeBetween(edgeFrom, edgeTo, "toolbar")}><GitBranch size={16} /> {t.draftEdge}</button>
-              <button className="button ghost" onClick={clearPreview}><Trash2 size={16} /> {t.clear}</button>
-            </div>
-          ) : null}
+        ) : null}
+
+        {selected ? (
+          <SelectionInspector
+            selected={selected}
+            selectedNodeId={selectedNodeId}
+            selectedEdgeId={selectedEdgeId}
+            relatedRefs={selectedNodeRefs}
+            edgeFrom={edgeFrom}
+            edgeTo={edgeTo}
+            t={t}
+            onUseEdgeEndpoints={() => {
+              if (isSelectedEdge(selected)) {
+                setEdgeFrom(String(selected.source || ""));
+                setEdgeTo(String(selected.target || ""));
+                setActiveTool("edge");
+              }
+            }}
+            onDeleteNode={() => void deleteSelectedNodeDraft()}
+            onUpdateEdge={() => void updateSelectedEdgeDraft()}
+            onDeleteEdge={() => void deleteSelectedEdgeDraft()}
+            onSwapEdge={swapSelectedEdgeEndpoints}
+            onClose={() => setSelected(null)}
+          />
+        ) : null}
+
+        <div className="canvas-help-chip">
+          <GitBranch size={14} />
+          <span>{t.connectHint}</span>
         </div>
         <ReactFlow
           nodes={graphNodes}
@@ -929,35 +1253,326 @@ function MemoryGraphWorkspace({
         </ReactFlow>
         {!l2bNodes.length && !previewNodes.length ? <EmptyL2BHint liveState={liveState} t={t} /> : null}
       </div>
+    </section>
+  );
+}
 
-      <aside className="drawer">
-        <h2><PanelRightOpen size={18} /> {t.selected}</h2>
-        {selected ? <JsonBlock value={selected} /> : <p className="muted">{t.noSelection}</p>}
-        {edgeFrom && edgeTo ? (
-          <SelectedEdgeTools
-            selected={isSelectedEdge(selected) ? selected : { source: edgeFrom, target: edgeTo }}
-            edgeFrom={edgeFrom}
-            edgeTo={edgeTo}
-            onRetarget={draftSelectedEdgeRetarget}
-            onSwap={swapSelectedEdgeEndpoints}
-            t={t}
-          />
-        ) : null}
-        <h2>{t.sourceBoard}</h2>
+function IconToolButton({
+  active = false,
+  danger = false,
+  label,
+  onClick,
+  children
+}: {
+  active?: boolean;
+  danger?: boolean;
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      className={`icon-tool${active ? " active" : ""}${danger ? " danger" : ""}`}
+      data-tooltip={label}
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MemoryToolPanel({
+  activeTool,
+  liveState,
+  t,
+  nodeLabel,
+  setNodeLabel,
+  nodeKind,
+  setNodeKind,
+  edgeFrom,
+  setEdgeFrom,
+  edgeTo,
+  setEdgeTo,
+  edgeKind,
+  setEdgeKind,
+  edgeStrength,
+  setEdgeStrength,
+  edgeMetaText,
+  setEdgeMetaText,
+  tagText,
+  setTagText,
+  filterKind,
+  setFilterKind,
+  stateColors,
+  setStateColors,
+  subgraphLabel,
+  setSubgraphLabel,
+  onDraftNode,
+  onDraftEdge,
+  onUpdateEdge,
+  onDeleteEdge,
+  onCreateSubgraph,
+  onDraftTag,
+  poolHealth,
+  buckets,
+  maxBucketCount,
+  pushReceipt,
+  onGraphitiPreview
+}: {
+  activeTool: MemoryToolId;
+  liveState: LiveState;
+  t: ConsoleCopy;
+  nodeLabel: string;
+  setNodeLabel: (value: string) => void;
+  nodeKind: string;
+  setNodeKind: (value: string) => void;
+  edgeFrom: string;
+  setEdgeFrom: (value: string) => void;
+  edgeTo: string;
+  setEdgeTo: (value: string) => void;
+  edgeKind: string;
+  setEdgeKind: (value: string) => void;
+  edgeStrength: string;
+  setEdgeStrength: (value: string) => void;
+  edgeMetaText: string;
+  setEdgeMetaText: (value: string) => void;
+  tagText: string;
+  setTagText: (value: string) => void;
+  filterKind: string;
+  setFilterKind: (value: string) => void;
+  stateColors: boolean;
+  setStateColors: (value: boolean) => void;
+  subgraphLabel: string;
+  setSubgraphLabel: (value: string) => void;
+  onDraftNode: () => void;
+  onDraftEdge: () => void;
+  onUpdateEdge: () => void;
+  onDeleteEdge: () => void;
+  onCreateSubgraph: () => void;
+  onDraftTag: () => void;
+  poolHealth: Record<string, unknown>;
+  buckets: Array<Record<string, unknown>>;
+  maxBucketCount: number;
+  pushReceipt: (receipt: Receipt | null) => void;
+  onGraphitiPreview: (preview: GraphitiPreviewPayload) => void;
+}) {
+  if (activeTool === "node") {
+    return (
+      <section className="tool-panel">
+        <ToolPanelHead icon={<Plus size={16} />} title={t.createNode} />
+        <label><span>{t.nodeLabel}</span><input value={nodeLabel} onChange={(event) => setNodeLabel(event.target.value)} /></label>
+        <label><span>{t.nodeKind}</span><select value={nodeKind} onChange={(event) => setNodeKind(event.target.value)}>{NODE_KIND_OPTIONS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
+        <button className="button primary" onClick={onDraftNode}><Plus size={16} /> {t.createNode}</button>
+      </section>
+    );
+  }
+  if (activeTool === "edge") {
+    return (
+      <section className="tool-panel">
+        <ToolPanelHead icon={<GitBranch size={16} />} title={t.draftEdge} />
+        <div className="two-field-grid">
+          <label><span>{t.fromUuid}</span><input value={edgeFrom} onChange={(event) => setEdgeFrom(event.target.value)} /></label>
+          <label><span>{t.toUuid}</span><input value={edgeTo} onChange={(event) => setEdgeTo(event.target.value)} /></label>
+        </div>
+        <div className="two-field-grid">
+          <label><span>{t.edgeKind}</span><select value={edgeKind} onChange={(event) => setEdgeKind(event.target.value)}>{EDGE_KIND_OPTIONS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
+          <label><span>{t.edgeStrength}</span><input value={edgeStrength} onChange={(event) => setEdgeStrength(event.target.value)} inputMode="decimal" /></label>
+        </div>
+        <label><span>{t.edgeMeta}</span><textarea value={edgeMetaText} onChange={(event) => setEdgeMetaText(event.target.value)} rows={4} /></label>
+        <div className="button-row">
+          <button className="button primary" onClick={onDraftEdge}><Link2 size={16} /> {t.draftEdge}</button>
+          <button className="button" onClick={onUpdateEdge}><Pencil size={16} /> {t.updateEdge}</button>
+          <button className="button danger" onClick={onDeleteEdge}><Trash2 size={16} /> {t.deleteEdge}</button>
+        </div>
+      </section>
+    );
+  }
+  if (activeTool === "subgraph") {
+    return (
+      <section className="tool-panel">
+        <ToolPanelHead icon={<Layers size={16} />} title={t.subgraph} />
+        <label><span>{t.nodeLabel}</span><input value={subgraphLabel} onChange={(event) => setSubgraphLabel(event.target.value)} /></label>
+        <button className="button primary" onClick={onCreateSubgraph}><Layers size={16} /> {t.createSubgraph}</button>
+      </section>
+    );
+  }
+  if (activeTool === "filter") {
+    return (
+      <section className="tool-panel">
+        <ToolPanelHead icon={<Filter size={16} />} title={t.filters} />
+        <label><span>{t.nodeKind}</span><select value={filterKind} onChange={(event) => setFilterKind(event.target.value)}><option value="all">all</option>{NODE_KIND_OPTIONS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
+      </section>
+    );
+  }
+  if (activeTool === "tags") {
+    return (
+      <section className="tool-panel">
+        <ToolPanelHead icon={<Tags size={16} />} title={t.tags} />
+        <label><span>{t.tags}</span><input value={tagText} onChange={(event) => setTagText(event.target.value)} placeholder="tag-a, tag-b" /></label>
+        <button className="button" onClick={onDraftTag}><Tags size={16} /> {t.addTagDraft}</button>
+      </section>
+    );
+  }
+  if (activeTool === "state") {
+    return (
+      <section className="tool-panel">
+        <ToolPanelHead icon={<Activity size={16} />} title={t.stateView} />
+        <label className="toggle-row">
+          <input type="checkbox" checked={stateColors} onChange={(event) => setStateColors(event.target.checked)} />
+          <span>{t.statusColors}</span>
+        </label>
+        <div className="state-legend">
+          <span className="legend-dot confirmed" /> confirmed
+          <span className="legend-dot tentative" /> tentative/expected
+          <span className="legend-dot alert" /> alert
+        </div>
+      </section>
+    );
+  }
+  if (activeTool === "pool") {
+    return (
+      <section className="tool-panel pool-panel">
+        <ToolPanelHead icon={<Database size={16} />} title={t.l15} />
         <L15HealthPanel health={poolHealth} t={t} />
-        <SourceBoard
-          pushReceipt={pushReceipt}
-          t={t}
-          onGraphitiPreview={stageGraphitiPreview}
-        />
-        <h2>{t.l15Buckets}</h2>
-        <div className="bucket-board">
+        <SourceBoard liveState={liveState} pushReceipt={pushReceipt} t={t} onGraphitiPreview={onGraphitiPreview} />
+        <div className="bucket-board compact">
           {buckets.map((bucket) => (
             <BucketCard key={String(bucket.kind)} bucket={bucket} maxNodeCount={maxBucketCount} pushReceipt={pushReceipt} t={t} />
           ))}
         </div>
-      </aside>
+      </section>
+    );
+  }
+  return (
+    <section className="tool-panel">
+      <ToolPanelHead icon={<Settings size={16} />} title={t.settings} />
+      <p className="source-card-note">{t.connectHint}</p>
+      <p className="source-card-note">RustWorkX stores topology; Node/Edge kind, status, tags and meta stay in payloads for flexible visual mapping.</p>
     </section>
+  );
+}
+
+function ToolPanelHead({ icon, title }: { icon: ReactNode; title: string }) {
+  return (
+    <div className="tool-panel-head">
+      <strong>{icon}{title}</strong>
+    </div>
+  );
+}
+
+function SelectionInspector({
+  selected,
+  selectedNodeId,
+  selectedEdgeId,
+  relatedRefs,
+  edgeFrom,
+  edgeTo,
+  t,
+  onUseEdgeEndpoints,
+  onDeleteNode,
+  onUpdateEdge,
+  onDeleteEdge,
+  onSwapEdge,
+  onClose
+}: {
+  selected: Record<string, unknown>;
+  selectedNodeId: string;
+  selectedEdgeId: string;
+  relatedRefs: Array<Record<string, string>>;
+  edgeFrom: string;
+  edgeTo: string;
+  t: ConsoleCopy;
+  onUseEdgeEndpoints: () => void;
+  onDeleteNode: () => void;
+  onUpdateEdge: () => void;
+  onDeleteEdge: () => void;
+  onSwapEdge: () => void;
+  onClose: () => void;
+}) {
+  const isEdge = String(selected.selection_type || "") === "edge";
+  const title = isEdge ? t.selectedEdge : t.selectedNode;
+  const kind = String(selected.kind || (isEdge ? "edge" : "node"));
+  const tags = Array.isArray(selected.tags) ? selected.tags.map(String) : [];
+  const selectedMeta = recordFromUnknown(selected.meta);
+  const nodeAssetPath = !isEdge
+    ? String(selected.reference_image_path || selected.asset_ref || selectedMeta.asset_ref || selectedMeta.asset_path || "")
+    : "";
+  const nodeAssetUrl = photoAssetPreviewUrl(nodeAssetPath);
+  const nodeEpisodeRef = !isEdge
+    ? String(selected.episode_ref || selectedMeta.episode_ref || "")
+    : "";
+  const hasRefOrPhotoDetails = !isEdge && (relatedRefs.length > 0 || Boolean(nodeAssetPath) || Boolean(nodeEpisodeRef));
+  return (
+    <aside className="selection-float">
+      <div className="selection-head">
+        <strong>{isEdge ? <GitBranch size={16} /> : <CircleDot size={16} />} {title}</strong>
+        <button className="icon-tool tiny" data-tooltip={t.clearSelection} title={t.clearSelection} onClick={onClose}>x</button>
+      </div>
+      <div className="selection-title">{String(selected.label || selected.id || selectedNodeId || selectedEdgeId || kind)}</div>
+      <div className="detail-grid">
+        <span>kind</span><strong>{kind}</strong>
+        {isEdge ? (
+          <>
+            <span>{t.fromUuid}</span><strong>{edgeFrom || String(selected.source || "-")}</strong>
+            <span>{t.toUuid}</span><strong>{edgeTo || String(selected.target || "-")}</strong>
+            <span>{t.edgeStrength}</span><strong>{String(selected.strength ?? "-")}</strong>
+            <span>source</span><strong>{String(selected.edge_source || selected.source_tool || "-")}</strong>
+          </>
+        ) : (
+          <>
+            <span>status</span><strong>{String(selected.confirmation || "-")}</strong>
+            <span>salience</span><strong>{String(selected.salience || "-")}</strong>
+            <span>bucket</span><strong>{String(selected.bucket_id || "-")}</strong>
+            <span>source</span><strong>{String(selected.source || "-")}</strong>
+          </>
+        )}
+      </div>
+      {tags.length ? <div className="tag-row">{tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}
+      {hasRefOrPhotoDetails ? (
+        <div className="ref-link-panel">
+          <strong><Link2 size={14} /> Refs / Photos</strong>
+          {nodeAssetPath ? (
+            <div className="ref-link-row">
+              {nodeAssetUrl ? <img className="photo-preview-thumb" src={nodeAssetUrl} alt="Photo asset preview" loading="lazy" /> : null}
+              <span>Photo asset</span>
+              <small>{nodeAssetPath}</small>
+            </div>
+          ) : null}
+          {nodeEpisodeRef ? (
+            <div className="ref-link-row">
+              <span>Episode</span>
+              <small>{nodeEpisodeRef}</small>
+            </div>
+          ) : null}
+          {relatedRefs.slice(0, 6).map((row) => (
+            <div className="ref-link-row" key={row.id}>
+              {row.url ? <img className="photo-preview-thumb small" src={row.url} alt="" loading="lazy" /> : null}
+              <span>{row.label}</span>
+              <small>{row.kind} / {row.source}</small>
+              {row.path ? <small>{row.path}</small> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <details className="record-details">
+        <summary>{t.recordDetails}</summary>
+        <JsonBlock value={selected} />
+      </details>
+      <div className="button-row">
+        {isEdge ? (
+          <>
+            <button className="button small" onClick={onUseEdgeEndpoints}>{t.useAsEndpoints}</button>
+            <button className="button small ghost" onClick={onSwapEdge}>{t.swapEdge}</button>
+            <button className="button small" onClick={onUpdateEdge}>{t.updateEdge}</button>
+            <button className="button small danger" onClick={onDeleteEdge}>{t.deleteEdge}</button>
+          </>
+        ) : (
+          <button className="button small danger" onClick={onDeleteNode}>{t.deleteNode}</button>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -1142,6 +1757,8 @@ function RuntimeFlowWorkspace({
         </div>
       </div>
 
+      <VisionEvidencePanel pushReceipt={pushReceipt} t={t} />
+
       <div className="canvas-panel runtime-canvas">
         <ReactFlow nodes={nodes} edges={edges} onNodeClick={onNodeClick} fitView>
           <Controls />
@@ -1186,6 +1803,119 @@ function RuntimeFlowWorkspace({
             <small>{String(event.summary)}</small>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function VisionEvidencePanel({
+  pushReceipt,
+  t
+}: {
+  pushReceipt: (receipt: Receipt | null) => void;
+  t: ConsoleCopy;
+}) {
+  const [status, setStatus] = useState<VisionEvidenceStatus>({});
+  const [timeline, setTimeline] = useState<VisionEvidenceTimeline>({});
+  const [busy, setBusy] = useState(false);
+
+  const loadEvidence = useCallback(async () => {
+    try {
+      const [nextStatus, nextTimeline] = await Promise.all([
+        api.visionEvidenceStatus(),
+        api.visionEvidenceTimeline(8)
+      ]);
+      setStatus(nextStatus);
+      setTimeline(nextTimeline);
+    } catch (exc) {
+      pushReceipt(errorReceipt("vision.evidence.load", exc));
+    }
+  }, [pushReceipt]);
+
+  useEffect(() => {
+    void loadEvidence();
+  }, [loadEvidence]);
+
+  const runEvidenceAction = async (action: "request" | "frame" | "bbox" | "focus") => {
+    setBusy(true);
+    try {
+      if (action === "request") {
+        pushReceipt(await api.visionEvidenceRequest({
+          description: "Web operator requested nearest time-aligned evidence.",
+          target_time_ms: Date.now(),
+          require_asset: true
+        }));
+      } else if (action === "frame") {
+        pushReceipt(await api.visionFrameCacheUpload({
+          image_base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+          mime_type: "image/png",
+          source_id: "web_console_test_track",
+          track_sid: "web_console_test_track",
+          wall_time_ms: Date.now(),
+          sequence: Date.now() % 1000000,
+          description: "Web Console cached-frame smoke sample.",
+          dry_run: false,
+          operator_mode: true
+        }));
+      } else {
+        pushReceipt(await api.visualAttentionTest({
+          kind: action,
+          subject_id: `web_${action}_${Date.now()}`,
+          label: `web ${action} evidence test`,
+          dispatch_harness: action === "bbox",
+          timebase: {
+            clock_domain: "web",
+            wall_time_ms: Date.now(),
+            source_id: "web_console"
+          }
+        }));
+      }
+      await loadEvidence();
+    } catch (exc) {
+      pushReceipt(errorReceipt("vision.evidence.action", exc, { evidence_action: action }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const items = timeline.items ?? [];
+  return (
+    <section className="evidence-console">
+      <div className="palette-title">
+        <strong><CircleDot size={17} /> {t.evidenceConsole}</strong>
+        <span>
+          {t.evidenceSamples}: {status.sample_count ?? 0}
+          {" / "}
+          {t.evidenceAssets}: {status.visual_asset_count ?? 0}
+          {" / "}
+          {t.frameCache}: {status.frame_cache?.frame_count ?? 0}
+        </span>
+      </div>
+      <div className="button-row">
+        <button className="button small" disabled={busy} onClick={() => void loadEvidence()}>
+          <RefreshCw size={15} /> {t.refresh}
+        </button>
+        <button className="button small" disabled={busy} onClick={() => void runEvidenceAction("request")}>
+          <Search size={15} /> {t.requestEvidence}
+        </button>
+        <button className="button small" disabled={busy} onClick={() => void runEvidenceAction("frame")}>
+          <Camera size={15} /> {t.cacheFrameTest}
+        </button>
+        <button className="button small" disabled={busy} onClick={() => void runEvidenceAction("bbox")}>
+          <Filter size={15} /> {t.bboxTest}
+        </button>
+        <button className="button small" disabled={busy} onClick={() => void runEvidenceAction("focus")}>
+          <CircleDot size={15} /> {t.focusTest}
+        </button>
+      </div>
+      <div className="evidence-timeline">
+        {items.length ? items.map((item, index) => (
+          <div className="evidence-row" key={String(item.evidence_id || index)}>
+            <strong>{String(item.kind || "evidence")}</strong>
+            <span>{String(item.status || "ready")}</span>
+            <small>{String(item.description || item.evidence_id || "")}</small>
+          </div>
+        )) : <p className="muted">{t.noEvidence}</p>}
       </div>
     </section>
   );
@@ -1277,6 +2007,78 @@ function isSelectedEdge(selected: Record<string, unknown> | null): selected is R
   return selected?.selection_type === "edge";
 }
 
+function relatedRefsForNode(
+  liveState: LiveState,
+  nodeId: string,
+  selected: Record<string, unknown> | null
+): Array<Record<string, string>> {
+  if (!nodeId) return [];
+  const rows: Array<Record<string, string>> = [];
+  const seen = new Set<string>();
+  const pushRow = (row: Record<string, unknown>, source: string, fallbackKind = "ref") => {
+    const id = String(row.ref_id || row.photo_id || row.id || row.source_event_id || `${source}:${rows.length}`);
+    const stableKey = `${source}:${id}`;
+    if (seen.has(stableKey)) return;
+    seen.add(stableKey);
+    const meta = recordFromUnknown(row.custom_meta || row.meta);
+    const path = String(row.payload_source || row.asset_ref || row.reference_image_path || meta.asset_ref || meta.asset_path || "");
+    rows.push({
+      id: stableKey,
+      label: String(row.label || row.title || row.photo_id || row.ref_id || id),
+      kind: String(row.kind || row.role || meta.role || fallbackKind),
+      source,
+      path,
+      url: photoAssetPreviewUrl(path)
+    });
+  };
+
+  (liveState.refs?.refs ?? []).forEach((row) => {
+    if (
+      String(row.target_kind || "") === "l2b_node"
+      && String(row.target_id || "") === nodeId
+    ) {
+      pushRow(row, "RefBinding", "ref");
+    }
+  });
+  (liveState.intent_workspace?.refs ?? []).forEach((row) => {
+    if (
+      String(row.related_node_uuid || "") === nodeId
+      || String(row.photo_id || "") === nodeId
+    ) {
+      pushRow(row, "IntentWorkspace", "workspace_ref");
+    }
+  });
+
+  const selectedMeta = recordFromUnknown(selected?.meta);
+  ["focus_refs", "bbox_refs", "ref_ids"].forEach((field) => {
+    const values = selectedMeta[field];
+    if (!Array.isArray(values)) return;
+    values.map(String).filter(Boolean).forEach((refId) => {
+      pushRow({ ref_id: refId, kind: field.replace(/_refs$/, "") }, "Node meta", field);
+    });
+  });
+  return rows;
+}
+
+function photoAssetPreviewUrl(value: string): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const normalized = raw.replace(/\\/g, "/");
+  if (normalized.startsWith("/api/photos/asset/")) return normalized;
+  if (normalized.startsWith("api/photos/asset/")) return `/${normalized}`;
+  const cleanPath = normalized.split(/[?#]/)[0];
+  const lowerPath = cleanPath.toLowerCase();
+  if (!lowerPath.includes("/upload/photo/") && !lowerPath.includes("/photos/") && !lowerPath.endsWith(".jpg")) {
+    return "";
+  }
+  const match = cleanPath.match(/(?:\/upload\/photo\/|\/)(\d{4}-\d{2}-\d{2})\/([^/]+)$/i);
+  if (!match) return "";
+  const day = match[1];
+  const fileName = match[2].replace(/\.jpg$/i, "");
+  if (!fileName || fileName.includes("..")) return "";
+  return `/api/photos/asset/${encodeURIComponent(day)}/${encodeURIComponent(fileName)}`;
+}
+
 function EmptyL2BHint({ liveState, t }: { liveState: LiveState; t: ConsoleCopy }) {
   const rows = [
     { label: t.blackboardScope, value: `${liveState.blackboard?.present_count ?? 0}/${liveState.blackboard?.declared_count ?? 0}` },
@@ -1330,10 +2132,12 @@ function L15HealthPanel({ health, t }: { health: Record<string, unknown>; t: Con
 }
 
 function SourceBoard({
+  liveState,
   pushReceipt,
   t,
   onGraphitiPreview
 }: {
+  liveState: LiveState;
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
   onGraphitiPreview: (preview: GraphitiPreviewPayload) => void;
@@ -1343,6 +2147,7 @@ function SourceBoard({
     { id: "graphiti" as const, label: t.graphiti, icon: <Database size={15} /> },
     { id: "obsidian" as const, label: "Obsidian", icon: <FileText size={15} /> },
     { id: "calendar" as const, label: t.googleCalendar, icon: <CalendarDays size={15} /> },
+    { id: "refs" as const, label: "Refs/Photos", icon: <Link2 size={15} /> },
     { id: "manual" as const, label: t.manualNode, icon: <Plus size={15} /> }
   ];
   return (
@@ -1371,6 +2176,9 @@ function SourceBoard({
         <div className="source-panel" hidden={activeSource !== "calendar"}>
           <CalendarSourceCard pushReceipt={pushReceipt} t={t} />
         </div>
+        <div className="source-panel" hidden={activeSource !== "refs"}>
+          <RefPhotoSourceCard liveState={liveState} pushReceipt={pushReceipt} />
+        </div>
         <div className="source-panel" hidden={activeSource !== "manual"}>
           <ManualNodeSourceCard t={t} />
         </div>
@@ -1396,6 +2204,9 @@ function GraphitiSourceCard({
   const [subgraphNodes, setSubgraphNodes] = useState<Array<Record<string, unknown>>>([]);
   const [subgraphEdges, setSubgraphEdges] = useState<Array<Record<string, unknown>>>([]);
   const [selectedHitKeys, setSelectedHitKeys] = useState<string[]>([]);
+  const [exportObservations, setExportObservations] = useState<Array<Record<string, unknown>>>([]);
+  const [edgeDrafts, setEdgeDrafts] = useState<Array<Record<string, unknown>>>([]);
+  const [edgePolicy, setEdgePolicy] = useState("");
   const selectedHits = useMemo(
     () => hits.filter((hit, index) => selectedHitKeys.includes(graphitiHitKey(hit, index))),
     [hits, selectedHitKeys]
@@ -1422,6 +2233,9 @@ function GraphitiSourceCard({
       setSubgraphNodes(nextSubgraphNodes);
       setSubgraphEdges(nextSubgraphEdges);
       setSelectedHitKeys(nextHits.map((hit, index) => graphitiHitKey(hit, index)));
+      setExportObservations([]);
+      setEdgeDrafts([]);
+      setEdgePolicy("");
       if (receipt.success !== false && (nextHits.length || nextSubgraphNodes.length)) {
         onPreview(buildGraphitiPreviewPayload({
           hits: nextHits,
@@ -1446,13 +2260,19 @@ function GraphitiSourceCard({
   const selectAllHits = () => {
     setSelectedHitKeys(hits.map((hit, index) => graphitiHitKey(hit, index)));
   };
+  const showExportReceipt = (receipt: Receipt) => {
+    setExportObservations(receiptArray(receipt, "observations"));
+    setEdgeDrafts(receiptArray(receipt, "edge_drafts"));
+    setEdgePolicy(String(receipt.data?.edge_write_policy || ""));
+    pushReceipt(receipt);
+  };
   const exportDraft = async () => {
     if (!selectedHits.length) {
       pushReceipt(localReceipt("graphiti.subgraph.export_draft", false, { error: "no_hits_selected", partition, query }));
       return;
     }
     try {
-      pushReceipt(await api.graphitiSubgraphExportDraft({ partition, query: query.trim(), hits: selectedHits }));
+      showExportReceipt(await api.graphitiSubgraphExportDraft({ partition, query: query.trim(), hits: selectedHits }));
     } catch (exc) {
       pushReceipt(errorReceipt("graphiti.subgraph.export_draft", exc, { partition, query }));
     }
@@ -1463,7 +2283,7 @@ function GraphitiSourceCard({
       return;
     }
     try {
-      pushReceipt(await api.graphitiSubgraphExport({
+      showExportReceipt(await api.graphitiSubgraphExport({
         partition,
         query: query.trim(),
         hits: selectedHits,
@@ -1514,7 +2334,7 @@ function GraphitiSourceCard({
       <div className="hit-list">
         <div className="hit-list-head">
           <strong>{t.resultGraph}</strong>
-          <small>{`${selectedHits.length}/${hits.length} ${t.selectedOf} · ${subgraphNodes.length} Node · ${subgraphEdges.length} Edge`}</small>
+          <small>{`${selectedHits.length}/${hits.length} ${t.selectedOf} / ${subgraphNodes.length} Node / ${subgraphEdges.length} Edge`}</small>
         </div>
         {hits.length ? (
           <div className="button-row compact">
@@ -1551,6 +2371,26 @@ function GraphitiSourceCard({
           );
         }) : <small className="muted">{t.noHits}</small>}
       </div>
+      {exportObservations.length || edgeDrafts.length ? (
+        <div className="note-preview-list graphiti-export-plan">
+          <strong>Export plan</strong>
+          <small>{`${exportObservations.length} L1.5 observation(s) / ${edgeDrafts.length} Edge draft(s)`}</small>
+          {edgePolicy ? <small className="muted">{edgePolicy}</small> : null}
+          {exportObservations.slice(0, 3).map((row, index) => (
+            <div className="preview-row" key={`${String(row.graphiti_uuid || row.label || index)}:graphiti-observation`}>
+              <span>{String(row.label || row.graphiti_uuid || "-")}</span>
+              <small>{`Graphiti -> L1.5 / ${String(row.kind || "object")}`}</small>
+            </div>
+          ))}
+          {edgeDrafts.slice(0, 3).map((row, index) => (
+            <div className="preview-row mapping-row" key={`${String(row.hit_graphiti_uuid || index)}:graphiti-edge-draft`}>
+              <span>{String(row.label || row.kind || "graphiti_fact")}</span>
+              <small>{`${String(row.source_graphiti_uuid || "-")} -> ${String(row.target_graphiti_uuid || "-")}`}</small>
+              <small>{String(row.write_policy || "requires_resolved_l2b_node_uuid")}</small>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -1562,28 +2402,93 @@ function CalendarSourceCard({
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
 }) {
+  const defaultCalendarRaw = JSON.stringify([
+    {
+      id: "react_source_board_calendar_event",
+      calendar_id: "primary",
+      summary: "React Source Board calendar preview",
+      start: { dateTime: "2026-05-15T10:00:00+08:00", timeZone: "Asia/Shanghai" },
+      end: { dateTime: "2026-05-15T10:30:00+08:00", timeZone: "Asia/Shanghai" },
+      htmlLink: "https://calendar.google.com/",
+      status: "confirmed",
+      objects: ["blue mug"]
+    }
+  ], null, 2);
+  const [rawPayload, setRawPayload] = useState(defaultCalendarRaw);
   const [normalizedEvents, setNormalizedEvents] = useState<Array<Record<string, unknown>>>([]);
   const [observations, setObservations] = useState<Array<Record<string, unknown>>>([]);
-  const draft = async () => {
-    const events = [
-      {
-        id: "react_source_board_calendar_event",
-        calendar_id: "primary",
-        summary: "React Source Board calendar preview",
-        start: { dateTime: "2026-05-15T10:00:00+08:00", timeZone: "Asia/Shanghai" },
-        end: { dateTime: "2026-05-15T10:30:00+08:00", timeZone: "Asia/Shanghai" },
-        htmlLink: "https://calendar.google.com/",
-        status: "confirmed",
-        objects: ["blue mug"]
-      }
-    ];
+  const [mappingRows, setMappingRows] = useState<Array<Record<string, unknown>>>([]);
+  const [resultRows, setResultRows] = useState<Array<Record<string, unknown>>>([]);
+  const [resultStatus, setResultStatus] = useState("");
+  const calendarPayload = () => ({ raw: rawPayload.trim() || defaultCalendarRaw });
+  const showCalendarReceipt = (receipt: Receipt) => {
+    setNormalizedEvents(receiptArray(receipt, "normalized_events"));
+    setObservations(receiptArray(receipt, "observations"));
+    setMappingRows(receiptArray(receipt, "mapping_rows"));
+    pushReceipt(receipt);
+  };
+  const fetchPreview = async () => {
     try {
-      const receipt = await api.googleCalendarPreview({ events });
-      setNormalizedEvents(receiptArray(receipt, "normalized_events"));
-      setObservations(receiptArray(receipt, "observations"));
+      pushReceipt(await api.googleCalendarFetch({ dry_run: true, operator_mode: false }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("google.calendar.fetch", exc));
+    }
+  };
+  const fetchExecute = async () => {
+    try {
+      pushReceipt(await api.googleCalendarFetch({ dry_run: false, operator_mode: true }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("google.calendar.fetch.execute", exc));
+    }
+  };
+  const loadResults = async () => {
+    try {
+      const receipt = await api.googleCalendarResults(12);
+      setResultRows(receiptArray(receipt, "rows"));
+      const data = receipt.data ?? {};
+      setResultStatus(data.available === false
+        ? t.calendarResultUnavailable
+        : t.calendarResultEmpty);
       pushReceipt(receipt);
     } catch (exc) {
+      setResultStatus(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("google.calendar.results", exc));
+    }
+  };
+  const preview = async () => {
+    try {
+      showCalendarReceipt(await api.googleCalendarPreview(calendarPayload()));
+    } catch (exc) {
       pushReceipt(errorReceipt("calendar.preview", exc));
+    }
+  };
+  const importDraft = async () => {
+    try {
+      showCalendarReceipt(await api.googleCalendarImportDraft(calendarPayload()));
+    } catch (exc) {
+      pushReceipt(errorReceipt("google.calendar.import_draft", exc));
+    }
+  };
+  const importPreview = async () => {
+    try {
+      showCalendarReceipt(await api.googleCalendarImport({
+        ...calendarPayload(),
+        dry_run: true,
+        operator_mode: false
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("google.calendar.import", exc));
+    }
+  };
+  const importExecute = async () => {
+    try {
+      showCalendarReceipt(await api.googleCalendarImport({
+        ...calendarPayload(),
+        dry_run: false,
+        operator_mode: true
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("google.calendar.import.execute", exc));
     }
   };
   return (
@@ -1592,7 +2497,36 @@ function CalendarSourceCard({
         <strong><CalendarDays size={16} /> {t.googleCalendar}</strong>
         <small>{t.writeThroughL15}</small>
       </div>
-      <button className="button" onClick={() => void draft()}><Bell size={16} /> {t.calendarPreview}</button>
+      <label>
+        <span>{t.calendarPayload}</span>
+        <textarea value={rawPayload} onChange={(event) => setRawPayload(event.target.value)} rows={8} />
+      </label>
+      <div className="button-row compact">
+        <button className="button" onClick={() => void fetchPreview()}><CalendarDays size={16} /> {t.calendarFetch}</button>
+        <button className="button ghost" onClick={() => void fetchExecute()}><Play size={16} /> {t.calendarFetchExecute}</button>
+        <button className="button" onClick={() => void loadResults()}><RefreshCw size={16} /> {t.calendarResults}</button>
+        <button className="button" onClick={() => void preview()}><Bell size={16} /> {t.calendarPreview}</button>
+        <button className="button" onClick={() => void importDraft()}><UploadCloud size={16} /> {t.importDraft}</button>
+        <button className="button ghost" onClick={() => void importPreview()}><ShieldCheck size={16} /> {t.dryApply}</button>
+        <button className="button ghost" onClick={() => void importExecute()}><UploadCloud size={16} /> {t.calendarImportExecute}</button>
+      </div>
+      {resultRows.length ? (
+        <div className="note-preview-list calendar-result-list">
+          <strong>{t.calendarResults}</strong>
+          {resultRows.slice(0, 4).map((row, index) => (
+            <div className="preview-row mapping-row" key={`${String(row.stream_id || row.task_id || index)}:calendar-result`}>
+              <span>{`${String(row.status || "-")} · ${String(row.event_count ?? 0)} events`}</span>
+              <small>{`${String(row.task_id || "-")} / ${String(row.original_type || "-")}`}</small>
+              <small>{String(row.result_summary || "")}</small>
+            </div>
+          ))}
+        </div>
+      ) : resultStatus ? (
+        <div className="note-preview-list calendar-result-list">
+          <strong>{t.calendarResults}</strong>
+          <small className="muted">{resultStatus}</small>
+        </div>
+      ) : null}
       {normalizedEvents.length ? (
         <div className="note-preview-list">
           <strong>{t.normalizedPreview}</strong>
@@ -1615,6 +2549,18 @@ function CalendarSourceCard({
           ))}
         </div>
       ) : null}
+      {mappingRows.length ? (
+        <div className="note-preview-list">
+          <strong>{t.calendarMapping}</strong>
+          {mappingRows.slice(0, 4).map((row, index) => (
+            <div className="preview-row mapping-row" key={`${String(row.provider_ref || row.calendar_event_id || index)}:mapping`}>
+              <span>{String(row.title || row.calendar_event_id || "-")}</span>
+              <small>{`${t.calendarTarget}: ${String(row.l15_bucket || "-")} -> L2-B ${String(row.l2b_kind || "-")} / ${String(row.l2b_action || "-")}`}</small>
+              <small>{`${t.calendarPolicy}: ${String(row.intent_workspace_policy || "-")} / ${String(row.policy_note || "-")}`}</small>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -1627,6 +2573,159 @@ function ManualNodeSourceCard({ t }: { t: ConsoleCopy }) {
         <small>{t.roleplayModeHint}</small>
       </div>
       <p className="source-card-note">{t.manualNodeHint}</p>
+    </article>
+  );
+}
+
+function RefPhotoSourceCard({
+  liveState,
+  pushReceipt
+}: {
+  liveState: LiveState;
+  pushReceipt: (receipt: Receipt | null) => void;
+}) {
+  const refRows = liveState.refs?.refs ?? [];
+  const resolvedTargets = liveState.refs?.resolved_l2b_targets ?? [];
+  const intentRefs = liveState.intent_workspace?.refs ?? [];
+  const isPhotoLikeRef = (row: Record<string, unknown>) => {
+    const kind = String(row.kind || "").toLowerCase();
+    const role = String(row.role || "").toLowerCase();
+    return kind === "photo" || role.startsWith("photo");
+  };
+  const seenPhotoRefs = new Set<string>();
+  const photoRefs = [...refRows.filter(isPhotoLikeRef), ...intentRefs.filter(isPhotoLikeRef)].filter((row) => {
+    const stableId = String(row.ref_id || row.photo_id || row.source_event_id || JSON.stringify(row));
+    if (seenPhotoRefs.has(stableId)) return false;
+    seenPhotoRefs.add(stableId);
+    return true;
+  });
+  const photoNodes = (liveState.l2b?.nodes ?? []).filter((row) => String(row.kind || "").toLowerCase() === "photo");
+  const [refId, setRefId] = useState("");
+  const [targetKind, setTargetKind] = useState("l2b_node");
+  const [targetId, setTargetId] = useState("");
+  const [draftPlan, setDraftPlan] = useState<Record<string, unknown> | null>(null);
+  const selectRef = (row: Record<string, unknown>) => {
+    setRefId(String(row.ref_id || ""));
+    setTargetKind(String(row.target_kind || "l2b_node"));
+    setTargetId(String(row.target_id || ""));
+  };
+  const selectPhoto = (row: Record<string, unknown>) => {
+    setRefId(String(row.ref_id || ""));
+    setTargetKind(String(row.target_kind || "l2b_node"));
+    setTargetId(String(row.target_id || row.related_node_uuid || row.photo_id || ""));
+  };
+  const showDraftReceipt = (receipt: Receipt) => {
+    setDraftPlan(receipt.data ?? {});
+    pushReceipt(receipt);
+  };
+  const draftBinding = async () => {
+    if (!refId.trim()) {
+      showDraftReceipt(localReceipt("refs.binding.draft", false, { error: "missing_ref_id", core_candidate: "CORE-006" }));
+      return;
+    }
+    try {
+      showDraftReceipt(await api.refBindingDraft({
+        ref_id: refId.trim(),
+        target_kind: targetKind,
+        target_id: targetId.trim(),
+        dry_run: true,
+        operator_mode: false
+      }));
+    } catch (exc) {
+      showDraftReceipt(errorReceipt("refs.binding.draft", exc, { ref_id: refId, target_kind: targetKind, target_id: targetId }));
+    }
+  };
+  return (
+    <article className="source-card ref-photo-card">
+      <div className="source-card-head">
+        <strong><Link2 size={16} /> Refs / Photos</strong>
+        <small>CORE-006 draft only</small>
+      </div>
+      <div className="source-mini-grid">
+        <span><strong>{refRows.length}</strong><small>RefBindings</small></span>
+        <span><strong>{resolvedTargets.length}</strong><small>L2-B targets</small></span>
+        <span><strong>{photoRefs.length}</strong><small>PHOTO refs</small></span>
+        <span><strong>{photoNodes.length}</strong><small>Photo Nodes</small></span>
+      </div>
+      <p className="source-card-note">
+        Ref/file/photo repair is still a Web-only draft surface until CORE-006 is ratified.
+      </p>
+      {refRows.length ? (
+        <div className="note-preview-list">
+          <strong>Session RefBindings</strong>
+          {refRows.slice(0, 5).map((row, index) => (
+            <button className="hit-row" key={`${String(row.ref_id || index)}:ref-row`} onClick={() => selectRef(row)}>
+              <span>{String(row.label || row.ref_id || "-")}</span>
+              <small>{`${String(row.kind || "-")} -> ${String(row.target_kind || "unresolved")} / ${String(row.target_id || "")}`}</small>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="note-preview-list">
+          <strong>Session RefBindings</strong>
+          <small className="muted">No Focus/BBox RefBinding rows in the current session.</small>
+        </div>
+      )}
+      {photoRefs.length || photoNodes.length ? (
+        <div className="note-preview-list">
+          <strong>Photo refs</strong>
+          {photoRefs.slice(0, 3).map((row, index) => {
+            const meta = recordFromUnknown(row.custom_meta);
+            return (
+              <button className="hit-row" key={`${String(row.ref_id || row.photo_id || index)}:photo-ref`} onClick={() => selectPhoto(row)}>
+                <span>{String(row.title || row.photo_id || row.ref_id || "photo")}</span>
+                <small>{`${String(row.role || meta.role || "photo")} / Node ${String(row.related_node_uuid || row.photo_id || "-")}`}</small>
+              </button>
+            );
+          })}
+          {photoNodes.slice(0, 3).map((row, index) => {
+            const meta = recordFromUnknown(row.meta);
+            const assetPath = String(row.reference_image_path || meta.asset_path || meta.asset_ref || "");
+            const assetUrl = photoAssetPreviewUrl(assetPath);
+            return (
+              <div className="preview-row mapping-row photo-node-row" key={`${String(row.uuid || index)}:photo-node`}>
+                {assetUrl ? <img className="photo-preview-thumb" src={assetUrl} alt="Photo Node preview" loading="lazy" /> : <span className="photo-preview-empty">no preview</span>}
+                <div>
+                  <span>{String(row.label || row.uuid || "Photo Node")}</span>
+                  <small>{assetPath || "asset path pending"}</small>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      <div className="note-preview-list">
+        <strong>Binding draft</strong>
+        <label>
+          <span>ref_id</span>
+          <input value={refId} onChange={(event) => setRefId(event.target.value)} placeholder="ref_..." />
+        </label>
+        <label>
+          <span>target kind</span>
+          <select value={targetKind} onChange={(event) => setTargetKind(event.target.value)}>
+            <option value="l2b_node">l2b_node</option>
+            <option value="graphiti_uuid">graphiti_uuid</option>
+            <option value="episode">episode</option>
+            <option value="l2b_edge">l2b_edge</option>
+            <option value="unresolved">unresolved</option>
+          </select>
+        </label>
+        <label>
+          <span>target id</span>
+          <input value={targetId} onChange={(event) => setTargetId(event.target.value)} placeholder="Node uuid / Graphiti uuid / episode id" />
+        </label>
+        <button className="button" onClick={() => void draftBinding()}><Link2 size={16} /> Preview binding</button>
+      </div>
+      {draftPlan ? (
+        <div className="note-preview-list ref-draft-plan">
+          <strong>Ref draft plan</strong>
+          <div className={draftPlan.error ? "preview-row import-error-row" : "preview-row import-plan-row"}>
+            <span>{String(draftPlan.ref_id || draftPlan.error || "-")}</span>
+            <small>{String(draftPlan.write_path || draftPlan.policy || "draft only")}</small>
+            <small>{String(draftPlan.core_candidate || "CORE-006")} / {String(draftPlan.shared_status || "candidate_only")}</small>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -1646,8 +2745,30 @@ function ObsidianDraftCard({
   const [invalidNotes, setInvalidNotes] = useState<Array<Record<string, unknown>>>([]);
   const [selectedNotePaths, setSelectedNotePaths] = useState<string[]>([]);
   const [vaultStatus, setVaultStatus] = useState<Record<string, unknown> | null>(null);
+  const [importItems, setImportItems] = useState<Array<Record<string, unknown>>>([]);
+  const [importErrors, setImportErrors] = useState<Array<Record<string, unknown>>>([]);
+  const [importPlanMeta, setImportPlanMeta] = useState<Record<string, unknown> | null>(null);
   const visibleScanNotes = scanNotes.slice(0, 12);
   const refMissingUuid = profile === "ref" && !obsidianUuid.trim();
+  const showImportReceipt = (receipt: Receipt) => {
+    const data = receipt.data ?? {};
+    const nextErrors = receiptArray(receipt, "errors");
+    if (!nextErrors.length && data.error) {
+      nextErrors.push({ error: data.error });
+    }
+    setImportItems(receiptArray(receipt, "items"));
+    setImportErrors(nextErrors);
+    setImportPlanMeta({
+      action: receipt.action || "l15.obsidian_vault.import_draft",
+      success: receipt.success !== false,
+      selected_count: data.selected_count ?? 0,
+      write_path: data.write_path || "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)",
+      runtime_path: data.runtime_path || "ObsidianIngestTrigger -> TriggerOutcome.commit_observations -> L15Pool.admit",
+      would_apply: data.would_apply ?? false,
+      apply_skipped_reason: data.apply_skipped_reason || ""
+    });
+    pushReceipt(receipt);
+  };
   const scanVault = async () => {
     try {
       const receipt = await api.obsidianVaultScan(vaultPath);
@@ -1684,18 +2805,34 @@ function ObsidianDraftCard({
   };
   const draftImport = async () => {
     if (!selectedNotePaths.length) {
-      pushReceipt(localReceipt("l15.obsidian_vault.import_draft", false, { error: "no_notes_selected" }));
+      showImportReceipt(localReceipt("l15.obsidian_vault.import_draft", false, { error: "no_notes_selected" }));
       return;
     }
     try {
-      pushReceipt(await api.obsidianVaultImportDraft({
+      showImportReceipt(await api.obsidianVaultImportDraft({
         vault_path: vaultPath,
         paths: selectedNotePaths,
         dry_run: true,
         operator_mode: false
       }));
     } catch (exc) {
-      pushReceipt(errorReceipt("l15.obsidian_vault.import_draft", exc, { vault_path: vaultPath, paths: selectedNotePaths }));
+      showImportReceipt(errorReceipt("l15.obsidian_vault.import_draft", exc, { vault_path: vaultPath, paths: selectedNotePaths }));
+    }
+  };
+  const applyImportPreview = async () => {
+    if (!selectedNotePaths.length) {
+      showImportReceipt(localReceipt("l15.obsidian_vault.import", false, { error: "no_notes_selected" }));
+      return;
+    }
+    try {
+      showImportReceipt(await api.obsidianVaultImport({
+        vault_path: vaultPath,
+        paths: selectedNotePaths,
+        dry_run: true,
+        operator_mode: false
+      }));
+    } catch (exc) {
+      showImportReceipt(errorReceipt("l15.obsidian_vault.import", exc, { vault_path: vaultPath, paths: selectedNotePaths }));
     }
   };
   const draft = async () => {
@@ -1759,10 +2896,47 @@ function ObsidianDraftCard({
               </button>
             </div>
           ))}
-          <button className="button" onClick={() => void draftImport()}><UploadCloud size={16} /> {t.importDraft}</button>
+          <div className="button-row compact">
+            <button className="button" onClick={() => void draftImport()}><UploadCloud size={16} /> {t.importDraft}</button>
+            <button className="button ghost" onClick={() => void applyImportPreview()}><ShieldCheck size={16} /> {t.dryApply}</button>
+          </div>
         </div>
       ) : null}
       {invalidNotes.length ? <small className="warn-text">{t.invalidNotes}: {invalidNotes.length}</small> : null}
+      {importPlanMeta || importItems.length || importErrors.length ? (
+        <div className="note-preview-list import-plan">
+          <div className="import-plan-head">
+            <strong>Import plan</strong>
+            <small className={importPlanMeta?.success === false ? "warn-text" : "muted"}>
+              {`${String(importPlanMeta?.selected_count ?? importItems.length)} ready / ${importErrors.length} issue(s)`}
+            </small>
+          </div>
+          <small className="muted">{String(importPlanMeta?.write_path || "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)")}</small>
+          {importItems.slice(0, 4).map((item, index) => {
+            const observation = recordFromUnknown(item.observation);
+            const meta = recordFromUnknown(observation.meta);
+            const tags = Array.isArray(meta.tags) ? meta.tags.map(String).slice(0, 4).join(", ") : "";
+            return (
+              <div className="preview-row import-plan-row" key={`${String(item.path || item.label || index)}:obsidian-import-item`}>
+                <span>{String(item.label || item.path || "-")}</span>
+                <small>{`${String(item.profile || "-")} -> ${String(item.target_bucket || "-")} / ${String(item.bind_policy || "-")}`}</small>
+                <small>{`Node ${String(observation.kind || "object")} / source ${String(observation.source || "user_tag_obsidian")}${tags ? ` / tags ${tags}` : ""}`}</small>
+                <small>{String(item.path || "")}</small>
+              </div>
+            );
+          })}
+          {importErrors.slice(0, 4).map((row, index) => (
+            <div className="preview-row import-error-row" key={`${String(row.path || index)}:obsidian-import-error`}>
+              <span>{String(row.path || row.error || "-")}</span>
+              <small>{String(row.error || row.reason || "import_error")}</small>
+              {row.reason ? <small>{String(row.reason)}</small> : null}
+            </div>
+          ))}
+          {String(importPlanMeta?.apply_skipped_reason || "") ? (
+            <small className="muted">{String(importPlanMeta?.apply_skipped_reason)}</small>
+          ) : null}
+        </div>
+      ) : null}
       <label>
         <span>{t.settingProfile}</span>
         <select value={profile} onChange={(event) => setProfile(event.target.value)}>
@@ -1986,6 +3160,11 @@ function receiptRecord(receipt: Receipt, key: string): Record<string, unknown> {
   return raw as Record<string, unknown>;
 }
 
+function recordFromUnknown(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return raw as Record<string, unknown>;
+}
+
 function recordArrayFrom(source: Record<string, unknown>, key: string): Array<Record<string, unknown>> {
   const raw = source[key];
   if (!Array.isArray(raw)) return [];
@@ -2048,7 +3227,7 @@ function graphitiHitLabel(hit: Record<string, unknown>, index: number): string {
   return firstClause.slice(0, 72);
 }
 
-function memoryNode(row: Record<string, unknown>, index: number): Node {
+function memoryNode(row: Record<string, unknown>, index: number, stateColors = true): Node {
   const angle = (Math.PI * 2 * index) / Math.max(1, 12);
   const radius = 220;
   return {
@@ -2059,9 +3238,18 @@ function memoryNode(row: Record<string, unknown>, index: number): Node {
       label: String(row.label || row.uuid),
       source: row
     },
-    className: `memory-node kind-${String(row.kind || "node")}`,
+    className: `memory-node kind-${String(row.kind || "node")}${stateColors ? ` ${memoryStateClass(row)}` : ""}`,
     connectable: true
   };
+}
+
+function memoryStateClass(row: Record<string, unknown>): string {
+  const confirmation = String(row.confirmation || "expected").toLowerCase();
+  const salience = String(row.salience || "").toLowerCase();
+  if (salience === "alert") return "state-alert";
+  if (confirmation === "confirmed") return "state-confirmed";
+  if (confirmation === "uncertain" || confirmation === "ghost") return "state-uncertain";
+  return "state-tentative";
 }
 
 function isDraftableMemoryNodeId(id: string): boolean {
@@ -2124,6 +3312,31 @@ function inferEdgeHandles(source: string, target: string, positions: NodePositio
 function edgeEndpoint(row: Record<string, unknown>, side: "source" | "target"): string {
   const fallback = side === "source" ? row.from_uuid : row.to_uuid;
   return String(row[side] ?? fallback ?? "");
+}
+
+function parseJsonObject(text: string): Record<string, unknown> {
+  const raw = text.trim();
+  if (!raw || raw === "{}") return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return { raw_text: raw, parse_error: "invalid_json" };
+  }
+  return { raw_text: raw };
+}
+
+function parseTags(text: string): string[] {
+  const raw = text.trim();
+  if (!raw) return [];
+  if (raw.startsWith("{")) {
+    const parsed = parseJsonObject(raw);
+    const tags = parsed.tags;
+    if (Array.isArray(tags)) return tags.map(String).filter(Boolean);
+  }
+  return raw.split(",").map((item) => item.trim()).filter(Boolean).slice(0, 12);
 }
 
 function formatRelativeTime(epochSeconds: number): string {

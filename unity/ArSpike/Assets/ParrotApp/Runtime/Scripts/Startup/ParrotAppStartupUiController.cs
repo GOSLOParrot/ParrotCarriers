@@ -254,7 +254,6 @@ namespace ParrotApp.UI
             if (_canvas != null) return;
 
             _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            if (_font == null) _font = Resources.GetBuiltinResource<Font>("Arial.ttf");
 
             _canvas = new GameObject("ParrotAppStartupCanvas").AddComponent<Canvas>();
             var uiCamera = Camera.main;
@@ -395,8 +394,7 @@ namespace ParrotApp.UI
             Stretch(_mainText.rectTransform, new Vector2(36f, 28f), new Vector2(-36f, -104f));
 
             AddIconButton(panel, Tr("AR 就绪", "AR READY"), _iconScene, new Vector2(54f, 42f), new Vector2(190f, 54f), ReportSceneReady, BottomLeft());
-            AddIconButton(panel, Tr("已放置", "PLACED"), _iconModel, new Vector2(254f, 42f), new Vector2(190f, 54f), ReportGosloPlaced, BottomLeft());
-            AddIconButton(panel, Tr("设置", "ROOM"), _iconRoom, new Vector2(454f, 42f), new Vector2(170f, 54f), ShowRoomSetting, BottomLeft());
+            AddIconButton(panel, Tr("设置", "ROOM"), _iconRoom, new Vector2(254f, 42f), new Vector2(170f, 54f), ShowRoomSetting, BottomLeft());
 
             return surface;
         }
@@ -879,12 +877,6 @@ namespace ParrotApp.UI
         {
             startupFlow?.ReportSceneReady();
             ShowMain(Tr("场景就绪", "Scene Ready"));
-        }
-
-        private void ReportGosloPlaced()
-        {
-            startupFlow?.ReportGosloPlaced();
-            ShowMain(Tr("已放置", "Placed"));
         }
 
         private void HandleTransitionStarted(AppStartupConfigDto config)

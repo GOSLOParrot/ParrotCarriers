@@ -1,7 +1,8 @@
 """Shared RPC forwarding logic — Tool → LiveKit RPC → Unity client.
 
-All Unity-bound tools (fly_to, animate, captureSnapshot, etc.) go through
-this bridge. Sprint 1 S1.A4 adds two BB writer responsibilities on this
+Unity-bound realtime commands such as fly_to and animate go through this
+bridge. Durable App data and image bytes do not belong here; photos use ECP
+metadata plus HTTP/storage assets. Sprint 1 S1.A4 adds two BB writer responsibilities on this
 module (writer="brain._rpc_bridge"):
 
     tick/last_rpc_ack   — {ok, rpc, reason, detail, ts}

@@ -217,6 +217,13 @@ def _copy_google_calendar_source_meta(obs: Observation) -> dict[str, Any]:
         "updated",
         "objects",
         "is_urgent",
+        # WEB-014.15: Google incremental sync can report cancelled/deleted
+        # events. Preserve the lifecycle marker in source_meta so Web and
+        # future reconciliation jobs can distinguish a live event from a
+        # historical tombstone without adding a new shared DTO field.
+        "calendar_lifecycle",
+        "is_tombstone",
+        "tombstone_policy",
     )
     return {key: obs.meta[key] for key in keys if key in obs.meta}
 

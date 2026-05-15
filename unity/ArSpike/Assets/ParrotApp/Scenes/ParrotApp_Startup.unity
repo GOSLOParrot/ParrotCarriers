@@ -362,6 +362,7 @@ GameObject:
   - component: {fileID: 1120588110}
   - component: {fileID: 1120588111}
   - component: {fileID: 1120588112}
+  - component: {fileID: 1120588115}
   - component: {fileID: 1120588113}
   - component: {fileID: 1120588114}
   m_Layer: 0
@@ -412,6 +413,7 @@ MonoBehaviour:
   homeHudController: {fileID: 1120588109}
   homeMenuLoader: {fileID: 1120588111}
   modelReadyReporter: {fileID: 1120588112}
+  modelPlacementController: {fileID: 1120588115}
   arRuntimeBootstrap: {fileID: 1120588114}
   arSessionBaselineReporter: {fileID: 1120588113}
   defaultConfig:
@@ -767,6 +769,25 @@ MonoBehaviour:
   startupFlow: {fileID: 1120588092}
   mainReadyGate: {fileID: 1120588108}
   modelDriver: {fileID: 0}
+--- !u!114 &1120588115
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1120588090}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 73519fa88a59495fa49ed65a36a48921, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  startupFlow: {fileID: 1120588092}
+  mainReadyGate: {fileID: 1120588108}
+  modelReadyReporter: {fileID: 1120588112}
+  modelRoot: {fileID: 1775703627}
+  placementCamera: {fileID: 275410333}
+  defaultDistanceMeters: 1.2
+  fallbackPosition: {x: 0, y: -0.25, z: 1.2}
 --- !u!114 &1120588113
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -800,6 +821,9 @@ MonoBehaviour:
   bootstrapOnAwake: 0
   createArSessionObject: 1
   attachCameraManagers: 1
+  mountXrOriginAndPlacementManagers: 1
+  manageXrLifecycle: 1
+  skipXrLifecycleInEditor: 1
 --- !u!1 &1265433863
 GameObject:
   m_ObjectHideFlags: 0

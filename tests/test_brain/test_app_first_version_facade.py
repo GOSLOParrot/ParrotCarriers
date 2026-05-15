@@ -213,8 +213,12 @@ def test_tool_cabinet_documents_camera_and_attention_tools() -> None:
 
     assert set(tools) == set(AppToolId)
     assert "PhotoController" in " ".join(tools[AppToolId.CAMERA].flow)
-    assert "/api/app/test/focus" in tools[AppToolId.MAGNIFIER_FOCUS].action_endpoints
-    assert "/api/app/test/bbox" in tools[AppToolId.BOUNDARY_BOX].action_endpoints
+    assert tools[AppToolId.MAGNIFIER_FOCUS].enabled is False
+    assert tools[AppToolId.BOUNDARY_BOX].enabled is False
+    assert tools[AppToolId.MAGNIFIER_FOCUS].state == "deferred_phone_stability"
+    assert tools[AppToolId.BOUNDARY_BOX].state == "deferred_phone_stability"
+    assert tools[AppToolId.MAGNIFIER_FOCUS].action_endpoints == ()
+    assert tools[AppToolId.BOUNDARY_BOX].action_endpoints == ()
     assert tools[AppToolId.NOTE_INBOX].asset_slot == "paper_note_newspaper"
 
 

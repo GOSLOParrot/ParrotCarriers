@@ -1,27 +1,30 @@
-"""Snapshot (single-frame capture) envelope schema — V1.
+"""Snapshot (single-frame capture) envelope schema V1.
 
-Sprint 0 Schema V1. Used by three flows:
-  1. `captureSnapshot` RPC (Unity → Brain), see audit §5.1 B1-B2
-  2. Brain `capture_current_frame()` helper (`brain/vision/snapshot.py`, Sprint 4)
-  3. `PhotoEvent` / identify_object pipeline (Sprint 4 S4.A + audit §5)
+This is a legacy-compatible metadata envelope for saved/observed still frames.
+Formal Unity must not transport full images or inline base64 through LiveKit
+RPC. The accepted App path is:
+
+1. Unity ``PhotoController`` emits compact ECP metadata
+   (``photo.taken_preview`` / capture time / pose / refs).
+2. Full photo bytes are uploaded via HTTP/storage and referenced by path/URI.
+3. Brain/DSG consumers attach the reference to sightings or memory nodes.
 
 Design notes:
-  - Envelope is payload-agnostic: `payload_kind` discriminates between inline
-    base64, file-path reference, and URI. This lets us start inline (≤120 KB
-    LiveKit RPC limit) and migrate to disk / OSS without protocol change.
-  - `request_id` is used so concurrent callers (identify_object, camera mode)
-    can correlate RPC request ↔ response.
-  - `camera_pose` is optional because DESKTOP_WEBCAM has no pose; only AR
-    path fills it.
-  - File-layout convention per audit §5.1 B3:
-        data/snapshots/objects/{uuid}/reference.jpg
-        data/snapshots/sightings/{yyyy-mm-dd}/{ts}.jpg
-        data/photos/{yyyy-mm-dd}/{ts}.jpg
-    These paths are produced by consumers, not required inside the envelope.
+- ``payload_kind`` remains payload-agnostic for older tests and storage-backed
+  consumers. Prefer FILE_PATH / URI / NONE for formal App code.
+- ``request_id`` can correlate a user camera action, ECP event, HTTP upload,
+  and downstream sighting result.
+- ``camera_pose`` is optional because DESKTOP_WEBCAM has no pose; only AR path
+  fills it.
+- File-layout convention:
+      data/snapshots/objects/{uuid}/reference.jpg
+      data/snapshots/sightings/{yyyy-mm-dd}/{ts}.jpg
+      data/photos/{yyyy-mm-dd}/{ts}.jpg
+  These paths are produced by consumers, not required inside the envelope.
 
-Extension points (intentionally left open in V1):
-  - `exif`: loose dict for camera exposure / focus / lens etc.
-  - `meta`: free-form app-level tags (scene, mode, user flags).
+Extension points:
+- ``exif``: loose dict for camera exposure / focus / lens etc.
+- ``meta``: free-form app-level tags (scene, mode, user flags).
 """
 
 from __future__ import annotations
@@ -44,7 +47,7 @@ class SnapshotSource(str, Enum):
 
 
 class SnapshotPayloadKind(str, Enum):
-    """How the image bytes are delivered with this envelope."""
+    """How image bytes are referenced by this envelope."""
 
     INLINE_JPEG_B64 = "inline_jpeg_b64"
     FILE_PATH = "file_path"
@@ -53,12 +56,7 @@ class SnapshotPayloadKind(str, Enum):
 
 
 class BBox(BaseModel):
-    """Normalized axis-aligned bounding box (x1, y1, x2, y2), all in [0, 1].
-
-    Coordinate convention: origin at top-left, x right, y down — matches
-    image pixel coords after normalization. Flip upstream if your source
-    uses bottom-left origin.
-    """
+    """Normalized axis-aligned bounding box (x1, y1, x2, y2), all in [0, 1]."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -78,11 +76,7 @@ class BBox(BaseModel):
 
 
 class CameraPose(BaseModel):
-    """World-space camera pose at the instant of capture.
-
-    Optional for DESKTOP_WEBCAM. Required for AR path to anchor PhotoEvent.
-    Right-handed, Unity-style (y-up) coordinates.
-    """
+    """World-space camera pose at the instant of capture."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -99,16 +93,16 @@ class SnapshotEnvelope(BaseModel):
     """One captured frame plus metadata.
 
     Lifecycle:
-        Unity SnapshotService.cs → LiveKit RPC response
-            → Brain capture_current_frame()
-            → consumer (identify_object L0/L1 compare, PhotoEvent storage,
-              DSG Ingest cv_track_filter)
-        → SemanticNode.reference_image_path / last_sighting_path (L2-B)
-        → L0 EventEnvelope.payload (audit trail) via provenance_stream_id
+        Unity PhotoController / storage-backed capture
+            -> Brain/DSG consumer (identify_object evidence, PhotoEvent
+              storage, DSG Ingest cv_track_filter)
+        -> SemanticNode.reference_image_path / last_sighting_path (L2-B)
+        -> L0 EventEnvelope.payload (audit trail) via provenance_stream_id
 
     Size budget:
-        - INLINE_JPEG_B64 payload ≤ ~120 KB (LiveKit PerformRpc safe limit)
-        - Falls back to FILE_PATH / URI when exceeded; producer decides.
+        - Formal App code should use FILE_PATH / URI for image bytes.
+        - INLINE_JPEG_B64 exists only for legacy tests/tools and must not be
+          sent through LiveKit RPC.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")

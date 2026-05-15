@@ -11,7 +11,7 @@ import parrot.dsg.l2b_graph as l2b_graph_module
 from parrot.dsg.ingest.base import ObservationSource
 from parrot.dsg.l1_5 import BucketKind, L15Pool, set_pool_for_test
 from parrot.dsg.l2b_graph import L2BGraph
-from parrot.dsg.l2b_types import NodeKind
+from parrot.dsg.l2b_types import ConfirmationStatus, NodeKind, Salience
 from parrot.dsg.triggers.calendar_trigger import CalendarTrigger
 from parrot.dsg.triggers.runner import TriggerRunner
 
@@ -91,6 +91,49 @@ async def test_calendar_refresh_merges_by_google_event_id(env):
     node = graph.all_nodes()[0]
     assert node.label == "New title"
     assert node.source_meta["etag"] == "new_etag"
+    handle = pool.get_bucket(BucketKind.GOOGLE_CALENDAR)
+    assert handle is not None
+    assert len(handle.node_uuids) == 1
+
+
+@pytest.mark.asyncio
+async def test_calendar_cancelled_event_marks_existing_node_as_tombstone(env):
+    graph, pool = env
+    trigger = CalendarTrigger(graph)
+    runner = TriggerRunner(graph=graph)
+
+    first = await trigger._parse_and_process(json.dumps([
+        {
+            "id": "evt_cancel",
+            "title": "Standup",
+            "start_time": "2026-05-09T11:00:00+08:00",
+            "etag": "etag-live",
+        }
+    ]))
+    assert first is not None
+    await runner._process_result(first)
+
+    cancelled = await trigger._parse_and_process(json.dumps([
+        {
+            "id": "evt_cancel",
+            "title": "Standup",
+            "start_time": "2026-05-09T11:00:00+08:00",
+            "status": "cancelled",
+            "etag": "etag-cancelled",
+        }
+    ]))
+    assert cancelled is not None
+    await runner._process_result(cancelled)
+
+    assert graph.node_count() == 1
+    node = graph.all_nodes()[0]
+    assert node.confirmation == ConfirmationStatus.GHOST
+    assert node.salience == Salience.PERIPHERAL
+    assert node.attention == 0.1
+    assert node.source_meta["status"] == "cancelled"
+    assert node.source_meta["calendar_lifecycle"] == "cancelled"
+    assert node.source_meta["is_tombstone"] is True
+    assert node.source_meta["tombstone_policy"] == "historical_event"
     handle = pool.get_bucket(BucketKind.GOOGLE_CALENDAR)
     assert handle is not None
     assert len(handle.node_uuids) == 1
