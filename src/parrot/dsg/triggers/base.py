@@ -57,6 +57,9 @@ class TriggerOutcome:
     nodes_affected: list[str] = field(default_factory=list)
     dispatch_to_nanobot: bool = False
     nanobot_task: dict[str, Any] | None = None
+    # Compatibility name from the older trigger protocol. The runner treats it
+    # as a C3 status notice by default; C4 speech requires an explicit future
+    # body-feel/priority policy instead of this boolean alone.
     notify_gemini: bool = False
     notification_text: str = ""
 
@@ -111,11 +114,14 @@ class BaseTrigger(ABC):
             return None
 
     async def _notify_brain(self, message: str) -> None:
-        """Helper: push a notification to Context Injector → Gemini."""
+        """Helper for compatibility triggers that still emit a C3 notice early."""
         try:
             from parrot.brain.context_injector import get_context_injector
             injector = get_context_injector()
             if injector:
-                await injector.inject_notification(message)
+                # Trigger notifications default to C3 chat-context hints. C4
+                # speech must be selected by a future priority/body-feel policy,
+                # not by the legacy ``notify_gemini`` boolean alone.
+                await injector.inject_status_notice(message)
         except Exception:
             logger.debug("%s: notification failed", self.name)

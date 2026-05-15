@@ -191,6 +191,36 @@ def test_upload_publishes_photo_asset_uploaded_event(_isolated):
     assert f'"asset_bytes":{len(payload)}' in wire
 
 
+def test_upload_publishes_photo_timebase_metadata(_isolated):
+    """HTTP uploads can carry producer sample time without ECP top-level churn."""
+    from fastapi.testclient import TestClient
+
+    room = _fake_room()
+    attach_ecp_event_publisher(room)
+
+    client = TestClient(build_app())
+    resp = client.post(
+        "/upload/photo/ph_timebase",
+        content=b"timebase-bytes",
+        headers={
+            "X-Parrot-Clock-Domain": "unity",
+            "X-Parrot-Wall-Time-Ms": "1700000020123",
+            "X-Parrot-Media-Time-Us": "123456",
+            "X-Parrot-Sequence": "8",
+            "X-Parrot-Source-Id": "unity-photo-controller",
+        },
+    )
+    assert resp.status_code == 200
+
+    wire = room.local_participant.publish_data.await_args.kwargs["payload"]
+    assert '"timebase"' in wire
+    assert '"clock_domain":"unity"' in wire
+    assert '"wall_time_ms":1700000020123' in wire
+    assert '"media_time_us":123456' in wire
+    assert '"sequence":8' in wire
+    assert '"source_id":"unity-photo-controller"' in wire
+
+
 def test_upload_publishes_when_no_preview_header_uses_photo_id_as_correlation(_isolated):
     from fastapi.testclient import TestClient
 

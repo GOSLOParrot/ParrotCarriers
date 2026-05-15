@@ -108,8 +108,6 @@ class SceneContextTrigger(BaseTrigger):
             for mem in memories[:5]:
                 notification += f"  - {mem[:80]}\n"
 
-            await self._notify_brain(notification)
-
             return TriggerOutcome(
                 trigger_name=self.name,
                 summary=f"Found {len(memories)} related memories for current scene",

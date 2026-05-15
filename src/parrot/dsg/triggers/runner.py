@@ -161,7 +161,7 @@ class TriggerRunner:
             4. archive_request         入归档队列
             5. plan_request            draft Plan
             6. dispatch_to_nanobot     既有 — 后台任务
-            7. notify_gemini           既有 — 上报 Brain
+            7. notify_gemini           legacy — C3 status notice by default
         Each channel is wrapped in its own try/except so a failure in
         one channel does not block the others.
         """
@@ -250,20 +250,19 @@ class TriggerRunner:
         # ── 7. notify_gemini (legacy) ──
         if result.notify_gemini and result.notification_text and self._session:
             try:
-                from parrot.brain.session_policy import should_generate_reply
+                # ``notify_gemini`` predates the trigger body-feel taxonomy and
+                # used to mean C4 speech. That is too strong for ordinary
+                # calendar/message/scene context. Default to C3 so GOSLO sees
+                # the hint on the next natural turn; future priority fields can
+                # opt into C4 explicitly after review.
+                from parrot.brain.context_injector import get_context_injector
 
-                if not should_generate_reply(f"trigger:{result.trigger_name}"):
-                    logger.info(
-                        "TriggerRunner: notification suppressed by session policy (%s)",
-                        result.trigger_name,
-                    )
-                    return
-                await self._session.generate_reply(
-                    instructions=result.notification_text
-                )
+                injector = get_context_injector()
+                if injector:
+                    await injector.inject_status_notice(result.notification_text)
             except Exception:
                 logger.debug(
-                    "TriggerRunner: failed to notify Gemini for %s",
+                    "TriggerRunner: failed to deliver C3 trigger notice for %s",
                     result.trigger_name,
                 )
 

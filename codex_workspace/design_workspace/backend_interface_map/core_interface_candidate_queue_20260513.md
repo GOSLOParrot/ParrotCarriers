@@ -136,6 +136,14 @@ for the same module-level decision.
   Allowed notices append compact evidence/ref context to Gemini chat context
   with no-interrupt wording; silent notices remain layer-1. C4 speech remains a
   policy candidate, not a ratified shared interface.
+- CORE-012: 2026-05-15 continuation wires
+  `transient/photo_awareness_notice` into `ContextInjector` C3 delivery for the
+  App photo-awareness menu levels. IntentWorkspace PHOTO refs remain passive
+  working-set context; only the session-owned C3 bridge makes GOSLO explicitly
+  notice them. `UNAWARE_RECORDED` and pending preview-ref notices stay layer-1,
+  while `AWARE_SILENT` / `AWARE_REACT` may append a no-interrupt photo hint
+  after a preview ref is staged or preview-missing is explicit. This is a
+  backend/App-facade behavior note, not a new Unity DTO field.
 - CORE-012: 2026-05-15 continuation adds Web/backend freshness status for the
   sampler and frame cache (`fresh_window_ms`, `latest_frame_age_ms`,
   `latest_frame_fresh`, per-track latest summaries). These fields support
@@ -149,6 +157,14 @@ for the same module-level decision.
   `web-console-screen` for no-camera laptop evidence smoke. This remains a
   Web/backend-first producer classification detail; shared promotion still
   waits for live screen-share/Unity track smoke and App lane review.
+- CORE-012: 2026-05-15 chain audit adds optional HTTP photo upload timebase
+  forwarding. Upload clients may send `X-Parrot-Timebase` JSON or discrete
+  `X-Parrot-*` sample-time headers; the Brain upload server forwards them as
+  `photo.asset_uploaded.payload.timebase`, letting `observer.photo` preserve
+  true sample time in the evidence ledger while old clients keep estimated
+  envelope-time fallback. Focused validation for timebase/frame/photo/snapshot/
+  attention/Web-route/identify chains passed (`58 passed`). Shared promotion
+  still waits for live screen-share smoke and App lane review.
 
 ## Trigger Protocol Audit Notes
 
@@ -167,6 +183,15 @@ for the same module-level decision.
   `parrot.dsg.types` still exists as an input/event compatibility path for
   scene alerts. It is not the preferred output protocol and should be folded
   into a typed event envelope only after a separate shared-interface review.
+- 2026-05-15 taxonomy review: the new core SSOT
+  `.cursor/memory/architecture/Interface/goslo_trigger_awareness_taxonomy_20260515.md`
+  classifies trigger families separately from delivery/body-feel levels.
+  Current code keeps `TriggerOutcome.notify_gemini` as compatibility wording
+  but routes it to C3 `ContextInjector.inject_status_notice()` by default; C4
+  speech and interrupt behavior require explicit future fields/policy. Candidate
+  fields before any DTO promotion include `trigger_family`, `delivery_level`,
+  `body_feel`, `priority`, `urgency`, `surprise`, `confidence`,
+  `quiet_hour_policy`, `cooldown_key`, and `recommended_action`.
 
 ## Promotion Rule
 

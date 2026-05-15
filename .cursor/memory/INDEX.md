@@ -77,6 +77,7 @@
 | `architecture/Interface/obsidian_true_connection_guide_20260509.md` | **Obsidian 真连接指南** — 三 profile、L1.5 入池、L2-B / RefTable / IntentWorkspace 写边界 |
 | `architecture/Interface/google_calendar_nanobot_true_connection_guide_20260509.md` | **Google Calendar + Nanobot 真连接指南** — Scheduler / Nanobot / Google / L1.5 链路、writeback draft 边界 |
 | `architecture/Interface/photo_memory_awareness_true_connection_guide_20260509.md` | **Photo 记忆与 Awareness 真连接指南** — HTTP 落盘、IntentWorkspace staged ref、PhotoNode、GOSLO Awareness 缺口 |
+| `architecture/Interface/goslo_trigger_awareness_taxonomy_20260515.md` | **GOSLO Trigger / Awareness 分类 SSOT** — Trigger 家族、体感等级、C3/C4/interrupt 路由、App listening/head-tilt 动画钩子 |
 | `architecture/Interface/chatB_true_connection_completion_record_20260509.md` | **Chat B 真连接完成记录** — 代码修复、验证、剩余缺口、下一步顺序 |
 | `architecture/Interface/app_v1_facade_core_business_interface_20260510.md` | **App V1 facade 核心/业务接口** — 菜单画布外部模块、相机/Awareness、Google draft、Obsidian、XRHand、Nanobot 报告 |
 | `architecture/Interface/app_v1_room_setting_room_profile_interface_20260510.md` | **App V1 RoomSetting / RoomProfile 接口** — 启动页 Room 保存/新建/选择、五轴切换、菜单持久化、能力兼容规则 |

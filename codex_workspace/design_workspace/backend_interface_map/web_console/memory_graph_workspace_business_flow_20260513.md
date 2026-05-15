@@ -1440,6 +1440,14 @@ Boundary:
 
 - `TimeAlignedSampleRef` is not yet a ratified App DTO. It is a Web/backend
   prototype feeding CORE-012.
+- The Runtime `Time / Evidence` panel is not part of the Memory/L2-B operation
+  page. Runtime Flow owns LiveKit sampling, browser screen-share permission,
+  ASR/BBox/Focus time alignment, sampler freshness, and GOSLO runtime evidence
+  notification policy.
+- Memory Graph / L2-B consumes evidence later as Ref/Node/source material. It
+  may display evidence-linked nodes, refs, photos, or board edges, but it
+  should not become the place where runtime sampling or screen-share proof is
+  controlled.
 - Evidence Board / Ref binding should reference evidence ids and storage refs
   through CORE-006/CORE-012 once reviewed; no separate Web-only board storage
   model should be invented.

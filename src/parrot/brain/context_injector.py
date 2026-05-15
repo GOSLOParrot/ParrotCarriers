@@ -69,6 +69,7 @@ _WATCHED_BB_KEYS: tuple[str, ...] = (
     "session/video_tier",
     "session/dsg_mode",
     "tick/last_rpc_ack",
+    "transient/photo_awareness_notice",
     "transient/evidence_awareness_notice",
 )
 
@@ -201,6 +202,18 @@ class ContextInjector:
 
     # ───────────────────────── C3: chat-ctx append (role=user) ────────────
 
+    async def inject_status_notice(self, message: str) -> None:
+        """Layer C3: append a quiet status notice to chat context.
+
+        Use this for trigger/awareness events that GOSLO should know about but
+        should not speak over. It is stronger than passive IntentWorkspace or
+        Blackboard state, but weaker than ``generate_reply``.
+        """
+        body = str(message or "").strip()
+        if not body:
+            return
+        await self._push_status_user(body)
+
     async def _push_status_user(self, body: str) -> None:
         """Append a `[状态] body` user-role message to Gemini's chat ctx (C3).
 
@@ -321,6 +334,54 @@ class ContextInjector:
         parts.append("Use it when relevant; do not interrupt the current turn.")
         return 3, " | ".join(parts), False
 
+    def _classify_photo_awareness_notice(
+        self, new: Any
+    ) -> tuple[int, str | None, bool]:
+        """Route App photo-awareness menu policy to C3, never C4.
+
+        IntentWorkspace staging is only a discoverable working-set ref. This
+        classifier is the explicit "GOSLO should notice the photo" bridge used
+        by the App menu's photo-awareness levels. It keeps the notification as
+        a chat-context hint so AWARE_SILENT and AWARE_REACT cannot interrupt
+        the current LiveKit turn by accident.
+        """
+        if not isinstance(new, dict):
+            return 1, None, False
+        if not new.get("notify_goslo") and not new.get("allow_react"):
+            return 1, None, False
+
+        photo_id = str(new.get("photo_id") or "").strip()
+        if not photo_id:
+            return 1, None, False
+
+        reason = str(new.get("reason") or "").strip()
+        # The observer may publish a pending notice before async staging has a
+        # ref id. Wait for the follow-up notice so we don't burn the per-key
+        # rate limit on an incomplete hint.
+        if reason == "preview_ref_pending":
+            return 1, None, False
+
+        policy = str(new.get("policy") or "").strip()
+        preview_ref_id = str(new.get("preview_ref_id") or "").strip()
+        if preview_ref_id:
+            message = "Photo preview is staged in IntentWorkspace."
+        elif reason == "preview_missing":
+            message = "Photo capture was observed, but no preview ref was staged."
+        else:
+            message = "Photo awareness notice is available."
+
+        parts = [message, f"photo_id={photo_id}"]
+        if preview_ref_id:
+            parts.append(f"preview_ref_id={preview_ref_id}")
+        if policy:
+            parts.append(f"policy={policy}")
+        if reason:
+            parts.append(f"reason={reason}")
+        if new.get("allow_react"):
+            parts.append("A safe-turn reaction is allowed by policy, but this delivery is C3 only.")
+        parts.append("Use it when relevant; do not interrupt the current turn.")
+        return 3, " | ".join(parts), False
+
     def _classify_visual_reason(
         self, old: Any, new: Any
     ) -> tuple[int, str | None, bool]:
@@ -389,6 +450,8 @@ class ContextInjector:
             return self._classify_dsg_mode(old, new)
         if key == "transient/evidence_awareness_notice":
             return self._classify_evidence_awareness_notice(new)
+        if key == "transient/photo_awareness_notice":
+            return self._classify_photo_awareness_notice(new)
         return 1, None, False
 
     async def _dispatch(self, key: str, old: Any, new: Any) -> None:

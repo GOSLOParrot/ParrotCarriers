@@ -41,6 +41,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import datetime
+import json
 import logging
 import os
 import socket
@@ -171,6 +172,7 @@ def build_app():  # type: ignore[no-untyped-def]
         asset_path = str(path)
         bytes_written = len(body)
         correlation_id = request.headers.get("X-Photo-Preview-Event-Id", "")
+        timebase = _extract_upload_timebase(request)
 
         publish_ok = await _publish_asset_uploaded_event(
             photo_id=photo_id,
@@ -178,6 +180,7 @@ def build_app():  # type: ignore[no-untyped-def]
             asset_path=asset_path,
             asset_bytes=bytes_written,
             correlation_id=correlation_id,
+            timebase=timebase,
         )
 
         logger.info(
@@ -206,6 +209,7 @@ async def _publish_asset_uploaded_event(
     asset_path: str,
     asset_bytes: int,
     correlation_id: str = "",
+    timebase: dict[str, Any] | None = None,
 ) -> bool:
     """Publish ``photo.asset_uploaded`` via the brain's EcpEventPublisher.
 
@@ -234,6 +238,7 @@ async def _publish_asset_uploaded_event(
                 # real disk path used by L2-B RefTable / IntentWorkspace.
                 "asset_path": asset_path,
                 "asset_bytes": asset_bytes,
+                **({"timebase": timebase} if timebase else {}),
             },
             correlation_id=correlation_id or photo_id,
         )
@@ -241,6 +246,67 @@ async def _publish_asset_uploaded_event(
     except Exception:
         logger.exception("[photo_upload] publish_asset_uploaded failed")
         return False
+
+
+def _extract_upload_timebase(request: "Request") -> dict[str, Any]:
+    """Parse optional producer sample-time metadata from photo upload headers.
+
+    This keeps the top-level ECP DTO unchanged while letting Unity/Web upload
+    producers attach the same V1 ``payload["timebase"]`` shape used by the
+    temporal evidence ledger.  Missing or malformed headers simply return an
+    empty dict so old upload clients keep working.
+    """
+    headers = request.headers
+    parsed = _json_header_object(headers.get("X-Parrot-Timebase", ""))
+    if parsed:
+        return _clean_timebase(parsed)
+
+    raw: dict[str, Any] = {
+        "clock_domain": headers.get("X-Parrot-Clock-Domain", ""),
+        "wall_time_ms": headers.get("X-Parrot-Wall-Time-Ms", "")
+        or headers.get("X-Photo-Ts-Ms", ""),
+        "monotonic_ms": headers.get("X-Parrot-Monotonic-Ms", ""),
+        "media_time_us": headers.get("X-Parrot-Media-Time-Us", ""),
+        "sequence": headers.get("X-Parrot-Sequence", ""),
+        "source_id": headers.get("X-Parrot-Source-Id", ""),
+    }
+    return _clean_timebase(raw)
+
+
+def _json_header_object(text: str) -> dict[str, Any]:
+    if not text:
+        return {}
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _clean_timebase(raw: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    clock_domain = str(raw.get("clock_domain") or "").strip()
+    source_id = str(raw.get("source_id") or "").strip()
+    if clock_domain:
+        out["clock_domain"] = clock_domain
+    if source_id:
+        out["source_id"] = source_id
+    for key in ("wall_time_ms", "monotonic_ms", "media_time_us", "sequence"):
+        value = _int_or_none(raw.get(key))
+        if value is not None:
+            out[key] = value
+    if "estimated" in raw:
+        out["estimated"] = bool(raw.get("estimated"))
+    return out
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool) or value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 # ─── uvicorn lifecycle helper (for brain.agent boot) ───────────────

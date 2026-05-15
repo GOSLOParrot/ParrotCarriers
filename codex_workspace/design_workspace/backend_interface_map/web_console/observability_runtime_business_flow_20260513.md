@@ -4,7 +4,7 @@ Owner: Web Console chat
 Status: in_progress
 Category: Web Console business interface  
 Scope: ECS/module health, orchestrator status, Blackboard, IntentWorkspace, Plan/task, Scheduler, Nanobot, AgentTeam/Maid Team, GOSLO/Nanobot collaboration  
-Updated: 2026-05-14
+Updated: 2026-05-15
 Related TODO: WEB-002, WEB-004, WEB-005, WEB-009, WEB-012
 Sources: `src/parrot/castle/orchestrator/status.py`, `src/parrot/castle/orchestrator/server.py`, `src/parrot/scheduler/**`, `src/parrot/brain/intent_workspace.py`, `src/parrot/brain/plan/**`, `.cursor/memory/architecture/Interface/app_web_parallel_routes_agent_team_20260513.md`
 
@@ -333,6 +333,12 @@ Extension for WEB-009:
   `screenshare`, `screen_share`, or compatible metadata). Otherwise it returns
   a warning-style local receipt with separate `fresh_any_evidence` and
   `screen_share_confirmed` fields.
+- Realtime usability note: the Runtime Time/Evidence panel now polls
+  `/api/vision/evidence/status` and `/api/vision/evidence/timeline` every 3s
+  while the Runtime page is mounted. Poll failures are silent to avoid flooding
+  the receipt rail. Screen-share start and `检查采样` also poke the evidence
+  panel, so sampler/frame-cache freshness is visible without a manual page
+  refresh.
 - Security posture for the React bridge: the short-lived token stays in
   component state only, receipts render token length/metadata instead of the
   raw token, and the browser LiveKit SDK log level is reduced to warning so
@@ -674,6 +680,43 @@ Category: backend interface / observability / vision evidence
 Scope: WEB-015, CORE-012
 Source: user-approved Time-Aligned Evidence plan
 
+### Time/Evidence Placement And Use
+
+The React `Time / Evidence` panel belongs to the `Runtime Flow` workspace, not
+to the L2-B / Memory Graph operation page. Its job is to show the current
+runtime evidence chain:
+
+- LiveKit/Brain room connection evidence, especially no-camera screen-share
+  tracks.
+- Brain `livekit_sampler` freshness and frame-cache freshness.
+- Temporal evidence rows for video frames, image assets, BBox/Focus/magnifier
+  attention, ASR, and future CV detections.
+- Manual `request evidence`, `检查采样`, and `stage hint` debugging for
+  IntentWorkspace/GOSLO context injection.
+
+User workflow:
+
+1. Open `协作流` / Runtime Flow.
+2. Use `LiveKit / Brain 连接` to mint a token and connect to the room.
+3. If the machine has no camera, publish browser screen share as
+   `web-console-screen`.
+4. Watch the `Time / Evidence` panel for `LiveKit sampler` and frame-cache
+   `fresh/stale` badges.
+5. Press `检查采样`; success means fresh evidence also looks like a screen-share
+   source. A generic camera/test frame must not count as a successful
+   screen-share smoke.
+6. Use `请求 Evidence` to locate nearest stored evidence by time and `暂存提示`
+   to stage a `visual_evidence_hint` into IntentWorkspace.
+
+Boundary with Memory/L2-B:
+
+- Memory Graph / L2-B consumes evidence later as Ref/Node/source material; it
+  should not own LiveKit room sampling, screen-share permission, ASR timing, or
+  BBox/Focus runtime capture controls.
+- L2-B pages can later display evidence-linked Nodes/Refs and graph changes,
+  but the runtime proof that "this frame existed at this time" stays in
+  Runtime Flow.
+
 Implemented:
 
 - Added backend-first `parrot.brain.vision.evidence` with `TimebaseStamp`,
@@ -684,6 +727,12 @@ Implemented:
   fields such as `ts_ms`, `timestamp`, and `observed_at`.
 - `observer.snapshot`, `observer.photo`, and `FocusBboxThreshold` mirror
   storage-backed snapshot/photo/attention events into the ledger.
+- HTTP photo upload now accepts optional sample-time metadata through
+  `X-Parrot-Timebase` JSON or discrete `X-Parrot-Clock-Domain`,
+  `X-Parrot-Wall-Time-Ms`, `X-Parrot-Media-Time-Us`, `X-Parrot-Sequence`, and
+  `X-Parrot-Source-Id` headers. The upload server forwards this as
+  `photo.asset_uploaded.payload.timebase`; old clients that do not send it
+  still work and simply fall back to estimated envelope time in the ledger.
 - `identify_object` now resolves stored evidence by `evidence_id`,
   `bbox_ref_id`, `focus_ref_id`, or `target_time_ms`; if no image/frame is
   available it records a pending evidence request and continues L0/L1
@@ -756,6 +805,10 @@ Interface boundary:
 - Evidence Awareness V1 may stage context and mark `notify_goslo=true`.
   `ContextInjector` is now the session-owned delivery bridge for C3 hints and
   keeps `allow_interrupt=false`; C4 safe-turn speech is still pending review.
+- BBox/Focus threshold V1 currently stops at ledger + Blackboard +
+  `attention.threshold.crossed`. Automatic "threshold crossed -> request
+  nearest stored image -> stage visual evidence hint" is deliberately left as
+  WEB-015.12 so the policy can be audited before it starts nudging GOSLO.
 - `POST /api/vision/evidence/frame-cache/upload` is a local Web/operator debug
   ingress; it is not the production LiveKit sampler and it does not belong in
   Unity/App DTOs.
@@ -766,6 +819,73 @@ Interface boundary:
   real Unity/LiveKit video smoke verifies track selection, reconnect behavior,
   and storage load. Crop/VLM comparison and App/Web field review are still
   required before SSOT promotion.
+
+Awareness intake and notification layers:
+
+| Layer | Current Parrot channel | LiveKit/agent meaning | Notification strength | Current policy |
+|:--|:--|:--|:--|:--|
+| L0 storage | Temporal Evidence Ledger, L1.5 RefTable, Photo asset path | Not in chat context | Durable evidence only | Never speaks; producer/sample source must be explicit. |
+| L1 working set | IntentWorkspace staged refs (`PHOTO`, `visual_evidence_hint`) | Discoverable by tools/read models, not automatically noticed | Soft context | GOSLO may inspect when a tool/turn looks at IntentWorkspace; staging alone is not a strong notification. |
+| L2 blackboard notice | `transient/current_attention_hint`, `transient/photo_awareness_notice`, `transient/evidence_awareness_notice` | Session-owned bridge can decide whether to push context | Audited notification decision | Blackboard notice records source/policy/reason; unsupported keys stay local. |
+| C3 chat-context hint | `ContextInjector._push_status_user()` via `session.update_chat_ctx` | Persistent chat context item for later turns | Strong notice, no speech | Evidence and Photo Awareness can reach this layer; message says do not interrupt. |
+| C4 safe-turn speech | `session.generate_reply(...)` | Proactive spoken reply / TTS turn | Strong notice with speech | Disabled for Photo/Evidence V1; future safe-turn policy only, never default interrupt. |
+
+Research anchors:
+
+- LiveKit `ChatContext` is the ordered conversation history sent to the LLM on
+  each turn, and can be modified/persisted with `update_chat_ctx`. This maps to
+  Parrot C3, not to passive IntentWorkspace storage.
+- LiveKit `generate_reply()` asks the agent to produce a response and can take
+  per-reply instructions or custom chat context. This maps to Parrot C4 and is
+  stronger than C3 because it schedules speech.
+- LiveKit speech/turn docs expose `allow_interruptions` and explicit
+  interruption control. Parrot Photo/Evidence Awareness V1 keeps
+  `allow_interrupt=false` and does not call C4 from utility code.
+
+Current intake behavior:
+
+- Evidence Awareness: `parrot.brain.vision.evidence_awareness` stages
+  `visual_evidence_hint` refs into IntentWorkspace, writes
+  `transient/evidence_awareness_notice`, and `ContextInjector` converts allowed
+  notices into C3 hints with evidence/ref ids. It does not speak.
+- Photo Awareness: `parrot.brain.photo_awareness` stages preview refs into
+  IntentWorkspace according to the App menu policy and writes
+  `transient/photo_awareness_notice`. 2026-05-15 continuation wires that notice
+  into `ContextInjector`: `UNAWARE_RECORDED` stays L1/L2 only; `AWARE_SILENT`
+  and `AWARE_REACT` can become C3 hints after a preview ref is staged or a
+  preview-missing decision is explicit. Pending preview-ref notices are held at
+  layer 1 to avoid pushing incomplete context.
+- Attention threshold: `FocusBboxThreshold` writes ledger + Blackboard +
+  `attention.threshold.crossed`. It is still not auto-promoted to C3; WEB-015.12
+  will add an audited bridge from threshold crossing to nearest evidence lookup
+  and Evidence Awareness staging.
+
+Trigger body-feel taxonomy update:
+
+- 2026-05-15 creates the core SSOT
+  `.cursor/memory/architecture/Interface/goslo_trigger_awareness_taxonomy_20260515.md`.
+  It separates trigger family (`photo`, `calendar`, `message`, `scene`,
+  `memory`, `curiosity`, etc.) from delivery/body-feel level
+  (`L0`, `L1`, `L2`, `C3`, `C4`, `I0`). A Photo trigger can therefore be a
+  quiet stored asset, a C3 notice, or a future C4/safe-turn prompt depending on
+  menu policy and priority; the same is true for Calendar and message triggers.
+- Normal Photo awareness is C3 when the menu policy permits notification; the
+  "off" setting stays storage/IntentWorkspace only. C4/interrupt is reserved
+  for high-priority reviewed cases such as urgent calendar rows or future L3
+  surprise/urgency thresholds.
+- Legacy `TriggerOutcome.notify_gemini` is now compatibility wording only.
+  `TriggerRunner` maps it to `ContextInjector.inject_status_notice()` by
+  default, and trigger implementations should not directly call
+  `_notify_brain()` before returning the same outcome. This avoids duplicate
+  injection and keeps ordinary triggers from speaking over the user.
+- Future Web trigger visualization should use clustered groups by trigger
+  family and badges/intensity for delivery level, priority, urgency, surprise,
+  confidence, and cooldown instead of trying to draw every trigger as a raw
+  Runtime Flow node.
+- App animation/body-language ownership is only recorded as an intake:
+  listening/ASR partials may drive a subtle head tilt; C3 can drive a glance;
+  high surprise can drive a peek; C4/interrupt-class events can drive explicit
+  alert animation after App review.
 
 Validation:
 
@@ -808,3 +928,15 @@ Validation:
 - Browser smoke: Runtime Flow shows Time/Evidence panel, exposes the `Cache
   Frame` button, clicking it adds a frame-cache receipt, and console errors
   stayed at zero.
+- 2026-05-15 chain audit: focused module/route suite covering timebase parsing,
+  frame-cache upload, fake LiveKit sampler, photo upload/observer, snapshot
+  metadata, BBox/Focus threshold evidence, Web evidence routes, safe photo
+  asset reads, and `identify_object` no-snapshot-RPC behavior -> `58 passed`.
+- 2026-05-15 continuation: wired Photo Awareness notices into
+  `ContextInjector` C3 delivery. Focused injector/photo/evidence tests ->
+  `28 passed`; App facade/monitor regression tests -> `40 passed`;
+  `git diff --check` passed with CRLF warnings only.
+- 2026-05-15 continuation: added Trigger/Awareness taxonomy SSOT and fixed the
+  legacy `notify_gemini` path so ordinary trigger notifications route to C3
+  exactly once through `TriggerRunner`. Focused trigger/calendar/message/
+  evidence-awareness tests -> `23 passed`.

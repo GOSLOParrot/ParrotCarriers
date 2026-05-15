@@ -155,8 +155,6 @@ class MessageNotificationTrigger(BaseTrigger):
         if not notification:
             return None
 
-        await self._notify_brain(notification)
-
         return TriggerOutcome(
             trigger_name=self.name,
             summary=f"Found {len(important)} important messages",

@@ -91,6 +91,20 @@ def test_trigger_implementations_use_trigger_outcome_name() -> None:
     assert offenders == []
 
 
+def test_trigger_implementations_leave_notification_delivery_to_runner() -> None:
+    """Concrete triggers should not duplicate the Runner-owned C3 delivery path."""
+    repo_root = Path(__file__).resolve().parents[2]
+    trigger_dir = repo_root / "src" / "parrot" / "dsg" / "triggers"
+    offenders = []
+    for path in sorted(trigger_dir.glob("*.py")):
+        if path.name == "base.py":
+            continue
+        if "_notify_brain(" in path.read_text(encoding="utf-8"):
+            offenders.append(path.name)
+
+    assert offenders == []
+
+
 def test_legacy_only_outcome_runs_legacy_path(env) -> None:
     """A TriggerOutcome with only legacy fields populated is valid."""
     out = TriggerOutcome(
@@ -266,3 +280,38 @@ async def test_processing_order_bucket_ops_before_commit(env) -> None:
     )
     await runner._process_result(outcome)
     assert env["pool"].get_bucket(BucketKind.ROLEPLAY_TEMP) is not None
+
+
+async def test_legacy_notify_gemini_routes_to_c3_status_notice(env) -> None:
+    """Legacy trigger notifications should not default to C4 speech."""
+    from parrot.brain import context_injector as context_injector_module
+
+    class _FakeInjector:
+        def __init__(self) -> None:
+            self.notices: list[str] = []
+            self.speeches: list[str] = []
+
+        async def inject_status_notice(self, message: str) -> None:
+            self.notices.append(message)
+
+        async def inject_notification(self, message: str) -> None:
+            self.speeches.append(message)
+
+    fake = _FakeInjector()
+    old_injector = context_injector_module._injector
+    context_injector_module._injector = fake  # type: ignore[assignment]
+    try:
+        runner = TriggerRunner(graph=env["graph"])
+        runner._session = object()
+        outcome = TriggerOutcome(
+            trigger_name="calendar_trigger",
+            notify_gemini=True,
+            notification_text="Calendar digest ready.",
+        )
+
+        await runner._process_result(outcome)
+
+        assert fake.notices == ["Calendar digest ready."]
+        assert fake.speeches == []
+    finally:
+        context_injector_module._injector = old_injector

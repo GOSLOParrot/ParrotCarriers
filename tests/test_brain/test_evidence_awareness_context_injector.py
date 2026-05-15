@@ -88,3 +88,78 @@ async def test_silent_evidence_awareness_notice_stays_layer_one() -> None:
     assert session.update_count == 0
     assert session.generated_replies == []
     assert session.chat_ctx.messages == []
+
+
+@pytest.mark.asyncio
+async def test_photo_awareness_notice_routes_to_c3_without_speech() -> None:
+    session = _FakeSession()
+    injector = ContextInjector(session)  # type: ignore[arg-type]
+
+    await injector._dispatch(
+        "transient/photo_awareness_notice",
+        {},
+        {
+            "photo_id": "photo_123",
+            "policy": "AWARE_SILENT",
+            "notify_goslo": True,
+            "allow_react": False,
+            "allow_interrupt": False,
+            "preview_ref_id": "ref_photo_456",
+            "reason": "preview_ref_staged",
+        },
+    )
+
+    assert session.update_count == 1
+    assert session.generated_replies == []
+    pushed = session.chat_ctx.messages[-1]
+    assert pushed["role"] == "user"
+    assert "Photo preview is staged" in pushed["content"][0]
+    assert "photo_id=photo_123" in pushed["content"][0]
+    assert "preview_ref_id=ref_photo_456" in pushed["content"][0]
+    assert "do not interrupt" in pushed["content"][0]
+
+
+@pytest.mark.asyncio
+async def test_photo_awareness_pending_notice_waits_for_staged_ref() -> None:
+    session = _FakeSession()
+    injector = ContextInjector(session)  # type: ignore[arg-type]
+
+    await injector._dispatch(
+        "transient/photo_awareness_notice",
+        {},
+        {
+            "photo_id": "photo_123",
+            "policy": "AWARE_REACT",
+            "notify_goslo": True,
+            "allow_react": True,
+            "allow_interrupt": False,
+            "reason": "preview_ref_pending",
+        },
+    )
+
+    assert session.update_count == 0
+    assert session.generated_replies == []
+    assert session.chat_ctx.messages == []
+
+
+@pytest.mark.asyncio
+async def test_unaware_photo_notice_stays_layer_one() -> None:
+    session = _FakeSession()
+    injector = ContextInjector(session)  # type: ignore[arg-type]
+
+    await injector._dispatch(
+        "transient/photo_awareness_notice",
+        {},
+        {
+            "photo_id": "photo_123",
+            "policy": "UNAWARE_RECORDED",
+            "notify_goslo": False,
+            "allow_react": False,
+            "allow_interrupt": False,
+            "reason": "awareness_disabled_or_unaware",
+        },
+    )
+
+    assert session.update_count == 0
+    assert session.generated_replies == []
+    assert session.chat_ctx.messages == []

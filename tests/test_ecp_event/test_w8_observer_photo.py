@@ -94,16 +94,20 @@ def _asset_uploaded_event(
     asset_path: str = "",
     asset_bytes: int = 12345,
     correlation_id: str = "",
+    timebase: dict | None = None,
 ) -> EcpEvent:
+    payload = {
+        "photo_id": photo_id,
+        "asset_ref": asset_ref,
+        "asset_path": asset_path,
+        "asset_bytes": asset_bytes,
+    }
+    if timebase:
+        payload["timebase"] = timebase
     return EcpEvent.build(
         event_type=EcpEventType.PHOTO_ASSET_UPLOADED,
         source=EcpEventSource.BRAIN,
-        payload={
-            "photo_id": photo_id,
-            "asset_ref": asset_ref,
-            "asset_path": asset_path,
-            "asset_bytes": asset_bytes,
-        },
+        payload=payload,
         correlation_id=correlation_id,
     )
 
@@ -256,6 +260,44 @@ def test_asset_uploaded_with_asset_path_stages_photo_ref(_isolated, tmp_path):
     assert any(h.metadata.related_node_uuid == "ph_path" for h in refs)
     pool = get_l1_5_pool()
     assert pool.refs.lookup_by_ref(RefKind.PHOTO_PATH, str(saved)) == "ph_path"
+
+
+def test_asset_uploaded_timebase_metadata_reaches_evidence_ledger(_isolated, tmp_path):
+    from parrot.brain.vision.evidence import EvidenceKind, get_evidence_ledger
+
+    ledger = get_evidence_ledger()
+    ledger.reset_for_tests()
+    ingest = EcpEventIngest()
+    photo_observer.register(ingest)
+    saved = tmp_path / "2026-05-15" / "ph_timebase.jpg"
+    saved.parent.mkdir(parents=True)
+    saved.write_bytes(b"jpeg")
+
+    ingest.handle_raw(
+        "parrot.ecp.event",
+        _asset_uploaded_event(
+            photo_id="ph_timebase",
+            asset_ref="/upload/photo/2026-05-15/ph_timebase.jpg",
+            asset_path=str(saved),
+            timebase={
+                "clock_domain": "unity",
+                "wall_time_ms": 1_700_000_020_123,
+                "media_time_us": 77_123,
+                "sequence": 4,
+                "source_id": "unity-photo-controller",
+            },
+        ).to_wire_json().encode("utf-8"),
+    )
+
+    rows = ledger.timeline(kind=EvidenceKind.IMAGE_ASSET, limit=1)
+    assert len(rows) == 1
+    assert rows[0].related_refs == ("ph_timebase",)
+    assert rows[0].timebase.clock_domain == "unity"
+    assert rows[0].timebase.wall_time_ms == 1_700_000_020_123
+    assert rows[0].timebase.media_time_us == 77_123
+    assert rows[0].timebase.sequence == 4
+    assert rows[0].timebase.source_id == "unity-photo-controller"
+    assert rows[0].timebase.estimated is False
 
 
 def test_asset_uploaded_for_unknown_photo_id_counted_no_crash(_isolated):

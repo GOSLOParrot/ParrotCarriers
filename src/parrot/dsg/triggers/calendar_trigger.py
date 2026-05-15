@@ -170,9 +170,6 @@ class CalendarTrigger(BaseTrigger):
             is_urgent=any(bool(ev.get("is_urgent")) for ev in events),
         )
 
-        if notification:
-            await self._notify_brain(notification)
-
         return TriggerOutcome(
             trigger_name=self.name,
             summary=f"Processed {len(events)} calendar events into L1.5",
