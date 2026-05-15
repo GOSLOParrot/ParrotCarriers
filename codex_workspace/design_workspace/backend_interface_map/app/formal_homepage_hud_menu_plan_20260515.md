@@ -55,6 +55,16 @@ Not complete:
   `http://` App HTTP/Mint/Orchestrator endpoints until
   `ProjectSettings.asset` was changed to `insecureHttpOption: 2`. This is a
   dev-local bridge only; production endpoints should become HTTPS/WSS.
+- 2026-05-15 follow-up iQOO LineA pass after rebuild produced useful formal
+  phone evidence: Unity loaded `parrot_config`, RoomSetting/menu save was
+  exercised through the App HTTP path, Mint/LiveKit connected, a Brain
+  `agent-*` participant published audio and sent `setVideoTier`, Android phone
+  mic published to LiveKit, AR video produced its first frame and published
+  1280x720, and short app-switch/background transitions paused/resumed video
+  state without an obvious C# or Java fatal crash in the captured log. The pass
+  also exposed two formal UI issues now fixed in code: startup main-ready
+  background staying visible over the formal home, and delayed RoomSetting
+  preview responses making preset taps feel sticky.
 
 ## B. Reuse Inventory
 
@@ -350,3 +360,9 @@ Remaining before marking phone-ready:
   and after the backend SVA/ECP visual-evidence contract report.
 - Degraded HUD polish for model/AR-specific failure state and final copy.
 - iQOO Neo9 mic/Bluetooth/app-switch/AR/video/workspace-pause/reconnect proof.
+- Rebuild/re-run after the startup-surface and RoomSetting preview fixes to
+  confirm the camera/AR background is no longer covered and preset switching
+  feels responsive on device.
+- Unity Editor currently warns that LiveKit's Android ARM64 FFI plugin is not
+  16KB-aligned. Track this during Android 15/iQOO stability work; it is not a
+  C# compile error, but it may become a native-package compatibility issue.

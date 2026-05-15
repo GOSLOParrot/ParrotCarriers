@@ -42,7 +42,7 @@ for the same module-level decision.
 | CORE-009 | draft | web-console | `MemoryRuntimeChangeStream`: sequence-based realtime/diff contract for L2-B, Blackboard, IntentWorkspace, Plan/task, Ref, and trigger/runtime receipts | Web Console first; possible Unity App HUD/menu consumer later | Web needs live visual operations without repeatedly repainting broad snapshots. If App later needs the same live DSG/Blackboard/Intent/Plan stream, this should become a shared changed-since/SSE/WebSocket contract with bounded event types, source/writer, op, entity id, timestamp, summary, and redacted payload pointers. 2026-05-14 WEB-013 adds a concrete full-screen L2-B monitor need, including browser reconnect behavior and engine-agnostic graph events. 2026-05-15 adds React-Force-Graph-style full-screen L2-B rendering, Graphiti search subgraph loading, renderer-level trigger/attention animations, and Graphiti-to-L2-B export receipts as Web-first stream consumers. | Runtime/DSG/RefBinding interface addendum only after dual-lane confirmation | Keep as Web-only `changed_since` or SSE/WebSocket prototype first. Promote only if App confirms the same stream is needed; do not add Web operator action fields to App DTOs. |
 | CORE-010 | draft | web-console | `RuntimeFlowTraceReadModel`: trace/span-like read model for Intent, Plan, HITL, Blackboard, IntentWorkspace, Scheduler, Nanobot, Trigger, Message, and Graphiti commit events | Web Console first; possible Unity/App status HUD later | Runtime Flow needs a single visual read shape so operators can follow one action across modules. Fields should stay observational: `sequence`, `trace_id`, `span_id`, `parent_span_id`, `entity_kind`, `entity_id`, `op`, `status`, `source`, `writer`, `summary`, `created_at`, and redacted payload/ref links. 2026-05-15 Runtime Flow adds a Web-first need to show manual Plan import, manual Nanobot task dispatch, result destination choices (`view_only`, `return_to_goslo`, `return_to_app`), and message/trigger collaboration receipts. | Runtime observability interface addendum only after dual-lane confirmation | Prototype implemented as Web-only `/api/runtime/flow` and `/api/runtime/flow/changes`; 2026-05-14 review added Web-only `trace_id`/`payload_ref` hints, graph id hygiene, and `source`/`writer` diff-signature coverage. WEB-012.15 now implements Web-only typed schema in `parrot.web_console.runtime_flow_models`. If promoted, clarify that edge `source`/`target` are graph endpoints while event `source` is writer/system. Do not make it a Unity DTO unless the App lane confirms a compact consumer. Nanobot result-destination routing remains a candidate gap until backend state/receipt fields are implemented and reviewed. |
 | CORE-011 | draft | web-console | `RuntimeHumanGate`: human-in-the-loop approval/revision gate for Plan, trigger, message, and resume actions | Web Console first; Unity/App may later consume compact confirmations | Web needs HITL V1 for approve/reject/revise/cancel/resume before side effects. Shared fields likely include gate id, trace id, target kind/id, action kind, state, prompt summary, options, expiry, receipt id, redacted payload pointer, and maybe `plan_state` / valid-actions hints if shared consumers need state-aware UI. | Plan/Scheduler/HITL interface addendum only after dual-lane confirmation | Prototype implemented as Web-only pending/draft/apply HITL routes with dry-run receipts; 2026-05-14 review made Plan decisions state-aware and made pending gate `options` reuse the same validation policy. WEB-012.16 now serializes HITL gates/receipts through Web-only typed models and exposes `core_candidate=CORE-011` on relevant receipts. Non-Plan targets return explicit `unsupported_hitl_target`; promote only if App also renders/writes human gates, and do not claim trigger/message gates until those target kinds are implemented. |
-| CORE-012 | draft | unity-app + web-console | `TimeAlignedEvidenceRef`: shared evidence/ref shape for GOSLO Intent `identify_object`, SVA frame sampling, camera/photo mode, Focus/BBox/magnifier attention, ASR/CV samples, and L2-B/Graphiti node creation | Unity App, Web Console, Brain Intent tools, SVA/video processor, DSG/L1.5/L2-B | `identify_object` should obtain a time-aligned frame from LiveKit background video, SVA frame cache, or HTTP/storage image asset, not from camera-mode inline RPC. Focus/BBox/magnifier, ASR, and CV workers should contribute evidence with coordinates/region, pose or producer id, sample timestamp, optional storage image ref, and trigger context so GOSLO can receive compact notifications and L2-B/IntentWorkspace can create/update evidence-linked nodes or refs. | Future SVA/ECP/RefBinding interface addendum, likely linked to CORE-006 and protocol snapshot only after dual-lane review | First Web/backend slices implemented as `parrot.brain.vision.evidence` with `TimebaseStamp` / `TimeAlignedSampleRef` plus `parrot.brain.vision.frame_cache` with `record_livekit_frame_bytes()`. ECP/RPC top-level schemas stay unchanged for V1; optional stamps live in `EcpEvent.payload["timebase"]`, `EcpCommand.meta["timebase"]`, or HTTP/upload/frame metadata. Candidate fields now include `evidence_id`, `kind`, `status`, `clock_domain`, `wall_time_ms`, `monotonic_ms`, `media_time_us`, `sequence`, `estimated`, `source_id`, `asset_uri`, `asset_path`, `region`, `bbox_refs`, `focus_refs`, `related_refs`, `room_id`, `track_sid`, `participant_id`, `description`, and redacted `meta`. The Web frame-cache upload route is debug/operator-only; automatic LiveKit/SVA track sampling, crop/VLM comparison, and App lane shared-subset review still block SSOT promotion. |
+| CORE-012 | draft | unity-app + web-console | `TimeAlignedEvidenceRef`: shared evidence/ref shape for GOSLO Intent `identify_object`, SVA frame sampling, camera/photo mode, Focus/BBox/magnifier attention, ASR/CV samples, and L2-B/Graphiti node creation | Unity App, Web Console, Brain Intent tools, SVA/video processor, DSG/L1.5/L2-B | `identify_object` should obtain a time-aligned frame from LiveKit background video, SVA frame cache, or HTTP/storage image asset, not from camera-mode inline RPC. Focus/BBox/magnifier, ASR, and CV workers should contribute evidence with coordinates/region, pose or producer id, sample timestamp, optional storage image ref, and trigger context so GOSLO can receive compact notifications and L2-B/IntentWorkspace can create/update evidence-linked nodes or refs. | Future SVA/ECP/RefBinding interface addendum, likely linked to CORE-006 and protocol snapshot only after dual-lane review | First Web/backend slices implemented as `parrot.brain.vision.evidence` with `TimebaseStamp` / `TimeAlignedSampleRef`, `parrot.brain.vision.frame_cache` with `record_livekit_frame_bytes()`, and `parrot.brain.vision.livekit_sampler` as the Brain room-scoped low-FPS LiveKit track consumer. ECP/RPC top-level schemas stay unchanged for V1; optional stamps live in `EcpEvent.payload["timebase"]`, `EcpCommand.meta["timebase"]`, or HTTP/upload/frame metadata. Candidate fields now include `evidence_id`, `kind`, `status`, `clock_domain`, `wall_time_ms`, `monotonic_ms`, `media_time_us`, `sequence`, `estimated`, `source_id`, `asset_uri`, `asset_path`, `region`, `bbox_refs`, `focus_refs`, `related_refs`, `room_id`, `track_sid`, `participant_id`, `description`, and redacted `meta`. The Web frame-cache upload route is debug/operator-only; live Unity/LiveKit smoke, crop/VLM comparison, and App lane shared-subset review still block SSOT promotion. |
 
 ## 2026-05-15 Candidate Implementation Notes
 
@@ -108,11 +108,47 @@ for the same module-level decision.
   longer calls the old snapshot RPC path. Shared promotion is blocked on a real
   LiveKit/SVA frame-cache producer, crop/VLM tests, and App lane field review.
 - CORE-012: 2026-05-15 continuation adds the storage-backed frame-cache ingress
-  (`parrot.brain.vision.frame_cache.record_livekit_frame_bytes`) and Web-only
-  `POST /api/vision/evidence/frame-cache/upload` smoke route. This proves the
-  ledger/storage/timebase shape for encoded frames but does not yet implement
-  the automatic LiveKit/SVA track subscriber; that sampler must be reviewed
-  before the candidate is promoted.
+  (`parrot.brain.vision.frame_cache.record_livekit_frame_bytes`), Web-only
+  `POST /api/vision/evidence/frame-cache/upload` smoke route, and
+  `parrot.brain.vision.livekit_sampler` automatic low-FPS room sampler. This
+  proves the ledger/storage/timebase shape for encoded frames in unit tests.
+  The sampler now writes secret-free status for Web observability and ships a
+  manual real-room smoke helper (`src/scripts/smoke_livekit_frame_sampler.py`).
+  Promotion remains blocked until a real Unity/LiveKit video smoke verifies
+  track selection, freshness/stale-frame behavior, reconnect behavior, and
+  storage load.
+- CORE-012: 2026-05-15 continuation adds
+  `parrot.brain.vision.evidence_image` for local stored image/crop preparation
+  and `identify_object` VLM describe enrichment. This confirms that CORE-012
+  can carry region/time/asset refs while VLM dereferencing remains a
+  backend-local storage operation. Reference-image comparison, GOSLO
+  notification policy, and App/Web shared-field review still block promotion.
+- CORE-012: 2026-05-15 continuation adds
+  `parrot.brain.vision.evidence_awareness`, Web `POST
+  /api/vision/evidence/stage-hint`, and BB key
+  `transient/evidence_awareness_notice` as a backend-first staging/notification
+  policy. Evidence can now stage an IntentWorkspace `visual_evidence_hint` and
+  record whether session policy allows a GOSLO safe-turn notification. This is
+  not an App DTO promotion; session-owned C4 policy and live conversation smoke
+  still block SSOT promotion.
+- CORE-012: 2026-05-15 continuation wires
+  `transient/evidence_awareness_notice` into `ContextInjector` C3 delivery.
+  Allowed notices append compact evidence/ref context to Gemini chat context
+  with no-interrupt wording; silent notices remain layer-1. C4 speech remains a
+  policy candidate, not a ratified shared interface.
+- CORE-012: 2026-05-15 continuation adds Web/backend freshness status for the
+  sampler and frame cache (`fresh_window_ms`, `latest_frame_age_ms`,
+  `latest_frame_fresh`, per-track latest summaries). These fields support
+  operator observability and evidence selection; they are not promoted as
+  Unity/App DTO fields until the App lane reviews video lifecycle and sample
+  freshness semantics.
+- CORE-012: 2026-05-15 continuation clarifies screen-share producers. The
+  Brain sampler recognizes both `screenshare` and `SOURCE_SCREEN_SHARE` style
+  LiveKit source names, preserves `publication_source` in Web/backend latest
+  frame summaries, and the React Runtime bridge can publish
+  `web-console-screen` for no-camera laptop evidence smoke. This remains a
+  Web/backend-first producer classification detail; shared promotion still
+  waits for live screen-share/Unity track smoke and App lane review.
 
 ## Trigger Protocol Audit Notes
 

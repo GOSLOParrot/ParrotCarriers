@@ -1,6 +1,8 @@
 import type {
   ConsoleConfig,
   L15Pool,
+  LiveKitConfig,
+  LiveKitToken,
   LiveState,
   MemoryLiveStateChanges,
   Receipt,
@@ -36,6 +38,12 @@ export const api = {
     ),
   l15Pool: () => json<L15Pool>("/api/l15/pool"),
   runtimeFlow: () => json<RuntimeFlow>("/api/runtime/flow"),
+  livekitConfig: () => json<LiveKitConfig>("/api/livekit/config"),
+  livekitWebToken: (body: Record<string, unknown>) =>
+    json<LiveKitToken>("/api/livekit/web-token", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   triggerCatalog: () => json<TriggerCatalog>("/api/dsg/triggers/catalog"),
   runtimeFlowChanges: (since: number) =>
     json<{ changed: boolean; sequence: number; snapshot?: RuntimeFlow }>("/api/runtime/flow/changes?since=" + since),
@@ -47,6 +55,11 @@ export const api = {
   },
   visionEvidenceRequest: (body: Record<string, unknown>) =>
     json<Receipt>("/api/vision/evidence/request", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  visionEvidenceStageHint: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/vision/evidence/stage-hint", {
       method: "POST",
       body: JSON.stringify(body)
     }),

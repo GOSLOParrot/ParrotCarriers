@@ -582,6 +582,14 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "Latest Photo Awareness decision: whether GOSLO was notified and which preview ref was staged.",
         event_driven=True,
     ),
+    BlackboardKey(
+        BbScope.TRANSIENT,
+        "transient/evidence_awareness_notice",
+        "dict[str, Any]",
+        "brain.vision.evidence_awareness",
+        "Latest time-aligned visual evidence decision staged for GOSLO IntentWorkspace.",
+        event_driven=True,
+    ),
 
     # ───── Sprint4 Phase 4 attention config (W6-7) — Echo path wiring ─────
     # Echo path fully wired (2026-04-30):

@@ -73,6 +73,7 @@ namespace ParrotApp.UI
         private RoomProfilePreviewDto _lastPreview;
         private Coroutine _roomSettingLoadCoroutine;
         private Coroutine _previewCoroutine;
+        private int _previewRequestRevision;
         private float _statusTick;
         private float _transitionTick;
         private bool _subscribed;
@@ -460,6 +461,7 @@ namespace ParrotApp.UI
         {
             _roomSettingBackendStatus = Tr("读取 RoomSetting...", "Loading RoomSetting...");
             RefreshSelectionSummary();
+            Debug.Log("[RoomSetting] Loading startup snapshot via App HTTP.");
 
             RequestResult<RoomSettingSnapshotDto> result = default;
             yield return roomSettingClient.LoadSnapshot(_config.room_profile_id, r => result = r);
@@ -468,12 +470,14 @@ namespace ParrotApp.UI
             if (!result.Success || result.Value == null)
             {
                 _roomSettingBackendStatus = Tr("后端未连接，使用本地占位", "Backend unavailable; using local fallback");
+                Debug.LogWarning("[RoomSetting] Startup snapshot failed: " + (result.Error ?? "unknown"));
                 RefreshSelectionSummary();
                 yield break;
             }
 
             _roomSettingSnapshot = result.Value;
             _roomSettingBackendStatus = Tr("RoomSetting 已加载", "RoomSetting loaded");
+            Debug.Log("[RoomSetting] Startup snapshot loaded.");
             ApplyRoomProfileDto(_roomSettingSnapshot.active_room, updateDisplayName: true);
             ApplyCompatibility(_roomSettingSnapshot.compatibility);
             RefreshSelectionSummary();
@@ -481,6 +485,7 @@ namespace ParrotApp.UI
 
         private void ScheduleRoomProfilePreview()
         {
+            int revision = ++_previewRequestRevision;
             if (_previewCoroutine != null)
                 StopCoroutine(_previewCoroutine);
             if (roomSettingClient == null || !roomSettingClient.HasEndpoint)
@@ -489,19 +494,30 @@ namespace ParrotApp.UI
                 RefreshSelectionSummary();
                 return;
             }
-            _previewCoroutine = StartCoroutine(PreviewCurrentRoomProfile());
+            _roomSettingBackendStatus = "Previewing Room...";
+            RefreshSelectionSummary();
+            _previewCoroutine = StartCoroutine(PreviewCurrentRoomProfile(revision));
         }
 
-        private IEnumerator PreviewCurrentRoomProfile()
+        private IEnumerator PreviewCurrentRoomProfile(int revision)
         {
             var profile = RoomSettingDtoMapper.FromStartupConfig(_config, _displayRoom);
             RequestResult<RoomProfilePreviewDto> result = default;
+            Debug.Log("[RoomSetting] Preview start rev=" + revision + " room=" + profile.room_profile_id + " line=" + profile.line_id);
             yield return roomSettingClient.Preview(profile, r => result = r);
+
+            if (revision != _previewRequestRevision)
+            {
+                Debug.Log("[RoomSetting] Preview stale ignored rev=" + revision + " current=" + _previewRequestRevision);
+                yield break;
+            }
+
             _previewCoroutine = null;
 
             if (!result.Success || result.Value == null)
             {
                 _roomSettingBackendStatus = Tr("预览失败，保留当前选择", "Preview failed; keeping current selection");
+                Debug.LogWarning("[RoomSetting] Preview failed rev=" + revision + ": " + (result.Error ?? "unknown"));
                 ApplyLocalCompatibilityFallback();
                 RefreshSelectionSummary();
                 yield break;
@@ -509,6 +525,7 @@ namespace ParrotApp.UI
 
             _lastPreview = result.Value;
             _roomSettingBackendStatus = Tr("兼容性已更新", "Compatibility updated");
+            Debug.Log("[RoomSetting] Preview applied rev=" + revision);
             ApplyRoomProfileDto(_lastPreview.room_profile, updateDisplayName: false);
             ApplyCompatibility(_lastPreview.compatibility);
             RefreshSelectionSummary();
@@ -649,6 +666,13 @@ namespace ParrotApp.UI
         private IEnumerator SaveCurrentRoomProfile(bool backToStartup)
         {
             ResolveServices();
+            ++_previewRequestRevision;
+            if (_previewCoroutine != null)
+            {
+                StopCoroutine(_previewCoroutine);
+                _previewCoroutine = null;
+            }
+
             if (roomSettingClient == null || !roomSettingClient.HasEndpoint)
             {
                 _roomSettingBackendStatus = Tr("后端未连接：无法保存 Room", "Backend unavailable: Room not saved");
@@ -659,6 +683,7 @@ namespace ParrotApp.UI
             var profile = BuildWritableRoomProfileForSave();
             _roomSettingBackendStatus = Tr("保存 Room...", "Saving Room...");
             RefreshSelectionSummary();
+            Debug.Log("[RoomSetting] Save start room=" + profile.room_profile_id + " line=" + profile.line_id);
 
             RequestResult<SaveRoomProfileResponseDto> result = default;
             yield return roomSettingClient.SaveRoomProfile(profile, r => result = r);
@@ -666,6 +691,7 @@ namespace ParrotApp.UI
             if (!result.Success || result.Value == null)
             {
                 _roomSettingBackendStatus = Tr("保存失败：", "Save failed: ") + (result.Error ?? "unknown");
+                Debug.LogWarning("[RoomSetting] Save failed: " + (result.Error ?? "unknown"));
                 RefreshSelectionSummary();
                 yield break;
             }
@@ -673,6 +699,7 @@ namespace ParrotApp.UI
             ApplyRoomProfileDto(result.Value.room_profile, updateDisplayName: true);
             ApplyCompatibility(result.Value.compatibility);
             _roomSettingBackendStatus = Tr("Room 已保存", "Room saved");
+            Debug.Log("[RoomSetting] Save completed room=" + _config.room_profile_id);
             _roomSettingSnapshot = null;
             RefreshSelectionSummary();
             LoadRoomSettingSnapshotIfNeeded();
@@ -893,12 +920,24 @@ namespace ParrotApp.UI
 
         private void HandleMainReadyGateChanged(FormalMainReadySnapshot snapshot)
         {
-            if (_visibleScreen != VisibleScreen.Main || _mainText == null) return;
+            if (_visibleScreen != VisibleScreen.Main) return;
             if (snapshot != null && snapshot.ready)
-                _mainText.text = "Home ready";
+            {
+                HideMainReadySurfaceForFormalHome();
+            }
             else
-                _mainText.text = "Loading home gates...\n" + MainReadyMissingText();
+            {
+                SetActive(_mainSurface, true);
+                if (_mainText != null)
+                    _mainText.text = "Loading home gates...\n" + MainReadyMissingText();
+            }
             RefreshStatus();
+        }
+
+        private void HideMainReadySurfaceForFormalHome()
+        {
+            SetActive(_mainSurface, false);
+            Debug.Log("[StartupUI] Main-ready gate satisfied; startup surface hidden for formal home.");
         }
 
         private void HandleStartupFailed(string reason)
@@ -939,6 +978,8 @@ namespace ParrotApp.UI
                 _mainText.text = message == "Loading home gates..."
                     ? "Loading home gates...\n" + MainReadyMissingText()
                     : message;
+            if (mainReadyGate != null && mainReadyGate.IsReady)
+                HideMainReadySurfaceForFormalHome();
             RefreshStatus();
         }
 

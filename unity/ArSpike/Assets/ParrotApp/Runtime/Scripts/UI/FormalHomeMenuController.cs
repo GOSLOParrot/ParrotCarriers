@@ -574,6 +574,14 @@ namespace ParrotApp.UI
                 return;
             }
 
+            if (modelPlacementController.HasPlacedModel)
+            {
+                modelPlacementController.ClearPlacedModel();
+                SetStatus("Model cleared", warning: true);
+                RefreshQuickActions();
+                return;
+            }
+
             modelPlacementController.PlaceAtDefaultPreview();
             SetStatus(modelPlacementController.LastPlacementStatus, modelPlacementController.HasPlacedModel);
             RefreshQuickActions();
@@ -803,7 +811,9 @@ namespace ParrotApp.UI
             if (_awarenessActionButton != null) _awarenessActionButton.interactable = canApplyMenu && string.IsNullOrWhiteSpace(_pendingAwarenessPolicy);
             if (_handActionButton != null) _handActionButton.interactable = canApplyMenu && string.IsNullOrWhiteSpace(_pendingXrHandMode);
             if (_modelPlacementActionButton != null)
-                _modelPlacementActionButton.interactable = modelPlacementController != null && modelPlacementController.CanPlaceNow;
+                _modelPlacementActionButton.interactable = modelPlacementController != null
+                                                           && (modelPlacementController.HasPlacedModel
+                                                               || modelPlacementController.CanPlaceNow);
             if (_audioRouteActionButton != null) _audioRouteActionButton.interactable = canSend && !audioPending;
             if (_micDeviceNextButton != null) _micDeviceNextButton.interactable = microphonePublisher != null;
             if (_micDeviceAutoButton != null) _micDeviceAutoButton.interactable = microphonePublisher != null && !string.IsNullOrWhiteSpace(microphonePublisher.PreferredDevice);
@@ -815,7 +825,9 @@ namespace ParrotApp.UI
             if (_handActionText != null)
                 _handActionText.text = "HAND\n" + PendingOrCurrentLabel(_xrHandMode, _pendingXrHandMode, "off");
             if (_modelPlacementActionText != null)
-                _modelPlacementActionText.text = "PLACE\n" + PlacementShortLabel();
+                _modelPlacementActionText.text =
+                    (modelPlacementController != null && modelPlacementController.HasPlacedModel ? "CLEAR\n" : "PLACE\n")
+                    + PlacementShortLabel();
             if (_audioRouteActionText != null)
                 _audioRouteActionText.text = "AUDIO\n" + (audioPending ? "..." : AudioRouteShortLabel());
             if (_micDeviceNextText != null)

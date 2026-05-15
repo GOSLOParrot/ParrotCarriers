@@ -429,6 +429,9 @@ def test_formal_startup_roomsetting_cold_load_uses_app_http_facade() -> None:
     assert "roomSettingClient.Preview" in ui
     assert "roomSettingClient.NewRoomProfile" in ui
     assert "roomSettingClient.SaveRoomProfile" in ui
+    assert "_previewRequestRevision" in ui
+    assert "PreviewCurrentRoomProfile(int revision)" in ui
+    assert "Preview stale ignored" in ui
     assert "BuildWritableRoomProfileForSave" in ui
     assert "IsReservedRoomProfileId" in ui
     assert 'string.Equals(id, "ner_lineb_room", StringComparison.Ordinal)' in ui
@@ -471,6 +474,8 @@ def test_formal_startup_layout_targets_landscape_phone_and_theme_selector() -> N
     assert "FormalMainReadyGate mainReadyGate" in text
     assert "Loading home gates" in text
     assert "MainReadyMissingText" in text
+    assert "HideMainReadySurfaceForFormalHome" in text
+    assert "startup surface hidden for formal home" in text
     assert "ReportGosloPlaced" not in text
     assert '"PLACED"' not in text
     assert 'Tr("Scene", "Scene")' not in text
@@ -487,6 +492,7 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     shutdown = SHUTDOWN_SERVICE.read_text(encoding="utf-8")
     room_manager = ROOM_MANAGER.read_text(encoding="utf-8")
     video = (SCRIPT_ROOT / "LiveKit" / "ARVideoPublisher.cs").read_text(encoding="utf-8")
+    video_tier_receiver = (SCRIPT_ROOT / "LiveKit" / "VideoTierReceiver.cs").read_text(encoding="utf-8")
     mic = (SCRIPT_ROOT / "LiveKit" / "MicrophonePublisher.cs").read_text(encoding="utf-8")
     route_reporter = AUDIO_ROUTE_POLICY_REPORTER.read_text(encoding="utf-8")
     route_detector = AUDIO_ROUTE_DETECTOR.read_text(encoding="utf-8")
@@ -585,6 +591,9 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "tier1_fresh_reconnect_waits_for_shutdown_cooldown" in flow
     assert "tier1_fresh_reconnect_reenter_token_gate" in flow
     assert "tier1_fresh_reconnect_room_profile" in flow
+    assert "ExpiredWarningMinIntervalSeconds" in video_tier_receiver
+    assert "LogExpiredCommand" in video_tier_receiver
+    assert "suppressed \" + _suppressedExpiredWarnings" in video_tier_receiver
     assert '"setLineBAudioRoutePolicy"' in route_reporter
     assert "unity_audio_route_policy" in route_reporter
     assert "BrainParticipantResolver.FindBrainParticipantId" in route_reporter
@@ -923,6 +932,9 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "model_manifest_missing" in model_reporter
     assert "public void ConfigureModelId" in model_driver
     assert "ModelManifestDto.LoadFromResources(EffectiveModelId)" in model_driver
+    assert "public void BootstrapNow()" in model_driver
+    assert "ResolveOrAttachController(Manifest.controller_type)" in model_driver
+    assert "ParrotRegistry.Instance?.Register(Controller)" in model_driver
     assert "ToLowerInvariant()" in manifest
 
     assert "class FormalModelPlacementController" in model_placement
@@ -948,7 +960,20 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "LastVisualSource" in model_placement
     assert "FormalPlacedModelWhitebox" in model_placement
     assert "driver.ConfigureModelId(ActiveModelId)" in model_placement
+    assert "driver.BootstrapNow()" in model_placement
     assert "startupFlow?.ReportGosloPlaced()" in model_placement
+    assert "enableTouchPlacementAndSelection" in model_placement
+    assert "HandleTouchPlacementAndSelection" in model_placement
+    assert "EventSystem.current.IsPointerOverGameObject" in model_placement
+    assert "RayIntersectsPlacedModel" in model_placement
+    assert "HasSelectedModel" in model_placement
+    assert "ScaleSelectedModel" in model_placement
+    assert "Input.touchCount >= 2" in model_placement
+    assert "ScaleMultiplier" in model_placement
+    assert "FormalPlacedModelSelectionRing" in model_placement
+    assert "PlayPlacementGreeting" in model_placement
+    assert "SetHeadState(AnimationDriver.HeadState.Tilt)" in model_placement
+    assert "SetState(AnimationDriver.BodyState.HeadBob)" in model_placement
     assert "ReportGosloPlaced()" not in model_reporter
 
     assert "class FormalModelRemoteController" in model_remote
@@ -1018,6 +1043,14 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "AddComponent<XROrigin>()" in ar_bootstrap
     assert "AddComponent<ARRaycastManager>()" in ar_bootstrap
     assert "AddComponent<ARPlaneManager>()" in ar_bootstrap
+    assert "AddComponent<ARPointCloudManager>()" in ar_bootstrap
+    assert "SpatialVisualsMounted" in ar_bootstrap
+    assert "mountPlaneAndPointCloudVisuals" in ar_bootstrap
+    assert "planesChanged += HandlePlanesChanged" in ar_bootstrap
+    assert "pointCloudsChanged += HandlePointCloudsChanged" in ar_bootstrap
+    assert "FormalARPlaneVisual_" in ar_bootstrap
+    assert "FormalARPointDot" in ar_bootstrap
+    assert "pointCloud.positions.HasValue" in ar_bootstrap
     assert "EnsureTrackedPoseDriver" in ar_bootstrap
     assert "AddComponent<TrackedPoseDriver>()" in ar_bootstrap
     assert '"<HandheldARInputDevice>/devicePosition"' in ar_bootstrap
@@ -1028,7 +1061,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "InitializeLoader()" in ar_bootstrap
     assert "StartSubsystems()" in ar_bootstrap
     assert "StopSubsystems()" in ar_bootstrap
-    assert "manager.DeinitializeLoader();\n            else if (_startedXrSubsystems)" in ar_bootstrap
+    assert ar_bootstrap.index("manager.StopSubsystems();") < ar_bootstrap.index("manager.DeinitializeLoader();")
     assert "skipXrLifecycleInEditor = true" in ar_bootstrap
     assert "ARSession" in ar_bootstrap
     assert "ARCameraManager" in ar_bootstrap

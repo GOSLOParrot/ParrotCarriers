@@ -33,12 +33,19 @@ The formal App frontend is **not complete**.
   canvas state are local until the next ECS deploy.
 - 2026-05-15 iQOO Neo9 phone START pass has started. Formal package identity is
   now `com.parrotcarriers.app` / `ParrotApp` / `ParrotCarriers`; Android
-  orientation is locked to landscape for the phone UI. The first formal phone
-  run proved the app process starts and loads `parrot_config`, but Release
-  builds blocked `http://8.216.45.45` App HTTP with Unity cleartext policy.
-  `ProjectSettings.asset` now uses `insecureHttpOption: 2` as a dev-local bridge
-  until Castle endpoints move to HTTPS/WSS. Rebuild/re-run is required before
-  calling phone START complete.
+  orientation is locked to landscape for the phone UI. Release builds originally
+  blocked current `http://8.216.45.45` dev Castle endpoints until
+  `ProjectSettings.asset` was changed to `insecureHttpOption: 2`. After rebuild,
+  a LineA phone pass showed `parrot_config` load, App HTTP RoomSetting/menu save
+  exercise, Mint/LiveKit connect, Brain `agent-*` participant audio, Brain
+  `setVideoTier` RPC traffic, Android phone mic publish, AR video first frame /
+  1280x720 publish, and short background pause/resume video-state reporting.
+  Follow-up bugfixes hide the startup main-ready surface once the formal home
+  gates are satisfied and ignore stale RoomSetting preview responses so delayed
+  HTTP replies cannot overwrite newer preset selections. This is useful phone
+  evidence, not final phone stability: Bluetooth/SCO/A2DP switching, network
+  reconnect, long background/session hold, LineB voice, and a visual re-run after
+  the UI fix remain pending.
 - Unity App RoomSetting ECS persistence is verified as of 2026-05-15:
   `New` returns an unsaved draft, `Save` persists a user Room through App HTTP,
   reload lists it from ECS, and save does not apply or change active Room.

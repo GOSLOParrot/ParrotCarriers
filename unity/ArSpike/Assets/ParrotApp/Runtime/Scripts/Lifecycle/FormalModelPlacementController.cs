@@ -4,6 +4,7 @@ using System.Reflection;
 using ParrotApp.Config;
 using ParrotApp.Parrot;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 #if UNITY_AR_FOUNDATION
 using UnityEngine.XR.ARFoundation;
@@ -32,7 +33,13 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private Camera placementCamera;
         [SerializeField] private bool preferArRaycastPlacement = true;
         [SerializeField] private bool fallbackToPreviewWhenArMisses = true;
+        [SerializeField] private bool enableTouchPlacementAndSelection = true;
+        [SerializeField] private bool enablePinchScale = true;
         [SerializeField] private float defaultDistanceMeters = 1.2f;
+        [SerializeField] private float minScaleMultiplier = 0.35f;
+        [SerializeField] private float maxScaleMultiplier = 2.6f;
+        [SerializeField] private float tapMaxSeconds = 0.32f;
+        [SerializeField] private float tapMaxMovePixels = 28f;
         [SerializeField] private Vector3 fallbackPosition = new Vector3(0f, -0.25f, 1.2f);
 #if UNITY_AR_FOUNDATION
         [SerializeField] private ARRaycastManager arRaycastManager;
@@ -44,6 +51,9 @@ namespace ParrotApp.Lifecycle
         public string LastPlacementStatus { get; private set; } = "waiting_start";
         public string LastPlacementMode { get; private set; } = "none";
         public string LastVisualSource { get; private set; } = "none";
+        public bool HasSelectedModel { get; private set; }
+        public float ScaleMultiplier { get; private set; } = 1f;
+        public string LastSelectionStatus { get; private set; } = "not_selected";
         public GameObject PlacedModel { get; private set; }
         public bool CanPlaceNow => startupFlow != null
                                    && startupFlow.MainUiReadyOnce
@@ -52,6 +62,15 @@ namespace ParrotApp.Lifecycle
 
         private bool _reportedGosloPlaced;
         private ModelManifestDto _manifest;
+        private bool _touchStartedOverUi;
+        private bool _mouseStartedOverUi;
+        private Vector2 _touchStartPosition;
+        private float _touchStartTime;
+        private float _pinchStartDistance;
+        private float _pinchStartScaleMultiplier = 1f;
+        private Vector3 _placedBaseScale = Vector3.one;
+        private GameObject _selectionVisual;
+        private Material _selectionVisualMaterial;
 
         private void OnEnable()
         {
@@ -68,6 +87,16 @@ namespace ParrotApp.Lifecycle
         private void OnDisable()
         {
             Unbind();
+        }
+
+        private void Update()
+        {
+            if (!enableTouchPlacementAndSelection)
+                return;
+
+            HandleTouchPlacementAndSelection();
+            HandleEditorMousePlacementAndSelection();
+            UpdateSelectionVisual();
         }
 
         private void Bind()
@@ -104,7 +133,10 @@ namespace ParrotApp.Lifecycle
             ClearPlacedModel();
             _reportedGosloPlaced = false;
             HasPlacedModel = false;
+            HasSelectedModel = false;
+            ScaleMultiplier = 1f;
             LastPlacementMode = "none";
+            LastSelectionStatus = "not_selected";
             PrepareManifest(config);
             LastPlacementStatus = "waiting_main_ready";
         }
@@ -193,7 +225,8 @@ namespace ParrotApp.Lifecycle
                 return;
             }
 
-            if (PlacedModel == null)
+            bool firstPlacement = PlacedModel == null;
+            if (firstPlacement)
                 PlacedModel = InstantiateModel();
 
             if (PlacedModel == null)
@@ -205,6 +238,14 @@ namespace ParrotApp.Lifecycle
             PlacedModel.transform.SetParent(modelRoot, worldPositionStays: true);
             PlacedModel.transform.SetPositionAndRotation(position, rotation);
             PlacedModel.SetActive(true);
+            if (firstPlacement)
+            {
+                _placedBaseScale = PlacedModel.transform.localScale;
+                ScaleMultiplier = 1f;
+                PlayPlacementGreeting();
+            }
+            ApplyScaleMultiplier();
+            SelectPlacedModel(true, "placed");
             HasPlacedModel = true;
             LastPlacementStatus = "placed:" + ShortReason(reason);
 
@@ -222,9 +263,31 @@ namespace ParrotApp.Lifecycle
                 Destroy(PlacedModel);
                 PlacedModel = null;
             }
+            DestroySelectionVisual();
             HasPlacedModel = false;
+            HasSelectedModel = false;
+            ScaleMultiplier = 1f;
             LastPlacementMode = "none";
             LastVisualSource = "none";
+            LastSelectionStatus = "cleared";
+        }
+
+        public void SelectPlacedModel(bool selected, string reason = "manual")
+        {
+            HasSelectedModel = selected && PlacedModel != null;
+            LastSelectionStatus = HasSelectedModel
+                ? "selected:" + ShortReason(reason)
+                : "not_selected:" + ShortReason(reason);
+            if (!HasSelectedModel)
+                DestroySelectionVisual();
+        }
+
+        public void ScaleSelectedModel(float multiplier, string reason = "manual")
+        {
+            if (PlacedModel == null) return;
+            ScaleMultiplier = Mathf.Clamp(multiplier, Mathf.Max(0.05f, minScaleMultiplier), Mathf.Max(minScaleMultiplier, maxScaleMultiplier));
+            ApplyScaleMultiplier();
+            LastSelectionStatus = "scaled:" + ScaleMultiplier.ToString("0.00") + ":" + ShortReason(reason);
         }
 
         private bool CanPlace()
@@ -323,7 +386,229 @@ namespace ParrotApp.Lifecycle
             var driver = go.GetComponent<ModelDriver>();
             if (driver == null) driver = go.AddComponent<ModelDriver>();
             driver.ConfigureModelId(ActiveModelId);
+            driver.BootstrapNow();
             return go;
+        }
+
+        private void HandleTouchPlacementAndSelection()
+        {
+            if (Input.touchCount <= 0)
+            {
+                _pinchStartDistance = 0f;
+                return;
+            }
+
+            if (Input.touchCount >= 2 && enablePinchScale && HasSelectedModel && PlacedModel != null)
+            {
+                var a = Input.GetTouch(0);
+                var b = Input.GetTouch(1);
+                if (IsPointerOverUi(a.fingerId) || IsPointerOverUi(b.fingerId))
+                    return;
+
+                float distance = Vector2.Distance(a.position, b.position);
+                if (_pinchStartDistance <= 1f || a.phase == TouchPhase.Began || b.phase == TouchPhase.Began)
+                {
+                    _pinchStartDistance = Mathf.Max(1f, distance);
+                    _pinchStartScaleMultiplier = ScaleMultiplier;
+                    LastSelectionStatus = "pinch_start";
+                    return;
+                }
+
+                ScaleSelectedModel(_pinchStartScaleMultiplier * distance / Mathf.Max(1f, _pinchStartDistance), "pinch");
+                return;
+            }
+
+            var touch = Input.GetTouch(0);
+            if (touch.phase == TouchPhase.Began)
+            {
+                _touchStartPosition = touch.position;
+                _touchStartTime = Time.unscaledTime;
+                _touchStartedOverUi = IsPointerOverUi(touch.fingerId);
+                return;
+            }
+
+            if (touch.phase != TouchPhase.Ended)
+                return;
+
+            if (_touchStartedOverUi || IsPointerOverUi(touch.fingerId))
+                return;
+
+            float elapsed = Time.unscaledTime - _touchStartTime;
+            float moved = Vector2.Distance(_touchStartPosition, touch.position);
+            if (elapsed > tapMaxSeconds || moved > tapMaxMovePixels)
+                return;
+
+            HandleTap(touch.position);
+        }
+
+        private void HandleEditorMousePlacementAndSelection()
+        {
+            if (!Application.isEditor)
+                return;
+
+            if (Input.GetMouseButtonDown(0))
+                _mouseStartedOverUi = IsPointerOverUi(-1);
+
+            if (Input.GetMouseButtonUp(0) && !_mouseStartedOverUi && !IsPointerOverUi(-1))
+                HandleTap(Input.mousePosition);
+
+            if (HasSelectedModel && enablePinchScale && PlacedModel != null)
+            {
+                float wheel = Input.mouseScrollDelta.y;
+                if (Mathf.Abs(wheel) > 0.001f)
+                    ScaleSelectedModel(ScaleMultiplier * (1f + wheel * 0.08f), "editor_wheel");
+            }
+        }
+
+        private void HandleTap(Vector2 screenPoint)
+        {
+            if (!HasPlacedModel || PlacedModel == null)
+            {
+                PlaceAtScreenPoint(screenPoint);
+                return;
+            }
+
+            if (RayIntersectsPlacedModel(screenPoint))
+                SelectPlacedModel(!HasSelectedModel, "tap_model");
+            else if (HasSelectedModel)
+                SelectPlacedModel(false, "tap_empty");
+        }
+
+        private bool RayIntersectsPlacedModel(Vector2 screenPoint)
+        {
+            if (PlacedModel == null) return false;
+            if (placementCamera == null) placementCamera = Camera.main;
+            if (placementCamera == null) return false;
+
+            var ray = placementCamera.ScreenPointToRay(screenPoint);
+            Bounds bounds;
+            if (!TryGetPlacedModelBounds(out bounds))
+            {
+                bounds = new Bounds(PlacedModel.transform.position, Vector3.one * 0.25f);
+            }
+            return bounds.IntersectRay(ray);
+        }
+
+        private bool TryGetPlacedModelBounds(out Bounds bounds)
+        {
+            bounds = new Bounds();
+            if (PlacedModel == null) return false;
+            var renderers = PlacedModel.GetComponentsInChildren<Renderer>(true);
+            bool hasBounds = false;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null || !renderer.enabled) continue;
+                if (!hasBounds)
+                {
+                    bounds = renderer.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+            }
+            return hasBounds;
+        }
+
+        private void ApplyScaleMultiplier()
+        {
+            if (PlacedModel == null) return;
+            if (_placedBaseScale.sqrMagnitude < 0.0001f)
+                _placedBaseScale = PlacedModel.transform.localScale;
+            PlacedModel.transform.localScale = _placedBaseScale * ScaleMultiplier;
+        }
+
+        private void PlayPlacementGreeting()
+        {
+            var animationDriver = PlacedModel != null ? PlacedModel.GetComponentInChildren<AnimationDriver>(true) : null;
+            if (animationDriver != null)
+            {
+                animationDriver.SetState(AnimationDriver.BodyState.HeadBob);
+                animationDriver.SetHeadState(AnimationDriver.HeadState.Tilt);
+                LastSelectionStatus = "greeting:animation_driver";
+                return;
+            }
+
+            string modelId = ActiveModelId;
+            var controller = ParrotRegistry.Instance != null ? ParrotRegistry.Instance.Resolve(modelId) : null;
+            if (controller != null)
+            {
+                if (Supports(controller, "spine_idle"))
+                    controller.ApplyCapability("spine_idle", "{}");
+                if (Supports(controller, "face_serious"))
+                    controller.ApplyCapability("face_serious", "{}");
+                LastSelectionStatus = "greeting:model_controller";
+            }
+        }
+
+        private void UpdateSelectionVisual()
+        {
+            if (!HasSelectedModel || PlacedModel == null)
+                return;
+
+            Bounds bounds;
+            if (!TryGetPlacedModelBounds(out bounds))
+                bounds = new Bounds(PlacedModel.transform.position, Vector3.one * 0.25f);
+
+            if (_selectionVisual == null)
+            {
+                _selectionVisual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                _selectionVisual.name = "FormalPlacedModelSelectionRing";
+                var collider = _selectionVisual.GetComponent<Collider>();
+                if (collider != null) Destroy(collider);
+                var renderer = _selectionVisual.GetComponent<Renderer>();
+                if (renderer != null)
+                    renderer.material = SelectionVisualMaterial();
+            }
+
+            float radius = Mathf.Clamp(Mathf.Max(bounds.extents.x, bounds.extents.z) * 1.25f, 0.08f, 1.25f);
+            _selectionVisual.transform.position = new Vector3(bounds.center.x, bounds.min.y + 0.012f, bounds.center.z);
+            _selectionVisual.transform.rotation = Quaternion.identity;
+            _selectionVisual.transform.localScale = new Vector3(radius * 2f, 0.004f, radius * 2f);
+        }
+
+        private void DestroySelectionVisual()
+        {
+            if (_selectionVisual != null)
+            {
+                Destroy(_selectionVisual);
+                _selectionVisual = null;
+            }
+        }
+
+        private Material SelectionVisualMaterial()
+        {
+            if (_selectionVisualMaterial != null) return _selectionVisualMaterial;
+            var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Standard");
+            if (shader == null)
+                shader = Shader.Find("UI/Default");
+            if (shader == null)
+                shader = Shader.Find("Hidden/Internal-Colored");
+            _selectionVisualMaterial = new Material(shader);
+            _selectionVisualMaterial.color = new Color(0.95f, 0.72f, 0.32f, 0.62f);
+            _selectionVisualMaterial.renderQueue = 3000;
+            return _selectionVisualMaterial;
+        }
+
+        private static bool Supports(IParrotController controller, string capabilityId)
+        {
+            if (controller == null || controller.SupportedCapabilities == null) return false;
+            foreach (var capability in controller.SupportedCapabilities)
+            {
+                if (string.Equals(capability, capabilityId, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool IsPointerOverUi(int pointerId)
+        {
+            if (EventSystem.current == null) return false;
+            return pointerId >= 0
+                ? EventSystem.current.IsPointerOverGameObject(pointerId)
+                : EventSystem.current.IsPointerOverGameObject();
         }
 
         private GameObject TryInstantiateManifestVisual(out string visualSource)

@@ -236,6 +236,14 @@ def build_app(
 
         return request_evidence(payload or {})
 
+    @app.post("/api/vision/evidence/stage-hint")
+    async def vision_evidence_stage_hint(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.vision_evidence import stage_evidence_hint
+
+        return await stage_evidence_hint(payload or {})
+
     @app.post("/api/vision/evidence/frame-cache/upload")
     async def vision_evidence_frame_cache_upload(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),

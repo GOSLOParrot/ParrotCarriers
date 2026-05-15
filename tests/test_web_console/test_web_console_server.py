@@ -1496,13 +1496,17 @@ def test_status_summary_marks_degraded_for_offline_process() -> None:
     assert summary["offline_processes"] == 1
 
 
-def test_vision_evidence_routes_are_secret_safe_and_record_timeline() -> None:
+def test_vision_evidence_routes_are_secret_safe_and_record_timeline(tmp_path, monkeypatch) -> None:
     from parrot.brain.vision.evidence import get_evidence_ledger
     from parrot.brain.vision.frame_cache import reset_frame_cache_for_tests
 
     ledger = get_evidence_ledger()
     ledger.reset_for_tests()
     reset_frame_cache_for_tests()
+    monkeypatch.setenv(
+        "PARROT_LIVEKIT_FRAME_SAMPLER_STATUS_PATH",
+        str(tmp_path / "missing-sampler-status.json"),
+    )
     client = TestClient(build_app(status_fetcher=_fake_fetcher))
 
     status = client.get("/api/vision/evidence/status").json()
@@ -1530,6 +1534,7 @@ def test_vision_evidence_routes_are_secret_safe_and_record_timeline() -> None:
     ).json()
 
     assert status["action"] == "vision.evidence.status"
+    assert status["livekit_sampler"]["message"] == "status_file_missing"
     assert request["action"] == "vision.evidence.request"
     assert request["message"] == "evidence_request_recorded"
     assert attention["action"] == "app.test.visual_attention"
@@ -1587,6 +1592,51 @@ def test_vision_frame_cache_upload_records_video_frame(tmp_path) -> None:
     assert request["evidence"]["evidence_id"] == applied["evidence"]["evidence_id"]
     assert timeline["items"][0]["evidence_id"] == applied["evidence"]["evidence_id"]
     assert "sk-" not in str(applied).lower()
+
+
+def test_vision_evidence_stage_hint_writes_intent_workspace_notice(tmp_path, monkeypatch) -> None:
+    import py_trees
+
+    from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
+    from parrot.brain.vision.evidence import (
+        ClockDomain,
+        EvidenceKind,
+        EvidenceStatus,
+        TimebaseStamp,
+        get_evidence_ledger,
+    )
+
+    py_trees.blackboard.Blackboard.storage = {}
+    py_trees.blackboard.Blackboard.metadata = {}
+    set_intent_workspace_for_test(IntentWorkspace())
+    monkeypatch.setenv(
+        "PARROT_LIVEKIT_FRAME_SAMPLER_STATUS_PATH",
+        str(tmp_path / "missing-sampler-status.json"),
+    )
+    ledger = get_evidence_ledger()
+    ledger.reset_for_tests()
+    sample = ledger.record_sample(
+        kind=EvidenceKind.IMAGE_ASSET,
+        status=EvidenceStatus.READY,
+        timebase=TimebaseStamp(clock_domain=ClockDomain.WEB, wall_time_ms=1_700_000_020_000),
+        description="staged red mug",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    try:
+        staged = client.post(
+            "/api/vision/evidence/stage-hint",
+            json={"evidence_id": sample.evidence_id, "description": "staged red mug"},
+        ).json()
+        status = client.get("/api/vision/evidence/status").json()
+
+        assert staged["action"] == "vision.evidence.stage_hint"
+        assert staged["success"] is True
+        assert staged["decision"]["staged_ref_id"]
+        assert status["evidence_awareness"]["staged_ref_id"] == staged["decision"]["staged_ref_id"]
+        assert "sk-" not in str(staged).lower()
+    finally:
+        set_intent_workspace_for_test(None)
 
 
 async def _fake_fetcher(config: OrchestratorProxyConfig) -> dict[str, Any]:

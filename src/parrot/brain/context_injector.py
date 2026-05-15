@@ -69,6 +69,7 @@ _WATCHED_BB_KEYS: tuple[str, ...] = (
     "session/video_tier",
     "session/dsg_mode",
     "tick/last_rpc_ack",
+    "transient/evidence_awareness_notice",
 )
 
 # Per-tier / per-mode cue fragments. Kept compact — Gemini only needs the
@@ -286,6 +287,40 @@ class ContextInjector:
             text += f": {detail}"
         return 3, text, False
 
+    def _classify_evidence_awareness_notice(
+        self, new: Any
+    ) -> tuple[int, str | None, bool]:
+        """Route staged visual evidence to C3 only.
+
+        Evidence awareness already stages the full payload in IntentWorkspace.
+        The injector only adds a compact chat-context hint so the session can
+        notice it on the next natural turn.  It deliberately never requests a
+        C4 reply here; safe-turn speech remains a separate future policy.
+        """
+        if not isinstance(new, dict):
+            return 1, None, False
+        if not new.get("notify_goslo") and not new.get("allow_react"):
+            return 1, None, False
+
+        evidence_id = str(new.get("evidence_id") or "").strip()
+        staged_ref_id = str(new.get("staged_ref_id") or "").strip()
+        if not evidence_id or not staged_ref_id:
+            return 1, None, False
+
+        message = str(new.get("message") or "").strip()
+        if not message:
+            message = "Time-aligned visual evidence is ready in IntentWorkspace."
+        reason = str(new.get("reason") or "").strip()
+        parts = [
+            message,
+            f"evidence_id={evidence_id}",
+            f"staged_ref_id={staged_ref_id}",
+        ]
+        if reason:
+            parts.append(f"reason={reason}")
+        parts.append("Use it when relevant; do not interrupt the current turn.")
+        return 3, " | ".join(parts), False
+
     def _classify_visual_reason(
         self, old: Any, new: Any
     ) -> tuple[int, str | None, bool]:
@@ -352,6 +387,8 @@ class ContextInjector:
             return self._classify_video_tier(old, new)
         if key == "session/dsg_mode":
             return self._classify_dsg_mode(old, new)
+        if key == "transient/evidence_awareness_notice":
+            return self._classify_evidence_awareness_notice(new)
         return 1, None, False
 
     async def _dispatch(self, key: str, old: Any, new: Any) -> None:

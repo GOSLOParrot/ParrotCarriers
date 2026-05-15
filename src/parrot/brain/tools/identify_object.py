@@ -59,6 +59,7 @@ from parrot.brain.event_publisher import get_ecp_event_publisher
 from parrot.brain.tools._budget import SegmentResult, with_budget
 from parrot.brain.tools._state_context import attach_state_header
 from parrot.brain.vision.evidence import resolve_identify_evidence
+from parrot.brain.vision.evidence_image import describe_evidence_sample
 from parrot.shared.ecp_event import EcpEventType
 
 if TYPE_CHECKING:
@@ -71,6 +72,7 @@ logger = logging.getLogger(__name__)
 # Phase 4 W4-5 budget (entry doc §8.1 L11 修订 + audit §9.6).
 # Budget redistributed because L0 no longer does visual_match.
 _BUDGET_CAPTURE_S = 0.8
+_BUDGET_VLM_DESCRIBE_S = 0.9
 _BUDGET_L0_TEXT_S = 0.2
 _BUDGET_L1_GRAPHITI_S = 0.8
 # 100ms tail buffer left implicit — total ≤ 1.9s wall-clock.
@@ -161,6 +163,7 @@ async def _match_staged(
     stages: list[str] = []
     snapshot_id = ""
     evidence_sample: "TimeAlignedSampleRef | None" = None
+    search_description = description
 
     # Phase 0: time-aligned evidence lookup. We await first because L0/L1
     # side effects should carry the selected evidence id when one exists.
@@ -196,9 +199,25 @@ async def _match_staged(
         reason = evidence_seg.error or "pending"
         stages.append(f"[evidence] pending: {reason} ({evidence_seg.elapsed_ms}ms)")
 
+    # WEB-015.6: use only storage-backed images/crops as VLM input. This keeps
+    # image bytes out of ECP/RPC and prevents the old snapshot RPC path from
+    # sneaking back into identify_object.
+    if evidence_sample is not None and evidence_sample.asset_path:
+        vlm_seg = await with_budget(
+            describe_evidence_sample(evidence_sample),
+            timeout_s=_BUDGET_VLM_DESCRIBE_S,
+            segment="VLM_describe_evidence",
+        )
+        if vlm_seg.ok and vlm_seg.value:
+            visual_hint = _compact_text(str(vlm_seg.value), 160)
+            search_description = _merge_visual_hint(description, visual_hint)
+            stages.append(f"[VLM] image detail: {visual_hint} ({vlm_seg.elapsed_ms}ms)")
+        elif vlm_seg.error:
+            stages.append(f"[VLM] skipped: {vlm_seg.error} ({vlm_seg.elapsed_ms}ms)")
+
     # ─── L0: text fast match across L2-B (+ L1.5 hook)
     l0_seg = await with_budget(
-        _l0_text_fast_match(description, category),
+        _l0_text_fast_match(search_description, category),
         timeout_s=_BUDGET_L0_TEXT_S + 0.05,
         segment="L0_text",
     )
@@ -217,7 +236,7 @@ async def _match_staged(
                 source="l0_text",
                 uuid=best_uuid,
                 label=best_label,
-                description=description,
+                description=search_description,
                 category=category,
                 confidence=best_conf,
                 snapshot_id=snapshot_id,
@@ -242,7 +261,7 @@ async def _match_staged(
 
     # ─── L1: Graphiti search
     l1_seg = await with_budget(
-        _l1_graphiti_search(description, category),
+        _l1_graphiti_search(search_description, category),
         timeout_s=_BUDGET_L1_GRAPHITI_S + 0.1,
         segment="L1_graphiti",
     )
@@ -265,7 +284,7 @@ async def _match_staged(
                 source="l1_graphiti",
                 uuid=l1_uuid,
                 label=l1_label,
-                description=description,
+                description=search_description,
                 category=category,
                 confidence=0.7,  # nominal — Graphiti search lacks numeric score
                 snapshot_id=snapshot_id,
@@ -698,6 +717,24 @@ async def _emit_trigger_event(event_type: str, data: dict) -> None:
 
 
 # ─── reply formatting ─────────────────────────────────────────────────
+
+
+def _merge_visual_hint(description: str, visual_hint: str) -> str:
+    """Attach VLM details without hiding the user's original phrase."""
+    base = description.strip()
+    hint = visual_hint.strip()
+    if not hint:
+        return base
+    if not base:
+        return hint
+    return f"{base}. Visual evidence detail: {hint}"
+
+
+def _compact_text(text: str, limit: int) -> str:
+    one_line = " ".join(str(text or "").split())
+    if len(one_line) <= limit:
+        return one_line
+    return one_line[: max(0, limit - 1)].rstrip() + "..."
 
 
 def _format_match_reply(

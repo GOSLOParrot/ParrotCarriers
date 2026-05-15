@@ -14,12 +14,19 @@ from parrot.brain.vision.evidence import (
     get_evidence_ledger,
 )
 from parrot.brain.vision.frame_cache import get_frame_cache
+from parrot.brain.vision.evidence_awareness import (
+    latest_evidence_awareness_notice,
+    stage_evidence_for_goslo,
+)
+from parrot.brain.vision.livekit_sampler import read_livekit_frame_sampler_status
 
 
 def evidence_status() -> dict[str, Any]:
     """Return a secret-free temporal evidence ledger summary."""
     status = get_evidence_ledger().status()
     status["frame_cache"] = get_frame_cache().status()
+    status["livekit_sampler"] = read_livekit_frame_sampler_status()
+    status["evidence_awareness"] = latest_evidence_awareness_notice()
     return status
 
 
@@ -119,6 +126,25 @@ def request_evidence(payload: dict[str, Any] | None) -> dict[str, Any]:
         "evidence": None,
         "request_evidence": request.as_json(),
         "request": _request_view(body),
+    }
+
+
+async def stage_evidence_hint(payload: dict[str, Any] | None) -> dict[str, Any]:
+    """Stage a ready evidence sample into IntentWorkspace for GOSLO."""
+    body = payload or {}
+    decision = await stage_evidence_for_goslo(
+        evidence_id=str(body.get("evidence_id", "") or ""),
+        target_time_ms=_body_int(body.get("target_time_ms"), 0),
+        description=str(body.get("description", "") or "web evidence hint"),
+        notify_requested=_body_bool(body.get("notify_requested"), True),
+        source=str(body.get("source", "") or "web_console"),
+        ttl_seconds=_body_int(body.get("ttl_seconds"), 15 * 60),
+    )
+    return {
+        "action": "vision.evidence.stage_hint",
+        "success": bool(decision.staged_ref_id),
+        "decision": decision.as_json(),
+        "notice": latest_evidence_awareness_notice(),
     }
 
 
@@ -340,5 +366,6 @@ __all__ = [
     "evidence_timeline",
     "request_evidence",
     "simulate_visual_attention",
+    "stage_evidence_hint",
     "upload_frame_cache",
 ]

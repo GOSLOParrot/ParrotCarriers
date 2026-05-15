@@ -81,7 +81,41 @@ export type VisionEvidenceStatus = {
   frame_cache?: {
     frame_count?: number;
     latest_frame?: Record<string, unknown> | null;
+    latest_frame_age_ms?: number | null;
+    latest_frame_fresh?: boolean;
+    fresh_window_ms?: number;
+    tracks?: Record<string, Record<string, unknown>>;
     root?: string;
+  };
+  livekit_sampler?: {
+    available?: boolean;
+    enabled?: boolean;
+    fps?: number;
+    active_tracks?: string[];
+    recorded_frames?: number;
+    fresh_window_ms?: number;
+    latest_frame?: Record<string, unknown> | null;
+    latest_frame_age_ms?: number | null;
+    latest_frame_fresh?: boolean;
+    tracks?: Record<string, Record<string, unknown>>;
+    status_file_age_ms?: number | null;
+    error_count?: number;
+    last_error?: string;
+    event?: string;
+    room_id?: string;
+    message?: string;
+    updated_at_ms?: number;
+    schema?: string;
+  };
+  evidence_awareness?: {
+    evidence_id?: string;
+    staged_ref_id?: string;
+    notify_goslo?: boolean;
+    allow_react?: boolean;
+    allow_interrupt?: boolean;
+    reason?: string;
+    message?: string;
+    ts_ms?: number;
   };
   now_ms?: number;
   schema?: string;
@@ -99,4 +133,20 @@ export type VisionEvidenceTimeline = {
 export type ConsoleConfig = {
   orchestrator_auth_mode?: string;
   refresh_interval_s?: number;
+};
+
+export type LiveKitConfig = {
+  url?: string;
+  room?: string;
+  token_ttl_s?: number;
+  web_identity_prefix?: string;
+  token_available?: boolean;
+};
+
+export type LiveKitToken = {
+  url: string;
+  room: string;
+  identity: string;
+  token: string;
+  expires_at: number;
 };

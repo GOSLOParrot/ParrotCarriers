@@ -49,6 +49,8 @@ import type {
   ConsoleConfig,
   L15Pool,
   Language,
+  LiveKitConfig,
+  LiveKitToken,
   LiveState,
   Receipt,
   RuntimeFlow,
@@ -92,6 +94,20 @@ type MemoryToolId = "node" | "edge" | "filter" | "tags" | "subgraph" | "state" |
 type HandleSide = "top" | "right" | "bottom" | "left";
 
 type NodePositionMap = Map<string, { x: number; y: number }>;
+type LiveKitEventStatus = "idle" | "good" | "warn" | "bad";
+
+type LiveKitEventRow = {
+  at: string;
+  label: string;
+  detail: string;
+  status: LiveKitEventStatus;
+};
+
+type LiveKitClientModule = {
+  Room: new (options?: Record<string, unknown>) => any;
+  RoomEvent?: Record<string, string>;
+  Track?: any;
+};
 
 const EDGE_KIND_OPTIONS = [
   "associated_with",
@@ -109,6 +125,13 @@ const NODE_KIND_OPTIONS = ["object", "surface", "zone", "person", "event", "phot
 const memoryNodeTypes: NodeTypes = {
   memory: MemoryNodeCard
 };
+
+const LIVEKIT_CLIENT_URLS = [
+  "https://cdn.jsdelivr.net/npm/livekit-client@2.18.10/dist/livekit-client.esm.mjs",
+  "https://unpkg.com/livekit-client@2.18.10/dist/livekit-client.esm.mjs"
+];
+
+let liveKitClientPromise: Promise<LiveKitClientModule> | null = null;
 
 const dict = {
   en: {
@@ -217,7 +240,12 @@ const dict = {
     evidenceSamples: "Samples",
     evidenceAssets: "Assets",
     frameCache: "Frame cache",
+    liveKitSampler: "LiveKit sampler",
+    fresh: "fresh",
+    stale: "stale",
+    evidenceAutoRefresh: "Auto",
     requestEvidence: "Request Evidence",
+    stageEvidenceHint: "Stage Hint",
     cacheFrameTest: "Cache Frame",
     bboxTest: "BBox Test",
     focusTest: "Focus Test",
@@ -238,6 +266,20 @@ const dict = {
     noHits: "No hits yet.",
     writeThroughL15: "writes through L1.5",
     sourceBoardHint: "Sources become previews or L1.5 observations before L2-B.",
+    liveKitBridge: "LiveKit / Brain Bridge",
+    liveKitRoom: "Room",
+    liveKitIdentity: "Identity",
+    mintToken: "Mint token",
+    connectRoom: "Connect",
+    disconnectRoom: "Disconnect",
+    enableMic: "Mic on",
+    disableMic: "Mic off",
+    shareScreen: "Share screen",
+    stopShare: "Stop share",
+    checkSamples: "Check samples",
+    liveKitEvents: "Events",
+    liveKitTranscripts: "Transcript",
+    liveKitBridgeHint: "Use screen share when there is no camera. Brain must be running in the same room.",
     googleCalendar: "Google Calendar",
     calendarFetch: "Fetch Preview",
     calendarFetchExecute: "Dispatch Fetch",
@@ -354,7 +396,12 @@ const dict = {
     evidenceSamples: "样本",
     evidenceAssets: "资产",
     frameCache: "帧缓存",
+    liveKitSampler: "LiveKit sampler",
+    fresh: "fresh",
+    stale: "stale",
+    evidenceAutoRefresh: "自动",
     requestEvidence: "请求 Evidence",
+    stageEvidenceHint: "暂存提示",
     cacheFrameTest: "缓存测试帧",
     bboxTest: "BBox 测试",
     focusTest: "Focus 测试",
@@ -375,6 +422,20 @@ const dict = {
     noHits: "暂无结果。",
     writeThroughL15: "通过 L1.5 写入",
     sourceBoardHint: "来源数据先变成预览或 L1.5 Observation，再进入 L2-B。",
+    liveKitBridge: "LiveKit / Brain 连接",
+    liveKitRoom: "房间",
+    liveKitIdentity: "身份",
+    mintToken: "生成 Token",
+    connectRoom: "连接",
+    disconnectRoom: "断开",
+    enableMic: "打开麦克风",
+    disableMic: "关闭麦克风",
+    shareScreen: "屏幕共享",
+    stopShare: "停止共享",
+    checkSamples: "检查采样",
+    liveKitEvents: "事件",
+    liveKitTranscripts: "转写",
+    liveKitBridgeHint: "没有摄像头时用屏幕共享。Brain 必须在同一个房间运行。",
     googleCalendar: "Google 日程",
     calendarFetch: "请求获取",
     calendarFetchExecute: "真实请求",
@@ -1588,6 +1649,10 @@ function RuntimeFlowWorkspace({
   t: ConsoleCopy;
 }) {
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
+  const [evidenceRefreshSeq, setEvidenceRefreshSeq] = useState(0);
+  const pokeEvidenceRefresh = useCallback(() => {
+    setEvidenceRefreshSeq((value) => value + 1);
+  }, []);
   const catalogGroups = useMemo(() => groupTriggerCatalog(triggerCatalog.triggers ?? []), [triggerCatalog]);
 
   const nodes = useMemo<Node[]>(() => {
@@ -1757,7 +1822,9 @@ function RuntimeFlowWorkspace({
         </div>
       </div>
 
-      <VisionEvidencePanel pushReceipt={pushReceipt} t={t} />
+      <LiveKitBridgePanel pushReceipt={pushReceipt} t={t} onEvidenceRefresh={pokeEvidenceRefresh} />
+
+      <VisionEvidencePanel pushReceipt={pushReceipt} t={t} refreshSignal={evidenceRefreshSeq} />
 
       <div className="canvas-panel runtime-canvas">
         <ReactFlow nodes={nodes} edges={edges} onNodeClick={onNodeClick} fitView>
@@ -1808,18 +1875,368 @@ function RuntimeFlowWorkspace({
   );
 }
 
-function VisionEvidencePanel({
+function LiveKitBridgePanel({
   pushReceipt,
-  t
+  t,
+  onEvidenceRefresh
 }: {
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
+  onEvidenceRefresh: () => void;
+}) {
+  const [config, setConfig] = useState<LiveKitConfig>({});
+  const [roomId, setRoomId] = useState("parrot-main");
+  const [identity, setIdentity] = useState(`web-console-${Date.now()}`);
+  const [tokenPayload, setTokenPayload] = useState<LiveKitToken | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [micEnabled, setMicEnabled] = useState(false);
+  const [screenSharing, setScreenSharing] = useState(false);
+  const [status, setStatus] = useState("idle");
+  const [events, setEvents] = useState<LiveKitEventRow[]>([]);
+  const [transcripts, setTranscripts] = useState<LiveKitEventRow[]>([]);
+  const roomRef = useRef<any>(null);
+  const screenTrackRef = useRef<MediaStreamTrack | null>(null);
+  const remoteAudioElsRef = useRef<Map<string, HTMLMediaElement>>(new Map());
+
+  const pushEvent = useCallback((label: string, detail = "", state: LiveKitEventStatus = "idle") => {
+    setEvents((rows) => [{
+      at: new Date().toLocaleTimeString(),
+      label,
+      detail,
+      status: state
+    }, ...rows].slice(0, 12));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.livekitConfig()
+      .then((nextConfig) => {
+        if (cancelled) return;
+        setConfig(nextConfig);
+        setRoomId(nextConfig.room || "parrot-main");
+        const prefix = nextConfig.web_identity_prefix || "web-console";
+        setIdentity((current) => current || `${prefix}-${Date.now()}`);
+      })
+      .catch((exc) => {
+        if (cancelled) return;
+        setStatus(exc instanceof Error ? exc.message : String(exc));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const mintToken = useCallback(async (quiet = false): Promise<LiveKitToken> => {
+    const payload = await api.livekitWebToken({ room: roomId, identity });
+    setTokenPayload(payload);
+    setStatus(`token ready: ${payload.identity}`);
+    pushEvent("token", `${payload.room} / ${payload.identity}`, "good");
+    if (!quiet) {
+      pushReceipt(localReceipt("livekit.web_token", true, {
+        room: payload.room,
+        identity: payload.identity,
+        url: payload.url,
+        expires_at: payload.expires_at,
+        token_length: payload.token.length
+      }));
+    }
+    return payload;
+  }, [identity, pushEvent, pushReceipt, roomId]);
+
+  const ensureToken = useCallback(async (): Promise<LiveKitToken> => {
+    const expiresSoon = !tokenPayload || tokenPayload.expires_at < Math.floor(Date.now() / 1000) + 30;
+    const wrongRoom = tokenPayload?.room !== roomId || tokenPayload?.identity !== identity;
+    return expiresSoon || wrongRoom ? mintToken(true) : tokenPayload;
+  }, [identity, mintToken, roomId, tokenPayload]);
+
+  const cleanupRemoteAudio = useCallback(() => {
+    for (const element of remoteAudioElsRef.current.values()) {
+      element.remove();
+    }
+    remoteAudioElsRef.current.clear();
+  }, []);
+
+  const disconnect = useCallback(() => {
+    stopMediaTrack(screenTrackRef.current);
+    screenTrackRef.current = null;
+    setScreenSharing(false);
+    setMicEnabled(false);
+    cleanupRemoteAudio();
+    const room = roomRef.current;
+    roomRef.current = null;
+    if (room) {
+      room.disconnect?.();
+    }
+    setConnected(false);
+    setStatus("disconnected");
+    pushEvent("disconnect", "", "idle");
+  }, [cleanupRemoteAudio, pushEvent]);
+
+  useEffect(() => disconnect, [disconnect]);
+
+  const connect = useCallback(async () => {
+    if (roomRef.current) return;
+    try {
+      setStatus("connecting");
+      const [client, session] = await Promise.all([loadLiveKitClient(), ensureToken()]);
+      const room = new client.Room({ adaptiveStream: false, dynacast: false });
+      roomRef.current = room;
+      bindLiveKitRoomEvents({
+        room,
+        RoomEvent: client.RoomEvent,
+        Track: client.Track,
+        onEvent: pushEvent,
+        onTranscript: (text, detail) => {
+          setTranscripts((rows) => [{
+            at: new Date().toLocaleTimeString(),
+            label: text,
+            detail,
+            status: "good" as const
+          }, ...rows].slice(0, 12));
+        },
+        onRemoteAudio: (track, participant) => {
+          attachRemoteAudio(track, participant, remoteAudioElsRef.current);
+        },
+        onRemoteAudioDetached: (track) => {
+          detachRemoteAudio(track, remoteAudioElsRef.current);
+        },
+        onDisconnected: (reason) => {
+          cleanupRemoteAudio();
+          roomRef.current = null;
+          screenTrackRef.current = null;
+          setConnected(false);
+          setMicEnabled(false);
+          setScreenSharing(false);
+          setStatus(`disconnected${reason ? `: ${reason}` : ""}`);
+        },
+        onState: setStatus
+      });
+      await room.connect(session.url, session.token, { autoSubscribe: true });
+      if (typeof room.startAudio === "function") await room.startAudio();
+      setConnected(true);
+      setStatus(`connected: ${session.identity}`);
+      pushEvent("connected", session.identity, "good");
+      pushReceipt(localReceipt("livekit.web_connect", true, {
+        room: session.room,
+        identity: session.identity,
+        url: session.url,
+        screen_share_supported: Boolean(navigator.mediaDevices?.getDisplayMedia)
+      }));
+    } catch (exc) {
+      const message = exc instanceof Error ? exc.message : String(exc);
+      setStatus(message);
+      pushEvent("error", message, "bad");
+      pushReceipt(errorReceipt("livekit.web_connect", exc, { room: roomId, identity }));
+      disconnect();
+    }
+  }, [cleanupRemoteAudio, disconnect, ensureToken, identity, pushEvent, pushReceipt, roomId]);
+
+  const toggleMic = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room) return;
+    try {
+      const next = !micEnabled;
+      await room.localParticipant?.setMicrophoneEnabled?.(next);
+      setMicEnabled(next);
+      pushEvent(next ? "mic_on" : "mic_off", "", next ? "good" : "idle");
+    } catch (exc) {
+      pushEvent("mic_error", exc instanceof Error ? exc.message : String(exc), "bad");
+      pushReceipt(errorReceipt("livekit.microphone", exc));
+    }
+  }, [micEnabled, pushEvent, pushReceipt]);
+
+  const stopScreenShare = useCallback(async () => {
+    const track = screenTrackRef.current;
+    if (!track) return;
+    screenTrackRef.current = null;
+    try {
+      await roomRef.current?.localParticipant?.unpublishTrack?.(track, true);
+    } catch {
+      // Older livekit-client builds may not expose unpublishTrack for raw tracks.
+    }
+    stopMediaTrack(track);
+    setScreenSharing(false);
+    pushEvent("screen_share_stop", "", "idle");
+  }, [pushEvent]);
+
+  const shareScreen = useCallback(async () => {
+    const room = roomRef.current;
+    if (!room) return;
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      pushEvent("screen_share_error", "getDisplayMedia unavailable", "bad");
+      return;
+    }
+    try {
+      const client = await loadLiveKitClient();
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 5 },
+        audio: false
+      });
+      const track = stream.getVideoTracks()[0];
+      if (!track) throw new Error("screen_track_missing");
+      screenTrackRef.current = track;
+      track.addEventListener("ended", () => {
+        void stopScreenShare();
+      }, { once: true });
+      await room.localParticipant?.publishTrack?.(track, {
+        source: client.Track?.Source?.ScreenShare,
+        name: "web-console-screen"
+      });
+      setScreenSharing(true);
+      pushEvent("screen_share_start", track.label || "screen", "good");
+      pushReceipt(localReceipt("livekit.screen_share", true, {
+        room: roomId,
+        identity,
+        track_label: track.label || "screen",
+        note: "Brain sampler should see this as a screenshare video track if Brain is in the same room."
+      }));
+      onEvidenceRefresh();
+    } catch (exc) {
+      pushEvent("screen_share_error", exc instanceof Error ? exc.message : String(exc), "bad");
+      pushReceipt(errorReceipt("livekit.screen_share", exc));
+      await stopScreenShare();
+    }
+  }, [identity, onEvidenceRefresh, pushEvent, pushReceipt, roomId, stopScreenShare]);
+
+  const checkSamples = useCallback(async () => {
+    try {
+      const checkTimeMs = Date.now();
+      const [evidenceStatus, nearest] = await Promise.all([
+        api.visionEvidenceStatus(),
+        api.visionEvidenceRequest({
+          description: "Web checked nearest screen-share evidence.",
+          target_time_ms: checkTimeMs,
+          require_asset: true,
+          window_ms: 15_000
+        })
+      ]);
+      const nearestRecord = nearest as Record<string, unknown>;
+      const nearestEvidence = nearestRecord.evidence as Record<string, unknown> | undefined;
+      const sampler = evidenceStatus.livekit_sampler ?? {};
+      const frameCache = evidenceStatus.frame_cache ?? {};
+      const latest = sampler.latest_frame ?? frameCache.latest_frame ?? nearestEvidence ?? null;
+      const likelyScreenShare = evidenceLooksScreenShare(nearestEvidence)
+        || evidenceLooksScreenShare(latest)
+        || Object.values(sampler.tracks ?? {}).some(evidenceLooksScreenShare)
+        || Object.values(frameCache.tracks ?? {}).some(evidenceLooksScreenShare);
+      const hasAnyFreshEvidence = Boolean(
+        sampler.latest_frame_fresh
+        || frameCache.latest_frame_fresh
+        || nearest.success
+      );
+      const screenShareConfirmed = hasAnyFreshEvidence && likelyScreenShare;
+      pushEvent(
+        "sample_check",
+        `${hasAnyFreshEvidence ? "fresh" : "stale"} / ${likelyScreenShare ? "screen" : "not-screen"} / ${sampler.recorded_frames ?? 0}f`,
+        screenShareConfirmed ? "good" : "warn"
+      );
+      pushReceipt(localReceipt("livekit.screen_share.evidence_check", screenShareConfirmed, {
+        sampler_available: Boolean(sampler.available),
+        sampler_fresh: Boolean(sampler.latest_frame_fresh),
+        sampler_age_ms: sampler.latest_frame_age_ms ?? null,
+        sampler_active_tracks: Array.isArray(sampler.active_tracks) ? sampler.active_tracks.length : 0,
+        sampler_recorded_frames: sampler.recorded_frames ?? 0,
+        frame_cache_fresh: Boolean(frameCache.latest_frame_fresh),
+        frame_cache_age_ms: frameCache.latest_frame_age_ms ?? null,
+        frame_count: frameCache.frame_count ?? 0,
+        fresh_any_evidence: hasAnyFreshEvidence,
+        screen_share_confirmed: screenShareConfirmed,
+        likely_screen_share: likelyScreenShare,
+        nearest_evidence_found: Boolean(nearest.success),
+        nearest_evidence_id: String(nearestEvidence?.evidence_id || ""),
+        message: String(nearestRecord.message || nearest.action || "")
+      }));
+    } catch (exc) {
+      pushEvent("sample_check_error", exc instanceof Error ? exc.message : String(exc), "bad");
+      pushReceipt(errorReceipt("livekit.screen_share.evidence_check", exc));
+    } finally {
+      onEvidenceRefresh();
+    }
+  }, [onEvidenceRefresh, pushEvent, pushReceipt]);
+
+  return (
+    <section className="livekit-bridge action-palette">
+      <div className="palette-title">
+        <strong><Activity size={17} /> {t.liveKitBridge}</strong>
+        <span className={connected ? "fresh-state" : "stale-state"}>
+          {status}
+        </span>
+      </div>
+      <div className="livekit-bridge-grid">
+        <label>
+          <span>{t.liveKitRoom}</span>
+          <input value={roomId} onChange={(event) => setRoomId(event.target.value)} disabled={connected} />
+        </label>
+        <label>
+          <span>{t.liveKitIdentity}</span>
+          <input value={identity} onChange={(event) => setIdentity(event.target.value)} disabled={connected} />
+        </label>
+        <p className="muted">{t.liveKitBridgeHint}</p>
+        <p className="muted">{config.url || "LiveKit URL unavailable"}</p>
+      </div>
+      <div className="button-row">
+        <button className="button small" disabled={connected} onClick={() => void mintToken(false)}>
+          {t.mintToken}
+        </button>
+        <button className="button small primary" disabled={connected} onClick={() => void connect()}>
+          {t.connectRoom}
+        </button>
+        <button className="button small" disabled={!connected} onClick={() => void toggleMic()}>
+          {micEnabled ? t.disableMic : t.enableMic}
+        </button>
+        <button className="button small" disabled={!connected || screenSharing} onClick={() => void shareScreen()}>
+          {t.shareScreen}
+        </button>
+        <button className="button small" disabled={!screenSharing} onClick={() => void stopScreenShare()}>
+          {t.stopShare}
+        </button>
+        <button className="button small" onClick={() => void checkSamples()}>
+          <Search size={15} /> {t.checkSamples}
+        </button>
+        <button className="button small danger" disabled={!connected} onClick={disconnect}>
+          {t.disconnectRoom}
+        </button>
+      </div>
+      <div className="livekit-stream-grid">
+        <div className="livekit-log">
+          <strong>{t.liveKitEvents}</strong>
+          {events.length ? events.map((event, index) => (
+            <div className={`livekit-row ${event.status}`} key={`${event.at}-${index}`}>
+              <span>{event.at}</span>
+              <b>{event.label}</b>
+              <small>{event.detail}</small>
+            </div>
+          )) : <p className="muted">No LiveKit events yet.</p>}
+        </div>
+        <div className="livekit-log">
+          <strong>{t.liveKitTranscripts}</strong>
+          {transcripts.length ? transcripts.map((row, index) => (
+            <div className="livekit-row good" key={`${row.at}-${index}`}>
+              <span>{row.at}</span>
+              <b>{row.label}</b>
+              <small>{row.detail}</small>
+            </div>
+          )) : <p className="muted">No transcript yet.</p>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function VisionEvidencePanel({
+  pushReceipt,
+  t,
+  refreshSignal
+}: {
+  pushReceipt: (receipt: Receipt | null) => void;
+  t: ConsoleCopy;
+  refreshSignal: number;
 }) {
   const [status, setStatus] = useState<VisionEvidenceStatus>({});
   const [timeline, setTimeline] = useState<VisionEvidenceTimeline>({});
   const [busy, setBusy] = useState(false);
 
-  const loadEvidence = useCallback(async () => {
+  const loadEvidence = useCallback(async (silent = false) => {
     try {
       const [nextStatus, nextTimeline] = await Promise.all([
         api.visionEvidenceStatus(),
@@ -1828,7 +2245,9 @@ function VisionEvidencePanel({
       setStatus(nextStatus);
       setTimeline(nextTimeline);
     } catch (exc) {
-      pushReceipt(errorReceipt("vision.evidence.load", exc));
+      if (!silent) {
+        pushReceipt(errorReceipt("vision.evidence.load", exc));
+      }
     }
   }, [pushReceipt]);
 
@@ -1836,7 +2255,17 @@ function VisionEvidencePanel({
     void loadEvidence();
   }, [loadEvidence]);
 
-  const runEvidenceAction = async (action: "request" | "frame" | "bbox" | "focus") => {
+  useEffect(() => {
+    if (!refreshSignal) return;
+    void loadEvidence(true);
+  }, [loadEvidence, refreshSignal]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void loadEvidence(true), 3000);
+    return () => window.clearInterval(timer);
+  }, [loadEvidence]);
+
+  const runEvidenceAction = async (action: "request" | "stage" | "frame" | "bbox" | "focus") => {
     setBusy(true);
     try {
       if (action === "request") {
@@ -1844,6 +2273,16 @@ function VisionEvidencePanel({
           description: "Web operator requested nearest time-aligned evidence.",
           target_time_ms: Date.now(),
           require_asset: true
+        }));
+      } else if (action === "stage") {
+        pushReceipt(await api.visionEvidenceStageHint({
+          evidence_id: String(items[0]?.evidence_id || ""),
+          target_time_ms: Number(items[0]?.timebase && typeof items[0].timebase === "object"
+            ? (items[0].timebase as Record<string, unknown>).wall_time_ms || Date.now()
+            : Date.now()),
+          description: "Web operator staged visual evidence for GOSLO.",
+          notify_requested: true,
+          source: "web_console"
         }));
       } else if (action === "frame") {
         pushReceipt(await api.visionFrameCacheUpload({
@@ -1879,6 +2318,15 @@ function VisionEvidencePanel({
   };
 
   const items = timeline.items ?? [];
+  const samplerTracks = status.livekit_sampler?.active_tracks ?? [];
+  const samplerFresh = Boolean(status.livekit_sampler?.latest_frame_fresh);
+  const samplerAge = formatEvidenceAge(status.livekit_sampler?.latest_frame_age_ms);
+  const frameFresh = Boolean(status.frame_cache?.latest_frame_fresh);
+  const frameAge = formatEvidenceAge(status.frame_cache?.latest_frame_age_ms);
+  const frameLabel = `${status.frame_cache?.frame_count ?? 0} / ${frameFresh ? t.fresh : t.stale}${frameAge ? ` ${frameAge}` : ""}`;
+  const samplerLabel = status.livekit_sampler?.available
+    ? `${status.livekit_sampler.recorded_frames ?? 0}f / ${samplerTracks.length}t / ${samplerFresh ? t.fresh : t.stale}${samplerAge ? ` ${samplerAge}` : ""}`
+    : String(status.livekit_sampler?.message || "offline");
   return (
     <section className="evidence-console">
       <div className="palette-title">
@@ -1888,7 +2336,11 @@ function VisionEvidencePanel({
           {" / "}
           {t.evidenceAssets}: {status.visual_asset_count ?? 0}
           {" / "}
-          {t.frameCache}: {status.frame_cache?.frame_count ?? 0}
+          <b className={frameFresh ? "fresh-state" : "stale-state"}>{t.frameCache}: {frameLabel}</b>
+          {" / "}
+          <b className={samplerFresh ? "fresh-state" : "stale-state"}>{t.liveKitSampler}: {samplerLabel}</b>
+          {" / "}
+          <b>{t.evidenceAutoRefresh}: 3s</b>
         </span>
       </div>
       <div className="button-row">
@@ -1897,6 +2349,9 @@ function VisionEvidencePanel({
         </button>
         <button className="button small" disabled={busy} onClick={() => void runEvidenceAction("request")}>
           <Search size={15} /> {t.requestEvidence}
+        </button>
+        <button className="button small" disabled={busy} onClick={() => void runEvidenceAction("stage")}>
+          <CircleDot size={15} /> {t.stageEvidenceHint}
         </button>
         <button className="button small" disabled={busy} onClick={() => void runEvidenceAction("frame")}>
           <Camera size={15} /> {t.cacheFrameTest}
@@ -1919,6 +2374,214 @@ function VisionEvidencePanel({
       </div>
     </section>
   );
+}
+
+function formatEvidenceAge(ageMs: number | null | undefined): string {
+  if (typeof ageMs !== "number" || Number.isNaN(ageMs)) return "";
+  if (ageMs < 1000) return "<1s";
+  if (ageMs < 60_000) return `${Math.round(ageMs / 1000)}s`;
+  return `${Math.round(ageMs / 60_000)}m`;
+}
+
+function evidenceLooksScreenShare(row: unknown): boolean {
+  if (!row || typeof row !== "object") return false;
+  const data = row as Record<string, unknown>;
+  const meta = data.meta && typeof data.meta === "object"
+    ? data.meta as Record<string, unknown>
+    : {};
+  const timebase = data.timebase && typeof data.timebase === "object"
+    ? data.timebase as Record<string, unknown>
+    : {};
+  const text = [
+    data.track_name,
+    data.source_id,
+    data.track_sid,
+    data.participant_id,
+    data.publication_source,
+    data.description,
+    meta.publication_source,
+    meta.track_name,
+    meta.source,
+    timebase.source_id
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+  return text.includes("web-console-screen")
+    || text.includes("screen_share")
+    || text.includes("screenshare")
+    || (text.includes("screen") && text.includes("share"));
+}
+
+async function loadLiveKitClient(): Promise<LiveKitClientModule> {
+  if (liveKitClientPromise) return liveKitClientPromise;
+  liveKitClientPromise = (async () => {
+    let lastError: unknown = null;
+    for (const url of LIVEKIT_CLIENT_URLS) {
+      try {
+        const client = await import(/* @vite-ignore */ url) as LiveKitClientModule & {
+          setLogLevel?: (level: unknown) => void;
+          LogLevel?: Record<string, unknown>;
+        };
+        // LiveKit's default info logs include connection URLs. Keep browser
+        // diagnostics quiet so join tokens never drift into visible logs.
+        client.setLogLevel?.(client.LogLevel?.warn ?? "warn");
+        return client;
+      } catch (exc) {
+        lastError = exc;
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("LiveKit browser client failed to load");
+  })();
+  return liveKitClientPromise;
+}
+
+function bindLiveKitRoomEvents({
+  room,
+  RoomEvent,
+  Track,
+  onEvent,
+  onTranscript,
+  onRemoteAudio,
+  onRemoteAudioDetached,
+  onDisconnected,
+  onState
+}: {
+  room: any;
+  RoomEvent?: Record<string, string>;
+  Track?: any;
+  onEvent: (label: string, detail?: string, state?: LiveKitEventStatus) => void;
+  onTranscript: (text: string, detail: string) => void;
+  onRemoteAudio: (track: any, participant: any) => void;
+  onRemoteAudioDetached: (track: any) => void;
+  onDisconnected: (reason: string) => void;
+  onState: (state: string) => void;
+}) {
+  const on = (name: string, handler: (...args: any[]) => void) => {
+    const eventName = RoomEvent?.[name];
+    if (eventName) room.on(eventName, handler);
+  };
+
+  on("ConnectionStateChanged", (state: unknown) => {
+    const label = String(state || "");
+    onState(label);
+    const status: LiveKitEventStatus = label === "connected"
+      ? "good"
+      : label.includes("reconnect") || label === "connecting"
+        ? "warn"
+        : "idle";
+    onEvent("state", label, status);
+  });
+  on("SignalReconnecting", () => onEvent("signal_reconnecting", "", "warn"));
+  on("Reconnecting", () => onEvent("reconnecting", "", "warn"));
+  on("Reconnected", () => onEvent("reconnected", "", "good"));
+  on("TrackSubscribed", (track: any, publication: any, participant: any) => {
+    const kind = String(track?.kind || publication?.kind || "");
+    const source = String(publication?.source || "");
+    onEvent("track_subscribed", `${participantIdentity(participant)} / ${kind} / ${source}`, "good");
+    if (isAudioTrack(track, Track)) onRemoteAudio(track, participant);
+  });
+  on("TrackUnsubscribed", (track: any) => {
+    onRemoteAudioDetached(track);
+    onEvent("track_unsubscribed", String(track?.kind || ""), "idle");
+  });
+  on("TranscriptionReceived", (segments: unknown, participant: any) => {
+    for (const row of normalizeTranscriptSegments(segments)) {
+      onTranscript(row, participantIdentity(participant));
+    }
+  });
+  on("DataReceived", (payload: unknown, participant: any, _kind: unknown, topic: unknown) => {
+    if (String(topic || "") !== "lk.transcription") return;
+    const text = decodeDataPayload(payload);
+    if (text) onTranscript(text, participantIdentity(participant));
+  });
+  on("Disconnected", (reason: unknown) => {
+    onEvent("disconnected", String(reason || ""), "idle");
+    onDisconnected(String(reason || ""));
+  });
+}
+
+function isAudioTrack(track: any, Track: any): boolean {
+  const kind = String(track?.kind || "").toLowerCase();
+  const audioKind = String(Track?.Kind?.Audio || "audio").toLowerCase();
+  return kind === "audio" || kind === audioKind;
+}
+
+function attachRemoteAudio(
+  track: any,
+  participant: any,
+  registry: Map<string, HTMLMediaElement>
+) {
+  try {
+    const element = track.attach?.() as HTMLMediaElement | undefined;
+    if (!element) return;
+    const key = `${participantIdentity(participant)}:${String(track.sid || track.mediaStreamTrack?.id || Date.now())}`;
+    element.autoplay = true;
+    element.controls = false;
+    element.style.display = "none";
+    element.dataset.parrotLivekitAudio = key;
+    document.body.appendChild(element);
+    registry.set(key, element);
+  } catch {
+    // Remote audio attachment is best-effort; connection state is still useful.
+  }
+}
+
+function detachRemoteAudio(track: any, registry: Map<string, HTMLMediaElement>) {
+  try {
+    const detached = track.detach?.() as HTMLMediaElement[] | undefined;
+    detached?.forEach((element) => element.remove());
+  } catch {
+    // Fall through to registry cleanup.
+  }
+  for (const [key, element] of registry.entries()) {
+    if (!document.body.contains(element)) {
+      registry.delete(key);
+      continue;
+    }
+    if (!track?.sid || key.includes(String(track.sid))) {
+      element.remove();
+      registry.delete(key);
+    }
+  }
+}
+
+function stopMediaTrack(track: MediaStreamTrack | null) {
+  try {
+    track?.stop();
+  } catch {
+    // Some browser tracks are already stopped by the share picker.
+  }
+}
+
+function normalizeTranscriptSegments(segments: unknown): string[] {
+  if (!Array.isArray(segments)) return [];
+  return segments
+    .map((segment) => {
+      if (typeof segment === "string") return segment;
+      if (segment && typeof segment === "object") {
+        const row = segment as Record<string, unknown>;
+        return String(row.text || row.final_text || row.transcript || "");
+      }
+      return "";
+    })
+    .map((text) => text.trim())
+    .filter(Boolean);
+}
+
+function decodeDataPayload(payload: unknown): string {
+  try {
+    if (payload instanceof Uint8Array) {
+      return new TextDecoder().decode(payload);
+    }
+    if (typeof payload === "string") return payload;
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function participantIdentity(participant: any): string {
+  return String(participant?.identity || participant?.sid || "remote");
 }
 
 function gateActions(gate: Record<string, unknown>): string[] {

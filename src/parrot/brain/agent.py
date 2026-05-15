@@ -1168,6 +1168,7 @@ async def brain_entrypoint(ctx: agents.JobContext):
         )
     background_tasks: list[asyncio.Task[Any]] = []
     photo_upload_server: Any | None = None
+    livekit_frame_sampler: Any | None = None
 
     def _track_background_task(task: asyncio.Task[Any], name: str) -> asyncio.Task[Any]:
         """Keep room-scoped background work cancellable on disconnect/restart."""
@@ -1193,7 +1194,15 @@ async def brain_entrypoint(ctx: agents.JobContext):
         or the room disconnects, no Redis listener, TriggerRunner loop, or
         photo upload server from the old room should keep running.
         """
-        nonlocal photo_upload_server
+        nonlocal photo_upload_server, livekit_frame_sampler
+        if livekit_frame_sampler is not None:
+            try:
+                await livekit_frame_sampler.stop()
+            except Exception:
+                logger.exception("livekit_frame_sampler stop failed (%s)", reason)
+            finally:
+                livekit_frame_sampler = None
+
         if photo_upload_server is not None:
             try:
                 from parrot.brain.photo_upload_server import stop_photo_upload_server
@@ -1276,6 +1285,19 @@ async def brain_entrypoint(ctx: agents.JobContext):
     _attach_realtime_app_rpc(ctx.room)
     greeting_state = {"sent": False}
     _attach_scene_ready_rpc(ctx.room, session, greeting_state)
+
+    # WEB-015.5b: low-FPS auditable frame sampling for identify_object.
+    # Gemini Live may watch the same room through video_input=True, but those
+    # internal frames cannot be retrieved for evidence.  This sampler stores
+    # its own encoded frames via parrot.brain.vision.frame_cache.
+    try:
+        from parrot.brain.vision.livekit_sampler import attach_livekit_frame_sampler
+
+        livekit_frame_sampler = attach_livekit_frame_sampler(ctx.room)
+        if livekit_frame_sampler is not None:
+            logger.info("LiveKit frame sampler started: %s", livekit_frame_sampler.status())
+    except Exception:
+        logger.exception("WEB-015.5b: LiveKit frame sampler start failed")
 
     # Sprint4 Phase 4 W2 收口 (entry doc §8.1 L12 + §8.4):
     # 上行 EcpEvent ingest + 下行 publisher + Phase 4 observers + 临时阈值器。

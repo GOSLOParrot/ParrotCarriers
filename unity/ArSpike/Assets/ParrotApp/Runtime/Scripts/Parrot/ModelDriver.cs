@@ -52,6 +52,8 @@ namespace ParrotApp.Parrot
 
         public ModelManifestDto Manifest { get; private set; }
         public IParrotController Controller { get; private set; }
+        private bool _autoScaleApplied;
+        private bool _registered;
 
         public string EffectiveModelId =>
             !string.IsNullOrEmpty(modelId) ? modelId : "GOSLO_default";
@@ -66,6 +68,9 @@ namespace ParrotApp.Parrot
             modelId = string.IsNullOrWhiteSpace(newModelId) ? "" : newModelId.Trim();
             ParrotRegistry.EnsureInstance();
             Manifest = ModelManifestDto.LoadFromResources(EffectiveModelId);
+            Controller = null;
+            _autoScaleApplied = false;
+            _registered = false;
         }
 
         void Awake()
@@ -94,9 +99,23 @@ namespace ParrotApp.Parrot
 
         void Start()
         {
+            BootstrapNow();
+        }
+
+        /// <summary>
+        /// Runtime placement can instantiate a model and greet it in the same
+        /// frame. Unity's normal Start order is too late for that path, so the
+        /// formal placement owner calls this immediately after ConfigureModelId.
+        /// It reuses the manifest contract and preserves the legacy GOSLO
+        /// AnimationDriver path instead of creating a separate placement-only
+        /// animation wire.
+        /// </summary>
+        public void BootstrapNow()
+        {
             if (Manifest == null) return;
 
-            Controller = ResolveOrAttachController(Manifest.controller_type);
+            if (Controller == null)
+                Controller = ResolveOrAttachController(Manifest.controller_type);
             if (Controller == null)
             {
                 Debug.LogError(
@@ -107,12 +126,17 @@ namespace ParrotApp.Parrot
 
             ConfigureControllerFromManifest();
 
-            if (Manifest.auto_scale_to_pet_height)
+            if (Manifest.auto_scale_to_pet_height && !_autoScaleApplied)
             {
                 ApplyAutoScale();
+                _autoScaleApplied = true;
             }
 
-            ParrotRegistry.Instance?.Register(Controller);
+            if (!_registered)
+            {
+                ParrotRegistry.Instance?.Register(Controller);
+                _registered = true;
+            }
         }
 
         private void ConfigureControllerFromManifest()

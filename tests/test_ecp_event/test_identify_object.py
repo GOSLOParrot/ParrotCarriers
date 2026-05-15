@@ -43,7 +43,7 @@ def _ctx():
 
 # Helper: directly invoke the staged orchestrator (skips the
 # function_tool wrapping that we test elsewhere).
-def _fake_evidence(evidence_id: str):
+def _fake_evidence(evidence_id: str, *, asset_path: str = ""):
     return type(
         "FakeEvidence",
         (),
@@ -51,7 +51,7 @@ def _fake_evidence(evidence_id: str):
             "evidence_id": evidence_id,
             "kind": "image_asset",
             "asset_uri": f"/asset/{evidence_id}.jpg",
-            "asset_path": "",
+            "asset_path": asset_path,
             "has_asset": True,
         },
     )()
@@ -223,6 +223,43 @@ async def test_capture_failure_does_not_block_l0_l1():
 
 
 # ─── budget timeout is segment-local ──────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_stored_evidence_vlm_hint_feeds_l0_and_l1(tmp_path):
+    evidence = _fake_evidence("ev_vlm", asset_path=str(tmp_path / "frame.jpg"))
+    seen_descriptions: list[str] = []
+
+    async def fake_capture(**kwargs):
+        return evidence
+
+    async def fake_describe(sample):
+        assert sample.evidence_id == "ev_vlm"
+        return "red handled tool with a white label"
+
+    async def fake_l0(description: str, category: str):
+        seen_descriptions.append(description)
+        return []
+
+    async def fake_l1(description: str, category: str):
+        seen_descriptions.append(description)
+        return []
+
+    async def fake_on_unmatched(**kwargs):
+        return None
+
+    with (
+        patch.object(id_module, "resolve_identify_evidence", new=fake_capture),
+        patch.object(id_module, "describe_evidence_sample", new=fake_describe),
+        patch.object(id_module, "_l0_text_fast_match", new=fake_l0),
+        patch.object(id_module, "_l1_graphiti_search", new=fake_l1),
+        patch.object(id_module, "_on_unmatched", new=fake_on_unmatched),
+    ):
+        out = await _match_staged("tool", "")
+
+    assert "[VLM] image detail: red handled tool with a white label" in out
+    assert seen_descriptions
+    assert all("Visual evidence detail: red handled tool" in item for item in seen_descriptions)
 
 
 @pytest.mark.asyncio

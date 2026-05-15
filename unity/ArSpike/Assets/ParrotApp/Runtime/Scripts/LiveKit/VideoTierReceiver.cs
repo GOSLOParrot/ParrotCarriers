@@ -34,11 +34,14 @@ namespace ParrotApp.LiveKit
         [SerializeField] private ARVideoPublisher videoPublisher;
 
         private const string RPC_METHOD = "setVideoTier";
+        private const double ExpiredWarningMinIntervalSeconds = 10.0;
 
         private Room _rpcRegisteredOnRoom;
 
         // Brain 默认 Blackboard combo 是 VIDEO_GEMINI_ONLY。
         private VideoTier _currentTier = VideoTier.GeminiOnly;
+        private DateTime _lastExpiredWarningUtc = DateTime.MinValue;
+        private int _suppressedExpiredWarnings;
 
         public VideoTier CurrentTier => _currentTier;
 
@@ -84,7 +87,7 @@ namespace ParrotApp.LiveKit
 
                 if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
                 {
-                    Debug.LogWarning($"[VideoTierReceiver] setVideoTier expired (command_id={p._ecp.command_id})");
+                    LogExpiredCommand(p._ecp.command_id);
                     return EcpAckJson.Expired(p._ecp, $"tier={p.video_tier}");
                 }
 
@@ -166,6 +169,23 @@ namespace ParrotApp.LiveKit
                 }
                 onComplete?.Invoke(result);
             });
+        }
+
+        private void LogExpiredCommand(string commandId)
+        {
+            var now = DateTime.UtcNow;
+            if ((now - _lastExpiredWarningUtc).TotalSeconds >= ExpiredWarningMinIntervalSeconds)
+            {
+                string suffix = _suppressedExpiredWarnings > 0
+                    ? " (suppressed " + _suppressedExpiredWarnings + " similar expired commands)"
+                    : "";
+                Debug.LogWarning("[VideoTierReceiver] setVideoTier expired (command_id=" + commandId + ")" + suffix);
+                _suppressedExpiredWarnings = 0;
+                _lastExpiredWarningUtc = now;
+                return;
+            }
+
+            _suppressedExpiredWarnings++;
         }
 
         private static VideoTier ParseTier(string raw)

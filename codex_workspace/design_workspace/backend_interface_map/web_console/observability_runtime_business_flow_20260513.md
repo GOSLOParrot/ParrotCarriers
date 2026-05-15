@@ -317,17 +317,47 @@ Extension for WEB-009:
   `TranscriptionReceived`, and `lk.transcription` data-topic messages. These
   panes are current-browser observability only; persistent conversation history
   remains owned by Graphiti/DSG archive flows.
+- React Runtime Flow now has a formal `LiveKit / Brain Bridge` panel. It
+  calls the same BFF token routes, joins the configured room without requiring
+  a camera, attaches remote agent audio, records connection/transcript events,
+  and can publish browser screen share as the `web-console-screen` track. This
+  is the no-camera laptop path for LineB/Web voice and evidence smoke.
+- The React bridge also has a read-only `检查采样` smoke button. It reads
+  `/api/vision/evidence/status`, requests nearest stored evidence near `now`,
+  and writes a local receipt summarizing sampler freshness, frame-cache
+  freshness, active-track count, nearest evidence id, and whether the latest
+  evidence looks like a screen-share source.
+- Bugfix note: this smoke receipt must not mark a generic fresh camera/test
+  frame as a successful screen-share verification. Success now requires both
+  fresh evidence and a screen-share-looking source (`web-console-screen`,
+  `screenshare`, `screen_share`, or compatible metadata). Otherwise it returns
+  a warning-style local receipt with separate `fresh_any_evidence` and
+  `screen_share_confirmed` fields.
+- Security posture for the React bridge: the short-lived token stays in
+  component state only, receipts render token length/metadata instead of the
+  raw token, and the browser LiveKit SDK log level is reduced to warning so
+  diagnostics do not echo join-token payloads or long connection parameters.
 - Browser-verified control-path smoke:
   LineB no-video route applies through the BFF, simulated mic/asr input returns
   `user_turn`, LineB profile selection stays on active LineB profiles only,
   LiveKit Web token mint returns a redacted UI receipt with no raw JWT in the
   page, Menu Canvas renders module/tool/workspace nodes, and workspace apply
   can switch the visible canvas state.
-- Boundary: automatic browser verification did not click `Connect Audio`
-  because that requests microphone permission and transmits the short-lived
-  LiveKit token to the configured room. Real no-video conversation verification
-  still requires an explicit user-approved mic permission click plus a running
-  server-side LineB/LiveKit Agents session.
+- Browser-verified LiveKit room smoke on 2026-05-15: the React bridge minted a
+  Web token, joined the configured room, reached `connected`, and subscribed to
+  a remote `agent-* / audio / microphone` track. That proves the Web browser
+  can see the Brain/LiveKit Agent when it is in the same room. The smoke then
+  disconnected cleanly. It did not click microphone or screen-share permission
+  prompts; those remain explicit user-approved actions.
+- Sampler follow-up on 2026-05-15: `parrot.brain.vision.livekit_sampler` now
+  accepts LiveKit screen-share source spellings such as `SOURCE_SCREEN_SHARE`
+  in addition to name hints like `web-console-screen`, and its latest-frame
+  summaries include `publication_source` so the Web receipt can distinguish
+  screen-share evidence from generic camera evidence.
+- Boundary: real no-video conversation verification still requires the user to
+  approve browser microphone and/or screen share. If the server-side
+  LineB/LiveKit Agents session is absent, the Web bridge can still join the
+  room but will not receive `agent-*` tracks or transcript events.
 
 Extension for WEB-004 / WEB-005:
 
@@ -664,10 +694,46 @@ Implemented:
   `record_livekit_frame_bytes()` after selecting/rate-limiting a track frame;
   the function writes an image asset, preserves room/track/participant/source
   ids, sequence, media timestamp, and records a `VIDEO_FRAME` ledger row.
+- Added `parrot.brain.vision.livekit_sampler` as the first automatic producer
+  adapter. `brain_entrypoint()` now starts a room-scoped low-FPS sampler that
+  scans existing remote video publications, handles `track_subscribed` /
+  reconnect-style events, encodes LiveKit `VideoFrame` objects to JPEG, and
+  writes through `record_livekit_frame_bytes()`. The sampler is stopped during
+  room disconnect/restart cleanup.
+- The sampler now writes a secret-free status file
+  (`PARROT_LIVEKIT_FRAME_SAMPLER_STATUS_PATH`, default
+  `data/vision/livekit_sampler_status.json`) with active tracks, recorded frame
+  count, last event, room id, and last error summary. Web status includes it as
+  `livekit_sampler`, so the Runtime Time/Evidence panel can distinguish
+  `status_file_missing` from an active frame consumer.
+- Frame-cache and sampler status now expose freshness-oriented observability:
+  `fresh_window_ms`, `latest_frame_age_ms`, `latest_frame_fresh`, and per-track
+  latest frame summaries. These are Web/debug status fields, not promoted
+  top-level Unity/App DTO fields.
+- Added manual smoke helper `src/scripts/smoke_livekit_frame_sampler.py`; it
+  joins the configured LiveKit room as a subscriber, attaches the sampler, waits
+  for remote video frames, and prints sampler/frame-cache status without
+  printing API secrets or JWTs.
+- Added `parrot.brain.vision.evidence_image` as the stored-image/crop bridge
+  for VLM calls. It dereferences local `asset_path`, applies optional
+  normalized or pixel `SampleRegion`, encodes a bounded JPEG, and calls the
+  existing Gemini `describe_image()` helper. `identify_object` uses that compact
+  visual hint to enrich L0/L1 search text when stored evidence is available.
+- Added `parrot.brain.vision.evidence_awareness` as the GOSLO staging policy
+  for ready visual evidence. It stages a compact `visual_evidence_hint` document
+  into IntentWorkspace, writes `transient/evidence_awareness_notice`, and uses
+  `session_policy.should_generate_reply()` to decide whether a safe-turn
+  notification is allowed. It does not call `generate_reply`; C3/C4 delivery
+  remains session-owned.
+- Wired `transient/evidence_awareness_notice` into `ContextInjector` as a
+  session-owned C3 chat-context hint. Allowed notices carry the evidence id,
+  staged ref id, reason, and an explicit no-interrupt cue into Gemini's chat
+  context. Silent notices remain layer-1 only; V1 does not trigger C4 speech.
 - Web routes now expose:
   - `GET /api/vision/evidence/status`
   - `GET /api/vision/evidence/timeline`
   - `POST /api/vision/evidence/request`
+  - `POST /api/vision/evidence/stage-hint`
   - `POST /api/vision/evidence/frame-cache/upload`
   - `GET /api/vision/evidence/{evidence_id}`
   - `POST /api/app/test/visual-attention`
@@ -685,19 +751,60 @@ Interface boundary:
   sample-time metadata.
 - Image bytes are not embedded in ECP/DataChannel payloads. VLM and Web debug
   surfaces must dereference HTTP/storage assets or future frame-cache files.
+- VLM describe V1 only reads local `asset_path`; `asset_uri` without a local
+  stored file is not fetched implicitly inside `identify_object`.
+- Evidence Awareness V1 may stage context and mark `notify_goslo=true`.
+  `ContextInjector` is now the session-owned delivery bridge for C3 hints and
+  keeps `allow_interrupt=false`; C4 safe-turn speech is still pending review.
 - `POST /api/vision/evidence/frame-cache/upload` is a local Web/operator debug
   ingress; it is not the production LiveKit sampler and it does not belong in
   Unity/App DTOs.
-- CORE-012 remains draft until the automatic LiveKit/SVA track sampler,
-  crop/VLM comparison, and App/Web field review are complete.
+- Fresh/stale status is derived from the producer sample timestamp and a local
+  freshness window. It is for operator visibility and evidence selection, not a
+  substitute for App-side video lifecycle telemetry.
+- The automatic sampler code path exists, but CORE-012 remains draft until a
+  real Unity/LiveKit video smoke verifies track selection, reconnect behavior,
+  and storage load. Crop/VLM comparison and App/Web field review are still
+  required before SSOT promotion.
 
 Validation:
 
 - `.venv\Scripts\python.exe -m pytest tests\test_brain\test_time_aligned_evidence.py tests\test_ecp_event\test_identify_object.py tests\test_web_console\test_web_console_server.py -q` -> `51 passed`.
 - 2026-05-15 continuation: same focused pytest set now includes frame-cache
   route/ledger tests -> `53 passed`.
+- 2026-05-15 continuation: same focused pytest set now includes automatic
+  sampler encoding/fake-room track tests -> `55 passed`.
+- 2026-05-15 continuation: added sampler status persistence, Web status
+  exposure, frontend status readout, and manual LiveKit room smoke script.
+  Focused pytest set remains `55 passed`; `npm run typecheck`, `npm run build`,
+  and `git diff --check` passed.
+- 2026-05-15 continuation: added stored-image/crop VLM describe V1. Focused
+  identify/evidence pytest subset -> `18 passed`; full focused WEB-015 set now
+  includes crop/VLM tests.
+- 2026-05-15 continuation: added evidence-awareness staging, Web
+  `stage-hint`, and `transient/evidence_awareness_notice`. Focused Web/evidence
+  route subset -> `51 passed`.
+- 2026-05-15 continuation final check: focused WEB-015 set
+  (`time_aligned_evidence`, `identify_object`, `web_console_server`) ->
+  `59 passed`; `npm run typecheck`, `npm run build`, `git diff --check`, secret
+  literal scan, route smoke, and browser smoke passed. The running 7893 server
+  now serves `assets/app-543b6d2f.js`.
+- 2026-05-15 continuation: added ContextInjector C3 delivery for
+  `transient/evidence_awareness_notice`. Focused WEB-015 plus injector test set
+  covers C3 routing, silent suppression, evidence staging, identify_object, and
+  Web evidence routes -> `61 passed`.
+- 2026-05-15 continuation: added frame-cache/sampler freshness fields and Web
+  Time/Evidence fresh/stale badges. `tests/test_brain/test_time_aligned_evidence.py`
+  -> `11 passed`; focused WEB-015 pytest set -> `61 passed`; frontend
+  typecheck/build passed with `assets/app-5b8dfb08.js`; browser smoke found the
+  Runtime Time/Evidence panel and fresh/stale status with no dev-console logs.
 - `web/console_app/node_modules/.bin/tsc.cmd --noEmit` passed.
 - `web/console_app/node_modules/.bin/vite.cmd build` passed with hashed
   assets; the live `http://127.0.0.1:7893/` page now serves the hashed bundle.
-- Browser smoke: Runtime Flow shows Time/Evidence panel, reads the pending
-  evidence timeline, and reports no console errors.
+- Local route smoke on `http://127.0.0.1:7893`: `POST
+  /api/vision/evidence/frame-cache/upload` cached a PNG test frame as
+  `video_frame`; `POST /api/vision/evidence/request` resolved the nearest
+  frame with `asset_exists=true`.
+- Browser smoke: Runtime Flow shows Time/Evidence panel, exposes the `Cache
+  Frame` button, clicking it adds a frame-cache receipt, and console errors
+  stayed at zero.

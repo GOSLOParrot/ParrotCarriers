@@ -45,10 +45,15 @@ class LiveKitFrameCache:
         root: Path | str | None = None,
         max_frames: int | None = None,
         max_bytes: int | None = None,
+        fresh_window_ms: int | None = None,
     ) -> None:
         self.root = Path(root) if root is not None else _default_root()
         self.max_frames = max(1, int(max_frames or _env_int("PARROT_FRAME_CACHE_MAX_FRAMES", 120)))
         self.max_bytes = max(1024, int(max_bytes or _env_int("PARROT_FRAME_CACHE_MAX_BYTES", 2_500_000)))
+        self.fresh_window_ms = max(
+            1000,
+            int(fresh_window_ms or _env_int("PARROT_FRAME_CACHE_FRESH_WINDOW_MS", 15_000)),
+        )
         self._frames: deque[TimeAlignedSampleRef] = deque()
         self._lock = RLock()
 
@@ -62,12 +67,27 @@ class LiveKitFrameCache:
         with self._lock:
             frames = list(self._frames)
         latest = frames[-1].as_json() if frames else None
+        now_ms = int(time.time() * 1000)
+        latest_age_ms = _sample_age_ms(latest, now_ms=now_ms)
+        track_summaries = _latest_by_track(
+            frames,
+            now_ms=now_ms,
+            fresh_window_ms=self.fresh_window_ms,
+        )
         return {
             "root": str(self.root),
             "max_frames": self.max_frames,
             "max_bytes": self.max_bytes,
+            "fresh_window_ms": self.fresh_window_ms,
             "frame_count": len(frames),
             "latest_frame": latest,
+            "latest_frame_age_ms": latest_age_ms,
+            "latest_frame_fresh": (
+                latest_age_ms is not None
+                and latest_age_ms <= self.fresh_window_ms
+                and bool(latest and latest.get("asset_exists"))
+            ),
+            "tracks": track_summaries,
             "schema": "LiveKitFrameCache.web_backend_v1",
         }
 
@@ -251,6 +271,51 @@ def _decode_base64_image(image_base64: str) -> bytes:
 def _safe_segment(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in value)
     return cleaned[:80] or "track"
+
+
+def _sample_age_ms(sample: dict[str, Any] | None, *, now_ms: int) -> int | None:
+    if not sample:
+        return None
+    timebase = sample.get("timebase") if isinstance(sample.get("timebase"), dict) else {}
+    try:
+        wall_time_ms = int(timebase.get("wall_time_ms") or 0)
+    except (TypeError, ValueError):
+        wall_time_ms = 0
+    if wall_time_ms <= 0:
+        return None
+    return max(0, now_ms - wall_time_ms)
+
+
+def _latest_by_track(
+    frames: list[TimeAlignedSampleRef],
+    *,
+    now_ms: int,
+    fresh_window_ms: int,
+) -> dict[str, dict[str, Any]]:
+    tracks: dict[str, dict[str, Any]] = {}
+    for sample in reversed(frames):
+        track_key = sample.track_sid or sample.timebase.source_id or "unknown_track"
+        if track_key in tracks:
+            continue
+        item = sample.as_json()
+        age_ms = _sample_age_ms(item, now_ms=now_ms)
+        tracks[track_key] = {
+            "evidence_id": sample.evidence_id,
+            "track_sid": sample.track_sid,
+            "source_id": sample.timebase.source_id,
+            "room_id": sample.room_id,
+            "sequence": sample.timebase.sequence,
+            "wall_time_ms": sample.timebase.wall_time_ms,
+            "media_time_us": sample.timebase.media_time_us,
+            "age_ms": age_ms,
+            "fresh": (
+                age_ms is not None
+                and age_ms <= fresh_window_ms
+                and bool(item.get("asset_exists"))
+            ),
+            "asset_exists": bool(item.get("asset_exists")),
+        }
+    return tracks
 
 
 _FRAME_CACHE = LiveKitFrameCache()
