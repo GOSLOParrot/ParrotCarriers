@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass
 from importlib import import_module
 from types import SimpleNamespace
@@ -916,6 +917,7 @@ def test_runtime_flow_typed_models_preserve_route_wire_shape() -> None:
     assert gate["options"] == gate["valid_actions_for_state"]
     assert snapshot["action"] == "runtime.flow.snapshot"
     assert snapshot["pending_human_gates"][0]["target_kind"] == "plan"
+    assert changes["event_schema"] == "runtime_flow_delta_v1"
     assert changes["snapshot"]["sequence"] == 7
     assert receipt["core_candidate"] == "CORE-011"
 
@@ -993,6 +995,8 @@ def test_runtime_flow_and_hitl_routes_are_web_only_receipt_surfaces(monkeypatch)
         assert all(edge["source"] in node_ids and edge["target"] in node_ids for edge in flow["edges"])
         assert any(node.get("trace_id") == f"plan:{plan.plan_id}" for node in flow["nodes"])
         assert flow["audit"]["typed_schema"] == "parrot.web_console.runtime_flow_models"
+        assert flow["audit"]["event_schema"] == "runtime_flow_delta_v1"
+        assert changes["event_schema"] == "runtime_flow_delta_v1"
         assert changes["changed"] is True
         assert no_change["changed"] is False
         assert no_change["snapshot"] is None
@@ -1017,6 +1021,23 @@ def test_runtime_flow_and_hitl_routes_are_web_only_receipt_surfaces(monkeypatch)
     finally:
         set_plan_registry_for_test(None)
         set_intent_workspace_for_test(None)
+
+
+def test_runtime_flow_sse_stream_uses_delta_schema() -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    with client.stream(
+        "GET",
+        "/api/runtime/flow/stream",
+        params={"since": 0, "max_events": 1, "interval_s": 0.25},
+    ) as response:
+        body = "".join(response.iter_text())
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: stream_open" in body
+    assert "event: runtime_delta" in body
+    assert "runtime_flow_delta_v1" in body
+    assert "receipt_stream" in body
 
 
 def test_memory_live_state_changes_uses_stable_web_sequence(monkeypatch) -> None:
@@ -1051,6 +1072,7 @@ def test_memory_live_state_changes_uses_stable_web_sequence(monkeypatch) -> None
         ).json()
 
         assert first["action"] == "memory.live_state.changes"
+        assert first["event_schema"] == "memory_runtime_delta_v1"
         assert first["changed"] is True
         assert first["snapshot"]["l2b"]["node_count"] == 0
         assert first["audit"]["web_only"] is True
@@ -1061,9 +1083,41 @@ def test_memory_live_state_changes_uses_stable_web_sequence(monkeypatch) -> None
         assert third["sequence"] > first["sequence"]
         assert third["changed"] is True
         assert third["snapshot"]["l2b"]["node_count"] == 1
+        assert third["events"][0]["event_schema"] == "memory_runtime_delta_v1"
+        assert third["events"][0]["event_id"]
+        assert third["events"][0]["redacted"] is True
         assert any(event["entity_kind"] == "l2b_node" for event in third["events"])
     finally:
         l2b_graph_module._instance = None
+        app_live_state_module._sequence = 0
+        memory_live_state_module._memory_sequence = 0
+        memory_live_state_module._memory_signature = ""
+
+
+def test_memory_live_state_sse_stream_uses_delta_schema(monkeypatch) -> None:
+    import parrot.brain.app_live_state as app_live_state_module
+    import parrot.web_console.memory_live_state as memory_live_state_module
+
+    app_live_state_module._sequence = 0
+    monkeypatch.setattr(memory_live_state_module, "_memory_sequence", 0)
+    monkeypatch.setattr(memory_live_state_module, "_memory_signature", "")
+
+    try:
+        client = TestClient(build_app(status_fetcher=_fake_fetcher))
+        with client.stream(
+            "GET",
+            "/api/memory/live-state/stream",
+            params={"since": 0, "max_events": 1, "interval_s": 0.25},
+        ) as response:
+            body = "".join(response.iter_text())
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert "event: stream_open" in body
+        assert "event: memory_delta" in body
+        assert "memory_runtime_delta_v1" in body
+        assert "receipt_stream" in body
+    finally:
         app_live_state_module._sequence = 0
         memory_live_state_module._memory_sequence = 0
         memory_live_state_module._memory_signature = ""
@@ -1382,6 +1436,12 @@ def test_l2b_node_and_edge_routes_stay_dry_run_by_default() -> None:
 
 
 def test_l2b_graph_policy_draft_routes_are_core013_and_dry_run() -> None:
+    from parrot.web_console.graph_policy import (
+        GraphDeltaEntityKind,
+        GraphDeltaEvent,
+        GraphDeltaOp,
+    )
+
     client = TestClient(build_app(status_fetcher=_fake_fetcher))
 
     import_draft = client.post(
@@ -1455,6 +1515,16 @@ def test_l2b_graph_policy_draft_routes_are_core013_and_dry_run() -> None:
     assert transform["data"]["draft"]["proposed_overlay"]["label"] == "Wrapped work selection"
     assert llm_context["data"]["draft"]["requires_operator"] is False
     assert llm_context["data"]["operator_required_for_apply"] is False
+    delta = GraphDeltaEvent(
+        sequence=1,
+        entity_kind=GraphDeltaEntityKind.GRAPH_OVERLAY.value,
+        entity_id="overlay_a",
+        op=GraphDeltaOp.OVERLAY_CREATE.value,
+        overlay_id="overlay_a",
+        patch={"label": "Work selection"},
+    )
+    assert delta.graph_scope == "memory_graph"
+    assert delta.redacted is True
 
 
 def test_l2b_graph_health_route_is_read_only(monkeypatch) -> None:
@@ -1612,10 +1682,12 @@ def test_status_summary_marks_degraded_for_offline_process() -> None:
 def test_vision_evidence_routes_are_secret_safe_and_record_timeline(tmp_path, monkeypatch) -> None:
     from parrot.brain.vision.evidence import get_evidence_ledger
     from parrot.brain.vision.frame_cache import reset_frame_cache_for_tests
+    from parrot.brain.vision.tool_lifecycle import reset_visual_tool_lifecycle_for_tests
 
     ledger = get_evidence_ledger()
     ledger.reset_for_tests()
     reset_frame_cache_for_tests()
+    reset_visual_tool_lifecycle_for_tests()
     monkeypatch.setenv(
         "PARROT_LIVEKIT_FRAME_SAMPLER_STATUS_PATH",
         str(tmp_path / "missing-sampler-status.json"),
@@ -1641,6 +1713,16 @@ def test_vision_evidence_routes_are_secret_safe_and_record_timeline(tmp_path, mo
             },
         },
     ).json()
+    lifecycle = client.post(
+        "/api/vision/evidence/tool-lifecycle",
+        json={
+            "tool_id": "bb_web_lifecycle",
+            "tool_kind": "bbox",
+            "interaction_phase": "confirm",
+            "region": {"x": 0.2, "y": 0.2, "width": 0.3, "height": 0.3},
+            "delivery_preference": "intent_only",
+        },
+    ).json()
     timeline = client.get("/api/vision/evidence/timeline?kind=bbox_focus").json()
     detail = client.get(
         f"/api/vision/evidence/{attention['evidence']['evidence_id']}"
@@ -1652,7 +1734,11 @@ def test_vision_evidence_routes_are_secret_safe_and_record_timeline(tmp_path, mo
     assert request["message"] == "evidence_request_recorded"
     assert attention["action"] == "app.test.visual_attention"
     assert attention["evidence"]["kind"] == "bbox_focus"
-    assert timeline["items"][0]["evidence_id"] == attention["evidence"]["evidence_id"]
+    assert lifecycle["success"] is True
+    assert lifecycle["delivery"]["resolved_channel"] == "intent_workspace"
+    evidence_ids = {row["evidence_id"] for row in timeline["items"]}
+    assert attention["evidence"]["evidence_id"] in evidence_ids
+    assert lifecycle["evidence"]["evidence_id"] in evidence_ids
     assert detail["success"] is True
 
 
@@ -1707,6 +1793,161 @@ def test_vision_frame_cache_upload_records_video_frame(tmp_path) -> None:
     assert "sk-" not in str(applied).lower()
 
 
+def test_vision_screen_share_smoke_is_read_only_and_checks_source(tmp_path, monkeypatch) -> None:
+    from parrot.brain.vision.evidence import get_evidence_ledger
+    from parrot.brain.vision.frame_cache import (
+        record_livekit_frame_bytes,
+        reset_frame_cache_for_tests,
+    )
+
+    ledger = get_evidence_ledger()
+    ledger.reset_for_tests()
+    reset_frame_cache_for_tests(root=tmp_path)
+    monkeypatch.setenv(
+        "PARROT_LIVEKIT_FRAME_SAMPLER_STATUS_PATH",
+        str(tmp_path / "missing-sampler-status.json"),
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    empty = client.get("/api/vision/evidence/screen-share-smoke").json()
+    assert empty["action"] == "livekit.screen_share.evidence_check"
+    assert empty["success"] is False
+    assert empty["audit"]["no_pending_request_written"] is True
+    assert ledger.status()["sample_count"] == 0
+
+    sample = record_livekit_frame_bytes(
+        b"fake-screen-frame",
+        mime_type="image/png",
+        room_id="parrot-test",
+        track_sid="track-screen",
+        participant_id="web-console",
+        source_id="web-console-screen",
+        wall_time_ms=int(time.time() * 1000),
+        sequence=1,
+        description="Web Console screen-share frame",
+        meta={"publication_source": "SOURCE_SCREEN_SHARE"},
+    )
+    confirmed = client.get("/api/vision/evidence/screen-share-smoke?window_ms=15000").json()
+
+    assert confirmed["success"] is True
+    assert confirmed["message"] == "screen_share_evidence_confirmed"
+    assert confirmed["data"]["screen_share_confirmed"] is True
+    assert confirmed["data"]["likely_screen_share"] is True
+    assert confirmed["data"]["nearest_evidence_id"] == sample.evidence_id
+    assert confirmed["data"]["frame_cache_count"] == 1
+    assert "sk-" not in str(confirmed).lower()
+
+
+def test_vision_screen_share_smoke_accepts_livekit_js_source_name(tmp_path, monkeypatch) -> None:
+    from parrot.brain.vision.evidence import get_evidence_ledger
+    from parrot.brain.vision.frame_cache import (
+        record_livekit_frame_bytes,
+        reset_frame_cache_for_tests,
+    )
+
+    get_evidence_ledger().reset_for_tests()
+    reset_frame_cache_for_tests(root=tmp_path)
+    monkeypatch.setenv(
+        "PARROT_LIVEKIT_FRAME_SAMPLER_STATUS_PATH",
+        str(tmp_path / "missing-sampler-status.json"),
+    )
+    record_livekit_frame_bytes(
+        b"fake-js-screen-frame",
+        mime_type="image/png",
+        room_id="parrot-test",
+        track_sid="track-screen-js",
+        participant_id="web-console",
+        source_id="screen_share",
+        wall_time_ms=int(time.time() * 1000),
+        sequence=1,
+        description="LiveKit JS screen-share frame",
+        meta={"publication_source": "screen_share"},
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    check = client.get("/api/vision/evidence/screen-share-smoke?window_ms=15000").json()
+
+    assert check["success"] is True
+    assert check["message"] == "screen_share_evidence_confirmed"
+    assert check["data"]["screen_share_confirmed"] is True
+    assert check["data"]["likely_screen_share"] is True
+
+
+def test_vision_screen_share_smoke_does_not_mix_stale_screen_with_fresh_camera(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from parrot.brain.vision.evidence import get_evidence_ledger
+    from parrot.brain.vision.frame_cache import (
+        record_livekit_frame_bytes,
+        reset_frame_cache_for_tests,
+    )
+
+    ledger = get_evidence_ledger()
+    ledger.reset_for_tests()
+    reset_frame_cache_for_tests(root=tmp_path)
+    sampler_status_path = tmp_path / "sampler-status.json"
+    now_ms = int(time.time() * 1000)
+    sampler_status_path.write_text(
+        json.dumps(
+            {
+                "available": True,
+                "enabled": True,
+                "fresh_window_ms": 15_000,
+                "recorded_frames": 7,
+                "active_tracks": ["stale-screen"],
+                "latest_frame": {
+                    "evidence_id": "ev_stale_screen",
+                    "track_sid": "stale-screen",
+                    "track_name": "web-console-screen",
+                    "source_id": "web-console-screen",
+                    "publication_source": "SOURCE_SCREEN_SHARE",
+                    "wall_time_ms": now_ms - 120_000,
+                    "asset_exists": True,
+                },
+                "tracks": {
+                    "stale-screen": {
+                        "evidence_id": "ev_stale_screen",
+                        "track_sid": "stale-screen",
+                        "track_name": "web-console-screen",
+                        "publication_source": "SOURCE_SCREEN_SHARE",
+                        "wall_time_ms": now_ms - 120_000,
+                        "asset_exists": True,
+                    }
+                },
+                "updated_at_ms": now_ms,
+                "schema": "LiveKitFrameSampler.web_backend_v1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PARROT_LIVEKIT_FRAME_SAMPLER_STATUS_PATH", str(sampler_status_path))
+    record_livekit_frame_bytes(
+        b"fresh-camera-frame",
+        mime_type="image/png",
+        room_id="parrot-test",
+        track_sid="track-camera",
+        participant_id="unity-phone",
+        source_id="ar-camera",
+        wall_time_ms=now_ms,
+        sequence=1,
+        description="fresh camera frame",
+        meta={"publication_source": "SOURCE_CAMERA"},
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    check = client.get("/api/vision/evidence/screen-share-smoke?window_ms=15000").json()
+
+    assert check["success"] is False
+    assert check["message"] == "screen_share_track_seen_but_stale"
+    assert check["data"]["fresh_any_evidence"] is True
+    assert check["data"]["likely_screen_share"] is True
+    assert check["data"]["fresh_screen_share"] is False
+    assert check["data"]["frame_cache_count"] == 1
+    assert any("stale" in step.lower() for step in check["data"]["next_steps"])
+    assert not any("Memory Draft" in step for step in check["data"]["next_steps"])
+
+
 def test_vision_evidence_stage_hint_writes_intent_workspace_notice(tmp_path, monkeypatch) -> None:
     import py_trees
 
@@ -1750,6 +1991,88 @@ def test_vision_evidence_stage_hint_writes_intent_workspace_notice(tmp_path, mon
         assert "sk-" not in str(staged).lower()
     finally:
         set_intent_workspace_for_test(None)
+
+
+def test_vision_evidence_memory_draft_returns_l15_and_ref_plan(tmp_path, monkeypatch) -> None:
+    from parrot.brain.vision.evidence import (
+        ClockDomain,
+        EvidenceKind,
+        EvidenceStatus,
+        TimebaseStamp,
+        get_evidence_ledger,
+    )
+
+    monkeypatch.setenv(
+        "PARROT_LIVEKIT_FRAME_SAMPLER_STATUS_PATH",
+        str(tmp_path / "missing-sampler-status.json"),
+    )
+    ledger = get_evidence_ledger()
+    ledger.reset_for_tests()
+    image_path = tmp_path / "memory-draft.jpg"
+    image_path.write_bytes(b"fake-jpeg")
+    sample = ledger.record_sample(
+        kind=EvidenceKind.IMAGE_ASSET,
+        status=EvidenceStatus.READY,
+        timebase=TimebaseStamp(
+            clock_domain=ClockDomain.WEB,
+            wall_time_ms=1_700_000_050_000,
+            source_id="pytest",
+        ),
+        asset_path=str(image_path),
+        mime_type="image/jpeg",
+        related_refs=("ref-photo-test",),
+        description="photo evidence for memory draft",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    draft = client.post(
+        "/api/vision/evidence/memory-draft",
+        json={
+            "evidence_id": sample.evidence_id,
+            "target_node_uuid": "node_existing",
+            "label": "Desk photo evidence",
+            "dry_run": True,
+        },
+    ).json()
+
+    assert draft["action"] == "vision.evidence.memory_draft"
+    assert draft["success"] is True
+    assert draft["dry_run"] is True
+    assert draft["data"]["observation"]["kind"] == "photo"
+    assert draft["data"]["observation"]["meta"]["evidence_id"] == sample.evidence_id
+    assert draft["data"]["observation"]["meta"]["target_node_uuid"] == "node_existing"
+    assert draft["data"]["ref_binding_draft"]["ref_id"] == "ref-photo-test"
+    assert draft["data"]["ref_binding_draft"]["target_kind"] == "l2b_node"
+    assert draft["data"]["write_paths"]["node"].startswith("L15Pool.admit")
+    assert draft["data"]["apply_status"] == "not_implemented_until_CORE_012_review"
+    assert draft["audit"]["read_only"] is True
+    assert draft["audit"]["no_l2b_mutation"] is True
+    assert draft["audit"]["no_ref_binding_mutation"] is True
+    assert draft["core_candidate"] == "CORE-012"
+    assert "sk-" not in str(draft).lower()
+
+
+def test_vision_evidence_memory_draft_missing_sample_is_safe(tmp_path, monkeypatch) -> None:
+    from parrot.brain.vision.evidence import get_evidence_ledger
+
+    monkeypatch.setenv(
+        "PARROT_LIVEKIT_FRAME_SAMPLER_STATUS_PATH",
+        str(tmp_path / "missing-sampler-status.json"),
+    )
+    get_evidence_ledger().reset_for_tests()
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    draft = client.post(
+        "/api/vision/evidence/memory-draft",
+        json={"evidence_id": "missing-evidence", "dry_run": True},
+    ).json()
+
+    assert draft["action"] == "vision.evidence.memory_draft"
+    assert draft["success"] is False
+    assert draft["audit"]["read_only"] is True
+    assert draft["audit"]["no_l15_mutation"] is True
+    assert draft["data"]["error"] == "evidence_not_found"
+    assert draft["data"]["core_candidates"] == ["CORE-012", "CORE-006", "CORE-008"]
 
 
 async def _fake_fetcher(config: OrchestratorProxyConfig) -> dict[str, Any]:

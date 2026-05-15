@@ -39,6 +39,35 @@ class GraphTransformKind(str, Enum):
     SEND_CONTEXT_TO_LLM = "send_context_to_llm"
 
 
+class GraphDeltaOp(str, Enum):
+    """Small operation vocabulary for future changed-since/SSE graph streams."""
+
+    SNAPSHOT = "snapshot"
+    UPSERT = "upsert"
+    UPDATE = "update"
+    DELETE = "delete"
+    TOMBSTONE = "tombstone"
+    LINK = "link"
+    UNLINK = "unlink"
+    OVERLAY_CREATE = "overlay_create"
+    OVERLAY_UPDATE = "overlay_update"
+    TRANSFORM_DRAFT = "transform_draft"
+    RECEIPT = "receipt"
+
+
+class GraphDeltaEntityKind(str, Enum):
+    """Entity vocabulary shared by Memory graph deltas and graph-policy drafts."""
+
+    L2B_NODE = "l2b_node"
+    L2B_EDGE = "l2b_edge"
+    GRAPH_OVERLAY = "graph_overlay"
+    L15_BUCKET = "l15_bucket"
+    REF_BINDING = "ref_binding"
+    GRAPHITI_HIT = "graphiti_hit"
+    INTENT_WORKSPACE_REF = "intent_workspace_ref"
+    RECEIPT = "receipt"
+
+
 @dataclass(frozen=True)
 class GraphOverlay:
     """Named wrapper over existing graph things.
@@ -106,16 +135,33 @@ class GraphTransformReceipt:
 
 @dataclass(frozen=True)
 class GraphDeltaEvent:
-    """Candidate delta row for future changed-since/SSE work."""
+    """Candidate delta row for future changed-since/SSE work.
+
+    This is deliberately renderer-agnostic: React Flow, React-Force-Graph, and
+    a future dense graph engine can all consume stable business ids plus a
+    small patch. It is not a Unity/App DTO and must not contain source secrets
+    or raw image/file payloads.
+    """
 
     sequence: int
-    op: str
     entity_kind: str
     entity_id: str
-    receipt_id: str
+    op: str
+    graph_scope: str = "memory_graph"
+    event_id: str = ""
+    overlay_id: str = ""
+    source_id: str = ""
+    target_id: str = ""
+    edge_kind: str = ""
+    trace_id: str = ""
+    receipt_id: str = ""
     source: str = "web_console.graph_policy"
     summary: str = ""
+    patch: dict[str, Any] | None = None
+    before_ref: str = ""
+    after_ref: str = ""
     created_at: float = 0.0
+    redacted: bool = True
 
 
 def draft_import_destination(payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -652,6 +698,8 @@ def _jsonable(value: Any) -> Any:
 
 __all__ = [
     "GraphDeltaEvent",
+    "GraphDeltaEntityKind",
+    "GraphDeltaOp",
     "GraphOverlay",
     "GraphRewriteDraft",
     "GraphTransformKind",

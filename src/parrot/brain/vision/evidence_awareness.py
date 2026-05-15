@@ -8,6 +8,7 @@ session-owned so the LiveKit/Gemini turn lifecycle can enforce safe timing.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -22,7 +23,12 @@ from parrot.brain.intent_workspace import (
     get_intent_workspace,
 )
 from parrot.brain.session_policy import should_generate_reply
-from parrot.brain.vision.evidence import TimeAlignedSampleRef, resolve_identify_evidence
+from parrot.brain.vision.evidence import (
+    ClockDomain,
+    TimeAlignedSampleRef,
+    TimebaseStamp,
+    resolve_identify_evidence,
+)
 from parrot.scheduler.blackboard import open_bb_client
 
 logger = logging.getLogger(__name__)
@@ -59,6 +65,8 @@ class EvidenceAwarenessDecision:
 async def stage_evidence_for_goslo(
     *,
     evidence_id: str = "",
+    bbox_ref_id: str = "",
+    focus_ref_id: str = "",
     target_time_ms: int = 0,
     description: str = "",
     notify_requested: bool = True,
@@ -73,6 +81,8 @@ async def stage_evidence_for_goslo(
     """
     sample = await resolve_identify_evidence(
         evidence_id=evidence_id,
+        bbox_ref_id=bbox_ref_id,
+        focus_ref_id=focus_ref_id,
         target_time_ms=target_time_ms,
         description=description,
         request_source=source,
@@ -95,6 +105,79 @@ async def stage_evidence_for_goslo(
         notify_requested=notify_requested,
         source=source,
         ttl_seconds=ttl_seconds,
+    )
+
+
+def bridge_attention_threshold_to_goslo(
+    payload: dict[str, Any] | None,
+    *,
+    source_event: Any | None = None,
+) -> dict[str, Any]:
+    """Schedule the conservative BBox/Focus threshold -> GOSLO bridge.
+
+    This is the automatic side of WEB-015.12.  The threshold accumulator is a
+    synchronous ECP subscriber, while IntentWorkspace staging is async.  When a
+    LiveKit/Brain loop is already running we schedule a task; in simple scripts
+    or tests without a loop we run the same coroutine to completion.
+
+    The bridge is intentionally narrow: it never captures a frame, never calls
+    ``generate_reply``, and never mutates L2-B.  It only asks the evidence
+    ledger for the nearest stored frame/photo and stages a compact hint if one
+    is already available; otherwise ``resolve_identify_evidence`` records a
+    pending evidence request.
+    """
+    body = dict(payload or {})
+    subject_kind = str(body.get("subject_kind") or "").strip().lower()
+    subject_id = str(body.get("subject_id") or "").strip()
+    ref_id = str(body.get("ref_id") or "").strip()
+    summary = {
+        "action": "vision.evidence.attention_bridge",
+        "subject_kind": subject_kind,
+        "subject_id": subject_id,
+        "ref_id": ref_id,
+        "scheduled": False,
+    }
+    coro = stage_attention_threshold_for_goslo(body, source_event=source_event)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        decision = asyncio.run(coro)
+        return {**summary, "scheduled": False, "decision": decision.as_json()}
+
+    task = loop.create_task(coro)
+    task.add_done_callback(_log_bridge_task_result)
+    return {**summary, "scheduled": True}
+
+
+async def stage_attention_threshold_for_goslo(
+    payload: dict[str, Any] | None,
+    *,
+    source_event: Any | None = None,
+) -> EvidenceAwarenessDecision:
+    """Resolve/stage evidence for an ``attention.threshold.crossed`` hint.
+
+    BBox/Mag/Focus attention is an evidence-ref tool, not a NodeKind.  The
+    threshold payload supplies the user's region ref and sample time; this
+    helper turns that into a normal ``visual_evidence_hint`` so GOSLO can see
+    it through the existing IntentWorkspace + C3 context path.
+    """
+    body = dict(payload or {})
+    subject_kind = str(body.get("subject_kind") or "").strip().lower()
+    subject_id = str(body.get("subject_id") or "").strip()
+    ref_id = str(body.get("ref_id") or "").strip()
+    bbox_ref_id = ref_id if subject_kind == "bbox" else ""
+    focus_ref_id = ref_id if subject_kind == "focus" else ""
+    description = _attention_description(body)
+    target_time_ms = _threshold_target_time_ms(body, source_event=source_event)
+    return await stage_evidence_for_goslo(
+        evidence_id=str(body.get("evidence_id") or ""),
+        bbox_ref_id=bbox_ref_id,
+        focus_ref_id=focus_ref_id,
+        target_time_ms=target_time_ms,
+        description=description,
+        notify_requested=True,
+        source="dsg.attention.threshold",
+        ttl_seconds=_DEFAULT_TTL_SECONDS,
     )
 
 
@@ -198,9 +281,61 @@ def _write_notice(decision: EvidenceAwarenessDecision) -> None:
         logger.debug("evidence awareness notice write failed", exc_info=True)
 
 
+def _attention_description(payload: dict[str, Any]) -> str:
+    subject_kind = str(payload.get("subject_kind") or "attention").strip()
+    subject_id = str(payload.get("subject_id") or "").strip()
+    label = str(payload.get("label") or "").strip()
+    weight = payload.get("weight")
+    bits = ["attention threshold crossed"]
+    if subject_kind:
+        bits.append(subject_kind)
+    if subject_id:
+        bits.append(subject_id)
+    if label and label not in bits:
+        bits.append(label)
+    if isinstance(weight, (int, float)) and not isinstance(weight, bool):
+        bits.append(f"weight={weight:.2f}")
+    return " / ".join(bits)
+
+
+def _threshold_target_time_ms(
+    payload: dict[str, Any],
+    *,
+    source_event: Any | None,
+) -> int:
+    """Prefer producer sample time over threshold envelope time."""
+    if source_event is not None:
+        try:
+            stamp = TimebaseStamp.from_payload(
+                getattr(source_event, "payload", {}) or {},
+                default_domain=ClockDomain.UNITY,
+                default_source_id=str(getattr(source_event, "unity_identity", "") or ""),
+                envelope_created_at_ms=int(getattr(source_event, "created_at", 0) or 0),
+            )
+            if stamp.wall_time_ms > 0:
+                return stamp.wall_time_ms
+        except Exception:
+            logger.debug("attention bridge source_event timebase parse failed", exc_info=True)
+    try:
+        return int(payload.get("ts_ms") or 0)
+    except Exception:
+        return 0
+
+
+def _log_bridge_task_result(task: asyncio.Task[EvidenceAwarenessDecision]) -> None:
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        logger.debug("attention evidence bridge task failed", exc_info=True)
+
+
 __all__ = [
     "EvidenceAwarenessDecision",
+    "bridge_attention_threshold_to_goslo",
     "latest_evidence_awareness_notice",
+    "stage_attention_threshold_for_goslo",
     "stage_evidence_for_goslo",
     "stage_sample_for_goslo",
 ]

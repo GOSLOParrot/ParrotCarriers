@@ -7,6 +7,7 @@ import type {
   MemoryLiveStateChanges,
   Receipt,
   RuntimeFlow,
+  RuntimeFlowChanges,
   TriggerCatalog,
   VisionEvidenceStatus,
   VisionEvidenceTimeline
@@ -46,7 +47,7 @@ export const api = {
     }),
   triggerCatalog: () => json<TriggerCatalog>("/api/dsg/triggers/catalog"),
   runtimeFlowChanges: (since: number) =>
-    json<{ changed: boolean; sequence: number; snapshot?: RuntimeFlow }>("/api/runtime/flow/changes?since=" + since),
+    json<RuntimeFlowChanges>("/api/runtime/flow/changes?since=" + since),
   visionEvidenceStatus: () => json<VisionEvidenceStatus>("/api/vision/evidence/status"),
   visionEvidenceTimeline: (limit = 24, kind = "") => {
     const params = new URLSearchParams({ limit: String(limit) });
@@ -63,11 +64,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  visionEvidenceMemoryDraft: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/vision/evidence/memory-draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   visionFrameCacheUpload: (body: Record<string, unknown>) =>
     json<Receipt>("/api/vision/evidence/frame-cache/upload", {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  visionScreenShareSmoke: (windowMs = 15_000) =>
+    json<Receipt>(
+      "/api/vision/evidence/screen-share-smoke?window_ms="
+        + encodeURIComponent(String(windowMs))
+    ),
   visualAttentionTest: (body: Record<string, unknown>) =>
     json<Receipt>("/api/app/test/visual-attention", {
       method: "POST",

@@ -39,6 +39,7 @@ export type LiveState = {
 export type MemoryLiveStateChanges = {
   success?: boolean;
   action?: string;
+  event_schema?: string;
   since?: number;
   sequence?: number;
   changed?: boolean;
@@ -63,6 +64,18 @@ export type RuntimeFlow = {
   edges?: Array<Record<string, unknown>>;
   events?: Array<Record<string, unknown>>;
   pending_human_gates?: Array<Record<string, unknown>>;
+};
+
+export type RuntimeFlowChanges = {
+  success?: boolean;
+  action?: string;
+  event_schema?: string;
+  since?: number;
+  sequence?: number;
+  changed?: boolean;
+  events?: Array<Record<string, unknown>>;
+  snapshot?: RuntimeFlow | null;
+  audit?: Record<string, unknown>;
 };
 
 export type TriggerCatalog = {

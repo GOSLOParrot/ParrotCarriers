@@ -25,6 +25,9 @@ namespace ParrotApp.UI
         [SerializeField] private FormalHomeMenuLoader menuLoader;
         [SerializeField] private LiveKitReconnectSupervisor reconnectSupervisor;
         [SerializeField] private AudioRoutePolicyBrainReporter audioRouteReporter;
+        [SerializeField] private FormalModelPlacementController modelPlacementController;
+        [SerializeField] private FormalArSessionBaselineReporter arSessionBaselineReporter;
+        [SerializeField] private FormalArRuntimeBootstrap arRuntimeBootstrap;
 
         private Canvas _canvas;
         private Text _statusText;
@@ -68,6 +71,9 @@ namespace ParrotApp.UI
             if (menuLoader == null) menuLoader = FindObjectOfType<FormalHomeMenuLoader>();
             if (reconnectSupervisor == null) reconnectSupervisor = FindObjectOfType<LiveKitReconnectSupervisor>();
             if (audioRouteReporter == null) audioRouteReporter = FindObjectOfType<AudioRoutePolicyBrainReporter>();
+            if (modelPlacementController == null) modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
+            if (arSessionBaselineReporter == null) arSessionBaselineReporter = FindObjectOfType<FormalArSessionBaselineReporter>();
+            if (arRuntimeBootstrap == null) arRuntimeBootstrap = FindObjectOfType<FormalArRuntimeBootstrap>();
 
             if (startupFlow != null)
             {
@@ -148,7 +154,7 @@ namespace ParrotApp.UI
             panelRect.anchorMax = new Vector2(0f, 1f);
             panelRect.pivot = new Vector2(0f, 1f);
             panelRect.anchoredPosition = new Vector2(24f, -20f);
-            panelRect.sizeDelta = new Vector2(610f, 196f);
+            panelRect.sizeDelta = new Vector2(690f, 236f);
             var panelImage = panel.AddComponent<Image>();
             panelImage.color = new Color(0.08f, 0.07f, 0.06f, 0.62f);
 
@@ -171,7 +177,7 @@ namespace ParrotApp.UI
             textRect.offsetMax = new Vector2(-18f, -14f);
             _statusText = textGo.AddComponent<Text>();
             _statusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _statusText.fontSize = 18;
+            _statusText.fontSize = 17;
             _statusText.alignment = TextAnchor.UpperLeft;
             _statusText.horizontalOverflow = HorizontalWrapMode.Wrap;
             _statusText.verticalOverflow = VerticalWrapMode.Truncate;
@@ -218,7 +224,28 @@ namespace ParrotApp.UI
                 + $"Mic {(health.AudioPublished ? "on" : "wait")}  Video {(health.VideoFreshFrame ? "fresh" : "wait")}\n"
                 + $"Room {_activeConfig.room_profile_id}  Line {_activeConfig.line_id}/{_activeConfig.line_profile_id}\n"
                 + $"Audio {AudioRouteHudLabel()}\n"
+                + $"AR {ArHudLabel()}  Place {PlacementHudLabel()}\n"
                 + $"Home {(ready ? "ready" : "loading")}  {alert}";
+        }
+
+        private string ArHudLabel()
+        {
+            string baseline = arSessionBaselineReporter != null
+                ? arSessionBaselineReporter.LastStatus
+                : "baseline?";
+            string spatial = arRuntimeBootstrap != null
+                ? arRuntimeBootstrap.LastSpatialVisualStatus
+                : "visual?";
+            return ShortLabel(baseline, 24) + " / " + ShortLabel(spatial, 24);
+        }
+
+        private string PlacementHudLabel()
+        {
+            if (modelPlacementController == null)
+                modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
+            if (modelPlacementController == null)
+                return "owner?";
+            return ShortLabel(modelPlacementController.LastDiagnosticSummary, 58);
         }
 
         private string AudioRouteHudLabel()

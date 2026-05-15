@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
+import py_trees
 import pytest
 
 from parrot.brain import refs as refs_registry
@@ -31,8 +32,21 @@ from parrot.brain.event_publisher import (
     attach_ecp_event_publisher,
     reset_ecp_event_publisher_for_tests,
 )
+from parrot.brain.intent_workspace import (
+    IntentWorkspace,
+    get_intent_workspace,
+    set_intent_workspace_for_test,
+)
 from parrot.brain.observer import bbox as bbox_observer
 from parrot.brain.observer import focus as focus_observer
+from parrot.brain.vision.evidence import (
+    ClockDomain,
+    EvidenceKind,
+    EvidenceStatus,
+    TimebaseStamp,
+    get_evidence_ledger,
+)
+from parrot.brain.vision.evidence_awareness import latest_evidence_awareness_notice
 from parrot.dsg.attention import hint_writer
 from parrot.dsg.attention.threshold import (
     FocusBboxThreshold,
@@ -62,6 +76,7 @@ def _reset():
     bbox_observer.reset_metrics_for_tests()
     focus_observer.reset_metrics_for_tests()
     hint_writer.reset_metrics_for_tests()
+    get_evidence_ledger().reset_for_tests()
     # F-05 step ③ side effect: FocusBboxThreshold() now reads BB on construct.
     # Clear the attention-config BB key so DEFAULT_* assertions aren't
     # contaminated by BB writes from test_attention_config_echo or any other
@@ -74,6 +89,8 @@ def _reset():
     bbox_observer.reset_metrics_for_tests()
     focus_observer.reset_metrics_for_tests()
     hint_writer.reset_metrics_for_tests()
+    get_evidence_ledger().reset_for_tests()
+    set_intent_workspace_for_test(None)
     reset_attention_thresholds_for_tests()
 
 
@@ -82,6 +99,22 @@ def _bbox_placed(bbox_id: str = "bb_emit") -> EcpEvent:
         event_type=EcpEventType.BBOX_PLACED,
         source=EcpEventSource.UNITY,
         payload={"bbox_id": bbox_id, "corners": [[0, 0], [1, 1]]},
+    )
+
+
+def _bbox_placed_at(bbox_id: str, wall_time_ms: int) -> EcpEvent:
+    return EcpEvent.build(
+        event_type=EcpEventType.BBOX_PLACED,
+        source=EcpEventSource.UNITY,
+        payload={
+            "bbox_id": bbox_id,
+            "corners": [[0, 0], [1, 1]],
+            "timebase": {
+                "clock_domain": "unity",
+                "wall_time_ms": wall_time_ms,
+                "source_id": "pytest-unity",
+            },
+        },
     )
 
 
@@ -302,6 +335,56 @@ async def test_hint_writer_called_but_no_op_when_ref_unresolved():
 
 
 # ─── F-08: race — bbox.removed AFTER threshold crossed ──────────────
+
+
+@pytest.mark.asyncio
+async def test_threshold_crossing_stages_nearby_frame_without_speech(tmp_path):
+    """WEB-015.12: threshold crossing can stage existing evidence for GOSLO.
+
+    The automatic bridge must stay conservative: it uses the stored frame
+    cache/ledger path, writes an IntentWorkspace hint, and never asks the
+    threshold module to capture images, mutate L2-B, or trigger C4 speech.
+    """
+    py_trees.blackboard.Blackboard.storage = {}
+    py_trees.blackboard.Blackboard.metadata = {}
+    set_intent_workspace_for_test(IntentWorkspace())
+    ledger = get_evidence_ledger()
+    ledger.reset_for_tests()
+    wall_time_ms = 1_700_000_040_000
+    frame_path = tmp_path / "threshold-auto-frame.jpg"
+    frame_path.write_bytes(b"fake-jpeg")
+    frame = ledger.record_sample(
+        kind=EvidenceKind.VIDEO_FRAME,
+        status=EvidenceStatus.READY,
+        timebase=TimebaseStamp(
+            clock_domain=ClockDomain.LIVEKIT_TRACK,
+            wall_time_ms=wall_time_ms + 4,
+            source_id="pytest-screen-share",
+        ),
+        asset_path=str(frame_path),
+        mime_type="image/jpeg",
+        description="nearby frame for threshold bridge",
+    )
+
+    room = _fake_room()
+    attach_ecp_event_publisher(room)
+    ingest = EcpEventIngest()
+    bbox_observer.register(ingest)
+    FocusBboxThreshold().register(ingest)
+
+    ingest.handle_raw(
+        "parrot.ecp.event",
+        _bbox_placed_at("bb_auto_bridge", wall_time_ms).to_wire_json().encode("utf-8"),
+    )
+    await asyncio.sleep(0.05)
+
+    staged = get_intent_workspace().list_active(role="visual_evidence_hint")
+    notice = latest_evidence_awareness_notice()
+    assert staged
+    assert notice["evidence_id"] == frame.evidence_id
+    assert notice["staged_ref_id"] == staged[0].ref_id
+    assert notice["allow_interrupt"] is False
+    assert "attention threshold crossed" in notice["message"]
 
 
 @pytest.mark.asyncio

@@ -135,6 +135,98 @@ Remaining WEB-011 work:
   automation timed out again, so the visual double-click gesture remains a
   manual smoke item in the open browser.
 
+## 2026-05-16 Memory Graph Policy Decisions
+
+Source: user-reviewed Web major roadmap questionnaire; `dsg-rustworkx-master`,
+`dsg-l2b-node-organization-options`, `dsg-attention-schema-papers`,
+`graphiti`, and `react-force-graph-l2b` skill readback.
+
+### Page Split
+
+- The current React Flow page is the **L2-B operation/editor page**. It should
+  specialize in WYSIWYG subgraph construction, detailed Node/Edge edits,
+  Graphiti-preloaded Node review, UUID/Ref/source binding, subgraph save/rollback
+  receipts, and operator-gated strong L2-B writes.
+- The future full-screen L2-B page is the **render/monitor page**. It should use
+  a force/canvas renderer such as React-Force-Graph, show more graph and less
+  text, and focus on realtime topology, local graph depth, filters/groups,
+  algorithm overlays, and attention/trigger animation.
+- L1.5 Source Board belongs to a right-side source/tool dock or drawer, not in
+  the selected Node/Edge inspector. Selecting a tool opens only that tool's
+  controls. Avoid stacked mixed-purpose component blocks.
+
+### Write Ownership Matrix
+
+| Surface | What Web may edit | Durable owner | First safe policy |
+|:--|:--|:--|:--|
+| L2-B Node/Edge | Node create/update/delete, Edge create/update/delete, subgraph overlay apply when backend route/audit exists. | DSG L1.5/L2-B. | Default preview/dry-run; real apply requires operator mode, receipt, and rollback/backup posture for destructive operations. |
+| Graphiti | Search, export to L1.5/L2-B, and future Graphiti API-level node/edge/fact surgery. | Graphiti API/FalkorDB operator adapter. | Do not pretend L2-B edits mutate Graphiti facts. Persistent Graphiti changes need Graphiti receipt/audit and operator mode. |
+| Obsidian | Scan, preview, import source packs, bind by path/metadata. | Obsidian vault/source file. | Treat source files as immutable imports from Web unless a dedicated vault-edit flow is designed. `roleplay` is a mode/profile containing many source packs. |
+| Google Calendar | Manual fetch/import V1, preview normalized events and mapping rows. | Google Calendar / Scheduler/Nanobot fetch result. | Preserve provider identity and status. Watch/syncToken is second-stage backend sync, not browser OAuth. |
+| IntentWorkspace | Stage refs/context or request GOSLO Intent edits. | GOSLO Intent workspace/Plan files. | Do not model IntentWorkspace membership as semantic `NodeKind`; use overlay/lifecycle flags and explicit task/workspace flows. |
+
+### Import Destination Defaults
+
+- `workspace_only`: unresolved IntentWorkspace refs, temporary human working
+  sets, and drafts that are not ready to index.
+- `index_pointer`: large or immutable source documents where L2-B should store
+  a lightweight pointer plus summary/tags/ref.
+- `isolated_compartment`: default for Graphiti search packs, Obsidian source
+  packs, Google Calendar batches, and Arknights test imports.
+- `connect_by_rule`: explicit bounded operator batch only.
+- `promote_to_main_graph`: explicit promotion after preview, receipt, and
+  audit review.
+
+### Graph Transform Examples To Build First
+
+- Wrap selected Nodes/Edges as a foldable overlay/subgraph.
+- Draft cross-links between two selected compartments using bounded rules.
+- Promote selected compartment Nodes into the main graph.
+- Split/tombstone stale or cancelled clusters without deleting provider
+  identity by default.
+- Send selected subgraph context to an LLM when free-form analysis is more
+  useful than graph mutation.
+
+### Delta Vocabulary Before SSE
+
+Implementation checkpoint: 2026-05-16.
+
+- Backend typed vocabulary now lives in `parrot.web_console.graph_policy` as
+  Web-only `GraphDeltaOp`, `GraphDeltaEntityKind`, and expanded
+  `GraphDeltaEvent`.
+- `GET /api/memory/live-state/changes` advertises
+  `event_schema=memory_runtime_delta_v1`, and every event row now carries
+  `event_id`, `graph_scope`, `trace_id`, `receipt_id`, `patch`, and
+  `redacted` fields. This is still polling changed-since, not SSE yet.
+- `GET /api/memory/live-state/stream` is the first Web-only SSE route. It is a
+  thin read-only wrapper over the same changed-since envelope and emits
+  `stream_open`, `memory_delta`, and `stream_close` events. It has a bounded
+  `max_events` test/debug cap, keep-alive comments, and no binary payloads.
+- React Memory now opens an `EventSource` to the SSE route when the browser
+  supports it. The old polling path remains active as a fallback for initial
+  load, disconnects, and browsers without EventSource.
+- Future SSE routes should stream the same event rows instead of inventing a
+  second graph/event shape. Operator receipts remain a separate stream.
+- `GraphDeltaEvent` uses stable business ids and optional patch data so React
+  Flow editor and React-Force-Graph monitor can share the backend event
+  vocabulary without sharing renderer layout state.
+- Verification: Web route tests `48 passed`, React `npm run typecheck`,
+  React `npm run build`, `py_compile` for the touched Web Console backend
+  modules, and in-app browser smoke on `http://127.0.0.1:7893/` passed. The
+  browser showed the Memory page with `SSE` transport and zero console errors
+  after restarting the local Web Console service.
+
+### Calendar and Source Node Notes
+
+- Google Calendar EVENT nodes should preserve Google `status`
+  (`confirmed`, `tentative`, `cancelled`) and add Parrot lifecycle overlays such
+  as `scheduled`, `tentative`, `cancelled_tombstone`, `expired`,
+  `completed_manual`, or `postponed/rescheduled`. Google Tasks has separate
+  task status and must not be silently folded into Calendar events.
+- Edge kinds and metadata must remain extensible. RustWorkX carries topology;
+  business UUIDs, edge kinds, confidence, source, provenance, and lifecycle live
+  in payloads/receipts so new kinds can be added without renderer rewrites.
+
 ## Slice: Memory Graph Workspace
 
 ### A. Source Readback
@@ -1093,6 +1185,12 @@ board":
   converts existing `/upload/photo/...` refs or cache paths into this route for
   selected Node and Source Board thumbnails; it does not expose local file paths
   directly and does not add any bind/unbind write surface.
+- 2026-05-16 Graphiti Source Board bugfix: the Graphiti tab now renders a
+  sanitized provider/status strip, clears stale graph previews after failed
+  searches or manual selection clearing, and preserves Graphiti fact/source/
+  target Edges when generating the CORE-013 import-destination policy preview.
+  Selection changes now also refresh the read-only canvas preview in place,
+  using the same Graphiti id normalization as the policy preview.
 - Google Calendar card now uses the calendar preview route to show raw event,
   normalized event, and Observation metadata. Real import/apply remains a later
   operator-gated step.
@@ -1610,5 +1708,14 @@ Boundary:
 - Evidence Board / Ref binding should reference evidence ids and storage refs
   through CORE-006/CORE-012 once reviewed; no separate Web-only board storage
   model should be invented.
-- Real frame cache, crop/region persistence, and VLM image comparison remain
-  pending WEB-015 follow-ups before L2-B can safely promote visual detections.
+- WEB-015.9 first slice adds Web-only `POST
+  /api/vision/evidence/memory-draft`. It is a preview/receipt bridge from
+  `TimeAlignedSampleRef` to Memory: it returns a draft
+  `Observation(source=USER_EXPLICIT)` for `L15Pool.admit`, an optional CORE-006
+  RefBinding draft when a BBox/Focus/Photo ref is present, and a mapping that
+  explains Temporal Evidence Ledger -> IntentWorkspace/Ref -> L1.5 -> L2-B.
+  There is deliberately no apply route yet; real Memory writes wait for
+  CORE-012/CORE-006 review and live screen-share smoke.
+- Real frame cache smoke, crop/region persistence, reference-image VLM
+  comparison, and apply policy remain pending WEB-015 follow-ups before L2-B
+  can safely promote visual detections.

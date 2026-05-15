@@ -6,6 +6,13 @@ using ParrotApp.Parrot;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+using EnhancedTouch = UnityEngine.InputSystem.EnhancedTouch.Touch;
+using EnhancedTouchPhase = UnityEngine.InputSystem.TouchPhase;
+using EnhancedTouchSupport = UnityEngine.InputSystem.EnhancedTouch.EnhancedTouchSupport;
+#endif
+
 #if UNITY_AR_FOUNDATION
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
@@ -19,9 +26,11 @@ namespace ParrotApp.Lifecycle
     /// This component deliberately owns the first real onGosloPlaced trigger.
     /// Startup, AR baseline, and menu loading may prove transport readiness,
     /// but they must not greet or mark the companion as placed. For the current
-    /// white-box slice it first tries a formal AR raycast against tracked
-    /// planes, then falls back to a camera-forward preview placement when AR
-    /// raycast is unavailable. Final prefabs can replace only InstantiateModel.
+    /// white-box slice follows the Unity AR Mobile template interaction
+    /// contract: tap a plane to place, tap the model to select, drag on a plane
+    /// to move, and pinch to scale. It refuses placement when AR raycast misses.
+    /// The whitebox fallback is only for missing runtime visuals after a valid
+    /// placement. Final prefabs can replace only InstantiateModel.
     /// </summary>
     [DisallowMultipleComponent]
     public class FormalModelPlacementController : MonoBehaviour
@@ -32,12 +41,15 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private Transform modelRoot;
         [SerializeField] private Camera placementCamera;
         [SerializeField] private bool preferArRaycastPlacement = true;
-        [SerializeField] private bool fallbackToPreviewWhenArMisses = true;
+        [SerializeField] private bool fallbackToPreviewWhenArMisses = false;
         [SerializeField] private bool enableTouchPlacementAndSelection = true;
+        [SerializeField] private bool enableDragMove = true;
         [SerializeField] private bool enablePinchScale = true;
+        [SerializeField] private bool applyDemoRandomAngleAtSpawn = true;
         [SerializeField] private float defaultDistanceMeters = 1.2f;
-        [SerializeField] private float minScaleMultiplier = 0.35f;
-        [SerializeField] private float maxScaleMultiplier = 2.6f;
+        [SerializeField] private float minScaleMultiplier = 0.25f;
+        [SerializeField] private float maxScaleMultiplier = 2f;
+        [SerializeField] private float demoSpawnAngleRangeDegrees = 45f;
         [SerializeField] private float tapMaxSeconds = 0.32f;
         [SerializeField] private float tapMaxMovePixels = 28f;
         [SerializeField] private Vector3 fallbackPosition = new Vector3(0f, -0.25f, 1.2f);
@@ -55,6 +67,17 @@ namespace ParrotApp.Lifecycle
         public float ScaleMultiplier { get; private set; } = 1f;
         public string LastSelectionStatus { get; private set; } = "not_selected";
         public GameObject PlacedModel { get; private set; }
+        public string LastDiagnosticSummary
+        {
+            get
+            {
+                string place = string.IsNullOrWhiteSpace(LastPlacementStatus) ? "unknown" : LastPlacementStatus;
+                string mode = string.IsNullOrWhiteSpace(LastPlacementMode) ? "none" : LastPlacementMode;
+                string visual = string.IsNullOrWhiteSpace(LastVisualSource) ? "none" : LastVisualSource;
+                string selected = HasSelectedModel ? "selected" : "not_selected";
+                return mode + " " + place + " " + selected + " " + visual;
+            }
+        }
         public bool CanPlaceNow => startupFlow != null
                                    && startupFlow.MainUiReadyOnce
                                    && (mainReadyGate == null || mainReadyGate.IsReady)
@@ -63,9 +86,14 @@ namespace ParrotApp.Lifecycle
         private bool _reportedGosloPlaced;
         private ModelManifestDto _manifest;
         private bool _touchStartedOverUi;
+        private bool _touchStartedOnModel;
         private bool _mouseStartedOverUi;
+        private bool _mouseStartedOnModel;
+        private bool _isDraggingModel;
+        private bool _mouseDraggingModel;
         private Vector2 _touchStartPosition;
         private float _touchStartTime;
+        private Vector3 _dragWorldOffset;
         private float _pinchStartDistance;
         private float _pinchStartScaleMultiplier = 1f;
         private Vector3 _placedBaseScale = Vector3.one;
@@ -74,6 +102,9 @@ namespace ParrotApp.Lifecycle
 
         private void OnEnable()
         {
+#if ENABLE_INPUT_SYSTEM
+            EnhancedTouchSupport.Enable();
+#endif
             Bind();
         }
 
@@ -94,8 +125,13 @@ namespace ParrotApp.Lifecycle
             if (!enableTouchPlacementAndSelection)
                 return;
 
+#if ENABLE_INPUT_SYSTEM
+            HandleInputSystemTouchPlacementAndSelection();
+            HandleInputSystemMousePlacementAndSelection();
+#else
             HandleTouchPlacementAndSelection();
             HandleEditorMousePlacementAndSelection();
+#endif
             UpdateSelectionVisual();
         }
 
@@ -174,10 +210,10 @@ namespace ParrotApp.Lifecycle
             }
 
             Vector2 screenPoint = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
-            if (TryResolveArRaycastPose(screenPoint, out Pose arPose, out string raycastStatus))
+            if (TryResolveArRaycastPose(screenPoint, out Pose arPose, out Vector3 surfaceNormal, out string raycastStatus))
             {
                 LastPlacementMode = "ar_raycast";
-                PlaceAt(arPose.position, ResolveDefaultRotation(arPose.position), "ar_raycast_plane");
+                PlaceAt(arPose.position, ResolveDemoSpawnRotation(arPose.position, surfaceNormal), "ar_raycast_plane");
                 return;
             }
 
@@ -204,10 +240,10 @@ namespace ParrotApp.Lifecycle
                 return;
             }
 
-            if (TryResolveArRaycastPose(screenPoint, out Pose arPose, out string raycastStatus))
+            if (TryResolveArRaycastPose(screenPoint, out Pose arPose, out Vector3 surfaceNormal, out string raycastStatus))
             {
                 LastPlacementMode = "ar_raycast";
-                PlaceAt(arPose.position, ResolveDefaultRotation(arPose.position), "ar_raycast_plane");
+                PlaceAt(arPose.position, ResolveDemoSpawnRotation(arPose.position, surfaceNormal), "ar_raycast_plane");
                 return;
             }
 
@@ -267,8 +303,11 @@ namespace ParrotApp.Lifecycle
             HasPlacedModel = false;
             HasSelectedModel = false;
             ScaleMultiplier = 1f;
+            _isDraggingModel = false;
+            _mouseDraggingModel = false;
             LastPlacementMode = "none";
             LastVisualSource = "none";
+            LastPlacementStatus = "cleared";
             LastSelectionStatus = "cleared";
         }
 
@@ -298,9 +337,10 @@ namespace ParrotApp.Lifecycle
             return _manifest != null;
         }
 
-        private bool TryResolveArRaycastPose(Vector2 screenPoint, out Pose pose, out string status)
+        private bool TryResolveArRaycastPose(Vector2 screenPoint, out Pose pose, out Vector3 surfaceNormal, out string status)
         {
             pose = new Pose();
+            surfaceNormal = Vector3.up;
             status = "";
             if (!preferArRaycastPlacement)
             {
@@ -330,6 +370,9 @@ namespace ParrotApp.Lifecycle
             }
 
             pose = RaycastHits[0].pose;
+            surfaceNormal = pose.up;
+            if (RaycastHits[0].trackable is ARPlane arPlane)
+                surfaceNormal = arPlane.normal;
             status = "ar_raycast_plane";
             return true;
 #else
@@ -395,18 +438,21 @@ namespace ParrotApp.Lifecycle
             if (Input.touchCount <= 0)
             {
                 _pinchStartDistance = 0f;
+                _isDraggingModel = false;
+                _touchStartedOnModel = false;
                 return;
             }
 
             if (Input.touchCount >= 2 && enablePinchScale && HasSelectedModel && PlacedModel != null)
             {
+                _isDraggingModel = false;
                 var a = Input.GetTouch(0);
                 var b = Input.GetTouch(1);
                 if (IsPointerOverUi(a.fingerId) || IsPointerOverUi(b.fingerId))
                     return;
 
                 float distance = Vector2.Distance(a.position, b.position);
-                if (_pinchStartDistance <= 1f || a.phase == TouchPhase.Began || b.phase == TouchPhase.Began)
+                if (_pinchStartDistance <= 1f || a.phase == UnityEngine.TouchPhase.Began || b.phase == UnityEngine.TouchPhase.Began)
                 {
                     _pinchStartDistance = Mathf.Max(1f, distance);
                     _pinchStartScaleMultiplier = ScaleMultiplier;
@@ -419,19 +465,49 @@ namespace ParrotApp.Lifecycle
             }
 
             var touch = Input.GetTouch(0);
-            if (touch.phase == TouchPhase.Began)
+            if (touch.phase == UnityEngine.TouchPhase.Began)
             {
                 _touchStartPosition = touch.position;
                 _touchStartTime = Time.unscaledTime;
                 _touchStartedOverUi = IsPointerOverUi(touch.fingerId);
+                _touchStartedOnModel = !_touchStartedOverUi && HasPlacedModel && RayIntersectsPlacedModel(touch.position);
+                _isDraggingModel = false;
+                if (_touchStartedOnModel)
+                {
+                    SelectPlacedModel(true, "touch_model");
+                    CaptureDragOffset(touch.position);
+                }
                 return;
             }
 
-            if (touch.phase != TouchPhase.Ended)
+            if (touch.phase == UnityEngine.TouchPhase.Moved || touch.phase == UnityEngine.TouchPhase.Stationary)
+            {
+                if (!_touchStartedOverUi && _touchStartedOnModel && enableDragMove && HasSelectedModel && PlacedModel != null)
+                {
+                    float dragDistance = Vector2.Distance(_touchStartPosition, touch.position);
+                    if (_isDraggingModel || dragDistance > tapMaxMovePixels)
+                    {
+                        _isDraggingModel = TryMoveSelectedModelOnPlane(touch.position, "touch_drag");
+                    }
+                }
+                return;
+            }
+
+            if (touch.phase != UnityEngine.TouchPhase.Ended && touch.phase != UnityEngine.TouchPhase.Canceled)
                 return;
 
             if (_touchStartedOverUi || IsPointerOverUi(touch.fingerId))
+            {
+                _isDraggingModel = false;
                 return;
+            }
+
+            if (_isDraggingModel)
+            {
+                _isDraggingModel = false;
+                LastSelectionStatus = "drag_end";
+                return;
+            }
 
             float elapsed = Time.unscaledTime - _touchStartTime;
             float moved = Vector2.Distance(_touchStartPosition, touch.position);
@@ -447,10 +523,33 @@ namespace ParrotApp.Lifecycle
                 return;
 
             if (Input.GetMouseButtonDown(0))
+            {
                 _mouseStartedOverUi = IsPointerOverUi(-1);
+                _mouseStartedOnModel = !_mouseStartedOverUi && HasPlacedModel && RayIntersectsPlacedModel(Input.mousePosition);
+                _mouseDraggingModel = false;
+                if (_mouseStartedOnModel)
+                {
+                    SelectPlacedModel(true, "mouse_model");
+                    CaptureDragOffset(Input.mousePosition);
+                }
+            }
+
+            if (Input.GetMouseButton(0) && !_mouseStartedOverUi && _mouseStartedOnModel && enableDragMove && HasSelectedModel && PlacedModel != null)
+            {
+                _mouseDraggingModel = TryMoveSelectedModelOnPlane(Input.mousePosition, "editor_drag");
+                return;
+            }
 
             if (Input.GetMouseButtonUp(0) && !_mouseStartedOverUi && !IsPointerOverUi(-1))
+            {
+                if (_mouseDraggingModel)
+                {
+                    _mouseDraggingModel = false;
+                    LastSelectionStatus = "drag_end";
+                    return;
+                }
                 HandleTap(Input.mousePosition);
+            }
 
             if (HasSelectedModel && enablePinchScale && PlacedModel != null)
             {
@@ -469,9 +568,172 @@ namespace ParrotApp.Lifecycle
             }
 
             if (RayIntersectsPlacedModel(screenPoint))
-                SelectPlacedModel(!HasSelectedModel, "tap_model");
+                SelectPlacedModel(true, "tap_model");
             else if (HasSelectedModel)
                 SelectPlacedModel(false, "tap_empty");
+        }
+
+#if ENABLE_INPUT_SYSTEM
+        private void HandleInputSystemTouchPlacementAndSelection()
+        {
+            var touches = EnhancedTouch.activeTouches;
+            if (touches.Count <= 0)
+            {
+                ResetActiveTouchGesture();
+                return;
+            }
+
+            if (touches.Count >= 2 && enablePinchScale && HasSelectedModel && PlacedModel != null)
+            {
+                _isDraggingModel = false;
+                var a = touches[0];
+                var b = touches[1];
+                if (IsTouchPointerOverUi(a.finger.index) || IsTouchPointerOverUi(b.finger.index))
+                    return;
+
+                float distance = Vector2.Distance(a.screenPosition, b.screenPosition);
+                if (_pinchStartDistance <= 1f || a.phase == EnhancedTouchPhase.Began || b.phase == EnhancedTouchPhase.Began)
+                {
+                    _pinchStartDistance = Mathf.Max(1f, distance);
+                    _pinchStartScaleMultiplier = ScaleMultiplier;
+                    LastSelectionStatus = "pinch_start";
+                    return;
+                }
+
+                ScaleSelectedModel(_pinchStartScaleMultiplier * distance / Mathf.Max(1f, _pinchStartDistance), "pinch");
+                return;
+            }
+
+            var touch = touches[0];
+            var screenPoint = touch.screenPosition;
+            int pointerId = touch.finger.index;
+            if (touch.phase == EnhancedTouchPhase.Began)
+            {
+                _touchStartPosition = screenPoint;
+                _touchStartTime = Time.unscaledTime;
+                _touchStartedOverUi = IsTouchPointerOverUi(pointerId);
+                _touchStartedOnModel = !_touchStartedOverUi && HasPlacedModel && RayIntersectsPlacedModel(screenPoint);
+                _isDraggingModel = false;
+                if (_touchStartedOnModel)
+                {
+                    SelectPlacedModel(true, "touch_model");
+                    CaptureDragOffset(screenPoint);
+                }
+                return;
+            }
+
+            if (touch.phase == EnhancedTouchPhase.Moved || touch.phase == EnhancedTouchPhase.Stationary)
+            {
+                if (!_touchStartedOverUi && _touchStartedOnModel && enableDragMove && HasSelectedModel && PlacedModel != null)
+                {
+                    float moved = Vector2.Distance(_touchStartPosition, screenPoint);
+                    if (_isDraggingModel || moved > tapMaxMovePixels)
+                        _isDraggingModel = TryMoveSelectedModelOnPlane(screenPoint, "touch_drag");
+                }
+                return;
+            }
+
+            if (touch.phase != EnhancedTouchPhase.Ended && touch.phase != EnhancedTouchPhase.Canceled)
+                return;
+
+            if (_touchStartedOverUi || IsTouchPointerOverUi(pointerId))
+            {
+                _isDraggingModel = false;
+                return;
+            }
+
+            if (_isDraggingModel)
+            {
+                _isDraggingModel = false;
+                LastSelectionStatus = "drag_end";
+                return;
+            }
+
+            float elapsed = Time.unscaledTime - _touchStartTime;
+            float movedDistance = Vector2.Distance(_touchStartPosition, screenPoint);
+            if (elapsed > tapMaxSeconds || movedDistance > tapMaxMovePixels)
+                return;
+
+            HandleTap(screenPoint);
+        }
+
+        private void HandleInputSystemMousePlacementAndSelection()
+        {
+            if (!Application.isEditor || Mouse.current == null)
+                return;
+
+            var mouse = Mouse.current;
+            Vector2 screenPoint = mouse.position.ReadValue();
+            if (mouse.leftButton.wasPressedThisFrame)
+            {
+                _mouseStartedOverUi = IsPointerOverUi(-1);
+                _mouseStartedOnModel = !_mouseStartedOverUi && HasPlacedModel && RayIntersectsPlacedModel(screenPoint);
+                _mouseDraggingModel = false;
+                if (_mouseStartedOnModel)
+                {
+                    SelectPlacedModel(true, "mouse_model");
+                    CaptureDragOffset(screenPoint);
+                }
+            }
+
+            if (mouse.leftButton.isPressed && !_mouseStartedOverUi && _mouseStartedOnModel && enableDragMove && HasSelectedModel && PlacedModel != null)
+            {
+                _mouseDraggingModel = TryMoveSelectedModelOnPlane(screenPoint, "editor_drag");
+                return;
+            }
+
+            if (mouse.leftButton.wasReleasedThisFrame && !_mouseStartedOverUi && !IsPointerOverUi(-1))
+            {
+                if (_mouseDraggingModel)
+                {
+                    _mouseDraggingModel = false;
+                    LastSelectionStatus = "drag_end";
+                    return;
+                }
+                HandleTap(screenPoint);
+            }
+
+            if (HasSelectedModel && enablePinchScale && PlacedModel != null)
+            {
+                float wheel = mouse.scroll.ReadValue().y;
+                if (Mathf.Abs(wheel) > 0.001f)
+                    ScaleSelectedModel(ScaleMultiplier * (1f + wheel * 0.0008f), "editor_wheel");
+            }
+        }
+#endif
+
+        private void ResetActiveTouchGesture()
+        {
+            _pinchStartDistance = 0f;
+            _isDraggingModel = false;
+            _touchStartedOnModel = false;
+        }
+
+        private void CaptureDragOffset(Vector2 screenPoint)
+        {
+            _dragWorldOffset = Vector3.zero;
+            if (PlacedModel == null) return;
+            if (!TryResolveArRaycastPose(screenPoint, out Pose pose, out Vector3 surfaceNormal, out _))
+                return;
+
+            _dragWorldOffset = Vector3.ProjectOnPlane(PlacedModel.transform.position - pose.position, surfaceNormal);
+        }
+
+        private bool TryMoveSelectedModelOnPlane(Vector2 screenPoint, string reason)
+        {
+            if (PlacedModel == null) return false;
+            if (!TryResolveArRaycastPose(screenPoint, out Pose pose, out Vector3 surfaceNormal, out string status))
+            {
+                LastSelectionStatus = ShortReason(status);
+                return false;
+            }
+
+            Vector3 offset = Vector3.ProjectOnPlane(_dragWorldOffset, surfaceNormal);
+            PlacedModel.transform.position = pose.position + offset;
+            LastPlacementMode = "ar_drag";
+            LastPlacementStatus = "placed:ar_drag_plane";
+            LastSelectionStatus = "dragging:" + ShortReason(reason);
+            return true;
         }
 
         private bool RayIntersectsPlacedModel(Vector2 screenPoint)
@@ -610,6 +872,13 @@ namespace ParrotApp.Lifecycle
                 ? EventSystem.current.IsPointerOverGameObject(pointerId)
                 : EventSystem.current.IsPointerOverGameObject();
         }
+
+#if ENABLE_INPUT_SYSTEM
+        private static bool IsTouchPointerOverUi(int pointerId)
+        {
+            return IsPointerOverUi(pointerId) || IsPointerOverUi(-1);
+        }
+#endif
 
         private GameObject TryInstantiateManifestVisual(out string visualSource)
         {
@@ -767,6 +1036,41 @@ namespace ParrotApp.Lifecycle
             look.y = 0f;
             if (look.sqrMagnitude < 0.0001f) return Quaternion.identity;
             return Quaternion.LookRotation(look.normalized, Vector3.up);
+        }
+
+        private Quaternion ResolveDemoSpawnRotation(Vector3 position, Vector3 surfaceNormal)
+        {
+            if (placementCamera == null) placementCamera = Camera.main;
+
+            Vector3 normal = surfaceNormal.sqrMagnitude > 0.0001f
+                ? surfaceNormal.normalized
+                : Vector3.up;
+            if (placementCamera == null)
+                return Quaternion.LookRotation(ResolvePlaneTangent(normal), normal);
+
+            Vector3 forward = placementCamera.transform.position - position;
+            forward = Vector3.ProjectOnPlane(forward, normal);
+            if (forward.sqrMagnitude < 0.0001f)
+                forward = Vector3.ProjectOnPlane(-placementCamera.transform.forward, normal);
+            if (forward.sqrMagnitude < 0.0001f)
+                forward = ResolvePlaneTangent(normal);
+
+            var rotation = Quaternion.LookRotation(forward.normalized, normal);
+            if (applyDemoRandomAngleAtSpawn && demoSpawnAngleRangeDegrees > 0.001f)
+                rotation *= Quaternion.AngleAxis(UnityEngine.Random.Range(-demoSpawnAngleRangeDegrees, demoSpawnAngleRangeDegrees), Vector3.up);
+            return rotation;
+        }
+
+        private static Vector3 ResolvePlaneTangent(Vector3 normal)
+        {
+            Vector3 tangent = Vector3.ProjectOnPlane(Vector3.forward, normal);
+            if (tangent.sqrMagnitude < 0.0001f)
+                tangent = Vector3.ProjectOnPlane(Vector3.right, normal);
+            if (tangent.sqrMagnitude < 0.0001f)
+                tangent = Vector3.Cross(normal, Vector3.up);
+            if (tangent.sqrMagnitude < 0.0001f)
+                tangent = Vector3.Cross(normal, Vector3.right);
+            return tangent.sqrMagnitude < 0.0001f ? Vector3.forward : tangent.normalized;
         }
 
         private static string SafeName(string raw)

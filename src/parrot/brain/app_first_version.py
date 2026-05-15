@@ -590,29 +590,42 @@ class AppFirstVersionFacade:
             AppToolCard(
                 tool_id=AppToolId.MAGNIFIER_FOCUS,
                 label="Magnifier",
-                state="deferred_phone_stability",
-                enabled=False,
+                state="backend_ready",
+                enabled=True,
                 summary=(
-                    "Deferred until the phone stability pass. Unity must not emit "
-                    "focus ECP from the formal homepage before the SVA/ECP evidence "
-                    "contract is refreshed."
+                    "MAG is a weak visual focus tool. Unity sends stable lifecycle "
+                    "milestones; backend stages evidence in IntentWorkspace and only "
+                    "uses C3 when explicitly requested."
                 ),
-                flow=("todo_phone_stability", "then_sva_ecp_evidence_contract"),
-                action_endpoints=(),
+                flow=(
+                    "preview/drag locally",
+                    "POST /api/app/visual-tool/event",
+                    "record TimeAlignedEvidenceRef",
+                    "stage IntentWorkspace",
+                    "optional C3 on explicit_send",
+                ),
+                action_endpoints=("/api/app/visual-tool/event",),
                 asset_slot="magnifier_or_telescope_placeholder",
                 metrics={"focus_refs": refs_metrics.get("focus_refs", 0)},
             ),
             AppToolCard(
                 tool_id=AppToolId.BOUNDARY_BOX,
                 label="Boundary Box",
-                state="deferred_phone_stability",
-                enabled=False,
+                state="backend_ready",
+                enabled=True,
                 summary=(
-                    "Deferred until the phone stability pass. Formal Unity should "
-                    "not send bbox ECP while backend BBox/magnifier evidence is being upgraded."
+                    "BBox is a strong visual evidence tool. Confirmed boxes bind a "
+                    "BBox Ref, record time-aligned evidence, stage IntentWorkspace, "
+                    "and default to a conservative C3 notice."
                 ),
-                flow=("todo_phone_stability", "then_sva_ecp_evidence_contract"),
-                action_endpoints=(),
+                flow=(
+                    "preview/drag locally",
+                    "POST /api/app/visual-tool/event",
+                    "bind BBox Ref",
+                    "record TimeAlignedEvidenceRef",
+                    "stage IntentWorkspace + C3 on confirm",
+                ),
+                action_endpoints=("/api/app/visual-tool/event",),
                 asset_slot="pixel_boundary_box_placeholder",
                 metrics={"bbox_refs": refs_metrics.get("bbox_refs", 0)},
             ),

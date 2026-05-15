@@ -38,6 +38,7 @@ to `.cursor/memory/architecture/Interface/**`.
 |:--|:--|:--|:--|
 | `GET /api/runtime/flow` | read | Build lanes, nodes, edges, events, receipts, and pending HITL gates from existing runtime monitors and registries. | Implemented Web-only first; candidate CORE-010 if shared. |
 | `GET /api/runtime/flow/changes?since=<sequence>` | read | Return bounded changed-since polling diff for active React workspaces. V1 returns the full snapshot/events when the sequence advances. | Implemented Web-only first; extends CORE-009 candidate if shared. |
+| `GET /api/runtime/flow/stream?since=<sequence>` | read/SSE | Stream the same bounded changed-since envelope as `runtime_flow_delta_v1` events for the active React Runtime page. It is a read-only EventSource surface and keeps operator receipts separate. | Implemented Web-only first; extends CORE-009/CORE-010 candidate only if shared. |
 | `GET /api/runtime/hitl/pending` | read | List pending human gates for Plan confirmation actions. | Implemented Web-only first; candidate CORE-011 if shared. |
 | `POST /api/runtime/hitl/draft-decision` | draft | Validate approve/reject/revise/cancel/resume decisions and return receipt. | Implemented Web-only operator BFF first. |
 | `POST /api/runtime/hitl/apply-decision` | dry-run/operator | Apply a decision only under explicit operator mode; default request path is dry-run. | Implemented Web-only operator BFF first. |
@@ -158,7 +159,16 @@ remain CORE-011 candidates rather than shared App DTO fields.
   `core_candidate=CORE-011` when relevant. Trigger/message targets keep
   explicit `unsupported_hitl_target` receipts until their backend state
   machines are designed.
-- This slice does not create SSE/WebSocket and does not add App/Unity DTOs.
+- 2026-05-16 realtime slice adds Web-only Runtime Flow SSE:
+  `GET /api/runtime/flow/stream`. It wraps the same
+  `runtime_flow_delta_v1` changed-since envelope as
+  `/api/runtime/flow/changes`, emits `stream_open` / `runtime_delta` /
+  `stream_close`, and does not dispatch Scheduler tasks, mutate Blackboard, or
+  send Nanobot messages.
+- React opens the Runtime SSE stream only while the Runtime Flow page is active
+  and falls back to polling if EventSource fails. Receipt/history streams stay
+  separate from this read model.
+- This slice does not create WebSocket and does not add App/Unity DTOs.
 
 Boundary:
 
@@ -189,6 +199,11 @@ Verification:
   returned `unsupported_hitl_target` with `core_candidate=CORE-011`; and
   `/api/runtime/flow/changes?since=<current sequence>` returned
   `changed=false`.
+- 2026-05-16 Runtime SSE verification:
+  `tests\test_web_console\test_web_console_server.py` -> `49 passed`;
+  `npm run typecheck`; `npm run build`; and `py_compile` for
+  `server.py`, `runtime_flow.py`, and `runtime_flow_models.py`. Browser smoke
+  is tracked by WEB-017.11.
 
 ## Slice: Runtime Observability
 
@@ -322,23 +337,32 @@ Extension for WEB-009:
   a camera, attaches remote agent audio, records connection/transcript events,
   and can publish browser screen share as the `web-console-screen` track. This
   is the no-camera laptop path for LineB/Web voice and evidence smoke.
-- The React bridge also has a read-only `检查采样` smoke button. It reads
-  `/api/vision/evidence/status`, requests nearest stored evidence near `now`,
-  and writes a local receipt summarizing sampler freshness, frame-cache
-  freshness, active-track count, nearest evidence id, and whether the latest
-  evidence looks like a screen-share source.
+- The React bridge also has a read-only `检查采样` smoke button. It calls
+  `GET /api/vision/evidence/screen-share-smoke`, which checks sampler status,
+  frame-cache freshness, nearest stored evidence near `now`, and whether the
+  latest/nearest evidence carries a screen-share source hint. The route returns
+  the receipt directly and does not write pending `EVIDENCE_REQUEST` rows when
+  the smoke fails.
 - Bugfix note: this smoke receipt must not mark a generic fresh camera/test
   frame as a successful screen-share verification. Success now requires both
-  fresh evidence and a screen-share-looking source (`web-console-screen`,
-  `screenshare`, `screen_share`, or compatible metadata). Otherwise it returns
-  a warning-style local receipt with separate `fresh_any_evidence` and
-  `screen_share_confirmed` fields.
+  freshness and a screen-share-looking source (`web-console-screen`,
+  `screenshare`, `screen_share`, or compatible metadata) on the same candidate
+  row. Otherwise a stale screen-share status plus a fresh camera frame could
+  pass by accident. Failed checks return a warning-style server receipt with
+  separate `fresh_any_evidence`, `likely_screen_share`, `fresh_screen_share`,
+  and `screen_share_confirmed` fields.
 - Realtime usability note: the Runtime Time/Evidence panel now polls
   `/api/vision/evidence/status` and `/api/vision/evidence/timeline` every 3s
   while the Runtime page is mounted. Poll failures are silent to avoid flooding
   the receipt rail. Screen-share start and `检查采样` also poke the evidence
   panel, so sampler/frame-cache freshness is visible without a manual page
   refresh.
+- 2026-05-15 usability follow-up: `检查采样` now renders its server verdict
+  inline inside `LiveKit / Brain Bridge` as a compact diagnostic card. It shows
+  ready/not-ready, fresh evidence, screen-source match, fresh screen frame,
+  sampler/frame-cache counts, and server `next_steps`; failed smoke therefore
+  explains whether the blocker is missing screen-share permission, absent Brain
+  sampler, stale frames, or non-screen evidence.
 - Security posture for the React bridge: the short-lived token stays in
   component state only, receipts render token length/metadata instead of the
   raw token, and the browser LiveKit SDK log level is reduced to warning so
@@ -360,6 +384,32 @@ Extension for WEB-009:
   in addition to name hints like `web-console-screen`, and its latest-frame
   summaries include `publication_source` so the Web receipt can distinguish
   screen-share evidence from generic camera evidence.
+- Research pass on 2026-05-15:
+  - LiveKit's current screen-share guide recommends JS
+    `room.localParticipant.setScreenShareEnabled(true)` and describes screen
+    share as a normal published video track. Follow-up implementation now uses
+    `setScreenShareEnabled(true)` when available and falls back to
+    `getDisplayMedia()` + `publishTrack(track, { source, name })` for older
+    clients. The fallback remains more dependent on source/name metadata
+    staying consistent.
+  - LiveKit Python docs expose `VideoStream.from_track()` /
+    `VideoStream.from_participant()` and `VideoFrameEvent.timestamp_us`, so the
+    current Brain sampler design can keep media-time evidence without using
+    Gemini's hidden video-input frames.
+  - LiveKit Agents video input can automatically receive camera/screen-share
+    tracks, but the docs say only the single most recently published video track
+    is used and frames are model input. Therefore `video_input=True` remains
+    useful for conversation perception but not as an auditable evidence source;
+    `frame_cache` / `TemporalEvidenceLedger` stays the canonical evidence path.
+  - MDN documents that `getDisplayMedia()` requires transient user activation
+    and permissions are not persisted. Therefore the final Web no-camera smoke
+    cannot be fully automated by backend tests: the user must click screen
+    share, choose a source, then run `检查采样`.
+  - Source anchors:
+    `https://docs.livekit.io/transport/media/screenshare/`,
+    `https://docs.livekit.io/reference/python/livekit/rtc/video_stream.html`,
+    `https://docs.livekit.io/agents/multimodality/vision/video/`,
+    `https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia`.
 - Boundary: real no-video conversation verification still requires the user to
   approve browser microphone and/or screen share. If the server-side
   LineB/LiveKit Agents session is absent, the Web bridge can still join the
@@ -464,6 +514,17 @@ admin access.
   incremental syncToken storage. Web should observe the resulting
   `calendar_result` / L1.5 / L2-B changes via changed-since or future
   SSE/WebSocket, not browser OAuth.
+- 2026-05-16 user decision: manual fetch/import with preview/operator receipt is
+  enough for Google Calendar V1. Watch/syncToken moves to stage 2 after source
+  import policy and SSE read streams are stable. Google Calendar itself does
+  not require Redis; Redis is useful in this repo as the Scheduler/Nanobot
+  cross-process result ledger and Web observability bus.
+- Calendar EVENT lifecycle should preserve Google event status (`confirmed`,
+  `tentative`, `cancelled`) and add Parrot lifecycle overlays such as
+  `scheduled`, `tentative`, `cancelled_tombstone`, `expired`,
+  `completed_manual`, or `postponed/rescheduled`. Google Tasks is a separate
+  API with task statuses such as `needsAction` / `completed` and should not be
+  silently merged into Calendar event status.
 
 Current protocol status:
 
@@ -645,8 +706,8 @@ Primary responsibilities:
   tape, receipts, and later workflow nodes.
 - Support manual Plan import as a receipt-first Web action.
 - Support manual Nanobot task dispatch with an explicit result destination,
-  for example `view_only`, `return_to_goslo`, `return_to_app`, or a future
-  workspace/blackboard return path.
+  for example `view_only`, `return_to_goslo`, `return_to_app`,
+  `stage_to_intent_workspace`, or `write_to_memory_draft`.
 - Support message send/receive and trigger fire/testing through existing safe
   BFF routes and future typed task routes; the browser must not hold Google,
   LiveKit, Redis, or server secrets.
@@ -663,6 +724,16 @@ Interaction direction:
   task went and who wrote the result.
 - It may link to L2-B/Memory details, but detailed Node/Ref/file/photo editing
   stays on the Memory operation page.
+- 2026-05-16 user decision: the first layout should be hybrid. Use swimlanes
+  for the system overview, then open a ComfyUI-style workflow detail for a
+  selected Plan, Nanobot task, HITL gate, or message/trigger chain.
+- Next HITL expansion order is Google imports and Graphiti imports, then
+  evidence/photo promotion. Trigger/message HITL should wait until those target
+  state machines are real.
+- C4/interruption candidates are urgent calendar/reminder, high-surprise
+  Awareness, explicit user rule, or operator-triggered event. Ordinary source
+  imports and evidence/photo hints default to C3/no-interrupt delivery unless a
+  session policy says otherwise.
 
 Data-model notes:
 
@@ -791,12 +862,26 @@ Implemented:
   - `GET /api/vision/evidence/timeline`
   - `POST /api/vision/evidence/request`
   - `POST /api/vision/evidence/stage-hint`
+  - `POST /api/vision/evidence/memory-draft`
   - `POST /api/vision/evidence/frame-cache/upload`
+  - `POST /api/vision/evidence/tool-lifecycle`
+  - `GET /api/vision/evidence/screen-share-smoke`
   - `GET /api/vision/evidence/{evidence_id}`
   - `POST /api/app/test/visual-attention`
+- App routes `POST /api/app/visual-tool/event` and
+  `POST /api/app/visual-tool/asset/{asset_id}`, plus ECP event
+  `visual_tool.lifecycle`, now cover BBox/MAG controller milestones and
+  rendered crop/preview bytes. BBox `confirm` defaults to C3/no-interrupt; MAG
+  `confirm` defaults to IntentWorkspace-only; `explicit_send` can request C3.
 - React Runtime Flow includes a compact Time/Evidence panel for ledger status,
-  recent evidence rows, manual evidence request, BBox/Focus test events, and a
-  Web/operator `Cache Frame` smoke action.
+  recent evidence rows, manual evidence request, BBox/Focus test events,
+  preview-only Memory Draft receipts, and a Web/operator `Cache Frame` smoke
+  action.
+- 2026-05-15 audit fix: `POST /api/vision/evidence/memory-draft` receipts now
+  expose top-level `audit`, `core_candidate`, and `core_candidates`. The audit
+  explicitly marks `read_only`, `no_l15_mutation`, `no_l2b_mutation`, and
+  `no_ref_binding_mutation`, so Web receipt rendering and SSOT review can
+  distinguish preview from execute.
 - React build output now writes stable tracked bundle names (`assets/app.js`
   and `assets/styles.css`). The Web BFF serves `/` and `/assets/*` with
   `Cache-Control: no-store`, so local reloads do not stay pinned to stale
@@ -806,6 +891,11 @@ Implemented:
 
 Interface boundary:
 
+- Implemented Web/backend behavior is consolidated in
+  `.cursor/memory/architecture/Interface/time_aligned_evidence_interface_20260515.md`.
+  That SSOT does not promote Unity/App top-level DTO fields; shared promotion
+  remains gated by CORE-012 review, live screen-share/Unity video smoke, and
+  App lane field selection.
 - `EcpEvent.created_at` is envelope creation time, not producer sample time.
 - `TimebaseStamp.estimated=true` is used when falling back from missing
   sample-time metadata.
@@ -816,14 +906,22 @@ Interface boundary:
 - Evidence Awareness V1 may stage context and mark `notify_goslo=true`.
   `ContextInjector` is now the session-owned delivery bridge for C3 hints and
   keeps `allow_interrupt=false`; C4 safe-turn speech is still pending review.
-- BBox/Focus threshold V1 currently stops at ledger + Blackboard +
-  `attention.threshold.crossed`. Automatic "threshold crossed -> request
-  nearest stored image -> stage visual evidence hint" is deliberately left as
-  WEB-015.12 so the policy can be audited before it starts nudging GOSLO.
+- BBox/Focus threshold V1 now remains conservative but connected: after ledger
+  + Blackboard + `attention.threshold.crossed`, `FocusBboxThreshold` asks the
+  evidence-awareness bridge to resolve the nearest stored frame/photo by
+  BBox/Focus ref and producer timebase, then stage a `visual_evidence_hint`
+  when evidence is available. Missing evidence becomes a pending request. The
+  bridge does not capture frames, write L2-B, call `generate_reply`, or set
+  `allow_interrupt=true`.
 - BBox/magnifier are evidence/ref tools, not NodeKind special cases. App/Web
   should model their long-lived graph effect through CORE-012 evidence refs and
   the new CORE-013 graph-link policy candidate instead of inventing
   toolbar-specific L2-B node subclasses.
+- CORE-014 is implemented as backend/App V1 in
+  `parrot.brain.vision.tool_lifecycle`. It is still deliberately smaller than
+  DSG L3 attention: it records semantic tool milestones, evidence refs, and
+  delivery receipts; graph promotion and future L3 consumption remain separate
+  policy layers.
 - `POST /api/vision/evidence/frame-cache/upload` is a local Web/operator debug
   ingress; it is not the production LiveKit sampler and it does not belong in
   Unity/App DTOs.
@@ -871,9 +969,11 @@ Current intake behavior:
   preview-missing decision is explicit. Pending preview-ref notices are held at
   layer 1 to avoid pushing incomplete context.
 - Attention threshold: `FocusBboxThreshold` writes ledger + Blackboard +
-  `attention.threshold.crossed`. It is still not auto-promoted to C3; WEB-015.12
-  will add an audited bridge from threshold crossing to nearest evidence lookup
-  and Evidence Awareness staging.
+  `attention.threshold.crossed`, then calls the audited WEB-015.12 bridge. The
+  bridge resolves a nearby stored frame/photo from the Temporal Evidence Ledger
+  and stages an Evidence Awareness `visual_evidence_hint`; ContextInjector may
+  later deliver it as a C3 no-interrupt hint according to session policy. It
+  still does not auto-promote to C4 speech or mutate L2-B.
 
 Trigger body-feel taxonomy update:
 
@@ -958,7 +1058,47 @@ Validation:
   `ContextInjector` C3 delivery. Focused injector/photo/evidence tests ->
   `28 passed`; App facade/monitor regression tests -> `40 passed`;
   `git diff --check` passed with CRLF warnings only.
+- 2026-05-15 continuation: wired `attention.threshold.crossed` into the
+  conservative evidence-awareness bridge. Focused regression set covering
+  Time/Evidence, BBox/Focus threshold, `identify_object`, Web console routes,
+  and ContextInjector -> `81 passed`.
+- 2026-05-15 continuation: added preview-only Evidence -> Memory draft route
+  and React Time/Evidence button. Route/source-meta tests -> `3 passed`;
+  focused Web/DSG/Time-Evidence regression -> `95 passed`; frontend
+  typecheck/build passed; browser smoke confirmed the Runtime Time/Evidence
+  panel, `Memory Draft` button, and zero dev-console errors.
 - 2026-05-15 continuation: added Trigger/Awareness taxonomy SSOT and fixed the
   legacy `notify_gemini` path so ordinary trigger notifications route to C3
   exactly once through `TriggerRunner`. Focused trigger/calendar/message/
   evidence-awareness tests -> `23 passed`.
+- 2026-05-15 continuation: added read-only backend screen-share smoke verifier
+  `GET /api/vision/evidence/screen-share-smoke` and routed React `检查采样`
+  through it. Web route tests -> `45 passed`; Time/Evidence/threshold/
+  `identify_object` regression -> `34 passed`; frontend typecheck/build passed.
+- 2026-05-15 bugfix: tightened screen-share smoke success so the same evidence
+  candidate must be both fresh and screen-share-like. Regression test covers
+  stale screen-share sampler status plus fresh camera frame -> warning, not
+  success; follow-up fixed `next_steps` so the stale-screen case does not tell
+  the operator to use Memory Draft. Web route tests -> `46 passed`.
+- 2026-05-15 continuation: React Runtime screen share now prefers LiveKit's
+  `setScreenShareEnabled(true)` and falls back to the previous
+  `getDisplayMedia + publishTrack` bridge only when the helper is unavailable.
+  It also listens for local screen-share unpublish events so the UI state
+  clears when the browser share picker stops the track. Frontend typecheck/build
+  and focused Web/Time-Evidence regression passed.
+- 2026-05-15 bugfix: the React bridge now requires
+  `setScreenShareEnabled(true)` to return a local screen-share publication
+  before marking the UI as sharing. If the user cancels the picker or the SDK
+  returns no publication, Web records only the error receipt and suppresses the
+  misleading `screen_share_stop` event. Local SDK source review confirmed
+  LiveKit JS `2.18.10` exposes `Track.Source.ScreenShare` as `screen_share`
+  while the Python sampler may report proto names such as `SOURCE_SCREEN_SHARE`;
+  the backend smoke verifier accepts both spellings. Regression now covers the
+  JS `screen_share` spelling. Focused Web/Time-Evidence regression -> `81
+  passed`; frontend typecheck/build and browser Runtime smoke passed.
+- 2026-05-15 SSOT consolidation: created
+  `.cursor/memory/architecture/Interface/time_aligned_evidence_interface_20260515.md`
+  and updated the Interface index, `.cursor/memory/INDEX.md`, CORE-012
+  candidate notes, and this Web README pointer. Audit result: Web/backend
+  Time-Aligned Evidence behavior is documented as active SSOT; shared Unity/App
+  DTO promotion remains explicitly blocked rather than implied.

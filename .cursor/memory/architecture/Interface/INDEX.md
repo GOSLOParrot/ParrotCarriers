@@ -24,7 +24,8 @@ related:
   - "app_v1_core_interface_audit_round2_20260511.md (Round 2: RoomProfile draft BB JSON / LineB cross-session reset / cosine dim guard / applyRoomProfile fallback warning)"
   - "app_v1_ecp_disconnect_audit_round3_20260511.md (Round 3: ecp_state_ingest disconnect cleanup — clear_bb_ecp_state dead-code + _last_seq cross-session carry-over, both empirically verified)"
   - "app_v1_menu_canvas_audit_round4_20260511.md (Round 4: 菜单画布 + 启动页 RPC — saveRoomProfile reserved id guard / payload typo warning / applyMenuSelection workspace fallback warnings / setAppCapabilityMode unknown-mode warning / 3 新 LiveKit RPC mirror)"
-  - "goslo_trigger_awareness_taxonomy_20260515.md (Trigger/Awareness family taxonomy, body-feel levels, C3/C4/interrupt routing, and App animation hooks)"
+  - "goslo_trigger_awareness_taxonomy_20260515.md (Trigger/Awareness family taxonomy, body-feel levels, C3/C4/interrupt routing, App animation hooks, and CORE-014 visual-tool evidence/body-feel defaults)"
+  - "time_aligned_evidence_interface_20260515.md (Time-aligned evidence Web/backend SSOT and CORE-012/CORE-014 staging doc)"
   - "audit_log_index_20260511.md (单页索引：5 轮共 18 bug + 1 gap + 3 类共性模式 + Codex 同步要点 + 跨工作区入口；此为 Cursor/Codex 共享 SSOT)"
 ---
 
@@ -126,7 +127,8 @@ log:
 | `obsidian_true_connection_guide_20260509.md` | active / business guide | Obsidian profiles, L1.5, L2-B, IntentWorkspace boundaries. |
 | `google_calendar_nanobot_true_connection_guide_20260509.md` | active / business guide | Google Calendar + Nanobot read/draft/writeback boundaries. |
 | `photo_memory_awareness_true_connection_guide_20260509.md` | active / business guide | Photo upload, PhotoNode, IntentWorkspace, awareness boundaries. |
-| `goslo_trigger_awareness_taxonomy_20260515.md` | tentative / interface SSOT | Trigger families, notification/body-feel levels, C3/C4/interrupt policy, and App animation hooks. |
+| `goslo_trigger_awareness_taxonomy_20260515.md` | active / interface SSOT | Trigger families, notification/body-feel levels, C3/C4/interrupt policy, App animation hooks, and CORE-014 visual-tool evidence/body-feel defaults. |
+| `time_aligned_evidence_interface_20260515.md` | active-web-backend-ssot / shared-core-candidate | TimebaseStamp, TimeAlignedSampleRef, TemporalEvidenceLedger, evidence lookup, LiveKit/frame-cache/photo/BBox evidence flow, CORE-012 promotion blockers, and ratified CORE-014 backend/App visual-tool lifecycle V1. |
 | `chatB_true_connection_completion_record_20260509.md` | completed / record | True-connection fixes and remaining gaps. |
 | `app_v1_facade_core_business_interface_20260510.md` | active / backend facade | App V1 facade and business-interface coverage; not frontend completion evidence. |
 | `app_v1_room_setting_room_profile_interface_20260510.md` | active / business interface | Startup RoomSetting, user-facing Room save/new/select, menu persistence, and capability compatibility contract. |

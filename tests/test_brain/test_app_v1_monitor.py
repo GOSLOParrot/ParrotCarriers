@@ -11,6 +11,8 @@ from parrot.brain.lineb_audio_guard import reset_lineb_audio_guard_for_test
 from parrot.brain.l2b_monitor import build_l2b_snapshot
 from parrot.brain.persona_loader import set_persona_loader_for_test
 from parrot.brain.preset_loader import PresetLoader, set_preset_loader_for_test
+from parrot.brain.vision.evidence import get_evidence_ledger
+from parrot.brain.vision.tool_lifecycle import reset_visual_tool_lifecycle_for_tests
 from parrot.brain.workspace_registry import WorkspaceRegistry, set_workspace_registry_for_test
 import parrot.dsg.l2b_graph as l2b_graph_module
 from parrot.dsg.l2b_graph import L2BGraph
@@ -18,11 +20,14 @@ from parrot.dsg.l2b_types import SemanticEdge, SemanticNode
 
 
 @pytest.fixture(autouse=True)
-def _reset_state(tmp_path):
+def _reset_state(tmp_path, monkeypatch: pytest.MonkeyPatch):
     py_trees.blackboard.Blackboard.storage = {}
     py_trees.blackboard.Blackboard.metadata = {}
     reset_lineb_audio_guard_for_test()
     refs_registry.reset_refs_for_tests()
+    get_evidence_ledger().reset_for_tests()
+    reset_visual_tool_lifecycle_for_tests()
+    monkeypatch.setenv("PARROT_VISUAL_TOOL_ASSET_ROOT", str(tmp_path / "visual_tools"))
     set_intent_workspace_for_test(IntentWorkspace())
     l2b_graph_module._instance = L2BGraph()
     set_persona_loader_for_test(None)
@@ -31,6 +36,8 @@ def _reset_state(tmp_path):
     yield
     reset_lineb_audio_guard_for_test()
     refs_registry.reset_refs_for_tests()
+    get_evidence_ledger().reset_for_tests()
+    reset_visual_tool_lifecycle_for_tests()
     l2b_graph_module._instance = None
     set_intent_workspace_for_test(None)
     set_persona_loader_for_test(None)
@@ -139,6 +146,29 @@ def test_console_action_endpoints_drive_app_tool_flows() -> None:
     xrhand = client.post("/api/app/xrhand/mode", json={"mode": "gesture_select"})
     focus = client.post("/api/app/test/focus", json={"focus_id": "fc_console"})
     bbox = client.post("/api/app/test/bbox", json={"bbox_id": "bb_console"})
+    visual_asset = client.post(
+        "/api/app/visual-tool/asset/bb_console_crop",
+        content=b"fake-image-bytes",
+        headers={
+            "content-type": "image/png",
+            "X-Parrot-Tool-Id": "bb_console_tool",
+            "X-Parrot-Tool-Kind": "bbox",
+            "X-Parrot-Tool-Phase": "confirm",
+            "X-Parrot-Timebase": '{"clock_domain":"unity","wall_time_ms":1777000000000}',
+            "X-Parrot-Region": '{"x":0.1,"y":0.1,"width":0.2,"height":0.2}',
+        },
+    )
+    visual_tool = client.post(
+        "/api/app/visual-tool/event",
+        json={
+            "tool_id": "bb_console_tool",
+            "tool_kind": "bbox",
+            "interaction_phase": "confirm",
+            "region": {"x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2},
+            "asset_path": visual_asset.json().get("asset_path", ""),
+            "mime_type": "image/png",
+        },
+    )
     photo = client.post(
         "/api/app/test/photo-preview",
         json={"photo_id": "ph_console", "candidate_subject_uuid": "obj_console"},
@@ -156,13 +186,18 @@ def test_console_action_endpoints_drive_app_tool_flows() -> None:
     assert xrhand.status_code == 200 and xrhand.json()["success"] is True
     assert focus.status_code == 200 and focus.json()["success"] is True
     assert bbox.status_code == 200 and bbox.json()["success"] is True
+    assert visual_asset.status_code == 200 and visual_asset.json()["success"] is True
+    assert visual_asset.json()["evidence"]["kind"] == "image_asset"
+    assert visual_tool.status_code == 200 and visual_tool.json()["success"] is True
+    assert visual_tool.json()["delivery"]["resolved_channel"] == "c3_context_notice"
+    assert visual_tool.json()["evidence"]["kind"] == "image_asset"
     assert photo.status_code == 200 and photo.json()["success"] is True
     assert report.status_code == 200 and report.json()["success"] is True
     assert graphiti.status_code == 200 and graphiti.json()["success"] is True
     assert draft.status_code == 200
     assert draft.json()["data"]["draft"]["group_id"] == "goslo"
     assert refs_registry.metrics_snapshot()["focus_refs"] == 1
-    assert refs_registry.metrics_snapshot()["bbox_refs"] == 1
+    assert refs_registry.metrics_snapshot()["bbox_refs"] == 2
     assert live.status_code == 200
     live_body = live.json()
     bb_keys = {row["key"]: row for row in live_body["blackboard"]["keys"]}

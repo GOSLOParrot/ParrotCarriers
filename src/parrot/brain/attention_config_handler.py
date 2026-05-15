@@ -39,21 +39,19 @@ sync: Unity SO value → Brain in-memory cache (BB key). Putting it under
 ``observer/`` would normalise misuse of that namespace. Top-level
 ``brain/`` matches the role.
 
-F-05 prerequisite chain status (§8.1 L9 ⚠ note)
------------------------------------------------
-After this module + Unity ``AttentionConfigEchoPublisher`` ship:
+F-05 prerequisite chain status (§8.1 L9)
+----------------------------------------
+Current chain:
 
-    ① Unity SO + EchoPublisher → publish EcpEvent      [LANDED in this chat]
-    ② Brain attention_config_handler writes BB         [LANDED in this chat]
-    ③ FocusBboxThreshold.__init__ reads BB             [DEFERRED to Brain
-                                                        chat — touches
-                                                        threshold.py which is
-                                                        locked in this chat]
+    ① Unity SO + EchoPublisher → publish EcpEvent      [LANDED]
+    ② Brain attention_config_handler writes BB         [LANDED]
+    ③ FocusBboxThreshold.__init__ reads BB             [LANDED]
 
-After ① + ②, ``global/attention_thresholds`` has a real producer wired and
-can lift the # CANDIDATE marker once entry doc + bb_schema get a follow-up
-doc-only chat. Until ③, FocusBboxThreshold still uses the hardcoded
-DEFAULTS in threshold.py — Echo writes BB but no consumer reads it yet.
+This file is only the inbound Echo consumer. The current threshold reader lives
+in ``parrot.dsg.attention.threshold`` and reads ``global/attention_thresholds``
+when a new ``FocusBboxThreshold`` instance is constructed. Existing instances do
+not live-reload values; reconnect/new Brain bootstrap is the intended refresh
+boundary until the later DSG L3 attention module exists.
 """
 
 from __future__ import annotations

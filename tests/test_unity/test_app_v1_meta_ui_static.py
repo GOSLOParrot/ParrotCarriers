@@ -94,6 +94,18 @@ FORMAL_AR_SESSION_BASELINE_REPORTER = (
 FORMAL_AR_RUNTIME_BOOTSTRAP = (
     SCRIPT_ROOT / "Lifecycle" / "FormalArRuntimeBootstrap.cs"
 )
+AR_MOBILE_TEMPLATE_PLANE_PREFAB = (
+    PARROT_APP / "Resources" / "ARMobileTemplate" / "Prefabs" / "ARFeatheredPlane.prefab"
+)
+AR_MOBILE_TEMPLATE_PLANE_VISUALIZER = (
+    SCRIPT_ROOT / "ARMobileTemplate" / "ARFeatheredPlaneMeshVisualizer.cs"
+)
+AR_MOBILE_TEMPLATE_PLANE_COMPANION = (
+    SCRIPT_ROOT / "ARMobileTemplate" / "ARFeatheredPlaneMeshVisualizerCompanion.cs"
+)
+AR_MOBILE_TEMPLATE_PLACE_ICON = (
+    PARROT_APP / "Resources" / "ARMobileTemplate" / "UI" / "Sprites" / "Icon-Cube.png"
+)
 NER_SPINE_CONTROLLER = (
     SCRIPT_ROOT / "Parrot" / "NerSpineController.cs"
 )
@@ -337,6 +349,7 @@ def test_formal_startup_scene_is_first_enabled_build_scene() -> None:
     assert formal in text
     assert "- enabled: 1\n    " + formal in text
     assert "Assets/Scenes/SampleScene.unity" not in text
+    assert all(line == line.rstrip() for line in text.splitlines())
 
 
 def test_formal_startup_scene_explicitly_mounts_runtime_services() -> None:
@@ -389,6 +402,25 @@ def test_formal_startup_scene_explicitly_mounts_runtime_services() -> None:
     assert "mountXrOriginAndPlacementManagers: 1" in text
     assert "appApiBaseUrl: http://127.0.0.1:8790" not in text
     assert "appApiBaseUrl: http://localhost:8790" not in text
+
+
+def test_ar_mobile_template_plane_assets_are_imported_into_formal_app() -> None:
+    for path in [
+        AR_MOBILE_TEMPLATE_PLANE_PREFAB,
+        AR_MOBILE_TEMPLATE_PLANE_VISUALIZER,
+        AR_MOBILE_TEMPLATE_PLANE_COMPANION,
+        AR_MOBILE_TEMPLATE_PLACE_ICON,
+        PARROT_APP / "Resources" / "ARMobileTemplate" / "Materials" / "ShadowReceiver.mat",
+        PARROT_APP / "Resources" / "ARMobileTemplate" / "Materials" / "OcclusionMaterial.mat",
+        PARROT_APP / "Resources" / "ARMobileTemplate" / "Textures" / "PlanePatternDot.png",
+    ]:
+        assert path.exists(), path
+        assert path.with_suffix(path.suffix + ".meta").exists(), path
+
+    prefab = AR_MOBILE_TEMPLATE_PLANE_PREFAB.read_text(encoding="utf-8")
+    assert "ARFeatheredPlane" in prefab
+    assert _unity_guid(AR_MOBILE_TEMPLATE_PLANE_VISUALIZER) in prefab
+    assert _unity_guid(AR_MOBILE_TEMPLATE_PLANE_COMPANION) in prefab
 
 
 def test_project_settings_default_scene_is_formal_startup_scene() -> None:
@@ -643,6 +675,11 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert '"menu_snapshot_loaded"' in main_ready
     assert '"model_resolved"' in main_ready
     assert '"ar_session_baseline_clean"' in main_ready
+    assert "requireAudioWhenModeNeedsMic = false" in main_ready
+    assert "requireVideoWhenModeNeedsVideo = false" in main_ready
+    scene = FORMAL_STARTUP_SCENE.read_text(encoding="utf-8")
+    assert "requireAudioWhenModeNeedsMic: 0" in scene
+    assert "requireVideoWhenModeNeedsVideo: 0" in scene
     assert "AppCapabilityModeNames.MicrophoneEnabled" in main_ready
     assert "VideoFreshFrame" in main_ready
     assert "OnGateChanged" in main_ready
@@ -657,7 +694,15 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "FormalHomeMenuLoader menuLoader" in home_hud
     assert "LiveKitReconnectSupervisor reconnectSupervisor" in home_hud
     assert "AudioRoutePolicyBrainReporter audioRouteReporter" in home_hud
+    assert "FormalModelPlacementController modelPlacementController" in home_hud
+    assert "FormalArSessionBaselineReporter arSessionBaselineReporter" in home_hud
+    assert "FormalArRuntimeBootstrap arRuntimeBootstrap" in home_hud
     assert "AudioRouteHudLabel" in home_hud
+    assert "PlacementHudLabel" in home_hud
+    assert "ArHudLabel" in home_hud
+    assert "modelPlacementController.LastDiagnosticSummary" in home_hud
+    assert "arSessionBaselineReporter.LastStatus" in home_hud
+    assert "arRuntimeBootstrap.LastSpatialVisualStatus" in home_hud
     assert "audioRouteReporter.LastInputRoute" in home_hud
     assert "audioRouteReporter.LastOutputRoute" in home_hud
     assert "audioRouteReporter.LastDetectionSource" in home_hud
@@ -838,6 +883,9 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "QuickPhotoAwareness" in menu_controller
     assert "QuickXrHandMode" in menu_controller
     assert "ModelPlacementPlaceButton" in menu_controller
+    assert "ARMobileTemplatePlaceButton" in menu_controller
+    assert "LoadArMobileTemplateSprite(\"ActivationButtonOpaque\")" in menu_controller
+    assert "LoadArMobileTemplateSprite(\"Icon-Cube\")" in menu_controller
     assert "QuickAudioRouteRefresh" in menu_controller
     assert "MicDeviceCycleButton" in menu_controller
     assert "MicDeviceAutoButton" in menu_controller
@@ -948,7 +996,24 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "TryResolveArRaycastPose" in model_placement
     assert "public void PlaceAtScreenPoint(Vector2 screenPoint)" in model_placement
     assert "LastPlacementMode" in model_placement
+    assert "LastDiagnosticSummary" in model_placement
     assert "fallbackToPreviewWhenArMisses" in model_placement
+    assert "fallbackToPreviewWhenArMisses = false" in model_placement
+    assert "EnhancedTouchSupport.Enable()" in model_placement
+    assert "HandleInputSystemTouchPlacementAndSelection" in model_placement
+    assert "HandleInputSystemMousePlacementAndSelection" in model_placement
+    assert "IsTouchPointerOverUi" in model_placement
+    assert "UnityEngine.TouchPhase" in model_placement
+    assert "enableDragMove" in model_placement
+    assert "minScaleMultiplier = 0.25f" in model_placement
+    assert "maxScaleMultiplier = 2f" in model_placement
+    assert "demoSpawnAngleRangeDegrees = 45f" in model_placement
+    assert "ResolveDemoSpawnRotation" in model_placement
+    assert "ResolvePlaneTangent" in model_placement
+    assert "Vector3.ProjectOnPlane" in model_placement
+    assert "TryMoveSelectedModelOnPlane" in model_placement
+    assert "CaptureDragOffset" in model_placement
+    assert 'SelectPlacedModel(true, "tap_model")' in model_placement
     assert "startupFlow.OnMainUiReady += HandleMainUiReady" in model_placement
     assert "public void PlaceAtDefaultPreview()" in model_placement
     assert "public void PlaceAt(Vector3 position, Quaternion rotation, string reason)" in model_placement
@@ -958,6 +1023,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "TryCreateSpineSkeletonVisual" in model_placement
     assert "Spine.Unity.SkeletonDataAsset" in model_placement
     assert "LastVisualSource" in model_placement
+    assert 'LastPlacementStatus = "cleared"' in model_placement
     assert "FormalPlacedModelWhitebox" in model_placement
     assert "driver.ConfigureModelId(ActiveModelId)" in model_placement
     assert "driver.BootstrapNow()" in model_placement
@@ -1043,14 +1109,19 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "AddComponent<XROrigin>()" in ar_bootstrap
     assert "AddComponent<ARRaycastManager>()" in ar_bootstrap
     assert "AddComponent<ARPlaneManager>()" in ar_bootstrap
-    assert "AddComponent<ARPointCloudManager>()" in ar_bootstrap
     assert "SpatialVisualsMounted" in ar_bootstrap
     assert "mountPlaneAndPointCloudVisuals" in ar_bootstrap
+    assert "ARMobileTemplate/Prefabs/ARFeatheredPlane" in ar_bootstrap
+    assert "ConfigureArMobileTemplatePlane" in ar_bootstrap
+    assert "planeManager.planePrefab = prefab" in ar_bootstrap
+    assert "PlaneDetectionMode.Horizontal | PlaneDetectionMode.Vertical" in ar_bootstrap
+    assert "showArMobileTemplatePlaneSurfaces = false" in ar_bootstrap
+    assert "ARFeatheredPlaneMeshVisualizerCompanion" in ar_bootstrap
     assert "planesChanged += HandlePlanesChanged" in ar_bootstrap
-    assert "pointCloudsChanged += HandlePointCloudsChanged" in ar_bootstrap
-    assert "FormalARPlaneVisual_" in ar_bootstrap
-    assert "FormalARPointDot" in ar_bootstrap
-    assert "pointCloud.positions.HasValue" in ar_bootstrap
+    assert "visualizeSurfaces = showArMobileTemplatePlaneSurfaces" in ar_bootstrap
+    assert "FormalARPlaneVisual_" not in ar_bootstrap
+    assert "FormalARPointDot" not in ar_bootstrap
+    assert "pointCloud.positions.HasValue" not in ar_bootstrap
     assert "EnsureTrackedPoseDriver" in ar_bootstrap
     assert "AddComponent<TrackedPoseDriver>()" in ar_bootstrap
     assert '"<HandheldARInputDevice>/devicePosition"' in ar_bootstrap

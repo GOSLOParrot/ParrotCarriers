@@ -125,6 +125,30 @@ def test_from_observation_default_factory_yields_empty_source_meta():
 # ─── 4. extension space — register a factory ──────────────────────
 
 
+def test_user_explicit_source_meta_preserves_evidence_pointers():
+    """WEB-015.9: evidence promotion stores pointers, not image bytes."""
+    obs = Observation(
+        source=ObservationSource.USER_EXPLICIT,
+        label="photo evidence",
+        kind=NodeKind.PHOTO,
+        meta={
+            "source_tool": "web_console.evidence_memory_draft",
+            "evidence_id": "ev_123",
+            "evidence_kind": "image_asset",
+            "evidence_asset_path": "D:/cache/frame.jpg",
+            "evidence_timebase": {"clock_domain": "web", "wall_time_ms": 1700000050000},
+            "related_refs": ["ref-photo"],
+            "secret_token": "must_not_copy",
+        },
+    )
+    n = SemanticNode.from_observation(obs)
+
+    assert n.source_meta["evidence_id"] == "ev_123"
+    assert n.source_meta["evidence_kind"] == "image_asset"
+    assert n.source_meta["related_refs"] == ["ref-photo"]
+    assert "secret_token" not in n.source_meta
+
+
 def test_register_source_meta_factory_attaches_payload():
     """Future A10 / Sentinel pipelines call register_source_meta_factory
     on import to plug in their own per-source meta builder. SemanticNode

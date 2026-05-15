@@ -814,6 +814,79 @@ select {
   color: #ff8f8f;
 }
 
+.sample-check-panel {
+  border: 1px solid #343842;
+  border-radius: 8px;
+  background: rgba(37, 40, 50, 0.78);
+  padding: 9px;
+  display: grid;
+  gap: 8px;
+}
+
+.sample-check-panel.good {
+  border-color: rgba(123, 217, 159, 0.45);
+  background: rgba(32, 52, 45, 0.62);
+}
+
+.sample-check-panel.warn {
+  border-color: rgba(232, 199, 121, 0.42);
+}
+
+.sample-check-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sample-check-grid {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sample-check-grid span {
+  border: 1px solid #3a3f4a;
+  border-radius: 999px;
+  background: rgba(23, 25, 31, 0.72);
+  color: #bac3d0;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.sample-check-grid span.good {
+  border-color: rgba(123, 217, 159, 0.42);
+  color: #c9f3d5;
+}
+
+.sample-check-grid span.warn {
+  border-color: rgba(232, 199, 121, 0.42);
+  color: #ecd89f;
+}
+
+.sample-next-steps {
+  border-top: 1px solid rgba(58, 63, 74, 0.76);
+  padding-top: 7px;
+  color: #aeb7c5;
+  font-size: 12px;
+}
+
+.sample-next-steps b {
+  display: block;
+  margin-bottom: 4px;
+  color: #dbe2ec;
+}
+
+.sample-next-steps ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.sample-next-steps li + li {
+  margin-top: 3px;
+}
+
 .evidence-console {
   grid-column: 1 / -1;
   border: 1px solid #343842;
@@ -1219,6 +1292,53 @@ select {
 .source-card-head small {
   max-width: 150px;
   text-align: right;
+}
+
+.graphiti-status-strip {
+  border: 1px solid rgba(58, 63, 74, 0.74);
+  border-radius: 7px;
+  background: rgba(23, 25, 31, 0.55);
+  padding: 7px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.graphiti-status-strip.ok {
+  border-color: rgba(123, 217, 159, 0.38);
+  background: rgba(32, 52, 45, 0.42);
+}
+
+.graphiti-status-strip span,
+.graphiti-status-strip small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graphiti-status-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #dfe7f2;
+}
+
+.graphiti-status-strip span svg {
+  color: #7bd99f;
+  filter: drop-shadow(0 0 7px rgba(123, 217, 159, 0.55));
+}
+
+.graphiti-status-strip small {
+  grid-column: 1;
+  color: #9aa4b2;
+  font-size: 12px;
+}
+
+.graphiti-status-strip .button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .source-card label,

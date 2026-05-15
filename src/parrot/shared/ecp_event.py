@@ -101,6 +101,7 @@ class EcpEventType(str, Enum):
     BBOX_REMOVED = "bbox.removed"
     FOCUS_ANCHORED = "focus.anchored"
     FOCUS_RELEASED = "focus.released"
+    VISUAL_TOOL_LIFECYCLE = "visual_tool.lifecycle"
     ATTENTION_THRESHOLD_CROSSED = "attention.threshold.crossed"
 
     # Tool ④ — camera / photo

@@ -21,7 +21,7 @@ from urllib.request import Request, urlopen
 
 try:
     from fastapi import Body, FastAPI, HTTPException
-    from fastapi.responses import FileResponse, HTMLResponse
+    from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
     from fastapi.staticfiles import StaticFiles
 except ImportError:  # pragma: no cover - install gate
     Body = None  # type: ignore[assignment]
@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover - install gate
     HTTPException = None  # type: ignore[assignment]
     FileResponse = None  # type: ignore[assignment]
     HTMLResponse = None  # type: ignore[assignment]
+    StreamingResponse = None  # type: ignore[assignment]
     StaticFiles = None  # type: ignore[assignment]
 
 
@@ -207,6 +208,84 @@ def build_app(
             limit=max(1, min(limit, 200)),
         )
 
+    @app.get("/api/memory/live-state/stream")
+    async def memory_live_state_stream(
+        since: int = 0,
+        limit: int = 120,
+        interval_s: float = 1.0,
+        heartbeat_s: float = 15.0,
+        max_events: int = 0,
+    ):  # type: ignore[no-untyped-def]
+        """Read-only SSE stream over the Memory changed-since envelope.
+
+        This is intentionally a thin transport wrapper around
+        ``/api/memory/live-state/changes``. SSE does not create a second event
+        schema; it streams the same ``memory_runtime_delta_v1`` rows and keeps
+        operator receipts on a separate future stream.
+        """
+
+        from parrot.web_console.memory_live_state import build_memory_live_state_changes
+
+        safe_limit = max(1, min(int(limit or 120), 200))
+        safe_interval = max(0.25, min(float(interval_s or 1.0), 30.0))
+        safe_heartbeat = max(5.0, min(float(heartbeat_s or 15.0), 60.0))
+        event_cap = max(0, min(int(max_events or 0), 50))
+
+        async def event_stream():  # type: ignore[no-untyped-def]
+            current_since = max(0, int(since or 0))
+            sent_events = 0
+            last_heartbeat = time.time()
+            yield _sse_event(
+                "stream_open",
+                {
+                    "action": "memory.live_state.stream",
+                    "event_schema": "memory_runtime_delta_v1",
+                    "since": current_since,
+                    "receipt_stream": "separate",
+                    "web_only": True,
+                },
+                event_id=f"memory-stream-{int(time.time() * 1000)}",
+            )
+            while True:
+                changes = build_memory_live_state_changes(
+                    since=current_since,
+                    limit=safe_limit,
+                )
+                if changes.get("changed"):
+                    current_since = int(changes.get("sequence") or current_since)
+                    sent_events += 1
+                    yield _sse_event(
+                        "memory_delta",
+                        changes,
+                        event_id=str(current_since),
+                    )
+                    if event_cap and sent_events >= event_cap:
+                        break
+                    last_heartbeat = time.time()
+                elif time.time() - last_heartbeat >= safe_heartbeat:
+                    yield f": keep-alive {time.time():.3f}\n\n"
+                    last_heartbeat = time.time()
+                await asyncio.sleep(safe_interval)
+            yield _sse_event(
+                "stream_close",
+                {
+                    "action": "memory.live_state.stream.close",
+                    "event_schema": "memory_runtime_delta_v1",
+                    "sequence": current_since,
+                    "sent_events": sent_events,
+                },
+                event_id=f"memory-stream-close-{current_since}",
+            )
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     @app.get("/api/memory/blackboard/activity")
     async def memory_blackboard_activity(limit: int = 40) -> dict[str, Any]:
         from parrot.web_console.blackboard_activity import build_blackboard_activity_snapshot
@@ -244,6 +323,14 @@ def build_app(
 
         return await stage_evidence_hint(payload or {})
 
+    @app.post("/api/vision/evidence/memory-draft")
+    async def vision_evidence_memory_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.vision_evidence import evidence_memory_draft
+
+        return evidence_memory_draft(payload or {})
+
     @app.post("/api/vision/evidence/frame-cache/upload")
     async def vision_evidence_frame_cache_upload(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -251,6 +338,12 @@ def build_app(
         from parrot.web_console.vision_evidence import upload_frame_cache
 
         return upload_frame_cache(payload or {})
+
+    @app.get("/api/vision/evidence/screen-share-smoke")
+    async def vision_evidence_screen_share_smoke(window_ms: int = 15_000) -> dict[str, Any]:
+        from parrot.web_console.vision_evidence import screen_share_smoke_check
+
+        return screen_share_smoke_check(window_ms=window_ms)
 
     @app.get("/api/vision/evidence/{evidence_id}")
     async def vision_evidence_detail(evidence_id: str) -> dict[str, Any]:
@@ -265,6 +358,14 @@ def build_app(
         from parrot.web_console.vision_evidence import simulate_visual_attention
 
         return simulate_visual_attention(payload or {})
+
+    @app.post("/api/vision/evidence/tool-lifecycle")
+    async def vision_evidence_tool_lifecycle(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.brain.vision.tool_lifecycle import handle_visual_tool_lifecycle
+
+        return await handle_visual_tool_lifecycle(payload or {}, source="web_console")
 
     @app.get("/api/runtime/monitor")
     async def runtime_monitor() -> dict[str, Any]:
@@ -283,6 +384,78 @@ def build_app(
         from parrot.web_console.runtime_flow import build_runtime_flow_changes
 
         return build_runtime_flow_changes(since=since)
+
+    @app.get("/api/runtime/flow/stream")
+    async def runtime_flow_stream(
+        since: int = 0,
+        interval_s: float = 1.0,
+        heartbeat_s: float = 15.0,
+        max_events: int = 0,
+    ):  # type: ignore[no-untyped-def]
+        """Read-only SSE stream over the Runtime Flow changed-since model.
+
+        This exposes observability deltas only. It does not dispatch Scheduler
+        tasks, mutate py-trees Blackboard state, or send Nanobot messages.
+        Operator action receipts remain separate from this runtime read stream.
+        """
+
+        from parrot.web_console.runtime_flow import build_runtime_flow_changes
+
+        safe_interval = max(0.25, min(float(interval_s or 1.0), 30.0))
+        safe_heartbeat = max(5.0, min(float(heartbeat_s or 15.0), 60.0))
+        event_cap = max(0, min(int(max_events or 0), 50))
+
+        async def event_stream():  # type: ignore[no-untyped-def]
+            current_since = max(0, int(since or 0))
+            sent_events = 0
+            last_heartbeat = time.time()
+            yield _sse_event(
+                "stream_open",
+                {
+                    "action": "runtime.flow.stream",
+                    "event_schema": "runtime_flow_delta_v1",
+                    "since": current_since,
+                    "receipt_stream": "separate",
+                    "web_only": True,
+                },
+                event_id=f"runtime-stream-{int(time.time() * 1000)}",
+            )
+            while True:
+                changes = build_runtime_flow_changes(since=current_since)
+                if changes.get("changed"):
+                    current_since = int(changes.get("sequence") or current_since)
+                    sent_events += 1
+                    yield _sse_event(
+                        "runtime_delta",
+                        changes,
+                        event_id=str(current_since),
+                    )
+                    if event_cap and sent_events >= event_cap:
+                        break
+                    last_heartbeat = time.time()
+                elif time.time() - last_heartbeat >= safe_heartbeat:
+                    yield f": keep-alive {time.time():.3f}\n\n"
+                    last_heartbeat = time.time()
+                await asyncio.sleep(safe_interval)
+            yield _sse_event(
+                "stream_close",
+                {
+                    "action": "runtime.flow.stream.close",
+                    "event_schema": "runtime_flow_delta_v1",
+                    "sequence": current_since,
+                    "sent_events": sent_events,
+                },
+                event_id=f"runtime-stream-close-{current_since}",
+            )
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     @app.get("/api/runtime/hitl/pending")
     async def runtime_hitl_pending() -> dict[str, Any]:
@@ -947,6 +1120,24 @@ def _decode_json_bytes(raw_body: bytes) -> Any:
         return json.loads(raw_body.decode("utf-8"))
     except Exception:
         return None
+
+
+def _sse_event(event: str, data: dict[str, Any], *, event_id: str = "") -> str:
+    """Serialize one Server-Sent Event frame with JSON data.
+
+    Keep this tiny and dependency-free so the first realtime path can run in
+    the existing FastAPI stack. Large binary/photo payloads must still travel
+    through HTTP/storage routes, never through SSE data frames.
+    """
+
+    lines: list[str] = []
+    if event_id:
+        lines.append(f"id: {event_id}")
+    lines.append(f"event: {event}")
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
+    for line in payload.splitlines() or ["{}"]:
+        lines.append(f"data: {line}")
+    return "\n".join(lines) + "\n\n"
 
 
 def _orchestrator_config_from_env() -> OrchestratorProxyConfig:

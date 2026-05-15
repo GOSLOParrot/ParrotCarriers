@@ -8,6 +8,7 @@ same EcpEvent observer path Unity uses; live-state views are read-only.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -290,6 +291,48 @@ def build_app():  # type: ignore[no-untyped-def]
     async def set_xrhand_mode(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         body = payload or {}
         return AppFirstVersionFacade().set_xrhand_mode(str(body.get("mode") or "tracking")).as_json()
+
+    @app.post("/api/app/visual-tool/event")
+    async def visual_tool_event(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ):  # type: ignore[misc]
+        """App BBox/MAG lifecycle route.
+
+        Unity should call this for stable interaction milestones such as
+        ``lock``, ``confirm`` or ``explicit_send``.  High-frequency drag frames
+        stay local or use the lossy ECP tick topic; this route records durable
+        evidence anchors and decides whether the event is only staged in
+        IntentWorkspace or also pushed as a C3 context notice.
+        """
+        require_write_auth(authorization)
+        from parrot.brain.vision.tool_lifecycle import handle_visual_tool_lifecycle
+
+        return await handle_visual_tool_lifecycle(payload or {}, source="app_http")
+
+    @app.post("/api/app/visual-tool/asset/{asset_id}")
+    async def visual_tool_asset_upload(
+        asset_id: str,
+        request: Request,
+        authorization: str = Header(default=""),
+    ):  # type: ignore[misc]
+        """Upload a BBox/MAG rendered crop or preview image.
+
+        The response returns ``asset_path`` and a `TimeAlignedSampleRef`.
+        Unity can pass that ``asset_path`` into `/api/app/visual-tool/event`
+        so the lifecycle receipt stages a concrete stored image instead of
+        only a region/time anchor.  This keeps image bytes out of ECP/RPC.
+        """
+        require_write_auth(authorization)
+        from parrot.brain.vision.tool_lifecycle import store_visual_tool_asset
+
+        body = await request.body()
+        return store_visual_tool_asset(
+            asset_id=asset_id,
+            body=body,
+            content_type=str(request.headers.get("content-type") or ""),
+            metadata=_visual_tool_asset_metadata_from_headers(request),
+        )
 
     @app.post("/api/app/nanobot/report")
     async def nanobot_report(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
@@ -994,6 +1037,35 @@ def _index_html() -> str:
   </script>
 </body>
 </html>"""
+
+
+def _visual_tool_asset_metadata_from_headers(request: Request) -> dict[str, Any]:  # type: ignore[valid-type]
+    """Parse optional visual-tool upload metadata from App HTTP headers."""
+    meta: dict[str, Any] = {
+        "tool_id": request.headers.get("X-Parrot-Tool-Id", ""),
+        "tool_kind": request.headers.get("X-Parrot-Tool-Kind", ""),
+        "interaction_phase": request.headers.get("X-Parrot-Tool-Phase", ""),
+        "source_surface": request.headers.get("X-Parrot-Source-Surface", "app_ar_overlay"),
+        "source_id": request.headers.get("X-Parrot-Source-Id", ""),
+        "description": request.headers.get("X-Parrot-Description", ""),
+    }
+    timebase = _json_header(request, "X-Parrot-Timebase")
+    if isinstance(timebase, dict):
+        meta["timebase"] = timebase
+    region = _json_header(request, "X-Parrot-Region")
+    if isinstance(region, dict):
+        meta["region"] = region
+    return meta
+
+
+def _json_header(request: Request, name: str) -> Any:  # type: ignore[valid-type]
+    raw = request.headers.get(name, "")
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
 
 
 def _body_bool(value: Any, default: bool) -> bool:

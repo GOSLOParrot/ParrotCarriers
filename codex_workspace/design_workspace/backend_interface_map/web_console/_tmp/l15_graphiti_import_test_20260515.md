@@ -805,6 +805,50 @@ Fixed:
   draft Edge `meta`: source/target Graphiti UUIDs, hit UUID, label/fact, and
   write policy.
 
+## 2026-05-16 Graphiti Source Board Preview Bugfix
+
+Fixed:
+
+- Graphiti Source Board status is now visible in the source card through the
+  existing sanitized `GET /api/graphiti/status` route. The UI shows provider,
+  model, installed/missing state, partition count, and secret-configured
+  booleans only; no key or connection secret is exposed.
+- Failed Graphiti searches and explicit "clear selection" now clear stale
+  Graphiti canvas preview Nodes/Edges. Previously a failed search could leave
+  the previous subgraph visible, which made the preview feel more real than the
+  receipt state.
+- Graphiti policy preview now matches selected hits by both plain hit keys and
+  React Flow preview ids such as `graphiti:<uuid>`. This fixes a UI-side edge
+  loss where selected Graphiti source/target/fact Edges could disappear from
+  `POST /api/l2b/graph-policy/import-draft` even though the backend subgraph
+  search returned them.
+- Follow-up fix: individual hit selection and select-all now refresh the
+  read-only canvas preview immediately without adding a new receipt for every
+  checkbox toggle. Preview Edges use the same id normalization, so selected
+  Graphiti source/target/fact Edges remain visible before export or policy
+  preview.
+
+Verification:
+
+- `npm run typecheck` in `web/console_app` -> passed.
+- `npm run build` in `web/console_app` -> passed and refreshed
+  `web/console_dist`.
+- Focused route regression for Graphiti export, Obsidian import draft, and
+  Google Calendar import draft -> `3 passed`.
+- Full Web route regression `tests/test_web_console/test_web_console_server.py`
+  -> `47 passed`.
+- Exact secret scan for the previously provided `PARROT_ORCH_SECRET` value and
+  DeepSeek key under `src`, `web`, `codex_workspace`, `.cursor`, and `tests`
+  -> no matches.
+- In-app browser smoke on `http://127.0.0.1:7893/`: opened Memory -> `L1.5 Pool`,
+  confirmed the Graphiti tab and `Status` button exist, clicked status, and
+  observed zero frontend console errors.
+
+Remaining:
+
+- Real Graphiti/FalkorDB data smoke and real L1.5 apply remain operator/service
+  readiness tasks, not UI-only completion.
+
 Verification:
 
 - `npm run typecheck` -> passed.

@@ -183,3 +183,32 @@ GOSLO 只能通过 AwarenessPolicy、IntentWorkspace ref 和 L2-B/RefTable 读�
 - `AWARE_SILENT` 能让 GOSLO 内部知道照片 ref，但不主动说话。
 - `AWARE_SILENT` / `AWARE_REACT` 能 stage 短期 preview ref，并写入 `transient/photo_awareness_notice`。
 - 菜单画布只展示相机模式、Awareness 状态和照片 ref，不持有图片 payload。
+
+## 10. 2026-05-15 Time-Aligned Evidence Addendum
+
+Source chat: `web-console`
+Writer: Codex
+Approved by: user
+Origin: `time_aligned_evidence_interface_20260515.md`
+
+Photo Awareness now shares the Time-Aligned Evidence boundary:
+
+1. Photo bytes still travel through HTTP/storage, not ECP/RPC/DataChannel.
+2. Photo upload metadata may include a `timebase` stamp. If missing, backend
+   code may fall back to envelope time, but must mark the stamp as estimated.
+3. Full photo assets and uploaded snapshots are represented in the evidence
+   ledger as `image_asset` rows, then linked to PhotoNode / RefTable /
+   IntentWorkspace by existing business flow.
+4. `transient/photo_awareness_notice` is consumed by `ContextInjector` as C3
+   chat-context only when policy allows it. `UNAWARE_RECORDED` stays passive,
+   and pending preview refs are not pushed as strong context.
+5. `AWARE_REACT` is still no-interrupt C3 in V1. It is not C4 speech yet.
+6. BBox, Focus, and magnifier attention should attach evidence refs or staged
+   visual hints. They should not become special PhotoNode or L2-B NodeKind
+   subclasses.
+
+See:
+
+- `time_aligned_evidence_interface_20260515.md`
+- `goslo_trigger_awareness_taxonomy_20260515.md`
+- `codex_workspace/design_workspace/backend_interface_map/web_console/observability_runtime_business_flow_20260513.md`

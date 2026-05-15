@@ -78,6 +78,13 @@ Graphiti/Zep episode and temporal fact docs, PRTS Wiki `剧情一览`
   extraction should be best-effort: store exact story/chapter URLs when links
   are available; otherwise store the parent page URL plus section/chapter id in
   `source_description`.
+- 2026-05-16 user decision: `Arknights_test` is a large temporal test pack, not
+  only a worldbuilding note. Prefer PRTS Wiki "剧情摘要/剧情速览" style source
+  material where available, but ingest only compact original summaries, facts,
+  and source URL/description. The important modeling goal is timeline and state
+  change: faction changes, relationship changes, character development, and
+  chapter/arc transitions should be separate episodes instead of flattened into
+  one static status.
 
 ### Route Plan
 
@@ -141,6 +148,19 @@ L1.5 admission and must remain operator-gated.
 - Export receipts now render an inline Export plan in the Source Board: selected
   hits become L1.5 observations, and Graphiti source/target pairs appear as
   Edge drafts with `requires_resolved_l2b_node_uuid` policy.
+- 2026-05-16 continuation: the Graphiti Source Board now has a compact status
+  strip backed by `GET /api/graphiti/status`, showing provider/model,
+  installed/missing state, partition count, and secret-configured booleans
+  without exposing secrets. Failed searches and cleared selections now remove
+  stale Graphiti preview Nodes/Edges from the Memory canvas.
+- 2026-05-16 bugfix: Source Board import-policy preview now matches selected
+  hits by both plain hit keys and `graphiti:<uuid>` React Flow preview ids, so
+  proposed Graphiti source/target/fact Edges are preserved in
+  `POST /api/l2b/graph-policy/import-draft` payloads.
+- 2026-05-16 continuation: changing selected Graphiti hits now immediately
+  refreshes the canvas preview without spamming the receipt rail. The same id
+  normalization is used for preview Edges, so the operator can see the selected
+  subgraph before choosing export or import-destination preview.
 - The canvas preview is still a Memory operation aid, not the final full-screen
   L2-B graph monitor. WEB-013 owns the later React-Force-Graph/Cytoscape-style
   renderer evaluation.
@@ -152,6 +172,13 @@ L1.5 admission and must remain operator-gated.
   summaries and fact candidates for main/major Arknights story arcs.
 - Avoid saving long copied plot text. Store derived summaries, source URLs or
   source descriptions, chapter/order metadata, and optional reference times.
+- Keep one episode roughly 300-800 Chinese characters. Split a character or
+  story pack by source unit: base information, archive/profile segment,
+  relationship update, chapter event, and aftermath/state-change segment rather
+  than merging them into a single call to `add_episode`.
+- If an exact URL cannot be extracted reliably, keep `source_description`,
+  source title, parent page URL, and chapter/section hint so later operator
+  review can repair provenance without losing the temporal episode.
 - Use `deepseek-v4-pro` for Graphiti LLM extraction by default; keep provider
   fallback visible in status.
 - Do not treat this test partition as production memory. It is an isolated

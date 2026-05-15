@@ -62,6 +62,10 @@ again in `app/README.md`.
 | `app/startup_roomsetting_app_interface_20260513.md` | Startup page, RoomSetting, START transition, LineB/LiveKit status, main-ready contract. |
 | `app/canvas_menu_ref_workspace_app_interface_20260513.md` | Canvas menu, renderer-agnostic node/edge boundary, App-side Ref workspace. |
 | `app/unity_project_inventory_app_ssot_20260513.md` | Unity App directory/resource/scene inventory SSOT and cleanup rules. |
+| `app/unity_app_transport_interface_taxonomy_20260515.md` | App HTTP / Orchestrator / Mint / LiveKit media / ECP / RPC / SVA channel ownership. |
+| `app/unity_livekit_ecp_sva_data_flow_map_20260515.md` | Data-flow map for formal App, LiveKit, ECP, SVA/video, Brain, DSG, GOSLO, and Scheduler. |
+| `app/app_evidence_tools_bbox_mag_photo_intent_workspace_20260515.md` | App-facing CAM/Photo, BBox, MAG/Focus, time-aligned evidence, IntentWorkspace, and GOSLO awareness readiness guide; includes CORE-014 backend/App lifecycle route handoff. |
+| `app/formal_homepage_hud_menu_plan_20260515.md` | Formal homepage HUD/menu/tool drawer implementation plan and acceptance gates. |
 
 Do not create one-off App interface files for every small step. Add durable
 decisions to these module-level files unless ownership or lifecycle changes.
@@ -76,6 +80,7 @@ the lane README and module-level Web files.
 | File | Scope |
 |:--|:--|
 | `web_console/web_console_step1_console_plan_20260513.md` | Web Console requirements, IA, Obsidian-like baseline, later Papers Please-inspired interaction lane, and doc hygiene. |
+| `web_console/web_console_major_roadmap_20260515.md` | Web Console fixed mainline roadmap: research gates, dependency order, true-vs-fake implementation standard, realtime/import/RustWorkX timing, and 2026-05-16 resolved user decisions. |
 | `web_console/observability_runtime_business_flow_20260513.md` | ECS/module health, orchestrator `/status`, Runtime Monitor, React Runtime Flow Workspace, Blackboard/Plan/Scheduler/Nanobot observability, HITL, LineB voice smoke, and trigger palette. |
 | `web_console/memory_graph_workspace_business_flow_20260513.md` | L1.5 pool, L2-B React visual workspace, Memory changed-since route, Blackboard/IntentWorkspace memory renderer, node/photo management, Ref/Evidence Board, and Visual Memory Operations Cockpit. |
 | `web_console/graphiti_management_business_flow_20260513.md` | Graphiti/FalkorDB observe/search/episode draft/dry-run and future Web operator surgery. |

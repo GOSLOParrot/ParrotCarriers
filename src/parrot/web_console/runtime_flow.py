@@ -87,6 +87,7 @@ def build_runtime_flow_snapshot() -> dict[str, Any]:
             "web_only": True,
             "read_model": True,
             "typed_schema": "parrot.web_console.runtime_flow_models",
+            "event_schema": "runtime_flow_delta_v1",
             "shared_core_candidates": ["CORE-009", "CORE-010", "CORE-011"],
             "payload_policy": "summaries and redacted refs only",
         },

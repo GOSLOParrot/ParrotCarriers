@@ -23,6 +23,7 @@ _ALWAYS_VOLATILE_KEYS = frozenset({
     "expires_in_seconds",
 })
 _ROOT_VOLATILE_KEYS = frozenset({"sequence"})
+_DELTA_SCHEMA = "memory_runtime_delta_v1"
 
 
 def build_memory_live_state_changes(*, since: int = 0, limit: int = 120) -> dict[str, Any]:
@@ -48,6 +49,7 @@ def build_memory_live_state_changes(*, since: int = 0, limit: int = 120) -> dict
     return {
         "success": True,
         "action": "memory.live_state.changes",
+        "event_schema": _DELTA_SCHEMA,
         "since": max(0, int(since or 0)),
         "sequence": sequence,
         "changed": changed,
@@ -174,6 +176,13 @@ def _event(
         "status": status,
         "summary": summary,
         "source": "web_console.memory_live_state",
+        "event_schema": _DELTA_SCHEMA,
+        "event_id": f"{sequence}:{entity_kind}:{entity_id}:{op}",
+        "graph_scope": "memory_graph",
+        "trace_id": "",
+        "receipt_id": "",
+        "patch": {},
+        "redacted": True,
         "created_at": time.time(),
     }
 

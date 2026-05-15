@@ -40,8 +40,10 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private bool requireStartupBrainRpcSynced = true;
         [SerializeField] private bool requireHeartbeatDataChannelReady = true;
         [SerializeField] private bool requireUnityCommandRpcReady = false;
-        [SerializeField] private bool requireAudioWhenModeNeedsMic = true;
-        [SerializeField] private bool requireVideoWhenModeNeedsVideo = true;
+        [Tooltip("Media publish readiness is reported through HUD/health, but should not block entering the AR home surface.")]
+        [SerializeField] private bool requireAudioWhenModeNeedsMic = false;
+        [Tooltip("AR camera/session readiness gates the home surface; LiveKit publish freshness remains a degradable media status.")]
+        [SerializeField] private bool requireVideoWhenModeNeedsVideo = false;
 
         [Header("Home gates")]
         [SerializeField] private bool requireHudLoaded = true;

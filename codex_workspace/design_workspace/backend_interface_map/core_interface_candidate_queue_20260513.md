@@ -44,6 +44,7 @@ for the same module-level decision.
 | CORE-011 | draft | web-console | `RuntimeHumanGate`: human-in-the-loop approval/revision gate for Plan, trigger, message, and resume actions | Web Console first; Unity/App may later consume compact confirmations | Web needs HITL V1 for approve/reject/revise/cancel/resume before side effects. Shared fields likely include gate id, trace id, target kind/id, action kind, state, prompt summary, options, expiry, receipt id, redacted payload pointer, and maybe `plan_state` / valid-actions hints if shared consumers need state-aware UI. | Plan/Scheduler/HITL interface addendum only after dual-lane confirmation | Prototype implemented as Web-only pending/draft/apply HITL routes with dry-run receipts; 2026-05-14 review made Plan decisions state-aware and made pending gate `options` reuse the same validation policy. WEB-012.16 now serializes HITL gates/receipts through Web-only typed models and exposes `core_candidate=CORE-011` on relevant receipts. Non-Plan targets return explicit `unsupported_hitl_target`; promote only if App also renders/writes human gates, and do not claim trigger/message gates until those target kinds are implemented. |
 | CORE-012 | draft | unity-app + web-console | `TimeAlignedEvidenceRef`: shared evidence/ref shape for GOSLO Intent `identify_object`, SVA frame sampling, camera/photo mode, Focus/BBox/magnifier attention, ASR/CV samples, and L2-B/Graphiti node creation | Unity App, Web Console, Brain Intent tools, SVA/video processor, DSG/L1.5/L2-B | `identify_object` should obtain a time-aligned frame from LiveKit background video, SVA frame cache, or HTTP/storage image asset, not from camera-mode inline RPC. Focus/BBox/magnifier, ASR, and CV workers should contribute evidence with coordinates/region, pose or producer id, sample timestamp, optional storage image ref, and trigger context so GOSLO can receive compact notifications and L2-B/IntentWorkspace can create/update evidence-linked nodes or refs. | Future SVA/ECP/RefBinding interface addendum, likely linked to CORE-006 and protocol snapshot only after dual-lane review | First Web/backend slices implemented as `parrot.brain.vision.evidence` with `TimebaseStamp` / `TimeAlignedSampleRef`, `parrot.brain.vision.frame_cache` with `record_livekit_frame_bytes()`, and `parrot.brain.vision.livekit_sampler` as the Brain room-scoped low-FPS LiveKit track consumer. ECP/RPC top-level schemas stay unchanged for V1; optional stamps live in `EcpEvent.payload["timebase"]`, `EcpCommand.meta["timebase"]`, or HTTP/upload/frame metadata. Candidate fields now include `evidence_id`, `kind`, `status`, `clock_domain`, `wall_time_ms`, `monotonic_ms`, `media_time_us`, `sequence`, `estimated`, `source_id`, `asset_uri`, `asset_path`, `region`, `bbox_refs`, `focus_refs`, `related_refs`, `room_id`, `track_sid`, `participant_id`, `description`, and redacted `meta`. The Web frame-cache upload route is debug/operator-only; live Unity/LiveKit smoke, crop/VLM comparison, and App lane shared-subset review still block SSOT promotion. |
 | CORE-013 | draft | unity-app + web-console | `L2BWorkspaceGraphOverlay` / `GraphRewritePolicy`: policy layer for staged refs, workspace files, L1.5 buckets, foldable subgraphs, isolated compartments, graph transforms, incremental updates, and automatic edge/link rules | Unity App, Web Console, Brain IntentWorkspace, DSG/L1.5, DSG/L2-B, RefBinding | App/Web need a way to decide whether an IntentWorkspace ref or source-pack item stays workspace-only, becomes a lightweight L2-B pointer Node, is isolated as a compartment/subgraph, is promoted into the L2-B main graph, or connects by bounded rules. Operators also need to wrap selections/clusters as foldable subgraphs, aggregate/compare subgraphs, draft cross-subgraph links, and choose LLM analysis instead of graph mutation when appropriate. This should not overload `NodeKind` with workspace/buff states and should not make IntentWorkspace itself an L1.5 bucket. | Future DSG/L1.5/L2-B + RefBinding addendum after App/Web review | Candidate fields include `workspace_id`, `subgraph_id`, `subgraph_label`, `staged_ref_id`, `related_node_uuid`, `pool_bucket_id`, `graph_view_mode`, `linkage_policy`, `promotion_policy`, `rewrite_rule_id`, `transform_kind`, `delta_sequence`, `edge_kind`, `confidence`, `attention_delta`, `source_event_id`, `evidence_id`, `asset_ref`, and audit receipt ids. Needs a mandatory research/architecture gate using RustWorkX/L2-B/L1.5/attention/Graphiti skills plus UI receipts before DTO/SSOT promotion. |
+| CORE-014 | ratified | unity-app + web-console | `VisualToolEvidenceLifecycle`: formal BBox/MAG/Focus tool packet and asset-ref bridge for user visual-tool evidence | Unity App, Web Console, Brain ECP ingest, Evidence Ledger, GOSLO Intent, future SVA/CV workers | Current `bbox.placed` / `focus.anchored` events remain a conservative compatibility bridge and cannot safely represent drag, resize, hover, dwell, explicit confirm, cancel, or tool-rendered crop assets. App now has a production-capable backend route so BBox can mean strong user-confirmed visual evidence and MAG can mean weak/local inspection with optional explicit send. Backend owns salience thresholds, evidence alignment, IntentWorkspace staging, C3/C4 policy, and future L2-B/Ref promotion without App writing those systems directly. This is not the DSG L3 attention module; it is a small lifecycle contract for visual tool evidence and notification policy. | `.cursor/memory/architecture/Interface/time_aligned_evidence_interface_20260515.md` | Backend/App V1 implemented 2026-05-16: `VisualToolLifecyclePacket` fields are `tool_event_id`, `tool_id`, `tool_kind`, `interaction_phase`, `region`, `pose`, `source_surface`, `timebase`, `asset_ref`, `asset_path`, `asset_uri`, `mime_type`, `evidence_id`, `attention_hint`, `delivery_preference`, `subject_hint`, `label`, and `meta`. Routes/events: `POST /api/app/visual-tool/event`, `POST /api/app/visual-tool/asset/{asset_id}`, ECP `visual_tool.lifecycle`, Web debug `POST /api/vision/evidence/tool-lifecycle`, BB receipt `transient/visual_tool_lifecycle_receipt`. Do not add image bytes to ECP/RPC. Tool-rendered images use HTTP/storage and become `TimeAlignedSampleRef` assets. Production App toolbar enablement still requires APP-024 phone/screen-share smoke and UI/body-feel review, but App controller work is no longer blocked by missing backend surface. |
 
 ## 2026-05-15 Candidate Implementation Notes
 
@@ -158,6 +159,20 @@ for the same module-level decision.
   `web-console-screen` for no-camera laptop evidence smoke. This remains a
   Web/backend-first producer classification detail; shared promotion still
   waits for live screen-share/Unity track smoke and App lane review.
+- CORE-012: 2026-05-15 continuation adds Web-only read verifier
+  `GET /api/vision/evidence/screen-share-smoke`. It combines sampler status,
+  frame-cache freshness, nearest stored evidence, and screen-share source hints
+  into a secret-free receipt. The freshness bit and screen-share classification
+  must belong to the same candidate row; stale screen-share metadata plus a
+  fresh camera frame must not pass. It is deliberately read-only and does not
+  create pending evidence requests or shared DTO fields; it exists to make the
+  user-assisted screen-share smoke auditable before any SSOT promotion.
+- CORE-012: 2026-05-15 research note: LiveKit screen share is still a normal
+  video track, but Agents `video_input=True` is model input rather than an
+  auditable frame source. Keep `TimeAlignedEvidenceRef` promotion centered on
+  stored HTTP/frame-cache assets with producer timebase, not hidden model
+  frames. Browser `getDisplayMedia()` remains user-activation gated, so live
+  screen-share proof is a user-assisted smoke before shared promotion.
 - CORE-012: 2026-05-15 chain audit adds optional HTTP photo upload timebase
   forwarding. Upload clients may send `X-Parrot-Timebase` JSON or discrete
   `X-Parrot-*` sample-time headers; the Brain upload server forwards them as
@@ -176,6 +191,40 @@ for the same module-level decision.
   focus-linked evidence request and returns no sample. This keeps BBox/Mag
   analysis tied to the user's selected region while still avoiding the old
   inline snapshot RPC path.
+- CORE-012: 2026-05-15 continuation wires `attention.threshold.crossed` to the
+  conservative evidence-awareness bridge. The bridge uses the existing optional
+  ECP payload timebase plus `bbox_ref_id` / `focus_ref_id` to resolve a nearby
+  stored frame/photo, stages an IntentWorkspace `visual_evidence_hint` when
+  available, and records a pending request otherwise. It does not add ECP/RPC
+  top-level fields, capture frames, mutate L2-B, or call C4 speech; those remain
+  separate SSOT/policy review items.
+- CORE-012 / CORE-006 / CORE-008: 2026-05-15 continuation adds Web-only
+  `POST /api/vision/evidence/memory-draft`. It turns a stored
+  `TimeAlignedSampleRef` into a draft `Observation(source=USER_EXPLICIT)`, a
+  possible RefBinding draft, and an operator-readable L0/L1/L1.5/L2-B mapping.
+  It has no apply route and does not promote raw images or Web operator fields
+  into App DTOs. Shared promotion still requires live screen-share smoke and
+  App/Web review of the evidence/ref fields.
+- CORE-012: 2026-05-15 SSOT consolidation created
+  `.cursor/memory/architecture/Interface/time_aligned_evidence_interface_20260515.md`
+  as the Web/backend active SSOT and shared-core staging document. This is not
+  a Unity/App DTO promotion: it ratifies the implemented backend/Web behavior,
+  records field meanings and route boundaries, and keeps the shared promotion
+  blockers explicit.
+- CORE-014: 2026-05-16 App-blocker audit adds the missing formal visual-tool
+  evidence lifecycle surface. Existing backend BBox/Focus evidence works for
+  conservative tests, but production App BBox/MAG must not publish repeated
+  drag/resize pulses as `bbox.placed` / `focus.anchored`. Review CORE-014
+  before enabling formal toolbar emission, tool crop upload, or C4-capable
+  visual attention. This candidate deliberately stays smaller than DSG L3:
+  App emits semantic tool phases, backend owns shared salience/notification
+  policy, and the future L3 module may consume the resulting evidence later.
+- CORE-014: 2026-05-16 implementation pass ratifies the backend/App V1 surface
+  in `.cursor/memory/architecture/Interface/time_aligned_evidence_interface_20260515.md`.
+  App can now implement BBox/MAG controllers against
+  `/api/app/visual-tool/event`, `/api/app/visual-tool/asset/{asset_id}`, or ECP
+  `visual_tool.lifecycle`; the remaining blockers are phone/screen-share smoke
+  and UI/body-feel tuning, not a missing backend packet.
 - CORE-013: 2026-05-15 design intake records that L2-B, L1.5, and
   IntentWorkspace need a graph-link policy layer. Keep semantic `NodeKind`
   separate from workspace/buff/lifecycle overlays; use L1.5 for admission and
@@ -213,6 +262,67 @@ for the same module-level decision.
   foldable overlay, graph transform, and graph health receipts before export or
   mutation. This is still Web-only review surface; no shared DTO or App/Unity
   interface field is promoted by this slice.
+- CORE-013 / CORE-009 / CORE-010: 2026-05-15 Web major roadmap fixes the
+  dependency order before further promotion: graph policy and rewrite examples
+  come before realtime transport; realtime streams then support Memory
+  operations, source imports, Runtime Flow collaboration, and the full-screen
+  L2-B monitor. This is a planning constraint, not a new shared field.
+- CORE-013: 2026-05-15 roadmap also makes the research gate explicit for each
+  major graph slice: reread RustWorkX, L2-B organization, L1.5, attention,
+  Graphiti, current code, and UI receipt needs before adding apply routes or
+  SSOT fields. If the UI cannot explain the graph value with a receipt and
+  bounded operation, do not promote it.
+- CORE-013: 2026-05-16 user-reviewed policy: React Flow Memory stays the
+  operation/editor surface for detailed Node/Edge/subgraph edits, UUID/Ref
+  binding, Graphiti-preloaded Node review, and operator-gated L2-B applies. The
+  future full-screen L2-B monitor is a separate low-text render surface, likely
+  React-Force-Graph first, for realtime topology, filters, local graph depth,
+  attention/trigger animation, and algorithm overlays. A right-side tool dock
+  should reveal only the selected tool's controls; Source Board/L1.5 imports
+  must stay separate from selected-object details.
+- CORE-013: 2026-05-16 import policy defaults are now recorded for the next
+  typed-schema pass: `workspace_only` for unresolved IntentWorkspace drafts,
+  `index_pointer` for large/immutable source docs, `isolated_compartment` for
+  Graphiti/Obsidian/Google/Arknights source packs, `connect_by_rule` only as an
+  explicit bounded operator batch, and `promote_to_main_graph` only after
+  preview/receipt/audit. These are policy defaults, not ratified App DTO
+  fields.
+- CORE-013: 2026-05-16 write ownership note: Web may eventually perform real
+  L2-B Node/Edge/subgraph applies only through backend routes, operator mode,
+  receipts, tests, and rollback/backup posture. L2-B edits do not mutate
+  Graphiti source facts, Obsidian files, or Google records. Persistent Graphiti
+  repair must go through Graphiti/FalkorDB operator APIs and audit receipts.
+- CORE-009: 2026-05-16 user-reviewed realtime policy is SSE first for Web
+  read streams, with a separate operator receipt stream. WebSocket remains
+  deferred until true bidirectional low-latency editing is needed. The stream
+  vocabulary should reuse `GraphDeltaEvent` / Runtime changed-since terms after
+  WEB-016 stabilizes them; do not invent a second incompatible App DTO.
+- CORE-009 / CORE-013: 2026-05-16 delta vocabulary checkpoint adds Web-only
+  `GraphDeltaOp`, `GraphDeltaEntityKind`, and expanded `GraphDeltaEvent` in
+  `parrot.web_console.graph_policy`. `GET /api/memory/live-state/changes` now
+  advertises `event_schema=memory_runtime_delta_v1`, and event rows include
+  stable `event_id`, `graph_scope`, optional `trace_id` / `receipt_id`, a
+  redacted patch slot, and no renderer layout state. This is still polling
+  changed-since; SSE should stream the same shape later, and receipt streams
+  remain separate.
+- CORE-009: 2026-05-16 first SSE prototype adds Web-only
+  `GET /api/memory/live-state/stream`. It wraps the same changed-since
+  `memory_runtime_delta_v1` envelope, emits `stream_open` / `memory_delta` /
+  `stream_close`, and keeps receipts on a separate future stream. This is not
+  yet a shared App DTO or a bidirectional action channel.
+- CORE-008: 2026-05-16 source policy update: Google Calendar V1 is manual
+  fetch/import with preview/operator receipt; server-side Google watch plus
+  syncToken is phase 2. Calendar EVENT nodes preserve Google event `status`
+  values and add a Parrot lifecycle overlay. Google Tasks is a separate source
+  type because task completion status is not Calendar event status. Obsidian
+  `roleplay` is a mode/profile containing many source packs, not a singleton
+  bucket.
+- CORE-010 / CORE-011: 2026-05-16 Runtime Flow policy update: use swimlane
+  overview plus ComfyUI-style detail. Manual Nanobot result destinations may be
+  `view_only`, `return_to_goslo`, `return_to_app`,
+  `stage_to_intent_workspace`, or `write_to_memory_draft`. Next HITL targets
+  are Google imports and Graphiti imports, then evidence/photo promotion;
+  trigger/message HITL waits for real target state machines.
 
 ## Trigger Protocol Audit Notes
 

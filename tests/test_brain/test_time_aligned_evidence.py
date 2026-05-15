@@ -7,7 +7,11 @@ from types import SimpleNamespace
 
 import py_trees
 
-from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
+from parrot.brain.intent_workspace import (
+    IntentWorkspace,
+    get_intent_workspace,
+    set_intent_workspace_for_test,
+)
 from parrot.brain.vision.evidence import (
     ClockDomain,
     EvidenceKind,
@@ -19,6 +23,7 @@ from parrot.brain.vision.evidence import (
 )
 from parrot.brain.vision.evidence_awareness import (
     latest_evidence_awareness_notice,
+    stage_attention_threshold_for_goslo,
     stage_evidence_for_goslo,
 )
 from parrot.brain.vision.evidence_image import prepare_evidence_image
@@ -411,6 +416,67 @@ def test_stage_evidence_for_goslo_writes_intent_workspace_and_notice() -> None:
         assert staged[0].ref_id == decision.staged_ref_id
         assert notice["staged_ref_id"] == decision.staged_ref_id
         assert notice["allow_interrupt"] is False
+    finally:
+        set_intent_workspace_for_test(None)
+
+
+def test_attention_threshold_bridge_stages_nearest_frame_for_goslo(tmp_path) -> None:
+    py_trees.blackboard.Blackboard.storage = {}
+    py_trees.blackboard.Blackboard.metadata = {}
+    set_intent_workspace_for_test(IntentWorkspace())
+    ledger = get_evidence_ledger()
+    ledger.reset_for_tests()
+
+    try:
+        frame_path = tmp_path / "threshold-frame.jpg"
+        frame_path.write_bytes(b"fake-jpeg")
+        anchor_time_ms = 1_700_000_030_000
+        ledger.record_sample(
+            kind=EvidenceKind.BBOX_FOCUS,
+            status=EvidenceStatus.READY,
+            timebase=TimebaseStamp(
+                clock_domain=ClockDomain.UNITY,
+                wall_time_ms=anchor_time_ms,
+            ),
+            related_refs=("ref-bbox-threshold",),
+            bbox_refs=("ref-bbox-threshold",),
+            description="threshold bbox anchor",
+        )
+        frame = ledger.record_sample(
+            kind=EvidenceKind.VIDEO_FRAME,
+            status=EvidenceStatus.READY,
+            timebase=TimebaseStamp(
+                clock_domain=ClockDomain.LIVEKIT_TRACK,
+                wall_time_ms=anchor_time_ms + 3,
+                source_id="screen-share-track",
+            ),
+            asset_path=str(frame_path),
+            mime_type="image/jpeg",
+            description="nearby screen-share frame",
+        )
+
+        decision = asyncio.run(
+            stage_attention_threshold_for_goslo(
+                {
+                    "ref_id": "ref-bbox-threshold",
+                    "subject_kind": "bbox",
+                    "subject_id": "bbox-threshold",
+                    "label": "threshold bbox",
+                    "weight": 1.0,
+                    "ts_ms": anchor_time_ms,
+                }
+            )
+        )
+
+        assert decision.evidence_id == frame.evidence_id
+        assert decision.staged_ref_id
+        assert decision.allow_interrupt is False
+        assert decision.notify_goslo is True
+        staged = get_intent_workspace().list_active(role="visual_evidence_hint")
+        notice = latest_evidence_awareness_notice()
+        assert staged[0].ref_id == decision.staged_ref_id
+        assert notice["staged_ref_id"] == decision.staged_ref_id
+        assert "attention threshold crossed" in notice["message"]
     finally:
         set_intent_workspace_for_test(None)
 

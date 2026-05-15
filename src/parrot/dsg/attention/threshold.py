@@ -59,6 +59,12 @@ What this module deliberately does NOT do
 * Does not write Graphiti (memory.archiver's job).
 * Does not write L2-B nodes directly (sibling ``hint_writer`` will, W6-7).
 * Does not arbitrate against other attention sources (gesture, gaze, etc.).
+* Does not model rich UI interaction phases such as drag, resize, hover,
+  dwell, or explicit confirm. Unity/App currently sends only placed/removed
+  and anchored/released lifecycle events; a production BBox/MAG tool packet
+  must add those phases before this can become a real L3 attention policy.
+* Does not continuously decay weights. It subtracts on release/remove and
+  evicts stale targets on the next received event after ``target_ttl_s``.
 * Does not persist weight across sessions (transient by design — closing the
   session is the user-perceptible "I'm not interested anymore" signal).
 
@@ -362,6 +368,11 @@ class FocusBboxThreshold:
                 subject_id=subject_id,
             )
             self._targets[target_key] = state
+        # Current semantics treat placed/anchored as discrete attention pulses.
+        # BBox production UI should avoid publishing every drag/resize as
+        # bbox.placed; otherwise weight can grow beyond one explicit confirm.
+        # Rich continuous tool state belongs in a future tool lifecycle packet,
+        # while this minimal accumulator remains the compatibility bridge.
         state.weight = max(0.0, state.weight + delta)
         state.last_update_ts = time.time()
         state.last_event_id = event.event_id
@@ -426,6 +437,15 @@ class FocusBboxThreshold:
         # 3) Delegate L2-B candidate-weight bump to hint_writer (no-op when
         # ref is UNRESOLVED, which is the common case at threshold time).
         self._dispatch_to_hint_writer(ref_id=ref_id, delta=delta)
+
+        # 4) WEB-015.12: ask the time-aligned evidence layer to find a nearby
+        # stored frame/photo and stage a visual_evidence_hint for GOSLO.  This
+        # is deliberately a best-effort bridge: no frame capture, no L2-B write,
+        # and no direct speech/interrupt from the threshold path.
+        self._bridge_attention_evidence(
+            payload=hint_payload,
+            source_event=source_event,
+        )
 
     # ─── fan-out helpers ────────────────────────────────────────────
 
@@ -525,6 +545,24 @@ class FocusBboxThreshold:
         except Exception:
             logger.debug(
                 "[attention.threshold] evidence ledger write failed",
+                exc_info=True,
+            )
+
+    def _bridge_attention_evidence(
+        self,
+        *,
+        payload: dict[str, Any],
+        source_event: EcpEvent,
+    ) -> None:
+        try:
+            from parrot.brain.vision.evidence_awareness import (
+                bridge_attention_threshold_to_goslo,
+            )
+
+            bridge_attention_threshold_to_goslo(payload, source_event=source_event)
+        except Exception:
+            logger.debug(
+                "[attention.threshold] evidence awareness bridge failed",
                 exc_info=True,
             )
 

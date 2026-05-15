@@ -15,6 +15,7 @@ Read in this pass:
 
 - `codex_workspace/design_workspace/backend_interface_map/app/unity_app_transport_interface_taxonomy_20260515.md`
 - `codex_workspace/design_workspace/backend_interface_map/app/unity_homepage_menu_livekit_audit_20260515.md`
+- `codex_workspace/design_workspace/backend_interface_map/app/app_evidence_tools_bbox_mag_photo_intent_workspace_20260515.md`
 - `.cursor/memory/architecture/sprint4_protocol_v2_ecp.md`
 - `.cursor/memory/architecture/protocol_snapshot_p4.md`
 - `.cursor/skills/client-sdk-unity/SKILL.md`
@@ -231,6 +232,9 @@ as `photo_id`, `captured_at`, route/source, pose, and related Focus/BBox refs.
 
 2026-05-15 App/Web design intake:
 
+- App-facing implementation/readiness handoff lives in
+  `app_evidence_tools_bbox_mag_photo_intent_workspace_20260515.md`. Use it
+  before enabling BBox/MAG production emissions from the formal toolbar.
 - BBox and magnifier are UI evidence tools. They should emit small metadata
   packets and upload optional rendered/cropped images through HTTP/storage; they
   should not create a special App DTO that mutates L2-B directly.

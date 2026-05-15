@@ -1,10 +1,15 @@
 ---
 title: GOSLO Trigger / Awareness Taxonomy SSOT
 date: 2026-05-15
-status: tentative
+status: active
 category: active-interface-ssot
 owner: Web Console Chat / Interface
 source_chat: web-console
+writer: Codex
+confirmed_by:
+  - web-console
+confirmed_at: 2026-05-15
+approved_by: user
 scope: DSG TriggerOutcome, Photo/Evidence Awareness, runtime notification body-feel, App animation hooks, Web trigger visualization
 source:
   - src/parrot/dsg/triggers/base.py
@@ -12,6 +17,8 @@ source:
   - src/parrot/brain/context_injector.py
   - src/parrot/brain/photo_awareness.py
   - src/parrot/brain/vision/evidence_awareness.py
+  - src/parrot/brain/vision/tool_lifecycle.py
+  - src/parrot/brain/observer/visual_tool.py
   - codex_workspace/design_workspace/backend_interface_map/web_console/observability_runtime_business_flow_20260513.md
 ---
 
@@ -63,7 +70,8 @@ fields first; do not promote them to Unity/App DTOs without a core review.
 |:--|:--|:--|:--|:--|:--|
 | `photo.capture_preview` | `photo.taken_preview` ECP -> `photo_awareness` | event-driven | PhotoNode + IntentWorkspace preview ref + `transient/photo_awareness_notice` | `context_notice` when policy is `AWARE_SILENT` or `AWARE_REACT` | Normal photo notification is C3. Off/unaware means no GOSLO notice, though storage may still happen. |
 | `photo.asset_uploaded` | HTTP upload -> `photo.asset_uploaded` -> observer | event-driven | disk asset + `IMAGE_ASSET` evidence + PhotoNode + RefTable + IntentWorkspace PHOTO | `working_set` | Asset arrival alone should not speak. It gives later evidence/Ref operations a real file. |
-| `visual_attention.threshold` | `FocusBboxThreshold` | event-driven | `BBOX_FOCUS` evidence + `transient/current_attention_hint` + `attention.threshold.crossed` | `blackboard_notice` now; future `context_notice` via WEB-015.12 | BBox/magnifier/focus is attention, not automatically speech. Surprise/urgency may later raise it. |
+| `visual_tool.lifecycle` | `/api/app/visual-tool/event` or ECP `visual_tool.lifecycle` -> `tool_lifecycle` | event-driven | RefBinding + `TimeAlignedSampleRef` + IntentWorkspace + optional `transient/evidence_awareness_notice` | BBox: `context_notice` on confirm; MAG: `working_set` by default | Implemented backend/App V1. It is semantic tool salience, not DSG L3 attention. C4 requests are audited and downgraded to C3 in V1. |
+| `visual_attention.threshold` | `FocusBboxThreshold` | event-driven | `BBOX_FOCUS` evidence + `transient/current_attention_hint` + `attention.threshold.crossed` + Evidence Awareness bridge | `blackboard_notice` plus possible `context_notice` after stored evidence resolves | BBox/magnifier/focus is attention, not automatically speech. Surprise/urgency may later raise it. The bridge does not capture frames, mutate L2-B, or call C4 speech. |
 | `evidence.ready` | `evidence_awareness.stage_*` | manual/operator or future bridge | IntentWorkspace `visual_evidence_hint` + `transient/evidence_awareness_notice` | `context_notice` | C3 no-interrupt by default; C4 safe-turn is future policy. |
 | `calendar.digest` | `CalendarTrigger` startup/periodic/result | startup/periodic/event-driven | Nanobot fetch -> `GOOGLE_CALENDAR` observations -> L1.5 | `context_notice` if notification text exists | Digest and prep are C3. Future C4 only for explicit urgent/imminent events. |
 | `calendar.prep` | `CalendarTrigger` prep window | periodic | same as calendar digest | `context_notice` | Should feel like gentle preparation, not alarm. |
@@ -79,6 +87,29 @@ fields first; do not promote them to Unity/App DTOs without a core review.
 | `archive.idle` | `IdleArchiveTrigger` | periodic | Archive request | `record_only` | Background housekeeping. |
 | `nanobot.result` | Scheduler/Nanobot result path | event-driven | result stream -> Plan/Trigger/IntentWorkspace | depends on task | Web Runtime Flow should cluster by task family and return target. |
 | `app.lifecycle` | App/LiveKit lifecycle events | event-driven | BB state + ContextInjector visual/video tier cues | C3/C4 depending event | Recovery from outage can be C4; routine state drift is C3. |
+
+### 3.1 Visual Tool Body-Feel Defaults
+
+These defaults are the current product line for App BBox/MAG tools. CORE-014
+is now implemented as a backend/App V1 route/event surface, but these are still
+taxonomy/body-feel rules, not Unity top-level DTO fields and not the future DSG
+L3 attention module.
+
+| Tool family | Typical source | Default delivery | Body feel | Notes |
+|:--|:--|:--|:--|:--|
+| `visual_attention.bbox_confirm` | User frames something with BBox and confirms. | `working_set` + possible `context_notice` | `notice` / `nudge` | Strong attention. Backend should stage a visual evidence hint and may C3 GOSLO when awareness policy allows it. Still no C4 by default. |
+| `visual_attention.mag_dwell` | User holds/uses magnifier to inspect or read. | `working_set` or `blackboard_notice` | `ambient` / `notice_later` | Weak attention. MAG is mostly a user reading/inspection tool; C3 only on explicit send, high dwell/relevance, or reviewed trigger policy. |
+| `visual_attention.tool_asset_ready` | Tool-rendered crop/snapshot arrives by HTTP/storage. | `working_set` | `silent` / `ambient` | Asset readiness alone is not speech. It gives identify_object, IntentWorkspace, and future L2-B/Ref paths an auditable image. |
+| `visual_attention.high_surprise` | Future novelty/surprise/urgency score crosses a high threshold. | future `safe_turn_speech` candidate | `surprise` / `urgent` | Requires cooldown, quiet-hour, user relevance, and live LineA/LineB policy review before C4. |
+
+Current backend code has two paths:
+
+- Compatibility pulse bridge: `bbox.placed` / `bbox.removed` and
+  `focus.anchored` / `focus.released` feed the old threshold accumulator.
+- Formal lifecycle V1: `/api/app/visual-tool/event` and ECP
+  `visual_tool.lifecycle` carry `preview_start`, `hover`, `drag_update`,
+  `resize_update`, `dwell_tick`, `lock`, `unlock`, `settings_open`,
+  `confirm`, `explicit_send`, `cancel`, and `release`.
 
 ## 4. App Animation / Body-Language Hooks
 
@@ -128,9 +159,23 @@ Suggested clusters:
   - `UNAWARE_RECORDED` -> no strong GOSLO notice.
   - `AWARE_SILENT` -> C3 photo context notice.
   - `AWARE_REACT` -> C3 with future safe-turn C4 candidate wording, not C4 yet.
-- Attention threshold auto bridge is still pending: threshold crossing should
-  request nearest evidence, stage a `visual_evidence_hint`, then use the
-  Evidence Awareness C3 path.
+- Attention threshold auto bridge is implemented conservatively:
+  `FocusBboxThreshold` records the threshold event, then
+  `evidence_awareness.bridge_attention_threshold_to_goslo()` resolves the
+  nearest stored frame/photo by BBox/Focus ref and producer timebase. Ready
+  evidence is staged as an IntentWorkspace `visual_evidence_hint`; missing
+  evidence becomes a pending request. It still does not capture frames, mutate
+  L2-B, call `generate_reply()`, or enable interruption.
+- `time_aligned_evidence_interface_20260515.md` is the Web/backend SSOT for
+  the evidence/timebase side of these trigger flows and the CORE-012 promotion
+  blockers.
+- 2026-05-16 App-blocker audit: BBox defaults to strong attention with
+  IntentWorkspace plus possible C3; MAG defaults to weak/local inspection with
+  C3 only on explicit send or high relevance. CORE-014 backend/App V1 now
+  implements the route/event surface; production App toolbar emission still
+  requires phone/screen-share smoke and UI/body-feel review. CORE-014 remains a
+  small visual-tool lifecycle/evidence contract, not a DSG L3 attention
+  implementation.
 
 ## 7. Promotion Rules
 
@@ -140,3 +185,18 @@ Suggested clusters:
   App/Web both confirm the shared subset.
 - C4 and interruption must have user-facing body-feel copy, cooldown, quiet
   hour behavior, and a live conversation smoke test before becoming default.
+
+## 8. Change Log
+
+- 2026-05-15: Promoted this taxonomy from tentative to active Interface SSOT
+  for Web/backend trigger body-feel routing after user approval in Web Console
+  chat. Updated the visual-attention row and code-alignment section to reflect
+  the implemented conservative `attention.threshold.crossed` -> Evidence
+  Awareness bridge. Unity/App DTO fields remain unpromoted unless App/Web later
+  confirm a shared subset.
+- 2026-05-16: Added visual-tool body-feel defaults for BBox versus MAG and
+  linked production App emission to CORE-014 evidence lifecycle policy.
+- 2026-05-16: Updated after backend implementation of
+  `/api/app/visual-tool/event`, ECP `visual_tool.lifecycle`, Web debug
+  `/api/vision/evidence/tool-lifecycle`, and BB receipt
+  `transient/visual_tool_lifecycle_receipt`.

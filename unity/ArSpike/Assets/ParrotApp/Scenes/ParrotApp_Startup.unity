@@ -702,8 +702,8 @@ MonoBehaviour:
   requireStartupBrainRpcSynced: 1
   requireHeartbeatDataChannelReady: 1
   requireUnityCommandRpcReady: 0
-  requireAudioWhenModeNeedsMic: 1
-  requireVideoWhenModeNeedsVideo: 1
+  requireAudioWhenModeNeedsMic: 0
+  requireVideoWhenModeNeedsVideo: 0
   requireHudLoaded: 1
   requireMenuSnapshotLoaded: 1
   requireModelResolved: 1

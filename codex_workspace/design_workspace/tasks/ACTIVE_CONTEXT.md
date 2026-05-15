@@ -402,18 +402,26 @@ These are useful test evidence only. They must not be used as App completion evi
   gaps remain in 2D pause policy, degraded HUD, and phone evidence.
   The App TODO board now has a binding execution order. Current checkpoint:
   FormalMainReadyGate owns `ReportRunning()` and self-reevaluates while waiting
-  so missing one-shot loader events degrade instead of silently hanging.
+  so missing one-shot loader events degrade instead of silently hanging. It no
+  longer treats mic/video publish health as a startup hold blocker; those remain
+  HUD/health degraded states so the AR home can open for placement and route
+  diagnosis.
   FormalHomeHudController reports `hud_loaded`, FormalHomeMenuLoader reports
   `menu_snapshot_loaded` from App HTTP `/api/app/canvas` only after a real
   workspace/menu shell payload is parsed, FormalModelReadyReporter reports
   `model_resolved` from Resources manifests, FormalModelPlacementController
   owns first placement plus `onGosloPlaced`, waits for
-  `FormalMainReadyGate.IsReady`, tries AR plane raycast placement first, and
-  loads the selected runtime visual from `Resources/Models/**` when available
-  before falling back to whitebox/manual preview placement under
-  `AssetPreviewStage`,
+  `FormalMainReadyGate.IsReady`, tries AR plane raycast placement first,
+  uses Input System EnhancedTouch, supports demo2-like tap placement/selection,
+  one-finger drag over AR planes, pinch scale with 0.25-2.0 bounds, demo-style
+  camera-facing spawn rotation with +/-45 degree yaw, immediately bootstraps the selected
+  Parrot model controller, and loads the selected runtime visual from
+  `Resources/Models/**` when available. It now refuses fake placement when AR
+  plane raycast misses; whitebox is only a missing-runtime-asset fallback after
+  a valid placement under `AssetPreviewStage`.
   FormalArRuntimeBootstrap mounts ARSession, XROrigin, ARRaycastManager,
-  ARPlaneManager, TrackedPoseDriver, and ARCameraManager/ARCameraBackground for the formal scene,
+  ARPlaneManager, the imported AR Mobile template `ARFeatheredPlane` plane
+  visual, TrackedPoseDriver, and ARCameraManager/ARCameraBackground for the formal scene,
   XRGeneralSettings automatic init/loading/running stays disabled for Android,
   iPhone, and Standalone while the formal bootstrap owns mobile AR startup, and
   FormalArSessionBaselineReporter owns
@@ -424,9 +432,22 @@ These are useful test evidence only. They must not be used as App completion evi
   Mint reconnect instead of hard-failing. Next App
   work should verify and extend the first formal touch menu/tool drawer, then
   add production model placement from the App HTTP/RPC/ECP boundaries, not from
-  Smoke UI. Runtime-used model visuals are separated from source/import
+  Smoke UI. 2026-05-16 correction: the previous hand-written plane/point-dot
+  visuals were removed; curated AR Mobile demo2 plane/button assets now live
+  under `Assets/ParrotApp/Resources/ARMobileTemplate/**` and are loaded by
+  formal controllers. The formal controller recreates the demo2 placement
+  interaction semantics for the selected Parrot model without importing the
+  full sample scene/object catalog, which remains reference-only.
+  Runtime-used model visuals are separated from source/import
   staging: manifests resolve `Resources/Models/**`, while
   `Assets/ParrotApp/Models/**` is not a completion signal by itself. The first
+  2026-05-16 batchmode compile audit found and fixed a `TouchPhase` ambiguity
+  in the legacy Input fallback and trimmed `EditorBuildSettings.asset`; Unity
+  script compilation now reaches `Tundra build success`. The formal HUD now
+  exposes AR baseline/spatial visual status and placement diagnostics from
+  `FormalModelPlacementController`, so the next iQOO run can tell no-plane,
+  missing-manager, drag, selection, and visual-source states apart. Phone proof
+  is still required for the AR placement behavior. The first
   formal HUD/menu implementation Ref is
   `backend_interface_map/app/formal_homepage_hud_menu_plan_20260515.md`.
   Current first slices: `FormalHomeMenuController` renders App HTTP canvas

@@ -52,7 +52,9 @@ import type {
   LiveKitConfig,
   LiveKitToken,
   LiveState,
+  MemoryLiveStateChanges,
   Receipt,
+  RuntimeFlowChanges,
   RuntimeFlow,
   TriggerCatalog,
   VisionEvidenceStatus,
@@ -86,6 +88,18 @@ type GraphitiPreviewPayload = {
   edges?: Array<Record<string, unknown>>;
   partition?: string;
   query?: string;
+  silent?: boolean;
+};
+
+type GraphitiStatusSummary = {
+  installed: boolean;
+  provider: string;
+  model: string;
+  secretConfigured: boolean;
+  embeddingProvider: string;
+  embeddingConfigured: boolean;
+  partitions: string[];
+  message: string;
 };
 
 type SourceBoardId = "graphiti" | "obsidian" | "calendar" | "refs" | "manual";
@@ -271,6 +285,7 @@ const dict = {
     evidenceAutoRefresh: "Auto",
     requestEvidence: "Request Evidence",
     stageEvidenceHint: "Stage Hint",
+    memoryDraft: "Memory Draft",
     cacheFrameTest: "Cache Frame",
     bboxTest: "BBox Test",
     focusTest: "Focus Test",
@@ -302,6 +317,13 @@ const dict = {
     shareScreen: "Share screen",
     stopShare: "Stop share",
     checkSamples: "Check samples",
+    sampleSmoke: "Sampling smoke",
+    screenReady: "Screen evidence ready",
+    notReady: "Not ready",
+    nextSteps: "Next steps",
+    freshAnyEvidence: "fresh evidence",
+    likelyScreenShare: "screen source",
+    freshScreenShare: "fresh screen",
     liveKitEvents: "Events",
     liveKitTranscripts: "Transcript",
     liveKitBridgeHint: "Use screen share when there is no camera. Brain must be running in the same room.",
@@ -427,6 +449,7 @@ const dict = {
     evidenceAutoRefresh: "自动",
     requestEvidence: "请求 Evidence",
     stageEvidenceHint: "暂存提示",
+    memoryDraft: "Memory 草稿",
     cacheFrameTest: "缓存测试帧",
     bboxTest: "BBox 测试",
     focusTest: "Focus 测试",
@@ -458,6 +481,13 @@ const dict = {
     shareScreen: "屏幕共享",
     stopShare: "停止共享",
     checkSamples: "检查采样",
+    sampleSmoke: "采样检查",
+    screenReady: "屏幕证据已就绪",
+    notReady: "尚未就绪",
+    nextSteps: "下一步",
+    freshAnyEvidence: "新鲜证据",
+    likelyScreenShare: "屏幕来源",
+    freshScreenShare: "新鲜屏幕帧",
     liveKitEvents: "事件",
     liveKitTranscripts: "转写",
     liveKitBridgeHint: "没有摄像头时用屏幕共享。Brain 必须在同一个房间运行。",
@@ -521,6 +551,24 @@ function receiptReducer(state: Receipt[], receipt: Receipt | null): Receipt[] {
   return [receipt, ...state].slice(0, 14);
 }
 
+function parseMemoryDeltaEvent(event: Event): MemoryLiveStateChanges | null {
+  try {
+    const data = (event as MessageEvent<string>).data;
+    return JSON.parse(data) as MemoryLiveStateChanges;
+  } catch {
+    return null;
+  }
+}
+
+function parseRuntimeDeltaEvent(event: Event): RuntimeFlowChanges | null {
+  try {
+    const data = (event as MessageEvent<string>).data;
+    return JSON.parse(data) as RuntimeFlowChanges;
+  } catch {
+    return null;
+  }
+}
+
 export function App() {
   const [view, setView] = useState<ViewId>("memory");
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem("parrot.console.lang") as Language) || "zh");
@@ -531,11 +579,15 @@ export function App() {
   const [triggerCatalog, setTriggerCatalog] = useState<TriggerCatalog>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [memoryTransport, setMemoryTransport] = useState<"connecting" | "sse" | "polling">("connecting");
+  const [runtimeTransport, setRuntimeTransport] = useState<"idle" | "connecting" | "sse" | "polling">("idle");
   const [receipts, pushReceipt] = useReducer(receiptReducer, []);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [recordsOpen, setRecordsOpen] = useState(false);
   const memorySequenceRef = useRef(0);
   const runtimeSequenceRef = useRef(0);
+  const memorySseOpenRef = useRef(false);
+  const runtimeSseOpenRef = useRef(false);
   const t = { ...dict.en, ...dict[language], ...(language === "zh" ? zhRuntimeCopy : {}) };
   const configuredRefreshIntervalS = Math.max(3, Math.round(Number(config.refresh_interval_s ?? 5)));
   const refreshIntervalS = view === "memory" ? Math.min(configuredRefreshIntervalS, 5) : configuredRefreshIntervalS;
@@ -546,9 +598,13 @@ export function App() {
     try {
       const [nextConfig, memoryChanges, nextPool, flowChanges, nextTriggerCatalog] = await Promise.all([
         api.config(),
-        api.memoryLiveChanges(memorySequenceRef.current),
+        memorySseOpenRef.current
+          ? Promise.resolve({ changed: false, sequence: memorySequenceRef.current } as MemoryLiveStateChanges)
+          : api.memoryLiveChanges(memorySequenceRef.current),
         api.l15Pool(),
-        api.runtimeFlowChanges(runtimeSequenceRef.current),
+        runtimeSseOpenRef.current
+          ? Promise.resolve({ changed: false, sequence: runtimeSequenceRef.current } as RuntimeFlowChanges)
+          : api.runtimeFlowChanges(runtimeSequenceRef.current),
         api.triggerCatalog()
       ]);
       setConfig(nextConfig);
@@ -581,6 +637,89 @@ export function App() {
     const timer = window.setInterval(() => void load(), refreshIntervalS * 1000);
     return () => window.clearInterval(timer);
   }, [load, refreshIntervalS]);
+
+  useEffect(() => {
+    if (typeof window.EventSource !== "function") {
+      setMemoryTransport("polling");
+      return;
+    }
+
+    const params = new URLSearchParams({
+      since: String(memorySequenceRef.current),
+      limit: "120",
+      interval_s: "1",
+      heartbeat_s: "15"
+    });
+    const source = new EventSource("/api/memory/live-state/stream?" + params.toString());
+
+    source.onopen = () => {
+      memorySseOpenRef.current = true;
+      setMemoryTransport("sse");
+    };
+    source.onerror = () => {
+      memorySseOpenRef.current = false;
+      setMemoryTransport("polling");
+    };
+    source.addEventListener("memory_delta", (event) => {
+      const payload = parseMemoryDeltaEvent(event);
+      if (!payload) return;
+      if (typeof payload.sequence === "number") {
+        memorySequenceRef.current = payload.sequence;
+      }
+      if (payload.changed && payload.snapshot) {
+        setLiveState(payload.snapshot);
+      }
+    });
+
+    return () => {
+      memorySseOpenRef.current = false;
+      source.close();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (view !== "runtime") {
+      runtimeSseOpenRef.current = false;
+      setRuntimeTransport("idle");
+      return;
+    }
+    if (typeof window.EventSource !== "function") {
+      setRuntimeTransport("polling");
+      return;
+    }
+
+    setRuntimeTransport("connecting");
+    const params = new URLSearchParams({
+      since: String(runtimeSequenceRef.current),
+      interval_s: "1",
+      heartbeat_s: "15"
+    });
+    const source = new EventSource("/api/runtime/flow/stream?" + params.toString());
+
+    source.onopen = () => {
+      runtimeSseOpenRef.current = true;
+      setRuntimeTransport("sse");
+    };
+    source.onerror = () => {
+      runtimeSseOpenRef.current = false;
+      setRuntimeTransport("polling");
+    };
+    source.addEventListener("runtime_delta", (event) => {
+      const payload = parseRuntimeDeltaEvent(event);
+      if (!payload) return;
+      if (typeof payload.sequence === "number") {
+        runtimeSequenceRef.current = payload.sequence;
+      }
+      if (payload.changed && payload.snapshot) {
+        setRuntimeFlow(payload.snapshot);
+      }
+    });
+
+    return () => {
+      runtimeSseOpenRef.current = false;
+      source.close();
+    };
+  }, [view]);
 
   const setLang = (next: Language) => {
     localStorage.setItem("parrot.console.lang", next);
@@ -624,7 +763,7 @@ export function App() {
           </div>
           <div className="topbar-actions">
             <span className={loading ? "live-pill loading" : "live-pill"}>
-              <Sparkles size={15} /> {t.live} / {t.autoRefresh} {refreshIntervalS}s
+              <Sparkles size={15} /> {t.live} / {view === "memory" ? memoryTransport.toUpperCase() : runtimeTransport === "idle" ? `${t.autoRefresh} ${refreshIntervalS}s` : runtimeTransport.toUpperCase()}
             </span>
             {error ? <span className="error-pill">{error}</span> : null}
             <button className="button" onClick={() => void load()}><RefreshCw size={16} /> {t.refresh}</button>
@@ -853,6 +992,7 @@ function MemoryGraphWorkspace({
       ...graphitiEdges
     ]);
     if (nodes.length) {
+      if (preview.silent) return;
       pushReceipt(localReceipt("graphiti.subgraph.preview", true, {
         count: nodes.length,
         edge_count: graphitiEdges.length,
@@ -2046,8 +2186,10 @@ function LiveKitBridgePanel({
   const [status, setStatus] = useState("idle");
   const [events, setEvents] = useState<LiveKitEventRow[]>([]);
   const [transcripts, setTranscripts] = useState<LiveKitEventRow[]>([]);
+  const [sampleCheck, setSampleCheck] = useState<Record<string, unknown> | null>(null);
   const roomRef = useRef<any>(null);
   const screenTrackRef = useRef<MediaStreamTrack | null>(null);
+  const screenShareModeRef = useRef<"livekit" | "manual" | null>(null);
   const remoteAudioElsRef = useRef<Map<string, HTMLMediaElement>>(new Map());
 
   const pushEvent = useCallback((label: string, detail = "", state: LiveKitEventStatus = "idle") => {
@@ -2111,6 +2253,7 @@ function LiveKitBridgePanel({
   const disconnect = useCallback(() => {
     stopMediaTrack(screenTrackRef.current);
     screenTrackRef.current = null;
+    screenShareModeRef.current = null;
     setScreenSharing(false);
     setMicEnabled(false);
     cleanupRemoteAudio();
@@ -2152,10 +2295,18 @@ function LiveKitBridgePanel({
         onRemoteAudioDetached: (track) => {
           detachRemoteAudio(track, remoteAudioElsRef.current);
         },
+        onLocalScreenShareStopped: () => {
+          if (!screenShareModeRef.current && !screenTrackRef.current) return;
+          screenTrackRef.current = null;
+          screenShareModeRef.current = null;
+          setScreenSharing(false);
+          pushEvent("screen_share_stop", "local publication ended", "idle");
+        },
         onDisconnected: (reason) => {
           cleanupRemoteAudio();
           roomRef.current = null;
           screenTrackRef.current = null;
+          screenShareModeRef.current = null;
           setConnected(false);
           setMicEnabled(false);
           setScreenSharing(false);
@@ -2197,29 +2348,59 @@ function LiveKitBridgePanel({
     }
   }, [micEnabled, pushEvent, pushReceipt]);
 
-  const stopScreenShare = useCallback(async () => {
+  const stopScreenShare = useCallback(async (silent = false) => {
+    const room = roomRef.current;
+    const mode = screenShareModeRef.current;
     const track = screenTrackRef.current;
-    if (!track) return;
     screenTrackRef.current = null;
+    screenShareModeRef.current = null;
     try {
-      await roomRef.current?.localParticipant?.unpublishTrack?.(track, true);
+      if (mode === "livekit") {
+        await room?.localParticipant?.setScreenShareEnabled?.(false);
+      } else if (track) {
+        await room?.localParticipant?.unpublishTrack?.(track, true);
+      }
     } catch {
-      // Older livekit-client builds may not expose unpublishTrack for raw tracks.
+      // Older livekit-client builds may not expose every screen-share helper.
     }
     stopMediaTrack(track);
     setScreenSharing(false);
-    pushEvent("screen_share_stop", "", "idle");
+    if (!silent) {
+      pushEvent("screen_share_stop", "", "idle");
+    }
   }, [pushEvent]);
 
   const shareScreen = useCallback(async () => {
     const room = roomRef.current;
     if (!room) return;
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      pushEvent("screen_share_error", "getDisplayMedia unavailable", "bad");
-      return;
-    }
     try {
       const client = await loadLiveKitClient();
+      if (typeof room.localParticipant?.setScreenShareEnabled === "function") {
+        const publication = await room.localParticipant.setScreenShareEnabled(true);
+        if (!publication) {
+          throw new Error("screen_share_not_published");
+        }
+        screenShareModeRef.current = "livekit";
+        screenTrackRef.current = null;
+        setSampleCheck(null);
+        setScreenSharing(true);
+        pushEvent("screen_share_start", String(publication.source || "screen_share"), "good");
+        pushReceipt(localReceipt("livekit.screen_share", true, {
+          room: roomId,
+          identity,
+          method: "setScreenShareEnabled",
+          publication_source: String(publication.source || ""),
+          track_sid: String(publication.trackSid || publication.sid || ""),
+          track_name: String(publication.trackName || publication.name || ""),
+          expected_source: "screen_share / SOURCE_SCREEN_SHARE",
+          note: "Brain sampler should see this as a screenshare video track if Brain is in the same room."
+        }));
+        onEvidenceRefresh();
+        return;
+      }
+      if (!navigator.mediaDevices?.getDisplayMedia) {
+        throw new Error("getDisplayMedia unavailable");
+      }
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: 5 },
         audio: false
@@ -2227,6 +2408,8 @@ function LiveKitBridgePanel({
       const track = stream.getVideoTracks()[0];
       if (!track) throw new Error("screen_track_missing");
       screenTrackRef.current = track;
+      screenShareModeRef.current = "manual";
+      setSampleCheck(null);
       track.addEventListener("ended", () => {
         void stopScreenShare();
       }, { once: true });
@@ -2239,6 +2422,7 @@ function LiveKitBridgePanel({
       pushReceipt(localReceipt("livekit.screen_share", true, {
         room: roomId,
         identity,
+        method: "getDisplayMedia+publishTrack",
         track_label: track.label || "screen",
         note: "Brain sampler should see this as a screenshare video track if Brain is in the same room."
       }));
@@ -2246,65 +2430,44 @@ function LiveKitBridgePanel({
     } catch (exc) {
       pushEvent("screen_share_error", exc instanceof Error ? exc.message : String(exc), "bad");
       pushReceipt(errorReceipt("livekit.screen_share", exc));
-      await stopScreenShare();
+      await stopScreenShare(true);
     }
   }, [identity, onEvidenceRefresh, pushEvent, pushReceipt, roomId, stopScreenShare]);
 
   const checkSamples = useCallback(async () => {
     try {
-      const checkTimeMs = Date.now();
-      const [evidenceStatus, nearest] = await Promise.all([
-        api.visionEvidenceStatus(),
-        api.visionEvidenceRequest({
-          description: "Web checked nearest screen-share evidence.",
-          target_time_ms: checkTimeMs,
-          require_asset: true,
-          window_ms: 15_000
-        })
-      ]);
-      const nearestRecord = nearest as Record<string, unknown>;
-      const nearestEvidence = nearestRecord.evidence as Record<string, unknown> | undefined;
-      const sampler = evidenceStatus.livekit_sampler ?? {};
-      const frameCache = evidenceStatus.frame_cache ?? {};
-      const latest = sampler.latest_frame ?? frameCache.latest_frame ?? nearestEvidence ?? null;
-      const likelyScreenShare = evidenceLooksScreenShare(nearestEvidence)
-        || evidenceLooksScreenShare(latest)
-        || Object.values(sampler.tracks ?? {}).some(evidenceLooksScreenShare)
-        || Object.values(frameCache.tracks ?? {}).some(evidenceLooksScreenShare);
-      const hasAnyFreshEvidence = Boolean(
-        sampler.latest_frame_fresh
-        || frameCache.latest_frame_fresh
-        || nearest.success
-      );
-      const screenShareConfirmed = hasAnyFreshEvidence && likelyScreenShare;
+      const receipt = await api.visionScreenShareSmoke(15_000);
+      const data = receipt.data ?? {};
+      const freshAnyEvidence = Boolean(data.fresh_any_evidence);
+      const likelyScreenShare = Boolean(data.likely_screen_share);
+      const screenShareConfirmed = Boolean(data.screen_share_confirmed);
+      setSampleCheck(data);
       pushEvent(
         "sample_check",
-        `${hasAnyFreshEvidence ? "fresh" : "stale"} / ${likelyScreenShare ? "screen" : "not-screen"} / ${sampler.recorded_frames ?? 0}f`,
+        `${freshAnyEvidence ? "fresh" : "stale"} / ${likelyScreenShare ? "screen" : "not-screen"} / ${data.sampler_recorded_frames ?? 0}f`,
         screenShareConfirmed ? "good" : "warn"
       );
-      pushReceipt(localReceipt("livekit.screen_share.evidence_check", screenShareConfirmed, {
-        sampler_available: Boolean(sampler.available),
-        sampler_fresh: Boolean(sampler.latest_frame_fresh),
-        sampler_age_ms: sampler.latest_frame_age_ms ?? null,
-        sampler_active_tracks: Array.isArray(sampler.active_tracks) ? sampler.active_tracks.length : 0,
-        sampler_recorded_frames: sampler.recorded_frames ?? 0,
-        frame_cache_fresh: Boolean(frameCache.latest_frame_fresh),
-        frame_cache_age_ms: frameCache.latest_frame_age_ms ?? null,
-        frame_count: frameCache.frame_count ?? 0,
-        fresh_any_evidence: hasAnyFreshEvidence,
-        screen_share_confirmed: screenShareConfirmed,
-        likely_screen_share: likelyScreenShare,
-        nearest_evidence_found: Boolean(nearest.success),
-        nearest_evidence_id: String(nearestEvidence?.evidence_id || ""),
-        message: String(nearestRecord.message || nearest.action || "")
-      }));
+      pushReceipt(receipt);
     } catch (exc) {
+      setSampleCheck({
+        error: exc instanceof Error ? exc.message : String(exc),
+        next_steps: ["Check Web Console connectivity and retry the sampler smoke."]
+      });
       pushEvent("sample_check_error", exc instanceof Error ? exc.message : String(exc), "bad");
       pushReceipt(errorReceipt("livekit.screen_share.evidence_check", exc));
     } finally {
       onEvidenceRefresh();
     }
   }, [onEvidenceRefresh, pushEvent, pushReceipt]);
+
+  const sampleCheckGood = Boolean(sampleCheck?.screen_share_confirmed);
+  const sampleCheckNextSteps = sampleCheck?.next_steps;
+  const sampleCheckSteps = Array.isArray(sampleCheckNextSteps)
+    ? sampleCheckNextSteps.map((step) => String(step))
+    : [];
+  const sampleCheckAge = typeof sampleCheck?.sampler_latest_age_ms === "number"
+    ? formatEvidenceAge(sampleCheck.sampler_latest_age_ms)
+    : "";
 
   return (
     <section className="livekit-bridge action-palette">
@@ -2349,6 +2512,31 @@ function LiveKitBridgePanel({
           {t.disconnectRoom}
         </button>
       </div>
+      {sampleCheck ? (
+        <div className={`sample-check-panel ${sampleCheckGood ? "good" : "warn"}`}>
+          <div className="sample-check-head">
+            <strong>{t.sampleSmoke}</strong>
+            <span className={sampleCheckGood ? "fresh-state" : "stale-state"}>
+              {sampleCheckGood ? t.screenReady : t.notReady}
+            </span>
+          </div>
+          <div className="sample-check-grid">
+            <span className={sampleCheck.fresh_any_evidence ? "good" : "warn"}>{t.freshAnyEvidence}</span>
+            <span className={sampleCheck.likely_screen_share ? "good" : "warn"}>{t.likelyScreenShare}</span>
+            <span className={sampleCheck.fresh_screen_share ? "good" : "warn"}>{t.freshScreenShare}</span>
+            <span>{t.liveKitSampler}: {String(sampleCheck.sampler_recorded_frames ?? 0)}f{sampleCheckAge ? ` / ${sampleCheckAge}` : ""}</span>
+            <span>{t.frameCache}: {String(sampleCheck.frame_cache_count ?? 0)}</span>
+          </div>
+          {sampleCheckSteps.length ? (
+            <div className="sample-next-steps">
+              <b>{t.nextSteps}</b>
+              <ol>
+                {sampleCheckSteps.map((step, index) => <li key={`${step}-${index}`}>{step}</li>)}
+              </ol>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="livekit-stream-grid">
         <div className="livekit-log">
           <strong>{t.liveKitEvents}</strong>
@@ -2417,7 +2605,7 @@ function VisionEvidencePanel({
     return () => window.clearInterval(timer);
   }, [loadEvidence]);
 
-  const runEvidenceAction = async (action: "request" | "stage" | "frame" | "bbox" | "focus") => {
+  const runEvidenceAction = async (action: "request" | "stage" | "memory" | "frame" | "bbox" | "focus") => {
     setBusy(true);
     try {
       if (action === "request") {
@@ -2435,6 +2623,17 @@ function VisionEvidencePanel({
           description: "Web operator staged visual evidence for GOSLO.",
           notify_requested: true,
           source: "web_console"
+        }));
+      } else if (action === "memory") {
+        pushReceipt(await api.visionEvidenceMemoryDraft({
+          evidence_id: String(items[0]?.evidence_id || ""),
+          target_time_ms: Number(items[0]?.timebase && typeof items[0].timebase === "object"
+            ? (items[0].timebase as Record<string, unknown>).wall_time_ms || Date.now()
+            : Date.now()),
+          label: String(items[0]?.description || items[0]?.kind || "Evidence memory"),
+          mode: "create_node",
+          dry_run: true,
+          operator_mode: false
         }));
       } else if (action === "frame") {
         pushReceipt(await api.visionFrameCacheUpload({
@@ -2505,6 +2704,9 @@ function VisionEvidencePanel({
         <button className="button small" disabled={busy} onClick={() => void runEvidenceAction("stage")}>
           <CircleDot size={15} /> {t.stageEvidenceHint}
         </button>
+        <button className="button small" disabled={busy} onClick={() => void runEvidenceAction("memory")}>
+          <Database size={15} /> {t.memoryDraft}
+        </button>
         <button className="button small" disabled={busy} onClick={() => void runEvidenceAction("frame")}>
           <Camera size={15} /> {t.cacheFrameTest}
         </button>
@@ -2533,33 +2735,6 @@ function formatEvidenceAge(ageMs: number | null | undefined): string {
   if (ageMs < 1000) return "<1s";
   if (ageMs < 60_000) return `${Math.round(ageMs / 1000)}s`;
   return `${Math.round(ageMs / 60_000)}m`;
-}
-
-function evidenceLooksScreenShare(row: unknown): boolean {
-  if (!row || typeof row !== "object") return false;
-  const data = row as Record<string, unknown>;
-  const meta = data.meta && typeof data.meta === "object"
-    ? data.meta as Record<string, unknown>
-    : {};
-  const timebase = data.timebase && typeof data.timebase === "object"
-    ? data.timebase as Record<string, unknown>
-    : {};
-  const text = [
-    data.track_name,
-    data.source_id,
-    data.track_sid,
-    data.participant_id,
-    data.publication_source,
-    data.description,
-    meta.publication_source,
-    meta.track_name,
-    meta.source,
-    timebase.source_id
-  ].map((value) => String(value || "").toLowerCase()).join(" ");
-  return text.includes("web-console-screen")
-    || text.includes("screen_share")
-    || text.includes("screenshare")
-    || (text.includes("screen") && text.includes("share"));
 }
 
 async function loadLiveKitClient(): Promise<LiveKitClientModule> {
@@ -2595,6 +2770,7 @@ function bindLiveKitRoomEvents({
   onTranscript,
   onRemoteAudio,
   onRemoteAudioDetached,
+  onLocalScreenShareStopped,
   onDisconnected,
   onState
 }: {
@@ -2605,6 +2781,7 @@ function bindLiveKitRoomEvents({
   onTranscript: (text: string, detail: string) => void;
   onRemoteAudio: (track: any, participant: any) => void;
   onRemoteAudioDetached: (track: any) => void;
+  onLocalScreenShareStopped: () => void;
   onDisconnected: (reason: string) => void;
   onState: (state: string) => void;
 }) {
@@ -2636,6 +2813,11 @@ function bindLiveKitRoomEvents({
     onRemoteAudioDetached(track);
     onEvent("track_unsubscribed", String(track?.kind || ""), "idle");
   });
+  on("LocalTrackUnpublished", (publication: any) => {
+    if (isScreenSharePublication(publication)) {
+      onLocalScreenShareStopped();
+    }
+  });
   on("TranscriptionReceived", (segments: unknown, participant: any) => {
     for (const row of normalizeTranscriptSegments(segments)) {
       onTranscript(row, participantIdentity(participant));
@@ -2650,6 +2832,19 @@ function bindLiveKitRoomEvents({
     onEvent("disconnected", String(reason || ""), "idle");
     onDisconnected(String(reason || ""));
   });
+}
+
+function isScreenSharePublication(publication: any): boolean {
+  const text = [
+    publication?.source,
+    publication?.trackName,
+    publication?.track?.name,
+    publication?.track?.source,
+    publication?.track?.mediaStreamTrack?.label
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+  return text.includes("screen")
+    || text.includes("screenshare")
+    || text.includes("screen_share");
 }
 
 function isAudioTrack(track: any, Track: any): boolean {
@@ -3045,6 +3240,7 @@ function GraphitiSourceCard({
   const [edgeDrafts, setEdgeDrafts] = useState<Array<Record<string, unknown>>>([]);
   const [edgePolicy, setEdgePolicy] = useState("");
   const [destination, setDestination] = useState("isolated_compartment");
+  const [status, setStatus] = useState<GraphitiStatusSummary | null>(null);
   const selectedHits = useMemo(
     () => hits.filter((hit, index) => selectedHitKeys.includes(graphitiHitKey(hit, index))),
     [hits, selectedHitKeys]
@@ -3056,6 +3252,51 @@ function GraphitiSourceCard({
     partition,
     query
   });
+  const refreshSelectionPreview = (nextSelectedKeys: string[], silent = true) => {
+    const nextSelectedHits = hits.filter((hit, index) => nextSelectedKeys.includes(graphitiHitKey(hit, index)));
+    onPreview({
+      ...buildGraphitiPreviewPayload({
+        hits: nextSelectedHits,
+        subgraphNodes,
+        subgraphEdges,
+        partition,
+        query
+      }),
+      silent
+    });
+  };
+  const clearGraphitiPreview = (reason = "graphiti.subgraph.preview.clear") => {
+    onPreview({ hits: [], nodes: [], edges: [], partition, query });
+    if (reason) {
+      pushReceipt(localReceipt(reason, true, { partition, query: query.trim(), canvas_preview_cleared: true }));
+    }
+  };
+  const loadStatus = async () => {
+    try {
+      const receipt = await api.graphitiStatus();
+      const normalized = normalizeGraphitiStatus(receipt);
+      setStatus(normalized);
+      pushReceipt({
+        action: "graphiti.status",
+        success: true,
+        dry_run: true,
+        operator_mode: false,
+        data: { status: normalized }
+      });
+    } catch (exc) {
+      setStatus({
+        installed: false,
+        provider: "unknown",
+        model: "",
+        secretConfigured: false,
+        embeddingProvider: "unknown",
+        embeddingConfigured: false,
+        partitions: [],
+        message: exc instanceof Error ? exc.message : String(exc)
+      });
+      pushReceipt(errorReceipt("graphiti.status", exc));
+    }
+  };
   const search = async () => {
     if (!query.trim()) {
       pushReceipt(localReceipt("graphiti.subgraph.search", false, { error: "missing_query" }));
@@ -3074,6 +3315,9 @@ function GraphitiSourceCard({
       setExportObservations([]);
       setEdgeDrafts([]);
       setEdgePolicy("");
+      if (receipt.success === false || (!nextHits.length && !nextSubgraphNodes.length)) {
+        clearGraphitiPreview("");
+      }
       if (receipt.success !== false && (nextHits.length || nextSubgraphNodes.length)) {
         onPreview(buildGraphitiPreviewPayload({
           hits: nextHits,
@@ -3089,14 +3333,22 @@ function GraphitiSourceCard({
     }
   };
   const toggleHit = (key: string) => {
-    setSelectedHitKeys((current) => (
-      current.includes(key)
+    setSelectedHitKeys((current) => {
+      const nextKeys = current.includes(key)
         ? current.filter((item) => item !== key)
-        : [...current, key]
-    ));
+        : [...current, key];
+      refreshSelectionPreview(nextKeys);
+      return nextKeys;
+    });
   };
   const selectAllHits = () => {
-    setSelectedHitKeys(hits.map((hit, index) => graphitiHitKey(hit, index)));
+    const nextKeys = hits.map((hit, index) => graphitiHitKey(hit, index));
+    setSelectedHitKeys(nextKeys);
+    refreshSelectionPreview(nextKeys);
+  };
+  const clearHitSelection = () => {
+    setSelectedHitKeys([]);
+    clearGraphitiPreview();
   };
   const showExportReceipt = (receipt: Receipt) => {
     setExportObservations(receiptArray(receipt, "observations"));
@@ -3138,11 +3390,12 @@ function GraphitiSourceCard({
       return;
     }
     try {
+      const selectedIds = selectedHits.flatMap((hit, index) => graphitiSelectionIds(hit, index));
       const itemIds = selectedHits.map((hit, index) => graphitiHitKey(hit, index));
       const edgeDraftPayload = subgraphEdges
         .filter((edge) => {
           const hitId = String(edge.hit_id || "");
-          return itemIds.includes(hitId) || itemIds.includes(String(edge.source || "")) || itemIds.includes(String(edge.target || ""));
+          return selectedIds.includes(hitId) || selectedIds.includes(String(edge.source || "")) || selectedIds.includes(String(edge.target || ""));
         })
         .slice(0, 24)
         .map((edge) => ({
@@ -3175,6 +3428,11 @@ function GraphitiSourceCard({
       <div className="source-card-head">
         <strong><Database size={16} /> {t.graphiti}</strong>
         <small>{t.writeThroughL15}</small>
+      </div>
+      <div className={status?.installed ? "graphiti-status-strip ok" : "graphiti-status-strip"}>
+        <span><CircleDot size={13} /> {status ? `${status.provider || "-"} / ${status.model || "-"}` : "Graphiti status"}</span>
+        <small>{status ? `${status.installed ? "installed" : "missing"} / secret ${status.secretConfigured ? "ok" : "missing"} / ${status.partitions.length} partitions` : "not checked"}</small>
+        <button className="button small" onClick={() => void loadStatus()}><RefreshCw size={14} /> Status</button>
       </div>
       <label>
         <span>{t.partition}</span>
@@ -3221,7 +3479,7 @@ function GraphitiSourceCard({
         {hits.length ? (
           <div className="button-row compact">
             <button className="button small" onClick={selectAllHits}>{t.selectAll}</button>
-            <button className="button small ghost" onClick={() => setSelectedHitKeys([])}>{t.clearSelection}</button>
+            <button className="button small ghost" onClick={clearHitSelection}>{t.clearSelection}</button>
           </div>
         ) : null}
         {hits.length ? hits.slice(0, 8).map((hit, index) => {
@@ -4074,6 +4332,34 @@ function graphitiHitKey(hit: Record<string, unknown>, index: number): string {
   );
 }
 
+function graphitiSelectionIds(hit: Record<string, unknown>, index: number): string[] {
+  return uniqueStrings([
+    graphitiHitKey(hit, index),
+    graphitiPreviewNodeId(hit, index),
+    String(hit.uuid || ""),
+    String(hit.graphiti_uuid || ""),
+    String(hit.id || ""),
+    hit.source_node_uuid ? `graphiti:${String(hit.source_node_uuid)}` : "",
+    hit.target_node_uuid ? `graphiti:${String(hit.target_node_uuid)}` : ""
+  ]);
+}
+
+function normalizeGraphitiStatus(raw: Record<string, unknown>): GraphitiStatusSummary {
+  const data = recordFromUnknown(raw.data);
+  const graphitiLlm = recordFromUnknown(data.graphiti_llm);
+  const partitions = Array.isArray(data.partitions) ? data.partitions.map(String) : [];
+  return {
+    installed: Boolean(data.installed),
+    provider: String(graphitiLlm.provider || graphitiLlm.requested_provider || "unknown"),
+    model: String(graphitiLlm.model || ""),
+    secretConfigured: Boolean(graphitiLlm.secret_configured),
+    embeddingProvider: String(graphitiLlm.embedding_provider || "unknown"),
+    embeddingConfigured: Boolean(graphitiLlm.embedding_secret_configured),
+    partitions,
+    message: String(raw.message || "")
+  };
+}
+
 function buildGraphitiPreviewPayload({
   hits,
   subgraphNodes,
@@ -4087,17 +4373,19 @@ function buildGraphitiPreviewPayload({
   partition: string;
   query: string;
 }): GraphitiPreviewPayload {
-  const hitNodeIds = new Set(hits.map((hit, index) => graphitiPreviewNodeId(hit, index)));
+  const selectedIds = new Set(hits.flatMap((hit, index) => graphitiSelectionIds(hit, index)));
   const selectedEdges = subgraphEdges.filter((edge) => {
     const hitId = String(edge.hit_id || "");
-    return hitNodeIds.has(hitId) || hitNodeIds.has(String(edge.source || "")) || hitNodeIds.has(String(edge.target || ""));
+    return selectedIds.has(hitId) || selectedIds.has(String(edge.source || "")) || selectedIds.has(String(edge.target || ""));
   });
-  const selectedNodeIds = new Set(hitNodeIds);
+  const selectedNodeIds = new Set(selectedIds);
   selectedEdges.forEach((edge) => {
     selectedNodeIds.add(String(edge.source || ""));
     selectedNodeIds.add(String(edge.target || ""));
   });
-  const nodes = subgraphNodes.filter((node) => selectedNodeIds.has(String(node.id || node.uuid || node.graphiti_uuid || "")));
+  const nodes = subgraphNodes.filter((node, index) => (
+    graphitiSelectionIds(node, index).some((id) => selectedNodeIds.has(id))
+  ));
   return {
     hits,
     nodes: nodes.length ? nodes : hits,

@@ -590,6 +590,14 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "Latest time-aligned visual evidence decision staged for GOSLO IntentWorkspace.",
         event_driven=True,
     ),
+    BlackboardKey(
+        BbScope.TRANSIENT,
+        "transient/visual_tool_lifecycle_receipt",
+        "dict[str, Any]",
+        "brain.vision.tool_lifecycle",
+        "Latest BBox/MAG visual-tool lifecycle receipt; not the DSG/L3 attention module.",
+        event_driven=True,
+    ),
 
     # ───── Sprint4 Phase 4 attention config (W6-7) — Echo path wiring ─────
     # Echo path fully wired (2026-04-30):

@@ -13,6 +13,7 @@ using UnityEngine.InputSystem.XR;
 using Unity.XR.CoreUtils;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
+using UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets;
 #endif
 
 namespace ParrotApp.Lifecycle
@@ -34,7 +35,8 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private bool attachCameraManagers = true;
         [SerializeField] private bool mountXrOriginAndPlacementManagers = true;
         [SerializeField] private bool mountPlaneAndPointCloudVisuals = true;
-        [SerializeField] private int maxPointCloudDotsPerCloud = 96;
+        [SerializeField] private string arTemplatePlanePrefabResourcePath = "ARMobileTemplate/Prefabs/ARFeatheredPlane";
+        [SerializeField] private bool showArMobileTemplatePlaneSurfaces = false;
         [SerializeField] private bool manageXrLifecycle = true;
         [SerializeField] private bool skipXrLifecycleInEditor = true;
 
@@ -67,11 +69,8 @@ namespace ParrotApp.Lifecycle
 
 #if UNITY_AR_FOUNDATION
         private ARPlaneManager _planeManager;
-        private ARPointCloudManager _pointCloudManager;
-        private Material _planeVisualMaterial;
-        private Material _pointCloudDotMaterial;
-        private readonly Dictionary<TrackableId, GameObject> _planeVisuals = new Dictionary<TrackableId, GameObject>();
-        private readonly Dictionary<TrackableId, List<GameObject>> _pointCloudDots = new Dictionary<TrackableId, List<GameObject>>();
+        private readonly List<ARFeatheredPlaneMeshVisualizerCompanion> _planeVisualCompanions =
+            new List<ARFeatheredPlaneMeshVisualizerCompanion>();
 #endif
 
         private void Awake()
@@ -316,8 +315,6 @@ namespace ParrotApp.Lifecycle
                 origin.gameObject.AddComponent<ARRaycastManager>();
             if (origin.GetComponent<ARPlaneManager>() == null)
                 origin.gameObject.AddComponent<ARPlaneManager>();
-            if (origin.GetComponent<ARPointCloudManager>() == null)
-                origin.gameObject.AddComponent<ARPointCloudManager>();
 
             SpatialVisualsMounted = BindSpatialVisuals(origin);
             return true;
@@ -332,164 +329,98 @@ namespace ParrotApp.Lifecycle
             }
 
             _planeManager = origin.GetComponent<ARPlaneManager>();
-            _pointCloudManager = origin.GetComponent<ARPointCloudManager>();
-            if (_planeManager == null || _pointCloudManager == null)
+            if (_planeManager == null)
             {
                 LastSpatialVisualStatus = "manager_missing";
                 return false;
             }
 
-            _planeManager.planesChanged -= HandlePlanesChanged;
-            _planeManager.planesChanged += HandlePlanesChanged;
-            _pointCloudManager.pointCloudsChanged -= HandlePointCloudsChanged;
-            _pointCloudManager.pointCloudsChanged += HandlePointCloudsChanged;
-            LastSpatialVisualStatus = "plane_pointcloud_visuals_bound";
-            return true;
+            return ConfigureArMobileTemplatePlane(_planeManager);
         }
 
         private void UnbindSpatialVisuals()
         {
             if (_planeManager != null)
                 _planeManager.planesChanged -= HandlePlanesChanged;
-            if (_pointCloudManager != null)
-                _pointCloudManager.pointCloudsChanged -= HandlePointCloudsChanged;
+            _planeManager = null;
+            _planeVisualCompanions.Clear();
         }
 
-        private void HandlePlanesChanged(ARPlanesChangedEventArgs args)
+        private bool ConfigureArMobileTemplatePlane(ARPlaneManager planeManager)
         {
-            for (int i = 0; i < args.added.Count; i++)
-                CreateOrUpdatePlaneVisual(args.added[i]);
-            for (int i = 0; i < args.updated.Count; i++)
-                CreateOrUpdatePlaneVisual(args.updated[i]);
-            for (int i = 0; i < args.removed.Count; i++)
-                RemovePlaneVisual(args.removed[i]);
-
-            LastSpatialVisualStatus = $"planes={_planeVisuals.Count} pointclouds={_pointCloudDots.Count}";
-        }
-
-        private void CreateOrUpdatePlaneVisual(ARPlane plane)
-        {
-            if (plane == null) return;
-            GameObject visual;
-            if (!_planeVisuals.TryGetValue(plane.trackableId, out visual) || visual == null)
+            var prefab = Resources.Load<GameObject>(arTemplatePlanePrefabResourcePath);
+            if (prefab == null)
             {
-                visual = GameObject.CreatePrimitive(PrimitiveType.Quad);
-                visual.name = "FormalARPlaneVisual_" + plane.trackableId;
-                visual.transform.SetParent(plane.transform, false);
-                var collider = visual.GetComponent<Collider>();
-                if (collider != null) Destroy(collider);
-                var renderer = visual.GetComponent<Renderer>();
-                if (renderer != null)
-                    renderer.material = PlaneVisualMaterial();
-                _planeVisuals[plane.trackableId] = visual;
+                LastSpatialVisualStatus = "ar_mobile_template_plane_missing:" + arTemplatePlanePrefabResourcePath;
+                Debug.LogWarning("[FormalArRuntimeBootstrap] Missing AR Mobile template plane prefab at Resources/" + arTemplatePlanePrefabResourcePath + ".");
+                return false;
             }
 
-            visual.transform.localPosition = Vector3.zero;
-            visual.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            Vector2 size = plane.size;
-            visual.transform.localScale = new Vector3(
-                Mathf.Max(0.06f, size.x),
-                Mathf.Max(0.06f, size.y),
-                1f);
-            visual.SetActive(plane.enabled);
+            // Match the Unity AR Mobile template: detected planes are rendered by
+            // its feathered plane prefab instead of an App-owned debug mesh.
+            planeManager.planePrefab = prefab;
+            planeManager.requestedDetectionMode = PlaneDetectionMode.Horizontal | PlaneDetectionMode.Vertical;
+            planeManager.planesChanged -= HandlePlanesChanged;
+            planeManager.planesChanged += HandlePlanesChanged;
+            SyncPlaneSurfaceVisibility();
+            LastSpatialVisualStatus = "ar_mobile_template_plane:" + arTemplatePlanePrefabResourcePath
+                                      + ":surface=" + (showArMobileTemplatePlaneSurfaces ? "on" : "dots");
+            return true;
         }
 
-        private void RemovePlaneVisual(ARPlane plane)
+        private void HandlePlanesChanged(ARPlanesChangedEventArgs eventArgs)
         {
-            if (plane == null) return;
-            GameObject visual;
-            if (_planeVisuals.TryGetValue(plane.trackableId, out visual) && visual != null)
-                Destroy(visual);
-            _planeVisuals.Remove(plane.trackableId);
-        }
-
-        private void HandlePointCloudsChanged(ARPointCloudChangedEventArgs args)
-        {
-            for (int i = 0; i < args.added.Count; i++)
-                CreateOrUpdatePointCloudVisual(args.added[i]);
-            for (int i = 0; i < args.updated.Count; i++)
-                CreateOrUpdatePointCloudVisual(args.updated[i]);
-            for (int i = 0; i < args.removed.Count; i++)
-                RemovePointCloudVisual(args.removed[i]);
-
-            LastSpatialVisualStatus = $"planes={_planeVisuals.Count} pointclouds={_pointCloudDots.Count}";
-        }
-
-        private void CreateOrUpdatePointCloudVisual(ARPointCloud pointCloud)
-        {
-            if (pointCloud == null || !pointCloud.positions.HasValue) return;
-            var positions = pointCloud.positions.Value;
-            int count = Mathf.Min(positions.Length, Mathf.Max(0, maxPointCloudDotsPerCloud));
-
-            List<GameObject> dots;
-            if (!_pointCloudDots.TryGetValue(pointCloud.trackableId, out dots))
+            if (eventArgs.added != null)
             {
-                dots = new List<GameObject>(count);
-                _pointCloudDots[pointCloud.trackableId] = dots;
+                for (int i = 0; i < eventArgs.added.Count; i++)
+                    TrackPlaneVisualizer(eventArgs.added[i]);
             }
 
-            while (dots.Count < count)
+            if (eventArgs.removed != null)
             {
-                var dot = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                dot.name = "FormalARPointDot";
-                dot.transform.SetParent(pointCloud.transform, false);
-                dot.transform.localScale = Vector3.one * 0.018f;
-                var collider = dot.GetComponent<Collider>();
-                if (collider != null) Destroy(collider);
-                var renderer = dot.GetComponent<Renderer>();
-                if (renderer != null)
-                    renderer.material = PointCloudDotMaterial();
-                dots.Add(dot);
+                for (int i = 0; i < eventArgs.removed.Count; i++)
+                    UntrackPlaneVisualizer(eventArgs.removed[i]);
             }
 
-            for (int i = 0; i < dots.Count; i++)
+            SyncPlaneSurfaceVisibility();
+        }
+
+        private void SyncPlaneSurfaceVisibility()
+        {
+            if (_planeManager == null)
+                return;
+
+            if (_planeVisualCompanions.Count != _planeManager.trackables.count)
             {
-                var dot = dots[i];
-                if (dot == null) continue;
-                bool active = i < count;
-                dot.SetActive(active);
-                if (active)
-                    dot.transform.localPosition = positions[i];
+                _planeVisualCompanions.Clear();
+                foreach (var plane in _planeManager.trackables)
+                    TrackPlaneVisualizer(plane);
+            }
+
+            for (int i = 0; i < _planeVisualCompanions.Count; i++)
+            {
+                if (_planeVisualCompanions[i] != null)
+                    _planeVisualCompanions[i].visualizeSurfaces = showArMobileTemplatePlaneSurfaces;
             }
         }
 
-        private void RemovePointCloudVisual(ARPointCloud pointCloud)
+        private void TrackPlaneVisualizer(ARPlane plane)
         {
-            if (pointCloud == null) return;
-            List<GameObject> dots;
-            if (_pointCloudDots.TryGetValue(pointCloud.trackableId, out dots))
-            {
-                for (int i = 0; i < dots.Count; i++)
-                    if (dots[i] != null) Destroy(dots[i]);
-            }
-            _pointCloudDots.Remove(pointCloud.trackableId);
+            if (plane == null)
+                return;
+            if (!plane.TryGetComponent(out ARFeatheredPlaneMeshVisualizerCompanion visualizer))
+                return;
+            if (!_planeVisualCompanions.Contains(visualizer))
+                _planeVisualCompanions.Add(visualizer);
+            visualizer.visualizeSurfaces = showArMobileTemplatePlaneSurfaces;
         }
 
-        private Material PlaneVisualMaterial()
+        private void UntrackPlaneVisualizer(ARPlane plane)
         {
-            if (_planeVisualMaterial != null) return _planeVisualMaterial;
-            _planeVisualMaterial = CreateTransparentMaterial(new Color(0.23f, 0.58f, 1f, 0.18f));
-            return _planeVisualMaterial;
-        }
-
-        private Material PointCloudDotMaterial()
-        {
-            if (_pointCloudDotMaterial != null) return _pointCloudDotMaterial;
-            _pointCloudDotMaterial = CreateTransparentMaterial(new Color(1f, 1f, 1f, 0.92f));
-            return _pointCloudDotMaterial;
-        }
-
-        private static Material CreateTransparentMaterial(Color color)
-        {
-            var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Standard");
-            if (shader == null)
-                shader = Shader.Find("UI/Default");
-            if (shader == null)
-                shader = Shader.Find("Hidden/Internal-Colored");
-            var material = new Material(shader);
-            material.color = color;
-            material.renderQueue = 3000;
-            return material;
+            if (plane == null)
+                return;
+            if (plane.TryGetComponent(out ARFeatheredPlaneMeshVisualizerCompanion visualizer))
+                _planeVisualCompanions.Remove(visualizer);
         }
 
         private static void EnsureArInputManager(GameObject target)

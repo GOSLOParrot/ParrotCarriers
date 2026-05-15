@@ -50,6 +50,7 @@ namespace ParrotApp.UI
 
         private Canvas _canvas;
         private RectTransform _toolbarRoot;
+        private RectTransform _demoPlacementButtonRoot;
         private RectTransform _drawerRoot;
         private RectTransform _settingsPanelRoot;
         private RectTransform _workspaceStrip;
@@ -63,6 +64,7 @@ namespace ParrotApp.UI
         private Text _awarenessActionText;
         private Text _handActionText;
         private Text _modelPlacementActionText;
+        private Text _demoPlacementButtonText;
         private Text _audioRouteActionText;
         private Text _micDeviceNextText;
         private Text _micDeviceAutoText;
@@ -72,6 +74,7 @@ namespace ParrotApp.UI
         private Button _awarenessActionButton;
         private Button _handActionButton;
         private Button _modelPlacementActionButton;
+        private Button _demoPlacementButton;
         private Button _audioRouteActionButton;
         private Button _micDeviceNextButton;
         private Button _micDeviceAutoButton;
@@ -292,6 +295,7 @@ namespace ParrotApp.UI
             CreateToolbarButton("ToolButtonCanvasMenu", 3, 6, "MENU", ToggleDrawer);
             CreateToolbarButton("ToolButtonWorkspace", 4, 6, "2D", TryOpen2DWorkspace);
             CreateToolbarButton("ToolButtonSettings", 5, 6, "SET", ToggleSettingsPanel);
+            _demoPlacementButton = CreateDemoPlacementButton(root.transform, out _demoPlacementButtonRoot, out _demoPlacementButtonText);
 
             _drawerRoot = CreatePanel("FormalHomeMenuDrawer", root.transform, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-28f, 0f), new Vector2(720f, 820f), new Color(0.09f, 0.075f, 0.055f, 0.84f));
             _settingsPanelRoot = CreatePanel("FormalHomeSettingsPanel", root.transform, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-28f, 0f), new Vector2(620f, 430f), new Color(0.09f, 0.075f, 0.055f, 0.86f));
@@ -814,6 +818,10 @@ namespace ParrotApp.UI
                 _modelPlacementActionButton.interactable = modelPlacementController != null
                                                            && (modelPlacementController.HasPlacedModel
                                                                || modelPlacementController.CanPlaceNow);
+            if (_demoPlacementButton != null)
+                _demoPlacementButton.interactable = modelPlacementController != null
+                                                    && (modelPlacementController.HasPlacedModel
+                                                        || modelPlacementController.CanPlaceNow);
             if (_audioRouteActionButton != null) _audioRouteActionButton.interactable = canSend && !audioPending;
             if (_micDeviceNextButton != null) _micDeviceNextButton.interactable = microphonePublisher != null;
             if (_micDeviceAutoButton != null) _micDeviceAutoButton.interactable = microphonePublisher != null && !string.IsNullOrWhiteSpace(microphonePublisher.PreferredDevice);
@@ -828,6 +836,10 @@ namespace ParrotApp.UI
                 _modelPlacementActionText.text =
                     (modelPlacementController != null && modelPlacementController.HasPlacedModel ? "CLEAR\n" : "PLACE\n")
                     + PlacementShortLabel();
+            if (_demoPlacementButtonText != null)
+                _demoPlacementButtonText.text = modelPlacementController != null && modelPlacementController.HasPlacedModel
+                    ? "CLEAR"
+                    : "";
             if (_audioRouteActionText != null)
                 _audioRouteActionText.text = "AUDIO\n" + (audioPending ? "..." : AudioRouteShortLabel());
             if (_micDeviceNextText != null)
@@ -885,6 +897,8 @@ namespace ParrotApp.UI
                 _settingsPanelRoot.gameObject.SetActive(_visible && _activePanel == HomePanelKind.Settings);
             if (_toolbarRoot != null)
                 _toolbarRoot.gameObject.SetActive(_visible);
+            if (_demoPlacementButtonRoot != null)
+                _demoPlacementButtonRoot.gameObject.SetActive(_visible);
         }
 
         private void SetVisible(bool visible)
@@ -980,6 +994,52 @@ namespace ParrotApp.UI
             return button;
         }
 
+        private Button CreateDemoPlacementButton(Transform parent, out RectTransform root, out Text label)
+        {
+            var rect = CreateArea(
+                "ARMobileTemplatePlaceButton",
+                parent,
+                new Vector2(0.5f, 0f),
+                new Vector2(0.5f, 0f),
+                new Vector2(0.5f, 0f),
+                new Vector2(0f, 34f),
+                new Vector2(116f, 116f));
+            root = rect;
+
+            var bg = rect.gameObject.AddComponent<Image>();
+            bg.sprite = LoadArMobileTemplateSprite("ActivationButtonOpaque");
+            bg.type = bg.sprite != null ? Image.Type.Simple : Image.Type.Sliced;
+            bg.color = new Color(1f, 1f, 1f, bg.sprite != null ? 0.98f : 0.68f);
+
+            var button = rect.gameObject.AddComponent<Button>();
+            button.onClick.AddListener(PlaceModelPreview);
+
+            var icon = CreateArea(
+                "ARMobileTemplatePlaceIcon",
+                rect,
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0f, 4f),
+                new Vector2(58f, 58f));
+            var iconImage = icon.gameObject.AddComponent<Image>();
+            iconImage.sprite = LoadArMobileTemplateSprite("Icon-Cube");
+            iconImage.color = iconImage.sprite != null ? Color.white : new Color(0.94f, 0.90f, 0.82f, 1f);
+
+            label = CreateText(
+                "ARMobileTemplatePlaceLabel",
+                rect,
+                new Vector2(0f, 0f),
+                new Vector2(1f, 0f),
+                new Vector2(0.5f, 0f),
+                new Vector2(0f, 8f),
+                new Vector2(-8f, 24f),
+                12,
+                TextAnchor.MiddleCenter);
+            label.color = new Color(0.95f, 0.90f, 0.80f, 1f);
+            return button;
+        }
+
         private static Text CreateText(string name, Transform parent, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 position, Vector2 size, int fontSize, TextAnchor alignment)
         {
             var rect = CreateArea(name, parent, anchorMin, anchorMax, pivot, position, size);
@@ -1044,6 +1104,11 @@ namespace ParrotApp.UI
         private static Sprite LoadSprite(string name)
         {
             return Resources.Load<Sprite>("StartupPaperCraft/" + name);
+        }
+
+        private static Sprite LoadArMobileTemplateSprite(string name)
+        {
+            return Resources.Load<Sprite>("ARMobileTemplate/UI/Sprites/" + name);
         }
 
         private static Color WorkspaceColor(AppWorkspaceDto ws)

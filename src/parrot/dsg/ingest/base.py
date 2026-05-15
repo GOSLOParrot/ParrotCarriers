@@ -256,6 +256,9 @@ def _copy_user_explicit_source_meta(obs: Observation) -> dict[str, Any]:
     wholesale. The first Graphiti-to-L2-B export path uses this to preserve
     partition, fact text, source URL/description, and Graphiti endpoint UUIDs
     while still avoiding a new shared ObservationSource before CORE-008 review.
+    WEB-015.9 adds the same conservative rule for time-aligned evidence: only
+    stable pointers and timestamps are copied, never raw image bytes or frontend
+    preview payloads.
     """
     keys = (
         "source_tool",
@@ -269,6 +272,19 @@ def _copy_user_explicit_source_meta(obs: Observation) -> dict[str, Any]:
         "source_url",
         "source_description",
         "fact_text",
+        "evidence_id",
+        "evidence_kind",
+        "evidence_status",
+        "evidence_asset_uri",
+        "evidence_asset_path",
+        "evidence_mime_type",
+        "evidence_timebase",
+        "related_refs",
+        "bbox_refs",
+        "focus_refs",
+        "room_id",
+        "track_sid",
+        "participant_id",
     )
     return {key: obs.meta[key] for key in keys if key in obs.meta}
 

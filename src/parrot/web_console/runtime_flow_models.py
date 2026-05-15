@@ -165,6 +165,7 @@ class RuntimeFlowChanges:
     events: list[dict[str, Any]]
     snapshot: dict[str, Any] | None
     audit: dict[str, Any]
+    event_schema: str = "runtime_flow_delta_v1"
     success: bool = True
     action: str = "runtime.flow.changes"
 
@@ -172,6 +173,7 @@ class RuntimeFlowChanges:
         return {
             "success": self.success,
             "action": self.action,
+            "event_schema": self.event_schema,
             "since": self.since,
             "sequence": self.sequence,
             "changed": self.changed,
