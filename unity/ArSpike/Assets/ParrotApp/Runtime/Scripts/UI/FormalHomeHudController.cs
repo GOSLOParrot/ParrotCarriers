@@ -24,6 +24,7 @@ namespace ParrotApp.UI
         [SerializeField] private FormalMainReadyGate mainReadyGate;
         [SerializeField] private FormalHomeMenuLoader menuLoader;
         [SerializeField] private LiveKitReconnectSupervisor reconnectSupervisor;
+        [SerializeField] private AudioRouteManager audioRouteManager;
         [SerializeField] private AudioRoutePolicyBrainReporter audioRouteReporter;
         [SerializeField] private FormalModelPlacementController modelPlacementController;
         [SerializeField] private FormalArSessionBaselineReporter arSessionBaselineReporter;
@@ -35,6 +36,7 @@ namespace ParrotApp.UI
         private bool _visible;
         private float _tick;
         private AppStartupConfigDto _activeConfig = AppStartupConfigDto.Default();
+        private FormalModelPlacementController _subscribedPlacementController;
 
         private void OnEnable()
         {
@@ -70,6 +72,7 @@ namespace ParrotApp.UI
             if (mainReadyGate == null) mainReadyGate = FindObjectOfType<FormalMainReadyGate>();
             if (menuLoader == null) menuLoader = FindObjectOfType<FormalHomeMenuLoader>();
             if (reconnectSupervisor == null) reconnectSupervisor = FindObjectOfType<LiveKitReconnectSupervisor>();
+            if (audioRouteManager == null) audioRouteManager = FindObjectOfType<AudioRouteManager>();
             if (audioRouteReporter == null) audioRouteReporter = FindObjectOfType<AudioRoutePolicyBrainReporter>();
             if (modelPlacementController == null) modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
             if (arSessionBaselineReporter == null) arSessionBaselineReporter = FindObjectOfType<FormalArSessionBaselineReporter>();
@@ -90,6 +93,15 @@ namespace ParrotApp.UI
                 mainReadyGate.OnGateChanged -= HandleMainReadyGateChanged;
                 mainReadyGate.OnGateChanged += HandleMainReadyGateChanged;
             }
+
+            if (_subscribedPlacementController != modelPlacementController)
+            {
+                if (_subscribedPlacementController != null)
+                    _subscribedPlacementController.OnPlacementStateChanged -= HandlePlacementStateChanged;
+                _subscribedPlacementController = modelPlacementController;
+                if (_subscribedPlacementController != null)
+                    _subscribedPlacementController.OnPlacementStateChanged += HandlePlacementStateChanged;
+            }
         }
 
         private void Unbind()
@@ -102,6 +114,11 @@ namespace ParrotApp.UI
             }
             if (mainReadyGate != null)
                 mainReadyGate.OnGateChanged -= HandleMainReadyGateChanged;
+            if (_subscribedPlacementController != null)
+            {
+                _subscribedPlacementController.OnPlacementStateChanged -= HandlePlacementStateChanged;
+                _subscribedPlacementController = null;
+            }
         }
 
         private void HandleTransitionStarted(AppStartupConfigDto config)
@@ -131,6 +148,13 @@ namespace ParrotApp.UI
             Refresh();
         }
 
+        private void HandlePlacementStateChanged(FormalModelPlacementController placement)
+        {
+            if (placement != null)
+                modelPlacementController = placement;
+            Refresh();
+        }
+
         private void EnsureHud()
         {
             if (_canvas != null) return;
@@ -157,6 +181,7 @@ namespace ParrotApp.UI
             panelRect.sizeDelta = new Vector2(690f, 236f);
             var panelImage = panel.AddComponent<Image>();
             panelImage.color = new Color(0.08f, 0.07f, 0.06f, 0.62f);
+            panelImage.raycastTarget = false;
 
             var dot = new GameObject("FormalHomeHudStatusDot");
             dot.transform.SetParent(panel.transform, false);
@@ -167,6 +192,7 @@ namespace ParrotApp.UI
             dotRect.anchoredPosition = new Vector2(18f, -18f);
             dotRect.sizeDelta = new Vector2(18f, 18f);
             _statusDot = dot.AddComponent<Image>();
+            _statusDot.raycastTarget = false;
 
             var textGo = new GameObject("FormalHomeHudStatusText");
             textGo.transform.SetParent(panel.transform, false);
@@ -182,6 +208,7 @@ namespace ParrotApp.UI
             _statusText.horizontalOverflow = HorizontalWrapMode.Wrap;
             _statusText.verticalOverflow = VerticalWrapMode.Truncate;
             _statusText.color = new Color(0.96f, 0.92f, 0.84f, 1f);
+            _statusText.raycastTarget = false;
         }
 
         private void SetVisible(bool visible)
@@ -236,7 +263,12 @@ namespace ParrotApp.UI
             string spatial = arRuntimeBootstrap != null
                 ? arRuntimeBootstrap.LastSpatialVisualStatus
                 : "visual?";
-            return ShortLabel(baseline, 24) + " / " + ShortLabel(spatial, 24);
+            string xri = arRuntimeBootstrap != null
+                ? arRuntimeBootstrap.LastTemplateInteractionStatus
+                : "xri?";
+            return ShortLabel(baseline, 20)
+                   + " / " + ShortLabel(spatial, 20)
+                   + " / " + ShortLabel(xri, 22);
         }
 
         private string PlacementHudLabel()
@@ -245,23 +277,44 @@ namespace ParrotApp.UI
                 modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
             if (modelPlacementController == null)
                 return "owner?";
-            return ShortLabel(modelPlacementController.LastDiagnosticSummary, 58);
+            string rpc = startupFlow != null && !string.IsNullOrWhiteSpace(startupFlow.LastBrainRpcStatus)
+                ? " " + startupFlow.LastBrainRpcStatus
+                : "";
+            return ShortLabel(modelPlacementController.LastDiagnosticSummary + rpc, 76);
         }
 
         private string AudioRouteHudLabel()
         {
+            if (audioRouteManager != null)
+            {
+                var snapshot = audioRouteManager.CurrentSnapshot;
+                string managerSuffix = string.IsNullOrWhiteSpace(audioRouteManager.LastError)
+                    ? ""
+                    : " fail " + ShortLabel(audioRouteManager.LastError, 18);
+                if (snapshot != null)
+                {
+                    return "in " + ShortRoute(snapshot.input_route)
+                           + " out " + ShortRoute(snapshot.output_route)
+                           + " src " + ShortRouteSource(snapshot.source)
+                           + managerSuffix;
+                }
+                return "route " + ShortRoute(audioRouteManager.CurrentPolicy.RouteName)
+                       + " src " + ShortRouteSource(audioRouteManager.LastDetectionSource)
+                       + managerSuffix;
+            }
+
             if (audioRouteReporter == null)
                 return "route unknown";
 
             string input = ShortRoute(audioRouteReporter.LastInputRoute);
             string output = ShortRoute(audioRouteReporter.LastOutputRoute);
             string source = ShortRouteSource(audioRouteReporter.LastDetectionSource);
-            string suffix = audioRouteReporter.ReportPending
+            string reporterSuffix = audioRouteReporter.ReportPending
                 ? " pending"
                 : (!string.IsNullOrWhiteSpace(audioRouteReporter.LastReportError)
                     ? " fail " + ShortLabel(audioRouteReporter.LastReportError, 18)
                     : "");
-            return "in " + input + " out " + output + " src " + source + suffix;
+            return "in " + input + " out " + output + " src " + source + reporterSuffix;
         }
 
         private static string ShortRouteSource(string source)

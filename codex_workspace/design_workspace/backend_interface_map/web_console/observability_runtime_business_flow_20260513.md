@@ -202,8 +202,10 @@ Verification:
 - 2026-05-16 Runtime SSE verification:
   `tests\test_web_console\test_web_console_server.py` -> `49 passed`;
   `npm run typecheck`; `npm run build`; and `py_compile` for
-  `server.py`, `runtime_flow.py`, and `runtime_flow_models.py`. Browser smoke
-  is tracked by WEB-017.11.
+  `server.py`, `runtime_flow.py`, and `runtime_flow_models.py`.
+- Browser smoke after local service restart:
+  Runtime page showed `实时 / SSE · LIVE`, the Runtime navigation opened
+  cleanly, and browser console errors stayed at zero.
 
 ## Slice: Runtime Observability
 
@@ -468,6 +470,13 @@ Extension for Trigger Lab and Gmail message smoke:
 - Frontend Runtime Monitor now has a collapsed Trigger Lab with trigger catalog,
   editable event JSON, draft/fire dry-run buttons, Gmail check dry-run, message
   push dry-run, and receipt output.
+- 2026-05-17 UI audit/fix: React Runtime Flow preset actions now share the
+  top-level Settings `Mode`. Web Console is a test bench, so default Mode is
+  real operator execution: `message_check` dispatches Scheduler/Nanobot work
+  and trigger presets call `/api/dsg/triggers/fire-event` with
+  `dry_run=false` and `operator_mode=true`. Switching Mode to preview keeps the
+  same buttons on draft/dry-run paths. The browser still never owns Google OAuth
+  or calls Brain trigger singletons directly.
 - 2026-05-14 cleanup: `MessageNotificationTrigger` now returns
   `TriggerOutcome.commit_observations` with
   `ObservationSource.GOOGLE_MESSAGE`. Message EVENT nodes enter L2-B through
@@ -496,6 +505,11 @@ admin access.
 | `POST /api/google/messages/push-test` | Draft/publish a synthetic `message_push` event. | `push_test_message()` -> trigger event path | Default dry-run; real event requires operator mode. |
 | `POST /api/google/calendar/fetch` | Draft/dispatch Nanobot Google Calendar `calendar_fetch`. | `dispatch_google_calendar_fetch()` -> Scheduler dispatch | Default dry-run; browser never holds Google OAuth; results return as `calendar_result` for `CalendarTrigger`. |
 | `GET /api/google/calendar/results` | Read recent Scheduler fan-out rows for `calendar_result`. | `google_calendar_result_history()` -> `STREAM_TRIGGER_RESULTS` | Read-only Web observability; payloads are bounded and secret-redacted. |
+
+Route defaults remain conservative if a raw caller omits execution fields, but
+the React Web Console's global Settings `Mode` now defaults execute/fire/import
+buttons to real operator testing. Preview Mode is the explicit way to force
+those buttons back to dry-run receipts.
 
 2026-05-15 Google Calendar sync note:
 

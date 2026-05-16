@@ -19,6 +19,7 @@ namespace ParrotApp.LiveKit
         private const string RpcMethod = "setLineBAudioRoutePolicy";
 
         [SerializeField] private RoomManager roomManager;
+        [SerializeField] private AudioRouteManager routeManager;
         [SerializeField] private AudioRouteDetector routeDetector;
         [SerializeField] private MicrophonePublisher microphonePublisher;
         [SerializeField] private float reportDebounceSeconds = 0.4f;
@@ -42,7 +43,12 @@ namespace ParrotApp.LiveKit
         void Start()
         {
             ResolveServices();
-            if (routeDetector != null)
+            if (routeManager != null)
+            {
+                CachePolicy(routeManager.CurrentPolicy);
+                routeManager.OnRoutePolicyChanged += OnRouteChanged;
+            }
+            else if (routeDetector != null)
             {
                 CachePolicy(routeDetector.CurrentPolicy);
                 routeDetector.OnRouteChanged += OnRouteChanged;
@@ -59,7 +65,9 @@ namespace ParrotApp.LiveKit
 
         void OnDestroy()
         {
-            if (routeDetector != null)
+            if (routeManager != null)
+                routeManager.OnRoutePolicyChanged -= OnRouteChanged;
+            if (routeManager == null && routeDetector != null)
                 routeDetector.OnRouteChanged -= OnRouteChanged;
             if (roomManager != null)
             {
@@ -77,7 +85,9 @@ namespace ParrotApp.LiveKit
         public void RefreshAndReportCurrentPolicy(string reason = "manual_rescan")
         {
             ResolveServices();
-            if (routeDetector != null)
+            if (routeManager != null)
+                CachePolicy(routeManager.RefreshCurrentPolicy(reason));
+            else if (routeDetector != null)
                 CachePolicy(routeDetector.RefreshCurrentPolicy(reason));
             QueueReport(reason);
         }
@@ -132,7 +142,9 @@ namespace ParrotApp.LiveKit
                 yield break;
             }
 
-            var policy = routeDetector != null ? routeDetector.DetectNow() : AudioRoutePolicy.Default();
+            var policy = routeManager != null
+                ? routeManager.RefreshCurrentPolicy("brain_report")
+                : (routeDetector != null ? routeDetector.DetectNow() : AudioRoutePolicy.Default());
             CachePolicy(policy);
             LastReportReason = reason;
             LastPayload = BuildPayload(policy, reason);
@@ -194,6 +206,13 @@ namespace ParrotApp.LiveKit
                 LastDetectionSource = routeDetector.LastDetectionSource;
                 LastDeviceSummary = routeDetector.LastDeviceSummary;
             }
+            if (routeManager != null)
+            {
+                LastDetectionSource = routeManager.LastDetectionSource;
+                LastDeviceSummary = routeManager.LastDeviceSummary;
+                if (!string.IsNullOrWhiteSpace(routeManager.LastError))
+                    LastDeviceSummary = LastDeviceSummary + ",error=" + routeManager.LastError;
+            }
         }
 
         private static string InputRouteFor(AudioRoutePolicy policy)
@@ -215,8 +234,13 @@ namespace ParrotApp.LiveKit
             try
             {
                 var status = JsonUtility.FromJson<RpcStatusEnvelope>(payload);
-                return status == null
-                       || !string.Equals(status.status, "error", StringComparison.OrdinalIgnoreCase);
+                if (status != null && string.Equals(status.status, "error", StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                var response = JsonUtility.FromJson<RpcBusinessResponse>(payload);
+                return response == null
+                       || response.result == null
+                       || response.result.success;
             }
             catch (Exception)
             {
@@ -227,8 +251,13 @@ namespace ParrotApp.LiveKit
         private void ResolveServices()
         {
             if (roomManager == null) roomManager = RoomManager.Instance ?? FindObjectOfType<RoomManager>();
-            if (routeDetector == null) routeDetector = FindObjectOfType<AudioRouteDetector>();
             if (microphonePublisher == null) microphonePublisher = FindObjectOfType<MicrophonePublisher>();
+            if (routeManager == null && microphonePublisher != null)
+                routeManager = microphonePublisher.RouteManager;
+            if (routeManager == null) routeManager = FindObjectOfType<AudioRouteManager>();
+            if (routeManager == null && microphonePublisher != null)
+                routeManager = microphonePublisher.gameObject.AddComponent<AudioRouteManager>();
+            if (routeDetector == null) routeDetector = FindObjectOfType<AudioRouteDetector>();
         }
 
         private static string Quote(string value)
@@ -241,6 +270,19 @@ namespace ParrotApp.LiveKit
         private class RpcStatusEnvelope
         {
             public string status = "";
+        }
+
+        [Serializable]
+        private class RpcBusinessResponse
+        {
+            public string status = "";
+            public RpcBusinessResult result;
+        }
+
+        [Serializable]
+        private class RpcBusinessResult
+        {
+            public bool success = true;
         }
     }
 }

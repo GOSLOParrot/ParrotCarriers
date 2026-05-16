@@ -61,7 +61,12 @@ for the same module-level decision.
   routes. The shared candidate implication is only the small L1.5 source-pack
   read shape (`daily` / `roleplay` / `ref`, target bucket, health, selected
   source path); the Web operator import button and direct test path stay out of
-  App DTOs.
+  App DTOs. 2026-05-16 adds a Web-only `import-plan` receipt that joins
+  selected note import rows with CORE-013 destination policy; this is an
+  operator review shape, not a promoted App DTO. 2026-05-16 operator-import
+  continuation exposes the real Web button, but it remains an explicit
+  `operator_mode=true` / `dry_run=false` path through `L15Pool.admit`, not a
+  shared App write DTO.
 - CORE-008: Web-only Google Calendar source import now has fetch/preview/import
   routes. The shared candidate implication is the source-ingest read shape:
   provider identity (`calendar_id`, `calendar_event_id`), temporal range
@@ -73,10 +78,29 @@ for the same module-level decision.
   `tombstone_policy=historical_event`, and lower L2-B state to GHOST/peripheral
   rather than default evict. Web `mapping_rows` are only receipt explanations
   for operators and should not be promoted unless another lane confirms a
-  shared read need.
+  shared read need. 2026-05-16 adds a Web-only Calendar `import-plan` receipt
+  with `mapping_rows`, `import_policy`, flow steps, and apply preconditions;
+  watch/syncToken remains future server-side work.
 - CORE-009: Graphiti search-to-subgraph and export receipts are now concrete
   Web stream consumers. They remain polling/receipt based; no shared
   SSE/WebSocket DTO is promoted yet.
+- CORE-013: Graphiti, Obsidian, and Google Calendar now share the same
+  Web-only source import plan shape: source normalization rows, optional
+  `edge_drafts`/mapping rows, CORE-013 `import_policy`, `import_draft`, flow
+  steps, and operator apply preconditions. This stabilizes the UI/receipt
+  vocabulary before any shared graph overlay DTO promotion. Empty source
+  selections must not generate a destination policy; they return
+  `policy_skipped_reason` with empty `import_policy` / `import_draft` so the UI
+  cannot imply a graph placement plan where no importable source row exists.
+  Import-plan receipts are review receipts, so their top-level audit flags stay
+  `dry_run=true` and `operator_mode=false`; requested apply flags are recorded
+  as ignored request metadata, not promoted execution state. Graphiti source
+  plans must use normalized partition/group provenance from the Graphiti export
+  draft before forming CORE-013 `source_id`. The later Graphiti/Obsidian
+  operator import buttons execute the underlying L1.5 admit routes but do not
+  promote a shared overlay apply contract; Graphiti fact `edge_drafts` still
+  require resolved L2-B UUIDs plus a separate operator Edge route before they
+  become persistent graph edges.
 - CORE-009: 2026-05-15 Web implemented the first concrete Memory
   changed-since polling envelope at
   `GET /api/memory/live-state/changes?since=...&limit=...`. Shape is
@@ -262,6 +286,13 @@ for the same module-level decision.
   foldable overlay, graph transform, and graph health receipts before export or
   mutation. This is still Web-only review surface; no shared DTO or App/Unity
   interface field is promoted by this slice.
+- CORE-008 / CORE-013: 2026-05-16 Graphiti Source Board adds Web-only
+  `POST /api/graphiti/subgraph/import-plan`. It combines Graphiti-to-L1.5
+  Observation drafts, Graphiti fact Edge drafts, and the CORE-013 import
+  destination policy in one receipt. This is a review/read surface only: real
+  export still admits through L1.5, real Edge writes still require resolved
+  L2-B node UUIDs and a separate operator-gated L2-B route, and no Graphiti or
+  FalkorDB durable edit is hidden inside the plan.
 - CORE-013 / CORE-009 / CORE-010: 2026-05-15 Web major roadmap fixes the
   dependency order before further promotion: graph policy and rewrite examples
   come before realtime transport; realtime streams then support Memory
@@ -310,6 +341,14 @@ for the same module-level decision.
   `memory_runtime_delta_v1` envelope, emits `stream_open` / `memory_delta` /
   `stream_close`, and keeps receipts on a separate future stream. This is not
   yet a shared App DTO or a bidirectional action channel.
+- CORE-009 / CORE-010: 2026-05-16 Runtime Flow now has the same Web-only SSE
+  pattern at `GET /api/runtime/flow/stream`. It streams
+  `runtime_flow_delta_v1` envelopes from the typed Runtime Flow read model,
+  emits `stream_open` / `runtime_delta` / `stream_close`, and is strictly
+  read-only: no Scheduler dispatch, Nanobot send, Blackboard mutation, or
+  operator receipt delivery is hidden inside the stream. If promoted later,
+  this should be described as a read stream plus a separate receipt/action
+  channel, not as a single bidirectional Runtime DTO.
 - CORE-008: 2026-05-16 source policy update: Google Calendar V1 is manual
   fetch/import with preview/operator receipt; server-side Google watch plus
   syncToken is phase 2. Calendar EVENT nodes preserve Google event `status`
@@ -323,6 +362,15 @@ for the same module-level decision.
   `stage_to_intent_workspace`, or `write_to_memory_draft`. Next HITL targets
   are Google imports and Graphiti imports, then evidence/photo promotion;
   trigger/message HITL waits for real target state machines.
+- CORE-013 / DSG-L2B: 2026-05-17 label namespace clarification from Web
+  operator testing: the visible `SemanticNode.label` and tag strings are not
+  global identifiers. Stable source identities (`obsidian_uuid`,
+  `graphiti_uuid`, Google provider ids, later Ref ids) should be matched first;
+  when those are absent, fallback merge is scoped to `NodeKind + exact label`.
+  This keeps different semantic roles such as `object:desk` and `zone:desk`
+  separate while preserving same-kind repeat merges. This is implemented in the
+  backend fallback path but remains candidate wording until the shared DSG/L2-B
+  interface is reviewed.
 
 ## Trigger Protocol Audit Notes
 

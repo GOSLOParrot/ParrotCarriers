@@ -85,6 +85,27 @@ class L2BGraph:
                 return node
         return None
 
+    def get_node_by_label_and_kind(self, label: str, kind: object) -> SemanticNode | None:
+        """Find a node by exact label within the same NodeKind namespace.
+
+        L2-B labels are human-facing names, not global identifiers. Web/manual
+        imports must allow different kinds to reuse a label ("desk" as a zone
+        and "desk" as an object), while repeated writes of the same kind/label
+        should still merge unless a stable provider UUID says otherwise.
+        """
+        try:
+            expected_kind = NodeKind(kind)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            expected_kind = kind
+        label_lower = label.strip().lower()
+        if not label_lower:
+            return None
+        for idx in self._graph.node_indices():
+            node: SemanticNode = self._graph[idx]
+            if node.kind == expected_kind and node.label.strip().lower() == label_lower:
+                return node
+        return None
+
     def remove_node(self, uuid: str) -> bool:
         idx = self._uuid_to_idx.pop(uuid, None)
         if idx is None:

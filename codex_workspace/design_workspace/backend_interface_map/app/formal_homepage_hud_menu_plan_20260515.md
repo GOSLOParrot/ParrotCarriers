@@ -82,7 +82,7 @@ Not complete:
 | `Runtime/Scripts/Lifecycle/FormalModelPlacementController.cs` | First formal placement owner: after `MainUiReadyOnce` and `FormalMainReadyGate.IsReady`, tries AR Foundation plane raycast placement, loads the selected manifest visual from `Resources/Models/**` when available, immediately bootstraps its manifest controller, uses EnhancedTouch for demo2-like tap placement/selection, one-finger drag on AR planes, pinch scale with 0.25-2.0 bounds, refuses to fake-place when AR misses a plane, uses a whitebox only after a valid placement when the runtime asset cannot load, and then triggers `onGosloPlaced` through `AppStartupFlowController.ReportGosloPlaced()`. | Formal source; phone proof still pending. |
 | `Runtime/Scripts/UI/FormalModelRemoteController.cs` | First local model remote owner: a small bottom-left joystick appears after main-ready and placement. It routes Ner to `spine_walk`, GOSLO to `ParrotController`/`AnimationDriver.WalkOnPlane`, and degrades visibly to local translation when no owner exists. | Formal source; local-only, no Brain RPC or menu persistence. |
 | `Runtime/Scripts/Lifecycle/FormalXrHandPerchController.cs` | First formal hand-perch owner: mounts `HandGestureSource`, gates `PerchOnHand` behind main-ready + placed model + manifest/controller `perch` support + `AnimationDriver`, and reports debug-only/package-missing degraded status when `UNITY_XR_HANDS` is unavailable. | Formal source; no Brain RPC/menu persistence, and not phone proof until XR Hands package/define and iQOO Neo9 logs exist. |
-| `Runtime/Scripts/Lifecycle/FormalArRuntimeBootstrap.cs` and `FormalArSessionBaselineReporter.cs` | Keep AR runtime bootstrap behind the AR/session gate, not during the startup page. The bootstrap mounts XROrigin, ARRaycastManager, ARPlaneManager, camera managers, ARInputManager, Input System TrackedPoseDriver, and the imported Unity AR Mobile template `ARFeatheredPlane` visual chain for formal AR placement/video. The previous hand-written plane mesh and point-dot visuals are removed. | Formal source. |
+| `Runtime/Scripts/Lifecycle/FormalArRuntimeBootstrap.cs` and `FormalArSessionBaselineReporter.cs` | Keep AR runtime bootstrap behind the AR/session gate, not during the startup page. The bootstrap mounts XROrigin, ARRaycastManager, ARPlaneManager, camera managers, ARInputManager, Input System TrackedPoseDriver, demo2 `XRUIInputModule`, and the imported Unity AR Mobile template `ARFeatheredPlane` visual chain plus XRI screen-ray/object-spawner bridge for formal AR placement/video. The previous hand-written plane mesh and point-dot visuals are removed. | Formal source. |
 | `Runtime/Scripts/LiveKit/**` | Reuse RoomManager, fresh-token reconnect supervisor, mic/video publishers, audio route policy reporter, video tier receiver. | Formal source; phone proof still pending. |
 | `Runtime/Scripts/Ecp/**` | Reuse heartbeat, state/event publisher, event dispatcher, object-payload parser. | Formal ECP source; no full menu dumps. |
 | `Runtime/Scripts/Attention/**`, `Photo/**`, `Hands/**` | Photo is first wired by `FormalHomeToolController`; Hands is first wired by `FormalXrHandPerchController`. Attention/BBox modules remain reference-ready but are not active from formal homepage V1 until after phone stability and the backend SVA/ECP evidence upgrade. | Formal-capable modules. Phone proof and richer interaction design are still pending. |
@@ -214,7 +214,7 @@ The first formal homepage HUD/menu slice can be considered implemented when:
   slice.
 - Persona/LineProfile selection APIs exist or are planned through App HTTP, but
   the formal homepage selector UI is not built.
-- Audio route is now visible in formal HUD/menu and the Settings panel, and can be manually rescanned/reported to Brain. Android route detection tries `AudioManager.getDevices(...)` before legacy flags and displays the source. A2DP remains output-only in Unity mic selection; only SCO prefers a Bluetooth microphone device. The Settings page now has local `MIC NEXT` / `MIC AUTO` controls that cycle `MicrophonePublisher`'s Unity device-name preference and republish the LiveKit mic track when connected. Native OS route forcing and iQOO Neo9 Bluetooth/SCO/A2DP proof are still pending.
+- Audio route is visible in the formal HUD/menu and Settings panel, and can be manually rescanned/reported to Brain. The first formal native route layer now exists: Android `ParrotAudioRoute.androidlib` owns communication-device routing, Bluetooth permission snapshots, and audio focus; Unity `AudioRouteManager` exposes accepted snapshots; `MicrophonePublisher` consumes those snapshots and serially rebuilds the LiveKit mic track without reconnecting the room. A2DP remains output-only in Unity mic selection and keeps the normal 48 kHz mic policy; only SCO uses the 16 kHz Bluetooth capture policy. The Settings page still has local `MIC NEXT` / `MIC AUTO` diagnostic controls that cycle `MicrophonePublisher`'s Unity device-name preference; they are not the final production audio-route UX. Route-policy RPC reporting rejects `status:error` and `result.success:false` business failures. Formal route-manager settings UI and iQOO Neo9 Bluetooth/SCO/A2DP proof are still pending.
 - First formal model placement owner exists with AR raycast, no fake placement
   on AR miss, and attempts runtime GOSLO/Ner visuals from `Resources/Models/**`.
   Whitebox is now only a visible fallback after a valid placement when the
@@ -326,8 +326,9 @@ directly.
   chain, and cube button sprites into `Assets/ParrotApp/Resources/ARMobileTemplate/**`
   with `.meta` files preserved.
 - `FormalArRuntimeBootstrap` loads `Resources.Load("ARMobileTemplate/Prefabs/ARFeatheredPlane")`,
-  assigns it to `ARPlaneManager.planePrefab`, and requests horizontal plus
-  vertical plane detection. The previous custom `FormalARPlaneVisual_` and
+  assigns it to `ARPlaneManager.planePrefab`, matches demo2 serialized
+  detection mode `-1`, and sets `XROrigin` to Device tracking with
+  camera Y offset `0`. The previous custom `FormalARPlaneVisual_` and
   `FormalARPointDot` path is removed.
 - `FormalHomeMenuController` adds a bottom-center demo-like cube placement
   button using the imported template sprites. The old Settings placement
@@ -345,38 +346,102 @@ directly.
   integration rather than a wholesale `SampleScene.unity` import, so it keeps
   the selected RoomSetting manifest, `ModelDriver`, and `onGosloPlaced` gate.
   Phone proof is still required before calling placement stable.
-- Strict-copy gap recorded: demo2's full interaction chain is
-  `XR Origin (AR Rig)` -> `Screen Space Ray Interactor` ->
-  `ObjectSpawner` + `ARInteractorSpawnTrigger` -> `XRGrabInteractable` +
-  `ARTransformer`. The formal App has copied the plane prefab/assets and now
-  mirrors the behavior in `FormalModelPlacementController`, but has not yet
-  imported the full XRI object-spawner/interactable prefab chain because the
-  spawned object must remain the RoomSetting-selected Parrot/Ner manifest and
-  must preserve LiveKit/main-ready/`onGosloPlaced` ownership. If the next phone
-  pass still feels different from demo2, the next implementation slice is to
-  adapt that exact XRI chain around a single manifest-backed Parrot prefab,
-  not to add more hand-written gesture code.
+- Strict-copy bridge update: the formal App now imports the demo2
+  `XRI Default Input Actions`, `Screen Space Ray Interactor`, `ObjectSpawner`,
+  and `ARInteractorSpawnTrigger` into `Assets/ParrotApp/**` with `.meta`
+  preserved. `FormalArRuntimeBootstrap` mounts that XRI screen-ray chain at
+  AR-runtime startup, enables the copied input actions through
+  `InputActionManager`, switches the active EventSystem to the demo2-style
+  `XRUIInputModule` with the copied `XRI UI` action map, and routes
+  `ObjectSpawner` placements into
+  `FormalModelPlacementController.PlaceAt(...)` so the spawned object remains
+  the RoomSetting-selected Parrot/Ner manifest and still owns
+  `onGosloPlaced`. Placed models now receive `XRGrabInteractable` +
+  `ARTransformer` with demo bounds (`0.25` to `2.0`) and demo-like grab
+  defaults (`ColliderPosition`, single focus, default grab transformers) so
+  selection, drag, and
+  pinch-scale use the Unity AR Mobile template interaction stack instead of
+  more hand-written gesture expansion. The bridge status is now surfaced in the
+  HUD via `LastTemplateInteractionStatus`, and placed models keep the
+  transformer in the grab starting list to avoid dynamic registration drift.
+  Follow-up parity audit matched `SampleScene.unity`'s
+  `ObjectSpawner.spawnAsChildren = true`; the spawned demo proxy remains
+  transient and is immediately routed into the formal Parrot/Ner placement
+  owner.
+  Follow-up input parity audit matched demo2's `XRUIInputModule` path rather
+  than the plain startup `InputSystemUIInputModule`: the formal bootstrap now
+  disables the non-XRI input module after AR runtime mount, enables
+  `XRUIInputModule`, and binds `Point`, `Click`, `MiddleClick`, `RightClick`,
+  `ScrollWheel`, `Navigate`, `Submit`, and `Cancel` from the copied `XRI UI`
+  action map so screen-ray select attempts follow the template chain.
+  Follow-up origin parity audit matched demo2's `XROrigin` settings:
+  `TrackingOriginMode.Device`, camera Y offset `0`, and
+  `ARPlaneManager` detection mode `-1` (AR Foundation 5.2.2 exposes only
+  `Horizontal`/`Vertical` enum names, so code uses `(PlaneDetectionMode)(-1)`).
+  This is still not a full SampleScene UI import; phone proof is required
+  before calling it stable.
 - Static guard:
   `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28 passed.
 - Unity batchmode compile audit:
   `D:\Unity\Editor\2022.3.62f3\Editor\Unity.exe -batchmode -quit -projectPath unity/ArSpike`
-  now reaches `Tundra build success`; the pass fixed a `TouchPhase` ambiguity
-  in the legacy Input fallback and removed trailing whitespace from
-  `ProjectSettings/EditorBuildSettings.asset`.
+  reaches `Tundra build success`; the latest pass also validates the copied
+  XRI Starter Assets and the formal XRI bridge compile inside ArSpike.
+- Device status: local ADB currently reports no attached/authorized iQOO
+  device, so the next acceptance step is still a phone Build & Run pass.
 - Phone diagnostics: `FormalHomeHudController` now shows AR baseline,
   AR Mobile template spatial-visual binding, and placement diagnostics from
   `FormalModelPlacementController.LastDiagnosticSummary` so iQOO testing can
   distinguish no-plane raycast, missing manager, drag state, selected state,
   and runtime visual source without adding test scenes or RPC probes.
+- UI raycast hygiene fix: the formal HUD/menu/tool canvases now keep
+  decorative panels, status text, dots, and icons out of UI raycasts while
+  leaving real buttons raycastable. This reduces false `IsPointerOverUI`
+  blocks against the copied `ARInteractorSpawnTrigger` without changing the
+  demo2 trigger script or adding a new gesture path.
+- XRI spawner idempotency fix: `FormalArRuntimeBootstrap` now re-checks and
+  reattaches both `ObjectSpawner` and `ARInteractorSpawnTrigger` on every AR
+  runtime mount, even if only one cached component survived a Unity refresh or
+  scene re-entry. This prevents a half-mounted `FormalARMobileTemplateObjectSpawner`
+  from becoming a null-reference or silent no-place state on phone. The
+  transient spawn proxy is also reparented to the current XROrigin on every
+  mount so a resumed/recreated AR rig cannot keep spawning through an old
+  transform root.
 - Clear/re-place diagnostics: clearing the placed model now resets the formal
   placement status to `cleared` instead of leaving the previous `placed:*`
   status in the HUD. This avoids false phone evidence when testing the demo2
   clear/place loop.
+- Placement state propagation: `FormalModelPlacementController` now emits
+  `OnPlacementStateChanged` after place, clear, select, scale, and XRI-status
+  changes. The formal HUD, menu, and joystick subscribe to that event so the
+  cube button label, settings action, diagnostics, and joystick visibility
+  update immediately instead of waiting for their next polling tick.
+- 2026-05-17 phone-blocker fix: the on-device magenta plane pointed to an
+  incomplete demo2 shader copy. `ShadowReceiverShaderFunctions.hlsl` is now
+  copied into the formal `ARMobileTemplate` shader chain with its `.meta` GUID
+  preserved. `goslo_default` now auto-scales to 0.16 m. Clearing the placed
+  model reports the existing `2d_workspace` session policy through
+  `ReportGosloRemovedFromView()` so the room/Brain job remain connected while
+  GOSLO is simply out of view. Re-placing the same model restores
+  `ar_workspace` / `FullARCompanion` through `ReportGosloReturnedToView()`
+  without replaying the first greeting. The local joystick is now selected-model
+  scoped instead of showing immediately after placement. The next rebuilt iQOO
+  pass still needs to prove audible `onGosloPlaced` greeting and material parity
+  on device.
+- Second iQOO blocker follow-up: the copied demo ShaderGraph still failed on
+  the phone, so `ARFeatheredPlaneMeshVisualizerCompanion` now swaps unsupported
+  or mobile plane materials to a transparent `PlanePatternDot` fallback at
+  runtime. Placement is also constrained to horizontal-up planes and then
+  height-normalized after the visual is active. `LastBrainRpcStatus` is surfaced
+  in the HUD placement line to expose the real `onGosloPlaced` result.
 - Plane visual parity fix: the formal bootstrap now mirrors the template menu's
   default debug-slider behavior by tracking `ARFeatheredPlaneMeshVisualizerCompanion`
   instances and keeping plane surface fill hidden by default while retaining the
   template dot/pattern affordance. This removes the oversized blue overlay seen
   in the first iQOO formal screenshot without importing the whole demo menu.
+  The white dots visible in the user's demo screenshots come from this
+  `ARFeatheredPlane` visual chain; demo2 does not mount an `ARPointCloudManager`
+  in `SampleScene.unity`, so the formal App should not add a separate custom
+  point-cloud renderer for this parity task.
 
 2026-05-15 formal toolbar tool-owner slice:
 

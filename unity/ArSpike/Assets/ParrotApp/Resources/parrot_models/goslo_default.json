@@ -8,8 +8,8 @@
   "forward_axis": "+Z",
   "up_axis": "+Y",
   "unit_meters": 1.0,
-  "default_pet_height_m": 0.20,
-  "auto_scale_to_pet_height": false,
+  "default_pet_height_m": 0.16,
+  "auto_scale_to_pet_height": true,
   "capabilities": [
     {"capability_id": "idle",      "kind": "pose",      "handler": "Idle"},
     {"capability_id": "fly",       "kind": "pose",      "handler": "Fly"},

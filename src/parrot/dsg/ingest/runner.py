@@ -223,7 +223,11 @@ class IngestRunner:
             for n in self._graph.all_nodes():
                 if n.graphiti_uuid == obs.graphiti_uuid:
                     return n
-        return self._graph.get_node_by_label(obs.label)
+        # Labels are not global identifiers. Once stable provider IDs are
+        # exhausted, fall back to the local "same kind + exact label" namespace
+        # so manual/Web imports can create e.g. object:desk and zone:desk
+        # without collapsing different semantic roles into one RustWorkX node.
+        return self._graph.get_node_by_label_and_kind(obs.label, obs.kind)
 
     def _merge(self, existing: SemanticNode, obs: Observation) -> bool:
         """Apply authority-respecting merge rules. Returns True iff mutated."""

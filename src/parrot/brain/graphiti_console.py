@@ -9,6 +9,10 @@ graph database is not available.
 from __future__ import annotations
 
 import datetime as _dt
+import json
+import os
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -67,6 +71,28 @@ def graphiti_status() -> GraphitiConsoleResult:
         config_data["config_error"] = f"{type(exc).__name__}: {exc}"
 
     message = "graphiti-core importable" if installed else _GRAPHITI_MISSING_MESSAGE
+    if not installed:
+        remote = _remote_graphiti_request("/api/graphiti/status")
+        if remote.get("success"):
+            remote_data = dict(remote.get("data") or {})
+            remote_data["remote_proxy"] = {
+                "enabled": True,
+                "base_url": _remote_graphiti_base_url(),
+                "local_graphiti_core": False,
+                "reason": "local_graphiti_core_missing",
+            }
+            return GraphitiConsoleResult(
+                action="graphiti_status",
+                success=bool(remote.get("success")),
+                available=bool(remote.get("available")),
+                message=f"remote: {remote.get('message') or 'Graphiti status proxied'}",
+                data=remote_data,
+            )
+        config_data["remote_proxy"] = {
+            "enabled": False,
+            "base_url": _remote_graphiti_base_url(),
+            "error": remote.get("error") or "remote_graphiti_status_unavailable",
+        }
     return GraphitiConsoleResult(
         action="graphiti_status",
         success=True,
@@ -122,12 +148,43 @@ async def search_graphiti(
             message="query is required",
         )
     if not installed:
+        remote = _remote_graphiti_request(
+            "/api/graphiti/search",
+            payload={"query": query, "partition": partition, "limit": selected_limit},
+        )
+        if remote.get("success"):
+            remote_data = dict(remote.get("data") or {})
+            remote_data.setdefault("query", query)
+            remote_data.setdefault("partition", _normalize_partition(partition))
+            remote_data.setdefault("limit", selected_limit)
+            remote_data["remote_proxy"] = {
+                "enabled": True,
+                "base_url": _remote_graphiti_base_url(),
+                "local_graphiti_core": False,
+                "reason": "local_graphiti_core_missing",
+            }
+            return GraphitiConsoleResult(
+                action="search_graphiti",
+                success=True,
+                available=bool(remote.get("available", True)),
+                message=f"remote: {remote.get('message') or 'search proxied'}",
+                data=remote_data,
+            )
         return GraphitiConsoleResult(
             action="search_graphiti",
             success=False,
             available=False,
             message=_GRAPHITI_MISSING_MESSAGE,
-            data={"query": query, "partition": partition, "results": []},
+            data={
+                "query": query,
+                "partition": partition,
+                "results": [],
+                "remote_proxy": {
+                    "enabled": False,
+                    "base_url": _remote_graphiti_base_url(),
+                    "error": remote.get("error") or "remote_graphiti_search_unavailable",
+                },
+            },
         )
     try:
         from parrot.memory.graphiti_client import get_graphiti
@@ -390,6 +447,69 @@ def _graphiti_core_installed() -> bool:
     except ImportError:
         return False
     return True
+
+
+def _remote_graphiti_base_url() -> str:
+    """Return the read-through Graphiti monitor URL for local Web Console.
+
+    The React console often runs in a lightweight Web BFF process that does not
+    install the optional Graphiti/FalkorDB dependencies. In that case reads can
+    safely proxy to the app-monitor developer console, which owns the real
+    Graphiti dependency and partition status. Writes still stay explicit and
+    operator-gated in their own routes.
+    """
+
+    return str(
+        os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_URL")
+        or os.getenv("PARROT_GRAPHITI_REMOTE_URL")
+        or ""
+    ).rstrip("/")
+
+
+def _remote_graphiti_timeout_s() -> float:
+    raw = os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_TIMEOUT_S", "3.0")
+    try:
+        return max(0.5, min(float(raw), 15.0))
+    except ValueError:
+        return 3.0
+
+
+def _remote_graphiti_request(
+    path: str,
+    *,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Call the app-monitor Graphiti API without leaking secrets to the browser."""
+
+    base_url = _remote_graphiti_base_url()
+    if not base_url:
+        return {
+            "success": False,
+            "available": False,
+            "error": "remote_graphiti_url_not_configured",
+        }
+    url = f"{base_url}/{path.lstrip('/')}"
+    data = None
+    headers = {"Accept": "application/json"}
+    method = "GET"
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+        method = "POST"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=_remote_graphiti_timeout_s()) as response:
+            raw = response.read().decode("utf-8")
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+        return {"success": False, "available": False, "error": "remote_graphiti_non_object_response"}
+    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        return {
+            "success": False,
+            "available": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
 
 
 def _serialize_search_hit(hit: Any) -> dict[str, Any]:

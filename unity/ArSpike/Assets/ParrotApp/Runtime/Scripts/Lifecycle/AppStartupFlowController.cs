@@ -58,6 +58,7 @@ namespace ParrotApp.Lifecycle
         public bool FreshReconnectInProgress => _freshReconnectCoroutine != null;
         public bool MainUiReadyOnce => _mainUiReadyOnce;
         public string LastError { get; private set; } = "";
+        public string LastBrainRpcStatus { get; private set; } = "not_sent";
 
         public event Action<AppStartupConfigDto> OnTransitionStarted;
         public event Action<AppStartupConfigDto> OnMainUiReady;
@@ -232,6 +233,28 @@ namespace ParrotApp.Lifecycle
                 return;
             }
             _workspaceSwitchCoroutine = StartCoroutine(SwitchWorkspaceRoutine(workspaceId, layoutKind));
+        }
+
+        public void ReportGosloRemovedFromView()
+        {
+            if (ActiveConfig == null) ActiveConfig = AppStartupConfigDto.Default();
+            ActiveConfig.Normalize();
+
+            // Removing the visible model is the same session shape as entering
+            // the 2D workspace: keep LiveKit/Brain alive, keep dialogue possible,
+            // pause AR/video, and let Brain know GOSLO is no longer in view.
+            SwitchWorkspace(ActiveConfig.workspace_id, "2d_workspace");
+        }
+
+        public void ReportGosloReturnedToView()
+        {
+            if (ActiveConfig == null) ActiveConfig = AppStartupConfigDto.Default();
+            ActiveConfig.Normalize();
+
+            // Re-placing the already introduced model restores the AR surface
+            // policy without repeating the first onGosloPlaced greeting or
+            // reconnecting the room.
+            SwitchWorkspace(ActiveConfig.workspace_id, "ar_workspace");
         }
 
         private IEnumerator SwitchWorkspaceRoutine(string workspaceId, string layoutKind)
@@ -418,11 +441,20 @@ namespace ParrotApp.Lifecycle
         public void ReportGosloPlaced()
         {
             if (ActiveConfig == null) ActiveConfig = AppStartupConfigDto.Default();
-            StartCoroutine(CallBrainRpc(
+            StartCoroutine(ReportGosloPlacedRoutine());
+        }
+
+        private IEnumerator ReportGosloPlacedRoutine()
+        {
+            bool ok = false;
+            yield return CallBrainRpc(
                 "onGosloPlaced",
                 BuildPlacementPayload(),
                 "goslo_placed",
-                waitForBrain: true));
+                waitForBrain: true,
+                onComplete: success => ok = success);
+            if (!ok)
+                lifecycleManager?.ReportDegraded("goslo_placed_rpc_failed");
         }
 
         private IEnumerator RunStartup(AppStartupConfigDto config)
@@ -936,6 +968,7 @@ namespace ParrotApp.Lifecycle
                 {
                     string missing = room == null ? "no room" : "brain not present";
                     Debug.LogWarning($"[AppStartupFlow] RPC {method} skipped: {missing} ({reason})");
+                    LastBrainRpcStatus = method + ":skipped:" + missing;
                     onComplete?.Invoke(false);
                     yield break;
                 }
@@ -958,16 +991,19 @@ namespace ParrotApp.Lifecycle
             if (rpcCall.IsError)
             {
                 Debug.LogWarning($"[AppStartupFlow] RPC {method} failed ({reason}): {rpcCall.Error?.Message}");
+                LastBrainRpcStatus = method + ":error:" + ShortRuntimeLabel(rpcCall.Error?.Message, 36);
                 onComplete?.Invoke(false);
                 yield break;
             }
 
             if (!IsRpcBusinessOk(method, rpcCall.Payload, reason))
             {
+                LastBrainRpcStatus = method + ":business_failed";
                 onComplete?.Invoke(false);
                 yield break;
             }
 
+            LastBrainRpcStatus = method + ":ok";
             onComplete?.Invoke(true);
         }
 
@@ -1290,6 +1326,13 @@ namespace ParrotApp.Lifecycle
                     : (roomManager != null ? roomManager.gameObject : gameObject);
                 arSessionBaselineReporter = host.AddComponent<FormalArSessionBaselineReporter>();
             }
+            if (FindObjectOfType<AudioRouteManager>() == null)
+            {
+                var host = microphonePublisher != null
+                    ? microphonePublisher.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                host.AddComponent<AudioRouteManager>();
+            }
             if (FindObjectOfType<AudioRoutePolicyBrainReporter>() == null)
             {
                 var host = microphonePublisher != null
@@ -1341,6 +1384,13 @@ namespace ParrotApp.Lifecycle
         {
             if (s == null) return "\"\"";
             return "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+        }
+
+        private static string ShortRuntimeLabel(string value, int max)
+        {
+            string text = string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
+            if (text.Length <= max) return text;
+            return text.Substring(0, Math.Max(1, max - 3)) + "...";
         }
 
         private static string QuoteArray(string[] values)

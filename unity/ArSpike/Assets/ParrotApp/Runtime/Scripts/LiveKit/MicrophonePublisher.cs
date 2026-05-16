@@ -27,16 +27,17 @@ namespace ParrotApp.LiveKit
     /// <list type="number">
     /// <item>The sample rate is no longer hard-coded to 48k. It comes from
     ///   <see cref="AudioRoutePolicy.PreferredSampleRate"/> via
-    ///   <see cref="AudioRouteDetector"/>: speaker/wired use 48k,
-    ///   bluetooth_sco/a2dp use 16k, and unknown falls back to 48k.</item>
+    ///   <see cref="AudioRouteManager"/>: speaker/wired/A2DP use 48k,
+    ///   bluetooth_sco uses 16k, and unknown falls back to 48k.</item>
     /// <item>Device selection prefers a <see cref="UnityEngine.Microphone"/> whose
-    ///   name contains <c>bluetooth</c>, <c>airpods</c>, or <c>sco</c> while a
-    ///   Bluetooth route is active. Otherwise it uses the system default.
-    ///   <see cref="preferredDevice"/> can still override this from Inspector.</item>
-    /// <item><see cref="AudioRouteDetector"/> owns route detection through
-    ///   <c>AudioSettings.OnAudioConfigurationChanged</c> plus polling fallback.
+    ///   name contains <c>bluetooth</c>, <c>airpods</c>, or <c>sco</c> only when
+    ///   the detector reports a SCO input route. A2DP stays output-only and uses
+    ///   Android's default microphone input. <see cref="preferredDevice"/> can
+    ///   still override this from Inspector or the Settings page.</item>
+    /// <item><see cref="AudioRouteManager"/> owns accepted route snapshots.
     ///   On changes, this class unpublishes and republishes so the LiveKit native
-    ///   source is rebuilt with the new sample rate.</item>
+    ///   source is rebuilt with the new sample rate. <see cref="AudioRouteDetector"/>
+    ///   remains a fallback/diagnostic provider.</item>
     /// <item>The route-change reason is reported through <c>audio_last_error</c> as
     ///   <c>route_changed_&lt;old&gt;_to_&lt;new&gt;</c>. A successful republish clears
     ///   it to mean the current route is healthy.</item>
@@ -48,7 +49,7 @@ namespace ParrotApp.LiveKit
     ///   <see cref="ClearPreferredDevice"/>. The preference is local to Unity
     ///   and only changes the <see cref="UnityEngine.Microphone"/> device name
     ///   used for the next LiveKit source rebuild.</item>
-    /// <item>Route policy still comes from <see cref="AudioRouteDetector"/>.
+    /// <item>Route policy comes from <see cref="AudioRouteManager"/>.
     ///   A2DP remains output-only; selecting a named mic does not magically
     ///   make A2DP a Bluetooth microphone route.</item>
     /// </list>
@@ -76,6 +77,9 @@ namespace ParrotApp.LiveKit
 
         [Tooltip("Optional; resolved through FindObjectOfType or added to this GameObject when empty.")]
         [SerializeField] private AudioRouteDetector routeDetector;
+
+        [Tooltip("Formal App route facade. Android native routing is preferred; AudioRouteDetector remains fallback.")]
+        [SerializeField] private AudioRouteManager routeManager;
 
         [Tooltip("Small debounce to coalesce Bluetooth/SCO route-change bursts before rebuilding the LiveKit audio source.")]
         [SerializeField] private float routeRepublishDebounceSeconds = 0.5f;
@@ -110,6 +114,7 @@ namespace ParrotApp.LiveKit
         public int ConfiguredSampleRate => _configuredSampleRate;
         public int UnityOutputSampleRate => _unityOutputSampleRate;
         public AudioRoutePolicy ActivePolicy => _activePolicy;
+        public AudioRouteManager RouteManager => routeManager;
         public bool PublishIntentEnabled => publishIntentEnabled;
         public string PreferredDevice => preferredDevice ?? "";
         public string LastManualDeviceStatus { get; private set; } = "auto";
@@ -148,16 +153,34 @@ namespace ParrotApp.LiveKit
         {
             if (lifecycleManager == null)
                 lifecycleManager = FindObjectOfType<AppLifecycleManager>();
+            if (lifecycleManager != null)
+                lifecycleManager.OnStateChanged += OnLifecycleStateChanged;
+
+            if (routeManager == null)
+                routeManager = FindObjectOfType<AudioRouteManager>();
+            if (routeManager == null)
+            {
+                routeManager = gameObject.AddComponent<AudioRouteManager>();
+                Debug.Log("[MicrophonePublisher] no AudioRouteManager found; auto-added on this GameObject");
+            }
 
             if (routeDetector == null)
                 routeDetector = FindObjectOfType<AudioRouteDetector>();
-            if (routeDetector == null)
+            if (routeDetector == null && routeManager == null)
             {
                 routeDetector = gameObject.AddComponent<AudioRouteDetector>();
                 Debug.Log("[MicrophonePublisher] no AudioRouteDetector found; auto-added on this GameObject");
             }
-            routeDetector.OnRouteChanged += OnAudioRouteChanged;
-            _activePolicy = routeDetector.CurrentPolicy;
+            if (routeManager != null)
+            {
+                routeManager.OnRoutePolicyChanged += OnAudioRouteChanged;
+                _activePolicy = routeManager.CurrentPolicy;
+            }
+            else if (routeDetector != null)
+            {
+                routeDetector.OnRouteChanged += OnAudioRouteChanged;
+                _activePolicy = routeDetector.CurrentPolicy;
+            }
 
             var rm = RoomManager.Instance;
             if (rm == null)
@@ -171,6 +194,24 @@ namespace ParrotApp.LiveKit
             if (rm.IsConnected) OnRoomConnected();
         }
 
+        private void OnLifecycleStateChanged(AppLifecycleState oldState, AppLifecycleState newState)
+        {
+            if (!publishIntentEnabled || _shutdownInitiated) return;
+            if (RoomManager.Instance?.IsConnected != true) return;
+            if (newState != AppLifecycleState.Connected
+                && newState != AppLifecycleState.Running
+                && newState != AppLifecycleState.Degraded)
+                return;
+
+            // Resume can change Android's communication device without a new
+            // plug/unplug callback. Pull a fresh snapshot; normal route-change
+            // handling decides whether the LiveKit mic track needs rebuilding.
+            if (routeManager != null)
+                RefreshActivePolicy(routeManager.RefreshCurrentPolicy("lifecycle_resumed"), "lifecycle_resumed");
+            else if (routeDetector != null)
+                RefreshActivePolicy(routeDetector.DetectNow(), "lifecycle_resumed");
+        }
+
         private void OnRoomConnected()
         {
             if (!publishIntentEnabled)
@@ -180,7 +221,12 @@ namespace ParrotApp.LiveKit
             }
             if (_isPublishing || _publishInProgress) return;
             // Pull the detector before publishing so the route policy is fresh.
-            if (routeDetector != null) RefreshActivePolicy(routeDetector.DetectNow(), "room_connected");
+            if (routeManager != null)
+            {
+                routeManager.RequestCommunicationMode(true);
+                RefreshActivePolicy(routeManager.RefreshCurrentPolicy("room_connected"), "room_connected");
+            }
+            else if (routeDetector != null) RefreshActivePolicy(routeDetector.DetectNow(), "room_connected");
             StartCoroutine(RequestAndPublish(initialReason: null));
         }
 
@@ -206,6 +252,7 @@ namespace ParrotApp.LiveKit
             publishIntentEnabled = enabled;
             if (!enabled)
             {
+                routeManager?.RequestCommunicationMode(false);
                 if (_publishInProgress && !_isPublishing && _audioTrack == null && _micSource == null)
                 {
                     Debug.Log($"[MicrophonePublisher] publish disable queued while permission/setup is in progress ({reason})");
@@ -221,7 +268,10 @@ namespace ParrotApp.LiveKit
 
             _shutdownInitiated = false;
             if (RoomManager.Instance?.IsConnected == true && !_isPublishing && !_publishInProgress)
+            {
+                routeManager?.RequestCommunicationMode(true);
                 StartCoroutine(RequestAndPublish(initialReason: $"policy_enabled:{reason}"));
+            }
         }
 
         /// <summary>
@@ -255,6 +305,17 @@ namespace ParrotApp.LiveKit
                 HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);
                 _publishInProgress = false;
                 yield break;
+            }
+
+            yield return RequestAndroidBluetoothPermissionIfNeeded();
+            if (routeManager != null)
+            {
+                routeManager.RequestCommunicationMode(true);
+                RefreshActivePolicy(routeManager.RefreshCurrentPolicy("publish_permission_granted"), "publish_permission_granted");
+            }
+            else if (routeDetector != null)
+            {
+                RefreshActivePolicy(routeDetector.DetectNow(), "publish_permission_granted");
             }
 
             if (!publishIntentEnabled)
@@ -374,10 +435,10 @@ namespace ParrotApp.LiveKit
         /// <see cref="preferredDevice"/> &gt; Bluetooth route match &gt;
         /// Microphone.devices[0] system default.
         ///
-        /// <b>Bluetooth rule</b>: when detector reports a Bluetooth policy, scan
-        /// <c>Microphone.devices</c> for bluetooth/airpods/sco/headset names. If no
-        /// explicit device is visible, fall back to the default while keeping the
-        /// native source at 16k so SCO can still work behind Android routing.
+        /// <b>Bluetooth rule</b>: only a SCO policy scans
+        /// <c>Microphone.devices</c> for bluetooth/airpods/sco/headset names. A2DP
+        /// is output-only and keeps Android's default microphone device at the
+        /// normal 48k policy.
         /// </summary>
         private string SelectDevice(AudioRoutePolicy policy)
         {
@@ -552,7 +613,9 @@ namespace ParrotApp.LiveKit
 
         private void QueueManualDeviceRepublish(string reason)
         {
-            if (routeDetector != null)
+            if (routeManager != null)
+                RefreshActivePolicy(routeManager.RefreshCurrentPolicy("manual_mic_device_preference"), "manual_mic_device_preference");
+            else if (routeDetector != null)
                 RefreshActivePolicy(routeDetector.DetectNow(), "manual_mic_device_preference");
 
             string safeReason = string.IsNullOrWhiteSpace(reason)
@@ -671,6 +734,7 @@ namespace ParrotApp.LiveKit
             }
             StopPublishingInner();
             _publishInProgress = false;
+            routeManager?.RequestCommunicationMode(false);
             HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), $"policy_disabled:{reason}");
             Debug.Log($"[MicrophonePublisher] microphone publish disabled by policy ({reason})");
         }
@@ -709,6 +773,14 @@ namespace ParrotApp.LiveKit
         {
             StopPublishing("destroy");
 
+            if (routeManager != null)
+            {
+                routeManager.OnRoutePolicyChanged -= OnAudioRouteChanged;
+                routeManager.RequestCommunicationMode(false);
+            }
+            if (lifecycleManager != null)
+                lifecycleManager.OnStateChanged -= OnLifecycleStateChanged;
+
             if (routeDetector != null)
                 routeDetector.OnRouteChanged -= OnAudioRouteChanged;
 
@@ -719,6 +791,42 @@ namespace ParrotApp.LiveKit
                 rm.OnDisconnected -= OnRoomDisconnected;
             }
         }
+
+        private IEnumerator RequestAndroidBluetoothPermissionIfNeeded()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (AndroidSdkInt() < 31)
+                yield break;
+            const string bluetoothConnect = "android.permission.BLUETOOTH_CONNECT";
+            if (UnityEngine.Android.Permission.HasUserAuthorizedPermission(bluetoothConnect))
+                yield break;
+
+            UnityEngine.Android.Permission.RequestUserPermission(bluetoothConnect);
+            float deadline = Time.realtimeSinceStartup + 4f;
+            while (!UnityEngine.Android.Permission.HasUserAuthorizedPermission(bluetoothConnect)
+                   && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+#else
+            yield break;
+#endif
+        }
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private static int AndroidSdkInt()
+        {
+            try
+            {
+                using (var version = new AndroidJavaClass("android.os.Build$VERSION"))
+                    return version.GetStatic<int>("SDK_INT");
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+#endif
 
         private static double UnixSeconds()
             => (DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;

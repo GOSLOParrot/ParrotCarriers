@@ -175,6 +175,7 @@ namespace ParrotApp.UI
             _statusText.horizontalOverflow = HorizontalWrapMode.Wrap;
             _statusText.verticalOverflow = VerticalWrapMode.Truncate;
             _statusText.text = LastToolStatus;
+            _statusText.raycastTarget = false;
         }
 
         private static RectTransform CreatePanel(
@@ -190,7 +191,7 @@ namespace ParrotApp.UI
             var rect = CreateArea(name, parent, anchorMin, anchorMax, pivot, position, size);
             var image = rect.gameObject.AddComponent<Image>();
             image.color = color;
-            image.raycastTarget = true;
+            image.raycastTarget = false;
             return rect;
         }
 
@@ -232,6 +233,7 @@ namespace ParrotApp.UI
             text.verticalOverflow = VerticalWrapMode.Truncate;
             text.color = new Color(0.96f, 0.92f, 0.78f, 0.95f);
             text.text = textValue;
+            text.raycastTarget = false;
         }
 
     }

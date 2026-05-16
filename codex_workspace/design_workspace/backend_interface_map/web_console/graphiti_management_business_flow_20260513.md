@@ -94,7 +94,8 @@ These routes remain Web-only business interfaces until reviewed:
 |:--|:--|:--|
 | `POST /api/graphiti/subgraph/search` | Natural-language Graphiti search returning bounded hits/subgraph candidates from one partition. | Read-only; tolerant bounded limit; partition allowlist includes `arknights_test`. |
 | `POST /api/graphiti/subgraph/export-draft` | Convert selected Graphiti hits into a planned L1.5/L2-B export receipt with observations, `subgraph`, `edge_drafts`, and edge write policy. | Draft only; no Graphiti or L2-B mutation. Edge drafts are preview-only until L1.5-admitted nodes resolve to L2-B UUIDs. |
-| `POST /api/graphiti/subgraph/export` | Export selected hits to L2-B by admitting observations through L1.5. | Default dry-run; real apply requires `operator_mode=true`; no direct FalkorDB or direct L2-B write. |
+| `POST /api/graphiti/subgraph/import-plan` | Join the Graphiti export draft with the CORE-013 import-destination policy so the Source Board shows one coherent Graphiti -> L1.5 -> L2-B plan. Empty hit selections return `policy_skipped_reason` and no graph placement policy. | Draft only; no Graphiti, FalkorDB, L1.5, or L2-B mutation. Real export still goes through `/api/graphiti/subgraph/export` under operator mode; real edges remain a later L2-B edge route after UUID resolution. |
+| `POST /api/graphiti/subgraph/export` | Export selected hits to L2-B by admitting observations through L1.5. | Supports dry-run or operator apply; React Settings `Mode` defaults the execute button to `dry_run=false` / `operator_mode=true`. No direct FalkorDB or direct L2-B Edge write. |
 
 Exported observations should use `ObservationSource.USER_EXPLICIT` for the
 first Web operator path and preserve Graphiti provenance in source metadata:
@@ -122,6 +123,30 @@ L1.5 admission and must remain operator-gated.
 - Export is dry-run/operator-gated and writes only through
   `L15Pool.admit(Observation(source=USER_EXPLICIT))`. It does not directly
   write FalkorDB or bypass Graphiti/L1.5 audit receipts.
+- 2026-05-16 continuation adds
+  `POST /api/graphiti/subgraph/import-plan` in the Web BFF. The route combines
+  the Graphiti export draft with `l2b.graph_policy.import_draft` semantics so
+  operators can see selected hits, L1.5 observations, Graphiti fact
+  `edge_drafts`, destination policy, proposed overlay/draft edges, apply
+  preconditions, and CORE-008/CORE-013 status in one receipt.
+- 2026-05-16 bugfix: when no Graphiti hits are selected, `import-plan` returns
+  `success=false`, `policy_skipped_reason=no_graphiti_observations`, and empty
+  `import_policy` / `import_draft` instead of showing a fake destination plan.
+- 2026-05-16 review fix: Graphiti `import-plan` now uses the normalized
+  partition returned by `draft_graphiti_subgraph_export`, so receipt
+  `partition`, Observation provenance, subgraph partition, and import-policy
+  `source_id` stay aligned. It also forces top-level draft audit flags
+  (`dry_run=true`, `operator_mode=false`) even if the caller sent apply flags.
+- 2026-05-16 review fix continuation: Graphiti `import-plan` now preserves the
+  export draft receipt id across both receipt shapes used in the Web stack:
+  top-level `receipt_id` from `parrot.brain.graphiti_console` and nested
+  `receipt.receipt_id` from `parrot.web_console.memory_ops`. This keeps the
+  search/export -> destination-policy audit chain visible without changing the
+  public route shape.
+- The React Source Board now uses that unified import plan for the Graphiti
+  policy button. This is still not a real apply path: the apply route remains
+  `/api/graphiti/subgraph/export`, and L2-B Edge writes still require resolved
+  Node UUIDs plus a separate operator-gated edge route.
 - 2026-05-15 continuation: Graphiti search routes now tolerate bad `limit`
   values instead of route-level 500s. Export receipts include `subgraph`,
   `edge_drafts`, and `edge_write_policy`, making the source/target/fact shape
@@ -143,8 +168,9 @@ L1.5 admission and must remain operator-gated.
   actions separate from preview actions.
 - `Export Draft` calls `/api/graphiti/subgraph/export-draft`; `Preview Apply`
   calls `/api/graphiti/subgraph/export` with `dry_run=true` and
-  `operator_mode=false`. Real apply remains operator-gated and is not exposed as
-  a casual primary action.
+  `operator_mode=false`. The separate execute/import action now follows the
+  global Settings `Mode`, which defaults to real operator testing on the Web
+  Console.
 - Export receipts now render an inline Export plan in the Source Board: selected
   hits become L1.5 observations, and Graphiti source/target pairs appear as
   Edge drafts with `requires_resolved_l2b_node_uuid` policy.
@@ -161,6 +187,40 @@ L1.5 admission and must remain operator-gated.
   refreshes the canvas preview without spamming the receipt rail. The same id
   normalization is used for preview Edges, so the operator can see the selected
   subgraph before choosing export or import-destination preview.
+- 2026-05-16 review fix continuation: Graphiti search/export/import-plan API
+  exceptions now clear stale export-plan state and show the exception inline in
+  the active source card. A failed request should not leave an older destination
+  policy or Edge draft looking like the current plan.
+- 2026-05-16 selection-state fix: Graphiti hit selection, select-all,
+  clear-selection, and partition/query/limit edits now invalidate the inline
+  export/import plan. Preview/export/import buttons are still clickable with no
+  selected hits so Web can return a visible `no_hits_selected` receipt instead
+  of hiding the blocked state behind disabled controls.
+- 2026-05-16 operator-import continuation: the Graphiti Source Board now
+  exposes a secondary `Import to L1.5` action. It calls
+  `/api/graphiti/subgraph/export` with `dry_run=false` and
+  `operator_mode=true`, so selected hits are admitted through L1.5 as
+  `USER_EXPLICIT` observations. This is not a FalkorDB write and not a direct
+  L2-B Edge write; fact Edges remain `edge_drafts` until resolved L2-B Node
+  UUIDs and the separate operator-gated Edge route are available.
+- 2026-05-17 execution-mode fix: `Import to L1.5` no longer owns a local dry-run
+  toggle. It obeys the global Web Console Settings `Mode`; default mode is real
+  operator execution for testing, and preview mode forces the same action to
+  return a dry-run receipt.
+- Successful Graphiti operator imports now ask React to refresh
+  `/api/app/live-state` and `/api/l15/pool` immediately and add a
+  `memory.refresh_after_import` receipt with refreshed counts. This confirms
+  the L1.5 admit chain in the Record rail without changing the Graphiti BFF
+  route shape.
+- 2026-05-17 ECS/app-monitor connection audit: when the lightweight Web
+  Console BFF on `7893` does not install `graphiti-core`, `graphiti_status()`
+  and `search_graphiti()` can proxy read-only status/search to an app-monitor
+  Graphiti API if `PARROT_WEB_CONSOLE_GRAPHITI_URL` or
+  `PARROT_GRAPHITI_REMOTE_URL` is set. The common local/ECS tunnel target is
+  `http://127.0.0.1:8790`. The proxy is opt-in so tests and deployments do not
+  silently reach a remote service. It is read-only for status/search; Graphiti
+  subgraph export still writes only through the local Web BFF's L1.5 apply path
+  unless the Web Console itself is deployed with the intended runtime target.
 - The canvas preview is still a Memory operation aid, not the final full-screen
   L2-B graph monitor. WEB-013 owns the later React-Force-Graph/Cytoscape-style
   renderer evaluation.

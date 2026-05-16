@@ -100,6 +100,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  l15BucketApply: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l15/bucket-op", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   refBindingDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/refs/binding/draft", {
       method: "POST",
@@ -115,6 +120,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  obsidianVaultImportPlan: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l15/obsidian-vault/import-plan", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   obsidianVaultImport: (body: Record<string, unknown>) =>
     json<Receipt>("/api/l15/obsidian-vault/import", {
       method: "POST",
@@ -122,6 +132,11 @@ export const api = {
     }),
   l15ObsidianNodeDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/l15/obsidian-node/draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  l15ObsidianNodeApply: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l15/obsidian-node", {
       method: "POST",
       body: JSON.stringify(body)
     }),
@@ -136,6 +151,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  graphitiSubgraphImportPlan: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/graphiti/subgraph/import-plan", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   graphitiSubgraphExport: (body: Record<string, unknown>) =>
     json<Receipt>("/api/graphiti/subgraph/export", {
       method: "POST",
@@ -146,6 +166,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  l2bNodeApply: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l2b/node", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   l2bNodeDelete: (body: Record<string, unknown>) =>
     json<Receipt>("/api/l2b/node/delete", {
       method: "POST",
@@ -153,6 +178,11 @@ export const api = {
     }),
   l2bEdgeDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/l2b/edge/draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  l2bEdgeApply: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l2b/edge", {
       method: "POST",
       body: JSON.stringify(body)
     }),
@@ -187,15 +217,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
-  messageCheck: () =>
+  triggerFire: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/dsg/triggers/fire-event", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  messageCheck: (body: Record<string, unknown> = {}) =>
     json<Receipt>("/api/google/messages/check", {
       method: "POST",
-      body: JSON.stringify({ dry_run: true, operator_mode: false })
+      body: JSON.stringify({ dry_run: true, operator_mode: false, ...body })
     }),
-  messagePush: () =>
+  messagePush: (body: Record<string, unknown> = {}) =>
     json<Receipt>("/api/google/messages/push-test", {
       method: "POST",
-      body: JSON.stringify({ subject: "Runtime Flow message push test", dry_run: true })
+      body: JSON.stringify({ subject: "Runtime Flow message push test", dry_run: true, operator_mode: false, ...body })
     }),
   googleCalendarPreview: (body: Record<string, unknown>) =>
     json<Receipt>("/api/google/calendar/preview", {
@@ -211,6 +246,11 @@ export const api = {
     json<Receipt>("/api/google/calendar/results?limit=" + encodeURIComponent(String(limit))),
   googleCalendarImportDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/google/calendar/import-draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  googleCalendarImportPlan: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/google/calendar/import-plan", {
       method: "POST",
       body: JSON.stringify(body)
     }),

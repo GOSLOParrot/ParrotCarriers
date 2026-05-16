@@ -437,6 +437,246 @@ def scan_obsidian_vault(payload: dict[str, Any] | None = None) -> dict[str, Any]
     )
 
 
+def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Build one reviewable plan for Graphiti -> L1.5 -> L2-B import.
+
+    Graphiti export and graph-placement policy used to be two separate UI
+    previews. Keeping them separate made the operator experience feel fake:
+    the Source Board could show observations or a destination policy, but not
+    one coherent import route. This Web-only wrapper joins both drafts without
+    adding an apply route or bypassing L1.5.
+    """
+
+    from parrot.brain.graphiti_console import draft_graphiti_subgraph_export
+    from parrot.web_console.graph_policy import draft_import_destination
+
+    body = payload or {}
+    requested_execution = {
+        "dry_run": _body_bool(body.get("dry_run"), True),
+        "operator_mode": _body_bool(body.get("operator_mode"), False),
+        "ignored_for_plan": True,
+    }
+    dry_run = True
+    operator_mode = False
+    raw_partition = str(body.get("partition") or "goslo").strip() or "goslo"
+    partition = raw_partition
+    query = str(body.get("query") or "").strip()
+
+    export_draft = draft_graphiti_subgraph_export(
+        {**body, "dry_run": True, "operator_mode": False}
+    )
+    export_data = dict(export_draft.get("data") or {})
+    partition = str(export_data.get("partition") or raw_partition).strip() or raw_partition
+    observations = [
+        row for row in export_data.get("observations", []) if isinstance(row, dict)
+    ]
+    edge_drafts = [
+        row for row in export_data.get("edge_drafts", []) if isinstance(row, dict)
+    ]
+    item_ids = [
+        str(
+            row.get("graphiti_uuid")
+            or row.get("provenance_stream_id")
+            or row.get("label")
+            or index
+        )
+        for index, row in enumerate(observations)
+    ]
+    proposed_edges = [
+        {
+            "source": row.get("source_graphiti_uuid"),
+            "target": row.get("target_graphiti_uuid"),
+            "kind": row.get("kind") or "graphiti_fact",
+            "strength": row.get("strength"),
+            "label": row.get("label"),
+            "source_graphiti_uuid": row.get("source_graphiti_uuid"),
+            "target_graphiti_uuid": row.get("target_graphiti_uuid"),
+            "hit_graphiti_uuid": row.get("hit_graphiti_uuid"),
+            "write_policy": row.get("write_policy"),
+            "edge_source": "graphiti",
+            "meta": row.get("meta") if isinstance(row.get("meta"), dict) else {},
+        }
+        for row in edge_drafts
+    ]
+    policy_receipt: dict[str, Any] | None = None
+    policy_skipped_reason = ""
+    if observations:
+        policy_receipt = draft_import_destination(
+            {
+                "destination": body.get("destination") or "isolated_compartment",
+                "source_kind": "graphiti",
+                "source_id": body.get("source_id") or f"{partition}:{query or 'search'}",
+                "workspace_id": body.get("workspace_id") or "memory_graph",
+                "subgraph_id": body.get("subgraph_id") or "",
+                "subgraph_label": body.get("subgraph_label") or query or partition,
+                "item_ids": item_ids,
+                "proposed_edges": proposed_edges,
+                "dry_run": True,
+                "operator_mode": False,
+            }
+        )
+    else:
+        # Empty imports must not display a plausible graph placement policy.
+        policy_skipped_reason = "no_graphiti_observations"
+    policy_data = dict((policy_receipt or {}).get("data") or {})
+    policy_success = bool(policy_receipt and policy_receipt.get("success"))
+    success = bool(export_draft.get("success")) and bool(observations) and policy_success
+    return _receipt(
+        action="graphiti.subgraph.import_plan",
+        success=success,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            "partition": partition,
+            "query": query,
+            "selected_count": len(observations),
+            "observations": observations,
+            "edge_drafts": edge_drafts,
+            "subgraph": export_data.get("subgraph", {}),
+            "export_write_path": export_data.get(
+                "write_path",
+                "L15Pool.admit(Observation(source=USER_EXPLICIT))",
+            ),
+            "edge_write_policy": export_data.get("edge_write_policy", ""),
+            "import_policy": policy_data.get("policy", {}),
+            "import_draft": policy_data.get("draft", {}),
+            "policy_skipped_reason": policy_skipped_reason,
+            "flow_steps": [
+                "Graphiti.search scoped by partition",
+                "operator selects hits",
+                "draft Observation(source=USER_EXPLICIT) rows",
+                "preview CORE-013 import destination / overlay policy",
+                "real export, if chosen later, must admit through L1.5 under operator mode",
+            ],
+            "operator_required_for_execute": True,
+            "apply_route": "/api/graphiti/subgraph/export",
+            "apply_preconditions": {
+                "dry_run": False,
+                "operator_mode": True,
+                "edge_apply": "separate L2-B edge route after node UUID resolution",
+            },
+            "warnings": list(export_data.get("warnings") or []),
+            "core_candidates": ["CORE-008", "CORE-013"],
+            "requested_execution": requested_execution,
+            "policy_receipt_id": ((policy_receipt or {}).get("receipt") or {}).get(
+                "receipt_id",
+                "",
+            ),
+            "export_receipt_id": str(
+                export_draft.get("receipt_id")
+                or (export_draft.get("receipt") or {}).get("receipt_id", "")
+            ),
+        },
+    )
+
+
+def draft_obsidian_l2b_import_plan(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Build one reviewable plan for Obsidian vault notes.
+
+    The Source Board should show the operator the whole path before any write:
+    local vault scan, note selection, UserTagFilter normalization, L1.5 admit,
+    and the optional L2-B overlay/subgraph placement policy. This remains a
+    draft-only Web surface and does not publish the Obsidian trigger event.
+    """
+
+    from parrot.web_console.graph_policy import draft_import_destination
+
+    body = payload or {}
+    requested_execution = {
+        "dry_run": _body_bool(body.get("dry_run"), True),
+        "operator_mode": _body_bool(body.get("operator_mode"), False),
+        "ignored_for_plan": True,
+    }
+    dry_run = True
+    operator_mode = False
+    draft = draft_obsidian_vault_import(
+        {**body, "dry_run": True, "operator_mode": False}
+    )
+    data = dict(draft.get("data") or {})
+    items = [row for row in data.get("items", []) if isinstance(row, dict)]
+    errors = [row for row in data.get("errors", []) if isinstance(row, dict)]
+    vault = (data.get("scan_summary") or {}).get("vault", {})
+    vault_path = str(
+        body.get("vault_path")
+        or (vault.get("vault_path") if isinstance(vault, dict) else "")
+        or "obsidian_vault"
+    )
+    item_ids = [
+        str(
+            row.get("path")
+            or (row.get("event") if isinstance(row.get("event"), dict) else {}).get(
+                "provenance_stream_id"
+            )
+            or (row.get("observation") if isinstance(row.get("observation"), dict) else {}).get(
+                "label"
+            )
+            or index
+        )
+        for index, row in enumerate(items)
+    ]
+    policy_receipt: dict[str, Any] | None = None
+    policy_skipped_reason = ""
+    if items:
+        policy_receipt = draft_import_destination(
+            {
+                "destination": body.get("destination") or "isolated_compartment",
+                "source_kind": "obsidian",
+                "source_id": body.get("source_id") or vault_path,
+                "workspace_id": body.get("workspace_id") or "memory_graph",
+                "subgraph_id": body.get("subgraph_id") or "",
+                "subgraph_label": body.get("subgraph_label") or "Obsidian source pack",
+                "item_ids": item_ids,
+                "dry_run": True,
+                "operator_mode": False,
+            }
+        )
+    else:
+        # Keep an empty or invalid note selection visibly empty in Source Board.
+        policy_skipped_reason = "no_importable_obsidian_items"
+    policy_data = dict((policy_receipt or {}).get("data") or {})
+    policy_success = bool(policy_receipt and policy_receipt.get("success"))
+    return _receipt(
+        action="l15.obsidian_vault.import_plan",
+        success=bool(items) and not errors and policy_success,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            "items": items,
+            "errors": errors,
+            "selected_count": len(items),
+            "scan_summary": data.get("scan_summary", {}),
+            "write_path": data.get(
+                "write_path",
+                "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)",
+            ),
+            "runtime_path": data.get(
+                "runtime_path",
+                "ObsidianIngestTrigger -> TriggerOutcome.commit_observations -> L15Pool.admit",
+            ),
+            "import_policy": policy_data.get("policy", {}),
+            "import_draft": policy_data.get("draft", {}),
+            "policy_skipped_reason": policy_skipped_reason,
+            "flow_steps": [
+                "scan local Obsidian vault",
+                "operator selects ready daily / roleplay / ref notes",
+                "UserTagFilter normalizes selected notes into Observations",
+                "preview CORE-013 import destination / overlay policy",
+                "real import, if chosen later, must admit through L1.5 under operator mode",
+            ],
+            "operator_required_for_execute": True,
+            "apply_route": "/api/l15/obsidian-vault/import",
+            "apply_preconditions": {"dry_run": False, "operator_mode": True},
+            "core_candidates": ["CORE-008", "CORE-013"],
+            "requested_execution": requested_execution,
+            "policy_receipt_id": ((policy_receipt or {}).get("receipt") or {}).get(
+                "receipt_id",
+                "",
+            ),
+            "import_receipt_id": (draft.get("receipt") or {}).get("receipt_id", ""),
+        },
+    )
+
+
 def draft_obsidian_vault_import(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Draft a batch import from scanned Obsidian notes into L1.5.
 
@@ -748,6 +988,114 @@ def draft_google_calendar_import(payload: dict[str, Any] | None = None) -> dict[
             "errors": errors,
             "write_path": "CalendarTrigger._event_to_observation -> L15Pool.admit(GOOGLE_CALENDAR)",
             "operator_required_for_import": True,
+        },
+    )
+
+
+def draft_google_calendar_l2b_import_plan(
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build one reviewable plan for Google Calendar -> L1.5 -> L2-B.
+
+    Manual fetch/import is the current phase. Google watch/syncToken remains a
+    later server-side feature, so this function only joins the existing
+    CalendarTrigger preview with the graph-placement policy draft.
+    """
+
+    from parrot.web_console.graph_policy import draft_import_destination
+
+    body = payload or {}
+    requested_execution = {
+        "dry_run": _body_bool(body.get("dry_run"), True),
+        "operator_mode": _body_bool(body.get("operator_mode"), False),
+        "ignored_for_plan": True,
+    }
+    dry_run = True
+    operator_mode = False
+    draft = draft_google_calendar_import({**body, "dry_run": True, "operator_mode": False})
+    data = dict(draft.get("data") or {})
+    observations = [
+        item for item in data.get("observations", []) if isinstance(item, dict)
+    ]
+    normalized_events = [
+        item for item in data.get("normalized_events", []) if isinstance(item, dict)
+    ]
+    mapping_rows = [
+        item for item in data.get("mapping_rows", []) if isinstance(item, dict)
+    ]
+    errors = [row for row in data.get("errors", []) if isinstance(row, dict)]
+    item_ids = [
+        str(
+            row.get("merge_key")
+            or row.get("provider_ref")
+            or row.get("calendar_event_id")
+            or index
+        )
+        for index, row in enumerate(mapping_rows)
+    ]
+    calendar_ids = sorted({
+        str(row.get("calendar_id") or "primary")
+        for row in mapping_rows
+        if isinstance(row, dict)
+    })
+    policy_receipt: dict[str, Any] | None = None
+    policy_skipped_reason = ""
+    if observations:
+        policy_receipt = draft_import_destination(
+            {
+                "destination": body.get("destination") or "isolated_compartment",
+                "source_kind": "google_calendar",
+                "source_id": body.get("source_id") or ",".join(calendar_ids) or "google_calendar",
+                "workspace_id": body.get("workspace_id") or "memory_graph",
+                "subgraph_id": body.get("subgraph_id") or "",
+                "subgraph_label": body.get("subgraph_label") or "Google Calendar source pack",
+                "item_ids": item_ids,
+                "dry_run": True,
+                "operator_mode": False,
+            }
+        )
+    else:
+        # A Calendar plan without normalized observations should not imply a graph write.
+        policy_skipped_reason = "no_calendar_observations"
+    policy_data = dict((policy_receipt or {}).get("data") or {})
+    policy_success = bool(policy_receipt and policy_receipt.get("success"))
+    return _receipt(
+        action="google.calendar.import_plan",
+        success=bool(observations) and not errors and policy_success,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            "raw_events": data.get("raw_events", []),
+            "normalized_events": normalized_events,
+            "observations": observations,
+            "mapping_rows": mapping_rows,
+            "observation_count": len(observations),
+            "errors": errors,
+            "write_path": data.get(
+                "write_path",
+                "CalendarTrigger._event_to_observation -> L15Pool.admit(GOOGLE_CALENDAR)",
+            ),
+            "import_policy": policy_data.get("policy", {}),
+            "import_draft": policy_data.get("draft", {}),
+            "policy_skipped_reason": policy_skipped_reason,
+            "flow_steps": [
+                "manual fetch or pasted Nanobot/Google JSON",
+                "CalendarTrigger normalizes event identity, time, status, and object hints",
+                "draft GOOGLE_CALENDAR Observations for L1.5",
+                "preview CORE-013 import destination / overlay policy",
+                "real import, if chosen later, must admit through L1.5 under operator mode",
+            ],
+            "operator_required_for_execute": True,
+            "apply_route": "/api/google/calendar/import",
+            "apply_preconditions": {"dry_run": False, "operator_mode": True},
+            "sync_policy": "manual_fetch_import_v1; google_watch_sync_token_v2_later",
+            "core_candidates": ["CORE-008", "CORE-013"],
+            "requested_execution": requested_execution,
+            "policy_receipt_id": ((policy_receipt or {}).get("receipt") or {}).get(
+                "receipt_id",
+                "",
+            ),
+            "import_receipt_id": (draft.get("receipt") or {}).get("receipt_id", ""),
         },
     )
 

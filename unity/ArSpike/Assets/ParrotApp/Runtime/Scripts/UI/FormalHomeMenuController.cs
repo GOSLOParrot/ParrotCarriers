@@ -38,6 +38,7 @@ namespace ParrotApp.UI
         [SerializeField] private FormalHomeMenuLoader menuLoader;
         [SerializeField] private FormalModelPlacementController modelPlacementController;
         [SerializeField] private FormalHomeToolController homeToolController;
+        [SerializeField] private AudioRouteManager audioRouteManager;
         [SerializeField] private AudioRouteDetector audioRouteDetector;
         [SerializeField] private AudioRoutePolicyBrainReporter audioRouteReporter;
         [SerializeField] private MicrophonePublisher microphonePublisher;
@@ -93,6 +94,7 @@ namespace ParrotApp.UI
         private string _pendingXrHandMode = "";
         private bool _audioRouteReportPending;
         private bool _workspaceApplyPending;
+        private FormalModelPlacementController _subscribedPlacementController;
 
         private void OnEnable()
         {
@@ -134,6 +136,7 @@ namespace ParrotApp.UI
             if (menuLoader == null) menuLoader = FindObjectOfType<FormalHomeMenuLoader>();
             if (modelPlacementController == null) modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
             if (homeToolController == null) homeToolController = FindObjectOfType<FormalHomeToolController>();
+            if (audioRouteManager == null) audioRouteManager = FindObjectOfType<AudioRouteManager>();
             if (audioRouteDetector == null) audioRouteDetector = FindObjectOfType<AudioRouteDetector>();
             if (audioRouteReporter == null) audioRouteReporter = FindObjectOfType<AudioRoutePolicyBrainReporter>();
             if (microphonePublisher == null) microphonePublisher = FindObjectOfType<MicrophonePublisher>();
@@ -165,6 +168,15 @@ namespace ParrotApp.UI
                 menuLoader.OnSelectorCatalogLoaded += HandleSelectorCatalogLoaded;
                 menuLoader.OnSelectorCatalogLoadFailed += HandleSelectorCatalogLoadFailed;
             }
+
+            if (_subscribedPlacementController != modelPlacementController)
+            {
+                if (_subscribedPlacementController != null)
+                    _subscribedPlacementController.OnPlacementStateChanged -= HandlePlacementStateChanged;
+                _subscribedPlacementController = modelPlacementController;
+                if (_subscribedPlacementController != null)
+                    _subscribedPlacementController.OnPlacementStateChanged += HandlePlacementStateChanged;
+            }
         }
 
         private void Unbind()
@@ -183,6 +195,11 @@ namespace ParrotApp.UI
                 menuLoader.OnSnapshotLoadFailed -= HandleSnapshotLoadFailed;
                 menuLoader.OnSelectorCatalogLoaded -= HandleSelectorCatalogLoaded;
                 menuLoader.OnSelectorCatalogLoadFailed -= HandleSelectorCatalogLoadFailed;
+            }
+            if (_subscribedPlacementController != null)
+            {
+                _subscribedPlacementController.OnPlacementStateChanged -= HandlePlacementStateChanged;
+                _subscribedPlacementController = null;
             }
         }
 
@@ -207,6 +224,14 @@ namespace ParrotApp.UI
             SetStatus("Loading menu", warning: true);
             if (menuLoader != null && menuLoader.Loaded && menuLoader.LastSnapshot != null)
                 RenderSnapshot(menuLoader.LastSnapshot);
+        }
+
+        private void HandlePlacementStateChanged(FormalModelPlacementController placement)
+        {
+            if (placement != null)
+                modelPlacementController = placement;
+            RefreshQuickActions();
+            RefreshStatus();
         }
 
         private void HandleStartupFailed(string _)
@@ -521,6 +546,8 @@ namespace ParrotApp.UI
             }
 
             _audioRouteReportPending = true;
+            if (audioRouteManager != null)
+                audioRouteManager.RefreshCurrentPolicy("formal_home_manual_rescan");
             audioRouteReporter.RefreshAndReportCurrentPolicy("formal_home_manual_rescan");
             RefreshQuickActions();
             if (_snapshot != null)
@@ -926,6 +953,7 @@ namespace ParrotApp.UI
             image.sprite = LoadSprite("paper_status_panel");
             image.type = image.sprite != null ? Image.Type.Sliced : Image.Type.Simple;
             image.color = color;
+            image.raycastTarget = false;
             return rect;
         }
 
@@ -945,6 +973,9 @@ namespace ParrotApp.UI
         private static Button CreateButton(string name, Transform parent, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 position, Vector2 size, Color color, Action onClick)
         {
             var rect = CreatePanel(name, parent, anchorMin, anchorMax, pivot, position, size, color);
+            var image = rect.GetComponent<Image>();
+            if (image != null)
+                image.raycastTarget = true;
             var button = rect.gameObject.AddComponent<Button>();
             if (onClick != null)
                 button.onClick.AddListener(() => onClick());
@@ -988,6 +1019,7 @@ namespace ParrotApp.UI
             var icon = CreateArea(name + "PixelIcon", button.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0f, 12f), new Vector2(32f, 32f));
             var iconImage = icon.gameObject.AddComponent<Image>();
             iconImage.color = ToolbarIconColor(index);
+            iconImage.raycastTarget = false;
 
             var text = CreateText(name + "Label", button.transform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 5f), new Vector2(-8f, 24f), 11, TextAnchor.MiddleCenter);
             text.text = label;
@@ -1010,6 +1042,7 @@ namespace ParrotApp.UI
             bg.sprite = LoadArMobileTemplateSprite("ActivationButtonOpaque");
             bg.type = bg.sprite != null ? Image.Type.Simple : Image.Type.Sliced;
             bg.color = new Color(1f, 1f, 1f, bg.sprite != null ? 0.98f : 0.68f);
+            bg.raycastTarget = true;
 
             var button = rect.gameObject.AddComponent<Button>();
             button.onClick.AddListener(PlaceModelPreview);
@@ -1025,6 +1058,7 @@ namespace ParrotApp.UI
             var iconImage = icon.gameObject.AddComponent<Image>();
             iconImage.sprite = LoadArMobileTemplateSprite("Icon-Cube");
             iconImage.color = iconImage.sprite != null ? Color.white : new Color(0.94f, 0.90f, 0.82f, 1f);
+            iconImage.raycastTarget = false;
 
             label = CreateText(
                 "ARMobileTemplatePlaceLabel",
@@ -1050,6 +1084,7 @@ namespace ParrotApp.UI
             text.horizontalOverflow = HorizontalWrapMode.Wrap;
             text.verticalOverflow = VerticalWrapMode.Truncate;
             text.color = new Color(0.95f, 0.90f, 0.80f, 1f);
+            text.raycastTarget = false;
             return text;
         }
 
@@ -1059,6 +1094,7 @@ namespace ParrotApp.UI
             var image = rect.gameObject.AddComponent<Image>();
             image.sprite = LoadSprite("status_red");
             image.color = new Color(0.94f, 0.32f, 0.24f, 0.95f);
+            image.raycastTarget = false;
             return image;
         }
 
@@ -1201,6 +1237,25 @@ namespace ParrotApp.UI
 
         private string AudioRouteStatusLabel()
         {
+            if (audioRouteManager != null)
+            {
+                var snapshot = audioRouteManager.CurrentSnapshot;
+                string managerStatus = "in " + AudioRouteLabel(audioRouteManager.CurrentPolicy.RouteName)
+                                       + " / src " + AudioRouteSourceLabel(audioRouteManager.LastDetectionSource);
+                if (snapshot != null)
+                {
+                    managerStatus = "in " + AudioRouteLabel(snapshot.input_route)
+                                    + " / out " + AudioRouteLabel(snapshot.output_route)
+                                    + " / " + snapshot.recommended_sample_rate_hz + "Hz"
+                                    + " / " + AudioRouteSourceLabel(snapshot.source);
+                    if (!string.IsNullOrWhiteSpace(snapshot.audio_focus))
+                        managerStatus += " / focus " + ShortLabel(snapshot.audio_focus, "focus", 12);
+                }
+                if (!string.IsNullOrWhiteSpace(audioRouteManager.LastError))
+                    managerStatus += " / local fail " + ShortLabel(audioRouteManager.LastError, "error", 18);
+                return managerStatus;
+            }
+
             if (audioRouteReporter == null)
             {
                 if (audioRouteDetector != null)
@@ -1209,17 +1264,17 @@ namespace ParrotApp.UI
                 return "route unknown";
             }
 
-            string status = "in " + AudioRouteLabel(audioRouteReporter.LastInputRoute)
-                            + " / out " + AudioRouteLabel(audioRouteReporter.LastOutputRoute)
-                            + " / " + audioRouteReporter.LastPreferredSampleRate + "Hz"
-                            + " / " + AudioRouteSourceLabel(audioRouteReporter.LastDetectionSource);
+            string reporterStatus = "in " + AudioRouteLabel(audioRouteReporter.LastInputRoute)
+                                    + " / out " + AudioRouteLabel(audioRouteReporter.LastOutputRoute)
+                                    + " / " + audioRouteReporter.LastPreferredSampleRate + "Hz"
+                                    + " / " + AudioRouteSourceLabel(audioRouteReporter.LastDetectionSource);
             if (audioRouteReporter.ReportPending)
-                return status + " / pending";
+                return reporterStatus + " / pending";
             if (!string.IsNullOrWhiteSpace(audioRouteReporter.LastReportError))
-                return status + " / fail " + ShortLabel(audioRouteReporter.LastReportError, "error", 20);
+                return reporterStatus + " / fail " + ShortLabel(audioRouteReporter.LastReportError, "error", 20);
             if (audioRouteReporter.ReportSuccessCount > 0)
-                return status + " / synced";
-            return status + " / not sent";
+                return reporterStatus + " / synced";
+            return reporterStatus + " / not sent";
         }
 
         private string MicrophoneStatusLabel()
@@ -1253,6 +1308,8 @@ namespace ParrotApp.UI
 
         private string AudioRouteShortLabel()
         {
+            if (audioRouteManager != null)
+                return AudioRouteLabel(audioRouteManager.CurrentPolicy.RouteName);
             if (audioRouteReporter == null)
                 return "unknown";
             return AudioRouteLabel(audioRouteReporter.LastOutputRoute);

@@ -106,6 +106,21 @@ AR_MOBILE_TEMPLATE_PLANE_COMPANION = (
 AR_MOBILE_TEMPLATE_PLACE_ICON = (
     PARROT_APP / "Resources" / "ARMobileTemplate" / "UI" / "Sprites" / "Icon-Cube.png"
 )
+AR_MOBILE_TEMPLATE_XRI_INPUT_ACTIONS = (
+    PARROT_APP / "Resources" / "ARMobileTemplate" / "XRIStarterAssets" / "XRI Default Input Actions.inputactions"
+)
+AR_MOBILE_TEMPLATE_SCREEN_RAY_PREFAB = (
+    PARROT_APP / "Resources" / "ARMobileTemplate" / "XRIStarterAssets" / "Screen Space Ray Interactor.prefab"
+)
+AR_MOBILE_TEMPLATE_SHADOW_FUNCTIONS = (
+    PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "ShadowReceiver" / "ShadowReceiverShaderFunctions.hlsl"
+)
+AR_MOBILE_TEMPLATE_OBJECT_SPAWNER = (
+    SCRIPT_ROOT / "ARMobileTemplate" / "XRIStarterAssets" / "ObjectSpawner.cs"
+)
+AR_MOBILE_TEMPLATE_SPAWN_TRIGGER = (
+    SCRIPT_ROOT / "ARMobileTemplate" / "XRIStarterAssets" / "ARInteractorSpawnTrigger.cs"
+)
 NER_SPINE_CONTROLLER = (
     SCRIPT_ROOT / "Parrot" / "NerSpineController.cs"
 )
@@ -124,8 +139,20 @@ NER_SPINE_AUDIT = (
 TOKEN_MINT_CLIENT = (
     SCRIPT_ROOT / "LiveKit" / "LiveKitTokenMintClient.cs"
 )
+AUDIO_ROUTE_MANAGER = (
+    SCRIPT_ROOT / "LiveKit" / "AudioRouteManager.cs"
+)
+ANDROID_AUDIO_ROUTE_MANAGER = (
+    SCRIPT_ROOT / "LiveKit" / "AndroidAudioRouteManager.cs"
+)
+AUDIO_ROUTE_SNAPSHOT = (
+    SCRIPT_ROOT / "LiveKit" / "AudioRouteSnapshot.cs"
+)
 AUDIO_ROUTE_POLICY_REPORTER = (
     SCRIPT_ROOT / "LiveKit" / "AudioRoutePolicyBrainReporter.cs"
+)
+AUDIO_ROUTE_POLICY = (
+    SCRIPT_ROOT / "LiveKit" / "AudioRoutePolicy.cs"
 )
 AUDIO_ROUTE_DETECTOR = (
     SCRIPT_ROOT / "LiveKit" / "AudioRouteDetector.cs"
@@ -159,6 +186,46 @@ ASSET_MANIFEST = PARROT_APP / "Art" / "AppV1" / "app_v1_asset_manifest.json"
 STARTUP_PAPER_RESOURCES = PARROT_APP / "Art" / "Startup" / "Resources" / "StartupPaperCraft"
 NER_MODEL_MANIFEST = PARROT_APP / "Resources" / "parrot_models" / "ner_skin2.json"
 GOSLO_MODEL_MANIFEST = PARROT_APP / "Resources" / "parrot_models" / "goslo_default.json"
+ANDROID_AUDIO_ROUTE_MANIFEST = (
+    UNITY_ROOT
+    / "Plugins"
+    / "Android"
+    / "ParrotAudioRoute.androidlib"
+    / "AndroidManifest.xml"
+)
+ANDROID_AUDIO_ROUTE_GRADLE = (
+    UNITY_ROOT
+    / "Plugins"
+    / "Android"
+    / "ParrotAudioRoute.androidlib"
+    / "build.gradle"
+)
+ANDROID_AUDIO_ROUTE_JAVA = (
+    UNITY_ROOT
+    / "Plugins"
+    / "Android"
+    / "ParrotAudioRoute.androidlib"
+    / "src"
+    / "main"
+    / "java"
+    / "com"
+    / "parrotcarriers"
+    / "audio"
+    / "AndroidAudioRouteManager.java"
+)
+ANDROID_AUDIO_ROUTE_CALLBACK_JAVA = (
+    UNITY_ROOT
+    / "Plugins"
+    / "Android"
+    / "ParrotAudioRoute.androidlib"
+    / "src"
+    / "main"
+    / "java"
+    / "com"
+    / "parrotcarriers"
+    / "audio"
+    / "AudioRouteSnapshotCallback.java"
+)
 
 
 def _unity_guid(asset: Path) -> str:
@@ -280,6 +347,8 @@ def test_formal_model_runtime_assets_are_resources_loadable() -> None:
     audit = NER_SPINE_AUDIT.read_text(encoding="utf-8")
 
     assert goslo_manifest["asset_path"] == "Models/GOSLO"
+    assert goslo_manifest["auto_scale_to_pet_height"] is True
+    assert 0.10 <= goslo_manifest["default_pet_height_m"] <= 0.18
     assert ner_manifest["asset_path"] == "Models/Ner/NerSkin2_SkeletonData"
     assert (RUNTIME_MODELS / "GOSLO.glb").is_file()
     assert (RUNTIME_MODELS / "GOSLO.glb.meta").is_file()
@@ -405,11 +474,17 @@ def test_formal_startup_scene_explicitly_mounts_runtime_services() -> None:
 
 
 def test_ar_mobile_template_plane_assets_are_imported_into_formal_app() -> None:
+    plane_companion = AR_MOBILE_TEMPLATE_PLANE_COMPANION.read_text(encoding="utf-8")
     for path in [
         AR_MOBILE_TEMPLATE_PLANE_PREFAB,
         AR_MOBILE_TEMPLATE_PLANE_VISUALIZER,
         AR_MOBILE_TEMPLATE_PLANE_COMPANION,
         AR_MOBILE_TEMPLATE_PLACE_ICON,
+        AR_MOBILE_TEMPLATE_XRI_INPUT_ACTIONS,
+        AR_MOBILE_TEMPLATE_SCREEN_RAY_PREFAB,
+        AR_MOBILE_TEMPLATE_SHADOW_FUNCTIONS,
+        AR_MOBILE_TEMPLATE_OBJECT_SPAWNER,
+        AR_MOBILE_TEMPLATE_SPAWN_TRIGGER,
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Materials" / "ShadowReceiver.mat",
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Materials" / "OcclusionMaterial.mat",
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Textures" / "PlanePatternDot.png",
@@ -421,6 +496,31 @@ def test_ar_mobile_template_plane_assets_are_imported_into_formal_app() -> None:
     assert "ARFeatheredPlane" in prefab
     assert _unity_guid(AR_MOBILE_TEMPLATE_PLANE_VISUALIZER) in prefab
     assert _unity_guid(AR_MOBILE_TEMPLATE_PLANE_COMPANION) in prefab
+
+    screen_ray = AR_MOBILE_TEMPLATE_SCREEN_RAY_PREFAB.read_text(encoding="utf-8")
+    assert "Screen Space Ray Interactor" in screen_ray
+    assert _unity_guid(AR_MOBILE_TEMPLATE_XRI_INPUT_ACTIONS) in screen_ray
+    assert "m_EnableARRaycasting: 1" in screen_ray
+
+    spawn_trigger = AR_MOBILE_TEMPLATE_SPAWN_TRIGGER.read_text(encoding="utf-8")
+    assert "#if AR_FOUNDATION_PRESENT || UNITY_AR_FOUNDATION" in spawn_trigger
+    assert "ARInteractorSpawnTrigger" in spawn_trigger
+    assert "ObjectSpawner" in AR_MOBILE_TEMPLATE_OBJECT_SPAWNER.read_text(encoding="utf-8")
+    assert "EnsureRuntimeSafeMaterialFallback" in plane_companion
+    assert "Application.isMobilePlatform" in plane_companion
+    assert "ParrotRuntimeSafeARPlaneDots" in plane_companion
+    assert "ARMobileTemplate/Textures/PlanePatternDot" in plane_companion
+
+    shadow_functions_guid = _unity_guid(AR_MOBILE_TEMPLATE_SHADOW_FUNCTIONS)
+    subgraph = (
+        PARROT_APP
+        / "Resources"
+        / "ARMobileTemplate"
+        / "Shaders"
+        / "ShadowReceiver"
+        / "MainLightShadowsSubgraph.shadersubgraph"
+    ).read_text(encoding="utf-8")
+    assert shadow_functions_guid in subgraph
 
 
 def test_project_settings_default_scene_is_formal_startup_scene() -> None:
@@ -526,8 +626,16 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     video = (SCRIPT_ROOT / "LiveKit" / "ARVideoPublisher.cs").read_text(encoding="utf-8")
     video_tier_receiver = (SCRIPT_ROOT / "LiveKit" / "VideoTierReceiver.cs").read_text(encoding="utf-8")
     mic = (SCRIPT_ROOT / "LiveKit" / "MicrophonePublisher.cs").read_text(encoding="utf-8")
+    route_manager = AUDIO_ROUTE_MANAGER.read_text(encoding="utf-8")
+    android_route_manager = ANDROID_AUDIO_ROUTE_MANAGER.read_text(encoding="utf-8")
+    route_snapshot = AUDIO_ROUTE_SNAPSHOT.read_text(encoding="utf-8")
     route_reporter = AUDIO_ROUTE_POLICY_REPORTER.read_text(encoding="utf-8")
+    route_policy = AUDIO_ROUTE_POLICY.read_text(encoding="utf-8")
     route_detector = AUDIO_ROUTE_DETECTOR.read_text(encoding="utf-8")
+    android_route_manifest = ANDROID_AUDIO_ROUTE_MANIFEST.read_text(encoding="utf-8")
+    android_route_gradle = ANDROID_AUDIO_ROUTE_GRADLE.read_text(encoding="utf-8")
+    android_route_java = ANDROID_AUDIO_ROUTE_JAVA.read_text(encoding="utf-8")
+    android_route_callback_java = ANDROID_AUDIO_ROUTE_CALLBACK_JAVA.read_text(encoding="utf-8")
     reconnect_supervisor = RECONNECT_SUPERVISOR.read_text(encoding="utf-8")
     lifecycle = APP_LIFECYCLE_MANAGER.read_text(encoding="utf-8")
     ecp_dto = (SCRIPT_ROOT / "Ecp" / "EcpEventDto.cs").read_text(encoding="utf-8")
@@ -550,6 +658,8 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "!response.result.success" in flow
     assert "LiveKitDataChannelHeartbeatTransport" in flow
     assert "heartbeatPublisher.Transport" in flow
+    assert "AudioRouteManager" in flow
+    assert "host.AddComponent<AudioRouteManager>()" in flow
     assert "AudioRoutePolicyBrainReporter" in flow
     assert "host.AddComponent<AudioRoutePolicyBrainReporter>()" in flow
     assert "LiveKitReconnectSupervisor" in flow
@@ -627,10 +737,13 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "LogExpiredCommand" in video_tier_receiver
     assert "suppressed \" + _suppressedExpiredWarnings" in video_tier_receiver
     assert '"setLineBAudioRoutePolicy"' in route_reporter
+    assert "AudioRouteManager routeManager" in route_reporter
     assert "unity_audio_route_policy" in route_reporter
     assert "BrainParticipantResolver.FindBrainParticipantId" in route_reporter
     assert "RefreshAndReportCurrentPolicy" in route_reporter
     assert "ReportPending" in route_reporter
+    assert "RpcBusinessResponse" in route_reporter
+    assert "response.result.success" in route_reporter
     assert "LastInputRoute" in route_reporter
     assert "LastOutputRoute" in route_reporter
     assert "LastPreferredSampleRate" in route_reporter
@@ -642,6 +755,47 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "system_default_microphone" in route_reporter
     assert "input_route" in route_reporter
     assert "output_route" in route_reporter
+    assert "class AudioRouteManager" in route_manager
+    assert "AndroidAudioRouteManager" in route_manager
+    assert "OnAndroidAudioRouteSnapshot" in route_manager
+    assert "AudioRouteSnapshotDto" in route_manager
+    assert "RequestCommunicationMode(bool enabled)" in route_manager
+    assert "SetPreference(AudioRoutePreference" in route_manager
+    assert "OnRoutePolicyChanged" in route_manager
+    assert "AudioRouteDetector" in route_manager
+    assert "fallback/diagnostic" in route_manager
+    assert "class AndroidAudioRouteManager" in android_route_manager
+    assert "com.parrotcarriers.audio.AndroidAudioRouteManager" in android_route_manager
+    assert "AudioRouteSnapshotCallbackProxy" in android_route_manager
+    assert "com.parrotcarriers.audio.AudioRouteSnapshotCallback" in android_route_manager
+    assert "UnityMainThread.Enqueue" in android_route_manager
+    assert "requestCommunicationMode" in android_route_manager
+    assert "BLUETOOTH_CONNECT" in android_route_manifest
+    assert "MODIFY_AUDIO_SETTINGS" in android_route_manifest
+    assert "RECORD_AUDIO" in android_route_manifest
+    assert 'package="com.parrotcarriers.audio"' in android_route_manifest
+    assert 'namespace "com.parrotcarriers.audio"' in android_route_gradle
+    assert "buildConfig false" in android_route_gradle
+    assert "com.parrotcarriers.app" not in android_route_gradle
+    assert "setCommunicationDevice" in android_route_java
+    assert "getAvailableCommunicationDevices" in android_route_java
+    assert "requestAudioFocus" in android_route_java
+    assert "preference_changed_cached" in android_route_java
+    assert "class Api31" in android_route_java
+    assert "Object communicationDeviceChangedListener" in android_route_java
+    assert "OnCommunicationDeviceChangedListener communicationDeviceChangedListener" not in android_route_java
+    assert "UnityPlayer" not in android_route_java
+    assert "AudioRouteSnapshotCallback callback" in android_route_java
+    assert "callback.onAudioRouteSnapshot(json)" in android_route_java
+    assert "interface AudioRouteSnapshotCallback" in android_route_callback_java
+    assert "TYPE_BLUETOOTH_SCO" in android_route_java
+    assert "TYPE_BLUETOOTH_A2DP" in android_route_java
+    assert "bluetooth_connect_permission" in android_route_java
+    assert "class AudioRouteSnapshotDto" in route_snapshot
+    assert "AudioRoutePreference" in route_snapshot
+    assert "requires_mic_republish" in route_snapshot
+    assert "recommended_sample_rate_hz" in route_snapshot
+    assert "KindFromRoutes" in route_snapshot
     assert "RefreshCurrentPolicy" in route_detector
     assert "ReevaluateAndFire" in route_detector
     assert "TryDetectAndroidDevices" in route_detector
@@ -653,6 +807,10 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "DetectAndroidLegacyFlags" in route_detector
     assert "LastDetectionSource" in route_detector
     assert "LastDeviceSummary" in route_detector
+    assert "A2DP stay at 48 kHz" in route_policy
+    assert "case AudioRouteKind.BluetoothSco:" in route_policy
+    assert "case AudioRouteKind.BluetoothA2dp:" in route_policy
+    assert "BluetoothA2dp:\n                case AudioRouteKind.WiredHeadset" in route_policy
     assert "RequestFreshTokenReconnect" in reconnect_supervisor
     assert "Mathf.Pow(2f" in reconnect_supervisor
     assert "IsBackgroundState" in reconnect_supervisor
@@ -703,10 +861,17 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "modelPlacementController.LastDiagnosticSummary" in home_hud
     assert "arSessionBaselineReporter.LastStatus" in home_hud
     assert "arRuntimeBootstrap.LastSpatialVisualStatus" in home_hud
+    assert "arRuntimeBootstrap.LastTemplateInteractionStatus" in home_hud
+    assert "panelImage.raycastTarget = false" in home_hud
+    assert "_statusDot.raycastTarget = false" in home_hud
+    assert "_statusText.raycastTarget = false" in home_hud
     assert "audioRouteReporter.LastInputRoute" in home_hud
     assert "audioRouteReporter.LastOutputRoute" in home_hud
     assert "audioRouteReporter.LastDetectionSource" in home_hud
     assert "audioRouteReporter.ReportPending" in home_hud
+    assert "AudioRouteManager audioRouteManager" in home_hud
+    assert "audioRouteManager.CurrentSnapshot" in home_hud
+    assert "audioRouteManager.CurrentPolicy" in home_hud
     assert "ShortRoute" in home_hud
     assert "ShortRouteSource" in home_hud
     assert "menuLoader.LastError" in home_hud
@@ -732,6 +897,17 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "sync quit drain skips waiting for UnpublishTrack" in video
     assert "sync quit drain skips waiting for UnpublishTrack" in mic
     assert "A2DP is output-only" in mic
+    assert "AudioRouteManager routeManager" in mic
+    assert "routeManager.RequestCommunicationMode(true)" in mic
+    assert "routeManager.RequestCommunicationMode(false)" in mic
+    assert "UnityEngine.Android.Permission.RequestUserPermission" in mic
+    assert "android.permission.BLUETOOTH_CONNECT" in mic
+    assert "OnLifecycleStateChanged" in mic
+    assert "lifecycle_resumed" in mic
+    assert "routeManager.OnRoutePolicyChanged += OnAudioRouteChanged" in mic
+    assert "RequestFreshTokenReconnect" not in mic
+    assert "RequestFreshTokenReconnect" not in route_manager
+    assert "Room.Connect" not in route_manager
     assert "policy.Kind == AudioRouteKind.BluetoothSco" in mic
     assert "CyclePreferredDevice" in mic
     assert "ClearPreferredDevice" in mic
@@ -760,6 +936,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     ar_bootstrap = FORMAL_AR_RUNTIME_BOOTSTRAP.read_text(encoding="utf-8")
     manifest = MODEL_MANIFEST_DTO.read_text(encoding="utf-8")
     model_driver = MODEL_DRIVER.read_text(encoding="utf-8")
+    flow = STARTUP_FLOW.read_text(encoding="utf-8")
     runtime_config = RUNTIME_CONFIG.read_text(encoding="utf-8")
     photo_controller = PHOTO_CONTROLLER.read_text(encoding="utf-8")
 
@@ -886,10 +1063,15 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "ARMobileTemplatePlaceButton" in menu_controller
     assert "LoadArMobileTemplateSprite(\"ActivationButtonOpaque\")" in menu_controller
     assert "LoadArMobileTemplateSprite(\"Icon-Cube\")" in menu_controller
+    assert "image.raycastTarget = false" in menu_controller
+    assert "image.raycastTarget = true" in menu_controller
+    assert "iconImage.raycastTarget = false" in menu_controller
+    assert "text.raycastTarget = false" in menu_controller
     assert "QuickAudioRouteRefresh" in menu_controller
     assert "MicDeviceCycleButton" in menu_controller
     assert "MicDeviceAutoButton" in menu_controller
     assert "AudioRouteDetector audioRouteDetector" in menu_controller
+    assert "AudioRouteManager audioRouteManager" in menu_controller
     assert "AudioRoutePolicyBrainReporter audioRouteReporter" in menu_controller
     assert "MicrophonePublisher microphonePublisher" in menu_controller
     assert "RenderAudioRouteRow" in menu_controller
@@ -903,10 +1085,13 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "MicrophonePreferenceShortLabel" in menu_controller
     assert "RefreshAudioRoutePolicy" in menu_controller
     assert 'audioRouteReporter.RefreshAndReportCurrentPolicy("formal_home_manual_rescan")' in menu_controller
+    assert 'audioRouteManager.RefreshCurrentPolicy("formal_home_manual_rescan")' in menu_controller
     assert "modelPlacementController.PlaceAtDefaultPreview()" in menu_controller
     assert "modelPlacementController.CanPlaceNow" in menu_controller
     assert "PlaceModelPreview" in menu_controller
     assert "PlacementShortLabel" in menu_controller
+    assert "OnPlacementStateChanged += HandlePlacementStateChanged" in menu_controller
+    assert "OnPlacementStateChanged -= HandlePlacementStateChanged" in menu_controller
     assert "audioRouteReporter.ReportPending" in menu_controller
     assert "audioRouteReporter.LastReportError" in menu_controller
     assert "audioRouteReporter.LastDetectionSource" in menu_controller
@@ -951,6 +1136,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "bbox_deferred_phone_stability" in tool_controller
     assert "photoController.CapturePhoto()" in tool_controller
     assert "photo_upload_endpoint_not_phone_safe" in tool_controller
+    assert "_statusText.raycastTarget = false" in tool_controller
     assert "!Application.isEditor" in tool_controller
     assert "config.photoUploadUrl" in tool_controller
     assert "config.photoUploadHost" in tool_controller
@@ -999,6 +1185,9 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "LastDiagnosticSummary" in model_placement
     assert "fallbackToPreviewWhenArMisses" in model_placement
     assert "fallbackToPreviewWhenArMisses = false" in model_placement
+    assert "preferHorizontalPlacementPlanes = true" in model_placement
+    assert "minPlacementPlaneUpDot = 0.5f" in model_placement
+    assert "forceManifestHeightAfterPlacement = true" in model_placement
     assert "EnhancedTouchSupport.Enable()" in model_placement
     assert "HandleInputSystemTouchPlacementAndSelection" in model_placement
     assert "HandleInputSystemMousePlacementAndSelection" in model_placement
@@ -1008,13 +1197,34 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "minScaleMultiplier = 0.25f" in model_placement
     assert "maxScaleMultiplier = 2f" in model_placement
     assert "demoSpawnAngleRangeDegrees = 45f" in model_placement
+    assert "TemplateXriInteractionActive" in model_placement
+    assert "disableCustomGesturesWhenTemplateXriActive = true" in model_placement
+    assert "public event Action<FormalModelPlacementController> OnPlacementStateChanged" in model_placement
+    assert "NotifyPlacementStateChanged()" in model_placement
+    assert "ReportTemplateXriStatus" in model_placement
+    assert "ConfigureArMobileTemplateXriInteractable" in model_placement
+    assert "XRGrabInteractable" in model_placement
+    assert "ARTransformer" in model_placement
+    assert "grab.distanceCalculationMode = XRBaseInteractable.DistanceCalculationMode.ColliderPosition" in model_placement
+    assert "XRBaseInteractable.MovementType.Instantaneous" in model_placement
+    assert "InteractableSelectMode.Single" in model_placement
+    assert "InteractableFocusMode.Single" in model_placement
+    assert "grab.addDefaultGrabTransformers = true" in model_placement
+    assert "transformer.objectPlaneTranslationMode = ARTransformer.PlaneTranslationMode.Any" in model_placement
+    assert "transformer.minScale = minScaleMultiplier" in model_placement
+    assert "transformer.maxScale = maxScaleMultiplier" in model_placement
+    assert "grab.startingSingleGrabTransformers.Add(transformer)" in model_placement
+    assert "grab.AddSingleGrabTransformer(transformer)" in model_placement
+    assert "BoxCollider" in model_placement
     assert "ResolveDemoSpawnRotation" in model_placement
     assert "ResolvePlaneTangent" in model_placement
     assert "Vector3.ProjectOnPlane" in model_placement
     assert "TryMoveSelectedModelOnPlane" in model_placement
     assert "CaptureDragOffset" in model_placement
     assert 'SelectPlacedModel(true, "tap_model")' in model_placement
+    assert "ar_raycast_no_horizontal_plane" in model_placement
     assert "startupFlow.OnMainUiReady += HandleMainUiReady" in model_placement
+    assert "ClearPlacedModel(reportOutOfView: false)" in model_placement
     assert "public void PlaceAtDefaultPreview()" in model_placement
     assert "public void PlaceAt(Vector3 position, Quaternion rotation, string reason)" in model_placement
     assert "GameObject.Find(\"AssetPreviewStage\")" in model_placement
@@ -1023,10 +1233,17 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "TryCreateSpineSkeletonVisual" in model_placement
     assert "Spine.Unity.SkeletonDataAsset" in model_placement
     assert "LastVisualSource" in model_placement
+    assert "public void ClearPlacedModel(bool reportOutOfView = true)" in model_placement
     assert 'LastPlacementStatus = "cleared"' in model_placement
+    assert "startupFlow?.ReportGosloRemovedFromView()" in model_placement
+    assert "startupFlow?.ReportGosloReturnedToView()" in model_placement
+    assert "_reportedGosloOutOfView = true" in model_placement
+    assert 'LastSelectionStatus = "out_of_view:voice_only"' in model_placement
     assert "FormalPlacedModelWhitebox" in model_placement
     assert "driver.ConfigureModelId(ActiveModelId)" in model_placement
     assert "driver.BootstrapNow()" in model_placement
+    assert "ForceManifestHeightAfterPlacement()" in model_placement
+    assert ":height=" in model_placement
     assert "startupFlow?.ReportGosloPlaced()" in model_placement
     assert "enableTouchPlacementAndSelection" in model_placement
     assert "HandleTouchPlacementAndSelection" in model_placement
@@ -1040,7 +1257,19 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "PlayPlacementGreeting" in model_placement
     assert "SetHeadState(AnimationDriver.HeadState.Tilt)" in model_placement
     assert "SetState(AnimationDriver.BodyState.HeadBob)" in model_placement
+    assert 'ApplyCapability("head_bob"' in model_placement
     assert "ReportGosloPlaced()" not in model_reporter
+    assert "public string LastBrainRpcStatus" in flow
+    assert "LastBrainRpcStatus = method + \":ok\"" in flow
+    assert "goslo_placed_rpc_failed" in flow
+    assert "public void ReportGosloRemovedFromView()" in flow
+    assert 'SwitchWorkspace(ActiveConfig.workspace_id, "2d_workspace")' in flow
+    assert "public void ReportGosloReturnedToView()" in flow
+    assert 'SwitchWorkspace(ActiveConfig.workspace_id, "ar_workspace")' in flow
+    assert "RequestDialogueShutdown" not in flow[
+        flow.index("public void ReportGosloRemovedFromView()"):
+        flow.index("private IEnumerator SwitchWorkspaceRoutine")
+    ]
 
     assert "class FormalModelRemoteController" in model_remote
     assert "using ParrotApp.Config;" in model_remote
@@ -1049,7 +1278,11 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "IPointerUpHandler" in model_remote
     assert "FormalModelRemoteCanvas" in model_remote
     assert "placementController.HasPlacedModel" in model_remote
+    assert "placementController.HasSelectedModel" in model_remote
+    assert "waiting_selected_model" in model_remote
     assert "placementController.PlacedModel" in model_remote
+    assert "OnPlacementStateChanged += HandlePlacementStateChanged" in model_remote
+    assert "OnPlacementStateChanged -= HandlePlacementStateChanged" in model_remote
     assert 'LastRemoteStatus = "idle";' in model_remote
     assert "WalkOnPlane(input, deltaTime)" in model_remote
     assert "ApplyCapability(\"spine_walk\"" in model_remote
@@ -1107,14 +1340,47 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "EnsureXrOrigin" in ar_bootstrap
     assert "EnsurePlacementManagers" in ar_bootstrap
     assert "AddComponent<XROrigin>()" in ar_bootstrap
+    assert "origin.RequestedTrackingOriginMode = XROrigin.TrackingOriginMode.Device" in ar_bootstrap
+    assert "origin.CameraYOffset = 0f" in ar_bootstrap
     assert "AddComponent<ARRaycastManager>()" in ar_bootstrap
     assert "AddComponent<ARPlaneManager>()" in ar_bootstrap
     assert "SpatialVisualsMounted" in ar_bootstrap
     assert "mountPlaneAndPointCloudVisuals" in ar_bootstrap
     assert "ARMobileTemplate/Prefabs/ARFeatheredPlane" in ar_bootstrap
+    assert "ARMobileTemplate/XRIStarterAssets/XRI Default Input Actions" in ar_bootstrap
+    assert "ARMobileTemplate/XRIStarterAssets/Screen Space Ray Interactor" in ar_bootstrap
+    assert "InputActionManager" in ar_bootstrap
+    assert "EnsureTemplateEventSystem" in ar_bootstrap
+    assert "XRUIInputModule" in ar_bootstrap
+    assert "InputSystemUIInputModule" in ar_bootstrap
+    assert "AssignTemplateUiActions" in ar_bootstrap
+    assert 'asset.FindActionMap("XRI UI", throwIfNotFound: false)' in ar_bootstrap
+    assert 'map.FindAction(actionName, throwIfNotFound: false)' in ar_bootstrap
+    assert "xrModule.enableXRInput = true" in ar_bootstrap
+    assert "xrModule.enableTouchInput = true" in ar_bootstrap
+    assert "xrModule.trackedDeviceDragThresholdMultiplier = 2f" in ar_bootstrap
+    assert "inputSystemUiModule.enabled = false" in ar_bootstrap
+    assert "ScreenSpaceRayPoseDriver" in ar_bootstrap
+    assert "XRScreenSpaceController" in ar_bootstrap
+    assert "XRRayInteractor" in ar_bootstrap
+    assert "ObjectSpawner" in ar_bootstrap
+    assert "ARInteractorSpawnTrigger" in ar_bootstrap
+    assert "_templateSpawnTrigger.requireHorizontalUpSurface = true" in ar_bootstrap
+    assert "placement.ReportTemplateXriStatus(LastTemplateInteractionStatus)" in ar_bootstrap
+    assert 'GameObject.Find("FormalARMobileTemplateObjectSpawner")' in ar_bootstrap
+    assert "_templateObjectSpawner == null || _templateObjectSpawner.gameObject != spawnerObject" in ar_bootstrap
+    assert "_templateSpawnTrigger == null || _templateSpawnTrigger.gameObject != spawnerObject" in ar_bootstrap
+    assert "SpawnTriggerType.SelectAttempt" in ar_bootstrap
+    assert "spawnAsChildren = true" in ar_bootstrap
+    assert "_templateObjectSpawner.enabled = true" in ar_bootstrap
+    assert "_templateSpawnTrigger.enabled = true" in ar_bootstrap
+    assert "var parent = origin != null ? origin.transform : transform" in ar_bootstrap
+    assert "_templateSpawnProxy.transform.SetParent(parent, false)" in ar_bootstrap
+    assert '"xri_template input=" + inputReady + " ui=" + uiReady' in ar_bootstrap
+    assert "placement.PlaceAt(position, rotation, \"ar_mobile_template_object_spawner\")" in ar_bootstrap
     assert "ConfigureArMobileTemplatePlane" in ar_bootstrap
     assert "planeManager.planePrefab = prefab" in ar_bootstrap
-    assert "PlaneDetectionMode.Horizontal | PlaneDetectionMode.Vertical" in ar_bootstrap
+    assert "planeManager.requestedDetectionMode = (PlaneDetectionMode)(-1)" in ar_bootstrap
     assert "showArMobileTemplatePlaneSurfaces = false" in ar_bootstrap
     assert "ARFeatheredPlaneMeshVisualizerCompanion" in ar_bootstrap
     assert "planesChanged += HandlePlanesChanged" in ar_bootstrap

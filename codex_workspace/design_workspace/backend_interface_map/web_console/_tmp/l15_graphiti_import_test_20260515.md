@@ -4,7 +4,7 @@ Owner: Web Console chat
 Status: temporary-active  
 Category: Web Console temporary research / audit archive  
 Scope: L1.5 source board, Obsidian profile import, Google Calendar mapping, Graphiti natural-language search, Graphiti-to-L2-B subgraph export, Arknights test partition  
-Updated: 2026-05-15  
+Updated: 2026-05-16
 Source pointers: `APP_WEB_PARALLEL_TODOLIST_20260513.md`, `memory_graph_workspace_business_flow_20260513.md`, `graphiti_management_business_flow_20260513.md`, `core_interface_candidate_queue_20260513.md`, Graphiti skill, DSG L1.5/L2-B/RustworkX skills, DeepSeek API docs, Graphiti/Zep docs, PRTS Wiki story index
 
 This temporary ledger exists so the L1.5/Graphiti import task can be audited
@@ -74,6 +74,59 @@ to the Web TODO board and active Web business-interface files.
 9. Test dry-run routes, provider config, secret non-leak, partition listing,
    Obsidian profile routing, Calendar field preservation, and Graphiti export
    receipts before any real import.
+
+2026-05-16 continuation:
+
+- Added unified import-plan receipts for all three Source Board sources:
+  Graphiti, Obsidian, and Google Calendar.
+- Obsidian `POST /api/l15/obsidian-vault/import-plan` combines selected-note
+  import rows with CORE-013 destination/overlay policy. It remains draft-only
+  and still applies through `/api/l15/obsidian-vault/import` only under
+  operator mode.
+- Google `POST /api/google/calendar/import-plan` combines normalized events,
+  L1.5 observations, mapping rows, and CORE-013 destination/overlay policy.
+  Manual fetch/import remains V1; Google watch/syncToken remains phase 2.
+- Bugfix follow-up: Graphiti, Obsidian, and Google import-plan receipts skip
+  CORE-013 destination policy when the source has no importable hits/items/
+  observations. The receipt returns `policy_skipped_reason` and empty
+  `import_policy` / `import_draft` so the Source Board cannot show a fake graph
+  placement plan for empty input.
+- Review fix follow-up: import-plan receipts force `dry_run=true` and
+  `operator_mode=false` at the top level even if the request sent apply flags;
+  the original request is kept under `requested_execution`. Graphiti import
+  plans now use the normalized partition from the export draft, keeping
+  response partition, Observation provenance, subgraph partition, and CORE-013
+  `source_id` aligned.
+- UI follow-up: Source Board cards now show `policy_skipped_reason` inline for
+  Graphiti, Obsidian, and Google import plans so blocked empty imports are not
+  hidden inside the raw receipt timeline. A small follow-up fixed the Obsidian
+  card state mapping so the backend reason is preserved through render, and
+  Graphiti no-selection export/apply attempts reuse the same inline blocked
+  state. Empty Graphiti search now clears stale preview data and shows
+  `missing_query` inline.
+- React Source Board import buttons now show source rows, destination policy,
+  and flow steps together instead of forcing the operator to mentally join
+  separate previews.
+- Operator-import follow-up: Graphiti and Obsidian Source Board cards now
+  expose secondary `Import to L1.5` actions after preview. Graphiti calls
+  `/api/graphiti/subgraph/export` with `dry_run=false` and
+  `operator_mode=true`; Obsidian calls `/api/l15/obsidian-vault/import` with
+  the same explicit execution flags. Both routes are Web operator paths into
+  `L15Pool.admit`, not direct L2-B/RustWorkX mutation and not Graphiti/FalkorDB
+  surgery. Calendar already has the same operator-import shape and still needs
+  watch/syncToken for true server-side realtime.
+- Stale-state follow-up: editing Calendar JSON, changing Obsidian vault path,
+  rescanning/toggling selections, or clearing selected notes now clears stale
+  preview/import results before the next receipt is rendered.
+- Live-refresh follow-up: when Graphiti, Obsidian, or Google Calendar operator
+  import succeeds, the React app immediately refreshes `/api/app/live-state`
+  and `/api/l15/pool`. This closes the operator UX gap where a real L1.5 admit
+  could succeed but the source board still looked stale until manual refresh or
+  the next transport tick.
+- Receipt follow-up: the same post-import refresh now writes
+  `memory.refresh_after_import` with refreshed L2-B, L1.5 Pool, Blackboard, and
+  IntentWorkspace counts, so the Record rail has an audit-visible confirmation
+  instead of only a silent UI state update.
 
 ## Audit Checklist
 
@@ -836,7 +889,8 @@ Verification:
 - Focused route regression for Graphiti export, Obsidian import draft, and
   Google Calendar import draft -> `3 passed`.
 - Full Web route regression `tests/test_web_console/test_web_console_server.py`
-  -> `47 passed`.
+  -> `56 passed` after import-plan draft-only and normalized-partition review
+  regressions.
 - Exact secret scan for the previously provided `PARROT_ORCH_SECRET` value and
   DeepSeek key under `src`, `web`, `codex_workspace`, `.cursor`, and `tests`
   -> no matches.
@@ -849,6 +903,48 @@ Remaining:
 - Real Graphiti/FalkorDB data smoke and real L1.5 apply remain operator/service
   readiness tasks, not UI-only completion.
 
+## 2026-05-16 Google Calendar Source Board Error-State Bugfix
+
+Fixed:
+
+- Calendar preview/import failures now render an inline reason in the active
+  Google Calendar source card instead of only appearing in the receipt stream.
+  The UI prefers `policy_skipped_reason`, then receipt `error`, then first
+  receipt-row error, then `no_calendar_events` for empty/invalid payloads.
+- Local preview/import exceptions now pass through the same Calendar receipt
+  renderer, which clears stale normalized events, Observation previews, mapping
+  rows, destination policy, and flow steps. This prevents an old successful
+  Calendar preview from staying visible after a failed request.
+
+Verification:
+
+- `npm run typecheck` in `web/console_app` -> passed.
+- `npm run build` in `web/console_app` -> passed and refreshed
+  `web/console_dist`.
+- `.venv\Scripts\python.exe -m pytest tests\test_web_console\test_web_console_server.py -q`
+  -> 56 passed.
+
+## 2026-05-16 Graphiti Review-Fix Continuation
+
+Fixed:
+
+- `graphiti.subgraph.import_plan` now preserves the upstream export draft
+  receipt id. The route accepts both receipt shapes currently used in the Web
+  stack: top-level `receipt_id` from `parrot.brain.graphiti_console` and nested
+  `receipt.receipt_id` from Web BFF helper receipts.
+- Graphiti Source Board API exceptions now clear stale export/import-plan state
+  and show the exception inline in the active source card. Search exceptions
+  also clear stale hits/subgraph selection and canvas preview so the previous
+  Graphiti result cannot masquerade as the current failed request.
+
+Verification:
+
+- Focused Graphiti import-plan tests -> 2 passed.
+- Full Web route regression
+  `.venv\Scripts\python.exe -m pytest tests\test_web_console\test_web_console_server.py -q`
+  -> 56 passed.
+- `npm run typecheck` and `npm run build` in `web/console_app` -> passed.
+
 Verification:
 
 - `npm run typecheck` -> passed.
@@ -860,3 +956,116 @@ Verification:
 - In-app browser smoke clicked `状态颜色` -> `Refresh health`; graph-health UI
   refreshed, no empty generic `receipt` label appeared, and console errors
   stayed at zero.
+
+## 2026-05-16 Graphiti Source Board Selection-State Fix
+
+Fixed:
+
+- Graphiti hit selection now invalidates the inline Export/Import plan whenever
+  the selected set changes. This prevents old L1.5 Observations, Edge drafts, or
+  import-destination policy from looking current after the operator deselects or
+  reselects hits.
+- Changing Graphiti partition, query, or limit clears the stale search result
+  state and canvas preview. The next export/import action must be based on a
+  fresh search result.
+- Preview/export/import controls stay clickable with no selected hits and emit a
+  visible `no_hits_selected` receipt. This makes the blocked state auditable in
+  the card instead of hiding it behind disabled buttons.
+
+Verification:
+
+- `npm run typecheck` and `npm run build` in `web/console_app` -> passed.
+- `.venv\Scripts\python.exe -m pytest tests/test_web_console/test_web_console_server.py -q`
+  -> 56 passed.
+- Exact secret scan for the previously provided `PARROT_ORCH_SECRET` value and
+  DeepSeek key under `src`, `web`, `codex_workspace`, `.cursor`, and `tests`
+  -> no matches.
+- In-app browser smoke opened Memory -> `L1.5 池`, confirmed Graphiti controls
+  render, clicked `Preview policy` with no selected hits, saw
+  `no_hits_selected` inline, and observed zero frontend console errors.
+
+## 2026-05-16 Post-Import Refresh Receipt
+
+Fixed:
+
+- Successful Graphiti, Obsidian, and Google Calendar operator imports already
+  forced a Memory refresh. That refresh now also emits
+  `memory.refresh_after_import` with refreshed L2-B Node/Edge counts, L1.5
+  bucket/node counts, Blackboard count, and IntentWorkspace ref count.
+- The receipt summary is readable without expanding JSON:
+  `L2-B nodes/edges · L1.5 buckets / Nodes`.
+- Bugfix: `memory.refresh_after_import` is now marked as an executed read
+  refresh (`dry_run=false`, `operator_mode=false`) instead of inheriting the
+  local draft/preview default. The operator import receipt still carries the
+  actual operator write flags; the refresh receipt only confirms the follow-up
+  read state.
+- This keeps the real-import path visibly auditable in the Record rail and
+  avoids a silent state update after `L15Pool.admit` succeeds.
+
+Verification:
+
+- `npm run typecheck` in `web/console_app` -> passed.
+- `npm run build` in `web/console_app` -> passed and refreshed
+  `web/console_dist`.
+- `.venv\Scripts\python.exe -m pytest tests/test_web_console/test_web_console_server.py -q`
+  -> 58 passed.
+- Exact secret scan for the previously provided `PARROT_ORCH_SECRET` value and
+  DeepSeek key under `src`, `web`, `codex_workspace`, `.cursor`, and `tests`
+  -> no matches.
+- In-app browser smoke on `http://127.0.0.1:7893/`: Memory and L1.5 Pool render,
+  frontend console errors -> 0.
+- After the receipt-summary tweak, React `typecheck`, React `build`, and browser
+  smoke were re-run; browser console errors stayed at 0.
+- After the `dry_run=false` refresh-receipt bugfix, React `typecheck`, React
+  `build`, full Web route tests (`58 passed`), exact secret scan, browser smoke,
+  and `git diff --check` were re-run; browser console errors stayed at 0.
+
+## 2026-05-16 Operator Import Double-Submit Guard
+
+Fixed:
+
+- Graphiti, Obsidian, and Google Calendar `Import to L1.5` actions now use a
+  synchronous in-flight ref guard plus disabled button state while the operator
+  write and follow-up Memory refresh are running.
+- If a second click somehow arrives during the same import, the UI returns a
+  local `operator_import_in_flight` receipt instead of sending another
+  operator request to L1.5.
+- The Google Calendar `Dispatch Fetch` action now has the same side-effect
+  discipline for task dispatch. It disables while the operator dispatch is in
+  flight and returns a local `operator_fetch_in_flight` receipt on a duplicate
+  click, avoiding duplicate Scheduler/Nanobot `calendar_fetch` tasks.
+
+Verification:
+
+- React `npm run typecheck` -> passed.
+- React `npm run build` -> passed and refreshed `web/console_dist`.
+- Full Web route tests
+  `.venv\Scripts\python.exe -m pytest tests/test_web_console/test_web_console_server.py -q`
+  -> 58 passed.
+- Exact secret scan for the previously provided `PARROT_ORCH_SECRET` and
+  DeepSeek key -> no matches.
+- `git diff --check` -> passed.
+- In-app browser smoke on `http://127.0.0.1:7893/`: Memory and L1.5 Pool render,
+  frontend console errors -> 0.
+- Calendar dispatch guard continuation: React `npm run typecheck`, React
+  `npm run build`, full Web route tests (`58 passed`), exact secret scan,
+  `git diff --check`, and browser smoke passed. Browser smoke opened
+  `L1.5 池 -> Google 日程` and confirmed the fetch/import controls render with
+  zero console errors; it did not click the real dispatch button.
+- Source import-plan matrix continuation: added a shared Web route regression
+  that covers Graphiti, Obsidian, and Google Calendar import-plan receipts in
+  one pass. It asserts the routes remain draft-only even when the request asks
+  for `dry_run=false` / `operator_mode=true`, preserve
+  `requested_execution`, expose operator apply preconditions, cite
+  CORE-008/CORE-013, and do not leak raw secrets or direct FalkorDB writes.
+  Full Web route tests now report `59 passed`; React `npm run typecheck` and
+  `npm run build`, exact secret scan, `git diff --check`, and in-app browser
+  smoke passed.
+- Landing-map continuation: Graphiti, Obsidian, and Google Calendar source
+  cards now render the same compact import landing visualization:
+  `Source -> L1.5 observations -> L2-B target`, with destination policy,
+  Edge draft count, apply route, and operator gate. This only changes the Web
+  renderer over existing receipts; it does not add shared DTO fields or change
+  the L1.5 admit path. Browser smoke opened `L1.5 Pool -> Graphiti`, ran the
+  safe search/preview-policy path, saw the landing map, and console errors
+  stayed at 0.

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import ReactFlow, {
   Background,
   type Connection,
@@ -42,7 +42,8 @@ import {
   Tags,
   Trash2,
   UploadCloud,
-  Workflow
+  Workflow,
+  X
 } from "lucide-react";
 import { api } from "./api";
 import type {
@@ -62,6 +63,8 @@ import type {
 } from "./types";
 
 type ViewId = "memory" | "runtime";
+type TransportMode = "idle" | "connecting" | "sse" | "polling";
+type ExecutionMode = "operator" | "preview";
 type RuntimeAction =
   | "message_check"
   | "message_push"
@@ -104,6 +107,16 @@ type GraphitiStatusSummary = {
 
 type SourceBoardId = "graphiti" | "obsidian" | "calendar" | "refs" | "manual";
 type MemoryToolId = "node" | "edge" | "filter" | "tags" | "subgraph" | "state" | "pool" | "settings";
+type FloatingPanelId = "toolbar" | "tool" | "selection";
+type FloatingResizeEdge = "left" | "bottom" | "bottom-left";
+
+type FloatingPanelState = {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  z: number;
+};
 
 type HandleSide = "top" | "right" | "bottom" | "left";
 
@@ -155,6 +168,20 @@ const GRAPH_TRANSFORM_OPTIONS = [
 
 const memoryNodeTypes: NodeTypes = {
   memory: MemoryNodeCard
+};
+
+const FLOATING_PANEL_SNAP_PX = 26;
+const FLOATING_PANEL_EDGE_GAP = 8;
+const FLOATING_PANEL_STACK_GAP = 12;
+const FLOATING_PANEL_DOCK_MARGIN = 16;
+const FLOATING_TOOLBAR_DOCK_LIMIT = 10;
+const FLOATING_PANEL_MIN_WIDTH = 340;
+const FLOATING_PANEL_MIN_HEIGHT = 120;
+
+const DEFAULT_FLOATING_PANELS: Record<FloatingPanelId, FloatingPanelState> = {
+  toolbar: { x: 12, y: 12, z: 24 },
+  tool: { x: 24, y: 24, width: 380, z: 22 },
+  selection: { x: 24, y: 330, width: 380, z: 21 }
 };
 
 const LIVEKIT_CLIENT_URLS = [
@@ -252,11 +279,11 @@ const dict = {
     noSelection: "Select an item on the canvas.",
     noReceipts: "No records yet.",
     triggerPalette: "Trigger Palette",
-    operatorSafe: "operator-safe preview",
+    operatorSafe: "preview mode",
     dryRunOnly: "preview only",
     previewMode: "preview",
     executeMode: "execute",
-    safeMode: "safe",
+    safeMode: "preview",
     operatorMode: "operator",
     okStatus: "ok",
     failedStatus: "failed",
@@ -416,11 +443,11 @@ const dict = {
     noSelection: "在画布上选择一个项目。",
     noReceipts: "暂无操作记录。",
     triggerPalette: "触发器面板",
-    operatorSafe: "operator 安全预演",
+    operatorSafe: "预演模式",
     dryRunOnly: "仅预演",
     previewMode: "预演",
     executeMode: "执行",
-    safeMode: "安全",
+    safeMode: "未执行",
     operatorMode: "operator",
     okStatus: "ok",
     failedStatus: "失败",
@@ -438,7 +465,7 @@ const dict = {
     blackboardScope: "黑板",
     intentScope: "Intent",
     runtimeSummary: "Intent、Plan、HITL、黑板、Scheduler、Nanobot 和消息流。",
-    memorySummary: "L1.5、L2-B、Graphiti、Refs、Evidence Board 和图上安全预演操作。",
+    memorySummary: "L1.5、L2-B、Graphiti、Refs、Evidence Board 和图上 Mode 管理操作。",
     evidenceConsole: "时间 / Evidence",
     evidenceSamples: "样本",
     evidenceAssets: "资产",
@@ -569,9 +596,40 @@ function parseRuntimeDeltaEvent(event: Event): RuntimeFlowChanges | null {
   }
 }
 
+function transportTone(mode: TransportMode): "idle" | "connecting" | "live" | "fallback" {
+  if (mode === "sse") return "live";
+  if (mode === "polling") return "fallback";
+  if (mode === "connecting") return "connecting";
+  return "idle";
+}
+
+function transportText(mode: TransportMode, fallbackText: string): string {
+  if (mode === "sse") return "SSE · LIVE";
+  if (mode === "polling") return "POLL · FALLBACK";
+  if (mode === "connecting") return "CONNECTING";
+  return fallbackText;
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function snapNumber(value: number, target: number, threshold = FLOATING_PANEL_SNAP_PX): number {
+  return Math.abs(value - target) <= threshold ? target : value;
+}
+
+function defaultFloatingPanelWidth(canvasWidth: number): number {
+  return Math.min(390, Math.max(320, canvasWidth - FLOATING_PANEL_DOCK_MARGIN * 2));
+}
+
 export function App() {
   const [view, setView] = useState<ViewId>("memory");
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem("parrot.console.lang") as Language) || "zh");
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>(() => {
+    const saved = localStorage.getItem("parrot.console.executionMode");
+    return saved === "preview" || saved === "operator" ? saved : "operator";
+  });
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [config, setConfig] = useState<ConsoleConfig>({});
   const [liveState, setLiveState] = useState<LiveState>({});
   const [l15Pool, setL15Pool] = useState<L15Pool>({});
@@ -579,8 +637,8 @@ export function App() {
   const [triggerCatalog, setTriggerCatalog] = useState<TriggerCatalog>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [memoryTransport, setMemoryTransport] = useState<"connecting" | "sse" | "polling">("connecting");
-  const [runtimeTransport, setRuntimeTransport] = useState<"idle" | "connecting" | "sse" | "polling">("idle");
+  const [memoryTransport, setMemoryTransport] = useState<TransportMode>("connecting");
+  const [runtimeTransport, setRuntimeTransport] = useState<TransportMode>("idle");
   const [receipts, pushReceipt] = useReducer(receiptReducer, []);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [recordsOpen, setRecordsOpen] = useState(false);
@@ -591,6 +649,10 @@ export function App() {
   const t = { ...dict.en, ...dict[language], ...(language === "zh" ? zhRuntimeCopy : {}) };
   const configuredRefreshIntervalS = Math.max(3, Math.round(Number(config.refresh_interval_s ?? 5)));
   const refreshIntervalS = view === "memory" ? Math.min(configuredRefreshIntervalS, 5) : configuredRefreshIntervalS;
+  const activeTransport = view === "memory" ? memoryTransport : runtimeTransport;
+  const transportStatusText = transportText(activeTransport, `${t.autoRefresh} ${refreshIntervalS}s`);
+  const livePillClass = `live-pill ${transportTone(activeTransport)}${loading ? " loading" : ""}`;
+  const operatorMode = executionMode === "operator";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -624,6 +686,33 @@ export function App() {
       setTriggerCatalog(nextTriggerCatalog);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const refreshMemoryNow = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [snapshot, nextPool] = await Promise.all([
+        api.liveState(),
+        api.l15Pool()
+      ]);
+      setLiveState(snapshot);
+      setL15Pool(nextPool);
+      const buckets = nextPool.buckets ?? [];
+      pushReceipt(localReceipt("memory.refresh_after_import", true, {
+        l2b_nodes: snapshot.l2b?.node_count ?? 0,
+        l2b_edges: snapshot.l2b?.edge_count ?? 0,
+        l15_buckets: buckets.length,
+        l15_nodes: buckets.reduce((total, bucket) => total + Number(bucket.node_count ?? 0), 0),
+        blackboard: snapshot.blackboard?.present_count ?? 0,
+        intent_refs: snapshot.intent_workspace?.ref_count ?? 0
+      }, { dryRun: false }));
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("memory.refresh_after_import", exc));
     } finally {
       setLoading(false);
     }
@@ -726,6 +815,11 @@ export function App() {
     setLanguage(next);
   };
 
+  const setMode = (next: ExecutionMode) => {
+    localStorage.setItem("parrot.console.executionMode", next);
+    setExecutionMode(next);
+  };
+
   return (
     <div className={`app-shell${sidebarOpen ? "" : " sidebar-collapsed"}${recordsOpen ? "" : " records-collapsed"}`}>
       <aside className={sidebarOpen ? "sidebar" : "sidebar collapsed"}>
@@ -762,19 +856,52 @@ export function App() {
             <h1>{view === "memory" ? t.memory : t.runtime}</h1>
           </div>
           <div className="topbar-actions">
-            <span className={loading ? "live-pill loading" : "live-pill"}>
-              <Sparkles size={15} /> {t.live} / {view === "memory" ? memoryTransport.toUpperCase() : runtimeTransport === "idle" ? `${t.autoRefresh} ${refreshIntervalS}s` : runtimeTransport.toUpperCase()}
+            <span className={livePillClass}>
+              <Sparkles size={15} /> {t.live} / {transportStatusText}
+            </span>
+            <span className={operatorMode ? "mode-chip active" : "mode-chip"}>
+              <ShieldCheck size={14} /> {operatorMode ? "真实连接" : "预演模式"}
             </span>
             {error ? <span className="error-pill">{error}</span> : null}
             <button className="button" onClick={() => void load()}><RefreshCw size={16} /> {t.refresh}</button>
-            <button className="button ghost"><Settings size={16} /> {t.settings}</button>
+            <div className="settings-wrap">
+              <button className={settingsOpen ? "button ghost active" : "button ghost"} onClick={() => setSettingsOpen((open) => !open)}>
+                <Settings size={16} /> {t.settings}
+              </button>
+              {settingsOpen ? (
+                <div className="settings-popover">
+                  <strong>Mode</strong>
+                  <small>Web Console is a test bench. Default is real operator execution.</small>
+                  <button
+                    className={operatorMode ? "mode-option active" : "mode-option"}
+                    onClick={() => setMode("operator")}
+                  >
+                    <ShieldCheck size={15} />
+                    <span>
+                      <strong>真实连接测试</strong>
+                      <small>dry_run=false / operator_mode=true</small>
+                    </span>
+                  </button>
+                  <button
+                    className={!operatorMode ? "mode-option active" : "mode-option"}
+                    onClick={() => setMode("preview")}
+                  >
+                    <CircleDot size={15} />
+                    <span>
+                      <strong>预演检查</strong>
+                      <small>dry_run=true / operator_mode=false</small>
+                    </span>
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </header>
 
         {view === "memory" ? (
-          <MemoryGraphWorkspace liveState={liveState} l15Pool={l15Pool} pushReceipt={pushReceipt} t={t} />
+          <MemoryGraphWorkspace liveState={liveState} l15Pool={l15Pool} pushReceipt={pushReceipt} t={t} operatorMode={operatorMode} onRefreshMemory={refreshMemoryNow} />
         ) : (
-          <RuntimeFlowWorkspace flow={runtimeFlow} triggerCatalog={triggerCatalog} pushReceipt={pushReceipt} t={t} />
+          <RuntimeFlowWorkspace flow={runtimeFlow} triggerCatalog={triggerCatalog} pushReceipt={pushReceipt} t={t} operatorMode={operatorMode} />
         )}
       </main>
 
@@ -787,12 +914,16 @@ function MemoryGraphWorkspace({
   liveState,
   l15Pool,
   pushReceipt,
-  t
+  t,
+  operatorMode,
+  onRefreshMemory
 }: {
   liveState: LiveState;
   l15Pool: L15Pool;
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
+  operatorMode: boolean;
+  onRefreshMemory: () => Promise<void>;
 }) {
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
   const [previewNodes, setPreviewNodes] = useState<Array<Record<string, unknown>>>([]);
@@ -814,6 +945,348 @@ function MemoryGraphWorkspace({
   const [manualPositions, setManualPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<MemoryNodeData> | null>(null);
   const [activeTool, setActiveTool] = useState<MemoryToolId | null>("node");
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const panelRefs = useRef<Partial<Record<FloatingPanelId, HTMLElement | null>>>({});
+  const userMovedPanelsRef = useRef<Partial<Record<FloatingPanelId, boolean>>>({});
+  const [floatingPanels, setFloatingPanels] = useState<Record<FloatingPanelId, FloatingPanelState>>(DEFAULT_FLOATING_PANELS);
+  const floatingPanelZRef = useRef(30);
+  const [toolbarVertical, setToolbarVertical] = useState(false);
+
+  const setFloatingPanelRef = useCallback((panelId: FloatingPanelId) => (node: HTMLElement | null) => {
+    panelRefs.current[panelId] = node;
+  }, []);
+
+  const bringPanelForward = useCallback((panelId: FloatingPanelId) => {
+    const next = floatingPanelZRef.current + 1;
+    floatingPanelZRef.current = next;
+    setFloatingPanels((panels) => ({
+      ...panels,
+      [panelId]: { ...panels[panelId], z: next }
+    }));
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const updateCanvasSize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+      setCanvasSize((current) => (
+        Math.abs(current.width - width) < 2 && Math.abs(current.height - height) < 2
+          ? current
+          : { width, height }
+      ));
+    };
+
+    updateCanvasSize();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateCanvasSize);
+      return () => window.removeEventListener("resize", updateCanvasSize);
+    }
+
+    const observer = new ResizeObserver(updateCanvasSize);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, []);
+
+  const snapFloatingPanelPosition = useCallback((
+    panelId: FloatingPanelId,
+    rawX: number,
+    rawY: number,
+    panelWidth: number,
+    panelHeight: number,
+    canvasRect: DOMRect
+  ) => {
+    const edgeGap = FLOATING_PANEL_EDGE_GAP;
+    let nextX = clampNumber(rawX, edgeGap, Math.max(edgeGap, canvasRect.width - panelWidth - edgeGap));
+    let nextY = clampNumber(rawY, edgeGap, Math.max(edgeGap, canvasRect.height - panelHeight - edgeGap));
+
+    nextX = snapNumber(nextX, edgeGap);
+    nextY = snapNumber(nextY, edgeGap);
+    nextX = snapNumber(nextX, canvasRect.width - panelWidth - edgeGap);
+    nextY = snapNumber(nextY, canvasRect.height - panelHeight - edgeGap);
+
+    (Object.keys(panelRefs.current) as FloatingPanelId[]).forEach((otherId) => {
+      if (otherId === panelId) return;
+      const other = panelRefs.current[otherId];
+      if (!other) return;
+      const otherRect = other.getBoundingClientRect();
+      const otherX = otherRect.left - canvasRect.left;
+      const otherY = otherRect.top - canvasRect.top;
+      const otherRight = otherX + otherRect.width;
+      const otherBottom = otherY + otherRect.height;
+
+      nextX = snapNumber(nextX, otherX);
+      nextX = snapNumber(nextX + panelWidth, otherRight) - panelWidth;
+      nextX = snapNumber(nextX, otherRight + edgeGap);
+      nextX = snapNumber(nextX + panelWidth, otherX - edgeGap) - panelWidth;
+      nextY = snapNumber(nextY, otherY);
+      nextY = snapNumber(nextY + panelHeight, otherBottom) - panelHeight;
+      nextY = snapNumber(nextY, otherBottom + edgeGap);
+      nextY = snapNumber(nextY + panelHeight, otherY - edgeGap) - panelHeight;
+    });
+
+    return {
+      x: clampNumber(nextX, edgeGap, Math.max(edgeGap, canvasRect.width - panelWidth - edgeGap)),
+      y: clampNumber(nextY, edgeGap, Math.max(edgeGap, canvasRect.height - panelHeight - edgeGap))
+    };
+  }, []);
+
+  const beginFloatingPanelDrag = useCallback((panelId: FloatingPanelId, event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    bringPanelForward(panelId);
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const panelElement = panelRefs.current[panelId];
+    const panelRect = panelElement?.getBoundingClientRect();
+    const startPanel = floatingPanels[panelId];
+    const startPointer = { x: event.clientX, y: event.clientY };
+    const panelWidth = panelRect?.width ?? startPanel.width ?? 360;
+    const panelHeight = panelRect?.height ?? startPanel.height ?? 160;
+    let lastSnappedPosition = { x: startPanel.x, y: startPanel.y };
+    userMovedPanelsRef.current[panelId] = true;
+
+    const movePanel = (moveEvent: PointerEvent) => {
+      const dx = moveEvent.clientX - startPointer.x;
+      const dy = moveEvent.clientY - startPointer.y;
+      const next = snapFloatingPanelPosition(
+        panelId,
+        startPanel.x + dx,
+        startPanel.y + dy,
+        panelWidth,
+        panelHeight,
+        canvasRect
+      );
+      lastSnappedPosition = next;
+      if (panelId === "toolbar") {
+        setToolbarVertical(next.x <= FLOATING_TOOLBAR_DOCK_LIMIT || next.x >= canvasRect.width - panelWidth - FLOATING_TOOLBAR_DOCK_LIMIT);
+      }
+      setFloatingPanels((panels) => ({
+        ...panels,
+        [panelId]: { ...panels[panelId], x: next.x, y: next.y }
+      }));
+    };
+
+    const stopDrag = () => {
+      window.removeEventListener("pointermove", movePanel);
+      window.removeEventListener("pointerup", stopDrag);
+      setFloatingPanels((panels) => ({
+        ...panels,
+        [panelId]: { ...panels[panelId], x: lastSnappedPosition.x, y: lastSnappedPosition.y }
+      }));
+    };
+
+    window.addEventListener("pointermove", movePanel);
+    window.addEventListener("pointerup", stopDrag, { once: true });
+  }, [bringPanelForward, floatingPanels, snapFloatingPanelPosition]);
+
+  const beginFloatingPanelResize = useCallback((panelId: FloatingPanelId, edge: FloatingResizeEdge, event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const canvas = canvasRef.current;
+    const panelElement = panelRefs.current[panelId];
+    if (!canvas || !panelElement) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    bringPanelForward(panelId);
+    userMovedPanelsRef.current[panelId] = true;
+
+    const canvasRect = canvas.getBoundingClientRect();
+    const panelRect = panelElement.getBoundingClientRect();
+    const startPointer = { x: event.clientX, y: event.clientY };
+    const startX = panelRect.left - canvasRect.left;
+    const startY = panelRect.top - canvasRect.top;
+    const startWidth = panelRect.width;
+    const startHeight = panelRect.height;
+    const startRight = startX + startWidth;
+    const maxWidth = Math.max(FLOATING_PANEL_MIN_WIDTH, canvasRect.width - FLOATING_PANEL_EDGE_GAP * 2);
+    const maxHeight = Math.max(FLOATING_PANEL_MIN_HEIGHT, canvasRect.height - startY - FLOATING_PANEL_EDGE_GAP);
+
+    const resizePanel = (moveEvent: PointerEvent) => {
+      const dx = moveEvent.clientX - startPointer.x;
+      const dy = moveEvent.clientY - startPointer.y;
+      let nextX = startX;
+      let nextWidth = startWidth;
+      let nextHeight = startHeight;
+
+      if (edge.includes("left")) {
+        const rawLeft = clampNumber(startX + dx, FLOATING_PANEL_EDGE_GAP, startRight - FLOATING_PANEL_MIN_WIDTH);
+        const snappedLeft = snapNumber(rawLeft, FLOATING_PANEL_EDGE_GAP);
+        nextWidth = clampNumber(startRight - snappedLeft, FLOATING_PANEL_MIN_WIDTH, maxWidth);
+        nextX = startRight - nextWidth;
+      }
+
+      if (edge.includes("bottom")) {
+        const rawBottom = startY + startHeight + dy;
+        const snappedBottom = snapNumber(rawBottom, canvasRect.height - FLOATING_PANEL_EDGE_GAP);
+        nextHeight = clampNumber(snappedBottom - startY, FLOATING_PANEL_MIN_HEIGHT, maxHeight);
+      }
+
+      setFloatingPanels((panels) => ({
+        ...panels,
+        [panelId]: {
+          ...panels[panelId],
+          x: clampNumber(nextX, FLOATING_PANEL_EDGE_GAP, Math.max(FLOATING_PANEL_EDGE_GAP, canvasRect.width - nextWidth - FLOATING_PANEL_EDGE_GAP)),
+          y: startY,
+          width: nextWidth,
+          height: nextHeight
+        }
+      }));
+    };
+
+    const stopResize = () => {
+      window.removeEventListener("pointermove", resizePanel);
+      window.removeEventListener("pointerup", stopResize);
+    };
+
+    window.addEventListener("pointermove", resizePanel);
+    window.addEventListener("pointerup", stopResize, { once: true });
+  }, [bringPanelForward]);
+
+  const noteFloatingPanelPointerDown = useCallback((panelId: FloatingPanelId, event: ReactPointerEvent<HTMLElement>) => {
+    const panel = panelRefs.current[panelId];
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    const resizeGripSize = 18;
+    const nearResizeGrip = rect.right - event.clientX <= resizeGripSize || rect.bottom - event.clientY <= resizeGripSize;
+    if (!nearResizeGrip) return;
+    userMovedPanelsRef.current[panelId] = true;
+    bringPanelForward(panelId);
+  }, [bringPanelForward]);
+
+  const floatingPanelStyle = (panelId: FloatingPanelId): CSSProperties => {
+    const panel = floatingPanels[panelId];
+    const style: CSSProperties = {
+      left: panel.x,
+      top: panel.y,
+      zIndex: panel.z
+    };
+    if (panel.width) style.width = panel.width;
+    if (panel.height) style.height = panel.height;
+    return style;
+  };
+
+  useEffect(() => {
+    if (!canvasSize.width || !canvasSize.height) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dockWidth = defaultFloatingPanelWidth(canvasSize.width);
+    const dockX = Math.max(
+      FLOATING_PANEL_EDGE_GAP,
+      canvasSize.width - dockWidth - FLOATING_PANEL_DOCK_MARGIN
+    );
+    const canvasRect = canvas.getBoundingClientRect();
+
+    setFloatingPanels((panels) => {
+      let changed = false;
+      const next = { ...panels };
+
+      if (activeTool && !userMovedPanelsRef.current.tool) {
+        const toolRect = panelRefs.current.tool?.getBoundingClientRect();
+        const preferred = snapFloatingPanelPosition(
+          "tool",
+          dockX,
+          FLOATING_PANEL_DOCK_MARGIN,
+          dockWidth,
+          toolRect?.height ?? panels.tool.height ?? 260,
+          canvasRect
+        );
+        next.tool = {
+          ...next.tool,
+          x: preferred.x,
+          y: preferred.y,
+          width: dockWidth,
+          height: undefined
+        };
+        changed = changed
+          || panels.tool.x !== next.tool.x
+          || panels.tool.y !== next.tool.y
+          || panels.tool.width !== dockWidth
+          || panels.tool.height !== undefined;
+      }
+
+      if (selected && !userMovedPanelsRef.current.selection) {
+        const toolHeight = panelRefs.current.tool?.getBoundingClientRect().height
+          ?? panels.tool.height
+          ?? 260;
+        const selectionHeight = panelRefs.current.selection?.getBoundingClientRect().height
+          ?? panels.selection.height
+          ?? 260;
+        const preferredY = activeTool
+          ? FLOATING_PANEL_DOCK_MARGIN + toolHeight + FLOATING_PANEL_STACK_GAP
+          : 96;
+        const preferred = snapFloatingPanelPosition(
+          "selection",
+          dockX,
+          preferredY,
+          dockWidth,
+          selectionHeight,
+          canvasRect
+        );
+        next.selection = {
+          ...next.selection,
+          x: preferred.x,
+          y: preferred.y,
+          width: dockWidth,
+          height: undefined
+        };
+        changed = changed
+          || panels.selection.x !== next.selection.x
+          || panels.selection.y !== next.selection.y
+          || panels.selection.width !== dockWidth
+          || panels.selection.height !== undefined;
+      }
+
+      return changed ? next : panels;
+    });
+  }, [activeTool, canvasSize.height, canvasSize.width, selected, snapFloatingPanelPosition]);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const panelIds: FloatingPanelId[] = ["tool", "selection"];
+    const observers = panelIds.map((panelId) => {
+      const node = panelRefs.current[panelId];
+      if (!node) return null;
+      const observer = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        const width = Math.round(entry.contentRect.width);
+        const height = Math.round(entry.contentRect.height);
+        setFloatingPanels((panels) => {
+          const current = panels[panelId];
+          const canvas = canvasRef.current;
+          const canvasRect = canvas?.getBoundingClientRect();
+          const snapped = canvasRect
+            ? snapFloatingPanelPosition(panelId, current.x, current.y, width, height, canvasRect)
+            : { x: current.x, y: current.y };
+          const nextHeight = userMovedPanelsRef.current[panelId] ? height : undefined;
+          if (
+            Math.abs((current.width ?? width) - width) < 2
+            && Math.abs((current.height ?? 0) - (nextHeight ?? 0)) < 2
+            && Math.abs(current.x - snapped.x) < 2
+            && Math.abs(current.y - snapped.y) < 2
+          ) {
+            return panels;
+          }
+          return {
+            ...panels,
+            [panelId]: { ...current, x: snapped.x, y: snapped.y, width, height: nextHeight }
+          };
+        });
+      });
+      observer.observe(node);
+      return observer;
+    });
+    return () => observers.forEach((observer) => observer?.disconnect());
+  }, [activeTool, selected, snapFloatingPanelPosition]);
 
   const l2bNodes = liveState.l2b?.nodes ?? [];
   const l2bEdges = liveState.l2b?.edges ?? [];
@@ -1011,15 +1484,22 @@ function MemoryGraphWorkspace({
       return;
     }
     try {
-      const receipt = await api.l2bNodeDraft({
+      const payload = {
         label,
         kind: nodeKind,
         description: `Created from React Memory Graph Workspace (${origin}).`,
-        dry_run: true,
-        operator_mode: false
-      });
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      };
+      const receipt = operatorMode
+        ? await api.l2bNodeApply(payload)
+        : await api.l2bNodeDraft(payload);
       if (receipt.success !== false) {
-        stagePreviewNode(makeDraftId("node"), label, position);
+        if (operatorMode) {
+          await onRefreshMemory();
+        } else {
+          stagePreviewNode(makeDraftId("node"), label, position);
+        }
       }
       pushReceipt(receipt);
     } catch (exc) {
@@ -1070,16 +1550,22 @@ function MemoryGraphWorkspace({
       return;
     }
     try {
-      const receipt = await api.l2bEdgeDraft({
+      const payload = {
         from_uuid: source,
         to_uuid: target,
         kind: edgeKind,
         strength: Number(edgeStrength) || 0.5,
         meta: edgeMetaPayload(reason, meta),
-        dry_run: true,
-        operator_mode: false
-      });
-      if (receipt.success !== false && draftableNodeIds.has(source) && draftableNodeIds.has(target)) {
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      };
+      const receipt = operatorMode
+        ? await api.l2bEdgeApply(payload)
+        : await api.l2bEdgeDraft(payload);
+      if (receipt.success !== false && operatorMode) {
+        await onRefreshMemory();
+      }
+      if (receipt.success !== false && !operatorMode && draftableNodeIds.has(source) && draftableNodeIds.has(target)) {
         const resolvedHandles = completeEdgeHandles(source, target, nodePositions, handles);
         setPreviewEdges((rows) => [
           ...rows,
@@ -1223,9 +1709,10 @@ function MemoryGraphWorkspace({
         meta: edgeMetaPayload("edge_update"),
         match_kind: isSelectedEdge(selected) ? String(selected.kind || "") : "",
         match_source: isSelectedEdge(selected) ? String(selected.edge_source || selected.source_tool || "") : "",
-        dry_run: true,
-        operator_mode: false
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
       }));
+      if (operatorMode) await onRefreshMemory();
     } catch (exc) {
       pushReceipt(errorReceipt("l2b.edge.update", exc, { from_uuid: source, to_uuid: target }));
     }
@@ -1238,6 +1725,7 @@ function MemoryGraphWorkspace({
       pushReceipt(localReceipt("l2b.edge.delete", false, { error: "missing_endpoint" }));
       return;
     }
+    if (operatorMode && !window.confirm("Delete this L2-B Edge from the runtime graph?")) return;
     if (selectedEdgeId && previewEdges.some((edge) => edge.id === selectedEdgeId)) {
       setPreviewEdges((rows) => rows.filter((edge) => edge.id !== selectedEdgeId));
     }
@@ -1247,9 +1735,10 @@ function MemoryGraphWorkspace({
         to_uuid: target,
         match_kind: isSelectedEdge(selected) ? String(selected.kind || "") : "",
         match_source: isSelectedEdge(selected) ? String(selected.edge_source || selected.source_tool || "") : "",
-        dry_run: true,
-        operator_mode: false
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
       }));
+      if (operatorMode) await onRefreshMemory();
     } catch (exc) {
       pushReceipt(errorReceipt("l2b.edge.delete", exc, { from_uuid: source, to_uuid: target }));
     }
@@ -1261,13 +1750,15 @@ function MemoryGraphWorkspace({
       pushReceipt(localReceipt("l2b.node.delete", false, { error: "missing_node_uuid" }));
       return;
     }
+    if (operatorMode && !window.confirm("Delete this L2-B Node through L1.5 eviction?")) return;
     if (previewNodes.some((row) => String(row.uuid) === uuid)) {
       setPreviewNodes((rows) => rows.filter((row) => String(row.uuid) !== uuid));
       setPreviewEdges((rows) => rows.filter((edge) => edge.source !== uuid && edge.target !== uuid));
       setSelected(null);
     }
     try {
-      pushReceipt(await api.l2bNodeDelete({ node_uuid: uuid, dry_run: true, operator_mode: false }));
+      pushReceipt(await api.l2bNodeDelete({ node_uuid: uuid, dry_run: !operatorMode, operator_mode: operatorMode }));
+      if (operatorMode) await onRefreshMemory();
     } catch (exc) {
       pushReceipt(errorReceipt("l2b.node.delete", exc, { node_uuid: uuid }));
     }
@@ -1440,8 +1931,18 @@ function MemoryGraphWorkspace({
         <Metric label={t.intent} value={String(liveState.intent_workspace?.ref_count ?? 0)} />
       </div>
 
-      <div className="canvas-panel">
-        <div className="canvas-toolbar icon-toolbar">
+      <div className="canvas-panel" ref={canvasRef}>
+        <div
+          className={`canvas-toolbar icon-toolbar floating-toolbar${toolbarVertical ? " vertical" : ""}`}
+          ref={setFloatingPanelRef("toolbar")}
+          style={floatingPanelStyle("toolbar")}
+          onMouseDown={() => bringPanelForward("toolbar")}
+        >
+          <span
+            className="toolbar-drag-grip panel-drag-handle"
+            title="Drag toolbar"
+            onPointerDown={(event) => beginFloatingPanelDrag("toolbar", event)}
+          />
           <IconToolButton active={activeTool === "node"} label={t.createNode} onClick={() => setActiveTool(activeTool === "node" ? null : "node")}><Plus size={18} /></IconToolButton>
           <IconToolButton active={activeTool === "edge"} label={t.draftEdge} onClick={() => setActiveTool(activeTool === "edge" ? null : "edge")}><GitBranch size={18} /></IconToolButton>
           <IconToolButton active={activeTool === "subgraph"} label={t.subgraph} onClick={() => setActiveTool(activeTool === "subgraph" ? null : "subgraph")}><Layers size={18} /></IconToolButton>
@@ -1457,8 +1958,14 @@ function MemoryGraphWorkspace({
         </div>
 
         {activeTool ? (
-          <div className="tool-dock">
-            <MemoryToolPanel
+          <div
+            className="tool-dock floating-canvas-panel"
+            ref={setFloatingPanelRef("tool")}
+            style={floatingPanelStyle("tool")}
+            onMouseDown={() => bringPanelForward("tool")}
+            onPointerDown={(event) => noteFloatingPanelPointerDown("tool", event)}
+            >
+              <MemoryToolPanel
               activeTool={activeTool}
               liveState={liveState}
               t={t}
@@ -1489,6 +1996,7 @@ function MemoryGraphWorkspace({
               graphTransformKind={graphTransformKind}
               setGraphTransformKind={setGraphTransformKind}
               graphHealth={graphHealth}
+              operatorMode={operatorMode}
               onDraftNode={() => void draftNode()}
               onDraftEdge={() => void draftEdgeBetween(edgeFrom, edgeTo, "toolbar")}
               onUpdateEdge={() => void updateSelectedEdgeDraft()}
@@ -1503,8 +2011,14 @@ function MemoryGraphWorkspace({
               maxBucketCount={maxBucketCount}
               pushReceipt={pushReceipt}
               onGraphitiPreview={stageGraphitiPreview}
-            />
-          </div>
+              onSourceApplied={onRefreshMemory}
+              onHeaderPointerDown={(event) => beginFloatingPanelDrag("tool", event)}
+                onClose={() => setActiveTool(null)}
+              />
+              <FloatingPanelResizeHandles
+                onResizePointerDown={(edge, event) => beginFloatingPanelResize("tool", edge, event)}
+              />
+            </div>
         ) : null}
 
         {selected ? (
@@ -1528,6 +2042,12 @@ function MemoryGraphWorkspace({
             onDeleteEdge={() => void deleteSelectedEdgeDraft()}
             onSwapEdge={swapSelectedEdgeEndpoints}
             onClose={() => setSelected(null)}
+            onHeaderPointerDown={(event) => beginFloatingPanelDrag("selection", event)}
+            style={floatingPanelStyle("selection")}
+            panelRef={setFloatingPanelRef("selection")}
+            onFocusPanel={() => bringPanelForward("selection")}
+            onPanelPointerDown={(event) => noteFloatingPanelPointerDown("selection", event)}
+            onResizePointerDown={(edge, event) => beginFloatingPanelResize("selection", edge, event)}
           />
         ) : null}
 
@@ -1628,6 +2148,7 @@ function MemoryToolPanel({
   graphTransformKind,
   setGraphTransformKind,
   graphHealth,
+  operatorMode,
   onDraftNode,
   onDraftEdge,
   onUpdateEdge,
@@ -1641,7 +2162,10 @@ function MemoryToolPanel({
   buckets,
   maxBucketCount,
   pushReceipt,
-  onGraphitiPreview
+  onGraphitiPreview,
+  onSourceApplied,
+  onHeaderPointerDown,
+  onClose
 }: {
   activeTool: MemoryToolId;
   liveState: LiveState;
@@ -1673,6 +2197,7 @@ function MemoryToolPanel({
   graphTransformKind: string;
   setGraphTransformKind: (value: string) => void;
   graphHealth: Record<string, unknown> | null;
+  operatorMode: boolean;
   onDraftNode: () => void;
   onDraftEdge: () => void;
   onUpdateEdge: () => void;
@@ -1687,11 +2212,15 @@ function MemoryToolPanel({
   maxBucketCount: number;
   pushReceipt: (receipt: Receipt | null) => void;
   onGraphitiPreview: (preview: GraphitiPreviewPayload) => void;
+  onSourceApplied: () => Promise<void>;
+  onHeaderPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+  onClose: () => void;
 }) {
   if (activeTool === "node") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<Plus size={16} />} title={t.createNode} />
+        <ToolPanelHead icon={<Plus size={16} />} title={t.createNode} onPointerDown={onHeaderPointerDown} onClose={onClose} />
+        <WriteModeBanner operatorMode={operatorMode} t={t} />
         <label><span>{t.nodeLabel}</span><input value={nodeLabel} onChange={(event) => setNodeLabel(event.target.value)} /></label>
         <label><span>{t.nodeKind}</span><select value={nodeKind} onChange={(event) => setNodeKind(event.target.value)}>{NODE_KIND_OPTIONS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
         <button className="button primary" onClick={onDraftNode}><Plus size={16} /> {t.createNode}</button>
@@ -1701,7 +2230,8 @@ function MemoryToolPanel({
   if (activeTool === "edge") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<GitBranch size={16} />} title={t.draftEdge} />
+        <ToolPanelHead icon={<GitBranch size={16} />} title={t.draftEdge} onPointerDown={onHeaderPointerDown} onClose={onClose} />
+        <WriteModeBanner operatorMode={operatorMode} t={t} />
         <div className="two-field-grid">
           <label><span>{t.fromUuid}</span><input value={edgeFrom} onChange={(event) => setEdgeFrom(event.target.value)} /></label>
           <label><span>{t.toUuid}</span><input value={edgeTo} onChange={(event) => setEdgeTo(event.target.value)} /></label>
@@ -1722,7 +2252,7 @@ function MemoryToolPanel({
   if (activeTool === "subgraph") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<Layers size={16} />} title={t.subgraph} />
+        <ToolPanelHead icon={<Layers size={16} />} title={t.subgraph} onPointerDown={onHeaderPointerDown} onClose={onClose} />
         <label><span>{t.nodeLabel}</span><input value={subgraphLabel} onChange={(event) => setSubgraphLabel(event.target.value)} /></label>
         <label>
           <span>{t.importDestination}</span>
@@ -1747,7 +2277,7 @@ function MemoryToolPanel({
   if (activeTool === "filter") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<Filter size={16} />} title={t.filters} />
+        <ToolPanelHead icon={<Filter size={16} />} title={t.filters} onPointerDown={onHeaderPointerDown} onClose={onClose} />
         <label><span>{t.nodeKind}</span><select value={filterKind} onChange={(event) => setFilterKind(event.target.value)}><option value="all">all</option>{NODE_KIND_OPTIONS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
       </section>
     );
@@ -1755,7 +2285,7 @@ function MemoryToolPanel({
   if (activeTool === "tags") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<Tags size={16} />} title={t.tags} />
+        <ToolPanelHead icon={<Tags size={16} />} title={t.tags} onPointerDown={onHeaderPointerDown} onClose={onClose} />
         <label><span>{t.tags}</span><input value={tagText} onChange={(event) => setTagText(event.target.value)} placeholder="tag-a, tag-b" /></label>
         <button className="button" onClick={onDraftTag}><Tags size={16} /> {t.addTagDraft}</button>
       </section>
@@ -1764,7 +2294,7 @@ function MemoryToolPanel({
   if (activeTool === "state") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<Activity size={16} />} title={t.stateView} />
+        <ToolPanelHead icon={<Activity size={16} />} title={t.stateView} onPointerDown={onHeaderPointerDown} onClose={onClose} />
         <label className="toggle-row">
           <input type="checkbox" checked={stateColors} onChange={(event) => setStateColors(event.target.checked)} />
           <span>{t.statusColors}</span>
@@ -1787,12 +2317,12 @@ function MemoryToolPanel({
   if (activeTool === "pool") {
     return (
       <section className="tool-panel pool-panel">
-        <ToolPanelHead icon={<Database size={16} />} title={t.l15} />
+        <ToolPanelHead icon={<Database size={16} />} title={t.l15} onPointerDown={onHeaderPointerDown} onClose={onClose} />
         <L15HealthPanel health={poolHealth} t={t} />
-        <SourceBoard liveState={liveState} pushReceipt={pushReceipt} t={t} onGraphitiPreview={onGraphitiPreview} />
+        <SourceBoard liveState={liveState} pushReceipt={pushReceipt} t={t} onGraphitiPreview={onGraphitiPreview} onSourceApplied={onSourceApplied} operatorMode={operatorMode} />
         <div className="bucket-board compact">
           {buckets.map((bucket) => (
-            <BucketCard key={String(bucket.kind)} bucket={bucket} maxNodeCount={maxBucketCount} pushReceipt={pushReceipt} t={t} />
+          <BucketCard key={String(bucket.kind)} bucket={bucket} maxNodeCount={maxBucketCount} operatorMode={operatorMode} pushReceipt={pushReceipt} t={t} />
           ))}
         </div>
       </section>
@@ -1800,18 +2330,72 @@ function MemoryToolPanel({
   }
   return (
     <section className="tool-panel">
-      <ToolPanelHead icon={<Settings size={16} />} title={t.settings} />
+      <ToolPanelHead icon={<Settings size={16} />} title={t.settings} onPointerDown={onHeaderPointerDown} onClose={onClose} />
       <p className="source-card-note">{t.connectHint}</p>
       <p className="source-card-note">RustWorkX stores topology; Node/Edge kind, status, tags and meta stay in payloads for flexible visual mapping.</p>
     </section>
   );
 }
 
-function ToolPanelHead({ icon, title }: { icon: ReactNode; title: string }) {
+function ToolPanelHead({
+  icon,
+  title,
+  onPointerDown,
+  onClose
+}: {
+  icon: ReactNode;
+  title: string;
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+  onClose: () => void;
+}) {
   return (
-    <div className="tool-panel-head">
+    <div className="tool-panel-head panel-drag-handle" onPointerDown={onPointerDown}>
       <strong>{icon}{title}</strong>
+      <button
+        className="icon-tool tiny"
+        aria-label="Close panel"
+        title="Close panel"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={onClose}
+      >
+        <X size={14} />
+      </button>
     </div>
+  );
+}
+
+function WriteModeBanner({ operatorMode, t }: { operatorMode: boolean; t: ConsoleCopy }) {
+  return (
+    <div className={operatorMode ? "write-mode-banner operator" : "write-mode-banner"}>
+      <ShieldCheck size={14} />
+      <span>{operatorMode ? `${t.executeMode} / ${t.operatorMode}` : `${t.previewMode} / ${t.safeMode}`}</span>
+    </div>
+  );
+}
+
+function FloatingPanelResizeHandles({
+  onResizePointerDown
+}: {
+  onResizePointerDown: (edge: FloatingResizeEdge, event: ReactPointerEvent<HTMLElement>) => void;
+}) {
+  return (
+    <>
+      <span
+        className="floating-resize-handle left"
+        aria-hidden="true"
+        onPointerDown={(event) => onResizePointerDown("left", event)}
+      />
+      <span
+        className="floating-resize-handle bottom"
+        aria-hidden="true"
+        onPointerDown={(event) => onResizePointerDown("bottom", event)}
+      />
+      <span
+        className="floating-resize-handle bottom-left"
+        aria-hidden="true"
+        onPointerDown={(event) => onResizePointerDown("bottom-left", event)}
+      />
+    </>
   );
 }
 
@@ -1828,7 +2412,13 @@ function SelectionInspector({
   onUpdateEdge,
   onDeleteEdge,
   onSwapEdge,
-  onClose
+  onClose,
+  onHeaderPointerDown,
+  style,
+  panelRef,
+  onFocusPanel,
+  onPanelPointerDown,
+  onResizePointerDown
 }: {
   selected: Record<string, unknown>;
   selectedNodeId: string;
@@ -1843,6 +2433,12 @@ function SelectionInspector({
   onDeleteEdge: () => void;
   onSwapEdge: () => void;
   onClose: () => void;
+  onHeaderPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+  style: CSSProperties;
+  panelRef: (node: HTMLElement | null) => void;
+  onFocusPanel: () => void;
+  onPanelPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+  onResizePointerDown: (edge: FloatingResizeEdge, event: ReactPointerEvent<HTMLElement>) => void;
 }) {
   const isEdge = String(selected.selection_type || "") === "edge";
   const title = isEdge ? t.selectedEdge : t.selectedNode;
@@ -1858,10 +2454,18 @@ function SelectionInspector({
     : "";
   const hasRefOrPhotoDetails = !isEdge && (relatedRefs.length > 0 || Boolean(nodeAssetPath) || Boolean(nodeEpisodeRef));
   return (
-    <aside className="selection-float">
-      <div className="selection-head">
+    <aside className="selection-float floating-canvas-panel" ref={panelRef} style={style} onMouseDown={onFocusPanel} onPointerDown={onPanelPointerDown}>
+      <div className="selection-head panel-drag-handle" onPointerDown={onHeaderPointerDown}>
         <strong>{isEdge ? <GitBranch size={16} /> : <CircleDot size={16} />} {title}</strong>
-        <button className="icon-tool tiny" data-tooltip={t.clearSelection} title={t.clearSelection} onClick={onClose}>x</button>
+        <button
+          className="icon-tool tiny"
+          data-tooltip={t.clearSelection}
+          title={t.clearSelection}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={onClose}
+        >
+          <X size={14} />
+        </button>
       </div>
       <div className="selection-title">{String(selected.label || selected.id || selectedNodeId || selectedEdgeId || kind)}</div>
       <div className="detail-grid">
@@ -1925,6 +2529,7 @@ function SelectionInspector({
           <button className="button small danger" onClick={onDeleteNode}>{t.deleteNode}</button>
         )}
       </div>
+      <FloatingPanelResizeHandles onResizePointerDown={onResizePointerDown} />
     </aside>
   );
 }
@@ -1933,12 +2538,14 @@ function RuntimeFlowWorkspace({
   flow,
   triggerCatalog,
   pushReceipt,
-  t
+  t,
+  operatorMode
 }: {
   flow: RuntimeFlow;
   triggerCatalog: TriggerCatalog;
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
+  operatorMode: boolean;
 }) {
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
   const [evidenceRefreshSeq, setEvidenceRefreshSeq] = useState(0);
@@ -1982,29 +2589,33 @@ function RuntimeFlowWorkspace({
   };
 
   const runAction = async (action: RuntimeAction) => {
+    const execution = { dry_run: !operatorMode, operator_mode: operatorMode };
+    const triggerAction = operatorMode ? api.triggerFire : api.triggerDraft;
     try {
       if (action === "message_check") {
-        pushReceipt(await api.messageCheck());
+        pushReceipt(await api.messageCheck(execution));
         return;
       }
       if (action === "message_push") {
-        pushReceipt(await api.messagePush());
+        pushReceipt(await api.messagePush(execution));
         return;
       }
       if (action === "llm_push") {
-        pushReceipt(await api.triggerDraft({
+        pushReceipt(await triggerAction({
           trigger_name: "intent_event_boundary",
+          ...execution,
           event: {
             type: "intent_boundary",
             kind: "web_llm_context_push",
-            summary: "React Runtime Flow dry-run context push."
+            summary: operatorMode ? "React Runtime Flow operator context push." : "React Runtime Flow dry-run context push."
           }
         }));
         return;
       }
       if (action === "scheduler_tick") {
-        pushReceipt(await api.triggerDraft({
+        pushReceipt(await triggerAction({
           trigger_name: "intent_event_boundary",
+          ...execution,
           event: {
             type: "intent_boundary",
             kind: "scheduler_tick",
@@ -2015,8 +2626,9 @@ function RuntimeFlowWorkspace({
         return;
       }
       if (action === "calendar_test") {
-        pushReceipt(await api.triggerDraft({
+        pushReceipt(await triggerAction({
           trigger_name: "calendar",
+          ...execution,
           event: {
             type: "calendar_result",
             result: JSON.stringify([
@@ -2031,8 +2643,9 @@ function RuntimeFlowWorkspace({
         return;
       }
       if (action === "scene_switch") {
-        pushReceipt(await api.triggerDraft({
+        pushReceipt(await triggerAction({
           trigger_name: "scene_switch",
+          ...execution,
           event: {
             kind: "scene_switch",
             old_scene_type: "previous",
@@ -2043,8 +2656,9 @@ function RuntimeFlowWorkspace({
         return;
       }
       if (action === "roleplay_open") {
-        pushReceipt(await api.triggerDraft({
+        pushReceipt(await triggerAction({
           trigger_name: "roleplay_mode",
+          ...execution,
           event: {
             kind: "roleplay_mode",
             action: "open",
@@ -2059,11 +2673,13 @@ function RuntimeFlowWorkspace({
   };
 
   const draftGate = async (gate: Record<string, unknown>, decision: string, apply = false) => {
+    const execution = apply
+      ? { dry_run: !operatorMode, operator_mode: operatorMode }
+      : { dry_run: true, operator_mode: false };
     const body = {
       gate_id: gate.gate_id,
       decision,
-      dry_run: true,
-      operator_mode: false
+      ...execution
     };
     try {
       pushReceipt(apply ? await api.hitlApply(body) : await api.hitlDraft(body));
@@ -2084,7 +2700,9 @@ function RuntimeFlowWorkspace({
       <div className="action-palette">
         <div className="palette-title">
           <strong><Workflow size={17} /> {t.triggerPalette}</strong>
-          <span><ShieldCheck size={14} /> {t.operatorSafe}</span>
+          <span className={operatorMode ? "mode-chip active" : "mode-chip"}>
+            <ShieldCheck size={14} /> {operatorMode ? `${t.executeMode} / ${t.operatorMode}` : t.operatorSafe}
+          </span>
         </div>
         <div className="action-groups">
           {runtimeActionGroups(t).map((group) => (
@@ -2095,7 +2713,7 @@ function RuntimeFlowWorkspace({
                   <button className="action-tile" key={item.action} onClick={() => void runAction(item.action)}>
                     {item.icon}
                     <strong>{item.label}</strong>
-                    <small>{t.dryRunOnly}</small>
+                    <small>{operatorMode ? t.executeMode : t.dryRunOnly}</small>
                   </button>
                 ))}
               </div>
@@ -3167,12 +3785,16 @@ function SourceBoard({
   liveState,
   pushReceipt,
   t,
-  onGraphitiPreview
+  onGraphitiPreview,
+  onSourceApplied,
+  operatorMode
 }: {
   liveState: LiveState;
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
   onGraphitiPreview: (preview: GraphitiPreviewPayload) => void;
+  onSourceApplied: () => Promise<void>;
+  operatorMode: boolean;
 }) {
   const [activeSource, setActiveSource] = useState<SourceBoardId>("graphiti");
   const sourceTabs = [
@@ -3200,13 +3822,13 @@ function SourceBoard({
       </div>
       <div className="source-board-active">
         <div className="source-panel" hidden={activeSource !== "graphiti"}>
-          <GraphitiSourceCard pushReceipt={pushReceipt} t={t} onPreview={onGraphitiPreview} />
+          <GraphitiSourceCard pushReceipt={pushReceipt} t={t} onPreview={onGraphitiPreview} onSourceApplied={onSourceApplied} operatorMode={operatorMode} />
         </div>
         <div className="source-panel" hidden={activeSource !== "obsidian"}>
-          <ObsidianDraftCard pushReceipt={pushReceipt} t={t} />
+          <ObsidianDraftCard pushReceipt={pushReceipt} t={t} onSourceApplied={onSourceApplied} operatorMode={operatorMode} />
         </div>
         <div className="source-panel" hidden={activeSource !== "calendar"}>
-          <CalendarSourceCard pushReceipt={pushReceipt} t={t} />
+          <CalendarSourceCard pushReceipt={pushReceipt} t={t} onSourceApplied={onSourceApplied} operatorMode={operatorMode} />
         </div>
         <div className="source-panel" hidden={activeSource !== "refs"}>
           <RefPhotoSourceCard liveState={liveState} pushReceipt={pushReceipt} />
@@ -3220,14 +3842,76 @@ function SourceBoard({
   );
 }
 
+function ImportLandingMap({
+  source,
+  sourceDetail = "",
+  l15Label = "L1.5 observations",
+  l2bLabel = "L2-B target",
+  importPolicy,
+  observationCount = 0,
+  edgeCount = 0,
+  applyRoute = "",
+  operatorRequired = true
+}: {
+  source: string;
+  sourceDetail?: string;
+  l15Label?: string;
+  l2bLabel?: string;
+  importPolicy?: Record<string, unknown> | null;
+  observationCount?: number;
+  edgeCount?: number;
+  applyRoute?: string;
+  operatorRequired?: boolean;
+}) {
+  const policy = recordFromUnknown(importPolicy);
+  const destination = String(policy.destination || "review target");
+  const sourceKind = String(policy.source_kind || source.toLowerCase());
+  const writePath = String(policy.write_path || "L1.5 admit -> L2-B policy");
+  const reason = String(policy.reason || "");
+  return (
+    <div className="import-landing-map">
+      <div className="landing-rail">
+        <div className="landing-step source">
+          <small>Source</small>
+          <strong>{source}</strong>
+          <span>{sourceDetail || sourceKind}</span>
+        </div>
+        <span className="landing-link" aria-hidden="true" />
+        <div className="landing-step l15">
+          <small>L1.5</small>
+          <strong>{l15Label}</strong>
+          <span>{`${observationCount} observation(s)`}</span>
+        </div>
+        <span className="landing-link" aria-hidden="true" />
+        <div className="landing-step l2b">
+          <small>L2-B</small>
+          <strong>{destination}</strong>
+          <span>{l2bLabel}</span>
+        </div>
+      </div>
+      <div className="landing-meta-row">
+        <span>{writePath}</span>
+        {edgeCount ? <span>{`${edgeCount} Edge draft(s)`}</span> : null}
+        {applyRoute ? <span>{applyRoute}</span> : null}
+        <span>{operatorRequired ? "operator apply required" : "preview only"}</span>
+        {reason ? <span>{reason}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function GraphitiSourceCard({
   pushReceipt,
   t,
-  onPreview
+  onPreview,
+  onSourceApplied,
+  operatorMode
 }: {
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
   onPreview: (preview: GraphitiPreviewPayload) => void;
+  onSourceApplied: () => Promise<void>;
+  operatorMode: boolean;
 }) {
   const [partition, setPartition] = useState("arknights_test");
   const [query, setQuery] = useState("Amiya Chernobog");
@@ -3239,8 +3923,13 @@ function GraphitiSourceCard({
   const [exportObservations, setExportObservations] = useState<Array<Record<string, unknown>>>([]);
   const [edgeDrafts, setEdgeDrafts] = useState<Array<Record<string, unknown>>>([]);
   const [edgePolicy, setEdgePolicy] = useState("");
+  const [importPolicy, setImportPolicy] = useState<Record<string, unknown> | null>(null);
+  const [policySkippedReason, setPolicySkippedReason] = useState("");
+  const [flowSteps, setFlowSteps] = useState<string[]>([]);
   const [destination, setDestination] = useState("isolated_compartment");
   const [status, setStatus] = useState<GraphitiStatusSummary | null>(null);
+  const [operatorImporting, setOperatorImporting] = useState(false);
+  const operatorImportingRef = useRef(false);
   const selectedHits = useMemo(
     () => hits.filter((hit, index) => selectedHitKeys.includes(graphitiHitKey(hit, index))),
     [hits, selectedHitKeys]
@@ -3271,6 +3960,40 @@ function GraphitiSourceCard({
       pushReceipt(localReceipt(reason, true, { partition, query: query.trim(), canvas_preview_cleared: true }));
     }
   };
+  const clearGraphitiPlanState = (reason = "") => {
+    setExportObservations([]);
+    setEdgeDrafts([]);
+    setEdgePolicy("");
+    setImportPolicy(null);
+    setPolicySkippedReason(reason);
+    setFlowSteps([]);
+  };
+  const showGraphitiError = (
+    action: string,
+    exc: unknown,
+    data: Record<string, unknown> = {},
+    clearSource = false
+  ) => {
+    const receipt = errorReceipt(action, exc, data);
+    const reason = String((receipt.data ?? {}).error || "request_failed");
+    if (clearSource) {
+      setHits([]);
+      setSubgraphNodes([]);
+      setSubgraphEdges([]);
+      setSelectedHitKeys([]);
+      clearGraphitiPreview("");
+    }
+    clearGraphitiPlanState(reason);
+    pushReceipt(receipt);
+  };
+  const clearGraphitiSearchResults = () => {
+    setHits([]);
+    setSubgraphNodes([]);
+    setSubgraphEdges([]);
+    setSelectedHitKeys([]);
+    clearGraphitiPlanState("");
+    clearGraphitiPreview("");
+  };
   const loadStatus = async () => {
     try {
       const receipt = await api.graphitiStatus();
@@ -3299,6 +4022,12 @@ function GraphitiSourceCard({
   };
   const search = async () => {
     if (!query.trim()) {
+      setHits([]);
+      setSubgraphNodes([]);
+      setSubgraphEdges([]);
+      setSelectedHitKeys([]);
+      clearGraphitiPlanState("missing_query");
+      clearGraphitiPreview();
       pushReceipt(localReceipt("graphiti.subgraph.search", false, { error: "missing_query" }));
       return;
     }
@@ -3312,9 +4041,7 @@ function GraphitiSourceCard({
       setSubgraphNodes(nextSubgraphNodes);
       setSubgraphEdges(nextSubgraphEdges);
       setSelectedHitKeys(nextHits.map((hit, index) => graphitiHitKey(hit, index)));
-      setExportObservations([]);
-      setEdgeDrafts([]);
-      setEdgePolicy("");
+      clearGraphitiPlanState("");
       if (receipt.success === false || (!nextHits.length && !nextSubgraphNodes.length)) {
         clearGraphitiPreview("");
       }
@@ -3329,7 +4056,7 @@ function GraphitiSourceCard({
       }
       pushReceipt(receipt);
     } catch (exc) {
-      pushReceipt(errorReceipt("graphiti.subgraph.search", exc, { partition, query }));
+      showGraphitiError("graphiti.subgraph.search", exc, { partition, query }, true);
     }
   };
   const toggleHit = (key: string) => {
@@ -3337,6 +4064,7 @@ function GraphitiSourceCard({
       const nextKeys = current.includes(key)
         ? current.filter((item) => item !== key)
         : [...current, key];
+      clearGraphitiPlanState(nextKeys.length ? "" : "no_hits_selected");
       refreshSelectionPreview(nextKeys);
       return nextKeys;
     });
@@ -3344,31 +4072,41 @@ function GraphitiSourceCard({
   const selectAllHits = () => {
     const nextKeys = hits.map((hit, index) => graphitiHitKey(hit, index));
     setSelectedHitKeys(nextKeys);
+    clearGraphitiPlanState(nextKeys.length ? "" : "no_hits_selected");
     refreshSelectionPreview(nextKeys);
   };
   const clearHitSelection = () => {
     setSelectedHitKeys([]);
+    clearGraphitiPlanState("no_hits_selected");
     clearGraphitiPreview();
   };
   const showExportReceipt = (receipt: Receipt) => {
+    const data = receipt.data ?? {};
     setExportObservations(receiptArray(receipt, "observations"));
     setEdgeDrafts(receiptArray(receipt, "edge_drafts"));
-    setEdgePolicy(String(receipt.data?.edge_write_policy || ""));
+    setEdgePolicy(String(data.edge_write_policy || ""));
+    const nextPolicy = recordFromUnknown(data.import_policy);
+    setImportPolicy(Object.keys(nextPolicy).length ? nextPolicy : null);
+    setPolicySkippedReason(String(data.policy_skipped_reason || data.error || ""));
+    const steps = Array.isArray(data.flow_steps) ? data.flow_steps.map(String) : [];
+    setFlowSteps(steps);
     pushReceipt(receipt);
   };
   const exportDraft = async () => {
     if (!selectedHits.length) {
+      clearGraphitiPlanState("no_hits_selected");
       pushReceipt(localReceipt("graphiti.subgraph.export_draft", false, { error: "no_hits_selected", partition, query }));
       return;
     }
     try {
       showExportReceipt(await api.graphitiSubgraphExportDraft({ partition, query: query.trim(), hits: selectedHits }));
     } catch (exc) {
-      pushReceipt(errorReceipt("graphiti.subgraph.export_draft", exc, { partition, query }));
+      showGraphitiError("graphiti.subgraph.export_draft", exc, { partition, query });
     }
   };
   const exportDryRun = async () => {
     if (!selectedHits.length) {
+      clearGraphitiPlanState("no_hits_selected");
       pushReceipt(localReceipt("graphiti.subgraph.export", false, { error: "no_hits_selected", partition, query }));
       return;
     }
@@ -3381,46 +4119,86 @@ function GraphitiSourceCard({
         operator_mode: false
       }));
     } catch (exc) {
-      pushReceipt(errorReceipt("graphiti.subgraph.export", exc, { partition, query }));
+      showGraphitiError("graphiti.subgraph.export", exc, { partition, query });
+    }
+  };
+  const exportExecute = async () => {
+    if (operatorImportingRef.current) {
+      pushReceipt(localReceipt("graphiti.subgraph.export", false, { error: "operator_import_in_flight", partition, query }));
+      return;
+    }
+    if (!selectedHits.length) {
+      clearGraphitiPlanState("no_hits_selected");
+      clearGraphitiPreview("");
+      pushReceipt(localReceipt("graphiti.subgraph.export", false, { error: "no_hits_selected", partition, query }));
+      return;
+    }
+    operatorImportingRef.current = true;
+    setOperatorImporting(true);
+    try {
+      const receipt = await api.graphitiSubgraphExport({
+        partition,
+        query: query.trim(),
+        hits: selectedHits,
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      });
+      showExportReceipt(receipt);
+      if (receipt.success !== false && operatorMode) {
+        await onSourceApplied();
+      }
+    } catch (exc) {
+      showGraphitiError("graphiti.subgraph.export.execute", exc, { partition, query });
+    } finally {
+      operatorImportingRef.current = false;
+      setOperatorImporting(false);
     }
   };
   const previewImportPolicy = async () => {
     if (!selectedHits.length) {
-      pushReceipt(localReceipt("l2b.graph_policy.import_draft", false, { error: "no_hits_selected", partition, query }));
+      clearGraphitiPlanState("no_hits_selected");
+      pushReceipt(localReceipt("graphiti.subgraph.import_plan", false, { error: "no_hits_selected", partition, query }));
       return;
     }
     try {
-      const selectedIds = selectedHits.flatMap((hit, index) => graphitiSelectionIds(hit, index));
-      const itemIds = selectedHits.map((hit, index) => graphitiHitKey(hit, index));
-      const edgeDraftPayload = subgraphEdges
-        .filter((edge) => {
-          const hitId = String(edge.hit_id || "");
-          return selectedIds.includes(hitId) || selectedIds.includes(String(edge.source || "")) || selectedIds.includes(String(edge.target || ""));
-        })
-        .slice(0, 24)
-        .map((edge) => ({
-          source: edge.source,
-          target: edge.target,
-          kind: edge.kind || "graphiti_fact",
-          source_graphiti_uuid: edge.source_graphiti_uuid,
-          target_graphiti_uuid: edge.target_graphiti_uuid,
-          label: edge.label || edge.fact,
-          edge_source: "graphiti"
-        }));
-      pushReceipt(await api.l2bGraphImportDraft({
+      showExportReceipt(await api.graphitiSubgraphImportPlan({
+        partition,
+        query: query.trim(),
+        hits: selectedHits,
         destination,
-        source_kind: "graphiti",
-        source_id: `${partition}:${query.trim()}`,
         workspace_id: "memory_graph",
         subgraph_label: query.trim() || partition,
-        item_ids: itemIds,
-        proposed_edges: edgeDraftPayload,
         dry_run: true,
         operator_mode: false
       }));
     } catch (exc) {
-      pushReceipt(errorReceipt("l2b.graph_policy.import_draft", exc, { partition, query, destination }));
+      showGraphitiError("graphiti.subgraph.import_plan", exc, { partition, query, destination });
     }
+  };
+  const previewSelectedOnCanvas = () => {
+    if (!selectedHits.length) {
+      clearGraphitiPlanState("no_hits_selected");
+      clearGraphitiPreview("");
+      pushReceipt(localReceipt("graphiti.subgraph.preview", false, { error: "no_hits_selected", partition, query }));
+      return;
+    }
+    onPreview(selectedPreview());
+  };
+  const updateDestination = (value: string) => {
+    setDestination(value);
+    clearGraphitiPlanState("destination_changed");
+  };
+  const updatePartition = (value: string) => {
+    setPartition(value);
+    clearGraphitiSearchResults();
+  };
+  const updateQuery = (value: string) => {
+    setQuery(value);
+    clearGraphitiSearchResults();
+  };
+  const updateLimit = (value: string) => {
+    setLimit(Math.max(1, Math.min(20, Number(value) || 1)));
+    clearGraphitiSearchResults();
   };
 
   return (
@@ -3436,7 +4214,7 @@ function GraphitiSourceCard({
       </div>
       <label>
         <span>{t.partition}</span>
-        <select value={partition} onChange={(event) => setPartition(event.target.value)}>
+        <select value={partition} onChange={(event) => updatePartition(event.target.value)}>
           <option value="arknights_test">arknights_test</option>
           <option value="goslo">goslo</option>
           <option value="maid">maid</option>
@@ -3446,7 +4224,7 @@ function GraphitiSourceCard({
       </label>
       <label>
         <span>{t.graphitiQuery}</span>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t.graphitiQuery} />
+        <input value={query} onChange={(event) => updateQuery(event.target.value)} placeholder={t.graphitiQuery} />
       </label>
       <label>
         <span>{t.limit}</span>
@@ -3455,21 +4233,22 @@ function GraphitiSourceCard({
           min={1}
           max={20}
           value={limit}
-          onChange={(event) => setLimit(Math.max(1, Math.min(20, Number(event.target.value) || 1)))}
+          onChange={(event) => updateLimit(event.target.value)}
         />
       </label>
       <label>
         <span>{t.importDestination}</span>
-        <select value={destination} onChange={(event) => setDestination(event.target.value)}>
+        <select value={destination} onChange={(event) => updateDestination(event.target.value)}>
           {GRAPH_IMPORT_DESTINATIONS.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
       </label>
       <div className="button-row">
         <button className="button primary" onClick={() => void search()}><Search size={16} /> {t.searchGraphiti}</button>
-        <button className="button" onClick={() => onPreview(selectedPreview())} disabled={!selectedHits.length}><GitBranch size={16} /> {t.previewOnCanvas}</button>
-        <button className="button" onClick={() => void previewImportPolicy()} disabled={!selectedHits.length}><Workflow size={16} /> {t.previewPolicy}</button>
-        <button className="button" onClick={() => void exportDraft()} disabled={!selectedHits.length}><UploadCloud size={16} /> {t.exportSubgraphDraft}</button>
-        <button className="button ghost" onClick={() => void exportDryRun()} disabled={!selectedHits.length}><ShieldCheck size={16} /> {t.applyExportDryRun}</button>
+        <button className="button" onClick={previewSelectedOnCanvas}><GitBranch size={16} /> {t.previewOnCanvas}</button>
+        <button className="button" onClick={() => void previewImportPolicy()}><Workflow size={16} /> {t.previewPolicy}</button>
+        <button className="button" onClick={() => void exportDraft()}><UploadCloud size={16} /> {t.exportSubgraphDraft}</button>
+        <button className="button ghost" onClick={() => void exportDryRun()}><ShieldCheck size={16} /> {t.applyExportDryRun}</button>
+        <button className="button ghost" onClick={() => void exportExecute()} disabled={operatorImporting}><UploadCloud size={16} /> {operatorMode ? t.calendarImportExecute : t.dryApply}</button>
       </div>
       <div className="hit-list">
         <div className="hit-list-head">
@@ -3511,11 +4290,34 @@ function GraphitiSourceCard({
           );
         }) : <small className="muted">{t.noHits}</small>}
       </div>
-      {exportObservations.length || edgeDrafts.length ? (
+      {exportObservations.length || edgeDrafts.length || policySkippedReason ? (
         <div className="note-preview-list graphiti-export-plan">
           <strong>Export plan</strong>
           <small>{`${exportObservations.length} L1.5 observation(s) / ${edgeDrafts.length} Edge draft(s)`}</small>
+          {policySkippedReason ? <small className="warn-text">{policySkippedReason}</small> : null}
           {edgePolicy ? <small className="muted">{edgePolicy}</small> : null}
+          <ImportLandingMap
+            source="Graphiti"
+            sourceDetail={`${partition} / ${query.trim() || "search"}`}
+            l15Label="USER_EXPLICIT"
+            l2bLabel="subgraph overlay"
+            importPolicy={importPolicy}
+            observationCount={exportObservations.length}
+            edgeCount={edgeDrafts.length}
+            applyRoute="/api/graphiti/subgraph/export"
+          />
+          {importPolicy ? (
+            <div className="preview-row import-plan-row">
+              <span>{`Destination: ${String(importPolicy.destination || destination)}`}</span>
+              <small>{String(importPolicy.write_path || "Graphiti -> L1.5 -> L2-B policy")}</small>
+              <small>{String(importPolicy.reason || "")}</small>
+            </div>
+          ) : null}
+          {flowSteps.length ? (
+            <div className="flow-step-list">
+              {flowSteps.slice(0, 5).map((step, index) => <small key={`${step}:${index}`}>{`${index + 1}. ${step}`}</small>)}
+            </div>
+          ) : null}
           {exportObservations.slice(0, 3).map((row, index) => (
             <div className="preview-row" key={`${String(row.graphiti_uuid || row.label || index)}:graphiti-observation`}>
               <span>{String(row.label || row.graphiti_uuid || "-")}</span>
@@ -3537,10 +4339,14 @@ function GraphitiSourceCard({
 
 function CalendarSourceCard({
   pushReceipt,
-  t
+  t,
+  onSourceApplied,
+  operatorMode
 }: {
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
+  onSourceApplied: () => Promise<void>;
+  operatorMode: boolean;
 }) {
   const defaultCalendarRaw = JSON.stringify([
     {
@@ -3560,11 +4366,44 @@ function CalendarSourceCard({
   const [mappingRows, setMappingRows] = useState<Array<Record<string, unknown>>>([]);
   const [resultRows, setResultRows] = useState<Array<Record<string, unknown>>>([]);
   const [resultStatus, setResultStatus] = useState("");
+  const [importPolicy, setImportPolicy] = useState<Record<string, unknown> | null>(null);
+  const [policySkippedReason, setPolicySkippedReason] = useState("");
+  const [flowSteps, setFlowSteps] = useState<string[]>([]);
+  const [operatorFetching, setOperatorFetching] = useState(false);
+  const [operatorImporting, setOperatorImporting] = useState(false);
+  const operatorFetchingRef = useRef(false);
+  const operatorImportingRef = useRef(false);
   const calendarPayload = () => ({ raw: rawPayload.trim() || defaultCalendarRaw });
+  const clearCalendarPreviewState = () => {
+    setNormalizedEvents([]);
+    setObservations([]);
+    setMappingRows([]);
+    setImportPolicy(null);
+    setPolicySkippedReason("");
+    setFlowSteps([]);
+  };
+  const updateCalendarPayload = (value: string) => {
+    setRawPayload(value);
+    clearCalendarPreviewState();
+  };
   const showCalendarReceipt = (receipt: Receipt) => {
+    const data = receipt.data ?? {};
+    const nextErrors = receiptArray(receipt, "errors");
+    const firstError = nextErrors[0];
+    const inlineReason = String(
+      data.policy_skipped_reason
+      || data.error
+      || firstError?.error
+      || firstError?.reason
+      || (receipt.success === false ? "no_calendar_events" : "")
+    );
     setNormalizedEvents(receiptArray(receipt, "normalized_events"));
     setObservations(receiptArray(receipt, "observations"));
     setMappingRows(receiptArray(receipt, "mapping_rows"));
+    const nextPolicy = recordFromUnknown(data.import_policy);
+    setImportPolicy(Object.keys(nextPolicy).length ? nextPolicy : null);
+    setPolicySkippedReason(inlineReason);
+    setFlowSteps(Array.isArray(data.flow_steps) ? data.flow_steps.map(String) : []);
     pushReceipt(receipt);
   };
   const fetchPreview = async () => {
@@ -3575,10 +4414,19 @@ function CalendarSourceCard({
     }
   };
   const fetchExecute = async () => {
+    if (operatorFetchingRef.current) {
+      pushReceipt(localReceipt("google.calendar.fetch.execute", false, { error: "operator_fetch_in_flight" }));
+      return;
+    }
+    operatorFetchingRef.current = true;
+    setOperatorFetching(true);
     try {
-      pushReceipt(await api.googleCalendarFetch({ dry_run: false, operator_mode: true }));
+      pushReceipt(await api.googleCalendarFetch({ dry_run: !operatorMode, operator_mode: operatorMode }));
     } catch (exc) {
       pushReceipt(errorReceipt("google.calendar.fetch.execute", exc));
+    } finally {
+      operatorFetchingRef.current = false;
+      setOperatorFetching(false);
     }
   };
   const loadResults = async () => {
@@ -3599,14 +4447,21 @@ function CalendarSourceCard({
     try {
       showCalendarReceipt(await api.googleCalendarPreview(calendarPayload()));
     } catch (exc) {
-      pushReceipt(errorReceipt("calendar.preview", exc));
+      showCalendarReceipt(errorReceipt("calendar.preview", exc));
     }
   };
   const importDraft = async () => {
     try {
-      showCalendarReceipt(await api.googleCalendarImportDraft(calendarPayload()));
+      showCalendarReceipt(await api.googleCalendarImportPlan({
+        ...calendarPayload(),
+        destination: "isolated_compartment",
+        workspace_id: "memory_graph",
+        subgraph_label: "Google Calendar source pack",
+        dry_run: true,
+        operator_mode: false
+      }));
     } catch (exc) {
-      pushReceipt(errorReceipt("google.calendar.import_draft", exc));
+      showCalendarReceipt(errorReceipt("google.calendar.import_plan", exc));
     }
   };
   const importPreview = async () => {
@@ -3617,18 +4472,31 @@ function CalendarSourceCard({
         operator_mode: false
       }));
     } catch (exc) {
-      pushReceipt(errorReceipt("google.calendar.import", exc));
+      showCalendarReceipt(errorReceipt("google.calendar.import", exc));
     }
   };
   const importExecute = async () => {
+    if (operatorImportingRef.current) {
+      showCalendarReceipt(localReceipt("google.calendar.import.execute", false, { error: "operator_import_in_flight" }));
+      return;
+    }
+    operatorImportingRef.current = true;
+    setOperatorImporting(true);
     try {
-      showCalendarReceipt(await api.googleCalendarImport({
+      const receipt = await api.googleCalendarImport({
         ...calendarPayload(),
-        dry_run: false,
-        operator_mode: true
-      }));
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      });
+      showCalendarReceipt(receipt);
+      if (receipt.success !== false && operatorMode) {
+        await onSourceApplied();
+      }
     } catch (exc) {
-      pushReceipt(errorReceipt("google.calendar.import.execute", exc));
+      showCalendarReceipt(errorReceipt("google.calendar.import.execute", exc));
+    } finally {
+      operatorImportingRef.current = false;
+      setOperatorImporting(false);
     }
   };
   return (
@@ -3639,16 +4507,16 @@ function CalendarSourceCard({
       </div>
       <label>
         <span>{t.calendarPayload}</span>
-        <textarea value={rawPayload} onChange={(event) => setRawPayload(event.target.value)} rows={8} />
+        <textarea value={rawPayload} onChange={(event) => updateCalendarPayload(event.target.value)} rows={8} />
       </label>
       <div className="button-row compact">
         <button className="button" onClick={() => void fetchPreview()}><CalendarDays size={16} /> {t.calendarFetch}</button>
-        <button className="button ghost" onClick={() => void fetchExecute()}><Play size={16} /> {t.calendarFetchExecute}</button>
+        <button className="button ghost" onClick={() => void fetchExecute()} disabled={operatorFetching}><Play size={16} /> {operatorMode ? t.calendarFetchExecute : t.dryApply}</button>
         <button className="button" onClick={() => void loadResults()}><RefreshCw size={16} /> {t.calendarResults}</button>
         <button className="button" onClick={() => void preview()}><Bell size={16} /> {t.calendarPreview}</button>
         <button className="button" onClick={() => void importDraft()}><UploadCloud size={16} /> {t.importDraft}</button>
         <button className="button ghost" onClick={() => void importPreview()}><ShieldCheck size={16} /> {t.dryApply}</button>
-        <button className="button ghost" onClick={() => void importExecute()}><UploadCloud size={16} /> {t.calendarImportExecute}</button>
+        <button className="button ghost" onClick={() => void importExecute()} disabled={operatorImporting}><UploadCloud size={16} /> {operatorMode ? t.calendarImportExecute : t.dryApply}</button>
       </div>
       {resultRows.length ? (
         <div className="note-preview-list calendar-result-list">
@@ -3689,9 +4557,33 @@ function CalendarSourceCard({
           ))}
         </div>
       ) : null}
-      {mappingRows.length ? (
-        <div className="note-preview-list">
+      {mappingRows.length || policySkippedReason ? (
+        <div className="note-preview-list import-plan">
           <strong>{t.calendarMapping}</strong>
+          {policySkippedReason ? <small className="warn-text">{policySkippedReason}</small> : null}
+          {importPolicy ? (
+            <ImportLandingMap
+              source="Google Calendar"
+              sourceDetail="manual fetch/import"
+              l15Label="GOOGLE_CALENDAR"
+              l2bLabel="EVENT Node policy"
+              importPolicy={importPolicy}
+              observationCount={observations.length || mappingRows.length}
+              applyRoute="/api/google/calendar/import"
+            />
+          ) : null}
+          {importPolicy ? (
+            <div className="preview-row import-plan-row">
+              <span>{`Destination: ${String(importPolicy.destination || "isolated_compartment")}`}</span>
+              <small>{String(importPolicy.write_path || "Calendar -> L1.5 -> L2-B policy")}</small>
+              <small>{String(importPolicy.reason || "")}</small>
+            </div>
+          ) : null}
+          {flowSteps.length ? (
+            <div className="flow-step-list">
+              {flowSteps.slice(0, 5).map((step, index) => <small key={`${step}:${index}`}>{`${index + 1}. ${step}`}</small>)}
+            </div>
+          ) : null}
           {mappingRows.slice(0, 4).map((row, index) => (
             <div className="preview-row mapping-row" key={`${String(row.provider_ref || row.calendar_event_id || index)}:mapping`}>
               <span>{String(row.title || row.calendar_event_id || "-")}</span>
@@ -3872,10 +4764,14 @@ function RefPhotoSourceCard({
 
 function ObsidianDraftCard({
   pushReceipt,
-  t
+  t,
+  onSourceApplied,
+  operatorMode
 }: {
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
+  onSourceApplied: () => Promise<void>;
+  operatorMode: boolean;
 }) {
   const [profile, setProfile] = useState("daily");
   const [label, setLabel] = useState("Web setting node");
@@ -3888,8 +4784,29 @@ function ObsidianDraftCard({
   const [importItems, setImportItems] = useState<Array<Record<string, unknown>>>([]);
   const [importErrors, setImportErrors] = useState<Array<Record<string, unknown>>>([]);
   const [importPlanMeta, setImportPlanMeta] = useState<Record<string, unknown> | null>(null);
+  const [operatorImporting, setOperatorImporting] = useState(false);
+  const operatorImportingRef = useRef(false);
   const visibleScanNotes = scanNotes.slice(0, 12);
   const refMissingUuid = profile === "ref" && !obsidianUuid.trim();
+  const clearObsidianImportState = (reason = "") => {
+    setImportItems([]);
+    setImportErrors([]);
+    setImportPlanMeta(reason ? {
+      action: "l15.obsidian_vault.import_plan",
+      success: false,
+      selected_count: 0,
+      policy_skipped_reason: reason,
+      flow_steps: []
+    } : null);
+  };
+  const updateVaultPath = (value: string) => {
+    setVaultPath(value);
+    setScanNotes([]);
+    setInvalidNotes([]);
+    setSelectedNotePaths([]);
+    setVaultStatus(null);
+    clearObsidianImportState();
+  };
   const showImportReceipt = (receipt: Receipt) => {
     const data = receipt.data ?? {};
     const nextErrors = receiptArray(receipt, "errors");
@@ -3905,7 +4822,10 @@ function ObsidianDraftCard({
       write_path: data.write_path || "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)",
       runtime_path: data.runtime_path || "ObsidianIngestTrigger -> TriggerOutcome.commit_observations -> L15Pool.admit",
       would_apply: data.would_apply ?? false,
-      apply_skipped_reason: data.apply_skipped_reason || ""
+      apply_skipped_reason: data.apply_skipped_reason || "",
+      policy_skipped_reason: data.policy_skipped_reason || data.error || "",
+      import_policy: data.import_policy || null,
+      flow_steps: data.flow_steps || []
     });
     pushReceipt(receipt);
   };
@@ -3915,6 +4835,7 @@ function ObsidianDraftCard({
       const notes = receiptArray(receipt, "notes");
       setScanNotes(notes);
       setSelectedNotePaths([]);
+      clearObsidianImportState();
       setInvalidNotes(receiptArray(receipt, "invalid_notes"));
       const nextVaultStatus = receipt.data?.vault;
       setVaultStatus((nextVaultStatus && typeof nextVaultStatus === "object" && !Array.isArray(nextVaultStatus))
@@ -3939,9 +4860,15 @@ function ObsidianDraftCard({
         ? current.filter((item) => item !== path)
         : [...current, path]
     ));
+    clearObsidianImportState();
   };
   const selectVisibleNotes = () => {
     setSelectedNotePaths(visibleScanNotes.map((note) => String(note.path || "")).filter(Boolean));
+    clearObsidianImportState();
+  };
+  const clearSelectedNotes = () => {
+    setSelectedNotePaths([]);
+    clearObsidianImportState("no_notes_selected");
   };
   const draftImport = async () => {
     if (!selectedNotePaths.length) {
@@ -3949,14 +4876,17 @@ function ObsidianDraftCard({
       return;
     }
     try {
-      showImportReceipt(await api.obsidianVaultImportDraft({
+      showImportReceipt(await api.obsidianVaultImportPlan({
         vault_path: vaultPath,
         paths: selectedNotePaths,
+        destination: "isolated_compartment",
+        workspace_id: "memory_graph",
+        subgraph_label: "Obsidian source pack",
         dry_run: true,
         operator_mode: false
       }));
     } catch (exc) {
-      showImportReceipt(errorReceipt("l15.obsidian_vault.import_draft", exc, { vault_path: vaultPath, paths: selectedNotePaths }));
+      showImportReceipt(errorReceipt("l15.obsidian_vault.import_plan", exc, { vault_path: vaultPath, paths: selectedNotePaths }));
     }
   };
   const applyImportPreview = async () => {
@@ -3975,6 +4905,35 @@ function ObsidianDraftCard({
       showImportReceipt(errorReceipt("l15.obsidian_vault.import", exc, { vault_path: vaultPath, paths: selectedNotePaths }));
     }
   };
+  const applyImportExecute = async () => {
+    if (operatorImportingRef.current) {
+      showImportReceipt(localReceipt("l15.obsidian_vault.import.execute", false, { error: "operator_import_in_flight", vault_path: vaultPath, paths: selectedNotePaths }));
+      return;
+    }
+    if (!selectedNotePaths.length) {
+      showImportReceipt(localReceipt("l15.obsidian_vault.import", false, { error: "no_notes_selected" }));
+      return;
+    }
+    operatorImportingRef.current = true;
+    setOperatorImporting(true);
+    try {
+      const receipt = await api.obsidianVaultImport({
+        vault_path: vaultPath,
+        paths: selectedNotePaths,
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      });
+      showImportReceipt(receipt);
+      if (receipt.success !== false && operatorMode) {
+        await onSourceApplied();
+      }
+    } catch (exc) {
+      showImportReceipt(errorReceipt("l15.obsidian_vault.import.execute", exc, { vault_path: vaultPath, paths: selectedNotePaths }));
+    } finally {
+      operatorImportingRef.current = false;
+      setOperatorImporting(false);
+    }
+  };
   const draft = async () => {
     if (refMissingUuid) {
       pushReceipt(localReceipt("l15.obsidian_node.draft", false, {
@@ -3985,18 +4944,28 @@ function ObsidianDraftCard({
       return;
     }
     try {
-      pushReceipt(await api.l15ObsidianNodeDraft({
+      const payload = {
         profile,
         label: label.trim(),
         obsidian_uuid: obsidianUuid.trim(),
         description: `Drafted from React Memory Graph Workspace (${profile}).`,
-        dry_run: true,
-        operator_mode: false
-      }));
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      };
+      const receipt = operatorMode
+        ? await api.l15ObsidianNodeApply(payload)
+        : await api.l15ObsidianNodeDraft(payload);
+      pushReceipt(receipt);
+      if (receipt.success !== false && operatorMode) await onSourceApplied();
     } catch (exc) {
       pushReceipt(errorReceipt("l15.obsidian_node.draft", exc, { profile, label }));
     }
   };
+  const obsidianImportPolicy = recordFromUnknown(importPlanMeta?.import_policy);
+  const obsidianFlowStepsRaw = importPlanMeta?.flow_steps;
+  const obsidianFlowSteps = Array.isArray(obsidianFlowStepsRaw)
+    ? obsidianFlowStepsRaw.map(String)
+    : [];
   return (
     <article className="source-card obsidian-card">
       <div className="source-card-head">
@@ -4005,7 +4974,7 @@ function ObsidianDraftCard({
       </div>
       <label>
         <span>{t.obsidianVaultPath}</span>
-        <input value={vaultPath} onChange={(event) => setVaultPath(event.target.value)} placeholder="D:/GOSLOParrot/GOSLObsidian" />
+        <input value={vaultPath} onChange={(event) => updateVaultPath(event.target.value)} placeholder="D:/GOSLOParrot/GOSLObsidian" />
       </label>
       <button className="button" onClick={() => void scanVault()}><Search size={16} /> {t.scanVault}</button>
       {vaultStatus ? (
@@ -4020,7 +4989,7 @@ function ObsidianDraftCard({
           <small>{t.selectedNotes}: {selectedNotePaths.length}</small>
           <div className="button-row compact">
             <button className="button small" onClick={selectVisibleNotes}>{t.selectVisibleNotes}</button>
-            <button className="button small ghost" onClick={() => setSelectedNotePaths([])}>{t.clearSelection}</button>
+            <button className="button small ghost" onClick={clearSelectedNotes}>{t.clearSelection}</button>
           </div>
           {visibleScanNotes.map((note, index) => (
             <div className="note-select-row" key={`${String(note.path || note.label)}:${index}`}>
@@ -4039,6 +5008,7 @@ function ObsidianDraftCard({
           <div className="button-row compact">
             <button className="button" onClick={() => void draftImport()}><UploadCloud size={16} /> {t.importDraft}</button>
             <button className="button ghost" onClick={() => void applyImportPreview()}><ShieldCheck size={16} /> {t.dryApply}</button>
+            <button className="button ghost" onClick={() => void applyImportExecute()} disabled={operatorImporting}><UploadCloud size={16} /> {operatorMode ? t.calendarImportExecute : t.dryApply}</button>
           </div>
         </div>
       ) : null}
@@ -4052,6 +5022,29 @@ function ObsidianDraftCard({
             </small>
           </div>
           <small className="muted">{String(importPlanMeta?.write_path || "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)")}</small>
+          {obsidianImportPolicy.destination ? (
+            <ImportLandingMap
+              source="Obsidian"
+              sourceDetail={vaultPath}
+              l15Label="USER_TAG_OBSIDIAN"
+              l2bLabel="setting/source pack policy"
+              importPolicy={obsidianImportPolicy}
+              observationCount={importItems.length}
+              applyRoute="/api/l15/obsidian-vault/import"
+            />
+          ) : null}
+          {obsidianImportPolicy.destination ? (
+            <div className="preview-row import-plan-row">
+              <span>{`Destination: ${String(obsidianImportPolicy.destination || "isolated_compartment")}`}</span>
+              <small>{String(obsidianImportPolicy.write_path || "Obsidian -> L1.5 -> L2-B policy")}</small>
+              <small>{String(obsidianImportPolicy.reason || "")}</small>
+            </div>
+          ) : null}
+          {obsidianFlowSteps.length ? (
+            <div className="flow-step-list">
+              {obsidianFlowSteps.slice(0, 5).map((step, index) => <small key={`${step}:${index}`}>{`${index + 1}. ${step}`}</small>)}
+            </div>
+          ) : null}
           {importItems.slice(0, 4).map((item, index) => {
             const observation = recordFromUnknown(item.observation);
             const meta = recordFromUnknown(observation.meta);
@@ -4074,6 +5067,9 @@ function ObsidianDraftCard({
           ))}
           {String(importPlanMeta?.apply_skipped_reason || "") ? (
             <small className="muted">{String(importPlanMeta?.apply_skipped_reason)}</small>
+          ) : null}
+          {String(importPlanMeta?.policy_skipped_reason || "") ? (
+            <small className="warn-text">{String(importPlanMeta?.policy_skipped_reason)}</small>
           ) : null}
         </div>
       ) : null}
@@ -4141,11 +5137,13 @@ function SelectedEdgeTools({
 function BucketCard({
   bucket,
   maxNodeCount,
+  operatorMode,
   pushReceipt,
   t
 }: {
   bucket: Record<string, unknown>;
   maxNodeCount: number;
+  operatorMode: boolean;
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
 }) {
@@ -4155,8 +5153,12 @@ function BucketCard({
   const ratio = Math.max(0.04, Math.min(1, nodeCount / Math.max(1, maxNodeCount)));
   const lastActivity = Math.max(Number(bucket.last_modified_at ?? 0), Number(bucket.created_at ?? 0));
   const op = async (operation: string) => {
+    if (operatorMode && operation === "clear" && !window.confirm(`Clear L1.5 bucket ${kind}?`)) return;
     try {
-      pushReceipt(await api.l15BucketDraft({ kind, op: operation, dry_run: true, operator_mode: false }));
+      const payload = { kind, op: operation, dry_run: !operatorMode, operator_mode: operatorMode };
+      pushReceipt(operatorMode
+        ? await api.l15BucketApply(payload)
+        : await api.l15BucketDraft(payload));
     } catch (exc) {
       pushReceipt(errorReceipt("l15.bucket.draft", exc, { kind, op: operation }));
     }
@@ -4532,13 +5534,18 @@ function formatRelativeTime(epochSeconds: number): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-function localReceipt(action: string, success: boolean, data: Record<string, unknown>): Receipt {
+function localReceipt(
+  action: string,
+  success: boolean,
+  data: Record<string, unknown>,
+  options: { dryRun?: boolean; operatorMode?: boolean } = {}
+): Receipt {
   return {
     receipt_id: `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     action,
     success,
-    dry_run: true,
-    operator_mode: false,
+    dry_run: options.dryRun ?? true,
+    operator_mode: options.operatorMode ?? false,
     data
   };
 }
@@ -4562,6 +5569,9 @@ function receiptSummary(data: Record<string, unknown>): string {
   if (Array.isArray(matched) && matched.length) return `matched: ${matched.map(String).join(", ")}`;
   const skipped = data.publish_skipped_reason || data.apply_skipped_reason || data.dispatch_skipped_reason;
   if (skipped) return String(skipped);
+  if ("l2b_nodes" in data || "l15_buckets" in data) {
+    return `L2-B ${String(data.l2b_nodes ?? 0)}/${String(data.l2b_edges ?? 0)} · L1.5 ${String(data.l15_buckets ?? 0)} buckets / ${String(data.l15_nodes ?? 0)} Nodes`;
+  }
   const event = data.event;
   if (event && typeof event === "object") {
     const row = event as Record<string, unknown>;

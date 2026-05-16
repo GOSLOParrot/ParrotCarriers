@@ -55,8 +55,9 @@ Current React Memory behavior:
   Blackboard/Intent/Refs/L2-B placeholder boxes were removed because they looked
   like real graph Nodes.
 - Selecting a node opens a detail drawer with safe JSON detail.
-- Create/update/delete node actions and edge draft actions call existing
-  Web-only dry-run/draft routes and append receipts.
+- Create/update/delete node actions and edge actions use the global Settings
+  `Mode`: default real operator testing calls apply routes with receipts;
+  preview mode uses the existing dry-run/draft routes.
 - 2026-05-14 React continuation: dragging from one React Flow node to another
   now drafts an L2-B edge through the existing Web BFF and draws a
   frontend-only preview edge. Clicking an edge opens the same inspector path.
@@ -90,6 +91,25 @@ Current React Memory behavior:
   selected Edge; with no selection it fits the full graph. `Layout` reapplies a
   local circular layout to visible Nodes and then fits the viewport. These
   controls do not change L2-B data or App DTOs.
+- 2026-05-17 panel and label-namespace bugfix: the active Memory tool dock and
+  selected Node/Edge inspector are independent canvas panels. Operators can
+  focus, close, drag by the header, and resize each panel, matching the intended
+  Photoshop-like workspace direction without introducing a full dock framework.
+  Follow-up polish adds a draggable icon-toolbar grip; the toolbar can snap to
+  side edges and switch to a vertical dock, while floating panels snap to canvas
+  edges and nearby panel edges on drag/release and after resize. The active
+  tool dock and selection inspector default to a right-side stacked dock sized
+  from the current canvas, then keep that dock when the operation-record rail is
+  expanded/collapsed until the operator manually drags a panel elsewhere. Panel
+  resizing uses explicit left-edge, bottom-edge, and bottom-left handles so
+  right-docked panels can be expanded without hunting for the browser's native
+  bottom-right resize corner.
+  Backend fallback de-dup no longer treats the visible `label` as a global key:
+  stable source identities (`obsidian_uuid`, `graphiti_uuid`, Google provider
+  ids) still win first, then fallback lookup uses `NodeKind + exact label`.
+  This allows `object:desk` and `zone:desk` to coexist while same-kind repeat
+  writes still merge through L1.5/Ingest. Tags remain free-form labels and are
+  not identity keys.
 - 2026-05-14 homepage cleanup: Memory view polling is capped at 5s in the React
   shell, while Runtime keeps the configured BFF cadence. This remains polling,
   not true realtime; SSE/changed-since remains the next CORE-009 candidate.
@@ -215,6 +235,42 @@ Implementation checkpoint: 2026-05-16.
   modules, and in-app browser smoke on `http://127.0.0.1:7893/` passed. The
   browser showed the Memory page with `SSE` transport and zero console errors
   after restarting the local Web Console service.
+
+### Source Board Operator Import Checkpoint
+
+Implementation checkpoint: 2026-05-16.
+
+- Graphiti, Obsidian, and Google Calendar all share the same operator-safety
+  posture: preview/import-plan first, then a visible secondary `Import to
+  L1.5` action only when the operator explicitly executes with
+  `operator_mode=true` and `dry_run=false`.
+- Graphiti operator import admits selected search hits through L1.5 as
+  `USER_EXPLICIT` observations and keeps Graphiti fact relationships as
+  receipt `edge_drafts`; it does not directly mutate FalkorDB or RustWorkX
+  edges.
+- Obsidian operator import rescans the vault server-side and writes through
+  `UserTagFilter -> L15Pool.admit`; `daily` and `roleplay` are still
+  UUID-free setting profiles, while `ref` stays a binding profile.
+- Source edits invalidate stale receipts: Calendar JSON edits, Obsidian vault
+  path changes, rescans, selected-note toggles, and cleared selections all
+  reset old preview/import state before new receipts are shown.
+- The three `Import to L1.5` buttons use a synchronous in-flight guard plus
+  disabled UI state. A second click during an operator import returns
+  `operator_import_in_flight` locally instead of issuing a duplicate L1.5 admit.
+- Successful Graphiti, Obsidian, and Google Calendar operator imports now
+  trigger an immediate Memory refresh in React: `/api/app/live-state` plus
+  `/api/l15/pool`, then emit a visible `memory.refresh_after_import` receipt
+  with refreshed L2-B, L1.5 Pool, Blackboard, and IntentWorkspace counts. This
+  is a UI consistency hook only; SSE/polling remains the realtime transport
+  and no backend route/DTO shape changed. The refresh receipt is marked as an
+  executed safe read (`dry_run=false`, `operator_mode=false`) so it does not
+  look like a draft apply.
+- Verification for this checkpoint: focused Graphiti/Obsidian operator import
+  tests `2 passed`, full Web route tests `58 passed`, React `npm run
+  typecheck`, React `npm run build`, and exact secret scan passed. The
+  live-refresh/refresh-receipt continuation revalidated full Web route tests
+  (`58 passed`), React `typecheck`/`build`, exact secret scan, and browser smoke
+  with zero console errors.
 
 ### Calendar and Source Node Notes
 
@@ -420,6 +476,23 @@ flows can be audited without inventing a second memory write path.
 | `POST /api/l2b/edge/delete` | Draft/execute L2-B edge removal. | `delete_l2b_edge()` -> `L2BGraph.remove_edge_between` | Default dry-run; real delete requires operator mode and removes the first matching directed edge. |
 | `GET /api/memory/blackboard/activity` | Inspect recent py-trees Blackboard activity. | `build_blackboard_activity_snapshot()` -> `Blackboard.activity_stream` | Read-only, Web-only, bounded, summaries-only; starts activity capture if py-trees has not enabled it yet. |
 
+2026-05-17 operator-mode audit:
+
+- React Memory Canvas now uses the top-level Settings `Mode` for direct
+  L2-B/L1.5 edits. Default is real operator testing, so direct Node create,
+  Edge create/update/delete, Node delete, L1.5 bucket freeze/unfreeze/clear,
+  Obsidian setting-node publish, and Source Board execute buttons call their
+  apply routes with `dry_run=false` and `operator_mode=true`. Switching Mode to
+  preview keeps those same buttons on dry-run receipts.
+- This does not change the architecture boundary: Node create/update still goes
+  through `L15Pool.admit(Observation(source=USER_EXPLICIT))`, Node delete still
+  goes through `L15Pool.evict`, and Edge surgery still uses endpoint plus
+  optional kind/source matching rather than exposing RustWorkX edge indexes.
+- Destructive operator deletes ask for browser confirmation. Source-import
+  plans (`Graphiti`, `Google Calendar`, `Obsidian`) still show explicit
+  preview/import-plan receipts, but their execute/import buttons obey the same
+  global Mode rather than carrying separate local dry-run toggles.
+
 ### Audit: 2026-05-13 Requirement Alignment
 
 Useful pieces completed:
@@ -430,8 +503,9 @@ Useful pieces completed:
   without leaking writes or pulling Web-only fields into App DTOs.
 - The renderer already has lanes for Blackboard, IntentWorkspace, Refs, L2-B,
   and tool artifacts, so it can become the shell for a better graph/canvas.
-- L1.5/L2-B operator drafts now exist and are documented. They default to
-  dry-run and produce receipts before any real write.
+- L1.5/L2-B operator routes now exist and are documented. Backend routes still
+  require operator flags for real writes, while the React test bench defaults
+  to real connection Mode and leaves preview Mode available for dry-run audits.
 
 Current drift / insufficiency:
 
@@ -1191,9 +1265,18 @@ board":
   target Edges when generating the CORE-013 import-destination policy preview.
   Selection changes now also refresh the read-only canvas preview in place,
   using the same Graphiti id normalization as the policy preview.
+- 2026-05-16 review fix continuation: Graphiti API exceptions now clear stale
+  export/import-plan state and render the exception inline in the Graphiti card.
+  The Graphiti import-plan receipt also carries the upstream export draft
+  receipt id, whether that id came from the Graphiti console's top-level
+  `receipt_id` or the Web BFF's nested `receipt.receipt_id`.
 - Google Calendar card now uses the calendar preview route to show raw event,
   normalized event, and Observation metadata. Real import/apply remains a later
-  operator-gated step.
+  operator-gated step. 2026-05-16 UI bugfix: Calendar preview/import failures
+  now show the inline reason in the active card (`policy_skipped_reason`,
+  receipt error, local exception, or `no_calendar_events`) and clear stale
+  normalized event / mapping / destination-policy previews so operators do not
+  mistake old data for the current failed request.
 - Manual Node card points users back to the canvas toolbar, keeping direct
   Node/Edge draft operations near the graph instead of mixing them with source
   imports.
@@ -1485,10 +1568,12 @@ Implemented after the first UI slice:
 |:--|:--|:--|
 | `GET /api/l15/obsidian-vault/scan` | Scan a local vault path and classify ready/invalid Obsidian notes for `daily`, `roleplay`, and `ref` profiles. | Read-only; no file writes, no trigger publish, import remains operator-gated. |
 | `POST /api/l15/obsidian-vault/import-draft` | Rescan selected Obsidian note paths and convert them through `UserTagFilter` into reviewable L1.5 observations. | Draft only; no Redis publish and no L1.5/L2-B mutation. |
+| `POST /api/l15/obsidian-vault/import-plan` | Join selected Obsidian note import preview with CORE-013 destination policy so Source Board shows one source -> L1.5 -> L2-B plan. Empty/invalid selections return `policy_skipped_reason` and no graph placement policy. | Draft only; no Redis publish, no L1.5/L2-B mutation, no App DTO. |
 | `POST /api/l15/obsidian-vault/import` | Apply selected Obsidian notes to L1.5 for Web operator testing. | Default dry-run; real import requires `operator_mode=true` and uses `L15Pool.admit`, not App DTOs. |
 | `POST /api/google/calendar/fetch` | Draft/dispatch a Scheduler/Nanobot `calendar_fetch` task that should return `calendar_result`. | Default dry-run; real dispatch requires operator mode. Browser never holds Google OAuth. |
 | `POST /api/google/calendar/preview` | Show raw Google/Nanobot event, normalized `CalendarTrigger` event, and `GOOGLE_CALENDAR` Observation metadata. | Read-only; no L1.5 commit, no Google OAuth in browser. |
 | `POST /api/google/calendar/import-draft` | Convert selected/test Calendar events into reviewable `GOOGLE_CALENDAR` observations for L1.5 import. | Draft only; no L1.5/L2-B mutation. |
+| `POST /api/google/calendar/import-plan` | Join Calendar import preview, mapping rows, and CORE-013 destination policy into a single reviewable source-pack plan. Empty event payloads return `policy_skipped_reason` and no graph placement policy. | Draft only; manual fetch/import V1; watch/syncToken stays future server-side work. |
 | `POST /api/google/calendar/import` | Apply Calendar observations to L1.5 for Web operator testing. | Default dry-run; real import requires `operator_mode=true` and `dry_run=false`, then uses `L15Pool.admit`. |
 
 The React Source Board now consumes these routes. Obsidian scan can load a
@@ -1506,6 +1591,36 @@ Invalid `limit` input returns a Web receipt error instead of raising a route
 exception. This is Web-only receipt semantics and does not change App DTOs or
 the runtime trigger protocol.
 
+2026-05-16 continuation: Obsidian and Google Calendar now have unified
+`import-plan` routes matching Graphiti. The plan receipt carries the source
+normalization rows, selected-note/calendar errors, `import_policy`,
+`import_draft`, flow steps, and the future apply route/preconditions in one
+place. This keeps the Source Board consistent: preview source data first,
+review L1.5 observations and CORE-013 destination/overlay policy second, then
+use the existing operator-gated import route only if a real write is intended.
+
+2026-05-16 bugfix: Graphiti, Obsidian, and Google import-plan receipts now skip
+CORE-013 destination-policy drafting when the source side has no importable
+observations/items. The receipt remains useful (`success=false`,
+`policy_skipped_reason=*`, errors/warnings preserved), but the UI must not show
+a fake isolated-compartment/subgraph plan for an empty source selection.
+
+2026-05-16 review fix: `import-plan` endpoints are always draft-only receipts.
+Even if a caller sends `dry_run=false` or `operator_mode=true`, the top-level
+receipt stays `dry_run=true` and `operator_mode=false`; requested flags are
+recorded only under `requested_execution`. This keeps review plans separate
+from apply receipts and avoids misleading audit trails.
+
+2026-05-16 UI follow-up: the React Source Board now renders
+`policy_skipped_reason` inline for Graphiti, Obsidian, and Google import-plan
+cards. Empty or invalid import sources should be visible as a clear blocked
+state in the source card, not only discoverable in the raw receipt stream. A
+follow-up fixed the Obsidian card's local state mapping so the backend
+`policy_skipped_reason` is not dropped before render. The Graphiti card now
+uses the same inline warning surface for no-selection export/apply attempts,
+instead of only pushing a receipt rail entry. Empty Graphiti search also clears
+stale preview state and shows `missing_query` in the card itself.
+
 2026-05-15 Calendar import boundary: Google Calendar now has the same two-step
 Web operator shape as Obsidian and Graphiti. The draft route returns raw events,
 normalized events, and observations for review. The import route defaults to
@@ -1520,6 +1635,31 @@ preview/import routes. `POST /api/google/calendar/fetch` drafts the real
 Scheduler/Nanobot fetch task shape and returns the `calendar_result` flow so an
 operator can verify the Google Workspace MCP path without putting OAuth in the
 browser.
+
+2026-05-16 Calendar dispatch bugfix: the real Google Calendar fetch dispatch is
+now guarded in the React Source Board. `Dispatch Fetch` uses
+`operator_mode=true` and can enqueue work through Scheduler/Nanobot, so the UI
+disables the button while the request is in flight and emits a local
+`operator_fetch_in_flight` receipt instead of double-dispatching a task. This
+does not change the Web BFF route shape or move Google credentials into the
+browser.
+
+2026-05-16 source import-plan audit guard: Graphiti, Obsidian, and Google
+Calendar now share a route-matrix regression for their `import-plan` contracts.
+Even if the caller requests `dry_run=false` and `operator_mode=true`, the plan
+routes must return draft-only receipts, keep the requested execution under
+`requested_execution`, expose the later operator apply preconditions, cite
+CORE-008/CORE-013, and avoid raw secret or direct FalkorDB write leakage. Full
+Web route tests now report `59 passed`; React build/typecheck, exact secret
+scan, diff check, and in-app browser smoke passed.
+
+2026-05-16 source import Landing map: the React Source Board now renders a
+compact `Source -> L1.5 -> L2-B` landing visualization for Graphiti, Obsidian,
+and Google Calendar import plans. It shows the selected source, L1.5
+Observation count, destination policy, Edge draft count when relevant, apply
+route, and operator gate. This is intentionally a Web rendering/readability
+layer over existing receipts; it does not introduce a shared DTO and does not
+turn preview/import-plan into an apply operation.
 
 ### Graphiti / Arknights Temporal Import Principle
 

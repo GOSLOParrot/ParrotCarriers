@@ -55,6 +55,7 @@ def _obs(
     *,
     source: ObservationSource = ObservationSource.GEMINI_ORAL,
     label: str = "test_node",
+    kind: NodeKind = NodeKind.OBJECT,
     confidence: float = 0.5,
     confirmation: ConfirmationStatus = ConfirmationStatus.TENTATIVE,
     graphiti_uuid: str = "",
@@ -69,7 +70,7 @@ def _obs(
         graphiti_uuid=graphiti_uuid,
         obsidian_uuid=obsidian_uuid,
         description=description,
-        kind=NodeKind.OBJECT,
+        kind=kind,
     )
 
 
@@ -220,6 +221,39 @@ def test_runner_user_explicit_promotes_salience_to_foreground():
     obs = _obs(source=ObservationSource.USER_EXPLICIT, label="user_node")
     node = runner._observation_to_node(obs)
     assert node.salience == Salience.FOREGROUND
+
+
+@pytest.mark.asyncio
+async def test_runner_label_fallback_is_scoped_by_node_kind():
+    """Manual labels are names, not global IDs; kind keeps roles separate."""
+    from parrot.dsg.l2b_graph import L2BGraph
+
+    graph = L2BGraph()
+    runner = IngestRunner.__new__(IngestRunner)
+    runner._graph = graph
+    runner._label_cache = {}
+    runner._repeat_window_s = 30.0
+
+    assert await runner.commit_observation(
+        _obs(source=ObservationSource.USER_EXPLICIT, label="desk", kind=NodeKind.OBJECT)
+    )
+    assert await runner.commit_observation(
+        _obs(source=ObservationSource.USER_EXPLICIT, label="desk", kind=NodeKind.ZONE)
+    )
+    assert graph.node_count() == 2
+
+    assert await runner.commit_observation(
+        _obs(
+            source=ObservationSource.USER_EXPLICIT,
+            label="desk",
+            kind=NodeKind.OBJECT,
+            description="same object again",
+        )
+    )
+    assert graph.node_count() == 2
+    object_node = graph.get_node_by_label_and_kind("desk", NodeKind.OBJECT)
+    assert object_node is not None
+    assert "same object again" in object_node.known_facts
 
 
 # ─── 6. _source_for_node prefers node.source ──────────────────────

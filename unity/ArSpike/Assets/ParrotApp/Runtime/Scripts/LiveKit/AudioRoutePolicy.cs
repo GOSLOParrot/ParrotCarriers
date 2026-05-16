@@ -61,20 +61,19 @@ namespace ParrotApp.LiveKit
         /// <summary>
         /// Returns the standard policy for <paramref name="kind"/>.
         ///
-        /// Speaker, earpiece, and wired headset stay at 48 kHz. SCO uses 16 kHz
-        /// to avoid LiveKit native source mismatches on Android. A2DP is output
-        /// only, but the sample-rate policy remains conservative because Android
-        /// may switch the active microphone path through SCO when capture starts.
-        /// Device selection still treats only <see cref="AudioRouteKind.BluetoothSco"/>
-        /// as a Bluetooth microphone input.
+        /// Speaker, earpiece, wired headset, and A2DP stay at 48 kHz. SCO uses
+        /// 16 kHz to avoid LiveKit native source mismatches on Android headset
+        /// microphone capture. A2DP is output-only, so it must not force the
+        /// Unity microphone source into the SCO policy unless Android exposes a
+        /// real SCO input route.
         /// </summary>
         public static AudioRoutePolicy ForKind(AudioRouteKind kind)
         {
             switch (kind)
             {
                 case AudioRouteKind.BluetoothSco:
-                case AudioRouteKind.BluetoothA2dp:
                     return new AudioRoutePolicy(kind, RouteNameOf(kind), 16000);
+                case AudioRouteKind.BluetoothA2dp:
                 case AudioRouteKind.WiredHeadset:
                 case AudioRouteKind.Speaker:
                 case AudioRouteKind.Earpiece:

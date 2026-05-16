@@ -1,6 +1,6 @@
 # Design Workspace Active Context
 
-> Updated: 2026-05-15
+> Updated: 2026-05-16
 > Code repo / Codex project route: `D:\GOSLOParrot\ParrotCarriers`
 > App design workspace: `D:\GOSLOParrot\ParrotCarriers\codex_workspace\design_workspace`
 > Clean status report: `.cursor/memory/architecture/Interface/app_v1_current_status_and_test_report_20260510.md`
@@ -46,6 +46,19 @@ The formal App frontend is **not complete**.
   evidence, not final phone stability: Bluetooth/SCO/A2DP switching, network
   reconnect, long background/session hold, LineB voice, and a visual re-run after
   the UI fix remain pending.
+- 2026-05-16 AR Mobile demo2 parity pass: formal App imported the demo2 XRI
+  interaction bridge (`XRI Default Input Actions`, `Screen Space Ray
+  Interactor`, `ObjectSpawner`, `ARInteractorSpawnTrigger`) under
+  `Assets/ParrotApp/**`, mounts demo2-style `XRUIInputModule`, Device tracking
+  origin, plane detection `-1`, and routes `ObjectSpawner` poses into the
+  RoomSetting-selected Parrot/Ner placement owner. Follow-up fixes keep
+  decorative formal HUD/menu/tool UI out of raycasts and align grab defaults
+  closer to the demo. Placement owner now emits `OnPlacementStateChanged` so
+  HUD/menu/joystick labels and visibility update immediately after place,
+  clear, select, scale, or XRI-status changes. Static tests and Unity batch compilation pass, but ADB
+  currently shows no attached phone; iQOO proof of plane detection, placement,
+  select, drag, pinch, Bluetooth/SCO/A2DP, app switch, reconnect, and LineB
+  voice remains pending.
 - Unity App RoomSetting ECS persistence is verified as of 2026-05-15:
   `New` returns an unsaved draft, `Save` persists a user Room through App HTTP,
   reload lists it from ECS, and save does not apply or change active Room.
@@ -481,6 +494,70 @@ These are useful test evidence only. They must not be used as App completion evi
   connected. This remains a Unity device-name preference, not native Android
   route forcing; iQOO Neo9 SCO/A2DP/wired/speaker logs are still required before
   calling audio switching stable.
+- 2026-05-16 audio-route correction: read
+  `backend_interface_map/app/unity_audio_route_research_20260516.md` before
+  implementing audio-device work. Old LineA/Smoke connectivity scripts proved
+  mic publish and Brain room presence only; they must not define formal
+  Bluetooth strategy. Formal direction is an Android-native route owner
+  (`AudioManager` communication devices, audio focus, Android 12+
+  `BLUETOOTH_CONNECT` as needed) plus serialized LiveKit mic-track rebuild.
+  `MicrophonePublisher` remains the executor; `AudioRoutePolicyBrainReporter`
+  remains Brain observation, not Brain-driven device switching.
+- 2026-05-16 audio-route research round 2: public Android/LiveKit/Unity docs and
+  issues now reinforce the same split. The preferred V1 is a native Android
+  route bridge plus Unity policy wrapper plus serialized mic republish; route
+  change is not a room reconnect reason. `MIC NEXT` / `MIC AUTO` are diagnostic
+  controls until the formal route manager and settings UX are designed.
+- 2026-05-16 audio-route implementation slice: created the formal App-owned
+  `Assets/Plugins/Android/ParrotAudioRoute.androidlib/**` route plugin plus
+  manifest permissions (`RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`, Android 12+
+  `BLUETOOTH_CONNECT`) and Java `AndroidAudioRouteManager`. Unity now has
+  `AudioRouteSnapshot`, `AndroidAudioRouteManager`, and `AudioRouteManager`
+  under `Assets/ParrotApp/Runtime/Scripts/LiveKit/**`; `MicrophonePublisher`
+  consumes accepted route snapshots and only serially rebuilds the local mic
+  track, while `AudioRoutePolicyBrainReporter` observes/reports compact Brain
+  route policy. `AudioRouteDetector` remains fallback/diagnostic. Static Unity
+  guard passes; phone proof is still required before calling Bluetooth/SCO/A2DP
+  stable.
+- 2026-05-17 audio-route review fix: native route preference changes are cached
+  until voice communication mode is active, so startup/Settings observation does
+  not seize communication routing before the App intends to publish microphone
+  audio. The Android API-31 communication-device listener is isolated behind an
+  API-31 holder while the Unity project still declares minSdk 30.
+  `MicrophonePublisher` also refreshes route state on formal lifecycle resume,
+  so pause/resume recovery is not dependent only on plug/unplug callbacks. The
+  Android route plugin no longer imports `UnityPlayer`; C# passes Activity and
+  a `AudioRouteSnapshotCallback` proxy, then marshals callbacks to Unity main
+  thread. The route androidlib manifest/source Gradle file owns
+  `com.parrotcarriers.audio` and disables route-library `BuildConfig`
+  generation, avoiding duplicate launcher `BuildConfig` during dex merge.
+  Unity MCP Android APK build now succeeds with `errors=0`, `warnings=3`.
+- 2026-05-17 AR placement phone-blocker fix: the iQOO screenshot showed a
+  head-sized GOSLO and magenta AR plane fill. `goslo_default.json` now enables
+  manifest auto-scaling to a 0.16 m target height, and the missing demo2
+  `ShadowReceiverShaderFunctions.hlsl` include is copied into
+  `Assets/ParrotApp/Resources/ARMobileTemplate/Shaders/ShadowReceiver/` with
+  its `.meta` GUID preserved. Clearing the first placed GOSLO now calls
+  `ReportGosloRemovedFromView()`, which reuses the existing in-room
+  `2d_workspace` policy (`VoiceOnlyNoVideo` + `applyWorkspace`) instead of
+  disconnecting LiveKit or starting a new Brain job. Re-placing the same model
+  calls `ReportGosloReturnedToView()` to restore the `ar_workspace` /
+  `FullARCompanion` policy without replaying the first greeting. The local
+  joystick is now selected-model scoped, so it hides after placement until the
+  model is selected. Rebuilt phone proof is still required for audible
+  `onGosloPlaced` greeting and final plane material parity.
+- 2026-05-17 second iQOO AR blocker follow-up: the demo2 ShaderGraph material
+  still rendered magenta after rebuild, so the copied
+  `ARFeatheredPlaneMeshVisualizerCompanion` now replaces unsupported/mobile
+  plane materials at runtime with a transparent `PlanePatternDot` fallback
+  material instead of trusting the failed ShaderGraph. The XRI spawn trigger now
+  requires `HorizontalUp` planes so taps do not spawn on vertical wall/curtain
+  planes above the user. `FormalModelPlacementController` also performs a
+  second post-placement renderer-bounds height normalization after the visual
+  is active, guarding against GLB/import/XRI scale layers ignoring the manifest
+  height. `AppStartupFlowController.LastBrainRpcStatus` is now shown in the HUD
+  placement line, so the next phone run can distinguish "Brain connected" from
+  "onGosloPlaced actually returned ok".
 - 2026-05-13 homepage/LiveKit continuation audit: Brain RPC testing does not
   require phone or voice, but it does require a Brain / LiveKit Agents
   participant in the same room. Phone/device testing is still required for AR

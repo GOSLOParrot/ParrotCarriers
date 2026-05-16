@@ -17,6 +17,9 @@ using EnhancedTouchSupport = UnityEngine.InputSystem.EnhancedTouch.EnhancedTouch
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 #endif
+using UnityEngine.XR.Interaction.Toolkit;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
+using UnityEngine.XR.Interaction.Toolkit.Transformers;
 
 namespace ParrotApp.Lifecycle
 {
@@ -45,6 +48,11 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private bool enableTouchPlacementAndSelection = true;
         [SerializeField] private bool enableDragMove = true;
         [SerializeField] private bool enablePinchScale = true;
+        [SerializeField] private bool attachArMobileTemplateXriInteractable = true;
+        [SerializeField] private bool disableCustomGesturesWhenTemplateXriActive = true;
+        [SerializeField] private bool preferHorizontalPlacementPlanes = true;
+        [SerializeField] private float minPlacementPlaneUpDot = 0.5f;
+        [SerializeField] private bool forceManifestHeightAfterPlacement = true;
         [SerializeField] private bool applyDemoRandomAngleAtSpawn = true;
         [SerializeField] private float defaultDistanceMeters = 1.2f;
         [SerializeField] private float minScaleMultiplier = 0.25f;
@@ -66,6 +74,8 @@ namespace ParrotApp.Lifecycle
         public bool HasSelectedModel { get; private set; }
         public float ScaleMultiplier { get; private set; } = 1f;
         public string LastSelectionStatus { get; private set; } = "not_selected";
+        public bool TemplateXriInteractionActive { get; private set; }
+        public string LastTemplateXriStatus { get; private set; } = "not_mounted";
         public GameObject PlacedModel { get; private set; }
         public string LastDiagnosticSummary
         {
@@ -75,13 +85,16 @@ namespace ParrotApp.Lifecycle
                 string mode = string.IsNullOrWhiteSpace(LastPlacementMode) ? "none" : LastPlacementMode;
                 string visual = string.IsNullOrWhiteSpace(LastVisualSource) ? "none" : LastVisualSource;
                 string selected = HasSelectedModel ? "selected" : "not_selected";
-                return mode + " " + place + " " + selected + " " + visual;
+                string xri = TemplateXriInteractionActive ? "xri:" + ShortReason(LastTemplateXriStatus) : "custom_touch";
+                return mode + " " + place + " " + selected + " " + visual + " " + xri;
             }
         }
         public bool CanPlaceNow => startupFlow != null
                                    && startupFlow.MainUiReadyOnce
                                    && (mainReadyGate == null || mainReadyGate.IsReady)
                                    && _manifest != null;
+
+        public event Action<FormalModelPlacementController> OnPlacementStateChanged;
 
         private bool _reportedGosloPlaced;
         private ModelManifestDto _manifest;
@@ -99,6 +112,7 @@ namespace ParrotApp.Lifecycle
         private Vector3 _placedBaseScale = Vector3.one;
         private GameObject _selectionVisual;
         private Material _selectionVisualMaterial;
+        private bool _reportedGosloOutOfView;
 
         private void OnEnable()
         {
@@ -124,6 +138,13 @@ namespace ParrotApp.Lifecycle
         {
             if (!enableTouchPlacementAndSelection)
                 return;
+
+            if (TemplateXriInteractionActive && disableCustomGesturesWhenTemplateXriActive)
+            {
+                RefreshScaleMultiplierFromPlacedTransform();
+                UpdateSelectionVisual();
+                return;
+            }
 
 #if ENABLE_INPUT_SYSTEM
             HandleInputSystemTouchPlacementAndSelection();
@@ -166,8 +187,9 @@ namespace ParrotApp.Lifecycle
 
         private void HandleTransitionStarted(AppStartupConfigDto config)
         {
-            ClearPlacedModel();
+            ClearPlacedModel(reportOutOfView: false);
             _reportedGosloPlaced = false;
+            _reportedGosloOutOfView = false;
             HasPlacedModel = false;
             HasSelectedModel = false;
             ScaleMultiplier = 1f;
@@ -196,6 +218,20 @@ namespace ParrotApp.Lifecycle
                 : "manifest_missing:" + ActiveModelId;
         }
 
+        public void SetTemplateXriInteractionActive(bool active, string reason)
+        {
+            TemplateXriInteractionActive = active;
+            LastTemplateXriStatus = (active ? "active:" : "inactive:") + ShortReason(reason);
+            if (PlacedModel != null)
+                ConfigureArMobileTemplateXriInteractable(PlacedModel);
+        }
+
+        public void ReportTemplateXriStatus(string status)
+        {
+            LastTemplateXriStatus = ShortReason(status);
+            NotifyPlacementStateChanged();
+        }
+
         public void PlaceAtDefaultPreview()
         {
             if (!CanPlace())
@@ -206,6 +242,7 @@ namespace ParrotApp.Lifecycle
                     LastPlacementStatus = "home_gates_wait:" + ShortReason(mainReadyGate.LastMissingGates);
                 else
                     LastPlacementStatus = "manifest_missing:" + ActiveModelId;
+                NotifyPlacementStateChanged();
                 return;
             }
 
@@ -221,6 +258,7 @@ namespace ParrotApp.Lifecycle
             {
                 LastPlacementMode = "ar_raycast_miss";
                 LastPlacementStatus = raycastStatus;
+                NotifyPlacementStateChanged();
                 return;
             }
 
@@ -237,6 +275,7 @@ namespace ParrotApp.Lifecycle
                 LastPlacementStatus = startupFlow == null || !startupFlow.MainUiReadyOnce
                     ? "main_not_ready"
                     : "home_gates_wait:" + ShortReason(mainReadyGate != null ? mainReadyGate.LastMissingGates : "");
+                NotifyPlacementStateChanged();
                 return;
             }
 
@@ -249,15 +288,21 @@ namespace ParrotApp.Lifecycle
 
             LastPlacementMode = "ar_raycast_miss";
             LastPlacementStatus = raycastStatus;
+            NotifyPlacementStateChanged();
         }
 
         public void PlaceAt(Vector3 position, Quaternion rotation, string reason)
         {
-            if (!CanPlace()) return;
+            if (!CanPlace())
+            {
+                NotifyPlacementStateChanged();
+                return;
+            }
             EnsureModelRoot();
             if (modelRoot == null)
             {
                 LastPlacementStatus = "model_root_missing";
+                NotifyPlacementStateChanged();
                 return;
             }
 
@@ -268,6 +313,7 @@ namespace ParrotApp.Lifecycle
             if (PlacedModel == null)
             {
                 LastPlacementStatus = "instantiate_failed:" + ActiveModelId;
+                NotifyPlacementStateChanged();
                 return;
             }
 
@@ -276,6 +322,7 @@ namespace ParrotApp.Lifecycle
             PlacedModel.SetActive(true);
             if (firstPlacement)
             {
+                ForceManifestHeightAfterPlacement();
                 _placedBaseScale = PlacedModel.transform.localScale;
                 ScaleMultiplier = 1f;
                 PlayPlacementGreeting();
@@ -288,12 +335,20 @@ namespace ParrotApp.Lifecycle
             if (!_reportedGosloPlaced)
             {
                 _reportedGosloPlaced = true;
+                _reportedGosloOutOfView = false;
                 startupFlow?.ReportGosloPlaced();
             }
+            else if (_reportedGosloOutOfView)
+            {
+                _reportedGosloOutOfView = false;
+                startupFlow?.ReportGosloReturnedToView();
+            }
+            NotifyPlacementStateChanged();
         }
 
-        public void ClearPlacedModel()
+        public void ClearPlacedModel(bool reportOutOfView = true)
         {
+            bool hadVisibleModel = HasPlacedModel || PlacedModel != null;
             if (PlacedModel != null)
             {
                 Destroy(PlacedModel);
@@ -309,6 +364,15 @@ namespace ParrotApp.Lifecycle
             LastVisualSource = "none";
             LastPlacementStatus = "cleared";
             LastSelectionStatus = "cleared";
+            NotifyPlacementStateChanged();
+
+            if (reportOutOfView && hadVisibleModel && _reportedGosloPlaced)
+            {
+                _reportedGosloOutOfView = true;
+                LastSelectionStatus = "out_of_view:voice_only";
+                startupFlow?.ReportGosloRemovedFromView();
+                NotifyPlacementStateChanged();
+            }
         }
 
         public void SelectPlacedModel(bool selected, string reason = "manual")
@@ -319,6 +383,7 @@ namespace ParrotApp.Lifecycle
                 : "not_selected:" + ShortReason(reason);
             if (!HasSelectedModel)
                 DestroySelectionVisual();
+            NotifyPlacementStateChanged();
         }
 
         public void ScaleSelectedModel(float multiplier, string reason = "manual")
@@ -327,6 +392,12 @@ namespace ParrotApp.Lifecycle
             ScaleMultiplier = Mathf.Clamp(multiplier, Mathf.Max(0.05f, minScaleMultiplier), Mathf.Max(minScaleMultiplier, maxScaleMultiplier));
             ApplyScaleMultiplier();
             LastSelectionStatus = "scaled:" + ScaleMultiplier.ToString("0.00") + ":" + ShortReason(reason);
+            NotifyPlacementStateChanged();
+        }
+
+        private void NotifyPlacementStateChanged()
+        {
+            OnPlacementStateChanged?.Invoke(this);
         }
 
         private bool CanPlace()
@@ -369,12 +440,27 @@ namespace ParrotApp.Lifecycle
                 return false;
             }
 
-            pose = RaycastHits[0].pose;
-            surfaceNormal = pose.up;
-            if (RaycastHits[0].trackable is ARPlane arPlane)
-                surfaceNormal = arPlane.normal;
-            status = "ar_raycast_plane";
-            return true;
+            for (int i = 0; i < RaycastHits.Count; i++)
+            {
+                var hit = RaycastHits[i];
+                Vector3 normal = hit.pose.up;
+                if (hit.trackable is ARPlane plane)
+                    normal = plane.normal;
+
+                if (preferHorizontalPlacementPlanes
+                    && Vector3.Dot(normal.normalized, Vector3.up) < Mathf.Clamp01(minPlacementPlaneUpDot))
+                    continue;
+
+                pose = hit.pose;
+                surfaceNormal = normal;
+                status = "ar_raycast_plane";
+                return true;
+            }
+
+            status = preferHorizontalPlacementPlanes
+                ? "ar_raycast_no_horizontal_plane"
+                : "ar_raycast_no_plane";
+            return false;
 #else
             status = "ar_foundation_not_compiled";
             return false;
@@ -430,6 +516,7 @@ namespace ParrotApp.Lifecycle
             if (driver == null) driver = go.AddComponent<ModelDriver>();
             driver.ConfigureModelId(ActiveModelId);
             driver.BootstrapNow();
+            ConfigureArMobileTemplateXriInteractable(go);
             return go;
         }
 
@@ -782,6 +869,184 @@ namespace ParrotApp.Lifecycle
             PlacedModel.transform.localScale = _placedBaseScale * ScaleMultiplier;
         }
 
+        private void ForceManifestHeightAfterPlacement()
+        {
+            if (!forceManifestHeightAfterPlacement || PlacedModel == null || _manifest == null)
+                return;
+            float targetHeight = _manifest.default_pet_height_m > 0f
+                ? _manifest.default_pet_height_m
+                : 0.16f;
+            if (targetHeight <= 0f || !TryGetPlacedModelBounds(out Bounds bounds))
+                return;
+
+            float currentHeight = bounds.size.y;
+            if (currentHeight <= 0.0001f)
+                return;
+
+            float ratio = targetHeight / currentHeight;
+            if (ratio <= 0f || float.IsNaN(ratio) || float.IsInfinity(ratio))
+                return;
+
+            PlacedModel.transform.localScale = PlacedModel.transform.localScale * ratio;
+            LastVisualSource = ShortReason(LastVisualSource + ":height=" + targetHeight.ToString("0.00") + "m");
+        }
+
+        private void RefreshScaleMultiplierFromPlacedTransform()
+        {
+            if (PlacedModel == null || _placedBaseScale.sqrMagnitude < 0.0001f)
+                return;
+
+            float baseMagnitude = Mathf.Max(0.0001f, _placedBaseScale.magnitude);
+            float next = PlacedModel.transform.localScale.magnitude / baseMagnitude;
+            ScaleMultiplier = Mathf.Clamp(next, Mathf.Max(0.05f, minScaleMultiplier), Mathf.Max(minScaleMultiplier, maxScaleMultiplier));
+        }
+
+        private void ConfigureArMobileTemplateXriInteractable(GameObject go)
+        {
+            if (!attachArMobileTemplateXriInteractable || go == null)
+            {
+                LastTemplateXriStatus = attachArMobileTemplateXriInteractable ? "model_missing" : "disabled";
+                return;
+            }
+
+            var body = go.GetComponent<Rigidbody>();
+            if (body == null)
+                body = go.AddComponent<Rigidbody>();
+            body.useGravity = false;
+            body.isKinematic = true;
+
+            EnsureArMobileTemplateCollider(go);
+
+            var grab = go.GetComponent<XRGrabInteractable>();
+            if (grab == null)
+                grab = go.AddComponent<XRGrabInteractable>();
+
+            grab.useDynamicAttach = true;
+            grab.matchAttachPosition = true;
+            grab.matchAttachRotation = false;
+            grab.snapToColliderVolume = false;
+            grab.distanceCalculationMode = XRBaseInteractable.DistanceCalculationMode.ColliderPosition;
+            grab.movementType = XRBaseInteractable.MovementType.Instantaneous;
+            grab.trackPosition = true;
+            grab.trackRotation = true;
+            grab.trackScale = true;
+            grab.throwOnDetach = false;
+            grab.retainTransformParent = true;
+            grab.selectMode = InteractableSelectMode.Single;
+            grab.focusMode = InteractableFocusMode.Single;
+            grab.addDefaultGrabTransformers = true;
+
+            var transformer = go.GetComponent<ARTransformer>();
+            if (transformer == null)
+                transformer = go.AddComponent<ARTransformer>();
+            transformer.objectPlaneTranslationMode = ARTransformer.PlaneTranslationMode.Any;
+            transformer.useInteractorOrientation = false;
+            transformer.minScale = minScaleMultiplier;
+            transformer.maxScale = maxScaleMultiplier;
+            transformer.scaleSensitivity = 0.75f;
+            transformer.elasticity = 0.15f;
+            transformer.enableElasticBreakLimit = true;
+            transformer.elasticBreakLimit = 0.5f;
+
+            if (grab.startingSingleGrabTransformers != null
+                && !grab.startingSingleGrabTransformers.Contains(transformer))
+            {
+                grab.startingSingleGrabTransformers.Add(transformer);
+            }
+
+            if (!HasRegisteredSingleGrabTransformer(grab, transformer))
+                grab.AddSingleGrabTransformer(transformer);
+
+            grab.selectEntered.RemoveListener(HandleTemplateXriSelectEntered);
+            grab.selectExited.RemoveListener(HandleTemplateXriSelectExited);
+            grab.selectEntered.AddListener(HandleTemplateXriSelectEntered);
+            grab.selectExited.AddListener(HandleTemplateXriSelectExited);
+
+            LastTemplateXriStatus = "interactable:" + go.name;
+        }
+
+        private void HandleTemplateXriSelectEntered(SelectEnterEventArgs args)
+        {
+            SelectPlacedModel(true, "xri_select");
+            LastTemplateXriStatus = "selected";
+        }
+
+        private void HandleTemplateXriSelectExited(SelectExitEventArgs args)
+        {
+            var grab = PlacedModel != null ? PlacedModel.GetComponent<XRGrabInteractable>() : null;
+            if (grab != null && grab.isSelected)
+                return;
+
+            SelectPlacedModel(false, "xri_release");
+            LastTemplateXriStatus = "released";
+        }
+
+        private static bool HasRegisteredSingleGrabTransformer(XRGrabInteractable grab, ARTransformer transformer)
+        {
+            if (grab == null || transformer == null)
+                return false;
+
+            for (int i = 0; i < grab.singleGrabTransformersCount; i++)
+            {
+                if (ReferenceEquals(grab.GetSingleGrabTransformerAt(i), transformer))
+                    return true;
+            }
+            return false;
+        }
+
+        private static void EnsureArMobileTemplateCollider(GameObject go)
+        {
+            var colliders = go.GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                if (colliders[i] != null && colliders[i].enabled)
+                    return;
+            }
+
+            var box = go.AddComponent<BoxCollider>();
+            if (TryGetObjectRendererBounds(go, out Bounds bounds))
+            {
+                box.center = go.transform.InverseTransformPoint(bounds.center);
+                var localSize = go.transform.InverseTransformVector(bounds.size);
+                box.size = new Vector3(
+                    Mathf.Max(0.04f, Mathf.Abs(localSize.x)),
+                    Mathf.Max(0.04f, Mathf.Abs(localSize.y)),
+                    Mathf.Max(0.04f, Mathf.Abs(localSize.z)));
+            }
+            else
+            {
+                box.center = Vector3.zero;
+                box.size = Vector3.one * 0.25f;
+            }
+        }
+
+        private static bool TryGetObjectRendererBounds(GameObject go, out Bounds bounds)
+        {
+            bounds = new Bounds();
+            if (go == null)
+                return false;
+
+            var renderers = go.GetComponentsInChildren<Renderer>(true);
+            bool hasBounds = false;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null || !renderer.enabled)
+                    continue;
+
+                if (!hasBounds)
+                {
+                    bounds = renderer.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+            }
+            return hasBounds;
+        }
+
         private void PlayPlacementGreeting()
         {
             var animationDriver = PlacedModel != null ? PlacedModel.GetComponentInChildren<AnimationDriver>(true) : null;
@@ -797,8 +1062,15 @@ namespace ParrotApp.Lifecycle
             var controller = ParrotRegistry.Instance != null ? ParrotRegistry.Instance.Resolve(modelId) : null;
             if (controller != null)
             {
-                if (Supports(controller, "spine_idle"))
+                if (Supports(controller, "head_bob"))
+                    controller.ApplyCapability("head_bob", "{}");
+                else if (Supports(controller, "spine_idle"))
                     controller.ApplyCapability("spine_idle", "{}");
+                else if (Supports(controller, "idle"))
+                    controller.ApplyCapability("idle", "{}");
+
+                if (Supports(controller, "face_think"))
+                    controller.ApplyCapability("face_think", "{}");
                 if (Supports(controller, "face_serious"))
                     controller.ApplyCapability("face_serious", "{}");
                 LastSelectionStatus = "greeting:model_controller";

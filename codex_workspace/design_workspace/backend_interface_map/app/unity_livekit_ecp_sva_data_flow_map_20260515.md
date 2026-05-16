@@ -258,6 +258,10 @@ as `photo_id`, `captured_at`, route/source, pose, and related Focus/BBox refs.
 
 ### Phone Lifecycle / Audio Route
 
+Research guard: read `unity_audio_route_research_20260516.md` before changing
+this area. Old Smoke/LineA connectivity scripts are not the formal audio-route
+policy.
+
 Current split:
 
 - `AudioRouteDetector` detects speaker/wired/Bluetooth route changes.
@@ -265,14 +269,25 @@ Current split:
   sample rate and device preference.
 - `AudioRoutePolicyBrainReporter` sends compact Brain RPC
   `setLineBAudioRoutePolicy`, separating `input_route` from `output_route` so
-  speaker/A2DP output does not masquerade as the microphone input.
+  speaker/A2DP output does not masquerade as the microphone input. It treats
+  `status:error` and `result.success:false` responses as business failures.
 - Brain writes the accepted policy to `session/audio_route_policy`.
+- `AudioRoutePolicy` keeps A2DP on the normal 48 kHz microphone policy because
+  A2DP is output-only; only a detected SCO input uses the 16 kHz Bluetooth
+  headset capture policy.
 
-Current gap: Android now tries native `AudioManager.getDevices(...)` before
-legacy route flags and surfaces the detection source/device summary in the
-formal HUD/menu. This still needs APP-024 phone proof on iQOO Neo9 for
-Bluetooth SCO, Bluetooth A2DP, wired/USB headset, speaker, and background
-resume transitions; a manual device picker is not built.
+Current gap: the first production split is implemented in code but not phone
+proven. `Assets/Plugins/Android/ParrotAudioRoute.androidlib/**` now owns the
+Android route bridge, Bluetooth permission snapshot, communication-device
+selection, callbacks, and audio focus. Unity `AudioRouteManager` owns accepted
+snapshots/policy/debounce; `MicrophonePublisher` only executes serialized
+LiveKit mic track rebuilds; `RoomManager`/lifecycle own room reconnects only
+for real transport failure; Brain/ECP observe the accepted route through compact
+state/RPC. This still needs APP-024 phone proof on iQOO Neo9 for Bluetooth SCO,
+Bluetooth A2DP, wired/USB headset, speaker, background resume transitions,
+other-media coexistence, LineA/LineB voice, and no LiveKit room deadlock.
+Do not treat route change as a LiveKit reconnect trigger, and do not promote
+the current `MIC NEXT` / `MIC AUTO` diagnostic controls into the final phone UX.
 
 ## E. Registered Surfaces
 

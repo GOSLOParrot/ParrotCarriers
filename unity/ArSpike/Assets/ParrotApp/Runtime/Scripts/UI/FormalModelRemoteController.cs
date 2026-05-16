@@ -36,6 +36,7 @@ namespace ParrotApp.UI
         private Text _statusText;
         private bool _walking;
         private float _tick;
+        private FormalModelPlacementController _subscribedPlacementController;
 
         private void OnEnable()
         {
@@ -95,6 +96,15 @@ namespace ParrotApp.UI
                 mainReadyGate.OnGateChanged -= HandleGateChanged;
                 mainReadyGate.OnGateChanged += HandleGateChanged;
             }
+
+            if (_subscribedPlacementController != placementController)
+            {
+                if (_subscribedPlacementController != null)
+                    _subscribedPlacementController.OnPlacementStateChanged -= HandlePlacementStateChanged;
+                _subscribedPlacementController = placementController;
+                if (_subscribedPlacementController != null)
+                    _subscribedPlacementController.OnPlacementStateChanged += HandlePlacementStateChanged;
+            }
         }
 
         private void Unbind()
@@ -107,6 +117,11 @@ namespace ParrotApp.UI
             }
             if (mainReadyGate != null)
                 mainReadyGate.OnGateChanged -= HandleGateChanged;
+            if (_subscribedPlacementController != null)
+            {
+                _subscribedPlacementController.OnPlacementStateChanged -= HandlePlacementStateChanged;
+                _subscribedPlacementController = null;
+            }
         }
 
         private void HandleTransitionStarted(AppStartupConfigDto _)
@@ -133,6 +148,13 @@ namespace ParrotApp.UI
             RefreshVisible();
         }
 
+        private void HandlePlacementStateChanged(FormalModelPlacementController placement)
+        {
+            if (placement != null)
+                placementController = placement;
+            RefreshVisible();
+        }
+
         private void SetJoystickInput(Vector2 input)
         {
             CurrentInput = Vector2.ClampMagnitude(input, 1f);
@@ -152,15 +174,19 @@ namespace ParrotApp.UI
                               && (mainReadyGate == null || mainReadyGate.IsReady)
                               && placementController != null
                               && placementController.HasPlacedModel
+                              && placementController.HasSelectedModel
                               && placementController.PlacedModel != null;
 
             SetVisible(shouldShow);
             if (!shouldShow)
             {
                 CurrentInput = Vector2.zero;
-                LastRemoteStatus = placementController != null && !placementController.HasPlacedModel
-                    ? "waiting_placed_model"
-                    : "waiting_home_ready";
+                if (placementController == null || !placementController.HasPlacedModel)
+                    LastRemoteStatus = "waiting_placed_model";
+                else if (!placementController.HasSelectedModel)
+                    LastRemoteStatus = "waiting_selected_model";
+                else
+                    LastRemoteStatus = "waiting_home_ready";
             }
             else if (CurrentInput.sqrMagnitude < 0.01f && !_walking)
             {

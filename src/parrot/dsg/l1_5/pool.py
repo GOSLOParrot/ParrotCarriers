@@ -351,7 +351,10 @@ class L15Pool:
                 for n in graph.all_nodes():
                     if n.graphiti_uuid == obs.graphiti_uuid:
                         return n
-            return graph.get_node_by_label(obs.label)
+            # Match the ingest runner fallback: label is scoped by NodeKind,
+            # not a graph-wide unique key. Stable provider identities above
+            # remain the preferred lookup path.
+            return graph.get_node_by_label_and_kind(obs.label, obs.kind)
         except Exception:
             return None
 
@@ -390,7 +393,7 @@ class L15Pool:
                         break
 
             if node is None:
-                node = graph.get_node_by_label(obs.label)
+                node = graph.get_node_by_label_and_kind(obs.label, obs.kind)
 
             if node is None:
                 return ""

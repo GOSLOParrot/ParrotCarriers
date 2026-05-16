@@ -524,6 +524,14 @@ def build_app(
 
         return draft_obsidian_vault_import(payload or {})
 
+    @app.post("/api/l15/obsidian-vault/import-plan")
+    async def l15_obsidian_vault_import_plan(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_obsidian_l2b_import_plan
+
+        return draft_obsidian_l2b_import_plan(payload or {})
+
     @app.post("/api/l15/obsidian-vault/import")
     async def l15_obsidian_vault_import(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -704,6 +712,14 @@ def build_app(
 
         return draft_google_calendar_import(payload or {})
 
+    @app.post("/api/google/calendar/import-plan")
+    async def google_calendar_import_plan(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_google_calendar_l2b_import_plan
+
+        return draft_google_calendar_l2b_import_plan(payload or {})
+
     @app.post("/api/google/calendar/import")
     async def google_calendar_import(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -753,6 +769,14 @@ def build_app(
         from parrot.brain.graphiti_console import draft_graphiti_subgraph_export
 
         return draft_graphiti_subgraph_export(payload or {})
+
+    @app.post("/api/graphiti/subgraph/import-plan")
+    async def graphiti_subgraph_import_plan(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_graphiti_l2b_import_plan
+
+        return draft_graphiti_l2b_import_plan(payload or {})
 
     @app.post("/api/graphiti/subgraph/export")
     async def graphiti_subgraph_export(  # type: ignore[misc]

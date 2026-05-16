@@ -242,6 +242,142 @@ def test_graphiti_subgraph_export_routes_are_l15_dry_run_and_secret_safe(monkeyp
     assert "deepseek-export-secret" not in str(missing_search) + str(draft) + str(export)
 
 
+def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch) -> None:
+    from parrot.brain import graphiti_console
+
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    hit = {
+        "text": "Amiya's role changes as Rhodes Island leaves Chernobog.",
+        "uuid": "graphiti-hit-plan-1",
+        "source_node_uuid": "source-amiya",
+        "target_node_uuid": "target-rhodes",
+        "score": 0.83,
+        "source_url": "https://prts.wiki/w/%E5%89%A7%E6%83%85%E4%B8%80%E8%A7%88",
+        "source_description": "arknights_test:main_00",
+    }
+
+    plan = client.post(
+        "/api/graphiti/subgraph/import-plan",
+        json={
+            "partition": "arknights_test",
+            "query": "Amiya Chernobog",
+            "hits": [hit],
+            "destination": "isolated_compartment",
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+
+    assert plan["action"] == "graphiti.subgraph.import_plan"
+    assert plan["success"] is True
+    assert plan["dry_run"] is True
+    assert plan["operator_mode"] is False
+    assert plan["data"]["requested_execution"] == {
+        "dry_run": False,
+        "operator_mode": True,
+        "ignored_for_plan": True,
+    }
+    assert plan["data"]["selected_count"] == 1
+    assert plan["data"]["observations"][0]["graphiti_uuid"] == "graphiti-hit-plan-1"
+    assert plan["data"]["edge_drafts"][0]["source_graphiti_uuid"] == "source-amiya"
+    assert plan["data"]["import_policy"]["destination"] == "isolated_compartment"
+    assert plan["data"]["import_policy"]["source_kind"] == "graphiti"
+    assert plan["data"]["import_draft"]["proposed_edges"][0]["source"] == "source-amiya"
+    assert plan["data"]["apply_route"] == "/api/graphiti/subgraph/export"
+    assert plan["data"]["apply_preconditions"]["edge_apply"].startswith("separate L2-B edge route")
+    assert plan["data"]["core_candidates"] == ["CORE-008", "CORE-013"]
+    assert plan["data"]["export_receipt_id"].startswith("web_")
+    assert "sk-" not in str(plan).lower()
+
+
+def test_graphiti_subgraph_import_plan_uses_normalized_partition(monkeypatch) -> None:
+    from parrot.brain import graphiti_console
+
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    plan = client.post(
+        "/api/graphiti/subgraph/import-plan",
+        json={
+            "partition": "unknown_partition",
+            "query": "Amiya",
+            "hits": [{"text": "Amiya leads Rhodes Island.", "uuid": "graphiti-hit-raw"}],
+        },
+    ).json()
+
+    assert plan["success"] is True
+    assert plan["data"]["partition"] == "goslo"
+    assert plan["data"]["subgraph"]["partition"] == "goslo"
+    assert plan["data"]["observations"][0]["meta"]["graphiti_partition"] == "goslo"
+    assert plan["data"]["import_policy"]["source_id"] == "goslo:Amiya"
+
+
+def test_graphiti_subgraph_import_plan_skips_policy_when_no_hits(monkeypatch) -> None:
+    from parrot.brain import graphiti_console
+
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    plan = client.post(
+        "/api/graphiti/subgraph/import-plan",
+        json={
+            "partition": "arknights_test",
+            "query": "nothing selected",
+            "hits": [],
+            "destination": "isolated_compartment",
+        },
+    ).json()
+
+    assert plan["action"] == "graphiti.subgraph.import_plan"
+    assert plan["success"] is False
+    assert plan["data"]["selected_count"] == 0
+    assert plan["data"]["import_policy"] == {}
+    assert plan["data"]["import_draft"] == {}
+    assert plan["data"]["policy_skipped_reason"] == "no_graphiti_observations"
+    assert plan["data"]["policy_receipt_id"] == ""
+
+
+def test_graphiti_subgraph_operator_export_admits_through_l15(monkeypatch) -> None:
+    captured: list[Any] = []
+
+    class FakePool:
+        async def admit(self, observations):
+            captured.extend(observations)
+            return _FakeAdmitOutcome()
+
+    monkeypatch.setattr("parrot.dsg.l1_5.pool.get_l1_5_pool", lambda: FakePool())
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    hit = {
+        "text": "Amiya chooses to protect Rhodes Island during Chernobog.",
+        "uuid": "graphiti-operator-hit-1",
+        "source_node_uuid": "source-amiya",
+        "target_node_uuid": "target-rhodes",
+        "source_description": "arknights_test:main_00",
+    }
+
+    body = client.post(
+        "/api/graphiti/subgraph/export",
+        json={
+            "partition": "arknights_test",
+            "query": "Amiya",
+            "hits": [hit],
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+
+    assert body["action"] == "graphiti.subgraph.export"
+    assert body["success"] is True
+    assert body["dry_run"] is False
+    assert body["operator_mode"] is True
+    assert body["data"]["selected_count"] == 1
+    assert len(captured) == 1
+    assert captured[0].graphiti_uuid == "graphiti-operator-hit-1"
+    assert captured[0].meta["graphiti_partition"] == "arknights_test"
+    assert body["data"]["write_path"] == "L15Pool.admit(Observation(source=USER_EXPLICIT))"
+
+
 def test_arknights_graphiti_fixture_script_dry_run() -> None:
     import subprocess
     import sys
@@ -346,6 +482,109 @@ def test_obsidian_vault_import_draft_uses_l15_observation_path(tmp_path) -> None
     assert dry_apply["action"] == "l15.obsidian_vault.import"
     assert dry_apply["data"]["would_apply"] is True
     assert dry_apply["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
+
+
+def test_obsidian_vault_operator_import_admits_through_l15(tmp_path, monkeypatch) -> None:
+    captured: list[Any] = []
+
+    class FakePool:
+        async def admit(self, observations):
+            captured.extend(observations)
+            return _FakeAdmitOutcome()
+
+    monkeypatch.setattr("parrot.dsg.l1_5.pool.get_l1_5_pool", lambda: FakePool())
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "daily.md").write_text(
+        "---\nprofile: daily\nlabel: Daily desk rule\nkind: object\n---\nKeep the desk clear.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    body = client.post(
+        "/api/l15/obsidian-vault/import",
+        json={
+            "vault_path": str(vault),
+            "paths": ["daily.md"],
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+
+    assert body["action"] == "l15.obsidian_vault.import"
+    assert body["success"] is True
+    assert body["dry_run"] is False
+    assert body["operator_mode"] is True
+    assert body["data"]["imported_count"] == 1
+    assert len(captured) == 1
+    assert captured[0].label == "Daily desk rule"
+    assert captured[0].meta["profile"] == "daily"
+    assert body["data"]["write_path"] == "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)"
+
+
+def test_obsidian_vault_import_plan_combines_l15_and_graph_policy(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "daily.md").write_text(
+        "---\nprofile: daily\nlabel: Daily desk rule\nkind: object\n---\nKeep the desk clear.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    plan = client.post(
+        "/api/l15/obsidian-vault/import-plan",
+        json={
+            "vault_path": str(vault),
+            "paths": ["daily.md"],
+            "destination": "isolated_compartment",
+            "workspace_id": "memory_graph",
+            "subgraph_label": "Daily settings",
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+
+    assert plan["action"] == "l15.obsidian_vault.import_plan"
+    assert plan["success"] is True
+    assert plan["dry_run"] is True
+    assert plan["operator_mode"] is False
+    assert plan["data"]["requested_execution"] == {
+        "dry_run": False,
+        "operator_mode": True,
+        "ignored_for_plan": True,
+    }
+    assert plan["data"]["selected_count"] == 1
+    assert plan["data"]["items"][0]["target_bucket"] == "obsidian_setting_daily"
+    assert plan["data"]["import_policy"]["destination"] == "isolated_compartment"
+    assert plan["data"]["import_policy"]["source_kind"] == "obsidian"
+    assert plan["data"]["apply_route"] == "/api/l15/obsidian-vault/import"
+    assert "UserTagFilter" in plan["data"]["write_path"]
+    assert "CORE-013" in plan["data"]["core_candidates"]
+    assert "PARROT_ORCH_SECRET" not in str(plan)
+
+
+def test_obsidian_vault_import_plan_skips_policy_when_no_items(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    plan = client.post(
+        "/api/l15/obsidian-vault/import-plan",
+        json={
+            "vault_path": str(vault),
+            "paths": ["missing.md"],
+            "destination": "isolated_compartment",
+        },
+    ).json()
+
+    assert plan["action"] == "l15.obsidian_vault.import_plan"
+    assert plan["success"] is False
+    assert plan["data"]["selected_count"] == 0
+    assert plan["data"]["import_policy"] == {}
+    assert plan["data"]["import_draft"] == {}
+    assert plan["data"]["policy_skipped_reason"] == "no_importable_obsidian_items"
+    assert plan["data"]["policy_receipt_id"] == ""
+    assert plan["data"]["errors"][0]["error"] == "selected_path_not_found"
 
 
 def test_obsidian_vault_import_draft_reports_selected_missing_or_invalid_paths(tmp_path) -> None:
@@ -741,6 +980,163 @@ def test_google_calendar_import_routes_are_l15_operator_gated() -> None:
     assert apply_preview["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
     assert "sk-" not in str(draft).lower()
     assert "PARROT_ORCH_SECRET" not in str(draft)
+
+
+def test_google_calendar_import_plan_combines_l15_and_graph_policy() -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    plan = client.post(
+        "/api/google/calendar/import-plan",
+        json={
+            "destination": "isolated_compartment",
+            "events": [
+                {
+                    "id": "evt_plan",
+                    "calendar_id": "primary",
+                    "summary": "Calendar import plan",
+                    "start": {
+                        "dateTime": "2026-05-15T11:00:00+08:00",
+                        "timeZone": "Asia/Shanghai",
+                    },
+                    "end": {"dateTime": "2026-05-15T11:30:00+08:00"},
+                    "status": "confirmed",
+                }
+            ],
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+
+    assert plan["action"] == "google.calendar.import_plan"
+    assert plan["success"] is True
+    assert plan["dry_run"] is True
+    assert plan["operator_mode"] is False
+    assert plan["data"]["requested_execution"] == {
+        "dry_run": False,
+        "operator_mode": True,
+        "ignored_for_plan": True,
+    }
+    assert plan["data"]["observation_count"] == 1
+    assert plan["data"]["mapping_rows"][0]["merge_key"] == "primary:evt_plan"
+    assert plan["data"]["import_policy"]["destination"] == "isolated_compartment"
+    assert plan["data"]["import_policy"]["source_kind"] == "google_calendar"
+    assert plan["data"]["sync_policy"].startswith("manual_fetch_import_v1")
+    assert plan["data"]["apply_route"] == "/api/google/calendar/import"
+    assert "CORE-013" in plan["data"]["core_candidates"]
+    assert "sk-" not in str(plan).lower()
+
+
+def test_source_import_plan_matrix_is_draft_only_and_operator_safe(tmp_path, monkeypatch) -> None:
+    from parrot.brain import graphiti_console
+
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "daily.md").write_text(
+        "---\nprofile: daily\nlabel: Daily desk rule\nkind: object\n---\nKeep the desk clear.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    graphiti_hit = {
+        "text": "Amiya's role changes as Rhodes Island leaves Chernobog.",
+        "uuid": "graphiti-hit-matrix-1",
+        "source_node_uuid": "source-amiya",
+        "target_node_uuid": "target-rhodes",
+        "score": 0.83,
+        "source_url": "https://prts.wiki/w/%E5%89%A7%E6%83%85%E4%B8%80%E8%A7%88",
+        "source_description": "arknights_test:main_00",
+    }
+    calendar_event = {
+        "id": "evt_matrix",
+        "calendar_id": "primary",
+        "summary": "Calendar import plan",
+        "start": {
+            "dateTime": "2026-05-15T11:00:00+08:00",
+            "timeZone": "Asia/Shanghai",
+        },
+        "end": {"dateTime": "2026-05-15T11:30:00+08:00"},
+        "status": "confirmed",
+    }
+    requests = [
+        (
+            "graphiti",
+            "/api/graphiti/subgraph/import-plan",
+            {
+                "partition": "arknights_test",
+                "query": "Amiya Chernobog",
+                "hits": [graphiti_hit],
+                "destination": "isolated_compartment",
+                "dry_run": False,
+                "operator_mode": True,
+            },
+            "/api/graphiti/subgraph/export",
+        ),
+        (
+            "obsidian",
+            "/api/l15/obsidian-vault/import-plan",
+            {
+                "vault_path": str(vault),
+                "paths": ["daily.md"],
+                "destination": "isolated_compartment",
+                "dry_run": False,
+                "operator_mode": True,
+            },
+            "/api/l15/obsidian-vault/import",
+        ),
+        (
+            "google_calendar",
+            "/api/google/calendar/import-plan",
+            {
+                "events": [calendar_event],
+                "destination": "isolated_compartment",
+                "dry_run": False,
+                "operator_mode": True,
+            },
+            "/api/google/calendar/import",
+        ),
+    ]
+
+    for source_kind, route, payload, apply_route in requests:
+        plan = client.post(route, json=payload).json()
+        data = plan["data"]
+        serialized = str(plan).lower()
+
+        assert plan["success"] is True
+        assert plan["dry_run"] is True
+        assert plan["operator_mode"] is False
+        assert data["requested_execution"] == {
+            "dry_run": False,
+            "operator_mode": True,
+            "ignored_for_plan": True,
+        }
+        assert data["operator_required_for_execute"] is True
+        assert data["apply_route"] == apply_route
+        assert data["apply_preconditions"]["dry_run"] is False
+        assert data["apply_preconditions"]["operator_mode"] is True
+        assert data["import_policy"]["destination"] == "isolated_compartment"
+        assert data["import_policy"]["source_kind"] == source_kind
+        assert "CORE-008" in data["core_candidates"]
+        assert "CORE-013" in data["core_candidates"]
+        assert "sk-" not in serialized
+        assert "parrot_orch_secret" not in serialized
+        assert "direct_falkordb_write': true" not in serialized
+
+
+def test_google_calendar_import_plan_skips_policy_when_no_observations() -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    plan = client.post(
+        "/api/google/calendar/import-plan",
+        json={"destination": "isolated_compartment", "events": []},
+    ).json()
+
+    assert plan["action"] == "google.calendar.import_plan"
+    assert plan["success"] is False
+    assert plan["data"]["observation_count"] == 0
+    assert plan["data"]["import_policy"] == {}
+    assert plan["data"]["import_draft"] == {}
+    assert plan["data"]["policy_skipped_reason"] == "no_calendar_observations"
+    assert plan["data"]["policy_receipt_id"] == ""
 
 
 def test_google_calendar_operator_import_preserves_event_time(monkeypatch) -> None:
@@ -2117,6 +2513,11 @@ class _FakeStatus:
 class _FakeActionResult:
     def as_json(self) -> dict[str, Any]:
         return {"status": "ok", "workspace_id": "workdesk"}
+
+
+@dataclass
+class _FakeAdmitOutcome:
+    rejected: tuple[Any, ...] = ()
 
 
 class _FakeAppFacade:
