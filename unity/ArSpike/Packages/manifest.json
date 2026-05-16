@@ -19,6 +19,7 @@
     "com.unity.xr.arcore": "5.2.2",
     "com.unity.xr.arfoundation": "5.2.2",
     "com.unity.xr.arkit": "5.2.2",
+    "com.unity.xr.hands": "1.2.1",
     "com.unity.xr.interaction.toolkit": "3.1.2",
     "io.livekit.livekit-sdk": "https://github.com/livekit/client-sdk-unity.git#7d868ef5cc5615c30a3ef4b73ae0dbb5cc4d6796",
     "com.unity.modules.ai": "1.0.0",

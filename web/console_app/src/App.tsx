@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import ReactFlow, {
   Background,
   type Connection,
@@ -16,6 +16,7 @@ import ReactFlow, {
   Position,
   type ReactFlowInstance
 } from "reactflow";
+import { Rnd, type DraggableData } from "react-rnd";
 import {
   Activity,
   Bell,
@@ -108,13 +109,12 @@ type GraphitiStatusSummary = {
 type SourceBoardId = "graphiti" | "obsidian" | "calendar" | "refs" | "manual";
 type MemoryToolId = "node" | "edge" | "filter" | "tags" | "subgraph" | "state" | "pool" | "settings";
 type FloatingPanelId = "toolbar" | "tool" | "selection";
-type FloatingResizeEdge = "left" | "bottom" | "bottom-left";
 
 type FloatingPanelState = {
   x: number;
   y: number;
-  width?: number;
-  height?: number;
+  width: number | "auto";
+  height: number | "auto";
   z: number;
 };
 
@@ -170,18 +170,38 @@ const memoryNodeTypes: NodeTypes = {
   memory: MemoryNodeCard
 };
 
-const FLOATING_PANEL_SNAP_PX = 26;
 const FLOATING_PANEL_EDGE_GAP = 8;
 const FLOATING_PANEL_STACK_GAP = 12;
 const FLOATING_PANEL_DOCK_MARGIN = 16;
 const FLOATING_TOOLBAR_DOCK_LIMIT = 10;
-const FLOATING_PANEL_MIN_WIDTH = 340;
-const FLOATING_PANEL_MIN_HEIGHT = 120;
+const FLOATING_PANEL_MIN_WIDTH = 430;
+const FLOATING_PANEL_MIN_HEIGHT = 180;
+const FLOATING_PANEL_DEFAULT_HEIGHT = 360;
+const FLOATING_PANEL_SELECTION_HEIGHT = 350;
+const FLOATING_PANEL_GRID: [number, number] = [8, 8];
+const FLOATING_PANEL_RESIZE_ENABLE = {
+  top: false,
+  topLeft: false,
+  topRight: false,
+  right: true,
+  bottomRight: true,
+  bottom: true,
+  bottomLeft: true,
+  left: true
+};
+const FLOATING_PANEL_RESIZE_HANDLE_CLASSES = {
+  left: "floating-rnd-handle floating-rnd-handle-left",
+  right: "floating-rnd-handle floating-rnd-handle-right",
+  bottom: "floating-rnd-handle floating-rnd-handle-bottom",
+  bottomLeft: "floating-rnd-handle floating-rnd-handle-bottom-left",
+  bottomRight: "floating-rnd-handle floating-rnd-handle-bottom-right"
+};
+const FLOATING_PANEL_DRAG_CANCEL = "button,input,select,textarea,a,details,.nodrag";
 
 const DEFAULT_FLOATING_PANELS: Record<FloatingPanelId, FloatingPanelState> = {
-  toolbar: { x: 12, y: 12, z: 24 },
-  tool: { x: 24, y: 24, width: 380, z: 22 },
-  selection: { x: 24, y: 330, width: 380, z: 21 }
+  toolbar: { x: 12, y: 12, width: "auto", height: "auto", z: 24 },
+  tool: { x: 24, y: 24, width: 560, height: FLOATING_PANEL_DEFAULT_HEIGHT, z: 22 },
+  selection: { x: 24, y: 120, width: 560, height: FLOATING_PANEL_SELECTION_HEIGHT, z: 21 }
 };
 
 const LIVEKIT_CLIENT_URLS = [
@@ -614,12 +634,18 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function snapNumber(value: number, target: number, threshold = FLOATING_PANEL_SNAP_PX): number {
-  return Math.abs(value - target) <= threshold ? target : value;
+function defaultFloatingPanelWidth(canvasWidth: number): number {
+  const available = Math.max(FLOATING_PANEL_MIN_WIDTH, canvasWidth - FLOATING_PANEL_DOCK_MARGIN * 2);
+  const preferred = Math.max(560, Math.round(canvasWidth * 0.42));
+  return Math.min(680, available, preferred);
 }
 
-function defaultFloatingPanelWidth(canvasWidth: number): number {
-  return Math.min(390, Math.max(320, canvasWidth - FLOATING_PANEL_DOCK_MARGIN * 2));
+function floatingPanelStateEquals(left: FloatingPanelState, right: FloatingPanelState): boolean {
+  return left.x === right.x
+    && left.y === right.y
+    && left.width === right.width
+    && left.height === right.height
+    && left.z === right.z;
 }
 
 export function App() {
@@ -944,18 +970,15 @@ function MemoryGraphWorkspace({
   const [stateColors, setStateColors] = useState(true);
   const [manualPositions, setManualPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<MemoryNodeData> | null>(null);
-  const [activeTool, setActiveTool] = useState<MemoryToolId | null>("node");
+  const [activeTool, setActiveTool] = useState<MemoryToolId | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-  const panelRefs = useRef<Partial<Record<FloatingPanelId, HTMLElement | null>>>({});
   const userMovedPanelsRef = useRef<Partial<Record<FloatingPanelId, boolean>>>({});
   const [floatingPanels, setFloatingPanels] = useState<Record<FloatingPanelId, FloatingPanelState>>(DEFAULT_FLOATING_PANELS);
   const floatingPanelZRef = useRef(30);
   const [toolbarVertical, setToolbarVertical] = useState(false);
-
-  const setFloatingPanelRef = useCallback((panelId: FloatingPanelId) => (node: HTMLElement | null) => {
-    panelRefs.current[panelId] = node;
-  }, []);
+  const [panelOpenVersion, setPanelOpenVersion] = useState({ tool: 0, selection: 0 });
+  const layoutReady = canvasSize.width > 0 && canvasSize.height > 0;
 
   const bringPanelForward = useCallback((panelId: FloatingPanelId) => {
     const next = floatingPanelZRef.current + 1;
@@ -966,7 +989,7 @@ function MemoryGraphWorkspace({
     }));
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -992,301 +1015,223 @@ function MemoryGraphWorkspace({
     return () => observer.disconnect();
   }, []);
 
-  const snapFloatingPanelPosition = useCallback((
+  // react-rnd owns pointer drag/resize; this only keeps controlled panel state inside the canvas after release.
+  const fitFloatingPanelState = useCallback((
     panelId: FloatingPanelId,
-    rawX: number,
-    rawY: number,
-    panelWidth: number,
-    panelHeight: number,
-    canvasRect: DOMRect
-  ) => {
+    rawPanel: FloatingPanelState,
+    measuredWidth?: number,
+    measuredHeight?: number
+  ): FloatingPanelState => {
+    if (!canvasSize.width || !canvasSize.height) return rawPanel;
+
     const edgeGap = FLOATING_PANEL_EDGE_GAP;
-    let nextX = clampNumber(rawX, edgeGap, Math.max(edgeGap, canvasRect.width - panelWidth - edgeGap));
-    let nextY = clampNumber(rawY, edgeGap, Math.max(edgeGap, canvasRect.height - panelHeight - edgeGap));
+    const measuredPanelWidth = measuredWidth
+      ?? (typeof rawPanel.width === "number" ? rawPanel.width : 180);
+    const measuredPanelHeight = measuredHeight
+      ?? (typeof rawPanel.height === "number" ? rawPanel.height : 48);
+    const maxWidth = Math.max(FLOATING_PANEL_MIN_WIDTH, canvasSize.width - edgeGap * 2);
+    const maxHeight = Math.max(FLOATING_PANEL_MIN_HEIGHT, canvasSize.height - edgeGap * 2);
+    const panelWidth = panelId === "toolbar"
+      ? measuredPanelWidth
+      : clampNumber(measuredPanelWidth, FLOATING_PANEL_MIN_WIDTH, maxWidth);
+    const panelHeight = panelId === "toolbar"
+      ? measuredPanelHeight
+      : clampNumber(measuredPanelHeight, FLOATING_PANEL_MIN_HEIGHT, maxHeight);
+    const maxX = Math.max(edgeGap, canvasSize.width - panelWidth - edgeGap);
+    const maxY = Math.max(edgeGap, canvasSize.height - panelHeight - edgeGap);
+    let nextX = clampNumber(rawPanel.x, edgeGap, maxX);
+    let nextY = clampNumber(rawPanel.y, edgeGap, maxY);
 
-    nextX = snapNumber(nextX, edgeGap);
-    nextY = snapNumber(nextY, edgeGap);
-    nextX = snapNumber(nextX, canvasRect.width - panelWidth - edgeGap);
-    nextY = snapNumber(nextY, canvasRect.height - panelHeight - edgeGap);
-
-    (Object.keys(panelRefs.current) as FloatingPanelId[]).forEach((otherId) => {
-      if (otherId === panelId) return;
-      const other = panelRefs.current[otherId];
-      if (!other) return;
-      const otherRect = other.getBoundingClientRect();
-      const otherX = otherRect.left - canvasRect.left;
-      const otherY = otherRect.top - canvasRect.top;
-      const otherRight = otherX + otherRect.width;
-      const otherBottom = otherY + otherRect.height;
-
-      nextX = snapNumber(nextX, otherX);
-      nextX = snapNumber(nextX + panelWidth, otherRight) - panelWidth;
-      nextX = snapNumber(nextX, otherRight + edgeGap);
-      nextX = snapNumber(nextX + panelWidth, otherX - edgeGap) - panelWidth;
-      nextY = snapNumber(nextY, otherY);
-      nextY = snapNumber(nextY + panelHeight, otherBottom) - panelHeight;
-      nextY = snapNumber(nextY, otherBottom + edgeGap);
-      nextY = snapNumber(nextY + panelHeight, otherY - edgeGap) - panelHeight;
-    });
+    if (nextX <= FLOATING_PANEL_DOCK_MARGIN) nextX = edgeGap;
+    if (nextY <= FLOATING_PANEL_DOCK_MARGIN) nextY = edgeGap;
+    if (canvasSize.width - (nextX + panelWidth) <= FLOATING_PANEL_DOCK_MARGIN) nextX = maxX;
+    if (canvasSize.height - (nextY + panelHeight) <= FLOATING_PANEL_DOCK_MARGIN) nextY = maxY;
 
     return {
-      x: clampNumber(nextX, edgeGap, Math.max(edgeGap, canvasRect.width - panelWidth - edgeGap)),
-      y: clampNumber(nextY, edgeGap, Math.max(edgeGap, canvasRect.height - panelHeight - edgeGap))
+      ...rawPanel,
+      x: nextX,
+      y: nextY,
+      width: panelId === "toolbar" ? rawPanel.width : panelWidth,
+      height: panelId === "toolbar" ? rawPanel.height : panelHeight
     };
-  }, []);
+  }, [canvasSize.height, canvasSize.width]);
 
-  const beginFloatingPanelDrag = useCallback((panelId: FloatingPanelId, event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const defaultFloatingPanelLayout = useCallback((
+    panelId: FloatingPanelId,
+    panels: Record<FloatingPanelId, FloatingPanelState>,
+    nextActiveTool = activeTool,
+    hasSelection = Boolean(selected)
+  ): FloatingPanelState => {
+    const panel = panels[panelId];
+    if (!layoutReady || panelId === "toolbar") {
+      return fitFloatingPanelState(panelId, panel);
+    }
 
-    event.preventDefault();
-    event.stopPropagation();
-    bringPanelForward(panelId);
-
-    const canvasRect = canvas.getBoundingClientRect();
-    const panelElement = panelRefs.current[panelId];
-    const panelRect = panelElement?.getBoundingClientRect();
-    const startPanel = floatingPanels[panelId];
-    const startPointer = { x: event.clientX, y: event.clientY };
-    const panelWidth = panelRect?.width ?? startPanel.width ?? 360;
-    const panelHeight = panelRect?.height ?? startPanel.height ?? 160;
-    let lastSnappedPosition = { x: startPanel.x, y: startPanel.y };
-    userMovedPanelsRef.current[panelId] = true;
-
-    const movePanel = (moveEvent: PointerEvent) => {
-      const dx = moveEvent.clientX - startPointer.x;
-      const dy = moveEvent.clientY - startPointer.y;
-      const next = snapFloatingPanelPosition(
-        panelId,
-        startPanel.x + dx,
-        startPanel.y + dy,
-        panelWidth,
-        panelHeight,
-        canvasRect
-      );
-      lastSnappedPosition = next;
-      if (panelId === "toolbar") {
-        setToolbarVertical(next.x <= FLOATING_TOOLBAR_DOCK_LIMIT || next.x >= canvasRect.width - panelWidth - FLOATING_TOOLBAR_DOCK_LIMIT);
-      }
-      setFloatingPanels((panels) => ({
-        ...panels,
-        [panelId]: { ...panels[panelId], x: next.x, y: next.y }
-      }));
-    };
-
-    const stopDrag = () => {
-      window.removeEventListener("pointermove", movePanel);
-      window.removeEventListener("pointerup", stopDrag);
-      setFloatingPanels((panels) => ({
-        ...panels,
-        [panelId]: { ...panels[panelId], x: lastSnappedPosition.x, y: lastSnappedPosition.y }
-      }));
-    };
-
-    window.addEventListener("pointermove", movePanel);
-    window.addEventListener("pointerup", stopDrag, { once: true });
-  }, [bringPanelForward, floatingPanels, snapFloatingPanelPosition]);
-
-  const beginFloatingPanelResize = useCallback((panelId: FloatingPanelId, edge: FloatingResizeEdge, event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    const canvas = canvasRef.current;
-    const panelElement = panelRefs.current[panelId];
-    if (!canvas || !panelElement) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    bringPanelForward(panelId);
-    userMovedPanelsRef.current[panelId] = true;
-
-    const canvasRect = canvas.getBoundingClientRect();
-    const panelRect = panelElement.getBoundingClientRect();
-    const startPointer = { x: event.clientX, y: event.clientY };
-    const startX = panelRect.left - canvasRect.left;
-    const startY = panelRect.top - canvasRect.top;
-    const startWidth = panelRect.width;
-    const startHeight = panelRect.height;
-    const startRight = startX + startWidth;
-    const maxWidth = Math.max(FLOATING_PANEL_MIN_WIDTH, canvasRect.width - FLOATING_PANEL_EDGE_GAP * 2);
-    const maxHeight = Math.max(FLOATING_PANEL_MIN_HEIGHT, canvasRect.height - startY - FLOATING_PANEL_EDGE_GAP);
-
-    const resizePanel = (moveEvent: PointerEvent) => {
-      const dx = moveEvent.clientX - startPointer.x;
-      const dy = moveEvent.clientY - startPointer.y;
-      let nextX = startX;
-      let nextWidth = startWidth;
-      let nextHeight = startHeight;
-
-      if (edge.includes("left")) {
-        const rawLeft = clampNumber(startX + dx, FLOATING_PANEL_EDGE_GAP, startRight - FLOATING_PANEL_MIN_WIDTH);
-        const snappedLeft = snapNumber(rawLeft, FLOATING_PANEL_EDGE_GAP);
-        nextWidth = clampNumber(startRight - snappedLeft, FLOATING_PANEL_MIN_WIDTH, maxWidth);
-        nextX = startRight - nextWidth;
-      }
-
-      if (edge.includes("bottom")) {
-        const rawBottom = startY + startHeight + dy;
-        const snappedBottom = snapNumber(rawBottom, canvasRect.height - FLOATING_PANEL_EDGE_GAP);
-        nextHeight = clampNumber(snappedBottom - startY, FLOATING_PANEL_MIN_HEIGHT, maxHeight);
-      }
-
-      setFloatingPanels((panels) => ({
-        ...panels,
-        [panelId]: {
-          ...panels[panelId],
-          x: clampNumber(nextX, FLOATING_PANEL_EDGE_GAP, Math.max(FLOATING_PANEL_EDGE_GAP, canvasRect.width - nextWidth - FLOATING_PANEL_EDGE_GAP)),
-          y: startY,
-          width: nextWidth,
-          height: nextHeight
-        }
-      }));
-    };
-
-    const stopResize = () => {
-      window.removeEventListener("pointermove", resizePanel);
-      window.removeEventListener("pointerup", stopResize);
-    };
-
-    window.addEventListener("pointermove", resizePanel);
-    window.addEventListener("pointerup", stopResize, { once: true });
-  }, [bringPanelForward]);
-
-  const noteFloatingPanelPointerDown = useCallback((panelId: FloatingPanelId, event: ReactPointerEvent<HTMLElement>) => {
-    const panel = panelRefs.current[panelId];
-    if (!panel) return;
-    const rect = panel.getBoundingClientRect();
-    const resizeGripSize = 18;
-    const nearResizeGrip = rect.right - event.clientX <= resizeGripSize || rect.bottom - event.clientY <= resizeGripSize;
-    if (!nearResizeGrip) return;
-    userMovedPanelsRef.current[panelId] = true;
-    bringPanelForward(panelId);
-  }, [bringPanelForward]);
-
-  const floatingPanelStyle = (panelId: FloatingPanelId): CSSProperties => {
-    const panel = floatingPanels[panelId];
-    const style: CSSProperties = {
-      left: panel.x,
-      top: panel.y,
-      zIndex: panel.z
-    };
-    if (panel.width) style.width = panel.width;
-    if (panel.height) style.height = panel.height;
-    return style;
-  };
-
-  useEffect(() => {
-    if (!canvasSize.width || !canvasSize.height) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const dockWidth = defaultFloatingPanelWidth(canvasSize.width);
+    const bothPanelsOpen = Boolean(hasSelection && nextActiveTool);
+    const sideBySideAvailableWidth = canvasSize.width - (FLOATING_PANEL_DOCK_MARGIN * 2) - FLOATING_PANEL_STACK_GAP;
+    const canPlaceSideBySide = bothPanelsOpen && sideBySideAvailableWidth >= FLOATING_PANEL_MIN_WIDTH * 2;
+    const dockWidth = canPlaceSideBySide
+      ? clampNumber(Math.floor(sideBySideAvailableWidth / 2), FLOATING_PANEL_MIN_WIDTH, 560)
+      : defaultFloatingPanelWidth(canvasSize.width);
     const dockX = Math.max(
       FLOATING_PANEL_EDGE_GAP,
       canvasSize.width - dockWidth - FLOATING_PANEL_DOCK_MARGIN
     );
-    const canvasRect = canvas.getBoundingClientRect();
+    const stackHeight = bothPanelsOpen && !canPlaceSideBySide
+      ? clampNumber(
+        Math.floor((canvasSize.height - FLOATING_PANEL_DOCK_MARGIN * 2 - FLOATING_PANEL_STACK_GAP) / 2),
+        FLOATING_PANEL_MIN_HEIGHT,
+        FLOATING_PANEL_DEFAULT_HEIGHT
+      )
+      : undefined;
+
+    if (panelId === "tool" && nextActiveTool) {
+      return fitFloatingPanelState("tool", {
+        ...panel,
+        x: canPlaceSideBySide ? FLOATING_PANEL_DOCK_MARGIN : dockX,
+        y: FLOATING_PANEL_DOCK_MARGIN,
+        width: dockWidth,
+        height: stackHeight ?? (typeof panel.height === "number" ? panel.height : FLOATING_PANEL_DEFAULT_HEIGHT)
+      });
+    }
+
+    if (panelId === "selection" && hasSelection) {
+      return fitFloatingPanelState("selection", {
+        ...panel,
+        x: dockX,
+        y: bothPanelsOpen && !canPlaceSideBySide && stackHeight
+          ? FLOATING_PANEL_DOCK_MARGIN + stackHeight + FLOATING_PANEL_STACK_GAP
+          : FLOATING_PANEL_DOCK_MARGIN,
+        width: dockWidth,
+        height: stackHeight ?? (typeof panel.height === "number" ? panel.height : FLOATING_PANEL_SELECTION_HEIGHT)
+      });
+    }
+
+    return fitFloatingPanelState(panelId, panel);
+  }, [activeTool, canvasSize.width, fitFloatingPanelState, layoutReady, selected]);
+
+  const openMemoryTool = useCallback((tool: MemoryToolId) => {
+    if (activeTool === tool) {
+      setActiveTool(null);
+      return;
+    }
+
+    userMovedPanelsRef.current.tool = false;
+    setFloatingPanels((panels) => {
+      let nextPanels = {
+        ...panels,
+        tool: defaultFloatingPanelLayout("tool", panels, tool, Boolean(selected))
+      };
+      if (selected && !userMovedPanelsRef.current.selection) {
+        nextPanels = {
+          ...nextPanels,
+          selection: defaultFloatingPanelLayout("selection", nextPanels, tool, true)
+        };
+      }
+      return nextPanels;
+    });
+    setPanelOpenVersion((current) => ({ ...current, tool: current.tool + 1 }));
+    setActiveTool(tool);
+  }, [activeTool, defaultFloatingPanelLayout, selected]);
+
+  const openSelectionInspector = useCallback((nextSelected: Record<string, unknown>) => {
+    userMovedPanelsRef.current.selection = false;
+    setFloatingPanels((panels) => {
+      let nextPanels = panels;
+      if (activeTool && !userMovedPanelsRef.current.tool) {
+        nextPanels = {
+          ...nextPanels,
+          tool: defaultFloatingPanelLayout("tool", nextPanels, activeTool, true)
+        };
+      }
+      return {
+        ...nextPanels,
+        selection: defaultFloatingPanelLayout("selection", nextPanels, activeTool, true)
+      };
+    });
+    setPanelOpenVersion((current) => ({ ...current, selection: current.selection + 1 }));
+    setSelected(nextSelected);
+  }, [activeTool, defaultFloatingPanelLayout]);
+
+  useLayoutEffect(() => {
+    if (!layoutReady) return;
 
     setFloatingPanels((panels) => {
-      let changed = false;
-      const next = { ...panels };
+      let nextPanels = panels;
+      const assignPanel = (panelId: FloatingPanelId, panel: FloatingPanelState) => {
+        if (floatingPanelStateEquals(nextPanels[panelId], panel)) return;
+        nextPanels = {
+          ...nextPanels,
+          [panelId]: panel
+        };
+      };
+
+      assignPanel("toolbar", fitFloatingPanelState("toolbar", panels.toolbar));
 
       if (activeTool && !userMovedPanelsRef.current.tool) {
-        const toolRect = panelRefs.current.tool?.getBoundingClientRect();
-        const preferred = snapFloatingPanelPosition(
-          "tool",
-          dockX,
-          FLOATING_PANEL_DOCK_MARGIN,
-          dockWidth,
-          toolRect?.height ?? panels.tool.height ?? 260,
-          canvasRect
-        );
-        next.tool = {
-          ...next.tool,
-          x: preferred.x,
-          y: preferred.y,
-          width: dockWidth,
-          height: undefined
-        };
-        changed = changed
-          || panels.tool.x !== next.tool.x
-          || panels.tool.y !== next.tool.y
-          || panels.tool.width !== dockWidth
-          || panels.tool.height !== undefined;
+        assignPanel("tool", defaultFloatingPanelLayout("tool", nextPanels));
       }
 
       if (selected && !userMovedPanelsRef.current.selection) {
-        const toolHeight = panelRefs.current.tool?.getBoundingClientRect().height
-          ?? panels.tool.height
-          ?? 260;
-        const selectionHeight = panelRefs.current.selection?.getBoundingClientRect().height
-          ?? panels.selection.height
-          ?? 260;
-        const preferredY = activeTool
-          ? FLOATING_PANEL_DOCK_MARGIN + toolHeight + FLOATING_PANEL_STACK_GAP
-          : 96;
-        const preferred = snapFloatingPanelPosition(
-          "selection",
-          dockX,
-          preferredY,
-          dockWidth,
-          selectionHeight,
-          canvasRect
-        );
-        next.selection = {
-          ...next.selection,
-          x: preferred.x,
-          y: preferred.y,
-          width: dockWidth,
-          height: undefined
-        };
-        changed = changed
-          || panels.selection.x !== next.selection.x
-          || panels.selection.y !== next.selection.y
-          || panels.selection.width !== dockWidth
-          || panels.selection.height !== undefined;
+        assignPanel("selection", defaultFloatingPanelLayout("selection", nextPanels));
       }
 
-      return changed ? next : panels;
+      return nextPanels;
     });
-  }, [activeTool, canvasSize.height, canvasSize.width, selected, snapFloatingPanelPosition]);
+  }, [activeTool, defaultFloatingPanelLayout, fitFloatingPanelState, layoutReady, selected]);
 
-  useEffect(() => {
-    if (typeof ResizeObserver === "undefined") return;
-    const panelIds: FloatingPanelId[] = ["tool", "selection"];
-    const observers = panelIds.map((panelId) => {
-      const node = panelRefs.current[panelId];
-      if (!node) return null;
-      const observer = new ResizeObserver((entries) => {
-        const entry = entries[0];
-        const width = Math.round(entry.contentRect.width);
-        const height = Math.round(entry.contentRect.height);
-        setFloatingPanels((panels) => {
-          const current = panels[panelId];
-          const canvas = canvasRef.current;
-          const canvasRect = canvas?.getBoundingClientRect();
-          const snapped = canvasRect
-            ? snapFloatingPanelPosition(panelId, current.x, current.y, width, height, canvasRect)
-            : { x: current.x, y: current.y };
-          const nextHeight = userMovedPanelsRef.current[panelId] ? height : undefined;
-          if (
-            Math.abs((current.width ?? width) - width) < 2
-            && Math.abs((current.height ?? 0) - (nextHeight ?? 0)) < 2
-            && Math.abs(current.x - snapped.x) < 2
-            && Math.abs(current.y - snapped.y) < 2
-          ) {
-            return panels;
-          }
-          return {
-            ...panels,
-            [panelId]: { ...current, x: snapped.x, y: snapped.y, width, height: nextHeight }
-          };
-        });
-      });
-      observer.observe(node);
-      return observer;
-    });
-    return () => observers.forEach((observer) => observer?.disconnect());
-  }, [activeTool, selected, snapFloatingPanelPosition]);
+  const markFloatingPanelInteraction = useCallback((panelId: FloatingPanelId) => {
+    userMovedPanelsRef.current[panelId] = true;
+    bringPanelForward(panelId);
+  }, [bringPanelForward]);
+
+  const handleFloatingDragStop = useCallback((panelId: FloatingPanelId, data: DraggableData) => {
+    const width = data.node.offsetWidth;
+    const height = data.node.offsetHeight;
+    setFloatingPanels((panels) => ({
+      ...panels,
+      [panelId]: fitFloatingPanelState(
+        panelId,
+        { ...panels[panelId], x: data.x, y: data.y },
+        width,
+        height
+      )
+    }));
+    if (panelId === "toolbar") {
+      const nextX = fitFloatingPanelState(panelId, { ...floatingPanels[panelId], x: data.x, y: data.y }, width, height).x;
+      setToolbarVertical(nextX <= FLOATING_TOOLBAR_DOCK_LIMIT || nextX >= canvasSize.width - width - FLOATING_TOOLBAR_DOCK_LIMIT);
+    }
+  }, [canvasSize.width, fitFloatingPanelState, floatingPanels]);
+
+  const handleFloatingResizeStop = useCallback((
+    panelId: FloatingPanelId,
+    ref: HTMLElement,
+    position: { x: number; y: number }
+  ) => {
+    setFloatingPanels((panels) => ({
+      ...panels,
+      [panelId]: fitFloatingPanelState(
+        panelId,
+        { ...panels[panelId], x: position.x, y: position.y, width: ref.offsetWidth, height: ref.offsetHeight },
+        ref.offsetWidth,
+        ref.offsetHeight
+      )
+    }));
+  }, [fitFloatingPanelState]);
+
+  const floatingPanelPosition = (panelId: FloatingPanelId) => {
+    const panel = floatingPanels[panelId];
+    return { x: panel.x, y: panel.y };
+  };
+
+  const floatingPanelSize = (panelId: FloatingPanelId) => {
+    const panel = floatingPanels[panelId];
+    if (panel.width === "auto" || panel.height === "auto") return undefined;
+    return { width: panel.width, height: panel.height };
+  };
+
+  const floatingPanelMaxWidth = Math.max(FLOATING_PANEL_MIN_WIDTH, canvasSize.width - FLOATING_PANEL_EDGE_GAP * 2);
+  const floatingPanelMaxHeight = Math.max(FLOATING_PANEL_MIN_HEIGHT, canvasSize.height - FLOATING_PANEL_EDGE_GAP * 2);
 
   const l2bNodes = liveState.l2b?.nodes ?? [];
   const l2bEdges = liveState.l2b?.edges ?? [];
@@ -1379,7 +1324,7 @@ function MemoryGraphWorkspace({
 
   const onNodeClick: NodeMouseHandler = (_, node) => {
     const source = (node.data as { source?: Record<string, unknown> }).source ?? {};
-    setSelected({ selection_type: "node", ...source });
+    openSelectionInspector({ selection_type: "node", ...source });
     const uuid = String(source.uuid || node.id);
     if (!draftableNodeIds.has(uuid)) return;
     if (!edgeFrom) setEdgeFrom(uuid);
@@ -1388,7 +1333,7 @@ function MemoryGraphWorkspace({
 
   const onEdgeClick: EdgeMouseHandler = (_, edge) => {
     const source = (edge.data as { source?: Record<string, unknown> } | undefined)?.source ?? {};
-    setSelected({
+    openSelectionInspector({
       ...source,
       selection_type: "edge",
       id: edge.id,
@@ -1407,7 +1352,7 @@ function MemoryGraphWorkspace({
     if (position) {
       setManualPositions((current) => ({ ...current, [uuid]: position }));
     }
-    setSelected({ selection_type: "node", ...nodeSource });
+    openSelectionInspector({ selection_type: "node", ...nodeSource });
     setEdgeFrom((currentFrom) => {
       if (!currentFrom) return uuid;
       setEdgeTo((currentTo) => currentTo || (currentFrom !== uuid ? uuid : currentTo));
@@ -1637,7 +1582,7 @@ function MemoryGraphWorkspace({
     const target = connection.target || oldEdge.target;
     setEdgeFrom(source);
     setEdgeTo(target);
-    setSelected({
+    openSelectionInspector({
       selection_type: "edge",
       id: oldEdge.id,
       source,
@@ -1823,7 +1768,7 @@ function MemoryGraphWorkspace({
       if (receipt.success !== false) {
         setPreviewNodes((rows) => [...rows, nodeSource]);
         setManualPositions((current) => ({ ...current, [uuid]: { x: 220, y: 180 } }));
-        setSelected({ selection_type: "node", ...nodeSource });
+        openSelectionInspector({ selection_type: "node", ...nodeSource });
       }
       pushReceipt(receipt);
     } catch (exc) {
@@ -1883,20 +1828,20 @@ function MemoryGraphWorkspace({
     if (!flowInstance) return;
     const selectedId = selectedNodeId || selectedEdgeId;
     if (!selectedId) {
-      flowInstance.fitView({ padding: 0.2, duration: 220 });
+      flowInstance.fitView({ padding: 0.3, duration: 220, maxZoom: 0.78 });
       return;
     }
     if (selectedNodeId) {
-      flowInstance.fitView({ nodes: [{ id: selectedNodeId }], padding: 0.7, duration: 220, maxZoom: 1.25 });
+      flowInstance.fitView({ nodes: [{ id: selectedNodeId }], padding: 0.9, duration: 220, maxZoom: 0.82 });
       return;
     }
     const edge = graphEdges.find((candidate) => candidate.id === selectedEdgeId);
     if (edge) {
       flowInstance.fitView({
         nodes: [{ id: edge.source }, { id: edge.target }],
-        padding: 0.45,
+        padding: 0.55,
         duration: 220,
-        maxZoom: 1.1
+        maxZoom: 0.82
       });
     }
   };
@@ -1916,7 +1861,7 @@ function MemoryGraphWorkspace({
       });
       return next;
     });
-    window.setTimeout(() => flowInstance?.fitView({ padding: 0.2, duration: 220 }), 0);
+    window.setTimeout(() => flowInstance?.fitView({ padding: 0.3, duration: 220, maxZoom: 0.78 }), 0);
   };
   const poolHealth = l15Pool.health ?? {};
   const buckets = l15Pool.buckets ?? [];
@@ -1932,38 +1877,60 @@ function MemoryGraphWorkspace({
       </div>
 
       <div className="canvas-panel" ref={canvasRef}>
-        <div
+        <Rnd
           className={`canvas-toolbar icon-toolbar floating-toolbar${toolbarVertical ? " vertical" : ""}`}
-          ref={setFloatingPanelRef("toolbar")}
-          style={floatingPanelStyle("toolbar")}
+          position={floatingPanelPosition("toolbar")}
+          bounds="parent"
+          dragGrid={FLOATING_PANEL_GRID}
+          enableResizing={false}
+          dragHandleClassName="toolbar-drag-grip"
+          cancel={FLOATING_PANEL_DRAG_CANCEL}
+          onDragStart={() => markFloatingPanelInteraction("toolbar")}
+          onDragStop={(_, data) => handleFloatingDragStop("toolbar", data)}
+          style={{ zIndex: floatingPanels.toolbar.z }}
           onMouseDown={() => bringPanelForward("toolbar")}
         >
           <span
             className="toolbar-drag-grip panel-drag-handle"
             title="Drag toolbar"
-            onPointerDown={(event) => beginFloatingPanelDrag("toolbar", event)}
           />
-          <IconToolButton active={activeTool === "node"} label={t.createNode} onClick={() => setActiveTool(activeTool === "node" ? null : "node")}><Plus size={18} /></IconToolButton>
-          <IconToolButton active={activeTool === "edge"} label={t.draftEdge} onClick={() => setActiveTool(activeTool === "edge" ? null : "edge")}><GitBranch size={18} /></IconToolButton>
-          <IconToolButton active={activeTool === "subgraph"} label={t.subgraph} onClick={() => setActiveTool(activeTool === "subgraph" ? null : "subgraph")}><Layers size={18} /></IconToolButton>
-          <IconToolButton active={activeTool === "filter"} label={t.filters} onClick={() => setActiveTool(activeTool === "filter" ? null : "filter")}><Filter size={18} /></IconToolButton>
-          <IconToolButton active={activeTool === "tags"} label={t.tags} onClick={() => setActiveTool(activeTool === "tags" ? null : "tags")}><Tags size={18} /></IconToolButton>
-          <IconToolButton active={activeTool === "state"} label={t.stateView} onClick={() => setActiveTool(activeTool === "state" ? null : "state")}><Activity size={18} /></IconToolButton>
-          <IconToolButton active={activeTool === "pool"} label={t.l15} onClick={() => setActiveTool(activeTool === "pool" ? null : "pool")}><Database size={18} /></IconToolButton>
-          <IconToolButton active={activeTool === "settings"} label={t.settings} onClick={() => setActiveTool(activeTool === "settings" ? null : "settings")}><Settings size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "node"} label={t.createNode} onClick={() => openMemoryTool("node")}><Plus size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "edge"} label={t.draftEdge} onClick={() => openMemoryTool("edge")}><GitBranch size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "subgraph"} label={t.subgraph} onClick={() => openMemoryTool("subgraph")}><Layers size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "filter"} label={t.filters} onClick={() => openMemoryTool("filter")}><Filter size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "tags"} label={t.tags} onClick={() => openMemoryTool("tags")}><Tags size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "state"} label={t.stateView} onClick={() => openMemoryTool("state")}><Activity size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "pool"} label={t.l15} onClick={() => openMemoryTool("pool")}><Database size={18} /></IconToolButton>
+          <IconToolButton active={activeTool === "settings"} label={t.settings} onClick={() => openMemoryTool("settings")}><Settings size={18} /></IconToolButton>
           <span className="tool-divider" />
           <IconToolButton label={t.focusSelection} onClick={focusSelection}><CircleDot size={18} /></IconToolButton>
           <IconToolButton label={t.layoutGraph} onClick={layoutGraph}><Workflow size={18} /></IconToolButton>
           <IconToolButton label={t.clear} danger onClick={clearPreview}><Trash2 size={18} /></IconToolButton>
-        </div>
+        </Rnd>
 
-        {activeTool ? (
-          <div
+        {activeTool && layoutReady ? (
+          <Rnd
+            key={`tool-${activeTool}-${panelOpenVersion.tool}`}
             className="tool-dock floating-canvas-panel"
-            ref={setFloatingPanelRef("tool")}
-            style={floatingPanelStyle("tool")}
+            size={floatingPanelSize("tool")}
+            position={floatingPanelPosition("tool")}
+            bounds="parent"
+            minWidth={FLOATING_PANEL_MIN_WIDTH}
+            minHeight={FLOATING_PANEL_MIN_HEIGHT}
+            maxWidth={floatingPanelMaxWidth}
+            maxHeight={floatingPanelMaxHeight}
+            dragGrid={FLOATING_PANEL_GRID}
+            resizeGrid={FLOATING_PANEL_GRID}
+            enableResizing={FLOATING_PANEL_RESIZE_ENABLE}
+            resizeHandleClasses={FLOATING_PANEL_RESIZE_HANDLE_CLASSES}
+            dragHandleClassName="panel-drag-handle"
+            cancel={FLOATING_PANEL_DRAG_CANCEL}
+            onDragStart={() => markFloatingPanelInteraction("tool")}
+            onDragStop={(_, data) => handleFloatingDragStop("tool", data)}
+            onResizeStart={() => markFloatingPanelInteraction("tool")}
+            onResizeStop={(_, __, ref, ___, position) => handleFloatingResizeStop("tool", ref, position)}
+            style={{ zIndex: floatingPanels.tool.z }}
             onMouseDown={() => bringPanelForward("tool")}
-            onPointerDown={(event) => noteFloatingPanelPointerDown("tool", event)}
             >
               <MemoryToolPanel
               activeTool={activeTool}
@@ -2012,43 +1979,57 @@ function MemoryGraphWorkspace({
               pushReceipt={pushReceipt}
               onGraphitiPreview={stageGraphitiPreview}
               onSourceApplied={onRefreshMemory}
-              onHeaderPointerDown={(event) => beginFloatingPanelDrag("tool", event)}
-                onClose={() => setActiveTool(null)}
+              onClose={() => setActiveTool(null)}
               />
-              <FloatingPanelResizeHandles
-                onResizePointerDown={(edge, event) => beginFloatingPanelResize("tool", edge, event)}
-              />
-            </div>
+            </Rnd>
         ) : null}
 
-        {selected ? (
-          <SelectionInspector
-            selected={selected}
-            selectedNodeId={selectedNodeId}
-            selectedEdgeId={selectedEdgeId}
-            relatedRefs={selectedNodeRefs}
-            edgeFrom={edgeFrom}
-            edgeTo={edgeTo}
-            t={t}
-            onUseEdgeEndpoints={() => {
-              if (isSelectedEdge(selected)) {
-                setEdgeFrom(String(selected.source || ""));
-                setEdgeTo(String(selected.target || ""));
-                setActiveTool("edge");
-              }
-            }}
-            onDeleteNode={() => void deleteSelectedNodeDraft()}
-            onUpdateEdge={() => void updateSelectedEdgeDraft()}
-            onDeleteEdge={() => void deleteSelectedEdgeDraft()}
-            onSwapEdge={swapSelectedEdgeEndpoints}
-            onClose={() => setSelected(null)}
-            onHeaderPointerDown={(event) => beginFloatingPanelDrag("selection", event)}
-            style={floatingPanelStyle("selection")}
-            panelRef={setFloatingPanelRef("selection")}
-            onFocusPanel={() => bringPanelForward("selection")}
-            onPanelPointerDown={(event) => noteFloatingPanelPointerDown("selection", event)}
-            onResizePointerDown={(edge, event) => beginFloatingPanelResize("selection", edge, event)}
-          />
+        {selected && layoutReady ? (
+          <Rnd
+            key={`selection-${selectedNodeId || selectedEdgeId || panelOpenVersion.selection}-${panelOpenVersion.selection}`}
+            className="selection-float floating-canvas-panel"
+            size={floatingPanelSize("selection")}
+            position={floatingPanelPosition("selection")}
+            bounds="parent"
+            minWidth={FLOATING_PANEL_MIN_WIDTH}
+            minHeight={FLOATING_PANEL_MIN_HEIGHT}
+            maxWidth={floatingPanelMaxWidth}
+            maxHeight={floatingPanelMaxHeight}
+            dragGrid={FLOATING_PANEL_GRID}
+            resizeGrid={FLOATING_PANEL_GRID}
+            enableResizing={FLOATING_PANEL_RESIZE_ENABLE}
+            resizeHandleClasses={FLOATING_PANEL_RESIZE_HANDLE_CLASSES}
+            dragHandleClassName="panel-drag-handle"
+            cancel={FLOATING_PANEL_DRAG_CANCEL}
+            onDragStart={() => markFloatingPanelInteraction("selection")}
+            onDragStop={(_, data) => handleFloatingDragStop("selection", data)}
+            onResizeStart={() => markFloatingPanelInteraction("selection")}
+            onResizeStop={(_, __, ref, ___, position) => handleFloatingResizeStop("selection", ref, position)}
+            style={{ zIndex: floatingPanels.selection.z }}
+            onMouseDown={() => bringPanelForward("selection")}
+          >
+            <SelectionInspector
+              selected={selected}
+              selectedNodeId={selectedNodeId}
+              selectedEdgeId={selectedEdgeId}
+              relatedRefs={selectedNodeRefs}
+              edgeFrom={edgeFrom}
+              edgeTo={edgeTo}
+              t={t}
+              onUseEdgeEndpoints={() => {
+                if (isSelectedEdge(selected)) {
+                  setEdgeFrom(String(selected.source || ""));
+                  setEdgeTo(String(selected.target || ""));
+                  openMemoryTool("edge");
+                }
+              }}
+              onDeleteNode={() => void deleteSelectedNodeDraft()}
+              onUpdateEdge={() => void updateSelectedEdgeDraft()}
+              onDeleteEdge={() => void deleteSelectedEdgeDraft()}
+              onSwapEdge={swapSelectedEdgeEndpoints}
+              onClose={() => setSelected(null)}
+            />
+          </Rnd>
         ) : null}
 
         <div className="canvas-help-chip">
@@ -2075,6 +2056,7 @@ function MemoryGraphWorkspace({
           reconnectRadius={18}
           zoomOnDoubleClick={false}
           fitView
+          fitViewOptions={{ padding: 0.34, maxZoom: 0.72 }}
         >
           <MiniMap
             pannable
@@ -2164,7 +2146,6 @@ function MemoryToolPanel({
   pushReceipt,
   onGraphitiPreview,
   onSourceApplied,
-  onHeaderPointerDown,
   onClose
 }: {
   activeTool: MemoryToolId;
@@ -2213,13 +2194,12 @@ function MemoryToolPanel({
   pushReceipt: (receipt: Receipt | null) => void;
   onGraphitiPreview: (preview: GraphitiPreviewPayload) => void;
   onSourceApplied: () => Promise<void>;
-  onHeaderPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   onClose: () => void;
 }) {
   if (activeTool === "node") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<Plus size={16} />} title={t.createNode} onPointerDown={onHeaderPointerDown} onClose={onClose} />
+        <ToolPanelHead icon={<Plus size={16} />} title={t.createNode} onClose={onClose} />
         <WriteModeBanner operatorMode={operatorMode} t={t} />
         <label><span>{t.nodeLabel}</span><input value={nodeLabel} onChange={(event) => setNodeLabel(event.target.value)} /></label>
         <label><span>{t.nodeKind}</span><select value={nodeKind} onChange={(event) => setNodeKind(event.target.value)}>{NODE_KIND_OPTIONS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
@@ -2230,7 +2210,7 @@ function MemoryToolPanel({
   if (activeTool === "edge") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<GitBranch size={16} />} title={t.draftEdge} onPointerDown={onHeaderPointerDown} onClose={onClose} />
+        <ToolPanelHead icon={<GitBranch size={16} />} title={t.draftEdge} onClose={onClose} />
         <WriteModeBanner operatorMode={operatorMode} t={t} />
         <div className="two-field-grid">
           <label><span>{t.fromUuid}</span><input value={edgeFrom} onChange={(event) => setEdgeFrom(event.target.value)} /></label>
@@ -2252,7 +2232,7 @@ function MemoryToolPanel({
   if (activeTool === "subgraph") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<Layers size={16} />} title={t.subgraph} onPointerDown={onHeaderPointerDown} onClose={onClose} />
+        <ToolPanelHead icon={<Layers size={16} />} title={t.subgraph} onClose={onClose} />
         <label><span>{t.nodeLabel}</span><input value={subgraphLabel} onChange={(event) => setSubgraphLabel(event.target.value)} /></label>
         <label>
           <span>{t.importDestination}</span>
@@ -2277,7 +2257,7 @@ function MemoryToolPanel({
   if (activeTool === "filter") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<Filter size={16} />} title={t.filters} onPointerDown={onHeaderPointerDown} onClose={onClose} />
+        <ToolPanelHead icon={<Filter size={16} />} title={t.filters} onClose={onClose} />
         <label><span>{t.nodeKind}</span><select value={filterKind} onChange={(event) => setFilterKind(event.target.value)}><option value="all">all</option>{NODE_KIND_OPTIONS.map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
       </section>
     );
@@ -2285,7 +2265,7 @@ function MemoryToolPanel({
   if (activeTool === "tags") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<Tags size={16} />} title={t.tags} onPointerDown={onHeaderPointerDown} onClose={onClose} />
+        <ToolPanelHead icon={<Tags size={16} />} title={t.tags} onClose={onClose} />
         <label><span>{t.tags}</span><input value={tagText} onChange={(event) => setTagText(event.target.value)} placeholder="tag-a, tag-b" /></label>
         <button className="button" onClick={onDraftTag}><Tags size={16} /> {t.addTagDraft}</button>
       </section>
@@ -2294,7 +2274,7 @@ function MemoryToolPanel({
   if (activeTool === "state") {
     return (
       <section className="tool-panel">
-        <ToolPanelHead icon={<Activity size={16} />} title={t.stateView} onPointerDown={onHeaderPointerDown} onClose={onClose} />
+        <ToolPanelHead icon={<Activity size={16} />} title={t.stateView} onClose={onClose} />
         <label className="toggle-row">
           <input type="checkbox" checked={stateColors} onChange={(event) => setStateColors(event.target.checked)} />
           <span>{t.statusColors}</span>
@@ -2317,7 +2297,7 @@ function MemoryToolPanel({
   if (activeTool === "pool") {
     return (
       <section className="tool-panel pool-panel">
-        <ToolPanelHead icon={<Database size={16} />} title={t.l15} onPointerDown={onHeaderPointerDown} onClose={onClose} />
+        <ToolPanelHead icon={<Database size={16} />} title={t.l15} onClose={onClose} />
         <L15HealthPanel health={poolHealth} t={t} />
         <SourceBoard liveState={liveState} pushReceipt={pushReceipt} t={t} onGraphitiPreview={onGraphitiPreview} onSourceApplied={onSourceApplied} operatorMode={operatorMode} />
         <div className="bucket-board compact">
@@ -2330,7 +2310,7 @@ function MemoryToolPanel({
   }
   return (
     <section className="tool-panel">
-      <ToolPanelHead icon={<Settings size={16} />} title={t.settings} onPointerDown={onHeaderPointerDown} onClose={onClose} />
+      <ToolPanelHead icon={<Settings size={16} />} title={t.settings} onClose={onClose} />
       <p className="source-card-note">{t.connectHint}</p>
       <p className="source-card-note">RustWorkX stores topology; Node/Edge kind, status, tags and meta stay in payloads for flexible visual mapping.</p>
     </section>
@@ -2340,16 +2320,14 @@ function MemoryToolPanel({
 function ToolPanelHead({
   icon,
   title,
-  onPointerDown,
   onClose
 }: {
   icon: ReactNode;
   title: string;
-  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   onClose: () => void;
 }) {
   return (
-    <div className="tool-panel-head panel-drag-handle" onPointerDown={onPointerDown}>
+    <div className="tool-panel-head panel-drag-handle">
       <strong>{icon}{title}</strong>
       <button
         className="icon-tool tiny"
@@ -2373,32 +2351,6 @@ function WriteModeBanner({ operatorMode, t }: { operatorMode: boolean; t: Consol
   );
 }
 
-function FloatingPanelResizeHandles({
-  onResizePointerDown
-}: {
-  onResizePointerDown: (edge: FloatingResizeEdge, event: ReactPointerEvent<HTMLElement>) => void;
-}) {
-  return (
-    <>
-      <span
-        className="floating-resize-handle left"
-        aria-hidden="true"
-        onPointerDown={(event) => onResizePointerDown("left", event)}
-      />
-      <span
-        className="floating-resize-handle bottom"
-        aria-hidden="true"
-        onPointerDown={(event) => onResizePointerDown("bottom", event)}
-      />
-      <span
-        className="floating-resize-handle bottom-left"
-        aria-hidden="true"
-        onPointerDown={(event) => onResizePointerDown("bottom-left", event)}
-      />
-    </>
-  );
-}
-
 function SelectionInspector({
   selected,
   selectedNodeId,
@@ -2412,13 +2364,7 @@ function SelectionInspector({
   onUpdateEdge,
   onDeleteEdge,
   onSwapEdge,
-  onClose,
-  onHeaderPointerDown,
-  style,
-  panelRef,
-  onFocusPanel,
-  onPanelPointerDown,
-  onResizePointerDown
+  onClose
 }: {
   selected: Record<string, unknown>;
   selectedNodeId: string;
@@ -2433,12 +2379,6 @@ function SelectionInspector({
   onDeleteEdge: () => void;
   onSwapEdge: () => void;
   onClose: () => void;
-  onHeaderPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
-  style: CSSProperties;
-  panelRef: (node: HTMLElement | null) => void;
-  onFocusPanel: () => void;
-  onPanelPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
-  onResizePointerDown: (edge: FloatingResizeEdge, event: ReactPointerEvent<HTMLElement>) => void;
 }) {
   const isEdge = String(selected.selection_type || "") === "edge";
   const title = isEdge ? t.selectedEdge : t.selectedNode;
@@ -2454,8 +2394,8 @@ function SelectionInspector({
     : "";
   const hasRefOrPhotoDetails = !isEdge && (relatedRefs.length > 0 || Boolean(nodeAssetPath) || Boolean(nodeEpisodeRef));
   return (
-    <aside className="selection-float floating-canvas-panel" ref={panelRef} style={style} onMouseDown={onFocusPanel} onPointerDown={onPanelPointerDown}>
-      <div className="selection-head panel-drag-handle" onPointerDown={onHeaderPointerDown}>
+    <div className="selection-float-inner">
+      <div className="selection-head panel-drag-handle">
         <strong>{isEdge ? <GitBranch size={16} /> : <CircleDot size={16} />} {title}</strong>
         <button
           className="icon-tool tiny"
@@ -2529,8 +2469,7 @@ function SelectionInspector({
           <button className="button small danger" onClick={onDeleteNode}>{t.deleteNode}</button>
         )}
       </div>
-      <FloatingPanelResizeHandles onResizePointerDown={onResizePointerDown} />
-    </aside>
+    </div>
   );
 }
 

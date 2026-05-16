@@ -47,7 +47,7 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private bool mountArMobileTemplateInteraction = true;
         [SerializeField] private string arTemplateInputActionsResourcePath = "ARMobileTemplate/XRIStarterAssets/XRI Default Input Actions";
         [SerializeField] private string arTemplateScreenRayInteractorResourcePath = "ARMobileTemplate/XRIStarterAssets/Screen Space Ray Interactor";
-        [SerializeField] private bool showArMobileTemplatePlaneSurfaces = false;
+        [SerializeField] private bool showArMobileTemplatePlaneSurfaces = true;
         [SerializeField] private bool manageXrLifecycle = true;
         [SerializeField] private bool skipXrLifecycleInEditor = true;
 
@@ -74,6 +74,7 @@ namespace ParrotApp.Lifecycle
         public bool XrLifecycleFailed { get; private set; }
         public string LastStatus { get; private set; } = "";
         public string LastSpatialVisualStatus { get; private set; } = "not_mounted";
+        public string LastPlaneMaterialStatus { get; private set; } = "not_seen";
         public string LastTemplateInteractionStatus { get; private set; } = "not_mounted";
 
         private bool _xrStartInProgress;
@@ -393,6 +394,7 @@ namespace ParrotApp.Lifecycle
             SyncPlaneSurfaceVisibility();
             LastSpatialVisualStatus = "ar_mobile_template_plane:" + arTemplatePlanePrefabResourcePath
                                       + ":surface=" + (showArMobileTemplatePlaneSurfaces ? "on" : "dots");
+            RefreshPlaneMaterialStatus();
             return true;
         }
 
@@ -429,6 +431,20 @@ namespace ParrotApp.Lifecycle
             {
                 if (_planeVisualCompanions[i] != null)
                     _planeVisualCompanions[i].visualizeSurfaces = showArMobileTemplatePlaneSurfaces;
+            }
+            RefreshPlaneMaterialStatus();
+        }
+
+        private void RefreshPlaneMaterialStatus()
+        {
+            LastPlaneMaterialStatus = "planes=" + _planeVisualCompanions.Count;
+            for (int i = 0; i < _planeVisualCompanions.Count; i++)
+            {
+                var visualizer = _planeVisualCompanions[i];
+                if (visualizer == null)
+                    continue;
+                LastPlaneMaterialStatus += ":" + visualizer.materialDebugSummary;
+                return;
             }
         }
 

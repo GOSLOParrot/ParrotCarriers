@@ -2006,13 +2006,13 @@ def test_ref_binding_draft_is_core_candidate_and_draft_only() -> None:
         assert draft["action"] == "refs.binding.draft"
         assert draft["success"] is True
         assert draft["data"]["core_candidate"] == "CORE-006"
-        assert draft["data"]["apply_route"] == ""
+        assert draft["data"]["apply_route"] == "/api/refs/binding/apply"
         assert draft["data"]["current_ref"]["ref_id"] == ref.ref_id
         assert draft["data"]["draft_target"] == {
             "target_kind": "l2b_node",
             "target_id": "node-web-ref",
         }
-        assert "Unity/App DTOs" in draft["data"]["policy"]
+        assert "does not mutate L2-B" in draft["data"]["policy"]
         assert missing["success"] is False
         assert missing["data"]["error"] == "missing_target_id"
         assert unresolved["success"] is True
@@ -2023,6 +2023,57 @@ def test_ref_binding_draft_is_core_candidate_and_draft_only() -> None:
             "target_kind": "unresolved",
             "target_id": "",
         }
+
+        preview = client.post(
+            "/api/refs/binding/apply",
+            json={
+                "ref_id": ref.ref_id,
+                "target_kind": "l2b_node",
+                "target_id": "node-web-ref",
+                "dry_run": True,
+                "operator_mode": False,
+            },
+        ).json()
+        applied = client.post(
+            "/api/refs/binding/apply",
+            json={
+                "ref_id": ref.ref_id,
+                "target_kind": "l2b_node",
+                "target_id": "node-web-ref",
+                "event_id": "evt-web-ref-apply",
+                "dry_run": False,
+                "operator_mode": True,
+            },
+        ).json()
+        unresolve_apply = client.post(
+            "/api/refs/binding/apply",
+            json={
+                "ref_id": ref.ref_id,
+                "target_kind": "unresolved",
+                "event_id": "evt-web-ref-unresolve",
+                "dry_run": False,
+                "operator_mode": True,
+            },
+        ).json()
+
+        assert preview["action"] == "refs.binding.apply"
+        assert preview["success"] is True
+        assert preview["data"]["would_apply"] is True
+        assert preview["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
+        assert applied["action"] == "refs.binding.apply"
+        assert applied["success"] is True
+        assert applied["dry_run"] is False
+        assert applied["operator_mode"] is True
+        assert applied["data"]["mutated"] is True
+        assert applied["data"]["updated_ref"]["revision"] == ref.revision + 1
+        assert applied["data"]["updated_ref"]["target_kind"] == "l2b_node"
+        assert applied["data"]["updated_ref"]["target_id"] == "node-web-ref"
+        assert applied["data"]["direct_l2b_write"] is False
+        assert applied["data"]["direct_graphiti_write"] is False
+        assert unresolve_apply["success"] is True
+        assert unresolve_apply["data"]["updated_ref"]["target_kind"] == "unresolved"
+        assert unresolve_apply["data"]["updated_ref"]["target_id"] == ""
+        assert refs_registry.get_ref(ref.ref_id).target_kind == "unresolved"
     finally:
         refs_registry.reset_refs_for_tests()
 

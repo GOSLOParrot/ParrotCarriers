@@ -155,11 +155,6 @@ public final class AndroidAudioRouteManager {
             sendSnapshot("apply_preferred_device_unsupported_api");
             return false;
         }
-        if (!hasBluetoothConnectPermission()) {
-            sendSnapshotWithError("apply_preferred_device", "bluetooth_connect_denied");
-            return false;
-        }
-
         try {
             AudioDeviceInfo target = chooseCommunicationDevice();
             if (target == null) {
@@ -270,6 +265,7 @@ public final class AndroidAudioRouteManager {
         if (audioManager == null || Build.VERSION.SDK_INT < 31) return null;
         List<AudioDeviceInfo> devices = audioManager.getAvailableCommunicationDevices();
         if (devices == null || devices.isEmpty()) return null;
+        boolean canUseBluetooth = hasBluetoothConnectPermission();
 
         if ("phone_mic".equals(preference)) {
             AudioDeviceInfo earpiece = firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
@@ -279,10 +275,12 @@ public final class AndroidAudioRouteManager {
             return devices.get(0);
         }
 
-        if ("bluetooth".equals(preference) || "auto".equals(preference)) {
+        if (canUseBluetooth && ("bluetooth".equals(preference) || "auto".equals(preference))) {
             AudioDeviceInfo bluetooth = firstDevice(devices, AudioDeviceInfo.TYPE_BLUETOOTH_SCO);
             if (bluetooth != null) return bluetooth;
-            if ("bluetooth".equals(preference)) return null;
+            // Explicit Bluetooth preference is advisory. When no SCO device is
+            // connected, the formal App must keep voice usable through the
+            // phone mic instead of blocking LiveKit publish on a missing route.
         }
 
         AudioDeviceInfo wired = firstAnyDevice(

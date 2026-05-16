@@ -336,13 +336,143 @@ def draft_ref_binding(payload: dict[str, Any] | None = None) -> dict[str, Any]:
             "would_unresolve": is_unresolved_target,
             "write_path": write_path,
             "operator_required_for_execute": True,
-            "apply_route": "",
+            "apply_route": "/api/refs/binding/apply",
             "core_candidate": "CORE-006",
             "shared_status": "candidate_only",
             "policy": (
-                "draft_only_until_CORE_006_is_ratified; Web operator apply must "
-                "remain separate from Unity/App DTOs"
+                "Web operator apply updates only the session RefBinding registry; "
+                "it does not mutate L2-B, Graphiti, or Unity/App DTOs"
             ),
+        },
+    )
+
+
+def apply_ref_binding(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Apply a RefBinding target update under explicit Web operator mode."""
+
+    from parrot.brain import refs as refs_registry
+    from parrot.shared.ref_binding import RefTargetKind
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    ref_id = str(body.get("ref_id") or "").strip()
+    target_kind_raw = str(body.get("target_kind") or RefTargetKind.L2B_NODE.value).strip()
+    target_id = str(body.get("target_id") or body.get("target_uuid") or "").strip()
+    event_id = str(body.get("event_id") or "web_console.refs.binding.apply").strip()
+    valid_target_kinds = [item.value for item in RefTargetKind]
+    target_kind = _parse_enum(RefTargetKind, target_kind_raw)
+
+    if not ref_id:
+        return _receipt(
+            action="refs.binding.apply",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "error": "missing_ref_id",
+                "valid_target_kinds": valid_target_kinds,
+                "core_candidate": "CORE-006",
+            },
+        )
+    if target_kind is None:
+        return _receipt(
+            action="refs.binding.apply",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "ref_id": ref_id,
+                "error": "invalid_target_kind",
+                "target_kind": target_kind_raw,
+                "valid_target_kinds": valid_target_kinds,
+                "core_candidate": "CORE-006",
+            },
+        )
+    if target_kind is not RefTargetKind.UNRESOLVED and not target_id:
+        return _receipt(
+            action="refs.binding.apply",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "ref_id": ref_id,
+                "target_kind": target_kind.value,
+                "error": "missing_target_id",
+                "core_candidate": "CORE-006",
+            },
+        )
+
+    current_ref = refs_registry.get_ref(ref_id)
+    if current_ref is None:
+        return _receipt(
+            action="refs.binding.apply",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "ref_id": ref_id,
+                "target_kind": target_kind.value,
+                "target_id": target_id,
+                "error": "ref_not_found",
+                "write_path": "RefBindingRegistry.resolve_ref(ref_id, target_kind, target_id)",
+                "operator_required_for_execute": True,
+                "core_candidate": "CORE-006",
+                "shared_status": "candidate_only",
+            },
+        )
+
+    draft_target_id = "" if target_kind is RefTargetKind.UNRESOLVED else target_id
+    write_path = (
+        "RefBinding.with_resolved_target(target_kind=unresolved, target_id='')"
+        if target_kind is RefTargetKind.UNRESOLVED
+        else "RefBindingRegistry.resolve_ref(ref_id, target_kind, target_id)"
+    )
+    if dry_run or not operator_mode:
+        return _receipt(
+            action="refs.binding.apply",
+            success=True,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "ref_id": ref_id,
+                "current_ref": _jsonable(current_ref),
+                "draft_target": {
+                    "target_kind": target_kind.value,
+                    "target_id": draft_target_id,
+                },
+                "would_apply": True,
+                "apply_skipped_reason": "dry_run_or_operator_mode_missing",
+                "write_path": write_path,
+                "operator_required_for_execute": True,
+                "core_candidate": "CORE-006",
+                "shared_status": "candidate_only",
+            },
+        )
+
+    updated = refs_registry.resolve_ref(
+        ref_id,
+        target_kind=target_kind,
+        target_id=draft_target_id,
+        new_event_id=event_id,
+    )
+    return _receipt(
+        action="refs.binding.apply",
+        success=updated is not None,
+        dry_run=False,
+        operator_mode=True,
+        data={
+            "ref_id": ref_id,
+            "previous_ref": _jsonable(current_ref),
+            "updated_ref": _jsonable(updated),
+            "write_path": write_path,
+            "core_candidate": "CORE-006",
+            "shared_status": "candidate_only",
+            "mutated": updated is not None,
+            "mutation_scope": "session_ref_binding_registry_only",
+            "direct_l2b_write": False,
+            "direct_graphiti_write": False,
+            "app_dto": False,
         },
     )
 

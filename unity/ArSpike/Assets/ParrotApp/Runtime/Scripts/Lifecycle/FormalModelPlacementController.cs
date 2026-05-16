@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using ParrotApp.Config;
@@ -53,10 +54,17 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private bool preferHorizontalPlacementPlanes = true;
         [SerializeField] private float minPlacementPlaneUpDot = 0.5f;
         [SerializeField] private bool forceManifestHeightAfterPlacement = true;
+        [SerializeField] private int manifestHeightNormalizationPasses = 40;
+        [SerializeField] private float manifestHeightNormalizationDelaySeconds = 0.1f;
         [SerializeField] private bool applyDemoRandomAngleAtSpawn = true;
         [SerializeField] private float defaultDistanceMeters = 1.2f;
         [SerializeField] private float minScaleMultiplier = 0.25f;
         [SerializeField] private float maxScaleMultiplier = 2f;
+        [SerializeField] private int selectionRingSegments = 72;
+        [SerializeField] private float selectionRingWidthMeters = 0.008f;
+        [SerializeField] private float selectionRingHeightOffsetMeters = 0.018f;
+        [SerializeField] private float selectionRingMaxRadiusMeters = 0.65f;
+        [SerializeField] private Color selectionRingColor = new Color(1f, 1f, 1f, 0.72f);
         [SerializeField] private float demoSpawnAngleRangeDegrees = 45f;
         [SerializeField] private float tapMaxSeconds = 0.32f;
         [SerializeField] private float tapMaxMovePixels = 28f;
@@ -86,7 +94,10 @@ namespace ParrotApp.Lifecycle
                 string visual = string.IsNullOrWhiteSpace(LastVisualSource) ? "none" : LastVisualSource;
                 string selected = HasSelectedModel ? "selected" : "not_selected";
                 string xri = TemplateXriInteractionActive ? "xri:" + ShortReason(LastTemplateXriStatus) : "custom_touch";
-                return mode + " " + place + " " + selected + " " + visual + " " + xri;
+                string height = string.IsNullOrWhiteSpace(_lastHeightNormalizationStatus)
+                    ? "height_unknown"
+                    : _lastHeightNormalizationStatus;
+                return mode + " " + place + " " + selected + " " + visual + " " + xri + " " + height;
             }
         }
         public bool CanPlaceNow => startupFlow != null
@@ -113,6 +124,10 @@ namespace ParrotApp.Lifecycle
         private GameObject _selectionVisual;
         private Material _selectionVisualMaterial;
         private bool _reportedGosloOutOfView;
+        private Coroutine _heightNormalizationCoroutine;
+        private bool _userScaleOverrideActive;
+        private bool _heightNormalizedOnce;
+        private string _lastHeightNormalizationStatus = "height_idle";
 
         private void OnEnable()
         {
@@ -322,10 +337,13 @@ namespace ParrotApp.Lifecycle
             PlacedModel.SetActive(true);
             if (firstPlacement)
             {
-                ForceManifestHeightAfterPlacement();
+                _userScaleOverrideActive = false;
+                _heightNormalizedOnce = false;
+                ForceManifestHeightAfterPlacement("initial");
                 _placedBaseScale = PlacedModel.transform.localScale;
                 ScaleMultiplier = 1f;
                 PlayPlacementGreeting();
+                StartHeightNormalizationPasses(PlacedModel);
             }
             ApplyScaleMultiplier();
             SelectPlacedModel(true, "placed");
@@ -354,12 +372,20 @@ namespace ParrotApp.Lifecycle
                 Destroy(PlacedModel);
                 PlacedModel = null;
             }
+            if (_heightNormalizationCoroutine != null)
+            {
+                StopCoroutine(_heightNormalizationCoroutine);
+                _heightNormalizationCoroutine = null;
+            }
             DestroySelectionVisual();
             HasPlacedModel = false;
             HasSelectedModel = false;
             ScaleMultiplier = 1f;
             _isDraggingModel = false;
             _mouseDraggingModel = false;
+            _userScaleOverrideActive = false;
+            _heightNormalizedOnce = false;
+            _lastHeightNormalizationStatus = "height_idle";
             LastPlacementMode = "none";
             LastVisualSource = "none";
             LastPlacementStatus = "cleared";
@@ -389,6 +415,7 @@ namespace ParrotApp.Lifecycle
         public void ScaleSelectedModel(float multiplier, string reason = "manual")
         {
             if (PlacedModel == null) return;
+            _userScaleOverrideActive = true;
             ScaleMultiplier = Mathf.Clamp(multiplier, Mathf.Max(0.05f, minScaleMultiplier), Mathf.Max(minScaleMultiplier, maxScaleMultiplier));
             ApplyScaleMultiplier();
             LastSelectionStatus = "scaled:" + ScaleMultiplier.ToString("0.00") + ":" + ShortReason(reason);
@@ -809,6 +836,7 @@ namespace ParrotApp.Lifecycle
         private bool TryMoveSelectedModelOnPlane(Vector2 screenPoint, string reason)
         {
             if (PlacedModel == null) return false;
+            _userScaleOverrideActive = true;
             if (!TryResolveArRaycastPose(screenPoint, out Pose pose, out Vector3 surfaceNormal, out string status))
             {
                 LastSelectionStatus = ShortReason(status);
@@ -869,26 +897,86 @@ namespace ParrotApp.Lifecycle
             PlacedModel.transform.localScale = _placedBaseScale * ScaleMultiplier;
         }
 
-        private void ForceManifestHeightAfterPlacement()
+        private bool ForceManifestHeightAfterPlacement(string reason = "sync")
         {
             if (!forceManifestHeightAfterPlacement || PlacedModel == null || _manifest == null)
-                return;
+                return false;
             float targetHeight = _manifest.default_pet_height_m > 0f
                 ? _manifest.default_pet_height_m
                 : 0.16f;
-            if (targetHeight <= 0f || !TryGetPlacedModelBounds(out Bounds bounds))
-                return;
+            if (targetHeight <= 0f)
+            {
+                _lastHeightNormalizationStatus = "height_target_missing";
+                return false;
+            }
+            if (!TryGetPlacedModelBounds(out Bounds bounds))
+            {
+                _lastHeightNormalizationStatus = "height_bounds_wait:" + ShortReason(reason);
+                return false;
+            }
 
             float currentHeight = bounds.size.y;
             if (currentHeight <= 0.0001f)
-                return;
+            {
+                _lastHeightNormalizationStatus = "height_zero:" + ShortReason(reason);
+                return false;
+            }
 
             float ratio = targetHeight / currentHeight;
             if (ratio <= 0f || float.IsNaN(ratio) || float.IsInfinity(ratio))
-                return;
+            {
+                _lastHeightNormalizationStatus = "height_ratio_bad:" + ShortReason(reason);
+                return false;
+            }
 
             PlacedModel.transform.localScale = PlacedModel.transform.localScale * ratio;
-            LastVisualSource = ShortReason(LastVisualSource + ":height=" + targetHeight.ToString("0.00") + "m");
+            _placedBaseScale = PlacedModel.transform.localScale;
+            ScaleMultiplier = 1f;
+            _heightNormalizedOnce = true;
+            _lastHeightNormalizationStatus =
+                "height=" + currentHeight.ToString("0.00")
+                + "->" + targetHeight.ToString("0.00")
+                + "m:" + ShortReason(reason);
+            LastVisualSource = ShortReason(
+                LastVisualSource + ":height=" + currentHeight.ToString("0.00")
+                + "->" + targetHeight.ToString("0.00") + "m:" + ShortReason(reason));
+            return true;
+        }
+
+        private void StartHeightNormalizationPasses(GameObject target)
+        {
+            if (!forceManifestHeightAfterPlacement || target == null)
+                return;
+            if (_heightNormalizationCoroutine != null)
+                StopCoroutine(_heightNormalizationCoroutine);
+            _heightNormalizationCoroutine = StartCoroutine(HeightNormalizationPasses(target));
+        }
+
+        private System.Collections.IEnumerator HeightNormalizationPasses(GameObject target)
+        {
+            int passes = Mathf.Max(1, manifestHeightNormalizationPasses);
+            for (int i = 0; i < passes; i++)
+            {
+                yield return null;
+                if (manifestHeightNormalizationDelaySeconds > 0f)
+                    yield return new WaitForSeconds(manifestHeightNormalizationDelaySeconds);
+
+                if (target == null || target != PlacedModel)
+                    break;
+                if (_userScaleOverrideActive)
+                {
+                    _lastHeightNormalizationStatus = "height_user_scale";
+                    break;
+                }
+
+                if (ForceManifestHeightAfterPlacement("pass" + i))
+                {
+                    ApplyScaleMultiplier();
+                    NotifyPlacementStateChanged();
+                }
+            }
+
+            _heightNormalizationCoroutine = null;
         }
 
         private void RefreshScaleMultiplierFromPlacedTransform()
@@ -967,6 +1055,15 @@ namespace ParrotApp.Lifecycle
 
         private void HandleTemplateXriSelectEntered(SelectEnterEventArgs args)
         {
+            // The AR Mobile template fires select as part of the placement tap.
+            // Treat it as focus until the manifest-height pass has succeeded;
+            // otherwise a just-spawned model can skip delayed normalization and
+            // stay at importer size on phone.
+            if (_heightNormalizedOnce)
+                _userScaleOverrideActive = true;
+            else if (!_lastHeightNormalizationStatus.StartsWith("height_wait_xri_select", StringComparison.Ordinal))
+                _lastHeightNormalizationStatus = "height_wait_xri_select";
+
             SelectPlacedModel(true, "xri_select");
             LastTemplateXriStatus = "selected";
         }
@@ -1088,19 +1185,40 @@ namespace ParrotApp.Lifecycle
 
             if (_selectionVisual == null)
             {
-                _selectionVisual = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                _selectionVisual = new GameObject("FormalPlacedModelSelectionRing");
                 _selectionVisual.name = "FormalPlacedModelSelectionRing";
-                var collider = _selectionVisual.GetComponent<Collider>();
-                if (collider != null) Destroy(collider);
-                var renderer = _selectionVisual.GetComponent<Renderer>();
-                if (renderer != null)
-                    renderer.material = SelectionVisualMaterial();
+                var line = _selectionVisual.AddComponent<LineRenderer>();
+                line.useWorldSpace = true;
+                line.loop = true;
+                line.numCornerVertices = 4;
+                line.numCapVertices = 4;
+                line.alignment = LineAlignment.View;
+                line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                line.receiveShadows = false;
+                line.material = SelectionVisualMaterial();
             }
 
-            float radius = Mathf.Clamp(Mathf.Max(bounds.extents.x, bounds.extents.z) * 1.25f, 0.08f, 1.25f);
-            _selectionVisual.transform.position = new Vector3(bounds.center.x, bounds.min.y + 0.012f, bounds.center.z);
-            _selectionVisual.transform.rotation = Quaternion.identity;
-            _selectionVisual.transform.localScale = new Vector3(radius * 2f, 0.004f, radius * 2f);
+            var ring = _selectionVisual.GetComponent<LineRenderer>();
+            if (ring == null)
+                ring = _selectionVisual.AddComponent<LineRenderer>();
+
+            int segmentCount = Mathf.Clamp(selectionRingSegments, 24, 128);
+            float radius = Mathf.Clamp(
+                Mathf.Max(bounds.extents.x, bounds.extents.z) * 1.18f,
+                0.08f,
+                Mathf.Max(0.12f, selectionRingMaxRadiusMeters));
+            Vector3 center = new Vector3(bounds.center.x, bounds.min.y + selectionRingHeightOffsetMeters, bounds.center.z);
+
+            ring.positionCount = segmentCount;
+            ring.widthMultiplier = Mathf.Max(0.002f, selectionRingWidthMeters);
+            ring.startColor = selectionRingColor;
+            ring.endColor = selectionRingColor;
+            ring.material = SelectionVisualMaterial();
+            for (int i = 0; i < segmentCount; i++)
+            {
+                float angle = (Mathf.PI * 2f * i) / segmentCount;
+                ring.SetPosition(i, center + new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius));
+            }
         }
 
         private void DestroySelectionVisual()
@@ -1115,14 +1233,37 @@ namespace ParrotApp.Lifecycle
         private Material SelectionVisualMaterial()
         {
             if (_selectionVisualMaterial != null) return _selectionVisualMaterial;
-            var shader = Shader.Find("Sprites/Default") ?? Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Standard");
+            var shader = Shader.Find("Sprites/Default")
+                         ?? Shader.Find("Universal Render Pipeline/Unlit")
+                         ?? Shader.Find("Unlit/Transparent")
+                         ?? Shader.Find("Unlit/Color")
+                         ?? Shader.Find("Standard");
             if (shader == null)
                 shader = Shader.Find("UI/Default");
             if (shader == null)
                 shader = Shader.Find("Hidden/Internal-Colored");
-            _selectionVisualMaterial = new Material(shader);
-            _selectionVisualMaterial.color = new Color(0.95f, 0.72f, 0.32f, 0.62f);
-            _selectionVisualMaterial.renderQueue = 3000;
+            _selectionVisualMaterial = new Material(shader)
+            {
+                name = "FormalSelectionRingTransparentWhite",
+                color = selectionRingColor,
+                renderQueue = 3100,
+            };
+            if (_selectionVisualMaterial.HasProperty("_BaseColor"))
+                _selectionVisualMaterial.SetColor("_BaseColor", selectionRingColor);
+            if (_selectionVisualMaterial.HasProperty("_Color"))
+                _selectionVisualMaterial.SetColor("_Color", selectionRingColor);
+            if (_selectionVisualMaterial.HasProperty("_Surface"))
+                _selectionVisualMaterial.SetFloat("_Surface", 1f);
+            if (_selectionVisualMaterial.HasProperty("_Blend"))
+                _selectionVisualMaterial.SetFloat("_Blend", 0f);
+            if (_selectionVisualMaterial.HasProperty("_SrcBlend"))
+                _selectionVisualMaterial.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (_selectionVisualMaterial.HasProperty("_DstBlend"))
+                _selectionVisualMaterial.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (_selectionVisualMaterial.HasProperty("_ZWrite"))
+                _selectionVisualMaterial.SetFloat("_ZWrite", 0f);
+            _selectionVisualMaterial.EnableKeyword("_ALPHABLEND_ON");
+            _selectionVisualMaterial.DisableKeyword("_ALPHATEST_ON");
             return _selectionVisualMaterial;
         }
 

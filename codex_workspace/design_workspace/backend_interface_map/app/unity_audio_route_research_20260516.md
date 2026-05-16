@@ -329,6 +329,20 @@ Implemented on 2026-05-16:
   route library disables its own `BuildConfig` generation. This prevents the
   launcher module from colliding with a generated
   `com.parrotcarriers.app.BuildConfig` during dex merge.
+- Uplink truth fix: LiveKit `PublishTrack` only proves the track was accepted by
+  the room. The formal App now waits for Unity `Microphone.GetPosition(...)` to
+  advance after `MicrophoneSource.Start()`. If capture never starts, Unity
+  unpublishes the track and reports `microphone_start_timeout` /
+  `microphone_start_exception` instead of fake `audio_published=true`.
+- If publish intent is disabled, shutdown starts, or the room disconnects while
+  Unity is waiting for microphone samples, the startup attempt aborts and cleans
+  up instead of later marking the uplink as published.
+- Cleanup fix: local track/source creation or `PublishTrack` failure clears the
+  half-built `_micSource` / `_audioTrack` before retry, so a later route change
+  or reconnect does not inherit stale local audio state.
+- HUD diagnostic update: formal home now separates `UsingMic` from `Uplink` so
+  phone tests can distinguish OS route/device selection from actual LiveKit
+  microphone capture.
 
 Validation so far:
 

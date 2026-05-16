@@ -79,10 +79,10 @@ Not complete:
 | `Runtime/Scripts/Backend/AppHomeMenuClient.cs` | App HTTP client for `/api/app/canvas`, `/api/app/personas`, `/api/app/line-profiles`, `/api/app/workspace/apply`, `/api/app/camera/mode`, `/api/app/awareness`, and `/api/app/xrhand/mode`. Do not add full-snapshot RPC paths. | Formal source. |
 | `Runtime/Scripts/Lifecycle/FormalMainReadyGate.cs` | Keep as the only `ReportRunning()` owner. Homepage components satisfy START, LiveKit/Brain/DataChannel, HUD, menu, model, and AR/session gates; they do not bypass this gate. Mic/video publish readiness is health/HUD-degraded state, not a blocker that keeps the startup hold surface over the AR home. | Formal source. |
 | `Runtime/Scripts/Lifecycle/FormalModelReadyReporter.cs` | Reuse for manifest resolution before placing model UI. It reports only `model_resolved`. | Formal source. |
-| `Runtime/Scripts/Lifecycle/FormalModelPlacementController.cs` | First formal placement owner: after `MainUiReadyOnce` and `FormalMainReadyGate.IsReady`, tries AR Foundation plane raycast placement, loads the selected manifest visual from `Resources/Models/**` when available, immediately bootstraps its manifest controller, uses EnhancedTouch for demo2-like tap placement/selection, one-finger drag on AR planes, pinch scale with 0.25-2.0 bounds, refuses to fake-place when AR misses a plane, uses a whitebox only after a valid placement when the runtime asset cannot load, and then triggers `onGosloPlaced` through `AppStartupFlowController.ReportGosloPlaced()`. | Formal source; phone proof still pending. |
+| `Runtime/Scripts/Lifecycle/FormalModelPlacementController.cs` | First formal placement owner: after `MainUiReadyOnce` and `FormalMainReadyGate.IsReady`, tries AR Foundation plane raycast placement, loads the selected manifest visual from `Resources/Models/**` when available, immediately bootstraps its manifest controller, uses EnhancedTouch for demo2-like tap placement/selection, one-finger drag on AR planes, pinch scale with 0.25-2.0 bounds, refuses to fake-place when AR misses a plane, uses a whitebox only after a valid placement when the runtime asset cannot load, and then triggers `onGosloPlaced` through `AppStartupFlowController.ReportGosloPlaced()`. Selection affordance is a non-blocking transparent white `LineRenderer` ring, not an orange cylinder/slab mesh. | Formal source; phone proof still pending. |
 | `Runtime/Scripts/UI/FormalModelRemoteController.cs` | First local model remote owner: a small bottom-left joystick appears after main-ready and placement. It routes Ner to `spine_walk`, GOSLO to `ParrotController`/`AnimationDriver.WalkOnPlane`, and degrades visibly to local translation when no owner exists. | Formal source; local-only, no Brain RPC or menu persistence. |
 | `Runtime/Scripts/Lifecycle/FormalXrHandPerchController.cs` | First formal hand-perch owner: mounts `HandGestureSource`, gates `PerchOnHand` behind main-ready + placed model + manifest/controller `perch` support + `AnimationDriver`, and reports debug-only/package-missing degraded status when `UNITY_XR_HANDS` is unavailable. | Formal source; no Brain RPC/menu persistence, and not phone proof until XR Hands package/define and iQOO Neo9 logs exist. |
-| `Runtime/Scripts/Lifecycle/FormalArRuntimeBootstrap.cs` and `FormalArSessionBaselineReporter.cs` | Keep AR runtime bootstrap behind the AR/session gate, not during the startup page. The bootstrap mounts XROrigin, ARRaycastManager, ARPlaneManager, camera managers, ARInputManager, Input System TrackedPoseDriver, demo2 `XRUIInputModule`, and the imported Unity AR Mobile template `ARFeatheredPlane` visual chain plus XRI screen-ray/object-spawner bridge for formal AR placement/video. The previous hand-written plane mesh and point-dot visuals are removed. | Formal source. |
+| `Runtime/Scripts/Lifecycle/FormalArRuntimeBootstrap.cs` and `FormalArSessionBaselineReporter.cs` | Keep AR runtime bootstrap behind the AR/session gate, not during the startup page. The bootstrap mounts XROrigin, ARRaycastManager, ARPlaneManager, camera managers, ARInputManager, Input System TrackedPoseDriver, demo2 `XRUIInputModule`, and the imported Unity AR Mobile template `ARFeatheredPlane` visual chain plus XRI screen-ray/object-spawner bridge for formal AR placement/video. The previous hand-written plane mesh and point-dot visuals are removed. Android builds keep the copied ShaderGraph by default; the runtime-safe white-dot plane material is only an emergency/null/error fallback. | Formal source. |
 | `Runtime/Scripts/LiveKit/**` | Reuse RoomManager, fresh-token reconnect supervisor, mic/video publishers, audio route policy reporter, video tier receiver. | Formal source; phone proof still pending. |
 | `Runtime/Scripts/Ecp/**` | Reuse heartbeat, state/event publisher, event dispatcher, object-payload parser. | Formal ECP source; no full menu dumps. |
 | `Runtime/Scripts/Attention/**`, `Photo/**`, `Hands/**` | Photo is first wired by `FormalHomeToolController`; Hands is first wired by `FormalXrHandPerchController`. Attention/BBox modules remain reference-ready but are not active from formal homepage V1 until after phone stability and the backend SVA/ECP evidence upgrade. | Formal-capable modules. Phone proof and richer interaction design are still pending. |
@@ -215,6 +215,7 @@ The first formal homepage HUD/menu slice can be considered implemented when:
 - Persona/LineProfile selection APIs exist or are planned through App HTTP, but
   the formal homepage selector UI is not built.
 - Audio route is visible in the formal HUD/menu and Settings panel, and can be manually rescanned/reported to Brain. The first formal native route layer now exists: Android `ParrotAudioRoute.androidlib` owns communication-device routing, Bluetooth permission snapshots, and audio focus; Unity `AudioRouteManager` exposes accepted snapshots; `MicrophonePublisher` consumes those snapshots and serially rebuilds the LiveKit mic track without reconnecting the room. A2DP remains output-only in Unity mic selection and keeps the normal 48 kHz mic policy; only SCO uses the 16 kHz Bluetooth capture policy. The Settings page still has local `MIC NEXT` / `MIC AUTO` diagnostic controls that cycle `MicrophonePublisher`'s Unity device-name preference; they are not the final production audio-route UX. Route-policy RPC reporting rejects `status:error` and `result.success:false` business failures. Formal route-manager settings UI and iQOO Neo9 Bluetooth/SCO/A2DP proof are still pending.
+- 2026-05-17 uplink audit fix: `MicrophonePublisher` no longer treats `PublishTrack` transport success as proven microphone capture. After publishing the local track it waits for Unity `Microphone.GetPosition(...)` to produce samples; timeout/exception unpublishes the track, reports degraded health, and shows `microphone_start_timeout` or `microphone_start_exception` in the HUD instead of fake `audio_published=true`. The formal HUD now has separate `UsingMic` and `Uplink` lines with selected/default mic device, available device count/list, publish stage, sample rate, route version, and error.
 - First formal model placement owner exists with AR raycast, no fake placement
   on AR miss, and attempts runtime GOSLO/Ner visuals from `Resources/Models/**`.
   Whitebox is now only a visible fallback after a valid placement when the
@@ -223,6 +224,12 @@ The first formal homepage HUD/menu slice can be considered implemented when:
   the local hand source/perch reflex only when model capability and animation
   gates pass. Model animation expansion and greeting proof on phone still need
   real mobile implementation and proof.
+- 2026-05-17 placement size audit fix: the height-normalization pass now updates
+  `_placedBaseScale` and resets `ScaleMultiplier` whenever renderer bounds are
+  normalized to the manifest `default_pet_height_m`. This prevents the later
+  scale application/XRI bridge from restoring the raw GLB's oversized scale.
+  Delayed normalization now runs for more passes to catch late renderer/model
+  driver bounds, but stops once the user intentionally pinches/scales the model.
 - XRHand fly/perch is not production-ready yet: `com.unity.xr.hands` /
   `UNITY_XR_HANDS` is not enabled in the current project, so
   `FormalXrHandPerchController` can only expose a debug-only/package-missing
@@ -428,11 +435,31 @@ directly.
   pass still needs to prove audible `onGosloPlaced` greeting and material parity
   on device.
 - Second iQOO blocker follow-up: the copied demo ShaderGraph still failed on
-  the phone, so `ARFeatheredPlaneMeshVisualizerCompanion` now swaps unsupported
-  or mobile plane materials to a transparent `PlanePatternDot` fallback at
-  runtime. Placement is also constrained to horizontal-up planes and then
-  height-normalized after the visual is active. `LastBrainRpcStatus` is surfaced
-  in the HUD placement line to expose the real `onGosloPlaced` result.
+  the phone until the missing shader chain was repaired. The normal target is
+  still the demo2 `ARFeatheredPlane` ShaderGraph so the transparent plane,
+  feathered edge, and shrinking dot pattern remain intact. If the graph still
+  resolves to magenta on phone, the fallback is intentionally just a simple
+  translucent white safety surface while the ShaderGraph chain is diagnosed.
+  Placement is also constrained to horizontal-up planes and then
+  height-normalized after the visual is active. `LastBrainRpcStatus` is
+  surfaced in the HUD placement line to expose the real `onGosloPlaced` result.
+- Shader migration correction: the AR Mobile template plane material was still
+  missing part of the demo2 shader chain. `URPShadowReceiver.shader` and
+  `InteractablePrimitive.shadergraph` are now copied under
+  `Assets/ParrotApp/Resources/ARMobileTemplate/Shaders/**` with `.meta`
+  preserved, and the formal `ShadowReceiver.mat` `_Texture2D` slot now points
+  at the copied `PlanePatternDot` texture instead of a missing GUID. Editor
+  build logs show `Shader Graphs/ShadowReceiver` compiling for `gles3`; any
+  remaining phone magenta is a ShaderGraph/build/runtime parity bug. The
+  runtime safe material fallback remains only as a simple translucent-white
+  guard, not as the demo-effect implementation.
+- Phone audio HUD correction: the temporary HUD can carry extra diagnostic
+  fields until the production HUD design replaces it. It now shows
+  native/fallback route source, route version, Bluetooth permission, audio
+  focus/mode, selected mic device, configured sample rate, device count, local
+  policy, manual pick status, and Brain audio-route report success/attempts.
+  This is diagnostic display only; it does not change RoomSetting persistence
+  or reconnect the LiveKit room during device switches.
 - Plane visual parity fix: the formal bootstrap now mirrors the template menu's
   default debug-slider behavior by tracking `ARFeatheredPlaneMeshVisualizerCompanion`
   instances and keeping plane surface fill hidden by default while retaining the
@@ -499,6 +526,53 @@ directly.
 - App animation note for the animation backlog: while listening, the parrot can
   use a subtle head-tilt/listening posture. This is a model/body-language
   behavior, not part of the evidence DTO.
+
+2026-05-17 iQOO AR/audio triage follow-up:
+
+- The latest phone screenshots show why the fallback must stay modest: it can
+  prevent a magenta plane, but it cannot be the demo2 visual implementation.
+  `showArMobileTemplatePlaneSurfaces=true` remains the intended demo2 path, and
+  the fallback is a simple translucent-white surface only when the material
+  resolves to a true error/fallback shader. Healthy
+  `Shader Graphs/ShadowReceiver` must be allowed to run while the copied
+  ShaderGraph/material chain is fixed. HUD diagnostics now include
+  `LastPlaneMaterialStatus` so the next device pass reports the actual plane
+  shader/fallback state.
+- Follow-up fix: the demo2 prefab itself was copied correctly, but the plane has
+  two material slots. The first slot is the visible dot/surface ShaderGraph; the
+  second slot is an invisible `AR/Occlusion` helper. On the formal Android build
+  that helper can render as a large magenta error plane while still not being
+  caught by the broad ShaderGraph fallback. The formal companion now preserves
+  the demo2 dot/surface slot and replaces only the mobile `AR/Occlusion` slot
+  with a transparent no-op material. This is intentionally narrower than
+  replacing the whole plane material and should keep the shrinking white-dot
+  affordance visible.
+- The HUD showed native Android `phone_mic`, microphone permission, Bluetooth
+  permission, and audio focus as healthy while Unity `Microphone.devices`
+  returned zero. `MicrophonePublisher` now treats the Android-only
+  native-route-plus-permission state as a valid default communication input,
+  labels it `android_default_microphone`, and lets
+  `MicrophoneSource(null, ...)` use the current OS route instead of failing
+  with `no_microphone_devices`.
+- Compile fix: `FormalModelPlacementController` now imports
+  `System.Collections` for its non-generic placement coroutine enumerator.
+  Android route selection also treats Bluetooth as an advisory connected-device
+  preference: only a real SCO input route is selected as Bluetooth mic, while
+  Bluetooth being enabled without a connected route falls through to the phone
+  communication device instead of blocking selection. `MIC NEXT` mirrors the
+  same fallback by showing `auto:android_default_microphone` when Unity has no
+  listed microphone devices but native Android routing can supply the default
+  input.
+- Parrot placement height is now normalized over several delayed post-spawn
+  passes, not only once in the same frame, so late renderer/model-driver bounds
+  can shrink the GLB/Spine visual to the manifest target before the user starts
+  drag/pinch tuning.
+- Follow-up fix: XRI `selectEntered` can fire as part of the same tap that
+  places the model. That is focus, not proof that the user manually scaled the
+  model. The placement owner now waits until at least one manifest-height pass
+  succeeds before treating XRI selection as a user scale override; otherwise
+  the delayed normalization loop could be skipped and the model could remain at
+  importer size on phone.
 
 Remaining before marking phone-ready:
 

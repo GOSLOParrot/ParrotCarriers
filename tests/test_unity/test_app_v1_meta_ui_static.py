@@ -487,6 +487,11 @@ def test_ar_mobile_template_plane_assets_are_imported_into_formal_app() -> None:
         AR_MOBILE_TEMPLATE_SPAWN_TRIGGER,
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Materials" / "ShadowReceiver.mat",
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Materials" / "OcclusionMaterial.mat",
+        PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "URPShadowReceiver.shader",
+        PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "InteractablePrimitive.shadergraph",
+        PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "PlaneOcclusionShader.shader",
+        PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "ShadowReceiver" / "ShadowReceiver.shadergraph",
+        PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "ShadowReceiver" / "MainLightShadowsSubgraph.shadersubgraph",
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Textures" / "PlanePatternDot.png",
     ]:
         assert path.exists(), path
@@ -507,9 +512,33 @@ def test_ar_mobile_template_plane_assets_are_imported_into_formal_app() -> None:
     assert "ARInteractorSpawnTrigger" in spawn_trigger
     assert "ObjectSpawner" in AR_MOBILE_TEMPLATE_OBJECT_SPAWNER.read_text(encoding="utf-8")
     assert "EnsureRuntimeSafeMaterialFallback" in plane_companion
-    assert "Application.isMobilePlatform" in plane_companion
-    assert "ParrotRuntimeSafeARPlaneDots" in plane_companion
+    assert "m_ForceMobileMaterialFallback = false" in plane_companion
+    assert "m_ForceMobileMaterialFallback && Application.isMobilePlatform" in plane_companion
+    assert "bool m_UseAndroidShaderGraphPlaneFallback = true" in plane_companion
+    assert "Root fix remains the demo2 ShaderGraph chain" in plane_companion
+    assert "simple translucent white surface" in plane_companion
+    assert "Hidden/Shader Graph/FallbackError" in plane_companion
+    assert 'shaderName.Contains("Shader Graphs/")' not in plane_companion
+    assert 'shaderName.Contains("ShadowReceiver")' not in plane_companion
+    assert "m_ReplaceMobileOcclusionSlot = true" in plane_companion
+    assert "ShouldReplaceOcclusionSlot(original)" in plane_companion
+    assert 'shaderName.Equals("AR/Occlusion"' in plane_companion
+    assert "ParrotRuntimeNoopARPlaneOcclusion" in plane_companion
+    assert "Keep the demo2 surface/dot material" in plane_companion
+    assert "bool replacedAny = false" in plane_companion
+    assert "NeedsRuntimeSafeFallback(original)" in plane_companion
+    assert "NeedsAndroidPlaneShaderFallback(original)" in plane_companion
+    assert "runtimeSafeMaterialActive" in plane_companion
+    assert "materialDebugSummary" in plane_companion
+    assert "MaterialShaderSummary" in plane_companion
+    assert "ParrotRuntimeSafeARPlaneTranslucentWhite" in plane_companion
     assert "ARMobileTemplate/Textures/PlanePatternDot" in plane_companion
+
+    shadow_receiver = (
+        PARROT_APP / "Resources" / "ARMobileTemplate" / "Materials" / "ShadowReceiver.mat"
+    ).read_text(encoding="utf-8")
+    assert _unity_guid(PARROT_APP / "Resources" / "ARMobileTemplate" / "Textures" / "PlanePatternDot.png") in shadow_receiver
+    assert "f682ded1fcdaacb4fb33ca928c0d632a" not in shadow_receiver
 
     shadow_functions_guid = _unity_guid(AR_MOBILE_TEMPLATE_SHADOW_FUNCTIONS)
     subgraph = (
@@ -522,6 +551,10 @@ def test_ar_mobile_template_plane_assets_are_imported_into_formal_app() -> None:
     ).read_text(encoding="utf-8")
     assert shadow_functions_guid in subgraph
 
+    plane_visualizer = AR_MOBILE_TEMPLATE_PLANE_VISUALIZER.read_text(encoding="utf-8")
+    assert "m_FeatheredPlaneMaterial.SetFloat(\"_ShortestUVMapping\", shortestUVMapping)" in plane_visualizer
+    assert "mesh.SetUVs(1, s_FeatheringUVs)" in plane_visualizer
+    assert "m_Plane.boundaryChanged += ARPlane_boundaryUpdated" in plane_visualizer
 
 def test_project_settings_default_scene_is_formal_startup_scene() -> None:
     text = PROJECT_SETTINGS.read_text(encoding="utf-8")
@@ -781,6 +814,10 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "getAvailableCommunicationDevices" in android_route_java
     assert "requestAudioFocus" in android_route_java
     assert "preference_changed_cached" in android_route_java
+    assert "boolean canUseBluetooth = hasBluetoothConnectPermission()" in android_route_java
+    assert 'if (canUseBluetooth && ("bluetooth".equals(preference) || "auto".equals(preference)))' in android_route_java
+    assert "Explicit Bluetooth preference is advisory" in android_route_java
+    assert "bluetooth_connect_denied" not in android_route_java
     assert "class Api31" in android_route_java
     assert "Object communicationDeviceChangedListener" in android_route_java
     assert "OnCommunicationDeviceChangedListener communicationDeviceChangedListener" not in android_route_java
@@ -811,6 +848,13 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "case AudioRouteKind.BluetoothSco:" in route_policy
     assert "case AudioRouteKind.BluetoothA2dp:" in route_policy
     assert "BluetoothA2dp:\n                case AudioRouteKind.WiredHeadset" in route_policy
+    assert "allowAndroidDefaultMicrophoneWhenDeviceListEmpty = true" in mic
+    assert "ShouldUseAndroidDefaultMicrophoneWhenDeviceListEmpty" in mic
+    assert "android_default_microphone" in mic
+    assert 'LastManualDeviceStatus = "auto:android_default_microphone"' in mic
+    assert 'return ShouldUseAndroidDefaultMicrophoneWhenDeviceListEmpty()' in mic
+    assert "IsAndroidMicInputRoute" in mic
+    assert "new MicrophoneSource(string.IsNullOrEmpty(device) ? null : device" in mic
     assert "RequestFreshTokenReconnect" in reconnect_supervisor
     assert "Mathf.Pow(2f" in reconnect_supervisor
     assert "IsBackgroundState" in reconnect_supervisor
@@ -852,15 +896,24 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "FormalHomeMenuLoader menuLoader" in home_hud
     assert "LiveKitReconnectSupervisor reconnectSupervisor" in home_hud
     assert "AudioRoutePolicyBrainReporter audioRouteReporter" in home_hud
+    assert "MicrophonePublisher microphonePublisher" in home_hud
     assert "FormalModelPlacementController modelPlacementController" in home_hud
     assert "FormalArSessionBaselineReporter arSessionBaselineReporter" in home_hud
     assert "FormalArRuntimeBootstrap arRuntimeBootstrap" in home_hud
     assert "AudioRouteHudLabel" in home_hud
+    assert "MicrophoneHudLabel" in home_hud
+    assert "MicrophoneDeviceHudLabel" in home_hud
+    assert "UplinkHudLabel" in home_hud
+    assert "UsingMic" in home_hud
+    assert "Uplink " in home_hud
+    assert "MicPublishSummary(health)" in home_hud
+    assert "health.AudioPublishAttempted ? \"wait\" : \"idle\"" in home_hud
     assert "PlacementHudLabel" in home_hud
     assert "ArHudLabel" in home_hud
     assert "modelPlacementController.LastDiagnosticSummary" in home_hud
     assert "arSessionBaselineReporter.LastStatus" in home_hud
     assert "arRuntimeBootstrap.LastSpatialVisualStatus" in home_hud
+    assert "arRuntimeBootstrap.LastPlaneMaterialStatus" in home_hud
     assert "arRuntimeBootstrap.LastTemplateInteractionStatus" in home_hud
     assert "panelImage.raycastTarget = false" in home_hud
     assert "_statusDot.raycastTarget = false" in home_hud
@@ -869,11 +922,29 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "audioRouteReporter.LastOutputRoute" in home_hud
     assert "audioRouteReporter.LastDetectionSource" in home_hud
     assert "audioRouteReporter.ReportPending" in home_hud
+    assert "audioRouteReporter.ReportSuccessCount" in home_hud
+    assert "audioRouteReporter.ReportAttemptCount" in home_hud
     assert "AudioRouteManager audioRouteManager" in home_hud
     assert "audioRouteManager.CurrentSnapshot" in home_hud
     assert "audioRouteManager.CurrentPolicy" in home_hud
+    assert "audioRouteManager.NativeAvailable" in home_hud
+    assert "snapshot.bluetooth_connect_permission" in home_hud
+    assert "snapshot.audio_focus" in home_hud
+    assert "microphonePublisher.SelectedDevice" in home_hud
+    assert "microphonePublisher.AvailableDeviceCount" in home_hud
+    assert "microphonePublisher.AvailableDevicesLabel(160)" in home_hud
+    assert "microphonePublisher.ConfiguredSampleRate" in home_hud
+    assert "microphonePublisher.LastManualDeviceStatus" in home_hud
+    assert "microphonePublisher.UplinkStateLabel" in home_hud
+    assert "microphonePublisher.LastPublishStage" in home_hud
+    assert "microphonePublisher.PublishedRouteVersion" in home_hud
+    assert "microphonePublisher.RouteVersion" in home_hud
+    assert "VerticalWrapMode.Overflow" in home_hud
+    assert "new Vector2(980f, 410f)" in home_hud
+    assert "SafeLabel(modelPlacementController.LastDiagnosticSummary + rpc)" in home_hud
     assert "ShortRoute" in home_hud
     assert "ShortRouteSource" in home_hud
+    assert "ShortRoutePreference" in home_hud
     assert "menuLoader.LastError" in home_hud
     assert "reconnectSupervisor.ReconnectPending" in home_hud
     assert "startupFlow.LastError" in home_hud
@@ -912,11 +983,24 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "CyclePreferredDevice" in mic
     assert "ClearPreferredDevice" in mic
     assert "PreferredDevice" in mic
+    assert "PublishInProgress" in mic
+    assert "LastPublishStage" in mic
+    assert "UplinkStateLabel" in mic
+    assert "PublishedRouteVersion" in mic
+    assert "RouteVersion" in mic
     assert "_selectedDevice" in mic
     assert "LastManualDeviceStatus" in mic
     assert "QueueManualDeviceRepublish" in mic
     assert "mic_device_changed" in mic
     assert "AvailableDevicesLabel" in mic
+    assert "microphoneStartTimeoutSeconds = 4f" in mic
+    assert "TryGetMicrophonePosition" in mic
+    assert "microphone_start_timeout" in mic
+    assert "microphone_start_exception" in mic
+    assert "microphone_start_aborted" in mic
+    assert "microphone_ready_aborted" in mic
+    assert "audio_track_create_failed" in mic
+    assert 'StopPublishingInner();\n                HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);' in mic
     assert "SnapshotRpcHandler" not in flow
     assert "CaptureSnapshotForRpc" not in video
     assert "AsyncGPUReadback.Request" not in video
@@ -1172,6 +1256,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "ToLowerInvariant()" in manifest
 
     assert "class FormalModelPlacementController" in model_placement
+    assert "using System.Collections;" in model_placement
     assert "This component deliberately owns the first real onGosloPlaced trigger" in model_placement
     assert "FormalMainReadyGate mainReadyGate" in model_placement
     assert "public bool CanPlaceNow" in model_placement
@@ -1242,8 +1327,22 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "FormalPlacedModelWhitebox" in model_placement
     assert "driver.ConfigureModelId(ActiveModelId)" in model_placement
     assert "driver.BootstrapNow()" in model_placement
-    assert "ForceManifestHeightAfterPlacement()" in model_placement
+    assert "ForceManifestHeightAfterPlacement(\"initial\")" in model_placement
+    assert "manifestHeightNormalizationPasses = 40" in model_placement
+    assert "manifestHeightNormalizationDelaySeconds = 0.1f" in model_placement
+    assert "StartHeightNormalizationPasses" in model_placement
+    assert "HeightNormalizationPasses" in model_placement
+    assert "currentHeight.ToString" in model_placement
     assert ":height=" in model_placement
+    assert "_placedBaseScale = PlacedModel.transform.localScale;" in model_placement
+    assert "_userScaleOverrideActive" in model_placement
+    assert "_heightNormalizedOnce" in model_placement
+    assert "_lastHeightNormalizationStatus" in model_placement
+    assert "HandleTemplateXriSelectEntered" in model_placement
+    assert "if (_heightNormalizedOnce)" in model_placement
+    assert "height_wait_xri_select" in model_placement
+    assert "stay at importer size on phone" in model_placement
+    assert "TryMoveSelectedModelOnPlane" in model_placement
     assert "startupFlow?.ReportGosloPlaced()" in model_placement
     assert "enableTouchPlacementAndSelection" in model_placement
     assert "HandleTouchPlacementAndSelection" in model_placement
@@ -1254,6 +1353,11 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "Input.touchCount >= 2" in model_placement
     assert "ScaleMultiplier" in model_placement
     assert "FormalPlacedModelSelectionRing" in model_placement
+    assert "LineRenderer" in model_placement
+    assert "PrimitiveType.Cylinder" not in model_placement
+    assert "selectionRingColor" in model_placement
+    assert "selectionRingWidthMeters" in model_placement
+    assert "FormalSelectionRingTransparentWhite" in model_placement
     assert "PlayPlacementGreeting" in model_placement
     assert "SetHeadState(AnimationDriver.HeadState.Tilt)" in model_placement
     assert "SetState(AnimationDriver.BodyState.HeadBob)" in model_placement
@@ -1381,8 +1485,10 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "ConfigureArMobileTemplatePlane" in ar_bootstrap
     assert "planeManager.planePrefab = prefab" in ar_bootstrap
     assert "planeManager.requestedDetectionMode = (PlaneDetectionMode)(-1)" in ar_bootstrap
-    assert "showArMobileTemplatePlaneSurfaces = false" in ar_bootstrap
+    assert "showArMobileTemplatePlaneSurfaces = true" in ar_bootstrap
     assert "ARFeatheredPlaneMeshVisualizerCompanion" in ar_bootstrap
+    assert "LastPlaneMaterialStatus" in ar_bootstrap
+    assert "RefreshPlaneMaterialStatus" in ar_bootstrap
     assert "planesChanged += HandlePlanesChanged" in ar_bootstrap
     assert "visualizeSurfaces = showArMobileTemplatePlaneSurfaces" in ar_bootstrap
     assert "FormalARPlaneVisual_" not in ar_bootstrap

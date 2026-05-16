@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using LiveKit;
 using ParrotApp.Core;
 using ParrotApp.Ecp;
+using ParrotApp.Hands;
 using ParrotApp.Health;
 using ParrotApp.Lifecycle;
 using ParrotApp.LiveKit;
@@ -15,6 +16,7 @@ namespace ParrotApp.RPC
     /// Registers RPC methods that the Brain Agent calls via <c>_rpc_bridge.py</c>:
     ///   <c>flyTo</c> -> <see cref="ParrotController.FlyTo"/>
     ///   <c>animate</c> -> <see cref="ParrotController.PlayAnimation"/>
+    ///   <c>perchToFinger</c> -> <see cref="PerchOnHand.TryRequestRpcPerch"/>
     ///
     /// 从 ParrotDev 搬迁（Sprint4 Phase 3 / L3 Group 4），保留 ECP-minimal 已落地的所有行为：
     /// <list type="bullet">
@@ -77,7 +79,8 @@ namespace ParrotApp.RPC
             {
                 room.LocalParticipant.RegisterRpcMethod("flyTo", HandleFlyTo);
                 room.LocalParticipant.RegisterRpcMethod("animate", HandleAnimate);
-                Debug.Log("[ParrotRPC] Registered: flyTo, animate");
+                room.LocalParticipant.RegisterRpcMethod("perchToFinger", HandlePerchToFinger);
+                Debug.Log("[ParrotRPC] Registered: flyTo, animate, perchToFinger");
 
                 if (!_rpcReadyReported)
                 {
@@ -211,6 +214,90 @@ namespace ParrotApp.RPC
             }
         }
 
+        private async Task<string> HandlePerchToFinger(RpcInvocationData data)
+        {
+            Debug.Log($"[ParrotRPC] perchToFinger <- {data.CallerIdentity}: {data.Payload}");
+            PerchToFingerPayload p = default;
+            try
+            {
+                p = JsonUtility.FromJson<PerchToFingerPayload>(data.Payload);
+
+                if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
+                {
+                    Debug.LogWarning($"[ParrotRPC] perchToFinger expired (command_id={p._ecp.command_id})");
+                    return EcpAckJson.Expired(p._ecp, $"expires_at={p._ecp.expires_at}");
+                }
+
+                string commandId = p._ecp?.command_id ?? "";
+                string modelId = p._ecp?.ModelId ?? "";
+                float timeoutSeconds = p.timeout_seconds > 0f ? p.timeout_seconds : 6f;
+                var started = new TaskCompletionSource<string>();
+                var landed = new TaskCompletionSource<PerchOnHand.PerchRpcResult>();
+
+                UnityMainThread.Enqueue(() =>
+                {
+                    try
+                    {
+                        var perch = ResolvePerchOwner(modelId);
+                        if (perch == null)
+                        {
+                            started.TrySetResult("perch_owner_missing");
+                            landed.TrySetResult(PerchOnHand.PerchRpcResult.Rejected("perch_owner_missing"));
+                            return;
+                        }
+
+                        if (!perch.TryRequestRpcPerch(
+                                commandId,
+                                p.require_branch_gesture,
+                                landed,
+                                out string reason))
+                        {
+                            started.TrySetResult(reason);
+                            landed.TrySetResult(PerchOnHand.PerchRpcResult.Rejected(reason));
+                            return;
+                        }
+
+                        started.TrySetResult("");
+                    }
+                    catch (Exception ex)
+                    {
+                        started.TrySetResult("failed");
+                        landed.TrySetResult(PerchOnHand.PerchRpcResult.Rejected(ex.Message));
+                    }
+                });
+
+                string startReason = await started.Task;
+                if (!string.IsNullOrEmpty(startReason))
+                    return EcpAckJson.Rejected(p._ecp, startReason, startReason);
+
+                Task finished = await Task.WhenAny(
+                    landed.Task,
+                    Task.Delay(TimeSpan.FromSeconds(Math.Max(1.0, timeoutSeconds))));
+                if (finished != landed.Task)
+                {
+                    UnityMainThread.Enqueue(() =>
+                    {
+                        var perch = ResolvePerchOwner(modelId);
+                        perch?.CancelRpcPerch(commandId, "timeout");
+                    });
+                    return EcpAckJson.Failed(p._ecp, "timeout", "timeout");
+                }
+
+                PerchOnHand.PerchRpcResult result = await landed.Task;
+                if (!result.Ok)
+                    return EcpAckJson.Rejected(p._ecp, result.Reason, result.Reason);
+
+                return EcpAckJson.Completed(
+                    p._ecp,
+                    EcpFrontendStateDto.ForBody("perched_on_hand", commandId, new[] { "body" }));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ParrotRPC] perchToFinger error: {e.Message}");
+                return EcpAckJson.Failed(p._ecp, e.Message);
+            }
+        }
+
         private static string AnimationToBodyState(string animation)
         {
             switch (animation)
@@ -223,6 +310,37 @@ namespace ParrotApp.RPC
                 case "sleep": return "idle";
                 default: return "idle";
             }
+        }
+
+        private PerchOnHand ResolvePerchOwner(string modelId)
+        {
+            var own = GetComponent<PerchOnHand>();
+            if (own != null && MatchesModel(own, modelId)) return own;
+
+            var all = FindObjectsOfType<PerchOnHand>(includeInactive: true);
+            PerchOnHand fallback = null;
+            for (int i = 0; i < all.Length; i++)
+            {
+                var candidate = all[i];
+                if (candidate == null) continue;
+                if (MatchesModel(candidate, modelId)) return candidate;
+                if (fallback == null && string.IsNullOrWhiteSpace(modelId))
+                    fallback = candidate;
+            }
+            return fallback;
+        }
+
+        private static bool MatchesModel(PerchOnHand perch, string modelId)
+        {
+            if (perch == null) return false;
+            if (string.IsNullOrWhiteSpace(modelId)) return true;
+
+            var driver = perch.GetComponentInChildren<ModelDriver>(true);
+            if (driver == null) return false;
+            if (driver.Manifest != null
+                && string.Equals(driver.Manifest.model_id, modelId, StringComparison.Ordinal))
+                return true;
+            return string.Equals(driver.EffectiveModelId, modelId, StringComparison.Ordinal);
         }
 
         void OnDestroy()
@@ -241,5 +359,6 @@ namespace ParrotApp.RPC
 
         [Serializable] private struct FlyToPayload { public float x, y, z; public EcpCommandDto _ecp; }
         [Serializable] private struct AnimatePayload { public string animation; public string parameters_json; public bool strict_capability; public EcpCommandDto _ecp; }
+        [Serializable] private struct PerchToFingerPayload { public bool require_branch_gesture; public float timeout_seconds; public EcpCommandDto _ecp; }
     }
 }

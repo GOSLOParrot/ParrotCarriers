@@ -88,6 +88,12 @@ namespace ParrotApp.LiveKit
         [Tooltip("False = keep the LiveKit room alive but do not publish microphone audio.")]
         [SerializeField] private bool publishIntentEnabled = true;
 
+        [Tooltip("Android route bridge fallback: when native routing says a mic is granted but Unity reports zero Microphone.devices, pass null to Microphone.Start so Android uses the current default communication input.")]
+        [SerializeField] private bool allowAndroidDefaultMicrophoneWhenDeviceListEmpty = true;
+
+        [Tooltip("Guard against fake uplink success: after LiveKit PublishTrack succeeds, wait until Unity's Microphone reports real captured samples before reporting audio_published=true.")]
+        [SerializeField] private float microphoneStartTimeoutSeconds = 4f;
+
         private MicrophoneSource _micSource;
         private LocalAudioTrack _audioTrack;
         private bool _isPublishing;
@@ -103,14 +109,17 @@ namespace ParrotApp.LiveKit
         private uint _publishedRouteVersion;
         private Coroutine _routeRepublishCoroutine;
         private string _pendingRouteRepublishReason = "";
+        private string _lastPublishStage = "idle";
 
         private ConnectionHealthAggregator HealthAggregator =>
             lifecycleManager != null ? lifecycleManager.HealthAggregator : null;
 
         public bool IsPublishing => _isPublishing;
+        public bool PublishInProgress => _publishInProgress;
         public bool PublishAttempted => _publishAttempted;
         public string SelectedDevice => _selectedDevice;
         public string LastError => _lastError;
+        public string LastPublishStage => _lastPublishStage;
         public int ConfiguredSampleRate => _configuredSampleRate;
         public int UnityOutputSampleRate => _unityOutputSampleRate;
         public AudioRoutePolicy ActivePolicy => _activePolicy;
@@ -119,6 +128,18 @@ namespace ParrotApp.LiveKit
         public string PreferredDevice => preferredDevice ?? "";
         public string LastManualDeviceStatus { get; private set; } = "auto";
         public int AvailableDeviceCount => Microphone.devices != null ? Microphone.devices.Length : 0;
+        public uint RouteVersion => _routeVersion;
+        public uint PublishedRouteVersion => _publishedRouteVersion;
+        public string UplinkDeviceLabel => string.IsNullOrWhiteSpace(_selectedDevice) ? "none" : _selectedDevice;
+        public string UplinkStateLabel
+        {
+            get
+            {
+                if (_isPublishing) return "published";
+                if (_publishInProgress) return "publishing";
+                return _publishAttempted ? "not_published" : "idle";
+            }
+        }
 
         // IGracefulShutdownParticipant.
 
@@ -291,6 +312,7 @@ namespace ParrotApp.LiveKit
             _publishInProgress = true;
             _publishAttempted = true;
             _lastError = initialReason ?? "";
+            _lastPublishStage = "permission_request";
 
             HealthAggregator?.ReportAudioPublishAttempt(UnixSeconds());
             if (initialReason != null)
@@ -301,12 +323,14 @@ namespace ParrotApp.LiveKit
             if (!Application.HasUserAuthorization(UserAuthorization.Microphone))
             {
                 _lastError = "permission_denied";
+                _lastPublishStage = "permission_denied";
                 Debug.LogError("[MicrophonePublisher] ERROR permission_denied");
                 HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);
                 _publishInProgress = false;
                 yield break;
             }
 
+            _lastPublishStage = "android_route_permission";
             yield return RequestAndroidBluetoothPermissionIfNeeded();
             if (routeManager != null)
             {
@@ -321,31 +345,39 @@ namespace ParrotApp.LiveKit
             if (!publishIntentEnabled)
             {
                 Debug.Log("[MicrophonePublisher] publish intent disabled after permission gate; aborting");
+                _lastPublishStage = "policy_disabled_after_permission";
                 _publishInProgress = false;
                 HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), "policy_disabled_after_permission");
                 yield break;
             }
 
-            if (Microphone.devices.Length == 0)
+            _lastPublishStage = "select_device";
+            AudioRoutePolicy publishPolicy = _activePolicy;
+            uint publishRouteVersion = _routeVersion;
+            bool useAndroidDefaultMicFallback = ShouldUseAndroidDefaultMicrophoneWhenDeviceListEmpty();
+            var devices = Microphone.devices;
+            if ((devices == null || devices.Length == 0) && !useAndroidDefaultMicFallback)
             {
                 _lastError = "no_microphone_devices";
+                _lastPublishStage = "no_microphone_devices";
                 Debug.LogWarning("[MicrophonePublisher] ERROR no_microphone_devices");
                 HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);
                 _publishInProgress = false;
                 yield break;
             }
 
-            AudioRoutePolicy publishPolicy = _activePolicy;
-            uint publishRouteVersion = _routeVersion;
-
-            string device = SelectDevice(publishPolicy);
-            _selectedDevice = device;
-            Debug.Log($"[MicrophonePublisher] Using device: '{device}' for policy={publishPolicy}");
+            string device = SelectDevice(publishPolicy, useAndroidDefaultMicFallback);
+            string deviceLabel = string.IsNullOrEmpty(device) && useAndroidDefaultMicFallback
+                ? "android_default_microphone"
+                : device;
+            _selectedDevice = deviceLabel ?? "";
+            Debug.Log($"[MicrophonePublisher] Using device: '{_selectedDevice}' for policy={publishPolicy}");
 
             var room = RoomManager.Instance?.Room;
             if (room == null)
             {
                 _lastError = "room_missing_after_permission";
+                _lastPublishStage = "room_missing_after_permission";
                 Debug.LogWarning("[MicrophonePublisher] ERROR room_missing_after_permission");
                 HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);
                 _publishInProgress = false;
@@ -355,15 +387,35 @@ namespace ParrotApp.LiveKit
             if (!publishIntentEnabled)
             {
                 Debug.Log("[MicrophonePublisher] publish intent disabled before track publish; aborting");
+                _lastPublishStage = "policy_disabled_before_publish";
                 _publishInProgress = false;
                 HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), "policy_disabled_before_publish");
                 yield break;
             }
 
-            ConfigureLiveKitMicrophoneSampleRate(device, publishPolicy);
+            _lastPublishStage = "configure_sample_rate";
+            ConfigureLiveKitMicrophoneSampleRate(_selectedDevice, publishPolicy);
 
-            _micSource = new MicrophoneSource(device, gameObject);
-            _audioTrack = LocalAudioTrack.CreateAudioTrack("microphone", _micSource, room);
+            bool sourceCreateFailed = false;
+            try
+            {
+                _micSource = new MicrophoneSource(string.IsNullOrEmpty(device) ? null : device, gameObject);
+                _audioTrack = LocalAudioTrack.CreateAudioTrack("microphone", _micSource, room);
+            }
+            catch (Exception e)
+            {
+                _lastError = "audio_track_create_failed:" + e.GetType().Name;
+                _lastPublishStage = "audio_track_create_failed";
+                Debug.LogWarning($"[MicrophonePublisher] ERROR {_lastError}: {e.Message}");
+                sourceCreateFailed = true;
+            }
+
+            if (sourceCreateFailed)
+            {
+                StopPublishingInner();
+                HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);
+                yield break;
+            }
 
             var options = new TrackPublishOptions
             {
@@ -371,26 +423,111 @@ namespace ParrotApp.LiveKit
                 AudioEncoding = new AudioEncoding { MaxBitrate = 64_000 },
             };
 
+            _lastPublishStage = "publish_track";
             var publish = room.LocalParticipant.PublishTrack(_audioTrack, options);
             yield return publish;
 
             if (publish.IsError)
             {
                 _lastError = "publish_failed";
+                _lastPublishStage = "publish_failed";
                 Debug.LogError("[MicrophonePublisher] ERROR publish_failed (PublishTrackInstruction.IsError; SDK exposes no Error details)");
+                StopPublishingInner();
                 HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);
-                _publishInProgress = false;
                 yield break;
             }
 
-            _micSource.Start();
+            _lastPublishStage = "microphone_start";
+            bool microphoneStartException = false;
+            try
+            {
+                _micSource.Start();
+            }
+            catch (Exception e)
+            {
+                _lastError = "microphone_start_exception:" + e.GetType().Name;
+                _lastPublishStage = "microphone_start_exception";
+                Debug.LogWarning($"[MicrophonePublisher] ERROR {_lastError}: {e.Message}");
+                microphoneStartException = true;
+            }
+
+            if (microphoneStartException)
+            {
+                if (_audioTrack != null)
+                    yield return room.LocalParticipant.UnpublishTrack(_audioTrack, stopOnUnpublish: true);
+                StopPublishingInner();
+                HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);
+                yield break;
+            }
+            string probeDevice = string.IsNullOrEmpty(device) ? null : device;
+            float elapsed = 0f;
+            bool captureReady = false;
+            string probeError = "";
+            float timeout = Mathf.Max(0.1f, microphoneStartTimeoutSeconds);
+            while (elapsed < timeout)
+            {
+                if (!publishIntentEnabled || _shutdownInitiated || RoomManager.Instance?.IsConnected != true)
+                {
+                    _lastError = !publishIntentEnabled
+                        ? "microphone_start_aborted:publish_intent_disabled"
+                        : (_shutdownInitiated
+                            ? "microphone_start_aborted:shutdown"
+                            : "microphone_start_aborted:room_disconnected");
+                    _lastPublishStage = "microphone_start_aborted";
+                    break;
+                }
+                if (TryGetMicrophonePosition(probeDevice, out int position, out probeError) && position > 0)
+                {
+                    captureReady = true;
+                    break;
+                }
+                yield return new WaitForSeconds(0.05f);
+                elapsed += 0.05f;
+            }
+
+            if (!captureReady)
+            {
+                if (string.IsNullOrWhiteSpace(_lastError) || !_lastError.StartsWith("microphone_start_aborted", StringComparison.Ordinal))
+                {
+                    _lastError = string.IsNullOrWhiteSpace(probeError)
+                        ? "microphone_start_timeout"
+                        : "microphone_start_timeout:" + probeError;
+                    _lastPublishStage = "microphone_start_timeout";
+                }
+                Debug.LogWarning(
+                    $"[MicrophonePublisher] ERROR {_lastError} device='{_selectedDevice}' " +
+                    $"route={publishPolicy.RouteName} timeout={timeout:0.0}s");
+                if (_audioTrack != null)
+                    yield return room.LocalParticipant.UnpublishTrack(_audioTrack, stopOnUnpublish: true);
+                StopPublishingInner();
+                HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);
+                yield break;
+            }
+
+            if (!publishIntentEnabled || _shutdownInitiated || RoomManager.Instance?.IsConnected != true)
+            {
+                _lastError = !publishIntentEnabled
+                    ? "microphone_ready_aborted:publish_intent_disabled"
+                    : (_shutdownInitiated
+                        ? "microphone_ready_aborted:shutdown"
+                        : "microphone_ready_aborted:room_disconnected");
+                _lastPublishStage = "microphone_ready_aborted";
+                Debug.LogWarning($"[MicrophonePublisher] ERROR {_lastError} after capture became ready");
+                if (_audioTrack != null)
+                    yield return room.LocalParticipant.UnpublishTrack(_audioTrack, stopOnUnpublish: true);
+                StopPublishingInner();
+                HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);
+                yield break;
+            }
+
             _isPublishing = true;
             _publishInProgress = false;
             _publishedRouteVersion = publishRouteVersion;
             _lastError = "";
+            _lastPublishStage = "published";
             HealthAggregator?.ReportAudioPublished(true, UnixSeconds(), "");
             Debug.Log(
-                $"[MicrophonePublisher] publishing started: device='{device}' route={publishPolicy.RouteName} " +
+                $"[MicrophonePublisher] publishing started: device='{_selectedDevice}' route={publishPolicy.RouteName} " +
                 $"configuredSampleRate={_configuredSampleRate} unityOutputSampleRate={_unityOutputSampleRate}");
 
             if (publishRouteVersion != _routeVersion && publishIntentEnabled && !_shutdownInitiated)
@@ -440,9 +577,11 @@ namespace ParrotApp.LiveKit
         /// is output-only and keeps Android's default microphone device at the
         /// normal 48k policy.
         /// </summary>
-        private string SelectDevice(AudioRoutePolicy policy)
+        private string SelectDevice(AudioRoutePolicy policy, bool allowDefaultWhenEmpty)
         {
             var devices = Microphone.devices;
+            if (devices == null || devices.Length == 0)
+                return allowDefaultWhenEmpty ? null : "";
 
             if (!string.IsNullOrEmpty(preferredDevice))
             {
@@ -474,11 +613,71 @@ namespace ParrotApp.LiveKit
             return devices[0];
         }
 
+        private bool ShouldUseAndroidDefaultMicrophoneWhenDeviceListEmpty()
+        {
+            if (!allowAndroidDefaultMicrophoneWhenDeviceListEmpty)
+                return false;
+
+            var devices = Microphone.devices;
+            if (devices != null && devices.Length > 0)
+                return false;
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (routeManager == null || !routeManager.NativeAvailable)
+                return false;
+
+            bool unityPermissionGranted = Application.HasUserAuthorization(UserAuthorization.Microphone);
+            var snapshot = routeManager.CurrentSnapshot;
+            if (snapshot == null)
+                return unityPermissionGranted;
+
+            bool permissionGranted = string.Equals(
+                snapshot.microphone_permission,
+                "granted",
+                StringComparison.OrdinalIgnoreCase)
+                || unityPermissionGranted;
+            return permissionGranted && IsAndroidMicInputRoute(snapshot.input_route);
+#else
+            return false;
+#endif
+        }
+
+        private static bool IsAndroidMicInputRoute(string route)
+        {
+            return string.Equals(route, "phone_mic", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(route, "system_default_microphone", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(route, "bluetooth_sco", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(route, "wired_headset", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryGetMicrophonePosition(string deviceName, out int position, out string error)
+        {
+            position = 0;
+            error = "";
+            try
+            {
+                position = Microphone.GetPosition(deviceName);
+                return true;
+            }
+            catch (Exception e)
+            {
+                error = e.GetType().Name;
+                return false;
+            }
+        }
+
         public bool CyclePreferredDevice(string reason = "manual_device_cycle")
         {
             var devices = Microphone.devices;
             if (devices == null || devices.Length == 0)
             {
+                if (ShouldUseAndroidDefaultMicrophoneWhenDeviceListEmpty())
+                {
+                    preferredDevice = "";
+                    LastManualDeviceStatus = "auto:android_default_microphone";
+                    QueueManualDeviceRepublish(reason);
+                    return true;
+                }
                 LastManualDeviceStatus = "no_microphone_devices";
                 return false;
             }
@@ -534,7 +733,10 @@ namespace ParrotApp.LiveKit
         public string AvailableDevicesLabel(int maxChars = 96)
         {
             var devices = Microphone.devices;
-            if (devices == null || devices.Length == 0) return "none";
+            if (devices == null || devices.Length == 0)
+                return ShouldUseAndroidDefaultMicrophoneWhenDeviceListEmpty()
+                    ? "android_default_microphone"
+                    : "none";
             string joined = string.Join("|", devices);
             if (maxChars > 0 && joined.Length > maxChars)
                 joined = joined.Substring(0, maxChars);
@@ -767,6 +969,8 @@ namespace ParrotApp.LiveKit
             catch (Exception e) { Debug.LogWarning($"[MicrophonePublisher] Stop microphone failed: {e.Message}"); }
             _micSource = null;
             _audioTrack = null;
+            if (string.IsNullOrWhiteSpace(_lastError))
+                _lastPublishStage = "stopped";
         }
 
         void OnDestroy()

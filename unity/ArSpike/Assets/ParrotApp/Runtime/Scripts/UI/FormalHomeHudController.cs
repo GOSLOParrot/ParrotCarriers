@@ -26,6 +26,7 @@ namespace ParrotApp.UI
         [SerializeField] private LiveKitReconnectSupervisor reconnectSupervisor;
         [SerializeField] private AudioRouteManager audioRouteManager;
         [SerializeField] private AudioRoutePolicyBrainReporter audioRouteReporter;
+        [SerializeField] private MicrophonePublisher microphonePublisher;
         [SerializeField] private FormalModelPlacementController modelPlacementController;
         [SerializeField] private FormalArSessionBaselineReporter arSessionBaselineReporter;
         [SerializeField] private FormalArRuntimeBootstrap arRuntimeBootstrap;
@@ -74,6 +75,7 @@ namespace ParrotApp.UI
             if (reconnectSupervisor == null) reconnectSupervisor = FindObjectOfType<LiveKitReconnectSupervisor>();
             if (audioRouteManager == null) audioRouteManager = FindObjectOfType<AudioRouteManager>();
             if (audioRouteReporter == null) audioRouteReporter = FindObjectOfType<AudioRoutePolicyBrainReporter>();
+            if (microphonePublisher == null) microphonePublisher = FindObjectOfType<MicrophonePublisher>();
             if (modelPlacementController == null) modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
             if (arSessionBaselineReporter == null) arSessionBaselineReporter = FindObjectOfType<FormalArSessionBaselineReporter>();
             if (arRuntimeBootstrap == null) arRuntimeBootstrap = FindObjectOfType<FormalArRuntimeBootstrap>();
@@ -178,7 +180,7 @@ namespace ParrotApp.UI
             panelRect.anchorMax = new Vector2(0f, 1f);
             panelRect.pivot = new Vector2(0f, 1f);
             panelRect.anchoredPosition = new Vector2(24f, -20f);
-            panelRect.sizeDelta = new Vector2(690f, 236f);
+            panelRect.sizeDelta = new Vector2(980f, 410f);
             var panelImage = panel.AddComponent<Image>();
             panelImage.color = new Color(0.08f, 0.07f, 0.06f, 0.62f);
             panelImage.raycastTarget = false;
@@ -203,10 +205,10 @@ namespace ParrotApp.UI
             textRect.offsetMax = new Vector2(-18f, -14f);
             _statusText = textGo.AddComponent<Text>();
             _statusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _statusText.fontSize = 17;
+            _statusText.fontSize = 13;
             _statusText.alignment = TextAnchor.UpperLeft;
             _statusText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            _statusText.verticalOverflow = VerticalWrapMode.Truncate;
+            _statusText.verticalOverflow = VerticalWrapMode.Overflow;
             _statusText.color = new Color(0.96f, 0.92f, 0.84f, 1f);
             _statusText.raycastTarget = false;
         }
@@ -244,15 +246,25 @@ namespace ParrotApp.UI
                 alert = "menu " + menuLoader.LastError;
             else if (reconnectSupervisor != null && reconnectSupervisor.ReconnectPending)
                 alert = "reconnecting";
-            if (alert.Length > 74) alert = alert.Substring(0, 74) + "...";
+            if (alert.Length > 120) alert = alert.Substring(0, 120);
 
             _statusText.text =
                 $"LK {(connected ? "on" : "off")}  Brain {(health.BrainPresent ? "on" : "wait")}  "
-                + $"Mic {(health.AudioPublished ? "on" : "wait")}  Video {(health.VideoFreshFrame ? "fresh" : "wait")}\n"
+                + $"Mic {MicPublishSummary(health)}  Video {(health.VideoFreshFrame ? "fresh" : "wait")}\n"
                 + $"Room {_activeConfig.room_profile_id}  Line {_activeConfig.line_id}/{_activeConfig.line_profile_id}\n"
-                + $"Audio {AudioRouteHudLabel()}\n"
-                + $"AR {ArHudLabel()}  Place {PlacementHudLabel()}\n"
+                + $"Route {AudioRouteHudLabel()}\n"
+                + $"UsingMic {MicrophoneDeviceHudLabel()}\n"
+                + $"Uplink {UplinkHudLabel()}\n"
+                + $"AR {ArHudLabel()}\n"
+                + $"Place {PlacementHudLabel()}\n"
                 + $"Home {(ready ? "ready" : "loading")}  {alert}";
+        }
+
+        private static string MicPublishSummary(ConnectionHealthState health)
+        {
+            if (health.AudioPublished)
+                return "pub";
+            return health.AudioPublishAttempted ? "wait" : "idle";
         }
 
         private string ArHudLabel()
@@ -266,9 +278,13 @@ namespace ParrotApp.UI
             string xri = arRuntimeBootstrap != null
                 ? arRuntimeBootstrap.LastTemplateInteractionStatus
                 : "xri?";
-            return ShortLabel(baseline, 20)
-                   + " / " + ShortLabel(spatial, 20)
-                   + " / " + ShortLabel(xri, 22);
+            string material = arRuntimeBootstrap != null
+                ? arRuntimeBootstrap.LastPlaneMaterialStatus
+                : "mat?";
+            return SafeLabel(baseline)
+                   + " / " + SafeLabel(spatial)
+                   + " / " + SafeLabel(xri)
+                   + " / " + SafeLabel(material);
         }
 
         private string PlacementHudLabel()
@@ -280,7 +296,7 @@ namespace ParrotApp.UI
             string rpc = startupFlow != null && !string.IsNullOrWhiteSpace(startupFlow.LastBrainRpcStatus)
                 ? " " + startupFlow.LastBrainRpcStatus
                 : "";
-            return ShortLabel(modelPlacementController.LastDiagnosticSummary + rpc, 76);
+            return SafeLabel(modelPlacementController.LastDiagnosticSummary + rpc);
         }
 
         private string AudioRouteHudLabel()
@@ -288,19 +304,31 @@ namespace ParrotApp.UI
             if (audioRouteManager != null)
             {
                 var snapshot = audioRouteManager.CurrentSnapshot;
-                string managerSuffix = string.IsNullOrWhiteSpace(audioRouteManager.LastError)
+                string managerError = string.IsNullOrWhiteSpace(audioRouteManager.LastError)
                     ? ""
                     : " fail " + ShortLabel(audioRouteManager.LastError, 18);
+                string native = audioRouteManager.NativeAvailable ? "native" : "fallback";
+                string preference = "pref " + ShortRoutePreference(audioRouteManager.Preference);
                 if (snapshot != null)
                 {
-                    return "in " + ShortRoute(snapshot.input_route)
+                    string snapshotSuffix =
+                        " v" + snapshot.route_version
+                        + " " + preference
+                        + " bt " + ShortLabel(snapshot.bluetooth_connect_permission, 8)
+                        + " focus " + ShortLabel(snapshot.audio_focus, 8)
+                        + " mode " + ShortLabel(snapshot.mode, 8);
+                    return native
+                           + " in " + ShortRoute(snapshot.input_route)
                            + " out " + ShortRoute(snapshot.output_route)
                            + " src " + ShortRouteSource(snapshot.source)
-                           + managerSuffix;
+                           + snapshotSuffix
+                           + managerError;
                 }
-                return "route " + ShortRoute(audioRouteManager.CurrentPolicy.RouteName)
+                return native
+                       + " route " + ShortRoute(audioRouteManager.CurrentPolicy.RouteName)
                        + " src " + ShortRouteSource(audioRouteManager.LastDetectionSource)
-                       + managerSuffix;
+                       + " " + preference
+                       + managerError;
             }
 
             if (audioRouteReporter == null)
@@ -315,6 +343,70 @@ namespace ParrotApp.UI
                     ? " fail " + ShortLabel(audioRouteReporter.LastReportError, 18)
                     : "");
             return "in " + input + " out " + output + " src " + source + reporterSuffix;
+        }
+
+        private string MicrophoneHudLabel()
+        {
+            return MicrophoneDeviceHudLabel() + " / " + UplinkHudLabel();
+        }
+
+        private string MicrophoneDeviceHudLabel()
+        {
+            if (microphonePublisher == null)
+                microphonePublisher = FindObjectOfType<MicrophonePublisher>();
+            if (microphonePublisher == null)
+                return ReporterHudSuffix("publisher_missing");
+
+            string intent = microphonePublisher.PublishIntentEnabled ? "intent on" : "intent off";
+            string device = string.IsNullOrWhiteSpace(microphonePublisher.SelectedDevice)
+                ? "auto"
+                : microphonePublisher.SelectedDevice;
+            string manual = string.IsNullOrWhiteSpace(microphonePublisher.LastManualDeviceStatus)
+                ? "auto"
+                : microphonePublisher.LastManualDeviceStatus;
+
+            return intent
+                   + " selected=" + device
+                   + " manual=" + manual
+                   + " count=" + microphonePublisher.AvailableDeviceCount
+                   + " devices=" + microphonePublisher.AvailableDevicesLabel(160);
+        }
+
+        private string UplinkHudLabel()
+        {
+            if (microphonePublisher == null)
+                microphonePublisher = FindObjectOfType<MicrophonePublisher>();
+            if (microphonePublisher == null)
+                return ReporterHudSuffix("publisher_missing");
+
+            string sampleRate = microphonePublisher.ConfiguredSampleRate > 0
+                ? microphonePublisher.ConfiguredSampleRate.ToString()
+                : "?";
+            string error = string.IsNullOrWhiteSpace(microphonePublisher.LastError)
+                ? "ok"
+                : microphonePublisher.LastError;
+
+            return microphonePublisher.UplinkStateLabel
+                   + " stage=" + microphonePublisher.LastPublishStage
+                   + " route=" + ShortRoute(microphonePublisher.ActivePolicy.RouteName)
+                   + " sr=" + sampleRate
+                   + " v=" + microphonePublisher.PublishedRouteVersion + "/" + microphonePublisher.RouteVersion
+                   + " err=" + error
+                   + ReporterHudSuffix("");
+        }
+
+        private string ReporterHudSuffix(string fallback)
+        {
+            if (audioRouteReporter == null)
+                return string.IsNullOrWhiteSpace(fallback) ? "" : " " + fallback;
+
+            string suffix = string.IsNullOrWhiteSpace(fallback) ? "" : " " + fallback;
+            suffix += " brainRoute " + audioRouteReporter.ReportSuccessCount + "/" + audioRouteReporter.ReportAttemptCount;
+            if (audioRouteReporter.ReportPending)
+                suffix += " pending";
+            if (!string.IsNullOrWhiteSpace(audioRouteReporter.LastReportError))
+                suffix += " repErr " + ShortLabel(audioRouteReporter.LastReportError, 14);
+            return suffix;
         }
 
         private static string ShortRouteSource(string source)
@@ -343,11 +435,31 @@ namespace ParrotApp.UI
             return ShortLabel(route, 12);
         }
 
+        private static string ShortRoutePreference(AudioRoutePreference preference)
+        {
+            switch (preference)
+            {
+                case AudioRoutePreference.Bluetooth:
+                    return "bt";
+                case AudioRoutePreference.PhoneMic:
+                    return "phone";
+                case AudioRoutePreference.SystemDefault:
+                    return "system";
+                default:
+                    return "auto";
+            }
+        }
+
         private static string ShortLabel(string value, int max)
         {
             string text = string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
             if (text.Length <= max) return text;
             return text.Substring(0, Mathf.Max(1, max - 3)) + "...";
+        }
+
+        private static string SafeLabel(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
         }
     }
 }

@@ -1,6 +1,6 @@
 # Design Workspace Active Context
 
-> Updated: 2026-05-16
+> Updated: 2026-05-17
 > Code repo / Codex project route: `D:\GOSLOParrot\ParrotCarriers`
 > App design workspace: `D:\GOSLOParrot\ParrotCarriers\codex_workspace\design_workspace`
 > Clean status report: `.cursor/memory/architecture/Interface/app_v1_current_status_and_test_report_20260510.md`
@@ -59,6 +59,15 @@ The formal App frontend is **not complete**.
   currently shows no attached phone; iQOO proof of plane detection, placement,
   select, drag, pinch, Bluetooth/SCO/A2DP, app switch, reconnect, and LineB
   voice remains pending.
+- 2026-05-17 formal App phone-blocker follow-up: Parrot placement size was
+  tightened by making manifest-height normalization refresh the placed model's
+  base scale and by extending delayed normalization passes for late renderer
+  bounds; this targets the repeated head-sized GLB symptom. Microphone uplink
+  now has an anti-fake-success guard: after LiveKit `PublishTrack`, Unity waits
+  for `Microphone.GetPosition(...)` to advance before reporting audio published;
+  failure is surfaced as `microphone_start_timeout`/`microphone_start_exception`.
+  The HUD now shows separate `UsingMic` and `Uplink` diagnostics so iQOO tests
+  can distinguish route/device selection from actual upstream capture.
 - Unity App RoomSetting ECS persistence is verified as of 2026-05-15:
   `New` returns an unsaved draft, `Save` persists a user Room through App HTTP,
   reload lists it from ECS, and save does not apply or change active Room.
@@ -548,9 +557,13 @@ These are useful test evidence only. They must not be used as App completion evi
   `onGosloPlaced` greeting and final plane material parity.
 - 2026-05-17 second iQOO AR blocker follow-up: the demo2 ShaderGraph material
   still rendered magenta after rebuild, so the copied
-  `ARFeatheredPlaneMeshVisualizerCompanion` now replaces unsupported/mobile
-  plane materials at runtime with a transparent `PlanePatternDot` fallback
-  material instead of trusting the failed ShaderGraph. The XRI spawn trigger now
+  `ARFeatheredPlaneMeshVisualizerCompanion` gained a transparent
+  `PlanePatternDot` fallback for unsupported materials. Follow-up phone
+  screenshot showed the ShaderGraph chain is now present, so the formal App no
+  longer treats fallback as the visual goal. The root fix is the demo2
+  ShaderGraph/material chain itself; Android fallback remains enabled only as a
+  simple translucent white safety surface if the copied ShaderGraph still
+  resolves to magenta. The XRI spawn trigger now
   requires `HorizontalUp` planes so taps do not spawn on vertical wall/curtain
   planes above the user. `FormalModelPlacementController` also performs a
   second post-placement renderer-bounds height normalization after the visual
@@ -558,6 +571,56 @@ These are useful test evidence only. They must not be used as App completion evi
   height. `AppStartupFlowController.LastBrainRpcStatus` is now shown in the HUD
   placement line, so the next phone run can distinguish "Brain connected" from
   "onGosloPlaced actually returned ok".
+- 2026-05-17 shader/audio diagnostics correction: the plane ShaderGraph issue
+  is not recorded as permanently unfixable. The formal AR Mobile template copy
+  now includes demo2's `URPShadowReceiver.shader` and
+  `InteractablePrimitive.shadergraph` with `.meta`, and `ShadowReceiver.mat`
+  no longer references a missing `_Texture2D` GUID. Static/editor logs now show
+  `Shader Graphs/ShadowReceiver` compiling for `gles3` without a shader error,
+  so remaining phone magenta must be treated as a shader-chain/build/runtime
+  parity bug to diagnose, not solved by a fancy fallback. The fallback is kept
+  intentionally simple: translucent white only. `FormalHomeHudController`
+  now exposes the phone audio path in more detail: native/fallback source,
+  route version, Bluetooth permission, audio focus/mode, selected mic device,
+  configured sample rate, device count, local route policy, manual selection,
+  and Brain audio-route report success/attempts. Use these fields in the next
+  iQOO LineA/LineB route test before claiming Bluetooth/SCO/A2DP stability.
+- 2026-05-17 iQOO screenshot triage: HUD showed native Android route
+  `phone_mic`, permission and audio focus granted, but Unity
+  `Microphone.devices` returned zero and blocked publish with
+  `no_microphone_devices`. `MicrophonePublisher` now allows an Android-only
+  default communication input fallback when the native route manager is present
+  and microphone permission is granted, passing `null` to LiveKit/Unity's
+  microphone source so Android supplies the current phone/SCO/wired input. The
+  HUD should show
+  `android_default_microphone` instead of failing with zero devices on the next
+  rebuild. Placement height normalization now runs several delayed passes after
+  the spawned model is active, so late renderer/model-driver bounds can shrink
+  the Parrot back to the manifest target instead of leaving a head-sized GLB.
+- 2026-05-17 compile/audio fallback fix: `FormalModelPlacementController`
+  explicitly imports `System.Collections` so delayed placement coroutines use
+  non-generic `IEnumerator` and compile in Unity. The Android audio-route
+  bridge no longer treats missing/unused `BLUETOOTH_CONNECT` or an explicit
+  Bluetooth preference as a blocker for built-in phone routing: Bluetooth SCO
+  is preferred only when actually available, otherwise the route falls through
+  to wired/earpiece/speaker plus phone mic. The manual `MIC NEXT` diagnostic
+  also resolves empty Unity device lists to `auto:android_default_microphone`
+  when the native Android route can supply the default input.
+- 2026-05-17 selected-plane visual correction: the latest phone screenshots
+  clarified that the pink/magenta surface is the AR plane material and the
+  orange surface is the selected GOSLO affordance. Formal selection feedback no
+  longer uses a cylinder/slab mesh; `FormalModelPlacementController` now draws
+  a transparent white `LineRenderer` ring around the selected model so it does
+  not occlude the camera view. `ARFeatheredPlaneMeshVisualizerCompanion` keeps
+  Android error-shader protection enabled, but it no longer treats every
+  Android ShaderGraph as fallback-worthy. A healthy
+  `Shader Graphs/ShadowReceiver` is allowed to run; only true error/fallback
+  shaders become a simple translucent white surface. Any demo2 visual mismatch
+  must be fixed in the copied ShaderGraph/material chain rather than by
+  elaborating the fallback.
+  `FormalArRuntimeBootstrap.LastPlaneMaterialStatus` is now surfaced in the
+  HUD so the next phone screenshot shows whether the plane is using
+  `Shader Graphs/ShadowReceiver`, `AR/Occlusion`, an error shader, or fallback.
 - 2026-05-13 homepage/LiveKit continuation audit: Brain RPC testing does not
   require phone or voice, but it does require a Brain / LiveKit Agents
   participant in the same room. Phone/device testing is still required for AR

@@ -8,6 +8,7 @@ from parrot.brain.tools.animate import animate
 from parrot.brain.tools.dispatch_task import dispatch_task
 from parrot.brain.tools.fly_to import fly_to
 from parrot.brain.tools.manage_episode import manage_episode
+from parrot.brain.tools.perch_to_finger import perch_to_finger
 from parrot.brain.tools.play_capability import play_capability
 from parrot.brain.tools.query_memory import query_memory
 from parrot.brain.tools.query_scene import query_scene
@@ -18,7 +19,7 @@ from parrot.brain.tools._capability_gate import active_model_id
 from parrot.brain.model_manifest_registry import get_model_manifest_registry
 
 ALL_TOOLS = [
-    fly_to, animate, play_capability, dispatch_task,
+    fly_to, perch_to_finger, animate, play_capability, dispatch_task,
     remember, query_memory, query_scene, set_mode,
     manage_episode, set_video_tier,
 ]
@@ -40,8 +41,13 @@ def tools_for_active_model():
     ]
     if registry.supports(model_id, "fly"):
         tools.insert(0, fly_to)
+    if registry.supports(model_id, "fly") and registry.supports(model_id, "perch"):
+        insert_at = 1 if fly_to in tools else 0
+        tools.insert(insert_at, perch_to_finger)
     if registry.parrot_reflex_enabled(model_id):
         insert_at = 1 if fly_to in tools else 0
+        if perch_to_finger in tools:
+            insert_at = max(insert_at, tools.index(perch_to_finger) + 1)
         tools.insert(insert_at, animate)
     if "identify_object" in globals():
         tools.append(identify_object)
@@ -65,7 +71,7 @@ if os.getenv("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", "0").lower() in {"1", "true",
     ALL_TOOLS.append(identify_object)
 
 __all__ = [
-    "fly_to", "animate", "play_capability", "dispatch_task",
+    "fly_to", "perch_to_finger", "animate", "play_capability", "dispatch_task",
     "remember", "query_memory", "query_scene", "set_mode",
     "manage_episode", "set_video_tier",
     "ALL_TOOLS", "tools_for_active_model",

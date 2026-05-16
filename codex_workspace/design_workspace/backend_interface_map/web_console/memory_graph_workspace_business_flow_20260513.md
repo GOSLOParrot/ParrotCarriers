@@ -103,13 +103,85 @@ Current React Memory behavior:
   expanded/collapsed until the operator manually drags a panel elsewhere. Panel
   resizing uses explicit left-edge, bottom-edge, and bottom-left handles so
   right-docked panels can be expanded without hunting for the browser's native
-  bottom-right resize corner.
+  bottom-right resize corner. The 2026-05-17 recording review also moved those
+  handles inside panel bounds, disabled panel-level horizontal scroll, raised
+  the minimum/default panel width, added right/right-corner resize handles, and
+  changed the ResizeObserver state writeback to use the real border-box size so
+  manual resizing is not immediately shrunk back by content-box measurement.
   Backend fallback de-dup no longer treats the visible `label` as a global key:
   stable source identities (`obsidian_uuid`, `graphiti_uuid`, Google provider
   ids) still win first, then fallback lookup uses `NodeKind + exact label`.
   This allows `object:desk` and `zone:desk` to coexist while same-kind repeat
   writes still merge through L1.5/Ingest. Tags remain free-form labels and are
   not identity keys.
+- 2026-05-17 panel-system research correction: the latest screen recording
+  shows the remaining resize/snap defects are substrate defects, not React Flow
+  graph defects. The current custom threshold code guesses dock/snap positions
+  from panel coordinates; that is too fragile for Photoshop-like behavior.
+  External research anchors:
+  - `react-rnd`: best short-term fit for controlled floating canvas panels
+    because it owns drag, resize, bounds, min/max size, controlled position/
+    size, grid increments, and canvas-scale compensation.
+  - `interact.js`: best lower-level fit if Memory needs real snap guides,
+    edge snapping, size snapping, and dynamic targets while still keeping a
+    custom React shell.
+  - `dockview`: best medium-term fit for IDE/Photoshop-like docked groups,
+    tabs, split groups, floating groups, popouts, and layout serialization.
+  - `react-resizable-panels` / Allotment-style split panes remain suitable for
+    the left nav, record rail, and source/detail rails, but not for free canvas
+    overlays by themselves.
+  - `Animal-Island-UI` is a playful Animal-Crossing-style React component
+    library; keep it as future 2D workspace inspiration, not as this console's
+    current operations-panel style.
+  Next implementation rule: do not keep adding custom snap heuristics to the
+  existing floating panel code. Either migrate the current tool/selection
+  floating panels to `react-rnd`/`interact.js`, or move the whole panel layout
+  to a real dock manager once the page is ready for that larger refactor.
+- 2026-05-17 implementation follow-up: the current Memory page now uses
+  `react-rnd@10.4.13` for the floating toolbar, active tool panel, and selected
+  Node/Edge inspector. `react-rnd` owns controlled position/size, parent
+  bounds, min/max dimensions, drag grid, resize grid, and resize handles. The
+  previous custom pointermove drag handler, custom resize handler, panel
+  element refs, and panel ResizeObserver writeback were removed from
+  `web/console_app/src/App.tsx`. This intentionally narrows custom layout code
+  to default right-dock placement and release-time boundary clamping; if the
+  next UX slice needs Photoshop guide lines, panel-to-panel magnetic docking,
+  or tabbed dock groups, use `interact.js` snap targets or a Dockview-style
+  layout manager instead of re-expanding the handwritten substrate.
+- 2026-05-17 default layout correction: Memory Graph no longer opens with the
+  Node creation tool panel active. Initial React Flow `fitView`, Focus, and
+  Layout now cap max zoom so a graph with only a few Nodes does not start in a
+  giant-node view. Selected Node/Edge details default to the right-side
+  inspector area; when an active tool panel is also open and there is enough
+  width, the selection inspector is placed beside the tool panel instead of
+  stacked below it. This keeps the graph visible after F5 and avoids the
+  "tool panel + detail panel cover the graph" startup state from the
+  2026-05-17 03:40 recording.
+- 2026-05-17 no-flash layout fix: the right-side selection inspector is now the
+  fixed default. If a tool panel is also open, the tool panel yields left when
+  there is enough width; the inspector no longer moves to the middle. Default
+  panel coordinates are no longer recalculated during render. The canvas first
+  reports a stable measured size, then unmoved tool/detail panels are synced
+  into controlled state and mounted from that state. This fixes the follow-up
+  regression where a zero-size first canvas frame could clamp the detail panel
+  to the left/top corner and leave it hard to click after repeated F5 reloads.
+- 2026-05-17 reopen/animation fix: floating panels no longer rely on a
+  post-mount layout correction when opened. Toolbar actions now write the
+  tool panel's right-dock state before changing `activeTool`, and Node/Edge
+  selection writes the inspector's right-dock state before changing `selected`;
+  both paths increment a remount version so closing/reopening the same tool or
+  selecting another item does not reuse stale `react-rnd` internals. The outer
+  panel animation was also changed from transform-based `panel-pop` to
+  opacity-only `panel-fade`, because transform animation overrides
+  `react-rnd`'s own translate transform and was the main source of the visible
+  left/top spawn flash.
+- 2026-05-17 collision fix: the tool panel and selected Node/Edge inspector now
+  share one deterministic layout policy. When the canvas is wide enough, the
+  tool panel yields to the left and the inspector stays right. When the
+  operation-record rail or viewport makes the canvas too narrow, both panels
+  stay in the right dock as a vertical split with bounded heights. This avoids
+  the previous clamp-back overlap where two tall panels fought for the same
+  right-side coordinate.
 - 2026-05-14 homepage cleanup: Memory view polling is capped at 5s in the React
   shell, while Runtime keeps the configured BFF cadence. This remains polling,
   not true realtime; SSE/changed-since remains the next CORE-009 candidate.

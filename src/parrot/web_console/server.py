@@ -564,6 +564,14 @@ def build_app(
 
         return draft_ref_binding(payload or {})
 
+    @app.post("/api/refs/binding/apply")
+    async def refs_binding_apply(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_ref_binding
+
+        return apply_ref_binding(payload or {})
+
     @app.post("/api/l15/obsidian-node/draft")
     async def l15_obsidian_node_draft(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),

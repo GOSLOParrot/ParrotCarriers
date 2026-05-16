@@ -1,33 +1,15 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 #if UNITY_XR_HANDS
+using Unity.XR.CoreUtils;
 using UnityEngine.XR.Hands;
 #endif
 
 namespace ParrotApp.Hands
 {
-    /// <summary>
-    /// Sprint4 Phase 4 W3.A.2 — pure local gesture event source.
-    ///
-    /// <b>本类与 ParrotDev 的 <c>XRHandTracker</c> 不同的地方</b>（按用户 2026-04-29
-    /// 决定）：
-    /// <list type="bullet">
-    /// <item><b>不发 LiveKit DataChannel</b>。手势是 Reflex 层（行为矩阵 §3.3 第 2 行），
-    ///   消费者只在 Unity 进程内（<c>PerchOnHand</c>）。Brain 不需要原始手势流；
-    ///   后果（如 PERCHED_ON_HAND body 状态）通过 EcpState A.3 双触发外溢。</item>
-    /// <item><b>新增 <see cref="HandGestureSnapshot.IndexIntermediate"/></b>：食指中段
-    ///   指节，作为"鸟踩树枝"的物理落点（<c>parrot_behavior_rules §5.1</c> +
-    ///   entry doc §3.3 末段"成功判定点"——食指中段，不是指尖）。</item>
-    /// <item><b>手势改为 <see cref="GestureBranch"/></b>：单手横着伸出食指（其他手指
-    ///   弯曲 + 食指方向接近水平），像一根树枝。</item>
-    /// </list>
-    ///
-    /// <b>包依赖</b>：实际手势检测依赖 <c>com.unity.xr.hands</c>。当前 ArSpike
-    /// <c>Packages/manifest.json</c> 没装该包，<c>csc.rsp</c> 也没 define
-    /// <c>UNITY_XR_HANDS</c>。装包并加 define 后本类自动启用真实检测；之前可走
-    /// <see cref="DebugFireBranchGesture"/> Inspector ContextMenu 触发。
-    /// </summary>
+    [DisallowMultipleComponent]
     public class HandGestureSource : MonoBehaviour
     {
         public const string GestureNone = "none";
@@ -35,43 +17,50 @@ namespace ParrotApp.Hands
         public const string GestureFist = "closed_fist";
 
 #if UNITY_XR_HANDS
-        public enum Handedness { Left, Right }
+        public enum PreferredHand { Left, Right }
 
         [Header("Tracking")]
-        [SerializeField] private Handedness preferredHand = Handedness.Right;
-
-        [Header("Gesture Thresholds")]
-        [Tooltip("Max curl angle (deg) for a finger to count as extended")]
-        [SerializeField] private float fingerExtendedMaxAngle = 40f;
-        [Tooltip("Min curl angle (deg) for a finger to count as curled")]
-        [SerializeField] private float fingerCurledMinAngle = 60f;
-        [Tooltip("|dot(indexDir, Vector3.up)| <= this => 'horizontal' (branch-like)")]
-        [SerializeField] private float indexHorizontalMaxAbsDotUp = 0.45f;
+        [SerializeField] private PreferredHand preferredHand = PreferredHand.Right;
 #endif
 
+        [Header("Gesture thresholds")]
+        [SerializeField] private float indexStraightMaxBendDegrees = 35f;
+        [SerializeField] private float curledMinBendDegrees = 55f;
+        [SerializeField] private float curledDistanceRatio = 0.86f;
+        [SerializeField] private float indexHorizontalMaxAbsDotUp = 0.42f;
+        [SerializeField] private float minBranchConfidence = 0.55f;
+
+        [Header("Perch pose")]
+        [SerializeField] private float middleSegmentBlend = 0.5f;
+        [SerializeField] private bool faceMainCameraWhenPossible = true;
+
         [Header("Update")]
-        [Tooltip("Interval between OnGestureSnapshot fires (seconds). 0 = every frame.")]
         [SerializeField] private float snapshotIntervalSeconds = 0.05f;
+        [SerializeField] private float subsystemRetryIntervalSeconds = 1f;
 
         public bool IsHandDetected { get; private set; }
         public string CurrentGesture { get; private set; } = GestureNone;
+        public string TrackingSource { get; private set; } = "none";
+        public string LastTrackingStatus { get; private set; } = "not_started";
         public Vector3 PalmPosition { get; private set; }
         public Vector3 IndexTipPosition { get; private set; }
-
-        /// <summary>
-        /// 食指中段指节（<see cref="XRHandJointID.IndexIntermediate"/> 经
-        /// XROrigin 变换后的世界坐标）。<see cref="PerchOnHand"/> 用作飞行目标。
-        /// </summary>
         public Vector3 IndexIntermediatePosition { get; private set; }
+        public Vector3 IndexDistalPosition { get; private set; }
+        public Vector3 IndexPerchPosition { get; private set; }
+        public Vector3 IndexDirection { get; private set; } = Vector3.right;
+        public Vector3 PalmNormal { get; private set; } = Vector3.up;
+        public HandPerchPose CurrentPerchPose { get; private set; }
 
         public event Action<HandGestureSnapshot> OnGestureSnapshot;
 
         private float _lastSnapshotAt;
         private string _lastSnapshotGesture = GestureNone;
         private bool _lastSnapshotDetected;
+        private float _nextSubsystemRetryAt;
 
 #if UNITY_XR_HANDS
         private XRHandSubsystem _handSubsystem;
+        private XROrigin _xrOrigin;
 #endif
 
         public struct HandGestureSnapshot
@@ -81,145 +70,313 @@ namespace ParrotApp.Hands
             public Vector3 Palm;
             public Vector3 IndexTip;
             public Vector3 IndexIntermediate;
+            public Vector3 IndexDistal;
+            public Vector3 IndexPerch;
+            public Vector3 IndexDirection;
+            public HandPerchPose PerchPose;
+            public string Source;
+            public float Confidence;
             public float Timestamp;
         }
 
-        void Start()
+        private struct FingerJoints
+        {
+            public Vector3 Proximal;
+            public Vector3 Intermediate;
+            public Vector3 Tip;
+            public bool Valid;
+        }
+
+        private void Start()
         {
 #if UNITY_XR_HANDS
-            var subsystems = new System.Collections.Generic.List<XRHandSubsystem>();
-            SubsystemManager.GetSubsystems(subsystems);
-            if (subsystems.Count > 0)
-            {
-                _handSubsystem = subsystems[0];
-                Debug.Log($"[HandGestureSource] XR Hand subsystem found: {_handSubsystem.GetType().Name}");
-            }
-            else
-            {
-                Debug.LogWarning("[HandGestureSource] No XR Hand subsystem available — gesture detection idle");
-            }
+            TryBindSubsystem();
 #else
+            LastTrackingStatus = "xr_hands_package_not_compiled";
             Debug.LogWarning(
-                "[HandGestureSource] com.unity.xr.hands / UNITY_XR_HANDS not enabled — " +
-                "gesture detection inactive. Use DebugFireBranchGesture() ContextMenu to manually trigger.");
+                "[HandGestureSource] UNITY_XR_HANDS is not defined. " +
+                "Install com.unity.xr.hands and keep Assets/csc.rsp enabled for real tracking.");
 #endif
         }
 
-        void Update()
+        private void Update()
         {
 #if UNITY_XR_HANDS
-            UpdateRealHand();
+            if ((_handSubsystem == null || !_handSubsystem.running) && Time.unscaledTime >= _nextSubsystemRetryAt)
+            {
+                _nextSubsystemRetryAt = Time.unscaledTime + Mathf.Max(0.25f, subsystemRetryIntervalSeconds);
+                TryBindSubsystem();
+                if (_handSubsystem == null || !_handSubsystem.running)
+                    MarkHandLost("subsystem_not_running");
+            }
+#endif
+        }
+
+        private void OnDestroy()
+        {
+#if UNITY_XR_HANDS
+            UnsubscribeSubsystem();
 #endif
         }
 
 #if UNITY_XR_HANDS
-        private void UpdateRealHand()
+        private void TryBindSubsystem()
         {
-            if (_handSubsystem == null || !_handSubsystem.running)
+            if (_handSubsystem != null && _handSubsystem.running) return;
+
+            UnsubscribeSubsystem();
+            var subsystems = new List<XRHandSubsystem>();
+            SubsystemManager.GetSubsystems(subsystems);
+            for (int i = 0; i < subsystems.Count; i++)
             {
-                if (IsHandDetected) MarkHandLost();
-                return;
-            }
-
-            XRHand hand = preferredHand == Handedness.Right
-                ? _handSubsystem.rightHand
-                : _handSubsystem.leftHand;
-
-            if (!hand.isTracked)
-            {
-                if (IsHandDetected) MarkHandLost();
-                return;
-            }
-
-            IsHandDetected = true;
-            UpdateJointPositions(hand);
-            CurrentGesture = DetectGesture(hand);
-            MaybeFireSnapshot();
-        }
-
-        private void UpdateJointPositions(XRHand hand)
-        {
-            var xrOrigin = FindAnyObjectByType<Unity.XR.CoreUtils.XROrigin>();
-            Pose originPose = xrOrigin != null
-                ? new Pose(xrOrigin.transform.position, xrOrigin.transform.rotation)
-                : Pose.identity;
-
-            if (hand.GetJoint(XRHandJointID.Palm).TryGetPose(out Pose palmPose))
-                PalmPosition = palmPose.GetTransformedBy(originPose).position;
-
-            if (hand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out Pose tipPose))
-                IndexTipPosition = tipPose.GetTransformedBy(originPose).position;
-
-            if (hand.GetJoint(XRHandJointID.IndexIntermediate).TryGetPose(out Pose midPose))
-                IndexIntermediatePosition = midPose.GetTransformedBy(originPose).position;
-        }
-
-        /// <summary>
-        /// Detection rules (entry doc §3.3 + parrot_behavior_rules §5.1):
-        /// <list type="bullet">
-        /// <item><c>index_finger_branch</c>: index extended + middle/ring/little
-        ///   curled + index direction is roughly horizontal (|dot(dir, up)|
-        ///   <= <see cref="indexHorizontalMaxAbsDotUp"/>).</item>
-        /// <item><c>closed_fist</c>: ≤ 1 finger extended (kept from ParrotDev
-        ///   for "shoo" semantics).</item>
-        /// <item><c>none</c>: anything else.</item>
-        /// </list>
-        /// Thumb is intentionally ignored — natural "branch" pose can have
-        /// thumb either tucked or relaxed.
-        /// </summary>
-        private string DetectGesture(XRHand hand)
-        {
-            float indexAngle = FingerCurlAngle(hand, XRHandJointID.IndexTip, XRHandJointID.IndexProximal);
-            float middleAngle = FingerCurlAngle(hand, XRHandJointID.MiddleTip, XRHandJointID.MiddleProximal);
-            float ringAngle = FingerCurlAngle(hand, XRHandJointID.RingTip, XRHandJointID.RingProximal);
-            float littleAngle = FingerCurlAngle(hand, XRHandJointID.LittleTip, XRHandJointID.LittleProximal);
-
-            int extendedCount = 0;
-            if (indexAngle < fingerExtendedMaxAngle) extendedCount++;
-            if (middleAngle < fingerExtendedMaxAngle) extendedCount++;
-            if (ringAngle < fingerExtendedMaxAngle) extendedCount++;
-            if (littleAngle < fingerExtendedMaxAngle) extendedCount++;
-
-            // closed fist: nothing extended (or only thumb, which we don't count)
-            if (extendedCount == 0) return GestureFist;
-
-            // index_finger_branch: only index extended, others curled, horizontal
-            bool onlyIndexExtended = indexAngle < fingerExtendedMaxAngle
-                && middleAngle > fingerCurledMinAngle
-                && ringAngle > fingerCurledMinAngle
-                && littleAngle > fingerCurledMinAngle;
-
-            if (onlyIndexExtended)
-            {
-                if (hand.GetJoint(XRHandJointID.IndexTip).TryGetPose(out Pose tipPose) &&
-                    hand.GetJoint(XRHandJointID.IndexProximal).TryGetPose(out Pose proxPose))
+                if (subsystems[i] != null && subsystems[i].running)
                 {
-                    Vector3 indexDir = (tipPose.position - proxPose.position).normalized;
-                    if (Mathf.Abs(Vector3.Dot(indexDir, Vector3.up)) <= indexHorizontalMaxAbsDotUp)
-                        return GestureBranch;
+                    _handSubsystem = subsystems[i];
+                    break;
                 }
             }
 
-            return GestureNone;
+            if (_handSubsystem == null)
+            {
+                LastTrackingStatus = "no_running_xrhand_subsystem";
+                return;
+            }
+
+            _xrOrigin = FindObjectOfType<XROrigin>();
+            _handSubsystem.updatedHands += HandleUpdatedHands;
+            _handSubsystem.trackingLost += HandleTrackingLost;
+            _handSubsystem.trackingAcquired += HandleTrackingAcquired;
+            LastTrackingStatus = "xrhand_subsystem_bound";
+            Debug.Log($"[HandGestureSource] XRHandSubsystem bound: {_handSubsystem.GetType().Name}");
         }
 
-        private static float FingerCurlAngle(XRHand hand, XRHandJointID tip, XRHandJointID proximal)
+        private void UnsubscribeSubsystem()
         {
-            if (!hand.GetJoint(tip).TryGetPose(out Pose tipPose)) return 90f;
-            if (!hand.GetJoint(proximal).TryGetPose(out Pose proxPose)) return 90f;
-            if (!hand.GetJoint(XRHandJointID.Palm).TryGetPose(out Pose palmPose)) return 90f;
+            if (_handSubsystem == null) return;
+            _handSubsystem.updatedHands -= HandleUpdatedHands;
+            _handSubsystem.trackingLost -= HandleTrackingLost;
+            _handSubsystem.trackingAcquired -= HandleTrackingAcquired;
+            _handSubsystem = null;
+        }
 
-            Vector3 fingerDir = (tipPose.position - proxPose.position).normalized;
-            Vector3 handForward = palmPose.rotation * Vector3.forward;
-            return Vector3.Angle(fingerDir, handForward);
+        private void HandleTrackingAcquired(XRHand hand)
+        {
+            LastTrackingStatus = "tracking_acquired";
+        }
+
+        private void HandleTrackingLost(XRHand hand)
+        {
+            MarkHandLost("tracking_lost");
+        }
+
+        private void HandleUpdatedHands(
+            XRHandSubsystem subsystem,
+            XRHandSubsystem.UpdateSuccessFlags updateSuccessFlags,
+            XRHandSubsystem.UpdateType updateType)
+        {
+            if (updateType != XRHandSubsystem.UpdateType.Dynamic) return;
+
+            XRHand hand = preferredHand == PreferredHand.Right
+                ? subsystem.rightHand
+                : subsystem.leftHand;
+
+            UpdateTrackedHand(hand);
+        }
+
+        private void UpdateTrackedHand(XRHand hand)
+        {
+            if (!hand.isTracked)
+            {
+                MarkHandLost("hand_not_tracked");
+                return;
+            }
+
+            if (!TryBuildPerchPose(hand, out HandPerchPose pose, out float confidence))
+            {
+                IsHandDetected = true;
+                CurrentGesture = GestureNone;
+                CurrentPerchPose = default;
+                LastTrackingStatus = "required_joints_unavailable";
+                MaybeFireSnapshot();
+                return;
+            }
+
+            CurrentPerchPose = pose;
+            PalmPosition = pose.PalmPosition;
+            PalmNormal = pose.PalmNormal;
+            IndexPerchPosition = pose.Position;
+            IndexDirection = pose.FingerDirection;
+            TrackingSource = "xr_hands";
+            IsHandDetected = true;
+            CurrentGesture = DetectGesture(hand, confidence);
+            LastTrackingStatus = "tracking";
+            MaybeFireSnapshot();
+        }
+
+        private bool TryBuildPerchPose(XRHand hand, out HandPerchPose pose, out float confidence)
+        {
+            pose = default;
+            confidence = 0f;
+
+            if (!TryGetWorldPose(hand, XRHandJointID.Palm, out Pose palmPose)) return false;
+            if (!TryGetWorldPosition(hand, XRHandJointID.IndexProximal, out Vector3 indexProximal)) return false;
+            if (!TryGetWorldPosition(hand, XRHandJointID.IndexIntermediate, out Vector3 indexIntermediate)) return false;
+            if (!TryGetWorldPosition(hand, XRHandJointID.IndexTip, out Vector3 indexTip)) return false;
+
+            bool hasDistal = TryGetWorldPosition(hand, XRHandJointID.IndexDistal, out Vector3 indexDistal);
+            if (!hasDistal) indexDistal = Vector3.Lerp(indexIntermediate, indexTip, 0.45f);
+
+            PalmPosition = palmPose.position;
+            IndexTipPosition = indexTip;
+            IndexIntermediatePosition = indexIntermediate;
+            IndexDistalPosition = indexDistal;
+
+            Vector3 segmentCenter = Vector3.Lerp(
+                indexIntermediate,
+                indexDistal,
+                Mathf.Clamp01(middleSegmentBlend));
+
+            Vector3 fingerDir = indexTip - indexProximal;
+            if (fingerDir.sqrMagnitude < 0.00001f) return false;
+            fingerDir.Normalize();
+
+            Vector3 palmNormal = palmPose.rotation * Vector3.up;
+            if (palmNormal.sqrMagnitude < 0.00001f) palmNormal = Vector3.up;
+            palmNormal.Normalize();
+
+            Vector3 facing = ResolveFacingDirection(segmentCenter, fingerDir);
+            Vector3 up = Vector3.Cross(facing, fingerDir);
+            if (up.sqrMagnitude < 0.00001f) up = Vector3.up;
+            up.Normalize();
+            facing = Vector3.Cross(fingerDir, up).normalized;
+
+            float horizontalScore = 1f - Mathf.Clamp01(Mathf.Abs(Vector3.Dot(fingerDir, Vector3.up)) / Mathf.Max(0.01f, indexHorizontalMaxAbsDotUp));
+            confidence = Mathf.Clamp01(0.55f + horizontalScore * 0.35f);
+
+            pose = new HandPerchPose
+            {
+                IsValid = true,
+                Position = segmentCenter,
+                Rotation = Quaternion.LookRotation(facing, up),
+                FingerDirection = fingerDir,
+                PalmPosition = palmPose.position,
+                PalmNormal = palmNormal,
+                FacingDirection = facing,
+                Confidence = confidence,
+                Source = "xr_hands",
+            };
+            return true;
+        }
+
+        private Vector3 ResolveFacingDirection(Vector3 perchPosition, Vector3 fingerDir)
+        {
+            Vector3 desired = Vector3.zero;
+            if (faceMainCameraWhenPossible && Camera.main != null)
+                desired = Camera.main.transform.position - perchPosition;
+            if (desired.sqrMagnitude < 0.0001f)
+                desired = Vector3.Cross(Vector3.up, fingerDir);
+            desired = Vector3.ProjectOnPlane(desired, fingerDir);
+            if (desired.sqrMagnitude < 0.0001f)
+                desired = Vector3.Cross(Vector3.forward, fingerDir);
+            if (desired.sqrMagnitude < 0.0001f)
+                desired = Vector3.forward;
+            return desired.normalized;
+        }
+
+        private string DetectGesture(XRHand hand, float poseConfidence)
+        {
+            if (!TryGetFinger(hand, XRHandJointID.IndexProximal, XRHandJointID.IndexIntermediate, XRHandJointID.IndexTip, out FingerJoints index))
+                return GestureNone;
+            if (!TryGetFinger(hand, XRHandJointID.MiddleProximal, XRHandJointID.MiddleIntermediate, XRHandJointID.MiddleTip, out FingerJoints middle))
+                return GestureNone;
+            if (!TryGetFinger(hand, XRHandJointID.RingProximal, XRHandJointID.RingIntermediate, XRHandJointID.RingTip, out FingerJoints ring))
+                return GestureNone;
+            if (!TryGetFinger(hand, XRHandJointID.LittleProximal, XRHandJointID.LittleIntermediate, XRHandJointID.LittleTip, out FingerJoints little))
+                return GestureNone;
+
+            float indexBend = BendAngle(index);
+            float middleBend = BendAngle(middle);
+            float ringBend = BendAngle(ring);
+            float littleBend = BendAngle(little);
+
+            float indexPalmDistance = Vector3.Distance(PalmPosition, index.Tip);
+            bool indexExtended = indexBend <= indexStraightMaxBendDegrees;
+            bool middleCurled = IsCurled(middle, middleBend, indexPalmDistance);
+            bool ringCurled = IsCurled(ring, ringBend, indexPalmDistance);
+            bool littleCurled = IsCurled(little, littleBend, indexPalmDistance);
+            bool horizontal = Mathf.Abs(Vector3.Dot(IndexDirection, Vector3.up)) <= indexHorizontalMaxAbsDotUp;
+
+            if (indexExtended && middleCurled && ringCurled && littleCurled && horizontal && poseConfidence >= minBranchConfidence)
+                return GestureBranch;
+
+            int extendedCount = 0;
+            if (indexExtended) extendedCount++;
+            if (middleBend <= indexStraightMaxBendDegrees) extendedCount++;
+            if (ringBend <= indexStraightMaxBendDegrees) extendedCount++;
+            if (littleBend <= indexStraightMaxBendDegrees) extendedCount++;
+            return extendedCount == 0 ? GestureFist : GestureNone;
+        }
+
+        private bool TryGetFinger(XRHand hand, XRHandJointID proximal, XRHandJointID intermediate, XRHandJointID tip, out FingerJoints joints)
+        {
+            joints = default;
+            if (!TryGetWorldPosition(hand, proximal, out joints.Proximal)) return false;
+            if (!TryGetWorldPosition(hand, intermediate, out joints.Intermediate)) return false;
+            if (!TryGetWorldPosition(hand, tip, out joints.Tip)) return false;
+            joints.Valid = true;
+            return true;
+        }
+
+        private bool TryGetWorldPosition(XRHand hand, XRHandJointID jointId, out Vector3 position)
+        {
+            position = default;
+            if (!TryGetWorldPose(hand, jointId, out Pose pose)) return false;
+            position = pose.position;
+            return true;
+        }
+
+        private bool TryGetWorldPose(XRHand hand, XRHandJointID jointId, out Pose worldPose)
+        {
+            worldPose = default;
+            if (!hand.GetJoint(jointId).TryGetPose(out Pose localPose)) return false;
+            if (_xrOrigin == null) _xrOrigin = FindObjectOfType<XROrigin>();
+            if (_xrOrigin != null)
+            {
+                Transform origin = _xrOrigin.transform;
+                worldPose = new Pose(
+                    origin.TransformPoint(localPose.position),
+                    origin.rotation * localPose.rotation);
+                return true;
+            }
+            worldPose = localPose;
+            return true;
         }
 #endif
 
-        private void MarkHandLost()
+        private static float BendAngle(FingerJoints finger)
         {
+            Vector3 a = finger.Intermediate - finger.Proximal;
+            Vector3 b = finger.Tip - finger.Intermediate;
+            if (a.sqrMagnitude < 0.00001f || b.sqrMagnitude < 0.00001f) return 90f;
+            return Vector3.Angle(a, b);
+        }
+
+        private bool IsCurled(FingerJoints finger, float bendAngle, float indexPalmDistance)
+        {
+            if (bendAngle >= curledMinBendDegrees) return true;
+            float distance = Vector3.Distance(PalmPosition, finger.Tip);
+            return distance <= indexPalmDistance * Mathf.Clamp(curledDistanceRatio, 0.5f, 1.1f);
+        }
+
+        private void MarkHandLost(string reason)
+        {
+            bool changed = IsHandDetected || CurrentGesture != GestureNone;
             IsHandDetected = false;
             CurrentGesture = GestureNone;
-            FireSnapshot();
+            TrackingSource = "none";
+            LastTrackingStatus = reason;
+            CurrentPerchPose = default;
+            if (changed) FireSnapshot();
         }
 
         private void MaybeFireSnapshot()
@@ -243,6 +400,12 @@ namespace ParrotApp.Hands
                 Palm = PalmPosition,
                 IndexTip = IndexTipPosition,
                 IndexIntermediate = IndexIntermediatePosition,
+                IndexDistal = IndexDistalPosition,
+                IndexPerch = IndexPerchPosition,
+                IndexDirection = IndexDirection,
+                PerchPose = CurrentPerchPose,
+                Source = TrackingSource,
+                Confidence = CurrentPerchPose.Confidence,
                 Timestamp = Time.time,
             };
 
@@ -250,22 +413,53 @@ namespace ParrotApp.Hands
             catch (Exception ex) { Debug.LogError($"[HandGestureSource] OnGestureSnapshot subscriber threw: {ex}"); }
         }
 
-        // ─── Editor / debug entry ────────────────────────────────────
-
-        /// <summary>
-        /// Editor smoke entry: simulate a horizontal index-finger branch in front
-        /// of the parrot. Useful when <c>com.unity.xr.hands</c> isn't installed
-        /// or while testing PerchOnHand without donning a head-tracked rig.
-        /// </summary>
-        [ContextMenu("Debug: Fire 'index_finger_branch' gesture (1m forward)")]
+        [ContextMenu("Debug: Fire 'index_finger_branch' gesture (camera space)")]
         public void DebugFireBranchGesture()
         {
+            Vector3 center;
+            Vector3 fingerDir;
+            Vector3 facing;
+            if (Camera.main != null)
+            {
+                Transform cam = Camera.main.transform;
+                center = cam.position + cam.forward * 0.55f + cam.right * 0.12f - cam.up * 0.05f;
+                fingerDir = cam.right.normalized;
+                facing = Vector3.ProjectOnPlane(cam.position - center, fingerDir).normalized;
+            }
+            else
+            {
+                center = transform.position + Vector3.forward * 0.55f + Vector3.right * 0.12f;
+                fingerDir = Vector3.right;
+                facing = Vector3.back;
+            }
+
+            if (facing.sqrMagnitude < 0.0001f) facing = Vector3.forward;
+            Vector3 up = Vector3.Cross(facing, fingerDir).normalized;
+            facing = Vector3.Cross(fingerDir, up).normalized;
+
             IsHandDetected = true;
             CurrentGesture = GestureBranch;
-            Vector3 forward = transform.position + Vector3.forward * 0.5f + Vector3.right * 0.2f;
-            PalmPosition = forward + Vector3.left * 0.08f;
-            IndexIntermediatePosition = forward;
-            IndexTipPosition = forward + Vector3.right * 0.04f;
+            TrackingSource = "debug";
+            LastTrackingStatus = "debug_branch";
+            PalmPosition = center - fingerDir * 0.08f;
+            IndexIntermediatePosition = center - fingerDir * 0.025f;
+            IndexDistalPosition = center + fingerDir * 0.025f;
+            IndexPerchPosition = center;
+            IndexTipPosition = center + fingerDir * 0.075f;
+            IndexDirection = fingerDir;
+            PalmNormal = up;
+            CurrentPerchPose = new HandPerchPose
+            {
+                IsValid = true,
+                Position = IndexPerchPosition,
+                Rotation = Quaternion.LookRotation(facing, up),
+                FingerDirection = fingerDir,
+                PalmPosition = PalmPosition,
+                PalmNormal = PalmNormal,
+                FacingDirection = facing,
+                Confidence = 1f,
+                Source = "debug",
+            };
             FireSnapshot();
         }
 
@@ -274,13 +468,15 @@ namespace ParrotApp.Hands
         {
             IsHandDetected = true;
             CurrentGesture = GestureFist;
+            TrackingSource = "debug";
+            LastTrackingStatus = "debug_fist";
             FireSnapshot();
         }
 
         [ContextMenu("Debug: Hand lost")]
         public void DebugFireHandLost()
         {
-            MarkHandLost();
+            MarkHandLost("debug_hand_lost");
         }
     }
 }
