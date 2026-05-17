@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from parrot.brain.tools.animate import animate
+from parrot.brain.tools.calendar_context import calendar_context
 from parrot.brain.tools.dispatch_task import dispatch_task
 from parrot.brain.tools.fly_to import fly_to
 from parrot.brain.tools.manage_episode import manage_episode
@@ -21,7 +22,7 @@ from parrot.brain.model_manifest_registry import get_model_manifest_registry
 
 ALL_TOOLS = [
     fly_to, perch_to_finger, return_to_view, animate, play_capability, dispatch_task,
-    remember, query_memory, query_scene, set_mode,
+    calendar_context, remember, query_memory, query_scene, set_mode,
     manage_episode, set_video_tier,
 ]
 
@@ -31,6 +32,7 @@ def tools_for_active_model():
     model_id = active_model_id()
     registry = get_model_manifest_registry()
     tools = [
+        calendar_context,
         dispatch_task,
         remember,
         query_memory,
@@ -79,7 +81,7 @@ if os.getenv("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", "0").lower() in {"1", "true",
 
 __all__ = [
     "fly_to", "perch_to_finger", "return_to_view", "animate", "play_capability", "dispatch_task",
-    "remember", "query_memory", "query_scene", "set_mode",
+    "calendar_context", "remember", "query_memory", "query_scene", "set_mode",
     "manage_episode", "set_video_tier",
     "ALL_TOOLS", "tools_for_active_model",
 ]

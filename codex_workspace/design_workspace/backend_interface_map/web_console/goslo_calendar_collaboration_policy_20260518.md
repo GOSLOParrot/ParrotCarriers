@@ -470,3 +470,25 @@ task types to Scheduler/nanobot, and it can return a task id quickly so GOSLO
 can continue the conversation. It still needs future upgrades around typed task
 schemas, result-contract selection, and safer Calendar write preconditions, but
 it is not blocked for non-destructive background work.
+
+## Implementation Ledger
+
+### 2026-05-18 - T1 `calendar_context`
+
+Implemented the first GOSLO-facing Calendar Intent/Thinking tool:
+
+- File: `src/parrot/brain/tools/calendar_context.py`.
+- Registration: `src/parrot/brain/tools/__init__.py`.
+- Category: T1 Intent / Thinking.
+- Default read path: official Google Calendar OAuth API via the existing
+  `fetch_google_calendar_api` receipt helper.
+- Optional read path: ECS Nanobot MCP read via `fetch_source=nanobot`, or
+  `fetch_source=auto` to try API first then Nanobot.
+- Result shape: compact text for GOSLO, with event summaries, read model,
+  source used, and source-to-DSG memory buffer preview.
+- Mutation policy: read-only. No Google Calendar write, no L1.5 import, no
+  L2-B mutation, and no Graphiti write. Non-preview sync requests are
+  explicitly downgraded to preview in the returned text.
+- Safety/fallback: slow or failed reads return a compact failure message telling
+  GOSLO to dispatch a background `calendar_fetch` task if the answer is not
+  needed before replying.
