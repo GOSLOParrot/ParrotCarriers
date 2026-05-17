@@ -501,6 +501,14 @@ def build_app(
 
         return await draft_workflow_plan(payload or {})
 
+    @app.post("/api/runtime/workflow/result-contract")
+    async def runtime_workflow_result_contract(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.runtime_flow import draft_workflow_result_contract
+
+        return await draft_workflow_result_contract(payload or {})
+
     @app.post("/api/runtime/workflow/run")
     async def runtime_workflow_run(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),

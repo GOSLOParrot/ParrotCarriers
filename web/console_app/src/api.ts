@@ -47,6 +47,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  runtimeWorkflowResultContract: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/runtime/workflow/result-contract", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   runtimeWorkflowRun: (body: Record<string, unknown>) =>
     json<Receipt>("/api/runtime/workflow/run", {
       method: "POST",

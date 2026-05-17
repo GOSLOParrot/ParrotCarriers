@@ -330,6 +330,7 @@ const dict = {
     loadWorkflow: "Load",
     deleteWorkflow: "Delete",
     runWorkflow: "Run",
+    resultRoutes: "Routes",
     savedWorkflows: "Saved workflows",
     noWorkflowNodes: "No workflow nodes inserted yet.",
     noSavedWorkflows: "No saved workflows.",
@@ -531,6 +532,7 @@ const dict = {
     loadWorkflow: "加载",
     deleteWorkflow: "删除",
     runWorkflow: "运行",
+    resultRoutes: "结果路由",
     savedWorkflows: "已保存工作流",
     noWorkflowNodes: "还没有插入工作流节点。",
     noSavedWorkflows: "暂无已保存工作流。",
@@ -2915,6 +2917,22 @@ function RuntimeFlowWorkspace({
     }
   };
 
+  const previewWorkflowResultRoutes = async () => {
+    if (!workflowDraft.length) {
+      pushReceipt(localReceipt("runtime.workflow.result_contract", false, { error: "empty_workflow_draft" }));
+      return;
+    }
+    try {
+      pushReceipt(await api.runtimeWorkflowResultContract({
+        title: workflowTitle,
+        workflow_id: savedWorkflowId,
+        workflow_nodes: workflowDraft
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.result_contract", exc, { workflow_node_count: workflowDraft.length }));
+    }
+  };
+
   const runWorkflow = async () => {
     if (!workflowDraft.length) {
       pushReceipt(localReceipt("runtime.workflow.run", false, { error: "empty_workflow_draft" }));
@@ -3052,6 +3070,9 @@ function RuntimeFlowWorkspace({
                 </button>
                 <button className="button small" onClick={() => void runWorkflow()}>
                   <Play size={14} /> {t.runWorkflow}
+                </button>
+                <button className="button small" onClick={() => void previewWorkflowResultRoutes()}>
+                  <GitBranch size={14} /> {t.resultRoutes}
                 </button>
                 <button className="button small" onClick={() => void importWorkflowPlan()}>
                   <UploadCloud size={14} /> {t.draftPlan}
@@ -6957,6 +6978,15 @@ function receiptSummary(data: Record<string, unknown>): string {
     const edges = String(data.edges_added ?? data.edge_count ?? 0);
     const skipped = Number(data.edges_skipped_duplicate ?? 0);
     return `Graphiti -> L2-B ${mode}: ${nodes} node(s), ${edges} edge(s)${skipped ? `, ${skipped} duplicate edge(s)` : ""}`;
+  }
+  const resultContract = recordFromUnknown(data.result_contract);
+  if (resultContract.schema) {
+    const nodeCount = String(resultContract.node_count ?? data.workflow_node_count ?? 0);
+    const counts = recordFromUnknown(resultContract.destination_counts);
+    const destinations = Object.entries(counts)
+      .map(([key, value]) => `${key}:${String(value)}`)
+      .join(", ");
+    return `Result routes ${nodeCount} node(s)${destinations ? ` / ${destinations}` : ""}`;
   }
   const skipped = data.publish_skipped_reason || data.apply_skipped_reason || data.dispatch_skipped_reason;
   if (skipped) return String(skipped);

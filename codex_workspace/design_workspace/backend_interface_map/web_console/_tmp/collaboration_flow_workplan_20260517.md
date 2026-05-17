@@ -47,7 +47,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-10 | done | Durable Web workflow draft registry. | Added save/list/get/delete routes, secret redaction, local UI save/load/delete controls, and `workflow_id` Plan import. |
 | CFW-11 | done-first-slice | Whole workflow run/preview. | `POST /api/runtime/workflow/run` splits trigger nodes to DSG trigger routes and Nanobot-compatible nodes to Plan/HITL without changing Scheduler schema. |
 | CFW-12 | pending | Trigger/message HITL state machine. | Current trigger fire remains operator-gated receipt-based execution. |
-| CFW-13 | pending | Durable result-destination contract for Plan/Scheduler results. | Needs a reviewed schema before autonomous chained workflows. |
+| CFW-13 | done-first-slice | Durable result-destination contract for Plan/Scheduler results. | Added `workflow_result_contract_v1` preview and carries result routes in Plan step inputs; Scheduler enforcement remains a reviewed follow-up before autonomous chained workflows. |
 
 ## First Slice Design
 
@@ -219,3 +219,10 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   preview, returned one `dsg.trigger.draft_event` receipt matched to
   `intent_event_boundary`, one `runtime.workflow.plan_draft` receipt with one
   `ref_scan` step, then deleted the draft.
+- 2026-05-17: Implemented CFW-13 first slice:
+  `POST /api/runtime/workflow/result-contract`. The contract is
+  `workflow_result_contract_v1`, returns per-node result routes, destination
+  counts, and route-state counts, and is copied into Nanobot-compatible Plan
+  step inputs as `result_routes`. This makes result destinations visible to
+  Nanobot/Scheduler dispatch payloads without making Scheduler enforce chained
+  routing yet.

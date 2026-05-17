@@ -160,15 +160,20 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
         json={"workflow_id": "monitor-workflow", "title": "Monitor workflow", "workflow_nodes": nodes},
     ).json()
     loaded = client.get("/api/runtime/workflows/drafts/monitor-workflow").json()
+    contract = client.post("/api/runtime/workflow/result-contract", json={"workflow_id": "monitor-workflow"}).json()
     plan = client.post("/api/runtime/workflow/plan-draft", json={"workflow_id": "monitor-workflow"}).json()
     run = client.post("/api/runtime/workflow/run", json={"workflow_id": "monitor-workflow"}).json()
     deleted = client.delete("/api/runtime/workflows/drafts/monitor-workflow").json()
 
     assert any(row["capability_id"] == "runtime.workflow_drafts.registry" for row in catalog["capabilities"])
+    assert any(row["capability_id"] == "runtime.workflow.result_contract" for row in catalog["capabilities"])
     assert saved["success"] is True
     assert loaded["draft"]["nodes"][0]["capability"]["sample_payload"]["api_token"] == "[REDACTED]"
+    assert contract["success"] is True
+    assert contract["data"]["result_contract"]["schema"] == "workflow_result_contract_v1"
     assert plan["success"] is True
     assert plan["data"]["steps"][0]["expected_tool"] == "ref_scan"
+    assert plan["data"]["steps"][0]["inputs"]["result_routes"][0]["destination"] == "view_only"
     assert run["success"] is True
     assert run["data"]["plan_receipt"]["data"]["steps"][0]["expected_tool"] == "ref_scan"
     assert deleted["deleted"] is True

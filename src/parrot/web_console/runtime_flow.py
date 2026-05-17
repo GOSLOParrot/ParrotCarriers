@@ -45,6 +45,58 @@ _VALID_HITL_ACTIONS = frozenset({
     "resume",
 })
 
+_RESULT_ROUTE_POLICIES: dict[str, dict[str, Any]] = {
+    "view_only": {
+        "sink": "web_console.receipt_rail",
+        "route": "receipt_only",
+        "route_state": "implemented",
+        "enforcement": "web_receipt_only",
+        "mutates_memory": False,
+    },
+    "return_to_goslo": {
+        "sink": "goslo.intent_context",
+        "route": "manual_context_return",
+        "route_state": "metadata_only",
+        "enforcement": "operator_or_agent_interprets_receipt",
+        "mutates_memory": False,
+    },
+    "return_to_app": {
+        "sink": "app.runtime_event",
+        "route": "not_implemented",
+        "route_state": "not_implemented",
+        "enforcement": "future_core_candidate",
+        "mutates_memory": False,
+    },
+    "stage_to_intent_workspace": {
+        "sink": "brain.intent_workspace",
+        "route": "PlanRegistry.draft/IntentWorkspace.stage",
+        "route_state": "partially_implemented",
+        "enforcement": "plan_step_input_carried",
+        "mutates_memory": True,
+    },
+    "write_to_memory_draft": {
+        "sink": "l1_5_l2b.memory_draft",
+        "route": "capability.draft_route",
+        "route_state": "operator_gated_route",
+        "enforcement": "route_receipt",
+        "mutates_memory": False,
+    },
+    "write_graphiti_episode": {
+        "sink": "graphiti.episode",
+        "route": "/api/graphiti/episode",
+        "route_state": "candidate_route",
+        "enforcement": "operator_gated_route",
+        "mutates_memory": True,
+    },
+    "materialize_l2b": {
+        "sink": "l2_b_graph",
+        "route": "capability.route",
+        "route_state": "operator_gated_route",
+        "enforcement": "route_receipt",
+        "mutates_memory": True,
+    },
+}
+
 
 def build_runtime_flow_snapshot() -> dict[str, Any]:
     """Return a graph-friendly Runtime Flow snapshot for the React console."""
@@ -268,6 +320,7 @@ async def draft_workflow_plan(payload: dict[str, Any] | None = None) -> dict[str
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
     workflow_nodes, saved_workflow = _workflow_nodes_and_saved(body)
+    workflow_id = str(body.get("workflow_id") or saved_workflow.get("workflow_id") or "")
     workflow = body.get("workflow") if isinstance(body.get("workflow"), dict) else {}
     title = str(
         body.get("title")
@@ -281,7 +334,7 @@ async def draft_workflow_plan(payload: dict[str, Any] | None = None) -> dict[str
         "title": title,
         "workflow_node_count": len(workflow_nodes),
         "compatible_step_count": len(compatible_steps),
-        "source_workflow_id": str(body.get("workflow_id") or saved_workflow.get("workflow_id") or ""),
+        "source_workflow_id": workflow_id,
         "skipped_nodes": skipped_nodes,
         "steps": [
             {
@@ -295,6 +348,11 @@ async def draft_workflow_plan(payload: dict[str, Any] | None = None) -> dict[str
         ],
         "operator_required_for_execute": True,
         "would_create_plan": bool(compatible_steps),
+        "result_contract": _workflow_result_contract(
+            workflow_nodes,
+            workflow_id=workflow_id,
+            title=title,
+        ),
     }
     if not compatible_steps:
         data["error"] = "no_plan_compatible_workflow_nodes"
@@ -351,6 +409,43 @@ async def draft_workflow_plan(payload: dict[str, Any] | None = None) -> dict[str
         )
 
 
+async def draft_workflow_result_contract(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Preview result destinations for a Collaboration Flow draft.
+
+    The contract is carried as Plan step input metadata, but Scheduler does not
+    enforce chained result routing yet.
+    """
+    body = payload or {}
+    workflow_nodes, saved_workflow = _workflow_nodes_and_saved(body)
+    workflow_id = str(body.get("workflow_id") or saved_workflow.get("workflow_id") or "")
+    workflow = body.get("workflow") if isinstance(body.get("workflow"), dict) else {}
+    title = str(
+        body.get("title")
+        or workflow.get("title")
+        or saved_workflow.get("title")
+        or workflow.get("name")
+        or "Runtime Flow result contract"
+    ).strip()
+    contract = _workflow_result_contract(
+        workflow_nodes,
+        workflow_id=workflow_id,
+        title=title,
+    )
+    return _receipt(
+        action="runtime.workflow.result_contract",
+        success=bool(workflow_nodes),
+        dry_run=True,
+        operator_mode=False,
+        data={
+            "title": title,
+            "workflow_id": workflow_id,
+            "workflow_node_count": len(workflow_nodes),
+            "result_contract": contract,
+            "error": "" if workflow_nodes else "no_workflow_nodes",
+        },
+    )
+
+
 async def run_workflow_draft(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Preview or run a saved Collaboration Flow workflow draft.
 
@@ -372,6 +467,11 @@ async def run_workflow_draft(payload: dict[str, Any] | None = None) -> dict[str,
     ).strip()
     trigger_nodes = _trigger_workflow_nodes(workflow_nodes)
     compatible_steps, skipped_nodes = _workflow_plan_steps(workflow_nodes)
+    result_contract = _workflow_result_contract(
+        workflow_nodes,
+        workflow_id=workflow_id,
+        title=title,
+    )
     trigger_receipts = []
     for node in trigger_nodes[:16]:
         trigger_receipts.append(await _execute_workflow_trigger_node(
@@ -398,6 +498,7 @@ async def run_workflow_draft(payload: dict[str, Any] | None = None) -> dict[str,
         "skipped_nodes": skipped_nodes,
         "trigger_receipts": trigger_receipts,
         "plan_receipt": plan_receipt,
+        "result_contract": result_contract,
         "execution_model": {
             "web_orchestrated": True,
             "trigger_path": "/api/dsg/triggers/fire-event",
@@ -879,6 +980,8 @@ def _workflow_plan_steps(workflow_nodes: list[Any]) -> tuple[list[PlanStepPropos
             "result_destinations": capability.get("result_destinations")
             if isinstance(capability.get("result_destinations"), list)
             else [],
+            "result_contract_version": "workflow_result_contract_v1",
+            "result_routes": _result_routes_for_capability(capability, row),
             "sample_payload": capability.get("sample_payload")
             if isinstance(capability.get("sample_payload"), dict)
             else {},
@@ -893,6 +996,117 @@ def _workflow_plan_steps(workflow_nodes: list[Any]) -> tuple[list[PlanStepPropos
         ))
         previous_step_id = step_id
     return steps, skipped
+
+
+def _workflow_result_contract(
+    workflow_nodes: list[Any],
+    *,
+    workflow_id: str = "",
+    title: str = "",
+) -> dict[str, Any]:
+    node_routes: list[dict[str, Any]] = []
+    destination_counts: dict[str, int] = {}
+    route_state_counts: dict[str, int] = {}
+    for idx, row in enumerate(workflow_nodes[:48]):
+        if not isinstance(row, dict):
+            node_routes.append({
+                "index": idx,
+                "workflow_node_id": "",
+                "capability_id": "",
+                "kind": "",
+                "result_routes": [],
+                "error": "invalid_workflow_node",
+            })
+            continue
+        capability = row.get("capability") if isinstance(row.get("capability"), dict) else row
+        routes = _result_routes_for_capability(capability, row)
+        for route in routes:
+            destination = str(route.get("destination") or "")
+            state = str(route.get("route_state") or "")
+            destination_counts[destination] = destination_counts.get(destination, 0) + 1
+            route_state_counts[state] = route_state_counts.get(state, 0) + 1
+        node_routes.append({
+            "index": idx,
+            "workflow_node_id": str(row.get("workflow_node_id") or ""),
+            "capability_id": str(capability.get("capability_id") or row.get("capability_id") or ""),
+            "title": str(capability.get("title") or capability.get("capability_id") or ""),
+            "kind": str(capability.get("kind") or ""),
+            "plan_step_compatible": bool(capability.get("plan_step_compatible")),
+            "nanobot_task_type": str(capability.get("nanobot_task_type") or ""),
+            "result_routes": routes,
+        })
+    return {
+        "schema": "workflow_result_contract_v1",
+        "workflow_id": workflow_id,
+        "title": title,
+        "node_count": len(workflow_nodes),
+        "node_routes": node_routes,
+        "destination_counts": destination_counts,
+        "route_state_counts": route_state_counts,
+        "execution_model": {
+            "web_only": True,
+            "plan_step_input_carried": True,
+            "scheduler_enforced": False,
+            "autonomous_chaining": False,
+            "operator_required_for_mutation": True,
+        },
+        "audit": {
+            "core_candidate": "CORE-015",
+            "durable_core_contract": False,
+            "review_before_scheduler_enforcement": True,
+        },
+    }
+
+
+def _result_routes_for_capability(
+    capability: dict[str, Any],
+    row: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    destinations = _result_destinations_for_capability(capability)
+    routes: list[dict[str, Any]] = []
+    for destination in destinations:
+        policy = dict(_RESULT_ROUTE_POLICIES.get(destination, {
+            "sink": "unknown",
+            "route": "unknown",
+            "route_state": "unknown",
+            "enforcement": "metadata_only",
+            "mutates_memory": False,
+        }))
+        route_hint = str(policy.get("route") or "")
+        if route_hint == "capability.route":
+            route_hint = str(capability.get("route") or "")
+        elif route_hint == "capability.draft_route":
+            route_hint = str(capability.get("draft_route") or capability.get("route") or "")
+        route_state = str(policy.get("route_state") or "")
+        if destination == "write_to_memory_draft" and not str(capability.get("draft_route") or capability.get("route") or ""):
+            route_state = "metadata_only"
+        if destination == "materialize_l2b" and not str(capability.get("route") or ""):
+            route_state = "metadata_only"
+        routes.append({
+            "destination": destination,
+            "sink": str(policy.get("sink") or ""),
+            "route": route_hint,
+            "route_state": route_state,
+            "enforcement": str(policy.get("enforcement") or ""),
+            "mutates_memory": bool(policy.get("mutates_memory")),
+            "plan_step_input_carried": bool(capability.get("plan_step_compatible") or capability.get("nanobot_task_type")),
+            "workflow_node_id": str((row or {}).get("workflow_node_id") or ""),
+            "capability_id": str(capability.get("capability_id") or ""),
+        })
+    return routes
+
+
+def _result_destinations_for_capability(capability: dict[str, Any]) -> list[str]:
+    raw = capability.get("result_destinations")
+    values = [str(item).strip() for item in raw] if isinstance(raw, list) else []
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values or ["view_only"]:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out[:12]
 
 
 def _workflow_nodes_and_saved(body: dict[str, Any]) -> tuple[list[Any], dict[str, Any]]:
@@ -1116,6 +1330,7 @@ __all__ = [
     "build_runtime_flow_changes",
     "build_runtime_flow_snapshot",
     "draft_workflow_plan",
+    "draft_workflow_result_contract",
     "draft_human_gate_decision",
     "pending_human_gates",
     "run_workflow_draft",

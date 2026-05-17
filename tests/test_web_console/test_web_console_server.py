@@ -133,6 +133,8 @@ def test_runtime_capability_catalog_indexes_real_workbench_routes() -> None:
     assert body["success"] is True
     assert body["audit"]["web_only"] is True
     assert by_id["runtime.flow.snapshot"]["route"] == "/api/runtime/flow"
+    assert by_id["runtime.workflow.result_contract"]["route"] == "/api/runtime/workflow/result-contract"
+    assert by_id["runtime.workflow.result_contract"]["execution_policy"] == "draft_only"
     assert by_id["graphiti.subgraph.search"]["true_connection"]["state"] == "ecs_proxy"
     assert by_id["graphiti.materialize_l2b"]["execution_policy"] == "operator_gated"
     assert by_id["l2b.subgraph.context"]["execution_policy"] == "read_only"
@@ -186,6 +188,10 @@ def test_runtime_workflow_plan_draft_imports_nanobot_capabilities_to_hitl() -> N
             "/api/runtime/workflow/plan-draft",
             json={"title": "Workbench plan", "workflow_nodes": workflow_nodes, "dry_run": True},
         ).json()
+        result_contract = client.post(
+            "/api/runtime/workflow/result-contract",
+            json={"title": "Workbench plan", "workflow_nodes": workflow_nodes},
+        ).json()
         nested_preview = client.post(
             "/api/runtime/workflow/plan-draft",
             json={
@@ -211,7 +217,14 @@ def test_runtime_workflow_plan_draft_imports_nanobot_capabilities_to_hitl() -> N
         assert preview["success"] is True
         assert preview["data"]["compatible_step_count"] == 1
         assert preview["data"]["steps"][0]["expected_tool"] == "ref_scan"
+        assert preview["data"]["steps"][0]["inputs"]["result_contract_version"] == "workflow_result_contract_v1"
+        assert preview["data"]["steps"][0]["inputs"]["result_routes"][0]["destination"] == "stage_to_intent_workspace"
+        assert preview["data"]["result_contract"]["schema"] == "workflow_result_contract_v1"
         assert preview["data"]["skipped_nodes"][0]["reason"] == "not_nanobot_plan_compatible"
+        assert result_contract["action"] == "runtime.workflow.result_contract"
+        assert result_contract["success"] is True
+        assert result_contract["data"]["result_contract"]["destination_counts"]["stage_to_intent_workspace"] == 1
+        assert result_contract["data"]["result_contract"]["execution_model"]["scheduler_enforced"] is False
         assert nested_preview["success"] is True
         assert nested_preview["data"]["title"] == "Nested workbench plan"
         assert nested_preview["data"]["workflow_node_count"] == 2
@@ -271,6 +284,10 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         ).json()
         listed = client.get("/api/runtime/workflows/drafts?q=demo").json()
         loaded = client.get("/api/runtime/workflows/drafts/wf-demo").json()
+        route_contract = client.post(
+            "/api/runtime/workflow/result-contract",
+            json={"workflow_id": "wf-demo"},
+        ).json()
         preview_plan = client.post(
             "/api/runtime/workflow/plan-draft",
             json={"workflow_id": "wf-demo", "dry_run": True},
@@ -293,6 +310,9 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         assert saved["summary"]["plan_compatible_count"] == 1
         assert listed["count"] == 1
         assert loaded["draft"]["nodes"][0]["capability"]["sample_payload"]["api_token"] == "[REDACTED]"
+        assert route_contract["success"] is True
+        assert route_contract["data"]["result_contract"]["workflow_id"] == "wf-demo"
+        assert route_contract["data"]["result_contract"]["destination_counts"]["return_to_goslo"] == 1
         assert preview_plan["success"] is True
         assert preview_plan["data"]["source_workflow_id"] == "wf-demo"
         assert preview_plan["data"]["steps"][0]["expected_tool"] == "ref_scan"
@@ -302,6 +322,7 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         assert run_preview["success"] is True
         assert run_preview["data"]["trigger_node_count"] == 1
         assert run_preview["data"]["plan_compatible_count"] == 1
+        assert run_preview["data"]["result_contract"]["schema"] == "workflow_result_contract_v1"
         assert run_preview["data"]["trigger_receipts"][0]["action"] == "dsg.trigger.draft_event"
         assert run_preview["data"]["plan_receipt"]["data"]["steps"][0]["expected_tool"] == "ref_scan"
         assert deleted["deleted"] is True

@@ -428,3 +428,40 @@ Remaining gaps after third slice:
   gates, but trigger/message HITL is still not durable beyond receipts.
 - Plan result destinations remain metadata inside step inputs; they are not yet
   an enforced Scheduler result-routing contract.
+
+## 2026-05-17 Fourth Slice Completion
+
+Implemented:
+
+- Added `POST /api/runtime/workflow/result-contract`.
+- The route accepts inline workflow nodes or a saved `workflow_id`.
+- It returns `workflow_result_contract_v1` with per-node `result_routes`,
+  destination counts, route-state counts, and an explicit execution model.
+- Nanobot-compatible Plan steps now carry `result_contract_version` and
+  `result_routes` inside `PlanStepProposal.inputs`.
+- React Runtime exposes a `Routes` / `结果路由` button for workflow drafts.
+- ECS `8790` app-monitor exposes the same route for remote parity.
+
+Design decision:
+
+- The result contract is carried as Plan input metadata and can be inspected by
+  Nanobot/Scheduler dispatch payloads, but Scheduler does not enforce chained
+  result routing yet. This avoids freezing an autonomous workflow protocol
+  before the trigger/message HITL state machine is reviewed.
+
+Contract states:
+
+- `implemented`: Web receipt/read path exists.
+- `partially_implemented`: route can stage through existing Plan/Intent paths,
+  but no autonomous follow-up chain is guaranteed.
+- `operator_gated_route`: mutation-capable route exists and still needs
+  operator mode.
+- `metadata_only`: visible to the plan/result consumer but not enforced.
+- `not_implemented`: declared future destination only.
+
+Remaining gaps after fourth slice:
+
+- Scheduler/Nanobot still needs a reviewed result-routing consumer before it
+  can automatically fan out result payloads to IntentWorkspace, Graphiti, L2-B,
+  or App events.
+- Trigger/message HITL state remains receipt-based rather than durable gates.
