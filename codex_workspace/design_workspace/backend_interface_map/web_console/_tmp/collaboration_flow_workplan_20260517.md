@@ -464,3 +464,16 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   release completed with all six services active; remote CLI table smoke on
   `/opt/parrot/ParrotCarriers` confirmed `workflow plan-draft`, `workflow run`,
   and `result-intake preview` all print `workflow_id=ecs-table-smoke`.
+- 2026-05-18 CFW-24 bugfix 2: second bug hunt found
+  `result-intake preview <result.json> --workflow <workflow.json>` misclassified
+  raw result payloads containing a `workflow_id` field as full intake envelopes,
+  then failed with `result_payload_required`. This is realistic because task
+  results often carry their own source/workflow ids. Fixed the CLI parser so
+  when route context is supplied through `--workflow`, `--workflow-id`,
+  `--workflow-node-id`, `--capability-id`, `--contract`, or `--routes`, the
+  positional JSON is treated as raw result payload unless it explicitly contains
+  `result_payload`, `result`, or `payload`. Validation: `py_compile` passed;
+  CLI tests reported `15 passed`; Web Console route tests reported `91 passed`;
+  app-monitor tests reported `11 passed`; manual smoke changed from exit `2`
+  to success with `workflow_id=cli-payload-fix`, `route_count=1`,
+  `recorded=false`, and secret redaction intact.

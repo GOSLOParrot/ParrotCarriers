@@ -389,6 +389,63 @@ def test_flow_cli_result_intake_preview_requires_contract_source(tmp_path) -> No
     assert body["data"]["errors"][0]["code"] == "result_contract_required"
 
 
+def test_flow_cli_result_intake_preview_treats_payload_workflow_id_as_result_data(tmp_path) -> None:
+    workflow_path = tmp_path / "intake-workflow.json"
+    result_path = tmp_path / "result-with-workflow-id.json"
+    workflow_path.write_text(
+        json.dumps(
+            {
+                "workflow_id": "cli-intake-context",
+                "nodes": [
+                    {
+                        "workflow_node_id": "wf-ref-scan",
+                        "capability": {
+                            "capability_id": "nanobot.ref_scan",
+                            "kind": "nanobot_task",
+                            "nanobot_task_type": "ref_scan",
+                            "plan_step_compatible": True,
+                            "result_destinations": ["stage_to_intent_workspace"],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result_path.write_text(
+        json.dumps(
+            {
+                "workflow_id": "external-source-workflow",
+                "summary": "Ref scan finished",
+                "api_token": "payload-workflow-secret",
+            }
+        ),
+        encoding="utf-8",
+    )
+    out = io.StringIO()
+
+    code = main(
+        [
+            "result-intake",
+            "preview",
+            str(result_path),
+            "--workflow",
+            str(workflow_path),
+            "--workflow-node-id",
+            "wf-ref-scan",
+        ],
+        stdout=out,
+    )
+    body = json.loads(out.getvalue())
+
+    assert code == 0
+    assert body["success"] is True
+    assert body["data"]["workflow_id"] == "cli-intake-context"
+    assert body["data"]["route_count"] == 1
+    assert body["data"]["recorded"] is False
+    assert "payload-workflow-secret" not in out.getvalue()
+
+
 def test_flow_cli_table_output_includes_runtime_workflow_ids_and_errors(tmp_path) -> None:
     workflow_path = tmp_path / "table-workflow.json"
     result_path = tmp_path / "table-result.json"

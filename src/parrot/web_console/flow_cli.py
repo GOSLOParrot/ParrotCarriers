@@ -215,7 +215,7 @@ def _result_intake_preview(args: argparse.Namespace) -> dict[str, Any]:
         payload = _read_json(args.path)
     except Exception as exc:
         return _error_receipt("runtime.workflow.result_intake", "invalid_json", str(exc))
-    body = _result_intake_body_from_payload(payload)
+    body = _result_intake_body_from_payload(payload, prefer_raw_result=_result_intake_has_context_args(args))
     body.update({
         "dry_run": True,
         "operator_mode": False,
@@ -264,13 +264,16 @@ def _result_intake_preview(args: argparse.Namespace) -> dict[str, Any]:
     return asyncio.run(intake_workflow_result(body))
 
 
-def _result_intake_body_from_payload(payload: Any) -> dict[str, Any]:
-    if isinstance(payload, dict) and any(
+def _result_intake_body_from_payload(payload: Any, *, prefer_raw_result: bool = False) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {"result_payload": payload}
+    if any(key in payload for key in ("result_payload", "result", "payload")):
+        return dict(payload)
+    if prefer_raw_result:
+        return {"result_payload": payload}
+    if any(
         key in payload
         for key in (
-            "result_payload",
-            "result",
-            "payload",
             "workflow_id",
             "workflow_node_id",
             "capability_id",
@@ -280,6 +283,20 @@ def _result_intake_body_from_payload(payload: Any) -> dict[str, Any]:
     ):
         return dict(payload)
     return {"result_payload": payload}
+
+
+def _result_intake_has_context_args(args: argparse.Namespace) -> bool:
+    return any(
+        bool(getattr(args, name, ""))
+        for name in (
+            "workflow",
+            "workflow_id",
+            "workflow_node_id",
+            "capability_id",
+            "contract",
+            "routes",
+        )
+    )
 
 
 def _workflow_preview_body(args: argparse.Namespace, *, action: str) -> dict[str, Any]:

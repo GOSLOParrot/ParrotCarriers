@@ -891,3 +891,14 @@ Bugfix after CFW-24:
 - ECS proof after commit `34bcb763`: remote table smoke confirmed
   `workflow plan-draft`, `workflow run`, and `result-intake preview` all print
   `workflow_id=ecs-table-smoke`.
+
+Bugfix after workflow-id table fix:
+
+- `result-intake preview <result.json> --workflow <workflow.json>` could
+  misclassify a raw result payload containing its own `workflow_id` field as a
+  full intake envelope and fail with `result_payload_required`.
+- Fixed CLI payload parsing so externally supplied route context makes the
+  positional JSON a raw result payload unless it explicitly contains
+  `result_payload`, `result`, or `payload`.
+- This preserves task-result source ids as data while using the workflow/route
+  flags for intake routing.
