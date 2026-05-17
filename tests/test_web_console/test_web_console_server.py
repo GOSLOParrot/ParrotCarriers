@@ -964,6 +964,8 @@ def test_graphiti_subgraph_materialize_l2b_is_operator_gated_and_context_queryab
         assert node is not None
         assert node.source == "graphiti"
         assert node.bucket_id == "graphiti_import_materialized"
+        assert "None" not in node.known_facts
+        assert node.known_facts == ["Amiya"]
         assert node.meta["preserve_raw_graphiti"] is True
         assert node.meta["materialization_state"] == "materialized_l2b_pointer"
         assert node.source_meta["source_ref"] == "graphiti://arknights_test/entity/source-amiya"

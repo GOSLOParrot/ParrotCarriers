@@ -1944,13 +1944,17 @@ def _materialize_graphiti_l2b_node(graph: Any, row: dict[str, Any]) -> dict[str,
             "preserve_raw_graphiti": True,
         }
     )
-    known_facts = _unique_texts(
-        [
-            str(row.get("label") or ""),
-            str((meta.get("graphiti_raw") or {}).get("summary") if isinstance(meta.get("graphiti_raw"), dict) else ""),
-            str((meta.get("graphiti_raw") or {}).get("content") if isinstance(meta.get("graphiti_raw"), dict) else ""),
-        ]
-    )[:8]
+    raw_graphiti = meta.get("graphiti_raw") if isinstance(meta.get("graphiti_raw"), dict) else {}
+    known_facts = _unique_texts([
+        value
+        for value in (
+            row.get("label"),
+            raw_graphiti.get("summary"),
+            raw_graphiti.get("content"),
+            raw_graphiti.get("fact"),
+        )
+        if value not in (None, "")
+    ])[:8]
     graph.upsert_node(
         SemanticNode(
             uuid=node_uuid,
