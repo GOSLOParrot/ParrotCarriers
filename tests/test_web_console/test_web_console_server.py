@@ -853,7 +853,8 @@ def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch
     assert plan["data"]["graphiti_raw_envelopes"][0]["raw"]["source_node"]["name"] == "Amiya"
     assert plan["data"]["graphiti_bundle"]["sections"]["facts"][0]["raw"]["target_node"]["name"] == "Rhodes Island"
     assert plan["data"]["graphiti_bundle"]["import_overlay"]["destination"] == "isolated_compartment"
-    assert plan["data"]["graphiti_bundle"]["import_overlay"]["apply_route"] == "/api/graphiti/subgraph/export"
+    assert plan["data"]["graphiti_bundle"]["import_overlay"]["l15_export_route"] == "/api/graphiti/subgraph/export"
+    assert plan["data"]["graphiti_bundle"]["import_overlay"]["apply_route"] == "/api/graphiti/subgraph/materialize-l2b"
     assert plan["data"]["direct_graphiti_write"] is False
     assert plan["data"]["direct_l2b_write"] is False
     assert plan["data"]["materialization_state"] == "preview_only_not_materialized"
@@ -883,8 +884,10 @@ def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch
     assert plan["data"]["import_policy"]["destination"] == "isolated_compartment"
     assert plan["data"]["import_policy"]["source_kind"] == "graphiti"
     assert plan["data"]["import_draft"]["proposed_edges"][0]["source"] == "source-amiya"
-    assert plan["data"]["apply_route"] == "/api/graphiti/subgraph/export"
-    assert plan["data"]["apply_preconditions"]["edge_apply"].startswith("separate L2-B edge route")
+    assert plan["data"]["l15_export_route"] == "/api/graphiti/subgraph/export"
+    assert plan["data"]["apply_route"] == "/api/graphiti/subgraph/materialize-l2b"
+    assert plan["data"]["apply_preconditions"]["materialize_l2b"].startswith("reviewed Graphiti bundle")
+    assert plan["data"]["apply_preconditions"]["preserve_raw_graphiti"] is True
     assert plan["data"]["core_candidates"] == ["CORE-008", "CORE-013", "CORE-015"]
     assert plan["data"]["export_receipt_id"].startswith("web_")
     assert "sk-" not in str(plan).lower()
@@ -1970,7 +1973,7 @@ def test_source_import_plan_matrix_is_draft_only_and_operator_safe(tmp_path, mon
                 "dry_run": False,
                 "operator_mode": True,
             },
-            "/api/graphiti/subgraph/export",
+            "/api/graphiti/subgraph/materialize-l2b",
         ),
         (
             "obsidian",

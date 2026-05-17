@@ -352,6 +352,8 @@ const dict = {
     previewOnCanvas: "Preview on canvas",
     exportSubgraphDraft: "Export Draft",
     applyExportDryRun: "Preview Apply",
+    previewGraphitiMaterialize: "Preview L2-B Import",
+    materializeGraphitiSubgraph: "Import Subgraph to L2-B",
     identityIndex: "Identity Index",
     verifyRefs: "Verify Refs",
     refScanPlan: "Ref Scan Plan",
@@ -371,7 +373,8 @@ const dict = {
     resultGraph: "Result graph",
     noHits: "No hits yet.",
     writeThroughL15: "writes through L1.5",
-    sourceBoardHint: "Sources become previews or L1.5 observations before L2-B.",
+    graphitiWriteThroughL2B: "materializes Graphiti pointers into L2-B",
+    sourceBoardHint: "Graphiti can materialize pointer subgraphs directly into L2-B; other sources still preview or admit through L1.5 first.",
     liveKitBridge: "LiveKit / Brain Bridge",
     liveKitRoom: "Room",
     liveKitIdentity: "Identity",
@@ -531,13 +534,16 @@ const dict = {
     previewOnCanvas: "画布预览",
     exportSubgraphDraft: "导出草稿",
     applyExportDryRun: "预演执行",
+    previewGraphitiMaterialize: "预演 L2-B 导入",
+    materializeGraphitiSubgraph: "导入子图到 L2-B",
     selectedHits: "选中结果",
     selectAll: "全选",
     selectedOf: "已选",
     resultGraph: "结果子图",
     noHits: "暂无结果。",
     writeThroughL15: "通过 L1.5 写入",
-    sourceBoardHint: "来源数据先变成预览或 L1.5 Observation，再进入 L2-B。",
+    graphitiWriteThroughL2B: "Graphiti 指针子图物化到 L2-B",
+    sourceBoardHint: "Graphiti 可直接物化指针子图到 L2-B；其他来源仍先预览或进入 L1.5。",
     liveKitBridge: "LiveKit / Brain 连接",
     liveKitRoom: "房间",
     liveKitIdentity: "身份",
@@ -4211,51 +4217,54 @@ function GraphitiSourceCard({
       showGraphitiError("graphiti.subgraph.export_draft", exc, { partition, query });
     }
   };
-  const exportDryRun = async () => {
+  const graphitiMaterializePayload = (execute: boolean): Record<string, unknown> => {
+    const payload: Record<string, unknown> = {
+      partition,
+      query: query.trim(),
+      hits: selectedHits,
+      destination,
+      subgraph_label: query.trim() || partition,
+      dry_run: !execute || !operatorMode,
+      operator_mode: execute && operatorMode
+    };
+    if (graphitiBundle && Object.keys(graphitiBundle).length) {
+      payload.graphiti_bundle = graphitiBundle;
+    }
+    return payload;
+  };
+  const previewMaterializeGraphitiSubgraph = async () => {
     if (!selectedHits.length) {
       clearGraphitiPlanState("no_hits_selected");
-      pushReceipt(localReceipt("graphiti.subgraph.export", false, { error: "no_hits_selected", partition, query }));
+      pushReceipt(localReceipt("graphiti.subgraph.materialize_l2b", false, { error: "no_hits_selected", partition, query }));
       return;
     }
     try {
-      showExportReceipt(await api.graphitiSubgraphExport({
-        partition,
-        query: query.trim(),
-        hits: selectedHits,
-        dry_run: true,
-        operator_mode: false
-      }));
+      showExportReceipt(await api.graphitiSubgraphMaterializeL2B(graphitiMaterializePayload(false)));
     } catch (exc) {
-      showGraphitiError("graphiti.subgraph.export", exc, { partition, query });
+      showGraphitiError("graphiti.subgraph.materialize_l2b", exc, { partition, query, destination });
     }
   };
-  const exportExecute = async () => {
+  const materializeGraphitiSubgraph = async () => {
     if (operatorImportingRef.current) {
-      pushReceipt(localReceipt("graphiti.subgraph.export", false, { error: "operator_import_in_flight", partition, query }));
+      pushReceipt(localReceipt("graphiti.subgraph.materialize_l2b", false, { error: "operator_import_in_flight", partition, query }));
       return;
     }
     if (!selectedHits.length) {
       clearGraphitiPlanState("no_hits_selected");
       clearGraphitiPreview("");
-      pushReceipt(localReceipt("graphiti.subgraph.export", false, { error: "no_hits_selected", partition, query }));
+      pushReceipt(localReceipt("graphiti.subgraph.materialize_l2b", false, { error: "no_hits_selected", partition, query }));
       return;
     }
     operatorImportingRef.current = true;
     setOperatorImporting(true);
     try {
-      const receipt = await api.graphitiSubgraphExport({
-        partition,
-        query: query.trim(),
-        hits: selectedHits,
-        dry_run: !operatorMode,
-        operator_mode: operatorMode
-      });
+      const receipt = await api.graphitiSubgraphMaterializeL2B(graphitiMaterializePayload(true));
       showExportReceipt(receipt);
       if (receipt.success !== false && operatorMode) {
         await onSourceApplied();
       }
     } catch (exc) {
-      showGraphitiError("graphiti.subgraph.export.execute", exc, { partition, query });
+      showGraphitiError("graphiti.subgraph.materialize_l2b.execute", exc, { partition, query, destination });
     } finally {
       operatorImportingRef.current = false;
       setOperatorImporting(false);
@@ -4590,7 +4599,7 @@ function GraphitiSourceCard({
     <article className="source-card graphiti-source-card">
       <div className="source-card-head">
         <strong><Database size={16} /> {t.graphiti}</strong>
-        <small>{t.writeThroughL15}</small>
+        <small>{t.graphitiWriteThroughL2B}</small>
       </div>
       <div className={status?.installed ? "graphiti-status-strip ok" : "graphiti-status-strip"}>
         <span><CircleDot size={13} /> {status ? `${status.provider || "-"} / ${status.model || "-"}` : "Graphiti status"}</span>
@@ -4755,8 +4764,8 @@ function GraphitiSourceCard({
         <button className="button" onClick={previewSelectedOnCanvas}><GitBranch size={16} /> {t.previewOnCanvas}</button>
         <button className="button" onClick={() => void previewImportPolicy()}><Workflow size={16} /> {t.previewPolicy}</button>
         <button className="button" onClick={() => void exportDraft()}><UploadCloud size={16} /> {t.exportSubgraphDraft}</button>
-        <button className="button ghost" onClick={() => void exportDryRun()}><ShieldCheck size={16} /> {t.applyExportDryRun}</button>
-        <button className="button ghost" onClick={() => void exportExecute()} disabled={operatorImporting}><UploadCloud size={16} /> {operatorMode ? t.calendarImportExecute : t.dryApply}</button>
+        <button className="button ghost" onClick={() => void previewMaterializeGraphitiSubgraph()}><ShieldCheck size={16} /> {t.previewGraphitiMaterialize}</button>
+        <button className="button ghost" onClick={() => void materializeGraphitiSubgraph()} disabled={operatorImporting}><UploadCloud size={16} /> {operatorMode ? t.materializeGraphitiSubgraph : t.dryApply}</button>
       </div>
       <div className="hit-list">
         <div className="hit-list-head">
@@ -4813,7 +4822,7 @@ function GraphitiSourceCard({
             importPolicy={importPolicy}
             observationCount={exportObservations.length}
             edgeCount={edgeDrafts.length}
-            applyRoute="/api/graphiti/subgraph/export"
+            applyRoute="/api/graphiti/subgraph/materialize-l2b"
           />
           {identityRefDrafts.length ? (
             <div className="edge-resolver-panel graphiti-ref-writeback-panel">

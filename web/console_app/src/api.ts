@@ -205,6 +205,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  graphitiSubgraphMaterializeL2B: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/graphiti/subgraph/materialize-l2b", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   l2bNodeDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/l2b/node/draft", {
       method: "POST",

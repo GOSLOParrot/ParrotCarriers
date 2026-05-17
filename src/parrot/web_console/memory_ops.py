@@ -1308,13 +1308,14 @@ def scan_obsidian_vault(payload: dict[str, Any] | None = None) -> dict[str, Any]
 
 
 def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Build one reviewable plan for Graphiti -> L1.5 -> L2-B import.
+    """Build one reviewable plan for Graphiti -> L2-B pointer materialization.
 
     Graphiti export and graph-placement policy used to be two separate UI
     previews. Keeping them separate made the operator experience feel fake:
     the Source Board could show observations or a destination policy, but not
-    one coherent import route. This Web-only wrapper joins both drafts without
-    adding an apply route or bypassing L1.5.
+    one coherent import route. This Web-only wrapper still exposes the legacy
+    L1.5 observation draft, but the apply path now points at the reviewed L2-B
+    materializer so Graphiti raw data remains authoritative and queryable.
     """
 
     from parrot.brain.graphiti_console import draft_graphiti_subgraph_export
@@ -1430,11 +1431,13 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
             "import_draft": policy_data.get("draft", {}),
             "transform_preview": transform_data,
             "policy_skipped_reason": policy_skipped_reason,
-            "apply_route": "/api/graphiti/subgraph/export",
+            "l15_export_route": "/api/graphiti/subgraph/export",
+            "apply_route": "/api/graphiti/subgraph/materialize-l2b",
             "apply_preconditions": {
                 "dry_run": False,
                 "operator_mode": True,
-                "edge_apply": "separate L2-B edge route after node UUID resolution",
+                "materialize_l2b": "reviewed Graphiti bundle projection writes deterministic pointer nodes/edges",
+                "preserve_raw_graphiti": True,
             },
             "context_route_policy": {
                 "route": "/api/l2b/subgraphs/context",
@@ -1487,14 +1490,16 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
                 "draft Observation(source=USER_EXPLICIT) rows",
                 "preview CORE-013 import destination / overlay policy",
                 "preview Graphiti bundle -> L2-B/RustWorkX projection without persisting rwx indices",
-                "real export, if chosen later, must admit through L1.5 under operator mode",
+                "operator materializes deterministic Graphiti pointer subgraph into L2-B",
             ],
             "operator_required_for_execute": True,
-            "apply_route": "/api/graphiti/subgraph/export",
+            "l15_export_route": "/api/graphiti/subgraph/export",
+            "apply_route": "/api/graphiti/subgraph/materialize-l2b",
             "apply_preconditions": {
                 "dry_run": False,
                 "operator_mode": True,
-                "edge_apply": "separate L2-B edge route after node UUID resolution",
+                "materialize_l2b": "reviewed Graphiti bundle projection writes deterministic pointer nodes/edges",
+                "preserve_raw_graphiti": True,
             },
             "warnings": list(export_data.get("warnings") or []),
             "core_candidates": ["CORE-008", "CORE-013", "CORE-015"],
