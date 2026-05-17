@@ -1003,3 +1003,82 @@ ECS proof after `80ee1017`:
 - After restarting `parrot-app-monitor`, a context-only read for the
   materialized UUID returned three nodes, three edges, zero missing UUIDs, and
   preserved raw Graphiti metadata.
+
+## 2026-05-18 Discussion Handoff: Calendar, L1.5, L2-B Persistence
+
+This section is the reread handoff before the next user discussion/analysis
+turn. It records current true-connection state and the user's latest decisions;
+do not treat it as a new implementation mandate.
+
+Current ECS Google Calendar/OAuth state:
+
+- ECS `8790` read-only Calendar probes are live through both paths:
+  `POST /api/google/calendar/api-fetch` returned `success=true` with
+  `credential_source=ecs_nanobot_google_workspace_mcp`; and
+  `POST /api/google/calendar/nanobot-fetch` returned `success=true` with
+  `nanobot_success=true`.
+- The OAuth files are installed for the `parrot` service user under
+  `/home/parrot/.nanobot/google-workspace-credentials` and are consumed by the
+  app-monitor credential resolver.
+- No immediate re-auth is required while this refresh-token-backed credential
+  remains valid. Re-auth is only expected if Google revokes the refresh token,
+  the OAuth client/scopes change, or the credential files are deleted/replaced.
+- Confirmed Web/ECS Calendar capability is fetch/preview/import-to-memory
+  plumbing. Direct Google Calendar write-back (create/update/delete events in
+  Google Calendar) is not yet a confirmed Web Console operator route and must
+  stay separate from memory import.
+
+Current L1.5/Calendar source state:
+
+- Calendar can be fetched and imported through the L1.5 source-import path as
+  normalized observations with operator gating.
+- This is not the same as materializing a Graphiti subgraph. Calendar subgraph
+  policy should be designed as a source-to-DSG buffer path before any
+  write-back/sync semantics are added.
+
+Known true interfaces:
+
+- L1.5 pool/read/apply: `GET /api/l15/pool`,
+  `POST /api/l15/bucket-op/draft`, `POST /api/l15/bucket-op`.
+- L1.5 source imports: Obsidian vault scan/import-plan/import, Obsidian node
+  draft/apply, and Google Calendar preview/import-plan/import/results plus
+  read-only `api-fetch` and `nanobot-fetch`.
+- Graphiti subgraph path: `POST /api/graphiti/subgraph/search`,
+  `POST /api/graphiti/subgraph/import-plan`,
+  `POST /api/graphiti/subgraph/materialize-l2b`, plus export draft/export
+  surfaces where present.
+- L2-B subgraph/path: `POST /api/l2b/subgraphs/draft`,
+  `POST /api/l2b/subgraphs/context`,
+  `POST /api/l2b/transforms/draft`, and
+  `GET /api/l2b/analysis/health`.
+
+L2-B persistence boundary:
+
+- The current durable L2-B persistence is not "operation page draft save".
+- The confirmed durable store is the backend pointer store
+  `data/web_console/l2b_materialized_graphiti_pointers.json`, configurable via
+  `PARROT_L2B_GRAPH_POINTER_STORE_PATH`.
+- It persists only operator-reviewed Graphiti pointer nodes/edges, stable
+  business UUIDs, and raw Graphiti metadata after
+  `/api/graphiti/subgraph/materialize-l2b`.
+- It does not persist RustWorkX integer indices, all Web operation drafts,
+  Graphiti/FalkorDB rows, arbitrary external files, or direct Ref file
+  locations.
+- Current materialization is soft/upsert-style pointer merging with stable
+  UUIDs and preserved raw envelopes. Hard overwrite, conflict timelines,
+  external Ref write-back, Google Calendar write-back, and source-file sync are
+  not implemented yet.
+
+User decisions to preserve for the next design discussion:
+
+- Wait on the full hard-persistence/conflict/timeline machinery until the
+  scheme is discussed.
+- If no stronger option appears, choose option C: use `nanobot + git + MCP` as
+  the practical Ref/file management lane.
+- Treat DSG as a Graphiti realtime buffer/adaptation layer, so Graphiti and
+  other source data can connect without breaking source-native information.
+- Build concrete capabilities first.
+- Do not assume the GOSLO App already has a designed 2D workspace.
+- Automatic search/preview/context pull is allowed; destructive materialization,
+  external Ref writes, and Google Calendar write-back still require explicit
+  operator policy unless the user broadens permission.

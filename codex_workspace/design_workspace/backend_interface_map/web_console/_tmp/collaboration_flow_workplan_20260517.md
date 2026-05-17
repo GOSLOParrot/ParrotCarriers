@@ -544,3 +544,17 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   succeeded with zero missing UUIDs, three nodes, three edges, preserved raw
   metadata, and first edge Graphiti UUID
   `ed386742-4e4e-4065-8151-6511960902b9`.
+- 2026-05-18 discussion handoff checkpoint: recorded that ECS Calendar OAuth is
+  currently live for read-only API and Nanobot fetch through `8790`, with
+  credentials under `/home/parrot/.nanobot/google-workspace-credentials` for the
+  `parrot` service user. Direct Google Calendar write-back is not a confirmed
+  Web operator route yet. Calendar import is an L1.5 source/observation path,
+  not a Graphiti subgraph materialization. The durable L2-B store is the narrow
+  Graphiti pointer store
+  `data/web_console/l2b_materialized_graphiti_pointers.json`, not an operation
+  page draft store and not a hard source-of-truth DB. User decisions recorded:
+  wait before full hard-persistence/conflict timelines; prefer option C
+  (`nanobot + git + MCP`) if no better Ref/file management scheme appears; DSG
+  is the Graphiti realtime buffer/adaptation layer; build capability first; do
+  not assume the App has a finished 2D workspace; automatic search/preview is
+  allowed while destructive writes remain operator-gated.
