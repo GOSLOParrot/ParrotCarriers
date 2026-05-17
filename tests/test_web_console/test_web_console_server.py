@@ -890,6 +890,123 @@ def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch
     assert "sk-" not in str(plan).lower()
 
 
+def test_graphiti_subgraph_materialize_l2b_is_operator_gated_and_context_queryable(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    import parrot.dsg.l2b_graph as l2b_graph_module
+    from parrot.brain import graphiti_console
+    from parrot.dsg.l2b_graph import L2BGraph
+
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_L2B_URL", raising=False)
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_GRAPHITI_URL", raising=False)
+    monkeypatch.delenv("PARROT_GRAPHITI_REMOTE_URL", raising=False)
+    monkeypatch.setenv(
+        "PARROT_MEMORY_IDENTITY_REF_INDEX_PATH",
+        str(tmp_path / "identity_ref_index.json"),
+    )
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
+    graph = L2BGraph()
+    monkeypatch.setattr(l2b_graph_module, "_instance", graph)
+    hit = {
+        "text": "Amiya's role changes as Rhodes Island leaves Chernobog.",
+        "uuid": "graphiti-hit-materialize-1",
+        "source_node_uuid": "source-amiya",
+        "target_node_uuid": "target-rhodes",
+        "episode_uuids": ["episode-plan-1"],
+        "graphiti_raw": {
+            "uuid": "graphiti-hit-materialize-1",
+            "fact": "Amiya's role changes as Rhodes Island leaves Chernobog.",
+            "source_node": {"uuid": "source-amiya", "name": "Amiya"},
+            "target_node": {"uuid": "target-rhodes", "name": "Rhodes Island"},
+        },
+        "score": 0.83,
+        "source_description": "arknights_test:main_00",
+    }
+    payload = {
+        "partition": "arknights_test",
+        "query": "Amiya Chernobog",
+        "hits": [hit],
+        "destination": "isolated_compartment",
+    }
+
+    try:
+        client = TestClient(build_app(status_fetcher=_fake_fetcher))
+        preview = client.post(
+            "/api/graphiti/subgraph/materialize-l2b",
+            json={**payload, "dry_run": True, "operator_mode": False},
+        ).json()
+        assert preview["action"] == "graphiti.subgraph.materialize_l2b"
+        assert preview["success"] is True
+        assert preview["dry_run"] is True
+        assert preview["data"]["would_materialize"] is True
+        assert preview["data"]["direct_l2b_write"] is False
+        assert preview["data"]["identity_ref_index_write"] is False
+        assert graph.node_count() == 0
+
+        applied = client.post(
+            "/api/graphiti/subgraph/materialize-l2b",
+            json={**payload, "dry_run": False, "operator_mode": True},
+        ).json()
+        assert applied["success"] is True
+        assert applied["dry_run"] is False
+        assert applied["operator_mode"] is True
+        assert applied["data"]["direct_l2b_write"] is True
+        assert applied["data"]["direct_graphiti_write"] is False
+        assert applied["data"]["direct_falkordb_write"] is False
+        assert applied["data"]["materialization_state"] == "materialized_l2b_pointer_graph"
+        assert applied["data"]["nodes_upserted"] >= 3
+        assert applied["data"]["edges_added"] >= 1
+        assert applied["data"]["identity_ref_index_write"] is True
+        assert applied["data"]["context_node_uuids"][0] == "graphiti:arknights_test:entity:source-amiya"
+
+        node = graph.get_node("graphiti:arknights_test:entity:source-amiya")
+        assert node is not None
+        assert node.source == "graphiti"
+        assert node.bucket_id == "graphiti_import_materialized"
+        assert node.meta["preserve_raw_graphiti"] is True
+        assert node.meta["materialization_state"] == "materialized_l2b_pointer"
+        assert node.source_meta["source_ref"] == "graphiti://arknights_test/entity/source-amiya"
+        edge = next(
+            edge
+            for src, dst, edge in graph.all_edges()
+            if src.uuid == "graphiti:arknights_test:entity:source-amiya"
+            and dst.uuid == "graphiti:arknights_test:entity:target-rhodes"
+        )
+        assert edge.kind.value == "graphiti_fact"
+        assert edge.source == "graphiti"
+        assert edge.graphiti_uuid == "graphiti-hit-materialize-1"
+        assert edge.meta["graphiti_raw"]["target_node"]["name"] == "Rhodes Island"
+
+        context = client.post(
+            "/api/l2b/subgraphs/context",
+            json={
+                "node_uuids": ["graphiti:arknights_test:entity:source-amiya"],
+                "depth": 1,
+                "dry_run": False,
+                "operator_mode": True,
+            },
+        ).json()
+        assert context["success"] is True
+        assert context["data"]["selected_node_uuids"] == ["graphiti:arknights_test:entity:source-amiya"]
+        assert context["data"]["missing_graphiti_preview_node_uuids"] == []
+        assert {row["uuid"] for row in context["data"]["nodes"]} >= {
+            "graphiti:arknights_test:entity:source-amiya",
+            "graphiti:arknights_test:entity:target-rhodes",
+        }
+        assert context["data"]["edges"][0]["meta"]["preserve_raw_graphiti"] is True
+
+        reapplied = client.post(
+            "/api/graphiti/subgraph/materialize-l2b",
+            json={**payload, "dry_run": False, "operator_mode": True},
+        ).json()
+        assert reapplied["success"] is True
+        assert reapplied["data"]["edges_added"] == 0
+        assert reapplied["data"]["edges_skipped_duplicate"] >= applied["data"]["edges_added"]
+    finally:
+        l2b_graph_module._instance = None
+
+
 def test_graphiti_subgraph_import_plan_preserves_episode_hit_without_fact_edge(monkeypatch) -> None:
     from parrot.brain import graphiti_console
 

@@ -96,6 +96,45 @@ def test_monitor_health_and_canvas_endpoints() -> None:
     assert body["asset_manifest"]["schema_version"] == 1
 
 
+def test_monitor_exposes_graphiti_materialize_and_l2b_context_routes() -> None:
+    from fastapi.testclient import TestClient
+
+    client = TestClient(build_app())
+
+    materialize = client.post(
+        "/api/graphiti/subgraph/materialize-l2b",
+        json={
+            "partition": "noble_etiquette",
+            "query": "formal greeting",
+            "graphiti_bundle": {
+                "partition": "noble_etiquette",
+                "query": "formal greeting",
+                "sections": {
+                    "episodes": [
+                        {
+                            "uuid": "episode-noble-route-1",
+                            "raw": {
+                                "uuid": "episode-noble-route-1",
+                                "content": "A formal greeting acknowledges relative rank.",
+                            },
+                        }
+                    ]
+                },
+            },
+            "dry_run": True,
+        },
+    ).json()
+    context = client.post("/api/l2b/subgraphs/context", json={}).json()
+
+    assert materialize["action"] == "graphiti.subgraph.materialize_l2b"
+    assert materialize["success"] is True
+    assert materialize["data"]["direct_l2b_write"] is False
+    assert materialize["data"]["context_route"] == "/api/l2b/subgraphs/context"
+    assert context["action"] == "l2b.subgraph.context"
+    assert context["success"] is False
+    assert context["data"]["error"] == "missing_node_selection"
+
+
 def test_monitor_personas_endpoint_lists_selector_metadata() -> None:
     from fastapi.testclient import TestClient
 

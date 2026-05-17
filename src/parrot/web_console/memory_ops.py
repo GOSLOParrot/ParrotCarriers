@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import fields, is_dataclass
 from datetime import datetime, timedelta, timezone
@@ -1506,6 +1508,582 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
                 or (export_draft.get("receipt") or {}).get("receipt_id", "")
             ),
         },
+    )
+
+
+def materialize_graphiti_l2b_subgraph(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Materialize a reviewed Graphiti bundle projection into live L2-B.
+
+    This is the operator apply companion to ``draft_graphiti_l2b_import_plan``.
+    Graphiti remains the authoritative temporal/provenance graph; L2-B receives
+    deterministic pointer nodes and reviewed local topology so subgraph/context
+    tools can traverse the result. The route never writes Graphiti/FalkorDB.
+    """
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    if _remote_operator_base_url() and not _body_bool(body.get("_remote_proxy_disable"), False):
+        remote_payload = dict(body)
+        remote_payload["_remote_proxy_disable"] = True
+        remote = _remote_operator_request(
+            "/api/graphiti/subgraph/materialize-l2b",
+            payload=remote_payload,
+        )
+        if isinstance(remote, dict) and remote.get("action"):
+            remote_data = dict(remote.get("data") or {})
+            remote_data["remote_proxy"] = {
+                "enabled": bool(remote.get("success")),
+                "base_url": _remote_operator_base_url(),
+                "reason": "web_console_l2b_remote_url_configured",
+                "error": remote.get("error") or "",
+            }
+            remote["data"] = remote_data
+            return remote
+
+    projection = _graphiti_l2b_materialization_projection(body)
+    if not projection.get("success"):
+        return _receipt(
+            action="graphiti.subgraph.materialize_l2b",
+            success=False,
+            dry_run=True,
+            operator_mode=False,
+            data={
+                **projection,
+                "mutated": False,
+                "direct_l2b_write": False,
+                "direct_graphiti_write": False,
+                "operator_required_for_execute": True,
+            },
+        )
+
+    transform = dict(projection.get("transform_preview") or {})
+    l2b_nodes = [row for row in transform.get("l2b_nodes", []) if isinstance(row, dict)]
+    l2b_edges = [row for row in transform.get("l2b_edges", []) if isinstance(row, dict)]
+    episode_links = [row for row in transform.get("episode_links", []) if isinstance(row, dict)]
+    edge_rows = [*l2b_edges, *episode_links]
+    identity_payloads = _graphiti_l2b_identity_payloads(
+        l2b_nodes=l2b_nodes,
+        fact_pointers=[
+            row for row in transform.get("fact_pointers", []) if isinstance(row, dict)
+        ],
+        edge_rows=edge_rows,
+        partition=str(projection.get("partition") or body.get("partition") or "goslo"),
+    )
+    base_data = {
+        **projection,
+        "l2b_nodes": l2b_nodes,
+        "l2b_edges": l2b_edges,
+        "episode_links": episode_links,
+        "node_count": len(l2b_nodes),
+        "edge_count": len(edge_rows),
+        "node_uuids": [str(row.get("uuid") or "") for row in l2b_nodes if row.get("uuid")],
+        "operator_required_for_execute": True,
+        "context_route": "/api/l2b/subgraphs/context",
+        "context_node_uuids": [
+            str(row.get("uuid") or "") for row in l2b_nodes[:8] if row.get("uuid")
+        ],
+        "identity_ref_index_would_write": bool(identity_payloads),
+        "identity_ref_index_payload_count": len(identity_payloads),
+        "materialization_policy": {
+            "node_uuid_policy": "deterministic_graphiti_pointer_uuid",
+            "preserve_raw_graphiti": True,
+            "edge_dedupe_key": "source,target,kind,edge_source,graphiti_uuid",
+            "graphiti_write": "never",
+            "falkordb_write": "never",
+        },
+    }
+    if dry_run or not operator_mode:
+        return _receipt(
+            action="graphiti.subgraph.materialize_l2b",
+            success=True,
+            dry_run=True,
+            operator_mode=False,
+            data={
+                **base_data,
+                "would_materialize": True,
+                "apply_skipped_reason": "dry_run_or_operator_mode_missing",
+                "mutated": False,
+                "direct_l2b_write": False,
+                "direct_graphiti_write": False,
+                "direct_falkordb_write": False,
+                "identity_ref_index_write": False,
+            },
+        )
+
+    try:
+        from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
+        from parrot.dsg.l2b_graph import get_l2b_graph
+
+        graph = get_l2b_graph()
+        before_nodes = graph.node_count()
+        before_edges = len(graph.all_edges())
+        node_reports = [_materialize_graphiti_l2b_node(graph, row) for row in l2b_nodes]
+        existing_edge_keys = _existing_l2b_edge_keys(graph)
+        edge_reports = [
+            _materialize_graphiti_l2b_edge(graph, row, existing_edge_keys)
+            for row in edge_rows
+        ]
+        identity_reports: list[dict[str, Any]] = []
+        identity_write = _body_bool(body.get("write_identity_ref_index"), True)
+        if identity_write and identity_payloads:
+            index = MemoryIdentityRefIndex()
+            for identity_payload in identity_payloads:
+                identity, ref = index.upsert(identity_payload)
+                identity_reports.append({
+                    "canonical_uuid": identity.canonical_uuid,
+                    "l2b_uuid": identity.l2b_uuid,
+                    "ref_id": ref.ref_id if ref is not None else "",
+                    "conflict_count": index.last_upsert_report.get("conflict_count", 0),
+                })
+            index.save()
+        after_nodes = graph.node_count()
+        after_edges = len(graph.all_edges())
+        nodes_upserted = sum(1 for row in node_reports if row.get("upserted"))
+        edges_added = sum(1 for row in edge_reports if row.get("connected"))
+        edges_skipped = sum(1 for row in edge_reports if row.get("skipped_duplicate"))
+        return _receipt(
+            action="graphiti.subgraph.materialize_l2b",
+            success=bool(l2b_nodes) and all(row.get("ok") for row in node_reports),
+            dry_run=False,
+            operator_mode=True,
+            data={
+                **base_data,
+                "would_materialize": False,
+                "mutated": True,
+                "direct_l2b_write": True,
+                "direct_graphiti_write": False,
+                "direct_falkordb_write": False,
+                "identity_ref_index_write": bool(identity_write and identity_payloads),
+                "nodes_upserted": nodes_upserted,
+                "edges_added": edges_added,
+                "edges_skipped_duplicate": edges_skipped,
+                "node_reports": node_reports,
+                "edge_reports": edge_reports,
+                "identity_ref_index_reports": identity_reports,
+                "before": {"node_count": before_nodes, "edge_count": before_edges},
+                "after": {"node_count": after_nodes, "edge_count": after_edges},
+                "materialization_state": "materialized_l2b_pointer_graph",
+            },
+        )
+    except Exception as exc:
+        return _receipt(
+            action="graphiti.subgraph.materialize_l2b",
+            success=False,
+            dry_run=False,
+            operator_mode=True,
+            data={
+                **base_data,
+                "error": f"{type(exc).__name__}: {exc}",
+                "mutated": False,
+                "direct_l2b_write": False,
+                "direct_graphiti_write": False,
+                "direct_falkordb_write": False,
+            },
+        )
+
+
+def _remote_operator_base_url() -> str:
+    raw = (
+        os.getenv("PARROT_WEB_CONSOLE_L2B_URL")
+        or os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_URL")
+        or os.getenv("PARROT_GRAPHITI_REMOTE_URL")
+        or ""
+    )
+    return str(raw).strip().rstrip("/")
+
+
+def _remote_operator_timeout_s() -> float:
+    raw = (
+        os.getenv("PARROT_WEB_CONSOLE_L2B_TIMEOUT_S")
+        or os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_TIMEOUT_S")
+        or os.getenv("PARROT_GRAPHITI_REMOTE_TIMEOUT_S")
+        or "30"
+    )
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        parsed = 30.0
+    return max(0.5, min(parsed, 300.0))
+
+
+def _remote_operator_request(
+    path: str,
+    *,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Proxy operator Graphiti/L2-B calls from the local Web Console to ECS."""
+
+    base_url = _remote_operator_base_url()
+    if not base_url:
+        return {"success": False, "action": "remote.operator.proxy", "error": "missing_remote_url"}
+    url = f"{base_url}/{path.lstrip('/')}"
+    data: bytes | None = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers=headers,
+        method="POST" if payload is not None else "GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=_remote_operator_timeout_s()) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+        parsed = json.loads(raw) if raw else {}
+        if isinstance(parsed, dict):
+            return parsed
+        return {"success": False, "action": "remote.operator.proxy", "error": "non_object_json", "raw": parsed}
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "success": False,
+            "action": "remote.operator.proxy",
+            "error": f"{type(exc).__name__}: {exc}",
+            "url": url,
+        }
+
+
+def _graphiti_l2b_materialization_projection(body: dict[str, Any]) -> dict[str, Any]:
+    """Return the same Graphiti bundle projection used by import-plan previews."""
+
+    from parrot.web_console.graph_policy import draft_graphiti_bundle_projection
+
+    partition = str(body.get("partition") or "goslo").strip() or "goslo"
+    query = str(body.get("query") or "").strip()
+    bundle = body.get("graphiti_bundle") or body.get("bundle")
+    if isinstance(bundle, dict) and bundle:
+        projection_receipt = draft_graphiti_bundle_projection(
+            {
+                "graphiti_bundle": bundle,
+                "partition": str(body.get("partition") or bundle.get("partition") or partition),
+                "query": query or str(bundle.get("query") or ""),
+                "destination": body.get("destination") or "isolated_compartment",
+                "subgraph_id": body.get("subgraph_id") or "",
+                "label": body.get("subgraph_label") or query or partition,
+                "dry_run": True,
+                "operator_mode": False,
+            }
+        )
+        data = dict(projection_receipt.get("data") or {})
+        return {
+            "success": bool(projection_receipt.get("success")),
+            "partition": data.get("partition") or partition,
+            "query": data.get("query") or query,
+            "selected_count": int(data.get("section_counts", {}).get("facts", 0) or 0),
+            "graphiti_bundle": bundle,
+            "transform_preview": data,
+            "transform_receipt_id": str((projection_receipt.get("receipt") or {}).get("receipt_id", "")),
+            "projection_source": "graphiti_bundle_payload",
+        }
+
+    plan = draft_graphiti_l2b_import_plan(
+        {**body, "dry_run": True, "operator_mode": False}
+    )
+    data = dict(plan.get("data") or {})
+    transform = dict(data.get("l2b_transform_preview") or {})
+    return {
+        "success": bool(plan.get("success")) and bool(transform),
+        "partition": data.get("partition") or partition,
+        "query": data.get("query") or query,
+        "selected_count": data.get("selected_count", 0),
+        "observations": data.get("observations", []),
+        "edge_drafts": data.get("edge_drafts", []),
+        "graphiti_bundle": data.get("graphiti_bundle", {}),
+        "identity_ref_drafts": data.get("identity_ref_drafts", []),
+        "subgraph": data.get("subgraph", {}),
+        "transform_preview": transform,
+        "source_import_plan_receipt_id": str((plan.get("receipt") or {}).get("receipt_id", "")),
+        "transform_receipt_id": str(data.get("transform_receipt_id") or ""),
+        "projection_source": "import_plan_preview",
+    }
+
+
+def _graphiti_l2b_identity_payloads(
+    *,
+    l2b_nodes: list[dict[str, Any]],
+    fact_pointers: list[dict[str, Any]],
+    edge_rows: list[dict[str, Any]],
+    partition: str,
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in l2b_nodes:
+        node_uuid = str(row.get("uuid") or "").strip()
+        graphiti_uuid = str(row.get("graphiti_uuid") or "").strip()
+        graphiti_kind = str(row.get("graphiti_kind") or "graphiti_entity").strip()
+        if not node_uuid or not graphiti_uuid:
+            continue
+        ref_id = str(row.get("ref_id") or f"graphiti:{partition}:entity:{graphiti_uuid}")
+        signal_key = _identity_signal_key_for_graphiti_kind(graphiti_kind)
+        raw_meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+        payload = {
+            "canonical_uuid": node_uuid,
+            "l2b_uuid": node_uuid,
+            signal_key: graphiti_uuid,
+            "ref_id": ref_id,
+            "ref_kind": graphiti_kind,
+            "locator": str(row.get("source_ref") or f"graphiti://{partition}/entity/{graphiti_uuid}"),
+            "canonical_uri": str(row.get("source_ref") or f"graphiti://{partition}/entity/{graphiti_uuid}"),
+            "managed_by": "graphiti",
+            "label": str(row.get("label") or ""),
+            "confidence": 0.7,
+            "resolution_state": "weak",
+            "graphiti_raw": {
+                "schema_version": 1,
+                "projection_row": row,
+                "raw": raw_meta.get("graphiti_raw") if isinstance(raw_meta, dict) else {},
+                "preserve_raw_graphiti": True,
+            },
+            "meta": {
+                "source_tool": "web_console.graphiti_l2b_materialize",
+                "graphiti_partition": partition,
+                "graphiti_kind": graphiti_kind,
+                "node_uuid_policy": "deterministic_graphiti_pointer_uuid",
+            },
+        }
+        _append_unique_identity_payload(payloads, seen, payload)
+    fact_rows_by_uuid = {
+        str(row.get("graphiti_uuid") or row.get("uuid") or "").strip(): row
+        for row in fact_pointers
+        if str(row.get("graphiti_uuid") or row.get("uuid") or "").strip()
+    }
+    for row in edge_rows:
+        fact_uuid = str(row.get("graphiti_uuid") or "").strip()
+        if not fact_uuid:
+            continue
+        fact_row = fact_rows_by_uuid.get(fact_uuid, {})
+        ref_id = str(row.get("ref_ids", [""])[0] if isinstance(row.get("ref_ids"), list) and row.get("ref_ids") else "")
+        if not ref_id:
+            ref_id = str(fact_row.get("ref_id") or f"graphiti:{partition}:fact:{fact_uuid}")
+        source_ref = str(fact_row.get("source_ref") or f"graphiti://{partition}/fact/{fact_uuid}")
+        raw_meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+        payload = {
+            "canonical_uuid": f"graphiti:{partition}:fact:{fact_uuid}",
+            "graphiti_edge_uuid": fact_uuid,
+            "ref_id": ref_id,
+            "ref_kind": "graphiti_fact",
+            "locator": source_ref,
+            "canonical_uri": source_ref,
+            "managed_by": "graphiti",
+            "label": str(row.get("label") or raw_meta.get("fact_text") or ""),
+            "confidence": 0.65,
+            "resolution_state": "weak",
+            "graphiti_raw": {
+                "schema_version": 1,
+                "projection_edge": row,
+                "fact_pointer": fact_row,
+                "raw": raw_meta.get("graphiti_raw") if isinstance(raw_meta, dict) else {},
+                "preserve_raw_graphiti": True,
+            },
+            "meta": {
+                "source_tool": "web_console.graphiti_l2b_materialize",
+                "graphiti_partition": partition,
+                "graphiti_kind": "graphiti_fact",
+            },
+        }
+        _append_unique_identity_payload(payloads, seen, payload)
+    return payloads
+
+
+def _append_unique_identity_payload(
+    payloads: list[dict[str, Any]],
+    seen: set[str],
+    payload: dict[str, Any],
+) -> None:
+    key = "|".join(
+        str(payload.get(item) or "")
+        for item in (
+            "canonical_uuid",
+            "l2b_uuid",
+            "graphiti_entity_uuid",
+            "graphiti_edge_uuid",
+            "graphiti_episode_uuid",
+            "ref_id",
+        )
+    )
+    if key in seen:
+        return
+    seen.add(key)
+    payloads.append(payload)
+
+
+def _identity_signal_key_for_graphiti_kind(graphiti_kind: str) -> str:
+    text = str(graphiti_kind or "").lower()
+    if "episode" in text:
+        return "graphiti_episode_uuid"
+    if "edge" in text or "fact" in text:
+        return "graphiti_edge_uuid"
+    return "graphiti_entity_uuid"
+
+
+def _materialize_graphiti_l2b_node(graph: Any, row: dict[str, Any]) -> dict[str, Any]:
+    from parrot.dsg.l2b_types import ConfirmationStatus, NodeKind, Salience, SemanticNode
+
+    node_uuid = str(row.get("uuid") or "").strip()
+    if not node_uuid:
+        return {"ok": False, "upserted": False, "error": "missing_node_uuid"}
+    before = graph.get_node(node_uuid)
+    node_kind = _parse_enum(NodeKind, row.get("node_kind") or NodeKind.OBJECT.value) or NodeKind.OBJECT
+    confirmation = (
+        _parse_enum(ConfirmationStatus, row.get("confirmation") or ConfirmationStatus.EXPECTED.value)
+        or ConfirmationStatus.EXPECTED
+    )
+    attention = max(0.0, min(_body_float(row.get("attention"), 0.35), 1.0))
+    meta = dict(row.get("meta")) if isinstance(row.get("meta"), dict) else {}
+    source_meta = dict(row.get("source_meta")) if isinstance(row.get("source_meta"), dict) else {}
+    source_ref = str(row.get("source_ref") or "")
+    ref_id = str(row.get("ref_id") or "")
+    meta.update(
+        {
+            "materialization_state": "materialized_l2b_pointer",
+            "materialized_by": "web_console.graphiti_l2b_materialize",
+            "source_ref": source_ref,
+            "ref_id": ref_id,
+            "preserve_raw_graphiti": True,
+        }
+    )
+    known_facts = _unique_texts(
+        [
+            str(row.get("label") or ""),
+            str((meta.get("graphiti_raw") or {}).get("summary") if isinstance(meta.get("graphiti_raw"), dict) else ""),
+            str((meta.get("graphiti_raw") or {}).get("content") if isinstance(meta.get("graphiti_raw"), dict) else ""),
+        ]
+    )[:8]
+    graph.upsert_node(
+        SemanticNode(
+            uuid=node_uuid,
+            kind=node_kind,
+            label=str(row.get("label") or node_uuid)[:160],
+            graphiti_uuid=str(row.get("graphiti_uuid") or ""),
+            category=str(row.get("graphiti_kind") or "graphiti_pointer"),
+            description=str(row.get("description") or "")[:400],
+            known_facts=known_facts,
+            tags=_unique_texts(["graphiti", row.get("partition"), row.get("graphiti_kind")]),
+            attention=attention,
+            salience=Salience.ACTIVE if attention >= 0.55 else Salience.BACKGROUND,
+            confirmation=confirmation,
+            evidence_score=attention,
+            provenance_stream_id=f"web:graphiti:{row.get('partition') or 'goslo'}:{row.get('graphiti_uuid') or node_uuid}",
+            bucket_id="graphiti_import_materialized",
+            source="graphiti",
+            source_meta={
+                **source_meta,
+                "materialization_state": "materialized_l2b_pointer",
+                "source_ref": source_ref,
+                "ref_id": ref_id,
+            },
+            meta=meta,
+        )
+    )
+    return {
+        "ok": True,
+        "upserted": before is None,
+        "uuid": node_uuid,
+        "graphiti_uuid": str(row.get("graphiti_uuid") or ""),
+        "kind": node_kind.value,
+        "label": str(row.get("label") or ""),
+    }
+
+
+def _existing_l2b_edge_keys(graph: Any) -> set[tuple[str, str, str, str, str]]:
+    return {
+        _materialized_edge_key(
+            source=str(getattr(src, "uuid", "") or ""),
+            target=str(getattr(dst, "uuid", "") or ""),
+            kind=_enum_value(getattr(edge, "kind", "")),
+            edge_source=str(getattr(edge, "source", "") or ""),
+            graphiti_uuid=str(getattr(edge, "graphiti_uuid", "") or ""),
+        )
+        for src, dst, edge in graph.all_edges()
+    }
+
+
+def _materialize_graphiti_l2b_edge(
+    graph: Any,
+    row: dict[str, Any],
+    existing_keys: set[tuple[str, str, str, str, str]],
+) -> dict[str, Any]:
+    from parrot.dsg.l2b_types import EdgeKind, SemanticEdge, edge_view_classes
+
+    source = str(row.get("source") or row.get("from_uuid") or "").strip()
+    target = str(row.get("target") or row.get("to_uuid") or "").strip()
+    if not source or not target:
+        return {"ok": False, "connected": False, "error": "missing_edge_endpoint", "edge": row}
+    edge_kind = _parse_enum(EdgeKind, row.get("kind") or EdgeKind.ASSOCIATED_WITH.value)
+    if edge_kind is None:
+        edge_kind = EdgeKind.ASSOCIATED_WITH
+    edge_source = str(row.get("edge_source") or row.get("source") or "graphiti").strip() or "graphiti"
+    graphiti_uuid = str(row.get("graphiti_uuid") or "").strip()
+    key = _materialized_edge_key(
+        source=source,
+        target=target,
+        kind=edge_kind.value,
+        edge_source=edge_source,
+        graphiti_uuid=graphiti_uuid,
+    )
+    if key in existing_keys:
+        return {
+            "ok": True,
+            "connected": False,
+            "skipped_duplicate": True,
+            "source": source,
+            "target": target,
+            "kind": edge_kind.value,
+            "graphiti_uuid": graphiti_uuid,
+        }
+    ref_ids = tuple(_unique_texts(row.get("ref_ids") or []))
+    meta = dict(row.get("meta")) if isinstance(row.get("meta"), dict) else {}
+    meta.update(
+        {
+            "materialization_state": "materialized_l2b_pointer_edge",
+            "materialized_by": "web_console.graphiti_l2b_materialize",
+            "label": str(row.get("label") or meta.get("fact_text") or ""),
+            "write_policy": "operator_reviewed_l2b_pointer_topology",
+            "preserve_raw_graphiti": True,
+        }
+    )
+    edge = SemanticEdge(
+        kind=edge_kind,
+        strength=max(0.0, min(_body_float(row.get("strength"), 0.5), 1.0)),
+        source=edge_source,
+        graphiti_uuid=graphiti_uuid,
+        source_graphiti_uuid=str(row.get("source_graphiti_uuid") or meta.get("source_graphiti_uuid") or ""),
+        target_graphiti_uuid=str(row.get("target_graphiti_uuid") or meta.get("target_graphiti_uuid") or ""),
+        ref_ids=ref_ids,
+        view_classes=edge_view_classes(edge_kind),
+        meta=meta,
+    )
+    connected = graph.connect(source, target, edge)
+    if connected:
+        existing_keys.add(key)
+    return {
+        "ok": bool(connected),
+        "connected": bool(connected),
+        "skipped_duplicate": False,
+        "source": source,
+        "target": target,
+        "kind": edge_kind.value,
+        "graphiti_uuid": graphiti_uuid,
+        "error": "" if connected else "l2b_endpoint_not_found",
+    }
+
+
+def _materialized_edge_key(
+    *,
+    source: str,
+    target: str,
+    kind: str,
+    edge_source: str,
+    graphiti_uuid: str,
+) -> tuple[str, str, str, str, str]:
+    return (
+        str(source or ""),
+        str(target or ""),
+        str(kind or ""),
+        str(edge_source or ""),
+        str(graphiti_uuid or ""),
     )
 
 

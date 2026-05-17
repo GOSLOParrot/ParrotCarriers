@@ -391,6 +391,18 @@ def build_app():  # type: ignore[no-untyped-def]
     async def l2b_snapshot(limit: int = 80):  # type: ignore[no-untyped-def]
         return build_l2b_snapshot(limit=max(1, min(limit, 200))).as_json()
 
+    @app.post("/api/l2b/subgraphs/context")
+    async def l2b_subgraphs_context(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.graph_policy import live_subgraph_context
+
+        return live_subgraph_context({**(payload or {}), "_remote_proxy_disable": True})
+
+    @app.get("/api/l2b/analysis/health")
+    async def l2b_analysis_health():  # type: ignore[no-untyped-def]
+        from parrot.web_console.graph_policy import graph_health_snapshot
+
+        return graph_health_snapshot()
+
     @app.get("/api/graphiti/status")
     async def graphiti_status_endpoint():  # type: ignore[no-untyped-def]
         return graphiti_status().as_json()
@@ -446,6 +458,12 @@ def build_app():  # type: ignore[no-untyped-def]
         from parrot.web_console.memory_ops import draft_graphiti_l2b_import_plan
 
         return draft_graphiti_l2b_import_plan(payload or {})
+
+    @app.post("/api/graphiti/subgraph/materialize-l2b")
+    async def graphiti_subgraph_materialize_l2b(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import materialize_graphiti_l2b_subgraph
+
+        return materialize_graphiti_l2b_subgraph({**(payload or {}), "_remote_proxy_disable": True})
 
     @app.post("/api/graphiti/subgraph/export")
     async def graphiti_subgraph_export_endpoint(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]

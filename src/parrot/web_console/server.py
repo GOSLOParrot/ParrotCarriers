@@ -924,6 +924,14 @@ def build_app(
 
         return draft_graphiti_l2b_import_plan(payload or {})
 
+    @app.post("/api/graphiti/subgraph/materialize-l2b")
+    async def graphiti_subgraph_materialize_l2b(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import materialize_graphiti_l2b_subgraph
+
+        return materialize_graphiti_l2b_subgraph(payload or {})
+
     @app.post("/api/graphiti/subgraph/export")
     async def graphiti_subgraph_export(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),

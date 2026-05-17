@@ -9,7 +9,11 @@ L1.5 or L2-B write path runs.
 
 from __future__ import annotations
 
+import json
+import os
 import time
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
@@ -322,6 +326,21 @@ def live_subgraph_context(payload: dict[str, Any] | None = None) -> dict[str, An
     """
 
     body = payload or {}
+    if _remote_l2b_base_url() and not _body_bool(body.get("_remote_proxy_disable"), False):
+        remote_payload = dict(body)
+        remote_payload["_remote_proxy_disable"] = True
+        remote = _remote_l2b_request("/api/l2b/subgraphs/context", payload=remote_payload)
+        if isinstance(remote, dict) and remote.get("action"):
+            remote_data = dict(remote.get("data") or {})
+            remote_data["remote_proxy"] = {
+                "enabled": bool(remote.get("success")),
+                "base_url": _remote_l2b_base_url(),
+                "reason": "web_console_l2b_remote_url_configured",
+                "error": remote.get("error") or "",
+            }
+            remote["data"] = remote_data
+            return remote
+
     requested_dry_run = _body_bool(body.get("dry_run"), True)
     requested_operator_mode = _body_bool(body.get("operator_mode"), False)
     node_uuids = _string_tuple(body.get("node_uuids") or body.get("nodes"))
@@ -708,6 +727,17 @@ def draft_graphiti_bundle_projection(payload: dict[str, Any] | None = None) -> d
 def graph_health_snapshot() -> dict[str, Any]:
     """Return read-only graph health metrics for operator planning."""
 
+    if _remote_l2b_base_url() and os.getenv("PARROT_WEB_CONSOLE_L2B_HEALTH_PROXY", "0").strip().lower() in {"1", "true", "yes", "on"}:
+        remote = _remote_l2b_request("/api/l2b/analysis/health")
+        if isinstance(remote, dict) and remote.get("action"):
+            remote["remote_proxy"] = {
+                "enabled": bool(remote.get("success")),
+                "base_url": _remote_l2b_base_url(),
+                "reason": "web_console_l2b_health_proxy_enabled",
+                "error": remote.get("error") or "",
+            }
+            return remote
+
     try:
         from parrot.dsg.l2b.clustering import get_cluster_strategy
         from parrot.dsg.l2b_graph import get_l2b_graph
@@ -768,6 +798,66 @@ def _record_rows(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [row for row in value if isinstance(row, dict)]
+
+
+def _remote_l2b_base_url() -> str:
+    raw = (
+        os.getenv("PARROT_WEB_CONSOLE_L2B_URL")
+        or os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_URL")
+        or os.getenv("PARROT_GRAPHITI_REMOTE_URL")
+        or ""
+    )
+    return str(raw).strip().rstrip("/")
+
+
+def _remote_l2b_timeout_s() -> float:
+    raw = (
+        os.getenv("PARROT_WEB_CONSOLE_L2B_TIMEOUT_S")
+        or os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_TIMEOUT_S")
+        or os.getenv("PARROT_GRAPHITI_REMOTE_TIMEOUT_S")
+        or "30"
+    )
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        parsed = 30.0
+    return max(0.5, min(parsed, 300.0))
+
+
+def _remote_l2b_request(
+    path: str,
+    *,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    base_url = _remote_l2b_base_url()
+    if not base_url:
+        return {"success": False, "action": "remote.l2b.proxy", "error": "missing_remote_url"}
+    url = f"{base_url}/{path.lstrip('/')}"
+    data: bytes | None = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers=headers,
+        method="POST" if payload is not None else "GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=_remote_l2b_timeout_s()) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+        parsed = json.loads(raw) if raw else {}
+        if isinstance(parsed, dict):
+            return parsed
+        return {"success": False, "action": "remote.l2b.proxy", "error": "non_object_json", "raw": parsed}
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError) as exc:
+        return {
+            "success": False,
+            "action": "remote.l2b.proxy",
+            "error": f"{type(exc).__name__}: {exc}",
+            "url": url,
+        }
 
 
 def _graphiti_bundle_l2b_nodes(
