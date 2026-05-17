@@ -662,10 +662,17 @@ Verification:
   it, exported `workflow_schema_v1`, import-previewed a diff with
   `wf-trigger` added and `wf-ref-scan` kept, confirmed `smoke-secret` was
   absent from the export, then deleted the draft.
+- ECS `8790` smoke after commit `24b0ef5` exposed catalog rows
+  `runtime.workflow.validate`, `runtime.workflow.export`, and
+  `runtime.workflow.import_preview`; saved
+  `ecs-schema-smoke-20260517233147`; validated it; exported
+  `workflow_schema_v1`; import-previewed `wf-trigger` as added and
+  `wf-ref-scan` as kept; confirmed `ecs-schema-secret` was absent from the
+  export; confirmed Plan draft still produced one `ref_scan` step; and deleted
+  the temporary workflow draft.
 
 Remaining gaps after this slice:
 
-- ECS `8790` still needs commit/push/release proof for these new schema routes.
 - Thin CLI `workflow validate` / `catalog list` is still a follow-up and must
   reuse these helper functions instead of inventing another schema parser.
 - Rich canvas layout, subflow reuse, loops, and deploy/activate semantics remain

@@ -59,7 +59,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-18 | done | `workflow_schema_v1` validator and redacted export/import helper. | Added shared validate/export/import-preview helpers and routes on both 7893 Web BFF and 8790 app-monitor parity surface. Tests cover good/bad JSON, diff preview, secret redaction, and catalog rows. |
 | CFW-19 | done-first-slice | Web import/export/diff preview for workflow drafts. | Runtime Flow now has Validate, Export, Import preview, Load import, JSON artifact textarea, and diff summary. Imported artifacts still persist only through the existing Save route after operator review. |
 | CFW-20 | pending | Thin CLI first slice: `workflow validate` and `catalog list`. | CLI must reuse backend/schema functions, default JSON output, and not execute writes. |
-| CFW-21 | in_progress | True-connection smoke pack for local/ECS workflow artifact path. | Local 7894 smoke proved save/validate/export/import-preview/delete against the real HTTP BFF with redaction. ECS 8790 proof follows commit/push/release. |
+| CFW-21 | done-first-slice | True-connection smoke pack for local/ECS workflow artifact path. | Local 7894 and ECS 8790 both proved save/validate/export/import-preview/delete with redaction; ECS also proved Plan draft still maps the imported workflow to `ref_scan`. |
 
 ## First Slice Design
 
@@ -354,4 +354,13 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   HTTP smoke on port `7894` saved `wf-schema-smoke`, validated it, exported
   `workflow_schema_v1`, import-previewed a diff with `wf-trigger` added and
   `wf-ref-scan` kept, confirmed `smoke-secret` was redacted, then deleted the
-  draft. ECS 8790 proof remains pending until commit/push/release.
+  draft.
+- 2026-05-17 remote CFW-18/19 proof after commit `24b0ef5`: ECS
+  `/opt/parrot/ParrotCarriers` fast-forwarded to `24b0ef5`, editable install
+  completed, and six services restarted active. Remote `8790` exposed catalog
+  rows `runtime.workflow.validate`, `runtime.workflow.export`, and
+  `runtime.workflow.import_preview`; saved `ecs-schema-smoke-20260517233147`;
+  validated it; exported `workflow_schema_v1`; import-previewed `wf-trigger`
+  as added and `wf-ref-scan` as kept; confirmed `ecs-schema-secret` was
+  redacted; Plan draft still produced one `ref_scan` step; and the temporary
+  draft was deleted.

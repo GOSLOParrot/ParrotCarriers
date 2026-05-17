@@ -301,7 +301,7 @@ TODO After:
 - [x] Run focused pytest for Web/app-monitor routes.
 - [x] Run frontend typecheck/build if React changed.
 - [x] Smoke a local Web BFF with one saved/exported/imported workflow.
-- [ ] Smoke remote 8790 after commit/push/ECS release when runtime code changed.
+- [x] Smoke remote 8790 after commit/push/ECS release when runtime code changed.
 - [x] Audit requirement drift against the table below.
 - [x] Record ledger results in the workplan.
 
