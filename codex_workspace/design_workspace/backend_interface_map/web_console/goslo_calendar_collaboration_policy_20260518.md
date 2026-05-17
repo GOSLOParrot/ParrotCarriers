@@ -585,3 +585,52 @@ Current minimal GOSLO Calendar tool surface:
 - `calendar_context`: quick T1 schedule read with T3 fallback.
 - `calendar_change_request`: T2 draft/HITL staging for writes.
 - `calendar_task_status`: quick monitor over background task/result ledgers.
+
+### 2026-05-18 - User Correction: Calendar Draft Is Intent Decision, Not Forced T3
+
+User correction to preserve:
+
+> `calendar_change_request` 是 Intent 层的。
+> GOSLO 更多做决策和与用户确定是否要改日程，以及分析是否冲突，来逐步完善 Plan 草稿。
+> 具体执行虽然是 T1 很快所以不一定需要 nanobot 来。
+> 但也可以决策好就交由 nanobot 做。
+> 具体决策 tool 不写死，要让 GOSLO 自己可以决定。
+> 要么写清楚，要么直接当成工作流程写，拆成 Plan 和执行。
+> 执行要走 T1 还是 T3 自己决定。
+> 一般软件的正常流程是 T1，但是我们拆开则自带 fallback，不被阻塞，GOSLO 能自己判断。
+> 我们的角色和 AgentTeam 就是这样协作的。
+
+Updated interpretation:
+
+- `calendar_change_request` is an Intent-layer decision/draft tool, not a
+  Calendar execution tool and not a forced Nanobot/T3 route.
+- GOSLO's primary job here is to reason with the user: whether a change should
+  happen, whether it conflicts with current schedule context, and how the
+  change should become a Plan/HITL draft.
+- The workflow is split into two phases:
+  1. **Plan/draft/confirmation phase**: GOSLO uses `calendar_context` and
+     user dialogue to analyze conflicts, then uses `calendar_change_request` to
+     stage an IntentWorkspace `calendar_draft`.
+  2. **Execution phase after approval**: GOSLO/Plan chooses the route based on
+     latency, risk, and conversation feel.
+- Execution route is deliberately not hardcoded:
+  - T1 direct Calendar API execution is the normal software-like path when the
+    write is safe, fast, and already approved.
+  - T3 Nanobot/Scheduler execution is appropriate when the write should run in
+    the background, may be slow, needs richer receipts, or belongs to a larger
+    AgentTeam/Plan workflow.
+  - T1 tools should keep fallback semantics so the live conversation does not
+    freeze if the service is slow.
+- `calendar_task_status` lets GOSLO monitor whichever background route exists
+  without treating L2-B as the task SSOT.
+- L1.5/L2-B/Graphiti sync is still post-result memory/buffer projection, not
+  the owner of the Calendar task truth.
+
+Tool wording correction:
+
+- `calendar_change_request` now records both
+  `allowed_execution_routes_after_approval = [T1_DIRECT_GOOGLE_CALENDAR_API,
+  T3_NANOBOT_SCHEDULER_TASK]` and `suggested_nanobot_task_type`.
+- The draft keeps the Nanobot task type as a suggested background route, while
+  preserving GOSLO/Plan's authority to choose T1 direct execution after HITL
+  approval.

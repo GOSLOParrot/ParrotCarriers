@@ -37,18 +37,21 @@ async def calendar_change_request(
 ) -> str:
     """Stage a Google Calendar change request for Plan/HITL approval.
 
-    Category: T2 Intent Plan / HITL draft tool. Use this after GOSLO has talked
-    with the user and wants to propose a Calendar create/patch/delete action as
-    a concrete draft. This tool is for decision handoff, not execution.
+    Category: Intent-layer Calendar decision/draft tool. Use this while GOSLO
+    is deciding with the user whether a Calendar change should happen, checking
+    whether the proposed change conflicts with context, and gradually shaping a
+    Plan or HITL-ready draft. This tool is for decision handoff, not execution.
 
     Conversation blocking: brief. It only stages a paper-note draft in
     IntentWorkspace, so GOSLO can keep speaking naturally after it returns.
 
     Write authority: none. This tool never calls Google Calendar, never
     dispatches Nanobot, never imports L1.5, never mutates L2-B, and never writes
-    Graphiti. The staged draft is the input to a later Plan/HITL gate. Only
-    after explicit approval should GOSLO or PlanRegistry dispatch the matching
-    T3 task: calendar_create, calendar_patch, or calendar_delete.
+    Graphiti. The staged draft is the input to a later Plan/HITL gate. After
+    approval, GOSLO/Plan may choose the execution route: a fast T1 direct
+    Calendar API action if the operation is safe and quick enough, or a T3
+    Nanobot/Scheduler task (`calendar_create`, `calendar_patch`, or
+    `calendar_delete`) when the work should run in the background.
 
     Args:
         action: Requested mutation: 'create', 'patch', 'update', or 'delete'.
@@ -126,7 +129,13 @@ async def do_calendar_change_request(
         "schema": "goslo_calendar_change_request_v1",
         "tool_category": "T2_INTENT_PLAN_HITL_DRAFT",
         "action": normalized_action,
+        "suggested_nanobot_task_type": task_type,
         "task_type_after_approval": task_type,
+        "execution_route_policy": "GOSLO/Plan chooses T1 direct or T3 Nanobot after approval",
+        "allowed_execution_routes_after_approval": [
+            "T1_DIRECT_GOOGLE_CALENDAR_API",
+            "T3_NANOBOT_SCHEDULER_TASK",
+        ],
         "calendar_id": str(calendar_id or "primary"),
         "event_id": str(event_id or ""),
         "title": str(title or ""),
@@ -138,7 +147,10 @@ async def do_calendar_change_request(
         "plan_id": str(plan_id or ""),
         "step_id": str(step_id or ""),
         "result_channel": "calendar_result",
-        "write_authority": "Plan/HITL approval -> Scheduler -> Nanobot Google Workspace MCP",
+        "write_authority": (
+            "Plan/HITL approval first; execution route selected by GOSLO/Plan "
+            "based on latency, risk, and conversation feel"
+        ),
         "sync_after_execution": [
             "IntentWorkspace result paper note",
             "calendar_result trigger ledger",
@@ -171,13 +183,14 @@ async def do_calendar_change_request(
         else "Draft says confirmation may already be present, but Plan/HITL should still verify it."
     )
     return (
-        "Calendar change draft staged (T2 Intent Plan / HITL draft).\n"
+        "Calendar change draft staged (Intent-layer Plan/HITL draft).\n"
         f"Draft ref: {ref_id or 'unknown'}.\n"
-        f"Action: {normalized_action} -> {task_type} after approval.\n"
+        f"Action: {normalized_action}; suggested T3 task={task_type} if background execution is chosen.\n"
         f"Calendar/event: {draft_payload['calendar_id']} / {draft_payload['event_id'] or 'new event'}.\n"
         f"{confirmation_line}\n"
-        "Next step: present the draft to the user or a Plan/HITL gate; only then dispatch "
-        f"{task_type} with result_channel=calendar_result.\n"
+        "Next step: present the draft to the user or a Plan/HITL gate; after approval, "
+        "GOSLO/Plan chooses either fast T1 direct execution or T3 Nanobot dispatch "
+        f"({task_type}, result_channel=calendar_result).\n"
         "No Google Calendar write, no Nanobot dispatch, no L1.5 import, no L2-B mutation, "
         "and no Graphiti write occurred."
     )
