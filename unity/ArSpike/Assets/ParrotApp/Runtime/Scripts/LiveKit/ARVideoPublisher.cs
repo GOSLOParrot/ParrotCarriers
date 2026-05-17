@@ -74,7 +74,7 @@ namespace ParrotApp.LiveKit
 
         [Header("Dev Fallback")]
         [Tooltip("AR 路径不可用时回落 WebCamTexture（spike / Editor 用，正式 AR build 走真 ARCore）。")]
-        [SerializeField] private bool useWebcamFallback = true;
+        [SerializeField] private bool useWebcamFallback = false;
 
         [Tooltip("子串匹配（不区分大小写）；空时优先选第一个非虚拟设备。")]
         [SerializeField] private string preferredDeviceName = "";
@@ -99,6 +99,7 @@ namespace ParrotApp.LiveKit
         private bool _publishMuted;
         private bool _isRebuilding;
         private bool _setupInProgress;
+        private int _videoPublishGeneration;
 
         // lifecycle 暂停 Blit 标志：true 时 OnARFrameReceived / BlitWebcamLoop 不写新帧
         private bool _blitPaused;
@@ -237,6 +238,7 @@ namespace ParrotApp.LiveKit
         private IEnumerator SetupAndPublish()
         {
             _setupInProgress = true;
+            int generation = _videoPublishGeneration;
             HealthAggregator?.ReportVideoPublishAttempt(UnixSeconds());
             HealthAggregator?.ReportVideoTier(TierToWire(_currentTier), UnixSeconds());
 
@@ -251,6 +253,8 @@ namespace ParrotApp.LiveKit
             _lastFreshState = false;
 
             yield return EnsureArRuntimeForPublish();
+            if (CancelSetupIfNeeded(generation))
+                yield break;
             bool arAvailable = TrySetupAR();
             bool useWebcam = useWebcamFallback;
 
@@ -270,12 +274,14 @@ namespace ParrotApp.LiveKit
             }
 #endif
 
-            float firstFrameTimeout = Config != null ? Config.T_FIRST_FRAME_TIMEOUT : 3f;
+            float firstFrameTimeout = Config != null ? Config.T_FIRST_FRAME_TIMEOUT : 8f;
 
             if (!arAvailable && useWebcam)
             {
                 Debug.Log("[ARVideoPublisher] AR not available, using webcam fallback");
                 yield return SetupWebcamFallback();
+                if (CancelSetupIfNeeded(generation))
+                    yield break;
                 if (!_webcamReady)
                 {
                     _lastPublishError = "webcam_fallback_no_frames";
@@ -296,6 +302,8 @@ namespace ParrotApp.LiveKit
             else
             {
                 yield return WaitForFirstFrame("AR", firstFrameTimeout);
+                if (CancelSetupIfNeeded(generation))
+                    yield break;
                 if (_producedFrameCount == 0)
                 {
                     _lastPublishError = "ar_path_no_frames";
@@ -362,6 +370,8 @@ namespace ParrotApp.LiveKit
 
             var publish = room.LocalParticipant.PublishTrack(_videoTrack, options);
             yield return publish;
+            if (CancelSetupIfNeeded(generation))
+                yield break;
 
             if (publish.IsError)
             {
@@ -369,6 +379,8 @@ namespace ParrotApp.LiveKit
                 options.VideoCodec = VideoCodec.Vp8;
                 publish = room.LocalParticipant.PublishTrack(_videoTrack, options);
                 yield return publish;
+                if (CancelSetupIfNeeded(generation))
+                    yield break;
 
                 if (publish.IsError)
                 {
@@ -382,7 +394,22 @@ namespace ParrotApp.LiveKit
             _videoSource.Start();
             StartCoroutine(_videoSource.Update());
             _isPublishing = true;
-            HealthAggregator?.ReportVideoPublished(true, UnixSeconds());
+            int postPublishFrameBaseline = _producedFrameCount;
+            yield return WaitForFramesAfterPublish(postPublishFrameBaseline, 1, firstFrameTimeout, generation);
+            if (CancelSetupIfNeeded(generation))
+                yield break;
+            if (_producedFrameCount <= postPublishFrameBaseline)
+            {
+                _lastPublishError = "video_publish_no_post_publish_frame";
+                HealthAggregator?.ReportVideoLifecycleReason("first_frame_timeout", UnixSeconds());
+                HealthAggregator?.ReportVideoPublished(false, UnixSeconds());
+                Debug.LogWarning("[ARVideoPublisher] published track but no fresh post-publish frame arrived");
+            }
+            else
+            {
+                HealthAggregator?.ReportVideoLifecycleReason("", UnixSeconds());
+                HealthAggregator?.ReportVideoPublished(true, UnixSeconds());
+            }
 
             if (_publishMuted)
             {
@@ -412,6 +439,23 @@ namespace ParrotApp.LiveKit
 
             if (_producedFrameCount > 0)
                 Debug.Log($"[ARVideoPublisher] First {sourceLabel} frame received (frames={_producedFrameCount})");
+        }
+
+        private IEnumerator WaitForFramesAfterPublish(
+            int baselineFrameCount,
+            int requiredFrames,
+            float timeoutSeconds,
+            int generation)
+        {
+            float remaining = Mathf.Max(0.1f, timeoutSeconds);
+            int targetFrameCount = baselineFrameCount + Mathf.Max(1, requiredFrames);
+            while (!IsVideoGenerationCancelled(generation)
+                   && _producedFrameCount < targetFrameCount
+                   && remaining > 0f)
+            {
+                remaining -= Time.deltaTime;
+                yield return null;
+            }
         }
 
         private void RecordProducedFrame(string sourceLabel)
@@ -684,9 +728,14 @@ namespace ParrotApp.LiveKit
         private IEnumerator RebuildTrack(VideoTierLocal tier, Action<TierApplyResult> onComplete = null)
         {
             _isRebuilding = true;
+            int generation = _videoPublishGeneration;
             HealthAggregator?.ReportVideoLifecycleReason("republishing", UnixSeconds());
 
             yield return StartCoroutine(SendTrackRebuildingRpc(true));
+            if (CancelRebuildIfNeeded(generation, onComplete))
+            {
+                yield break;
+            }
 
             var rm = RoomManager.Instance;
             if (rm == null || !rm.IsConnected || rm.Room == null)
@@ -714,6 +763,10 @@ namespace ParrotApp.LiveKit
             while (waited < coolDown)
             {
                 yield return null;
+                if (CancelRebuildIfNeeded(generation, onComplete))
+                {
+                    yield break;
+                }
                 waited += Time.unscaledDeltaTime;
             }
 
@@ -740,6 +793,10 @@ namespace ParrotApp.LiveKit
 
             var publish = room.LocalParticipant.PublishTrack(_videoTrack, options);
             yield return publish;
+            if (CancelRebuildIfNeeded(generation, onComplete))
+            {
+                yield break;
+            }
 
             if (publish.IsError)
             {
@@ -747,6 +804,10 @@ namespace ParrotApp.LiveKit
                 options.VideoCodec = VideoCodec.Vp8;
                 publish = room.LocalParticipant.PublishTrack(_videoTrack, options);
                 yield return publish;
+                if (CancelRebuildIfNeeded(generation, onComplete))
+                {
+                    yield break;
+                }
             }
 
             if (!publish.IsError)
@@ -754,11 +815,30 @@ namespace ParrotApp.LiveKit
                 _videoSource.Start();
                 StartCoroutine(_videoSource.Update());
                 _isPublishing = true;
-                HealthAggregator?.ReportVideoPublished(true, UnixSeconds());
-                if (_publishMuted)
-                    ((ILocalTrack)_videoTrack).SetMute(true);
-                Debug.Log($"[ARVideoPublisher] Track rebuilt: {bitrate / 1000}kbps/{fps}fps (tier={tier})");
-                onComplete?.Invoke(new TierApplyResult(true, "applied"));
+                int postPublishFrameBaseline = _producedFrameCount;
+                float firstFrameTimeout = Config != null ? Config.T_FIRST_FRAME_TIMEOUT : 8f;
+                yield return WaitForFramesAfterPublish(postPublishFrameBaseline, 1, firstFrameTimeout, generation);
+                if (CancelRebuildIfNeeded(generation, onComplete))
+                {
+                    yield break;
+                }
+                if (_producedFrameCount <= postPublishFrameBaseline)
+                {
+                    _lastPublishError = "rebuild_no_post_publish_frame";
+                    HealthAggregator?.ReportVideoLifecycleReason("first_frame_timeout", UnixSeconds());
+                    HealthAggregator?.ReportVideoPublished(false, UnixSeconds());
+                    Debug.LogWarning("[ARVideoPublisher] rebuilt track but no fresh post-publish frame arrived");
+                    onComplete?.Invoke(new TierApplyResult(false, "rebuild_no_post_publish_frame"));
+                }
+                else
+                {
+                    HealthAggregator?.ReportVideoLifecycleReason("", UnixSeconds());
+                    HealthAggregator?.ReportVideoPublished(true, UnixSeconds());
+                    if (_publishMuted)
+                        ((ILocalTrack)_videoTrack).SetMute(true);
+                    Debug.Log($"[ARVideoPublisher] Track rebuilt: {bitrate / 1000}kbps/{fps}fps (tier={tier})");
+                    onComplete?.Invoke(new TierApplyResult(true, "applied"));
+                }
             }
             else
             {
@@ -833,6 +913,8 @@ namespace ParrotApp.LiveKit
 
         private void StopPublishingLocal(string reason)
         {
+            _videoPublishGeneration++;
+            _isRebuilding = false;
             if (!_isPublishing && _videoSource == null && _videoTrack == null
                 && _webcamBlit == null && _webcam == null && _rt == null)
                 return;
@@ -852,6 +934,41 @@ namespace ParrotApp.LiveKit
         }
 
         // ─── helpers ──────────────────────────────────────────────────────
+
+        private bool IsVideoGenerationCancelled(int generation)
+        {
+            return generation != _videoPublishGeneration
+                   || RoomManager.Instance?.IsConnected != true;
+        }
+
+        private bool CancelSetupIfNeeded(int generation)
+        {
+            if (!IsVideoGenerationCancelled(generation))
+                return false;
+            _setupInProgress = false;
+            _isPublishing = false;
+            _videoSource?.Stop();
+            _videoSource = null;
+            _videoTrack = null;
+            _lastPublishError = "video_setup_cancelled";
+            HealthAggregator?.ReportVideoPublished(false, UnixSeconds());
+            return true;
+        }
+
+        private bool CancelRebuildIfNeeded(int generation, Action<TierApplyResult> onComplete)
+        {
+            if (!IsVideoGenerationCancelled(generation))
+                return false;
+            _isRebuilding = false;
+            _isPublishing = false;
+            _videoSource?.Stop();
+            _videoSource = null;
+            _videoTrack = null;
+            HealthAggregator?.ReportVideoLifecycleReason("", UnixSeconds());
+            HealthAggregator?.ReportVideoPublished(false, UnixSeconds());
+            onComplete?.Invoke(new TierApplyResult(false, "rebuild_cancelled"));
+            return true;
+        }
 
         private float CurrentStaleThreshold()
         {

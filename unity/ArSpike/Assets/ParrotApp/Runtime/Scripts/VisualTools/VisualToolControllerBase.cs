@@ -4,6 +4,10 @@ using ParrotApp.Backend;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem.UI;
+#endif
+
 namespace ParrotApp.VisualTools
 {
     public abstract class VisualToolControllerBase : MonoBehaviour
@@ -28,6 +32,7 @@ namespace ParrotApp.VisualTools
         private float _lastUpdateEventSentAt = -999f;
         private Vector2 _lastMousePosition;
         private bool _hasLastMousePosition;
+        private int _interactionGeneration = 1;
 
         public bool IsOpen { get; protected set; }
         public bool IsLocked { get; protected set; }
@@ -94,6 +99,7 @@ namespace ParrotApp.VisualTools
 
             if (string.IsNullOrWhiteSpace(ToolId))
                 ToolId = VisualToolPacketBuilder.GenerateToolId(ToolKind);
+            BeginNewInteractionGeneration();
             CurrentRegion = CurrentRegion.width > 0f && CurrentRegion.height > 0f
                 ? CurrentRegion.Clamped()
                 : DefaultRegion;
@@ -109,10 +115,15 @@ namespace ParrotApp.VisualTools
         {
             if (!FeatureEnabled)
                 return SetStatus(ToolKind + "_dev_flag_off_app024_required", false);
+            if (IsLocked)
+                return SetStatus(ToolKind + "_locked_unlock_required", true);
 
             CurrentRegion = region.Clamped();
             if (!IsOpen)
+            {
+                BeginNewInteractionGeneration();
                 IsOpen = true;
+            }
             LastRenderStatus = ToolKind + "_local_region_updated";
             UpdateOverlay();
 
@@ -171,7 +182,7 @@ namespace ParrotApp.VisualTools
                 return SetStatus(ToolKind + "_asset_http_endpoint_missing", false);
 
             var packet = BuildPacket(VisualToolPhases.Confirm, ConfirmDeliveryPreference, ConfirmAttentionHint);
-            StartCoroutine(UploadAssetThenLifecycle(packet, imageBytes, mimeType));
+            StartCoroutine(UploadAssetThenLifecycle(packet, imageBytes, mimeType, _interactionGeneration));
             return SetStatus(ToolKind + "_asset_confirm_queued", true);
         }
 
@@ -200,7 +211,13 @@ namespace ParrotApp.VisualTools
             IsLocked = false;
             IsSelected = false;
             UpdateOverlay();
-            string result = EmitPhase(VisualToolPhases.Cancel, VisualToolDeliveryPreferences.Silent);
+            int closingGeneration = _interactionGeneration;
+            string result = EmitPhase(
+                VisualToolPhases.Cancel,
+                VisualToolDeliveryPreferences.Silent,
+                generationOverride: closingGeneration,
+                allowStaleCompletion: true);
+            InvalidatePendingSemanticWork();
             ToolId = "";
             return result;
         }
@@ -214,7 +231,13 @@ namespace ParrotApp.VisualTools
             IsLocked = false;
             IsSelected = false;
             UpdateOverlay();
-            string result = EmitPhase(VisualToolPhases.Release, VisualToolDeliveryPreferences.Silent);
+            int closingGeneration = _interactionGeneration;
+            string result = EmitPhase(
+                VisualToolPhases.Release,
+                VisualToolDeliveryPreferences.Silent,
+                generationOverride: closingGeneration,
+                allowStaleCompletion: true);
+            InvalidatePendingSemanticWork();
             ToolId = "";
             return result;
         }
@@ -256,11 +279,14 @@ namespace ParrotApp.VisualTools
             string deliveryPreference,
             string assetPath = "",
             string mimeType = "",
-            float attentionHint = 0f)
+            float attentionHint = 0f,
+            int? generationOverride = null,
+            bool allowStaleCompletion = false)
         {
             if (!FeatureEnabled)
                 return SetStatus(ToolKind + "_dev_flag_off_app024_required", false);
 
+            int generation = generationOverride ?? _interactionGeneration;
             var packet = BuildPacket(phase, deliveryPreference, attentionHint);
             packet.asset_path = assetPath ?? "";
             packet.mime_type = mimeType ?? "";
@@ -280,7 +306,7 @@ namespace ParrotApp.VisualTools
                 return SetStatus(ToolKind + "_" + phase + "_local_http_missing", false);
             }
 
-            StartCoroutine(SendLifecycle(packet));
+            StartCoroutine(SendLifecycle(packet, generation, allowStaleCompletion));
             return SetStatus(ToolKind + "_" + phase + "_queued", true);
         }
 
@@ -307,7 +333,12 @@ namespace ParrotApp.VisualTools
             if (!EnsureOpenForStablePhase()) return LastStatus;
             ApplyStablePhaseLocalState(phase);
             if (!enableScreenRegionAssetCapture)
-                return SetStatus(ToolKind + "_screen_region_asset_disabled", false);
+                return EmitLifecycleWithAssetStatus(
+                    phase,
+                    deliveryPreference,
+                    attentionHint,
+                    "screen_region_asset_disabled",
+                    _interactionGeneration);
             if (!RuntimeHttpEnabled || !sendHttpLifecycleEvents)
                 return EmitPhase(phase, deliveryPreference, attentionHint: attentionHint);
             ResolveClient();
@@ -319,8 +350,40 @@ namespace ParrotApp.VisualTools
             }
 
             var packet = BuildPacket(phase, deliveryPreference, attentionHint);
-            StartCoroutine(CaptureScreenRegionAssetThenLifecycle(packet));
+            StartCoroutine(CaptureScreenRegionAssetThenLifecycle(packet, _interactionGeneration));
             return SetStatus(ToolKind + "_screen_asset_" + phase + "_queued", true);
+        }
+
+        private string EmitLifecycleWithAssetStatus(
+            string phase,
+            string deliveryPreference,
+            float attentionHint,
+            string assetStatus,
+            int generation)
+        {
+            LastAssetStatus = string.IsNullOrWhiteSpace(assetStatus)
+                ? "visual_tool_asset_status"
+                : assetStatus;
+            var packet = BuildPacket(phase, deliveryPreference, attentionHint);
+            AddMetaField(packet, "asset_status", LastAssetStatus);
+
+            if (!RuntimeHttpEnabled || !sendHttpLifecycleEvents)
+            {
+                LastHttpStatus = "visual_tool_http_dev_disabled";
+                UpdateOverlay();
+                return SetStatus(ToolKind + "_" + phase + "_local_only_" + LastAssetStatus, true);
+            }
+
+            ResolveClient();
+            if (httpClient == null || !httpClient.HasEndpoint)
+            {
+                LastHttpStatus = "visual_tool_http_endpoint_missing";
+                UpdateOverlay();
+                return SetStatus(ToolKind + "_" + phase + "_asset_status_http_missing", false);
+            }
+
+            StartCoroutine(SendLifecycle(packet, generation, allowStaleCompletion: false));
+            return SetStatus(ToolKind + "_" + phase + "_" + LastAssetStatus + "_queued", true);
         }
 
         protected struct PointerSample
@@ -384,11 +447,32 @@ namespace ParrotApp.VisualTools
 
         protected static void EnsureEventSystemForDevCanvas()
         {
-            if (EventSystem.current != null) return;
+            var current = EventSystem.current;
+            if (current != null)
+            {
+#if ENABLE_INPUT_SYSTEM
+                var legacy = current.GetComponent<StandaloneInputModule>();
+                if (legacy != null)
+                {
+                    if (Application.isPlaying)
+                        Destroy(legacy);
+                    else
+                        DestroyImmediate(legacy);
+                }
+
+                if (current.GetComponent<InputSystemUIInputModule>() == null)
+                    current.gameObject.AddComponent<InputSystemUIInputModule>();
+#endif
+                return;
+            }
 
             var eventSystem = new GameObject("VisualToolDevEventSystem");
             eventSystem.AddComponent<EventSystem>();
+#if ENABLE_INPUT_SYSTEM
+            eventSystem.AddComponent<InputSystemUIInputModule>();
+#else
             eventSystem.AddComponent<StandaloneInputModule>();
+#endif
         }
 
         protected static Vector2 ScreenToNormalizedTopLeft(Vector2 screenPosition)
@@ -438,12 +522,21 @@ namespace ParrotApp.VisualTools
             if (httpClient == null) httpClient = gameObject.AddComponent<VisualToolHttpClient>();
         }
 
-        private IEnumerator SendLifecycle(VisualToolLifecyclePacket packet)
+        private IEnumerator SendLifecycle(VisualToolLifecyclePacket packet, int generation, bool allowStaleCompletion)
         {
+            if (!allowStaleCompletion && IsStaleInteraction(generation))
+            {
+                SetStaleSemanticStatus(packet);
+                yield break;
+            }
+
             LastHttpStatus = "event_pending:" + packet.interaction_phase;
             UpdateOverlay();
             RequestResult<VisualToolLifecycleResultDto> result = default;
             yield return httpClient.SendLifecycle(packet, r => result = r);
+            if ((!allowStaleCompletion && IsStaleInteraction(generation))
+                || ShouldIgnoreStaleCompletion(packet, generation))
+                yield break;
             if (result.Success && result.Value != null)
             {
                 LastReceiptJson = result.Value.raw_json ?? "";
@@ -458,14 +551,25 @@ namespace ParrotApp.VisualTools
             UpdateOverlay();
         }
 
-        private IEnumerator UploadAssetThenLifecycle(VisualToolLifecyclePacket packet, byte[] imageBytes, string mimeType)
+        private IEnumerator UploadAssetThenLifecycle(VisualToolLifecyclePacket packet, byte[] imageBytes, string mimeType, int generation)
         {
+            if (IsStaleInteraction(generation))
+            {
+                SetStaleSemanticStatus(packet);
+                yield break;
+            }
+
             LastHttpStatus = "asset_pending:" + packet.interaction_phase;
             LastAssetStatus = "asset_pending:" + packet.interaction_phase;
             UpdateOverlay();
             string assetId = packet.tool_id + "_" + packet.interaction_phase + "_" + packet.timebase.wall_time_ms;
             RequestResult<VisualToolAssetUploadResultDto> assetResult = default;
             yield return httpClient.UploadAsset(assetId, imageBytes, mimeType, packet, r => assetResult = r);
+            if (IsStaleInteraction(generation))
+            {
+                SetStaleSemanticStatus(packet);
+                yield break;
+            }
             if (!assetResult.Success || assetResult.Value == null)
             {
                 LastHttpStatus = string.IsNullOrWhiteSpace(assetResult.Error) ? httpClient.LastAssetStatus : assetResult.Error;
@@ -476,7 +580,7 @@ namespace ParrotApp.VisualTools
                     packet.asset_path = "";
                     packet.asset_uri = "";
                     packet.mime_type = "";
-                    yield return SendLifecycle(packet);
+                    yield return SendLifecycle(packet, generation, allowStaleCompletion: false);
                 }
                 else
                 {
@@ -495,6 +599,8 @@ namespace ParrotApp.VisualTools
 
             RequestResult<VisualToolLifecycleResultDto> lifecycleResult = default;
             yield return httpClient.SendLifecycle(packet, r => lifecycleResult = r);
+            if (IsStaleInteraction(generation))
+                yield break;
             if (lifecycleResult.Success && lifecycleResult.Value != null)
             {
                 LastReceiptJson = lifecycleResult.Value.raw_json ?? "";
@@ -511,8 +617,14 @@ namespace ParrotApp.VisualTools
             UpdateOverlay();
         }
 
-        private IEnumerator CaptureScreenRegionAssetThenLifecycle(VisualToolLifecyclePacket packet)
+        private IEnumerator CaptureScreenRegionAssetThenLifecycle(VisualToolLifecyclePacket packet, int generation)
         {
+            if (IsStaleInteraction(generation))
+            {
+                SetStaleSemanticStatus(packet);
+                yield break;
+            }
+
             LastRenderStatus = ToolKind + "_screen_region_asset_capture_pending";
             LastAssetStatus = "screen_region_asset_pending:" + packet.interaction_phase;
             bool restoreOverlay = hideOverlayDuringAssetCapture && showDevHud;
@@ -522,6 +634,13 @@ namespace ParrotApp.VisualTools
                 UpdateOverlay();
 
             yield return new WaitForEndOfFrame();
+            if (IsStaleInteraction(generation))
+            {
+                SetStaleSemanticStatus(packet);
+                if (restoreOverlay)
+                    SetOverlayVisibleForScreenRegionAsset(true);
+                yield break;
+            }
 
             Texture2D texture = null;
             byte[] pngBytes = null;
@@ -566,7 +685,7 @@ namespace ParrotApp.VisualTools
                     packet.asset_path = "";
                     packet.asset_uri = "";
                     packet.mime_type = "";
-                    yield return SendLifecycle(packet);
+                    yield return SendLifecycle(packet, generation, allowStaleCompletion: false);
                 }
                 else
                 {
@@ -576,7 +695,7 @@ namespace ParrotApp.VisualTools
             }
 
             LastRenderStatus = ToolKind + "_screen_region_asset_png";
-            yield return UploadAssetThenLifecycle(packet, pngBytes, "image/png");
+            yield return UploadAssetThenLifecycle(packet, pngBytes, "image/png", generation);
         }
 
         private bool EnsureOpenForStablePhase()
@@ -604,6 +723,49 @@ namespace ParrotApp.VisualTools
                 IsSelected = true;
                 UpdateOverlay();
             }
+        }
+
+        private void BeginNewInteractionGeneration()
+        {
+            _interactionGeneration = NextGeneration(_interactionGeneration);
+        }
+
+        private void InvalidatePendingSemanticWork()
+        {
+            _interactionGeneration = NextGeneration(_interactionGeneration);
+        }
+
+        private bool IsStaleInteraction(int generation)
+        {
+            return generation != _interactionGeneration;
+        }
+
+        private void SetStaleSemanticStatus(VisualToolLifecyclePacket packet)
+        {
+            if (packet != null
+                && IsOpen
+                && !string.Equals(ToolId, packet.tool_id, StringComparison.Ordinal))
+                return;
+
+            string phase = packet != null ? packet.interaction_phase : "event";
+            LastHttpStatus = ToolKind + "_" + phase + "_stale_skipped";
+            LastAssetStatus = LastHttpStatus;
+            LastRenderStatus = ToolKind + "_stale_semantic_skipped";
+            SetStatus(LastHttpStatus, true);
+        }
+
+        private bool ShouldIgnoreStaleCompletion(VisualToolLifecyclePacket packet, int generation)
+        {
+            return IsStaleInteraction(generation)
+                   && packet != null
+                   && IsOpen
+                   && !string.Equals(ToolId, packet.tool_id, StringComparison.Ordinal);
+        }
+
+        private static int NextGeneration(int value)
+        {
+            int next = value == int.MaxValue ? 1 : value + 1;
+            return next <= 0 ? 1 : next;
         }
 
         private Rect ScreenPixelRect(VisualToolRegion region)

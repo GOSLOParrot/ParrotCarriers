@@ -3,6 +3,7 @@ package com.parrotcarriers.audio;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
@@ -35,6 +36,12 @@ public final class AndroidAudioRouteManager {
     private String lastInputRoute = "unknown";
     private int lastRecommendedSampleRateHz = 48000;
     private int routeVersion = 0;
+    private static final String MEDIA_BLUETOOTH_REASON_SUFFIX = "_kept_media_bluetooth_output";
+    private static final String COMMUNICATION_MODE_MEDIA_BLUETOOTH_REASON =
+        "communication_mode_kept_media_bluetooth_output";
+    private static final String MEDIA_PHONE_REASON_SUFFIX = "_kept_media_phone_output";
+    private static final String COMMUNICATION_MODE_MEDIA_PHONE_REASON =
+        "communication_mode_kept_media_phone_output";
     private boolean callbackRegistered = false;
     private boolean communicationListenerRegistered = false;
     private Object communicationDeviceChangedListener;
@@ -44,12 +51,12 @@ public final class AndroidAudioRouteManager {
     private final AudioDeviceCallback deviceCallback = new AudioDeviceCallback() {
         @Override
         public void onAudioDevicesAdded(AudioDeviceInfo[] addedDevices) {
-            sendSnapshot("device_added");
+            handleDeviceTopologyChanged("device_added");
         }
 
         @Override
         public void onAudioDevicesRemoved(AudioDeviceInfo[] removedDevices) {
-            sendSnapshot("device_removed");
+            handleDeviceTopologyChanged("device_removed");
         }
     };
 
@@ -82,6 +89,21 @@ public final class AndroidAudioRouteManager {
     }
 
     public void initialize(Activity unityActivity, AudioRouteSnapshotCallback snapshotCallback) {
+        boolean callbackChanged = callback != null && callback != snapshotCallback;
+        boolean activityChanged = activity != null && unityActivity != null && activity != unityActivity;
+        if (callbackChanged || activityChanged) {
+            unregisterCallbacks();
+            clearCommunicationDevice();
+            abandonAudioFocus();
+            if (audioManager != null) {
+                try {
+                    audioManager.setMode(AudioManager.MODE_NORMAL);
+                } catch (Throwable ignored) {
+                }
+            }
+            mode = "normal";
+        }
+
         activity = unityActivity;
         callback = snapshotCallback;
         if (activity != null) {
@@ -90,6 +112,40 @@ public final class AndroidAudioRouteManager {
 
         registerCallbacks();
         sendSnapshot("initialize");
+    }
+
+    public void startMicrophoneForegroundService() {
+        if (activity == null) {
+            sendSnapshotWithError("start_mic_foreground_service", "activity_missing");
+            return;
+        }
+        try {
+            Intent intent = new Intent(activity, ParrotMicForegroundService.class);
+            intent.setAction(ParrotMicForegroundService.ACTION_START);
+            if (Build.VERSION.SDK_INT >= 26) {
+                activity.startForegroundService(intent);
+            } else {
+                activity.startService(intent);
+            }
+            sendSnapshot("mic_foreground_service_start_requested");
+        } catch (Throwable t) {
+            sendSnapshotWithError("start_mic_foreground_service", safeMessage(t));
+        }
+    }
+
+    public void stopMicrophoneForegroundService() {
+        if (activity == null) return;
+        try {
+            Intent intent = new Intent(activity, ParrotMicForegroundService.class);
+            // Use stopService instead of starting a STOP action. Android 8+
+            // may reject background service starts during pause/teardown, and
+            // leaving the foreground mic service alive would confuse the next
+            // LiveKit mic publish attempt.
+            activity.stopService(intent);
+            sendSnapshot("mic_foreground_service_stop_requested");
+        } catch (Throwable t) {
+            sendSnapshotWithError("stop_mic_foreground_service", safeMessage(t));
+        }
     }
 
     public void refresh() {
@@ -130,6 +186,14 @@ public final class AndroidAudioRouteManager {
 
         try {
             if (enabled) {
+                if (shouldKeepMediaModeForOutputBluetooth()) {
+                    keepMediaMode(COMMUNICATION_MODE_MEDIA_BLUETOOTH_REASON, "normal_bt_output");
+                    return;
+                }
+                if (shouldKeepMediaModeForPhoneOutput()) {
+                    keepMediaMode(COMMUNICATION_MODE_MEDIA_PHONE_REASON, "normal_phone_output");
+                    return;
+                }
                 audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
                 mode = "communication";
                 requestAudioFocus();
@@ -147,6 +211,10 @@ public final class AndroidAudioRouteManager {
     }
 
     public boolean applyPreferredCommunicationDevice() {
+        return applyPreferredCommunicationDevice("communication_device");
+    }
+
+    private boolean applyPreferredCommunicationDevice(String reasonPrefix) {
         if (audioManager == null) {
             sendSnapshotWithError("apply_preferred_device", "audio_manager_missing");
             return false;
@@ -156,18 +224,46 @@ public final class AndroidAudioRouteManager {
             return false;
         }
         try {
+            if ("system_default".equals(preference)) {
+                if (shouldKeepMediaModeForOutputBluetooth()) {
+                    keepMediaMode(mediaBluetoothReason(reasonPrefix), "normal_bt_output");
+                    return true;
+                }
+                if (shouldKeepMediaModeForPhoneOutput()) {
+                    keepMediaMode(mediaPhoneReason(reasonPrefix), "normal_phone_output");
+                    return true;
+                }
+                clearCommunicationDevice();
+                sendSnapshot(reasonPrefix + "_cleared_for_system_default");
+                return true;
+            }
+
+            if (shouldKeepMediaModeForOutputBluetooth()) {
+                keepMediaMode(mediaBluetoothReason(reasonPrefix), "normal_bt_output");
+                return true;
+            }
+
             AudioDeviceInfo target = chooseCommunicationDevice();
+            if (target != null && shouldKeepMediaModeForPhoneDevice(target)) {
+                keepMediaMode(mediaPhoneReason(reasonPrefix), "normal_phone_output");
+                return true;
+            }
+
             if (target == null) {
                 if (shouldClearCommunicationDeviceForOutputBluetooth()) {
                     clearCommunicationDevice();
-                    sendSnapshot("communication_device_cleared_for_output_bluetooth");
+                    sendSnapshot(reasonPrefix + "_cleared_for_output_bluetooth");
                     return true;
                 }
                 sendSnapshot("apply_preferred_device_no_target");
                 return false;
             }
-            boolean ok = audioManager.setCommunicationDevice(target);
-            sendSnapshot(ok ? "communication_device_applied" : "communication_device_rejected");
+            boolean ok = setCommunicationDeviceWithRetry(target, 3, 120);
+            if (!ok && isBluetoothVoiceType(target.getType()) && hasBluetoothOutputType(getDevices(AudioManager.GET_DEVICES_OUTPUTS))) {
+                keepMediaMode(mediaBluetoothReason(reasonPrefix + "_bluetooth_rejected"), "normal_bt_output");
+                return true;
+            }
+            sendSnapshot(ok ? reasonPrefix + "_applied" : reasonPrefix + "_rejected");
             return ok;
         } catch (Throwable t) {
             sendSnapshotWithError("apply_preferred_device", safeMessage(t));
@@ -184,18 +280,7 @@ public final class AndroidAudioRouteManager {
     }
 
     public void dispose() {
-        if (audioManager != null && callbackRegistered) {
-            try {
-                audioManager.unregisterAudioDeviceCallback(deviceCallback);
-            } catch (Throwable ignored) {
-            }
-        }
-        callbackRegistered = false;
-
-        if (audioManager != null && communicationListenerRegistered && Build.VERSION.SDK_INT >= 31)
-            Api31.removeCommunicationDeviceChangedListener(audioManager, communicationDeviceChangedListener);
-        communicationListenerRegistered = false;
-        communicationDeviceChangedListener = null;
+        unregisterCallbacks();
 
         clearCommunicationDevice();
         abandonAudioFocus();
@@ -207,6 +292,22 @@ public final class AndroidAudioRouteManager {
         }
         mode = "normal";
         sendSnapshot("dispose");
+    }
+
+    private void unregisterCallbacks() {
+        if (audioManager != null && callbackRegistered) {
+            try {
+                audioManager.unregisterAudioDeviceCallback(deviceCallback);
+            } catch (Throwable ignored) {
+            }
+        }
+        callbackRegistered = false;
+
+        if (audioManager != null && communicationListenerRegistered && Build.VERSION.SDK_INT >= 31) {
+            Api31.removeCommunicationDeviceChangedListener(audioManager, communicationDeviceChangedListener);
+        }
+        communicationListenerRegistered = false;
+        communicationDeviceChangedListener = null;
     }
 
     private void registerCallbacks() {
@@ -223,6 +324,26 @@ public final class AndroidAudioRouteManager {
                 Api31.addCommunicationDeviceChangedListener(audioManager, mainExecutor, this);
             communicationListenerRegistered = communicationDeviceChangedListener != null;
         }
+    }
+
+    private void handleDeviceTopologyChanged(String reason) {
+        if ("communication".equals(mode)) {
+            // Bluetooth connect/disconnect can leave Android pinned to a stale
+            // speaker/SCO communication device. Re-apply the current preference
+            // while voice capture is active; system_default remains a clear
+            // operation so A2DP output is not stolen by speaker fallback.
+            if (shouldKeepMediaModeForOutputBluetooth()) {
+                keepMediaMode(mediaBluetoothReason(reason), "normal_bt_output");
+                return;
+            }
+            if (shouldKeepMediaModeForPhoneOutput()) {
+                keepMediaMode(mediaPhoneReason(reason), "normal_phone_output");
+                return;
+            }
+            applyPreferredCommunicationDevice(reason);
+            return;
+        }
+        sendSnapshot(reason);
     }
 
     private void requestAudioFocus() {
@@ -314,6 +435,28 @@ public final class AndroidAudioRouteManager {
         return firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
     }
 
+    private boolean setCommunicationDeviceWithRetry(AudioDeviceInfo target, int attempts, long delayMs) {
+        if (audioManager == null || target == null || Build.VERSION.SDK_INT < 31) return false;
+        int safeAttempts = Math.max(1, attempts);
+        for (int i = 0; i < safeAttempts; i++) {
+            try {
+                if (audioManager.setCommunicationDevice(target)) {
+                    return true;
+                }
+            } catch (Throwable ignored) {
+            }
+
+            if (i + 1 < safeAttempts) {
+                try {
+                    audioManager.clearCommunicationDevice();
+                } catch (Throwable ignored) {
+                }
+                sleepQuietly(delayMs);
+            }
+        }
+        return false;
+    }
+
     private boolean shouldClearCommunicationDeviceForOutputBluetooth() {
         if (audioManager == null || Build.VERSION.SDK_INT < 31) return false;
         if (!"auto".equals(preference) && !"bluetooth".equals(preference)) return false;
@@ -330,6 +473,80 @@ public final class AndroidAudioRouteManager {
             return !isBluetoothVoiceType(current.getType());
         } catch (Throwable ignored) {
             return true;
+        }
+    }
+
+    private boolean shouldKeepMediaModeForOutputBluetooth() {
+        if (audioManager == null || Build.VERSION.SDK_INT < 31) return false;
+        if (!"auto".equals(preference) && !"bluetooth".equals(preference)) return false;
+        if (!hasBluetoothConnectPermission()) return false;
+        if (!hasBluetoothOutputType(getDevices(AudioManager.GET_DEVICES_OUTPUTS))) return false;
+
+        List<AudioDeviceInfo> communicationDevices = audioManager.getAvailableCommunicationDevices();
+        if (communicationDevices == null || communicationDevices.isEmpty()) return true;
+        AudioDeviceInfo bluetoothVoice = firstAnyDevice(
+            communicationDevices,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET);
+        return bluetoothVoice == null;
+    }
+
+    private boolean shouldKeepMediaModeForPhoneOutput() {
+        if (audioManager == null || Build.VERSION.SDK_INT < 31) return false;
+        if (!"auto".equals(preference) && !"system_default".equals(preference)) return false;
+        List<AudioDeviceInfo> communicationDevices = audioManager.getAvailableCommunicationDevices();
+        if (communicationDevices == null || communicationDevices.isEmpty()) return true;
+        AudioDeviceInfo headset = firstAnyDevice(
+            communicationDevices,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_USB_HEADSET);
+        return headset == null;
+    }
+
+    private boolean shouldKeepMediaModeForPhoneDevice(AudioDeviceInfo target) {
+        if (target == null) return false;
+        int type = target.getType();
+        return (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER || type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)
+            && shouldKeepMediaModeForPhoneOutput();
+    }
+
+    private static String mediaBluetoothReason(String reasonPrefix) {
+        return (reasonPrefix == null ? "route" : reasonPrefix) + MEDIA_BLUETOOTH_REASON_SUFFIX;
+    }
+
+    private static String mediaPhoneReason(String reasonPrefix) {
+        return (reasonPrefix == null ? "route" : reasonPrefix) + MEDIA_PHONE_REASON_SUFFIX;
+    }
+
+    private void keepMediaMode(String reason, String nextMode) {
+        if (audioManager == null) return;
+        try {
+            // A2DP media output, and the plain phone-speaker route on several
+            // OEM Android builds, are not reliable communication microphone
+            // routes for Unity/LiveKit custom capture. Entering or staying in
+            // MODE_IN_COMMUNICATION here can pull Parrot downlink back to the
+            // phone speaker and can gate near-end capture. Keep media routing
+            // intact; Unity's local mic executor captures from Android
+            // AudioRecord / phone MIC without reconnecting the LiveKit room or
+            // Brain job.
+            clearCommunicationDevice();
+            abandonAudioFocus();
+            audioManager.setMode(AudioManager.MODE_NORMAL);
+            mode = nextMode == null || nextMode.length() == 0 ? "normal_media_output" : nextMode;
+            sendSnapshot(reason == null ? "route_kept_media_output" : reason);
+        } catch (Throwable t) {
+            sendSnapshotWithError("keep_media_output", safeMessage(t));
+        }
+    }
+
+    private static void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(Math.max(1, ms));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Throwable ignored) {
         }
     }
 

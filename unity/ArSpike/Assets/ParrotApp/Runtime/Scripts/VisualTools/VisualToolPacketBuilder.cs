@@ -268,8 +268,7 @@ namespace ParrotApp.VisualTools
         {
             if (string.IsNullOrWhiteSpace(value)) return "{}";
             string trimmed = value.Trim();
-            if ((trimmed.StartsWith("{", StringComparison.Ordinal) && trimmed.EndsWith("}", StringComparison.Ordinal))
-                || (trimmed.StartsWith("[", StringComparison.Ordinal) && trimmed.EndsWith("]", StringComparison.Ordinal)))
+            if (trimmed.StartsWith("{", StringComparison.Ordinal) && trimmed.EndsWith("}", StringComparison.Ordinal))
                 return trimmed;
             return "{}";
         }

@@ -99,6 +99,7 @@ namespace ParrotApp.UI
         private bool _audioRouteReportPending;
         private bool _workspaceApplyPending;
         private FormalModelPlacementController _subscribedPlacementController;
+        private FormalCameraModeController _subscribedCameraModeController;
 
         private void OnEnable()
         {
@@ -140,7 +141,7 @@ namespace ParrotApp.UI
             if (menuLoader == null) menuLoader = FindObjectOfType<FormalHomeMenuLoader>();
             if (modelPlacementController == null) modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
             if (homeToolController == null) homeToolController = FindObjectOfType<FormalHomeToolController>();
-            if (cameraModeController == null) cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            ResolveCameraModeController();
             if (bboxVisualToolController == null) bboxVisualToolController = FindObjectOfType<BBoxVisualToolController>();
             if (magnifierVisualToolController == null) magnifierVisualToolController = FindObjectOfType<MagnifierVisualToolController>();
             if (audioRouteManager == null) audioRouteManager = FindObjectOfType<AudioRouteManager>();
@@ -184,6 +185,34 @@ namespace ParrotApp.UI
                 if (_subscribedPlacementController != null)
                     _subscribedPlacementController.OnPlacementStateChanged += HandlePlacementStateChanged;
             }
+
+            SyncCameraModeSubscription();
+        }
+
+        private void ResolveCameraModeController()
+        {
+            if (cameraModeController == null)
+                cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            SyncCameraModeSubscription();
+        }
+
+        private void SyncCameraModeSubscription()
+        {
+            if (_subscribedCameraModeController == cameraModeController)
+                return;
+            if (_subscribedCameraModeController != null)
+            {
+                _subscribedCameraModeController.OnModeApplyPending -= HandleCameraModeApplyPending;
+                _subscribedCameraModeController.OnModeApplySucceeded -= HandleCameraModeApplySucceeded;
+                _subscribedCameraModeController.OnModeApplyFailed -= HandleCameraModeApplyFailed;
+            }
+            _subscribedCameraModeController = cameraModeController;
+            if (_subscribedCameraModeController != null)
+            {
+                _subscribedCameraModeController.OnModeApplyPending += HandleCameraModeApplyPending;
+                _subscribedCameraModeController.OnModeApplySucceeded += HandleCameraModeApplySucceeded;
+                _subscribedCameraModeController.OnModeApplyFailed += HandleCameraModeApplyFailed;
+            }
         }
 
         private void Unbind()
@@ -208,6 +237,32 @@ namespace ParrotApp.UI
                 _subscribedPlacementController.OnPlacementStateChanged -= HandlePlacementStateChanged;
                 _subscribedPlacementController = null;
             }
+            if (_subscribedCameraModeController != null)
+            {
+                _subscribedCameraModeController.OnModeApplyPending -= HandleCameraModeApplyPending;
+                _subscribedCameraModeController.OnModeApplySucceeded -= HandleCameraModeApplySucceeded;
+                _subscribedCameraModeController.OnModeApplyFailed -= HandleCameraModeApplyFailed;
+                _subscribedCameraModeController = null;
+            }
+        }
+
+        private void HandleCameraModeApplyPending(string mode)
+        {
+            _pendingCameraMode = NormalizeCameraMode(mode);
+            RefreshQuickActions();
+        }
+
+        private void HandleCameraModeApplySucceeded(string mode)
+        {
+            _cameraMode = NormalizeCameraMode(mode);
+            _pendingCameraMode = "";
+            RefreshQuickActions();
+        }
+
+        private void HandleCameraModeApplyFailed(string mode, string error)
+        {
+            _pendingCameraMode = "";
+            RefreshQuickActions();
         }
 
         private void HandleTransitionStarted(AppStartupConfigDto _)
@@ -490,8 +545,7 @@ namespace ParrotApp.UI
                     _cameraMode = module.state.Trim();
             }
 
-            if (cameraModeController == null)
-                cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            ResolveCameraModeController();
             cameraModeController?.SetModeLocal(_cameraMode, !string.Equals(_cameraMode, "off", StringComparison.OrdinalIgnoreCase));
         }
 
@@ -502,12 +556,15 @@ namespace ParrotApp.UI
                 SetStatus("Camera waits App HTTP", warning: false);
                 return;
             }
+            if (!string.IsNullOrWhiteSpace(_pendingCameraMode))
+            {
+                SetStatus("Camera HTTP pending " + _pendingCameraMode, warning: true);
+                return;
+            }
 
             string nextMode = NextCameraMode(_cameraMode);
             _pendingCameraMode = nextMode;
-            if (cameraModeController == null)
-                cameraModeController = FindObjectOfType<FormalCameraModeController>();
-            cameraModeController?.SetModeLocal(nextMode);
+            ResolveCameraModeController();
             cameraModeController?.MarkHttpPending(nextMode);
             StartCoroutine(ApplyCameraModeHttp(nextMode));
             RefreshQuickActions();
@@ -648,8 +705,7 @@ namespace ParrotApp.UI
 
             string status = homeToolController.CapturePhoto();
             bool photoOk = !status.Contains("missing") && !status.Contains("waits") && !status.Contains("not_phone_safe");
-            if (cameraModeController == null)
-                cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            ResolveCameraModeController();
             if (photoOk)
                 cameraModeController?.SetModeLocal("capture_locked");
             cameraModeController?.MarkPhotoCaptureStatus(status, photoOk);
@@ -776,15 +832,13 @@ namespace ParrotApp.UI
             if (result.Success)
             {
                 _cameraMode = mode;
-                if (cameraModeController == null)
-                    cameraModeController = FindObjectOfType<FormalCameraModeController>();
+                ResolveCameraModeController();
                 cameraModeController?.MarkHttpResult(mode, true);
                 SetStatus("Camera " + _cameraMode, warning: true);
             }
             else
             {
-                if (cameraModeController == null)
-                    cameraModeController = FindObjectOfType<FormalCameraModeController>();
+                ResolveCameraModeController();
                 cameraModeController?.SetModeLocal(_cameraMode);
                 cameraModeController?.MarkHttpResult(_cameraMode, false, result.Error);
                 SetStatus("Camera HTTP failed " + ShortLabel(result.Error, "unknown", 28), warning: false);
@@ -1242,6 +1296,17 @@ namespace ParrotApp.UI
             if (string.Equals(mode, "preview", StringComparison.OrdinalIgnoreCase))
                 return "photo_ready";
             if (string.Equals(mode, "photo_ready", StringComparison.OrdinalIgnoreCase))
+                return "capture_locked";
+            return "off";
+        }
+
+        private static string NormalizeCameraMode(string mode)
+        {
+            if (string.Equals(mode, "preview", StringComparison.OrdinalIgnoreCase))
+                return "preview";
+            if (string.Equals(mode, "photo_ready", StringComparison.OrdinalIgnoreCase))
+                return "photo_ready";
+            if (string.Equals(mode, "capture_locked", StringComparison.OrdinalIgnoreCase))
                 return "capture_locked";
             return "off";
         }

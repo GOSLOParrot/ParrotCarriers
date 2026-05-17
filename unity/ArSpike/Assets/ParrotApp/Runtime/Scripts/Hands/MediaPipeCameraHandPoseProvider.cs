@@ -97,7 +97,12 @@ namespace ParrotApp.Hands
         private bool _firstFrameLogged;
         private bool _firstTrackingLogged;
         private bool _gpuInitFallbackTried;
+        private bool _landmarkerInitBlocked;
+        private bool _nativeUnavailableLogged;
         private string _lastLoggedStatus = "";
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private static bool _androidNativeLibrariesPreloaded;
+#endif
 
         private void OnEnable()
         {
@@ -120,12 +125,13 @@ namespace ParrotApp.Hands
 
         private void Update()
         {
-            if ((cameraManager == null || _landmarker == null) && Time.unscaledTime >= _nextBindRetryAt)
+            bool shouldRetryLandmarker = _landmarker == null && !_landmarkerInitBlocked;
+            if ((cameraManager == null || shouldRetryLandmarker) && Time.unscaledTime >= _nextBindRetryAt)
             {
                 _nextBindRetryAt = Time.unscaledTime + Mathf.Max(0.1f, bindRetryIntervalSeconds);
                 if (cameraManager == null)
                     BindCamera();
-                if (_landmarker == null)
+                if (shouldRetryLandmarker)
                     TryInitializeLandmarker();
             }
             if (IsTracking && Time.unscaledTime - _lastDetectedAt > Mathf.Max(0.1f, handLostAfterSeconds))
@@ -152,7 +158,7 @@ namespace ParrotApp.Hands
 
         private void TryInitializeLandmarker()
         {
-            if (_landmarker != null)
+            if (_landmarker != null || _landmarkerInitBlocked)
                 return;
 
             if (handLandmarkerModel == null && !string.IsNullOrWhiteSpace(resourcesModelPath))
@@ -165,6 +171,7 @@ namespace ParrotApp.Hands
 
             try
             {
+                PreloadAndroidNativeLibraries();
                 var delegateCase = preferGpuDelegateOnMobile && Application.isMobilePlatform
                     && !_gpuInitFallbackTried
                     ? BaseOptions.Delegate.GPU
@@ -174,6 +181,12 @@ namespace ParrotApp.Hands
             catch (Exception ex)
             {
                 ReleaseLandmarker();
+                if (IsNativeLibraryFailure(ex))
+                {
+                    MarkNativeUnavailable(ex);
+                    return;
+                }
+
                 if (preferGpuDelegateOnMobile && Application.isMobilePlatform && !_gpuInitFallbackTried)
                 {
                     _gpuInitFallbackTried = true;
@@ -186,9 +199,16 @@ namespace ParrotApp.Hands
                     catch (Exception cpuEx)
                     {
                         ReleaseLandmarker();
+                        if (IsNativeLibraryFailure(cpuEx))
+                        {
+                            MarkNativeUnavailable(cpuEx);
+                            return;
+                        }
+
                         ex = cpuEx;
                     }
                 }
+                _landmarkerInitBlocked = true;
                 SetStatus("mediapipe_init_failed:" + ShortReason(ex.Message));
                 Debug.LogError("[MediaPipeCameraHandPoseProvider] " + ex);
             }
@@ -226,10 +246,7 @@ namespace ParrotApp.Hands
         private void HandleCameraFrame(ARCameraFrameEventArgs _)
         {
             if (_landmarker == null)
-            {
-                TryInitializeLandmarker();
                 return;
-            }
             if (cameraManager == null)
             {
                 BindCamera();
@@ -570,6 +587,60 @@ namespace ParrotApp.Hands
             SetStatus(status);
             DebugLog("hand_lost:" + status);
             OnHandPose?.Invoke(CameraHandPoseFrame.Lost("mediapipe_camera", status));
+        }
+
+        private void MarkNativeUnavailable(Exception ex)
+        {
+            _landmarkerInitBlocked = true;
+            string status = "mediapipe_native_unavailable:" + DeepReason(ex);
+            SetStatus(status);
+            PublishLost(status);
+            if (_nativeUnavailableLogged)
+                return;
+
+            _nativeUnavailableLogged = true;
+            Debug.LogError("[MediaPipeCameraHandPoseProvider] " + status + "\n" + ex);
+        }
+
+        private static bool IsNativeLibraryFailure(Exception ex)
+        {
+            for (Exception current = ex; current != null; current = current.InnerException)
+            {
+                string text = current.ToString();
+                if (text.IndexOf("mediapipe_jni", StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("opencv_java4", StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("Unable to load DLL", StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("UnsatisfiedLinkError", StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("dlopen", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string DeepReason(Exception ex)
+        {
+            Exception current = ex;
+            while (current != null && current.InnerException != null)
+                current = current.InnerException;
+            return ShortReason(current == null ? "" : current.Message);
+        }
+
+        private static void PreloadAndroidNativeLibraries()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (_androidNativeLibrariesPreloaded)
+                return;
+
+            using (var systemClass = new AndroidJavaClass("java.lang.System"))
+            {
+                systemClass.CallStatic("loadLibrary", "opencv_java4");
+                systemClass.CallStatic("loadLibrary", "mediapipe_jni");
+            }
+            _androidNativeLibrariesPreloaded = true;
+#endif
         }
 #else
         [SerializeField] private string disabledReason = "UNITY_MEDIAPIPE and UNITY_AR_FOUNDATION are required";

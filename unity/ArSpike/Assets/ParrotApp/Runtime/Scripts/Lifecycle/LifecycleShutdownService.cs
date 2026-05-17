@@ -169,7 +169,7 @@ namespace ParrotApp.Lifecycle
             var config = _lifecycle != null ? _lifecycle.Config : null;
 
             float waitHard = config != null ? config.T_DISCONNECT_WAIT_HARD : 5f;
-            float coolDown = config != null ? config.T_SHUTDOWN_COOLDOWN : 5f;
+            float coolDown = config != null ? config.T_SHUTDOWN_COOLDOWN : 35f;
 
             // 步骤 1+2：让所有 publisher 自己 unpublish
             yield return DrainShutdownParticipants(reason);

@@ -115,7 +115,7 @@ namespace ParrotApp.VisualTools
                 if (req.result != UnityWebRequest.Result.Success)
                 {
                     LastLifecycleOk = false;
-                    LastLifecycleStatus = req.error ?? "visual_tool_lifecycle_request_failed";
+                    LastLifecycleStatus = RequestErrorLabel(req, "visual_tool_lifecycle_request_failed");
                     onComplete?.Invoke(RequestResult<VisualToolLifecycleResultDto>.Fail(LastLifecycleStatus));
                     yield break;
                 }
@@ -191,6 +191,9 @@ namespace ParrotApp.VisualTools
                     req.SetRequestHeader("X-Parrot-Tool-Id", packet.tool_id ?? "");
                     req.SetRequestHeader("X-Parrot-Tool-Kind", packet.tool_kind ?? "");
                     req.SetRequestHeader("X-Parrot-Tool-Phase", packet.interaction_phase ?? "");
+                    req.SetRequestHeader("X-Parrot-Source-Surface", packet.source_surface ?? "");
+                    req.SetRequestHeader("X-Parrot-Source-Id", packet.tool_event_id ?? "");
+                    req.SetRequestHeader("X-Parrot-Description", AssetDescription(packet));
                     req.SetRequestHeader("X-Parrot-Timebase", VisualToolPacketBuilder.TimebaseJson(packet.timebase));
                     req.SetRequestHeader("X-Parrot-Region", VisualToolPacketBuilder.RegionJson(packet.region));
                 }
@@ -200,7 +203,7 @@ namespace ParrotApp.VisualTools
                 if (req.result != UnityWebRequest.Result.Success)
                 {
                     LastAssetOk = false;
-                    LastAssetStatus = req.error ?? "visual_tool_asset_request_failed";
+                    LastAssetStatus = RequestErrorLabel(req, "visual_tool_asset_request_failed");
                     onComplete?.Invoke(RequestResult<VisualToolAssetUploadResultDto>.Fail(LastAssetStatus));
                     yield break;
                 }
@@ -253,6 +256,15 @@ namespace ParrotApp.VisualTools
             return "event_ok:" + ShortLabel(phase, "phase", 16) + "/" + ShortLabel(delivery, "delivery", 22);
         }
 
+        private static string AssetDescription(VisualToolLifecyclePacket packet)
+        {
+            string label = packet != null && !string.IsNullOrWhiteSpace(packet.label)
+                ? packet.label
+                : (packet != null ? packet.tool_kind : "");
+            string phase = packet != null ? packet.interaction_phase : "";
+            return ShortLabel("visual_tool_asset:" + label + ":" + phase, "visual_tool_asset", 96);
+        }
+
         private static string ErrorLabel(string json, string fallback)
         {
             try
@@ -268,6 +280,17 @@ namespace ParrotApp.VisualTools
             {
                 // Keep the original fallback if the backend returned non-JSON text.
             }
+            return fallback;
+        }
+
+        private static string RequestErrorLabel(UnityWebRequest req, string fallback)
+        {
+            string body = req != null && req.downloadHandler != null ? req.downloadHandler.text : "";
+            string backendLabel = ErrorLabel(body, "");
+            if (!string.IsNullOrWhiteSpace(backendLabel))
+                return backendLabel;
+            if (req != null && !string.IsNullOrWhiteSpace(req.error))
+                return req.error;
             return fallback;
         }
 

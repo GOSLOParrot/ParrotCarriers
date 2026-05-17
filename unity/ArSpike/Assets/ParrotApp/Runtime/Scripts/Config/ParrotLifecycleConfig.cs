@@ -42,7 +42,7 @@ namespace ParrotApp.Config
 
         // see livekit-unity-lifecycle/IMPL_REF.md §2 / §10
         [Tooltip("Disconnect → 新 Connect 之间的 cool-down（秒）；避免 30s ICE 残留下的 identity 抢占。see IMPL_REF.md §2 / §10")]
-        [Min(0f)] public float T_SHUTDOWN_COOLDOWN = 5f;
+        [Min(0f)] public float T_SHUTDOWN_COOLDOWN = 35f;
 
         // ─── Connectivity watchdog (heartbeat) ─────────────────────────────
 
@@ -77,7 +77,7 @@ namespace ParrotApp.Config
 
         // see livekit-unity-lifecycle/IMPL_REF.md §10 / spike S5
         [Tooltip("publish 后等 First frame 超时（秒）；超时降级 stale。see IMPL_REF.md §10 / spike S5")]
-        [Min(0f)] public float T_FIRST_FRAME_TIMEOUT = 3f;
+        [Min(0f)] public float T_FIRST_FRAME_TIMEOUT = 8f;
 
         // ─── Fresh frame thresholds ────────────────────────────────────────
 
@@ -109,8 +109,8 @@ namespace ParrotApp.Config
                 "cool-down < 1s 会触发 abandoned publish (livekit/livekit #854)");
             ClampMin(ref T_DISCONNECT_WAIT_HARD, 1f, nameof(T_DISCONNECT_WAIT_HARD),
                 "Disconnect 软超时 < 1s 会让 watchdog 退路失效");
-            ClampMin(ref T_SHUTDOWN_COOLDOWN, 1f, nameof(T_SHUTDOWN_COOLDOWN),
-                "shutdown cool-down < 1s 会引发 identity 抢占");
+            ClampMin(ref T_SHUTDOWN_COOLDOWN, 30f, nameof(T_SHUTDOWN_COOLDOWN),
+                "shutdown cool-down < 30s 会引发 identity 抢占 / ICE 残留");
             ClampMin(ref T_HEARTBEAT_INTERVAL, 0.5f, nameof(T_HEARTBEAT_INTERVAL),
                 "heartbeat 频率 < 0.5s 会浪费 reliable DataChannel 带宽");
             if (T_HEARTBEAT_SOFT >= T_HEARTBEAT_HARD)

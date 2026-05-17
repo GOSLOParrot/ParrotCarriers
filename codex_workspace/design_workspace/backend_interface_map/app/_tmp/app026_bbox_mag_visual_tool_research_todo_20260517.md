@@ -129,6 +129,260 @@ Verification:
   0 Console errors. Remaining warnings are the unrelated existing audio
   unused-field warnings.
 
+## Requirements Trace Audit 12 - Original Workspace Docs (2026-05-17)
+
+Sources rechecked:
+
+- `app_evidence_tools_bbox_mag_photo_intent_workspace_20260515.md`
+- `time_aligned_evidence_interface_20260515.md`
+- `goslo_trigger_awareness_taxonomy_20260515.md`
+- `core_interface_candidate_queue_20260513.md`
+- `APP_WEB_PARALLEL_TODOLIST_20260513.md`
+- `formal_homepage_hud_menu_plan_20260515.md`
+- `unity_app_transport_interface_taxonomy_20260515.md`
+- `unity_livekit_ecp_sva_data_flow_map_20260515.md`
+- `app_web_parallel_workflow_20260513.md`
+
+Conclusion:
+
+- Current App implementation matches the CORE-014 App V1 scope: real
+  feature-flagged BBox/MAG controller skeletons, packet builder, HTTP lifecycle
+  client, optional HTTP asset upload before lifecycle, local high-frequency
+  interaction, BBox strong/default confirm, MAG intent-only confirm and C3
+  explicit send.
+- The older 2026-05-13 homepage requirement that MAG/BOX stay deferred is now
+  superseded for controller work by the 2026-05-15/16 CORE-014 backend-ready
+  requirement, but it still applies to production enablement. Default runtime
+  config keeps `visualToolDevEnabled=false`, and the HUD/menu still reports
+  flag-off / phone-stability status unless explicitly enabled.
+- No App code writes IntentWorkspace, Blackboard, Graphiti, or L2-B directly;
+  no `captureSnapshot`, `identify_object`, C4 send constant, legacy
+  `bbox.placed` / `focus.anchored` call, or image bytes over ECP/RPC are present
+  in the new VisualTools/formal camera/menu path.
+- CAM/Photo remains isolated in `FormalHomeToolController` + `PhotoController`;
+  BBox/MAG live under `Runtime/Scripts/VisualTools/**`.
+
+Remaining gates:
+
+- APP-024 phone/screen-share smoke is still not done and remains the production
+  enablement blocker for active BBox/MAG toolbar emission.
+- MAG body-feel is still a dev lens/zoom/controller scaffold with optional
+  screen-region asset probe, not a final tuned production magnifier experience.
+- True on-device HTTP/network/render proof must be collected before claiming
+  phone-ready; current proof is static/backend tests plus Unity Editor console.
+
+Verification for this audit:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py
+  tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 35 passed.
+- Unity MCP active instance: `ArSpike@a0c0295f7bd40ecc`, Unity `2022.3.62f3`,
+  active scene `Assets/ParrotApp/Scenes/ParrotApp_Startup.unity`,
+  not compiling, Console error entries: 0.
+- `git diff --check` on the touched App/test files reports only existing
+  LF/CRLF normalization warnings.
+
+## Bugfix Pass 13 - Camera Mode Pending Does Not Commit UI State (2026-05-17)
+
+Bug found:
+
+- The App transport taxonomy says camera mode changes go through App HTTP and
+  UI state updates only after HTTP business success.
+- `FormalCameraModeController.RequestModeApply()` and the menu quick camera
+  action were optimistically calling `SetModeLocal(nextMode)` before
+  `/api/app/**` returned. That could make the HUD/overlay look committed even
+  if backend camera-mode apply failed.
+
+Fix:
+
+- Camera mode requests now call `MarkHttpPending()` first and keep the current
+  local mode unchanged while HTTP is in flight.
+- `MarkHttpPending()` only opens a pending overlay for non-off target modes so
+  the user sees progress without committing the mode.
+- `SetModeLocal()` is now reached on HTTP success, capture success, snapshot
+  sync, or explicit failure rollback, not during the initial request.
+- Static tests now forbid `SetModeLocal(nextMode)` in `CycleCameraMode()` and
+  forbid `SetModeLocal(normalized)` inside `RequestModeApply()`.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py
+  tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 35 passed.
+- Forbidden-path scan across VisualTools, formal camera/menu/HUD/tool, and
+  runtime config found no active `captureSnapshot`, `identify_object`, C4 send
+  constant, direct Brain memory writes, or legacy BBox/Focus pulse calls.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` completed with no
+  Console compile errors. The visible entries are existing Android 16KB
+  alignment / Samples cache warnings.
+
+## Bugfix Pass 14 - Visual Tool HTTP Error Body Visibility (2026-05-17)
+
+Bug found:
+
+- `VisualToolHttpClient` discarded backend JSON error bodies when HTTP returned
+  a non-2xx status.
+- The HUD/status would show only the Unity transport error, making APP-024
+  device smoke hard to distinguish between auth, payload validation, and backend
+  policy rejection.
+
+Fix:
+
+- Lifecycle and asset-upload HTTP transport failures now call
+  `RequestErrorLabel()`.
+- `RequestErrorLabel()` prefers backend `error` / `detail` JSON fields, then
+  falls back to `UnityWebRequest.error`, then to the local fallback label.
+- Static tests now guard that both lifecycle and asset upload request-error
+  paths use the backend-aware label helper.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py
+  tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 35 passed.
+- Forbidden-path scan across VisualTools, formal camera/menu/HUD/tool, and
+  runtime config found no active `captureSnapshot`, `identify_object`, C4 send
+  constant, direct Brain memory writes, or legacy BBox/Focus pulse calls.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` completed with 0
+  Console error entries after domain reload.
+
+## Bugfix Pass 15 - Backend Shape And Asset Metadata Alignment (2026-05-17)
+
+Pre-edit audit:
+
+- Rechecked the real backend route and DTO shape in
+  `app_monitor_server.py` and `tool_lifecycle.py`.
+- Confirmed `/api/app/visual-tool/event` accepts `VisualToolLifecyclePacket`
+  with `pose` and `meta` typed as dictionaries, and `/asset/{asset_id}` parses
+  optional source-surface / source-id / description headers for evidence
+  metadata.
+
+Bug found:
+
+- Unity `ObjectJson()` accepted JSON arrays for `pose_json` and `meta_json`.
+  The current local callers pass objects, but the packet builder could produce
+  `pose: []` / `meta: []`, which backend V1 would reject because those fields
+  are `dict`.
+- Asset uploads sent tool id/kind/phase/timebase/region headers, but did not
+  send source surface, source id, or description even though the backend route
+  consumes them.
+
+Fix:
+
+- `ObjectJson()` now accepts object-shaped JSON only and falls back to `{}` for
+  array-shaped input.
+- Asset upload now sends `X-Parrot-Source-Surface`,
+  `X-Parrot-Source-Id`, and `X-Parrot-Description` alongside the existing
+  tool/timebase/region headers.
+- Static tests now guard the object-only packet-builder behavior and the new
+  asset metadata headers.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py
+  tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 35 passed.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after an
+  automatic Unity reconnect and completed ready; Console error entries: 0.
+- Forbidden-path scan across VisualTools and formal camera/menu/HUD/tool/runtime
+  config found no `captureSnapshot`, C4 send constant, direct Brain memory
+  writes, legacy BBox/Focus pulse calls, or image-byte RPC/ECP marker.
+- `git diff --check` on touched files reports only LF/CRLF normalization
+  warnings.
+
+## Bugfix Pass 16 - Drop Stale Async Visual Tool Semantics (2026-05-17)
+
+Pre-edit audit:
+
+- Rechecked BBox/MAG runtime event ordering around `IMG` / asset-backed C3,
+  cancel/release, and startup transitions.
+- Found that screen-region capture and asset upload are coroutine based. A user
+  could tap `IMG`, then cancel/release or trigger a startup transition before
+  the coroutine finished.
+
+Bug found:
+
+- Old non-terminal async work could still emit `confirm` / `explicit_send`
+  after the tool had already been released or a new interaction session had
+  started.
+- That could invert the intended semantic order: `release` followed by a stale
+  `confirm`.
+
+Fix:
+
+- Added an interaction-generation gate to `VisualToolControllerBase`.
+- New preview/local sessions advance the generation; cancel/release sends its
+  terminal lifecycle with the closing generation, then invalidates pending
+  non-terminal work.
+- Asset capture/upload/lifecycle coroutines check the generation before upload,
+  before fallback lifecycle emission, and before applying HTTP completion state.
+- Terminal cancel/release can still send its lifecycle, but stale terminal
+  completions will not overwrite a newer open session's HUD state.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py
+  tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 35 passed.
+- Forbidden-path scan across VisualTools and formal camera/menu/HUD/tool/runtime
+  config found no `captureSnapshot`, C4 send constant, direct Brain memory
+  writes, legacy BBox/Focus pulse calls, or image-byte RPC/ECP marker.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after an
+  automatic Unity reconnect and completed ready; Console error entries: 0.
+- `git diff --check` on touched files reports only LF/CRLF normalization
+  warnings.
+
+## Bugfix Pass 17 - Keep Dev Overlay Creation Behind Feature/Open State (2026-05-17)
+
+Pre-edit audit:
+
+- Rechecked runtime mounting and startup behavior after the async generation
+  gate.
+- Found that `VisualToolControllerBase.Start()` calls `UpdateOverlay()`.
+  BBox/MAG `UpdateOverlay()` immediately called `EnsureOverlay()`, which creates
+  dev canvases and an EventSystem even when `visualToolDevEnabled=false` and the
+  tools are not open.
+
+Bug found:
+
+- Feature-disabled BBox/MAG could still touch UI/input infrastructure at
+  startup. That was too leaky for the requirement to keep the controllers behind
+  a dev flag and avoid disturbing CAM/Photo.
+
+Fix:
+
+- BBox and MAG now return from `UpdateOverlay()` before `EnsureOverlay()` when
+  the dev canvas does not exist and either the feature flag is disabled or the
+  tool is not open.
+- Existing canvases still get hidden if the flag/open state changes, but
+  flag-off startup no longer creates BBox/MAG overlay UI or EventSystem state.
+- Static tests now guard that both visual-tool overlays gate `EnsureOverlay()`
+  behind `FeatureEnabled && IsOpen` when no canvas exists.
+
+Verification pending in this pass:
+
+- Focused static/backend tests, forbidden-path scan, Unity refresh/console, and
+  `git diff --check`.
+
 ## Continue Pass 5 - Asset Failure Fallback (2026-05-17)
 
 Pre-edit research:
@@ -403,6 +657,115 @@ Verification:
 - Forbidden-path scan across VisualTools, formal camera, menu, and HUD found no
   legacy snapshot RPC, Brain RPC, direct memory writes, or legacy BBox/Focus
   pulse calls.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 7 passed.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` completed ready with
+  0 Console errors after an automatic MCP reconnect.
+
+## Bugfix Pass 11 - Camera HUD/Menu Mode State Sync (2026-05-17)
+
+Bug found:
+
+- Camera HUD could successfully call backend `SetCameraMode()` through
+  `RequestModeApply()`, but `FormalHomeMenuController` did not learn that the
+  backend-owned camera mode changed.
+- The bottom QuickCameraMode button still used its stale `_cameraMode`, so the
+  next click could compute the wrong next mode and appear to jump backward.
+- Event subscription also needed to survive AppStartupFlow `AddComponent`
+  ordering, where the menu may bind before the camera controller exists.
+
+Fix:
+
+- `FormalCameraModeController` now emits mode apply pending/succeeded/failed
+  events from the same HTTP result path that owns backend state.
+- `FormalHomeMenuController` subscribes to those events, updates
+  `_pendingCameraMode` / `_cameraMode`, and refreshes quick actions.
+- Camera controller lookup is centralized through `ResolveCameraModeController()`
+  so late-created controllers are also subscribed.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- Forbidden-path scan across VisualTools, formal camera, menu, and HUD found no
+  C4 send constant, legacy snapshot RPC, Brain RPC, direct memory writes, or
+  legacy BBox/Focus pulse calls.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 7 passed.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` completed ready with
+  0 Console errors after an automatic MCP reconnect.
+
+## Continue Pass 10 - Locked Entry And Camera Pending Race Fixes (2026-05-17)
+
+Follow-up audit:
+
+- Rechecked pass-9 fixes for alternate entry points and request races.
+- Found that `UpdateLocalRegion()` was still a public local-update entry point
+  that could bypass the controller-specific locked pointer guards.
+- Found MAG could still emit dwell ticks after lock/confirm.
+- Found QuickCameraMode and Camera HUD could start a second camera-mode HTTP
+  request while one was already pending.
+
+Fix:
+
+- `VisualToolControllerBase.UpdateLocalRegion()` now rejects local region
+  mutation while locked and reports `*_locked_unlock_required`.
+- MAG dwell ticks now pause while locked.
+- Camera HUD no longer stops an in-flight mode coroutine; it reports
+  `camera_http_request_already_pending` until the request completes.
+- FormalHomeMenu QuickCameraMode now rejects repeated camera-mode changes while
+  `_pendingCameraMode` is set.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- Forbidden-path scan across VisualTools, formal camera, menu, and HUD found no
+  C4 send constant, legacy snapshot RPC, Brain RPC, direct memory writes, or
+  legacy BBox/Focus pulse calls.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 7 passed.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` completed ready with
+  0 Console errors after an automatic MCP reconnect.
+
+## Continue Pass 9 - Requirements Compliance Fixes (2026-05-17)
+
+Pre-edit audit:
+
+- Rechecked the implementation against the original App-side constraints after
+  the review pass.
+- Found three requirement-level gaps: locked tools could still be edited
+  locally without an `unlock`, disabled screen-region asset capture dropped the
+  stable lifecycle event, and camera HUD buttons could bypass the backend-owned
+  camera mode apply path.
+
+Fix:
+
+- BBox and MAG now reject pointer edits while locked and report
+  `*_locked_unlock_required`; MAG zoom controls also require unlock.
+- Screen-region asset capture disabled now falls back to sending a metadata-only
+  stable lifecycle packet with `meta.asset_status=screen_region_asset_disabled`.
+- Camera HUD Ready/Preview/Close buttons now call `RequestModeApply()`, which
+  uses `AppHomeMenuClient.SetCameraMode()` with pending/success/failure HUD
+  state. Capture only enters `capture_locked` after `CapturePhoto()` reports a
+  successful request.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- Forbidden-path scan across VisualTools, formal camera, menu, and HUD found no
+  C4 send constant, legacy snapshot RPC, Brain RPC, direct memory writes, or
+  legacy BBox/Focus pulse calls.
 - `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
   tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
   tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata

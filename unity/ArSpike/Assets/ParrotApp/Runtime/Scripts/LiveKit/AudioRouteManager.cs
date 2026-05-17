@@ -111,6 +111,16 @@ namespace ParrotApp.LiveKit
         {
             if (NativeAvailable)
                 _native.RequestCommunicationMode(enabled);
+            if (!enabled && _temporaryNativePreferenceActive)
+            {
+                // Temporary capture fallbacks are session-local. Once voice
+                // capture stops, restore the durable user preference inside
+                // the native bridge while it is back in observe-only mode so
+                // the next START does not inherit a stale fallback route.
+                _temporaryNativePreferenceActive = false;
+                if (NativeAvailable)
+                    _native.SetRoutePreference(AudioRouteSnapshotDto.PreferenceWireValue(preference));
+            }
         }
 
         public void ApplyPreferredCommunicationDevice()
@@ -123,6 +133,18 @@ namespace ParrotApp.LiveKit
         {
             if (NativeAvailable)
                 _native.ClearCommunicationDevice();
+        }
+
+        public void StartMicrophoneForegroundService()
+        {
+            if (NativeAvailable)
+                _native.StartMicrophoneForegroundService();
+        }
+
+        public void StopMicrophoneForegroundService()
+        {
+            if (NativeAvailable)
+                _native.StopMicrophoneForegroundService();
         }
 
         public void OnAndroidAudioRouteSnapshot(string json)

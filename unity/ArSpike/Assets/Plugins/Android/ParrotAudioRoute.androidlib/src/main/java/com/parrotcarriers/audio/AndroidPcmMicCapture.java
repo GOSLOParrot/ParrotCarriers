@@ -45,7 +45,7 @@ public final class AndroidPcmMicCapture {
                 return false;
             }
 
-            audioRecord = buildFirstUsableAudioRecord(activeSampleRate);
+            audioRecord = buildFirstUsableAudioRecord(activeSampleRate, routeHint);
             if (audioRecord == null || audioRecord.getState() != AudioRecord.STATE_INITIALIZED) {
                 if (lastError == null || lastError.length() == 0)
                     lastError = "audio_record_init_failed";
@@ -110,22 +110,31 @@ public final class AndroidPcmMicCapture {
         return lastError == null ? "" : lastError;
     }
 
-    private AudioRecord buildFirstUsableAudioRecord(int requestedSampleRate) {
+    private AudioRecord buildFirstUsableAudioRecord(int requestedSampleRate, String routeHint) {
         // Keep one strict sample rate per Java capture instance. LiveKit's
         // native audio source is created on the C# side before this Java class
         // starts, and the FFI rejects frames whose sample rate differs from the
         // source. Broader fallback is handled by MicrophonePublisher creating a
         // new LiveKit source for each retry rate.
         int[] sampleRates = new int[] { requestedSampleRate > 0 ? requestedSampleRate : 48000 };
-        int[] sources = new int[] {
-            // Formal App rule: the Android AudioRecord bridge is a last-resort
-            // phone-mic fallback after Unity's MicrophoneSource has failed to
-            // emit frames. Prefer the plain MIC source first because some
-            // devices report a healthy VOICE_COMMUNICATION recorder while the
-            // communication stack gates or silences near-end capture.
-            MediaRecorder.AudioSource.MIC,
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION
-        };
+        int[] sources = preferVoiceCommunication(routeHint)
+            ? new int[] {
+                // If the App already proved the plain MIC source is producing
+                // only digital zeroes, retry with Android's communication
+                // source first. This changes only local PCM capture; Unity
+                // still owns route policy, LiveKit room lifecycle, and Brain
+                // session continuity.
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                MediaRecorder.AudioSource.MIC
+            }
+            : new int[] {
+                // Formal App default: prefer the plain MIC source first
+                // because some devices report a healthy VOICE_COMMUNICATION
+                // recorder while the communication stack gates or silences
+                // near-end capture.
+                MediaRecorder.AudioSource.MIC,
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            };
         String lastAttemptError = "";
 
         for (int i = 0; i < sampleRates.length; i++) {
@@ -195,6 +204,8 @@ public final class AndroidPcmMicCapture {
             @Override
             public void run() {
                 short[] pcm = new short[samplesPerRead];
+                int consecutiveReadErrors = 0;
+                int consecutiveZeroReads = 0;
                 while (running) {
                     AudioRecord record = audioRecord;
                     if (record == null) break;
@@ -209,6 +220,8 @@ public final class AndroidPcmMicCapture {
                     }
 
                     if (read > 0) {
+                        consecutiveReadErrors = 0;
+                        consecutiveZeroReads = 0;
                         float[] samples = new float[read];
                         for (int i = 0; i < read; i++) {
                             samples[i] = Math.max(-1.0f, Math.min(1.0f, pcm[i] / 32768.0f));
@@ -226,8 +239,20 @@ public final class AndroidPcmMicCapture {
                     } else if (read < 0) {
                         lastError = "read_error:" + read;
                         sendState("read_error", lastError, routeHint);
+                        consecutiveReadErrors++;
+                        if (consecutiveReadErrors >= 3) {
+                            lastError = "read_error_persistent:" + read;
+                            sendState("read_error_persistent", lastError, routeHint);
+                            break;
+                        }
                         sleepQuietly(20);
                     } else {
+                        consecutiveZeroReads++;
+                        if (consecutiveZeroReads >= 200) {
+                            lastError = "read_zero_persistent";
+                            sendState("read_zero_persistent", lastError, routeHint);
+                            break;
+                        }
                         sleepQuietly(10);
                     }
                 }
@@ -293,6 +318,11 @@ public final class AndroidPcmMicCapture {
         if (source == MediaRecorder.AudioSource.VOICE_COMMUNICATION) return "voice_communication";
         if (source == MediaRecorder.AudioSource.MIC) return "mic";
         return "source_" + source;
+    }
+
+    private static boolean preferVoiceCommunication(String routeHint) {
+        return routeHint != null
+            && routeHint.toLowerCase().contains("voice_communication");
     }
 
     private static void sleepQuietly(long ms) {

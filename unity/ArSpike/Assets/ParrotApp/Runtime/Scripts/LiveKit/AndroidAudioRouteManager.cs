@@ -80,9 +80,24 @@ namespace ParrotApp.LiveKit
 #endif
         }
 
+        public void StartMicrophoneForegroundService()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            SafeCall("startMicrophoneForegroundService");
+#endif
+        }
+
+        public void StopMicrophoneForegroundService()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            SafeCall("stopMicrophoneForegroundService");
+#endif
+        }
+
         public void Dispose()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
+            StopMicrophoneForegroundService();
             SafeCall("dispose");
             _callbackProxy = null;
             _native?.Dispose();

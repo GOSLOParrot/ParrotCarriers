@@ -28,6 +28,7 @@ namespace ParrotApp.UI
         [SerializeField] private AudioRouteManager audioRouteManager;
         [SerializeField] private AudioRoutePolicyBrainReporter audioRouteReporter;
         [SerializeField] private MicrophonePublisher microphonePublisher;
+        [SerializeField] private ARVideoPublisher arVideoPublisher;
         [SerializeField] private FormalModelPlacementController modelPlacementController;
         [SerializeField] private FormalArSessionBaselineReporter arSessionBaselineReporter;
         [SerializeField] private FormalArRuntimeBootstrap arRuntimeBootstrap;
@@ -81,6 +82,7 @@ namespace ParrotApp.UI
             if (audioRouteManager == null) audioRouteManager = FindObjectOfType<AudioRouteManager>();
             if (audioRouteReporter == null) audioRouteReporter = FindObjectOfType<AudioRoutePolicyBrainReporter>();
             if (microphonePublisher == null) microphonePublisher = FindObjectOfType<MicrophonePublisher>();
+            if (arVideoPublisher == null) arVideoPublisher = FindObjectOfType<ARVideoPublisher>();
             if (modelPlacementController == null) modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
             if (arSessionBaselineReporter == null) arSessionBaselineReporter = FindObjectOfType<FormalArSessionBaselineReporter>();
             if (arRuntimeBootstrap == null) arRuntimeBootstrap = FindObjectOfType<FormalArRuntimeBootstrap>();
@@ -260,7 +262,7 @@ namespace ParrotApp.UI
 
             _statusText.text =
                 $"LK {(connected ? "on" : "off")}  Brain {(health.BrainPresent ? "on" : "wait")}  "
-                + $"Mic {MicPublishSummary(health)}  Video {(health.VideoFreshFrame ? "fresh" : "wait")}\n"
+                + $"Mic {MicPublishSummary(health)}  Video {VideoHudSummary(health)}\n"
                 + $"Room {_activeConfig.room_profile_id}  Line {_activeConfig.line_id}/{_activeConfig.line_profile_id}\n"
                 + $"Route {AudioRouteHudLabel()}\n"
                 + $"UsingMic {MicrophoneDeviceHudLabel()}\n"
@@ -278,6 +280,28 @@ namespace ParrotApp.UI
             if (health.AudioPublished)
                 return "pub";
             return health.AudioPublishAttempted ? "wait" : "idle";
+        }
+
+        private string VideoHudSummary(ConnectionHealthState health)
+        {
+            if (arVideoPublisher == null)
+                arVideoPublisher = FindObjectOfType<ARVideoPublisher>();
+            string state = health.VideoFreshFrame ? "fresh" : (health.VideoPublishAttempted ? "wait" : "idle");
+            if (arVideoPublisher == null)
+                return state + " src=?";
+            string source = string.IsNullOrWhiteSpace(arVideoPublisher.VideoSourceLabel)
+                ? "none"
+                : arVideoPublisher.VideoSourceLabel;
+            string error = string.IsNullOrWhiteSpace(arVideoPublisher.LastPublishError)
+                ? ""
+                : " err=" + ShortLabel(arVideoPublisher.LastPublishError, 18);
+            float age = arVideoPublisher.LastFrameAgeSeconds;
+            string ageText = age < 0f ? "age=?" : "age=" + age.ToString("0.0");
+            return state
+                   + " src=" + source
+                   + " frames=" + arVideoPublisher.ProducedFrameCount
+                   + " " + ageText
+                   + error;
         }
 
         private string ArHudLabel()

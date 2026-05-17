@@ -171,6 +171,55 @@ The formal App frontend is **not complete**.
   now surfaces `android_pcm_bridge_unavailable:*` rather than a generic startup
   exception. iQOO proof still requires non-zero `frames/ch/readSr/peak`, or a
   specific `native=` / `nerr=` blocker.
+- Latest native PCM guard: `AndroidPcmMicCapture` now reports and exits on
+  persistent zero-byte `AudioRecord.read(...)` loops as `read_zero_persistent`,
+  matching the existing `read_error_persistent:*` path for negative reads. The
+  Android microphone foreground service is stopped via `stopService(...)`, not a
+  `startService(STOP)` command that Android may reject during pause/teardown.
+  `MicrophonePublisher` now consumes those persistent native errors during the
+  startup wait and preserves them as `native_audio_record_failed:*` instead of
+  flattening them into generic `audio_read_timeout`, so the retry ladder and HUD
+  expose the real Android capture blocker.
+  Native Android device add/remove callbacks now re-apply the current
+  communication-device preference while voice mode is active, and
+  `system_default` remains a clear-device operation so Bluetooth/A2DP output is
+  not stolen by a stale speaker pin.
+  Formal Android capture now prefers the App-owned `AndroidPcmMicrophoneSource`
+  before Unity `MicrophoneSource` when no manual mic device is selected, because
+  LiveKit Unity / device evidence shows Unity can report local `AudioRead`
+  frames while remote uplink still receives no usable mic media.
+  Focus-resume is now treated as another local capture-refresh trigger: after
+  app switch, permission dialog, or Bluetooth settings focus hops, Unity pulls a
+  fresh route snapshot and queues/restarts only the mic source/track if needed.
+  AudioRecord itself now has a zero-peak recovery branch: if the plain Android
+  `MIC` source emits fresh but digitally silent frames, the next local rebuild
+  retries the same AudioRecord ladder with `VOICE_COMMUNICATION` first; if that
+  also stays silent, HUD/health expose `uplink_watchdog_zero_peak_android_audio_record`
+  instead of calling the uplink healthy.
+  Latest A2DP correction: when Android exposes Bluetooth media output but no
+  selectable SCO/BLE headset communication target, the native route owner now
+  keeps `MODE_NORMAL` / media routing instead of entering
+  `MODE_IN_COMMUNICATION`. This is meant to preserve headset downlink and avoid
+  OEM communication-stack near-end mic gating while Unity captures through the
+  App-owned AudioRecord/phone MIC path. The same rule applies to
+  connect-after-START device callbacks: if the route becomes A2DP-only, Android
+  exits communication mode instead of merely clearing a speaker pin. Stopping
+  mic publish or room disconnect also exits communication mode so stale routing
+  cannot poison the next START.
+- Latest phone/default route correction: the formal App no longer enters
+  `MODE_IN_COMMUNICATION` just to use the phone speaker + phone mic path. If
+  Android has no selectable headset communication target, the native route
+  owner keeps `MODE_NORMAL` as `normal_phone_output` and lets the App-owned
+  `AudioRecord` capture phone MIC frames. If a Bluetooth communication-device
+  selection is rejected but Bluetooth media output exists, it also falls back to
+  `normal_bt_output` instead of leaving the App in a half-communication state.
+  This is still a local mic-track rebuild path only; iQOO proof must show
+  non-zero `frames/ch/readSr/peak` before calling voice stable.
+  Temporary native route overrides are session-local and are restored to the
+  durable user preference when communication mode is disabled, so one failed
+  mic recovery cannot poison the next START.
+  These are local capture-lifecycle guards only and must not reconnect LiveKit,
+  mint a token, or dispatch a new Brain job.
 - Latest Parrot pose fix: `GOSLO.glb` was confirmed to import with a neutral
   `body` node; the body block appeared to jut forward because the formal
   `AnimationDriver` was applying the full Minecraft Java body pitch to standing
@@ -189,6 +238,18 @@ The formal App frontend is **not complete**.
   Brain dispatch, RoomSetting, or Android audio route is touched. Next proof is
   HUD non-zero uplink plus Castle logs showing `RoomIO input participant
   rebound` and transcript events from the current Unity identity.
+- Latest imported frames=0 TODO implementation: the desktop audit has been
+  moved to
+  `backend_interface_map/app/imported_frames0_root_cause_audit_todo_20260517.md`.
+  The first formal-App P0 slice is implemented without touching Smoke/ParrotDev:
+  Android microphone foreground service + Android 14 microphone FGS permission,
+  `AudioRecord.read<0` persistent-error exit, route-manager singleton callback
+  cleanup, `setCommunicationDevice` short retry, AR video no-webcam-default and
+  post-publish frame truth gate, HUD `Video src/frames/age/error`, volatile audio
+  peak diagnostics, 35s shutdown cool-down, and 8s AR first-frame timeout.
+  Validation passed: Java androidlib `javac`, Unity static guard 28/28, Unity MCP
+  refresh with Console 0 errors. This is still not phone-stable until a rebuilt
+  iQOO run proves non-zero `frames/ch/readSr/peak` and then LineA/LineB speech.
 - Unity App RoomSetting ECS persistence is verified as of 2026-05-15:
   `New` returns an unsaved draft, `Save` persists a user Room through App HTTP,
   reload lists it from ECS, and save does not apply or change active Room.

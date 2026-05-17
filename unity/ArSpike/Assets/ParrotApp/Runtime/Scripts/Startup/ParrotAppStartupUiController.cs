@@ -1600,16 +1600,40 @@ namespace ParrotApp.UI
 
         private static void EnsureEventSystem()
         {
-            if (FindObjectOfType<EventSystem>() != null) return;
+            var eventSystem = FindObjectOfType<EventSystem>();
+            if (eventSystem == null)
+            {
+                var go = new GameObject("EventSystem");
+                eventSystem = go.AddComponent<EventSystem>();
+            }
 
-            var go = new GameObject("EventSystem");
-            go.AddComponent<EventSystem>();
 #if ENABLE_INPUT_SYSTEM
-            go.AddComponent<InputSystemUIInputModule>();
+            var standaloneModule = eventSystem.GetComponent<StandaloneInputModule>();
+            if (standaloneModule != null)
+                RemoveLegacyInputModule(standaloneModule);
+
+            var inputSystemModule = eventSystem.GetComponent<InputSystemUIInputModule>();
+            if (inputSystemModule == null)
+                inputSystemModule = eventSystem.gameObject.AddComponent<InputSystemUIInputModule>();
+            inputSystemModule.enabled = true;
 #else
-            go.AddComponent<StandaloneInputModule>();
+            var standaloneModule = eventSystem.GetComponent<StandaloneInputModule>();
+            if (standaloneModule == null)
+                standaloneModule = eventSystem.gameObject.AddComponent<StandaloneInputModule>();
+            standaloneModule.enabled = true;
 #endif
         }
+
+#if ENABLE_INPUT_SYSTEM
+        private static void RemoveLegacyInputModule(StandaloneInputModule module)
+        {
+            if (module == null) return;
+            if (Application.isPlaying)
+                Destroy(module);
+            else
+                DestroyImmediate(module);
+        }
+#endif
 
         private static Vector2 TopLeft() => new Vector2(0f, 1f);
         private static Vector2 TopRight() => new Vector2(1f, 1f);

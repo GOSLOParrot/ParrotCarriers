@@ -82,6 +82,19 @@ speaker/earpiece communication device and then leaves routing to Android so the
 system output can remain on Bluetooth. Capture recovery tries `system_default`
 first and keeps automatic AudioRecord recovery on `system_default` so Bluetooth
 downlink can remain with Android while the Java bridge captures plain phone MIC.
+The same condition must not enter `MODE_IN_COMMUNICATION`; it keeps
+`MODE_NORMAL` / media routing to avoid stealing A2DP output or triggering OEM
+communication-stack mic gating. Device add/connect callbacks must apply the
+same rule if the active session becomes A2DP-only after START. Leaving voice
+publish, room disconnect, or destroy must call `RequestCommunicationMode(false)`
+so the next START begins from a clean route state.
+The phone speaker + phone MIC route is also media-mode by default in the
+formal App: when no Bluetooth/wired communication headset target is selectable,
+native route ownership keeps `MODE_NORMAL` as `normal_phone_output` and lets
+the App-owned `AudioRecord` capture phone MIC. If Android rejects a Bluetooth
+communication target while media Bluetooth output is present, the route owner
+falls back to `normal_bt_output` rather than staying in a half-selected
+communication state.
 Explicit `phone_mic` forcing is now reserved for future manual recovery.
 Temporary capture fallback is sticky until user preference changes or a new
 session starts; device add/remove callbacks must not undo it. This is still
@@ -120,6 +133,49 @@ caller identity as the current Unity phone and calls
 Brain input binding layer, not Unity local audio routing: it must not trigger
 LiveKit reconnect, token mint, Brain dispatch, RoomSetting changes, or Android
 route preference changes.
+
+2026-05-17 frames=0 P0 addendum: the imported desktop audit now lives at
+`backend_interface_map/app/imported_frames0_root_cause_audit_todo_20260517.md`.
+Formal Android mic capture may use the App-owned
+`ParrotAudioRoute.androidlib` foreground microphone service while a local
+LiveKit mic track is being published. This is a client-side Android permission /
+capture-lifecycle guard only: it must not change RoomSetting, reconnect the
+LiveKit room, refresh Mint tokens, or dispatch a new Brain job. Native
+`AudioRecord.read<0` and persistent zero-byte reads now report explicit native
+errors and exit instead of spinning silently, and native route manager re-init
+must unregister old callbacks before installing a new Unity callback. Stopping
+the foreground mic service uses `stopService(...)`, not a background-sensitive
+`startService(STOP)` workaround. Unity also preserves persistent native
+AudioRecord failures as `native_audio_record_failed:*` during the mic startup
+gate so the retry ladder and HUD do not hide them behind `audio_read_timeout`.
+Bluetooth device add/remove callbacks must re-apply the current native
+communication-device preference while voice mode is active; `system_default`
+remains a clear-device operation so A2DP output can stay on the headset instead
+of being pinned to phone speaker.
+On Android formal builds, automatic microphone selection now prefers the
+App-owned `AndroidPcmMicrophoneSource` / `AudioRecord` path before Unity
+`MicrophoneSource`, while a manual named mic device still opts back into Unity's
+device picker. This avoids treating local Unity `AudioRead` callbacks as proof
+that LiveKit remote participants are receiving usable microphone media.
+Focus resume after app switch, permission dialogs, or Android Bluetooth settings
+is also a local microphone lifecycle event: it may refresh the route snapshot
+and rebuild the mic source/track, but it must not reconnect the LiveKit room,
+mint a token, dispatch a Brain job, or mutate RoomSetting.
+If Android `AudioRecord` emits fresh frames with a sustained zero peak, the
+formal App first treats plain `MIC` as suspect and retries the local AudioRecord
+ladder with `VOICE_COMMUNICATION` preferred. If the communication source also
+stays digitally silent, health/HUD must remain degraded with
+`uplink_watchdog_zero_peak_android_audio_record`; fresh zero frames are not
+production proof of a usable uplink.
+Temporary native capture overrides are scoped to the active voice session. When
+communication mode is disabled, `AudioRouteManager` restores the durable user
+preference inside the native bridge so the next START cannot inherit a stale
+fallback route.
+Video and lifecycle related P0s from the same
+audit are also App-owned: no mobile webcam fallback by default, HUD must expose
+video source/frame truth, `video_published=true` requires post-publish frames,
+and shutdown/first-frame timeouts are tuned for real mobile lifecycle rather
+than Editor smoke speed.
 
 | `Lifecycle/FormalModelReadyReporter.cs` | Formal model manifest gate. | Resolves the selected `Resources/parrot_models/<id>` manifest and reports `model_resolved`; it must not call `onGosloPlaced`. |
 | `Lifecycle/FormalModelPlacementController.cs` | Formal model placement gate owner. | Places a manifest-driven runtime visual from `Resources/Models/**` when possible, or a whitebox placeholder only as a visible missing-asset fallback, under `AssetPreviewStage` after `MainUiReadyOnce` and `FormalMainReadyGate.IsReady`. It accepts the AR Mobile template `ObjectSpawner` pose from `FormalArRuntimeBootstrap`, keeps the selected RoomSetting manifest/model driver, attaches `XRGrabInteractable` + `ARTransformer` with demo bounds (`0.25` to `2.0`) and demo-like grab defaults (`ColliderPosition`, single focus, default grab transformers), normalizes model height to the manifest target over several post-spawn passes, snaps the visual bottom back to the last AR hit plane after GLB import scale / delayed bounds / pinch scaling, and refuses to fake-place when AR misses a plane. Placement still uses the AR plane for hit position, but the Parrot companion stays world-upright on horizontal placement planes instead of tilting its body to noisy blanket/desk normals; this avoids the body block looking hunched forward while preserving demo2-like tap/drag/pinch behavior. It calls `ReportGosloPlaced()` exactly once from the placement owner. Clearing an already placed model calls `ReportGosloRemovedFromView()`, reusing the in-session `2d_workspace` / `VoiceOnlyNoVideo` policy so LiveKit and the Brain job stay alive while GOSLO is no longer in view; re-placing the same model calls `ReportGosloReturnedToView()` to restore `ar_workspace` / `FullARCompanion` without a new greeting. It publishes `OnPlacementStateChanged` after place/clear/select/scale/XRI-status changes so HUD/menu/joystick state updates immediately instead of relying on delayed polling. Selected-model feedback uses a transparent white `LineRenderer` ring so it does not render as an orange slab or block the camera feed. The old custom EnhancedTouch path remains only as a guarded fallback when the XRI bridge is inactive. |

@@ -56,6 +56,8 @@ namespace ParrotApp.VisualTools
         {
             if (!showDevHud)
                 return;
+            if (_canvas == null && (!FeatureEnabled || !IsOpen))
+                return;
             EnsureOverlay();
             if (_canvas != null)
                 _canvas.gameObject.SetActive(FeatureEnabled && IsOpen);
@@ -177,6 +179,14 @@ namespace ParrotApp.VisualTools
             {
                 if (IsPointerOverUi(pointer))
                     return;
+                if (IsLocked)
+                {
+                    _pointerActive = false;
+                    _interactionMode = BBoxInteractionMode.None;
+                    LastRenderStatus = "bbox_locked_unlock_required";
+                    SetStatus("bbox_locked_unlock_required", true);
+                    return;
+                }
 
                 Vector2 normalized = ScreenToNormalizedTopLeft(pointer.position);
                 if (!RegionContains(CurrentRegion, normalized))

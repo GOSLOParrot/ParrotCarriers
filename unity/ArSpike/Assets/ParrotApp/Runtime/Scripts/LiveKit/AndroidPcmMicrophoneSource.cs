@@ -7,13 +7,12 @@ namespace ParrotApp.LiveKit
     /// <summary>
     /// Android-only LiveKit audio source backed by AudioRecord.
     ///
-    /// Unity's <see cref="MicrophoneSource"/> is still the primary path when
-    /// <see cref="Microphone.devices"/> returns a usable device. This source is
-    /// a formal App fallback for Android phones where Unity reports zero devices
-    /// or never advances <c>Microphone.GetPosition(null)</c> even after the app
-    /// has microphone permission. It does not reconnect the LiveKit room or
-    /// dispatch a new Brain job; it only supplies PCM frames to the existing
-    /// local audio track.
+    /// Formal Android builds may prefer this source before Unity's
+    /// <see cref="MicrophoneSource"/> because some devices expose a Unity mic
+    /// path that appears locally alive but does not produce usable remote
+    /// uplink. Manual named mic selection still opts into Unity's device path.
+    /// This class does not reconnect the LiveKit room or dispatch a new Brain
+    /// job; it only supplies PCM frames to the existing local audio track.
     /// </summary>
     public sealed class AndroidPcmMicrophoneSource : RtcAudioSource
     {

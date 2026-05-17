@@ -71,6 +71,8 @@ namespace ParrotApp.VisualTools
         {
             if (!showDevHud)
                 return;
+            if (_canvas == null && (!FeatureEnabled || !IsOpen))
+                return;
             EnsureOverlay();
             if (_canvas != null)
                 _canvas.gameObject.SetActive(FeatureEnabled && IsOpen);
@@ -217,6 +219,14 @@ namespace ParrotApp.VisualTools
             {
                 if (IsPointerOverUi(pointer))
                     return;
+                if (IsLocked)
+                {
+                    _pointerActive = false;
+                    _lastLocalMotionAt = Time.unscaledTime;
+                    LastRenderStatus = "mag_locked_unlock_required";
+                    SetStatus("mag_locked_unlock_required", true);
+                    return;
+                }
 
                 Vector2 normalized = ScreenToNormalizedTopLeft(pointer.position);
                 if (!RegionContains(CurrentRegion, normalized))
@@ -255,12 +265,17 @@ namespace ParrotApp.VisualTools
         {
             float wheel = Input.mouseScrollDelta.y;
             if (Mathf.Abs(wheel) < 0.01f) return;
+            if (IsLocked)
+            {
+                SetStatus("mag_locked_unlock_required", true);
+                return;
+            }
             AdjustZoom(wheel * zoomStep);
         }
 
         private void HandleDwellTick()
         {
-            if (!emitDwellTicks || _pointerActive)
+            if (!emitDwellTicks || _pointerActive || IsLocked)
                 return;
             float now = Time.unscaledTime;
             if (now - _lastLocalMotionAt < Mathf.Max(0.2f, dwellAfterStillSeconds))
@@ -273,6 +288,8 @@ namespace ParrotApp.VisualTools
 
         public string SetZoom(float value)
         {
+            if (IsLocked)
+                return SetStatus("mag_locked_unlock_required", true);
             zoom = Mathf.Clamp(value, Mathf.Max(0.25f, minZoom), Mathf.Max(minZoom, maxZoom));
             LastRenderStatus = "mag_local_zoom_changed";
             UpdateOverlay();

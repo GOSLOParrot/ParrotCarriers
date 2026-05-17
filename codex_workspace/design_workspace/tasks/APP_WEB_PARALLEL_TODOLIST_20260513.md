@@ -137,6 +137,8 @@ Latest APP-015.23 / APP-015.25 phone-blocker fix: the final microphone fallback 
 
 Latest APP-015.23 diagnostic follow-up: successful native AudioRecord fallback no longer clears the fallback/source evidence. `MicrophonePublisher` now tracks `ActiveAudioSourceKind`, `NativeAudioRecordState`, and `NativeAudioRecordError`, and the formal HUD shows those fields beside `frames/ch/readSr/peak`. The next phone run can distinguish "Unity mic path", "AudioRecord fallback active", "AudioRecord started but no frames", and "Brain/STT still did not consume frames" without guessing from route labels alone.
 
+Latest APP-015.23 / APP-024 frames=0 P0 implementation: imported TODO source is now `backend_interface_map/app/imported_frames0_root_cause_audit_todo_20260517.md`. Formal App adds `ParrotMicForegroundService` plus Android 14 microphone foreground-service permissions, starts/stops that service around local mic track publish, exits native `AudioRecord` capture on persistent `read<0` or persistent zero-byte reads, cleans native route singleton callback/focus state on re-init, retries Android `setCommunicationDevice`, and keeps route changes as local mic-track rebuilds only. Stopping the foreground mic guard now uses `stopService(...)` so pause/teardown cannot be blocked by Android background-start restrictions. The latest follow-up consumes persistent native AudioRecord errors during the C# startup wait and preserves them as `native_audio_record_failed:*` instead of flattening them into `audio_read_timeout`, letting the next retry/HUD branch show the real local capture blocker. Native Android device add/remove callbacks now re-apply the current communication-device preference while voice mode is active, and `system_default` still clears the communication device so Bluetooth/A2DP output is not stolen by stale speaker pinning. Formal Android capture now prefers the App-owned `AndroidPcmMicrophoneSource` before Unity `MicrophoneSource` when no manual mic device is selected, because LiveKit Unity/device evidence shows Unity can report local `AudioRead` frames while remote uplink still receives no usable mic media. Video fake-success gates were tightened at the same time: no Android webcam fallback by default, HUD now shows video source/frame age/error, and `video_published=true` waits for post-publish frames. Lifecycle config now uses 35s shutdown cool-down and 8s first-frame timeout. Validation: Java androidlib compile passed, Unity MCP refresh produced 0 console errors, and `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` passed 28/28. Still in-progress: rebuild iQOO proof must show non-zero local audio `frames/ch/readSr/peak`; only then test Brain/STT, Bluetooth/SCO/A2DP, pause/resume, LineA/LineB, and network reconnect.
+
 Latest APP-015.23 audio blocker follow-up: iQOO still showed `Mic wait` and
 `microphone_start_exception` during the native fallback, while route,
 permission, and focus looked valid. Wider LiveKit/Unity audit found two
@@ -173,6 +175,24 @@ Bluetooth now actively calls `clearCommunicationDevice()` so Android can return
 downlink audio to A2DP while keeping phone/default mic capture. Static guard and
 Java compile pass; this still needs iQOO proof for `frames/ch/readSr/peak` and
 Bluetooth output.
+Latest follow-up: A2DP-only Bluetooth must also avoid entering
+`MODE_IN_COMMUNICATION` in the first place. The native route owner now keeps
+`MODE_NORMAL` / media routing when there is Bluetooth media output but no
+selectable SCO/BLE headset communication target, so Parrot downlink can remain
+on Bluetooth while the App-owned AudioRecord path captures phone/default MIC.
+This also covers connect-after-START device callbacks: an A2DP-only route exits
+communication mode instead of merely clearing a stale speaker/earpiece pin.
+`MicrophonePublisher.StopPublishing(...)` also disables communication mode on
+room disconnect/destroy so stale route state does not leak into the next START.
+Follow-up correction: default phone speaker + phone MIC should also stay in
+`MODE_NORMAL` when no real headset communication target exists; the native
+owner now reports `normal_phone_output` rather than forcing a speaker/earpiece
+communication device. If Android rejects a selected Bluetooth communication
+device while media Bluetooth output exists, it falls back to
+`normal_bt_output` instead of remaining in a half-communication state. This is
+still a local mic-track route fix; rebuilt iQOO proof must show non-zero
+`frames/ch/readSr/peak` before APP-015.23/APP-024 can advance.
+Rebuild/iQOO proof is still required.
 
 Latest APP-015.23 greeting-only uplink fix: iQOO screenshots now prove the
 placement greeting/downlink path is alive but user speech still does not
@@ -221,6 +241,26 @@ Unity room reconnect, Mint token refresh, Brain redispatch, RoomSetting change,
 or Android audio-route mutation. Next iQOO proof should pair HUD
 `frames/ch/readSr/peak/nz` with Castle logs showing `RoomIO input participant
 rebound` and actual user transcript events.
+
+Latest APP-015.23 focus-resume local capture fix: Android app switching,
+permission dialogs, and Bluetooth settings focus hops can reset the
+communication device or microphone session while the LiveKit room stays alive.
+`MicrophonePublisher.OnApplicationFocus(true)` now refreshes the current route
+snapshot and queues/restarts only the local mic source/track. This is explicitly
+not a room reconnect, Mint token refresh, Brain dispatch, or RoomSetting apply.
+
+Latest APP-015.23 AudioRecord zero-peak fix: fresh `AudioRead` frames are not
+enough if the samples are digitally silent. If Android AudioRecord's plain
+`MIC` source stays zero-peak beyond the watchdog window, the formal App now
+rebuilds only the local mic track and retries the AudioRecord ladder with
+`VOICE_COMMUNICATION` preferred. If that path also stays silent, health/HUD
+remain degraded with `uplink_watchdog_zero_peak_android_audio_record` instead
+of claiming the mic is healthy.
+
+Latest APP-015.23 route override lifetime fix: temporary native capture
+overrides are now explicitly session-local. When communication mode is disabled,
+`AudioRouteManager` restores the native bridge to the durable user preference so
+a previous phone/default mic recovery cannot silently poison the next START.
 
 Latest APP-015.23 compatibility sweep: see
 `backend_interface_map/app/unity_audio_livekit_deep_audit_20260517.md`.

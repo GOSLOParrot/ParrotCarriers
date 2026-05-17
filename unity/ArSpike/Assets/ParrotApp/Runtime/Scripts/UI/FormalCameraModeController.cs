@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using ParrotApp.Backend;
 using UnityEngine;
 using UnityEngine.UI;
@@ -50,6 +51,7 @@ namespace ParrotApp.UI
         private float _exposure;
         private int _filterIndex;
         private bool _proOpen;
+        private Coroutine _modeApplyCoroutine;
 
         public string CurrentMode => _mode;
         public string PendingMode => _pendingMode;
@@ -61,6 +63,9 @@ namespace ParrotApp.UI
         public float Zoom => _zoom;
         public float Exposure => _exposure;
         public string FilterLabel => _filters[Mathf.Clamp(_filterIndex, 0, _filters.Length - 1)];
+        public event Action<string> OnModeApplyPending;
+        public event Action<string> OnModeApplySucceeded;
+        public event Action<string, string> OnModeApplyFailed;
 
         private void Awake()
         {
@@ -81,7 +86,7 @@ namespace ParrotApp.UI
         public string TogglePreviewLocal()
         {
             EnsureUi();
-            return IsOpen ? SetModeLocal("off") : SetModeLocal("preview");
+            return RequestModeApply(IsOpen ? "off" : "preview");
         }
 
         public string SetModeLocal(string mode, bool showOverlay = true)
@@ -103,12 +108,37 @@ namespace ParrotApp.UI
             return LastCameraStatus;
         }
 
+        public string RequestModeApply(string mode)
+        {
+            Bind();
+            EnsureUi();
+            string normalized = NormalizeMode(mode);
+            string previous = _mode;
+            if (_modeApplyCoroutine != null)
+            {
+                LastCameraStatus = "camera_http_request_already_pending:" + _pendingMode;
+                RefreshUi();
+                return LastCameraStatus;
+            }
+
+            MarkHttpPending(normalized);
+            _modeApplyCoroutine = StartCoroutine(ApplyModeHttp(normalized, previous));
+            return LastCameraStatus;
+        }
+
         public void MarkHttpPending(string mode)
         {
+            EnsureUi();
             _pendingMode = NormalizeMode(mode);
+            bool pendingOff = string.Equals(_pendingMode, "off", StringComparison.OrdinalIgnoreCase);
+            if (!pendingOff && showOverlayForPreviewModes)
+                SetVisible(true);
+            else if (pendingOff && string.Equals(_mode, "off", StringComparison.OrdinalIgnoreCase))
+                SetVisible(false);
             _lastHttpStatus = "camera_http_pending:" + _pendingMode;
             LastCameraStatus = _lastHttpStatus;
             RefreshUi();
+            OnModeApplyPending?.Invoke(_pendingMode);
         }
 
         public void MarkHttpResult(string mode, bool ok, string error = "")
@@ -118,17 +148,23 @@ namespace ParrotApp.UI
             _lastHttpStatus = ok
                 ? "camera_http_ok:" + normalized
                 : "camera_http_failed:" + ShortLabel(error, "unknown", 28);
+            LastCameraStatus = _lastHttpStatus;
             if (ok)
+            {
                 SetModeLocal(normalized);
+                OnModeApplySucceeded?.Invoke(normalized);
+            }
             else
+            {
                 RefreshUi();
+                OnModeApplyFailed?.Invoke(normalized, error ?? "");
+            }
         }
 
         public string CapturePhotoFromCameraMode()
         {
             Bind();
             EnsureUi();
-            SetModeLocal("capture_locked");
             if (homeToolController == null)
             {
                 _lastPhotoStatus = "camera_photo_owner_missing";
@@ -139,10 +175,37 @@ namespace ParrotApp.UI
 
             string status = homeToolController.CapturePhoto();
             bool ok = ToolStatusLooksOk(status);
+            if (ok)
+                SetModeLocal("capture_locked");
             _lastPhotoStatus = ok ? "camera_photo_requested" : "camera_photo_failed:" + ShortLabel(status, "unknown", 24);
             LastCameraStatus = status;
             RefreshUi();
             return status;
+        }
+
+        private IEnumerator ApplyModeHttp(string mode, string previousMode)
+        {
+            Bind();
+            if (homeMenuClient == null)
+            {
+                SetModeLocal(previousMode);
+                MarkHttpResult(previousMode, false, "home_menu_client_missing");
+                _modeApplyCoroutine = null;
+                yield break;
+            }
+
+            RequestResult<AppActionResultDto> result = default;
+            yield return homeMenuClient.SetCameraMode(mode, r => result = r);
+            if (result.Success)
+            {
+                MarkHttpResult(mode, true);
+            }
+            else
+            {
+                SetModeLocal(previousMode);
+                MarkHttpResult(previousMode, false, result.Error);
+            }
+            _modeApplyCoroutine = null;
         }
 
         public void MarkPhotoCaptureStatus(string status, bool ok)
@@ -254,11 +317,11 @@ namespace ParrotApp.UI
                 16,
                 TextAnchor.MiddleLeft);
 
-            CreateButton("FormalCameraModeCloseButton", _overlayRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-28f, -12f), new Vector2(48f, 38f), "x", () => SetModeLocal("off"));
+            CreateButton("FormalCameraModeCloseButton", _overlayRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-28f, -12f), new Vector2(48f, 38f), "x", () => RequestModeApply("off"));
             CreateButton("FormalCameraModeSettingsButton", _overlayRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-86f, -12f), new Vector2(72f, 38f), "gear", ToggleProSettings);
-            CreateButton("FormalCameraModeReadyButton", _overlayRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(-110f, 22f), new Vector2(110f, 54f), "Ready", () => SetModeLocal("photo_ready"));
+            CreateButton("FormalCameraModeReadyButton", _overlayRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(-110f, 22f), new Vector2(110f, 54f), "Ready", () => RequestModeApply("photo_ready"));
             CreateButton("FormalCameraModeShutterButton", _overlayRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(16f, 22f), new Vector2(130f, 54f), "Capture", CapturePhotoFromCameraMode);
-            CreateButton("FormalCameraModePreviewButton", _overlayRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(154f, 22f), new Vector2(126f, 54f), "Preview", () => SetModeLocal("preview"));
+            CreateButton("FormalCameraModePreviewButton", _overlayRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(154f, 22f), new Vector2(126f, 54f), "Preview", () => RequestModeApply("preview"));
 
             _zoomLabel = CreateText("FormalCameraZoomLabel", _overlayRoot, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(28f, -72f), new Vector2(96f, 56f), 15, TextAnchor.MiddleCenter);
             _zoomSlider = CreateSlider("CameraGestureRail_Zoom", _overlayRoot, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(130f, -72f), new Vector2(210f, 30f), minZoom, maxZoom, _zoom, SetZoom);
@@ -291,8 +354,8 @@ namespace ParrotApp.UI
             CreateText("FormalCameraProSettingsTitle", _proPanel, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, 1f), new Vector2(20f, -18f), new Vector2(-40f, 44f), 20, TextAnchor.MiddleLeft).text = "PRO CAMERA";
             _proLabel = CreateText("FormalCameraProSettingsState", _proPanel, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, 1f), new Vector2(20f, -70f), new Vector2(-40f, 150f), 15, TextAnchor.UpperLeft);
             CreateButton("FormalCameraFilterButton", _proPanel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(-82f, 142f), new Vector2(122f, 38f), "Filter", CycleFilter);
-            CreateButton("FormalCameraProReadyButton", _proPanel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(82f, 142f), new Vector2(122f, 38f), "Ready", () => SetModeLocal("photo_ready"));
-            CreateButton("FormalCameraProPreviewButton", _proPanel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(-82f, 94f), new Vector2(122f, 38f), "Preview", () => SetModeLocal("preview"));
+            CreateButton("FormalCameraProReadyButton", _proPanel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(82f, 142f), new Vector2(122f, 38f), "Ready", () => RequestModeApply("photo_ready"));
+            CreateButton("FormalCameraProPreviewButton", _proPanel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(-82f, 94f), new Vector2(122f, 38f), "Preview", () => RequestModeApply("preview"));
             CreateButton("FormalCameraHideUiButton", _proPanel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(82f, 94f), new Vector2(122f, 38f), "Hide UI", ToggleProSettings);
 
             var stamp = CreatePanel("CameraToolbox_PixelBBoxStamp", _proPanel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 28f), new Vector2(246f, 58f), new Color(0.78f, 0.74f, 0.56f, 0.94f));
