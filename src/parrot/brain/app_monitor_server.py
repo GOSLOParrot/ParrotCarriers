@@ -419,6 +419,12 @@ def build_app():  # type: ignore[no-untyped-def]
 
         return await draft_workflow_plan(payload or {})
 
+    @app.post("/api/runtime/workflow/run")
+    async def runtime_workflow_run(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.runtime_flow import run_workflow_draft
+
+        return await run_workflow_draft(payload or {})
+
     @app.get("/api/runtime/workflows/drafts")
     async def runtime_workflow_drafts(q: str = "", limit: int = 50):  # type: ignore[no-untyped-def]
         from parrot.web_console.workflow_drafts import list_workflow_drafts

@@ -267,14 +267,7 @@ async def draft_workflow_plan(payload: dict[str, Any] | None = None) -> dict[str
     body = payload or {}
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
-    workflow_nodes = _workflow_nodes_from_body(body)
-    saved_workflow: dict[str, Any] = {}
-    if not workflow_nodes and body.get("workflow_id"):
-        from parrot.web_console.workflow_drafts import get_workflow_draft_record
-
-        saved_workflow = get_workflow_draft_record(str(body.get("workflow_id") or "")) or {}
-        nodes = saved_workflow.get("nodes")
-        workflow_nodes = list(nodes) if isinstance(nodes, list) else []
+    workflow_nodes, saved_workflow = _workflow_nodes_and_saved(body)
     workflow = body.get("workflow") if isinstance(body.get("workflow"), dict) else {}
     title = str(
         body.get("title")
@@ -356,6 +349,75 @@ async def draft_workflow_plan(payload: dict[str, Any] | None = None) -> dict[str
             operator_mode=True,
             data={**data, "created": False, "error": f"{type(exc).__name__}: {exc}"},
         )
+
+
+async def run_workflow_draft(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Preview or run a saved Collaboration Flow workflow draft.
+
+    This is intentionally a Web orchestration route. Trigger nodes keep using
+    the DSG trigger bus, while Nanobot-compatible nodes keep using Plan/HITL.
+    """
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    workflow_nodes, saved_workflow = _workflow_nodes_and_saved(body)
+    workflow_id = str(body.get("workflow_id") or saved_workflow.get("workflow_id") or "")
+    workflow = body.get("workflow") if isinstance(body.get("workflow"), dict) else {}
+    title = str(
+        body.get("title")
+        or workflow.get("title")
+        or saved_workflow.get("title")
+        or workflow.get("name")
+        or "Runtime Flow workflow run"
+    ).strip()
+    trigger_nodes = _trigger_workflow_nodes(workflow_nodes)
+    compatible_steps, skipped_nodes = _workflow_plan_steps(workflow_nodes)
+    trigger_receipts = []
+    for node in trigger_nodes[:16]:
+        trigger_receipts.append(await _execute_workflow_trigger_node(
+            node,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        ))
+    plan_receipt: dict[str, Any] | None = None
+    if compatible_steps:
+        plan_receipt = await draft_workflow_plan({
+            "title": title,
+            "workflow_id": workflow_id,
+            "workflow_nodes": workflow_nodes,
+            "dry_run": dry_run,
+            "operator_mode": operator_mode,
+            "rationale": str(body.get("rationale") or "Workflow run imported Nanobot-compatible nodes."),
+        })
+    data = {
+        "title": title,
+        "workflow_id": workflow_id,
+        "workflow_node_count": len(workflow_nodes),
+        "trigger_node_count": len(trigger_nodes),
+        "plan_compatible_count": len(compatible_steps),
+        "skipped_nodes": skipped_nodes,
+        "trigger_receipts": trigger_receipts,
+        "plan_receipt": plan_receipt,
+        "execution_model": {
+            "web_orchestrated": True,
+            "trigger_path": "/api/dsg/triggers/fire-event",
+            "plan_path": "/api/runtime/workflow/plan-draft",
+            "direct_scheduler_protocol": False,
+            "operator_required_for_execute": True,
+        },
+    }
+    success = bool(trigger_receipts or plan_receipt) and all(
+        bool(row.get("success")) for row in trigger_receipts
+    ) and (plan_receipt is None or bool(plan_receipt.get("success")))
+    if not trigger_receipts and plan_receipt is None:
+        data["error"] = "no_executable_workflow_nodes"
+    return _receipt(
+        action="runtime.workflow.run",
+        success=success,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data=data,
+    )
 
 
 def _add_intent_nodes(
@@ -833,6 +895,18 @@ def _workflow_plan_steps(workflow_nodes: list[Any]) -> tuple[list[PlanStepPropos
     return steps, skipped
 
 
+def _workflow_nodes_and_saved(body: dict[str, Any]) -> tuple[list[Any], dict[str, Any]]:
+    workflow_nodes = _workflow_nodes_from_body(body)
+    saved_workflow: dict[str, Any] = {}
+    if not workflow_nodes and body.get("workflow_id"):
+        from parrot.web_console.workflow_drafts import get_workflow_draft_record
+
+        saved_workflow = get_workflow_draft_record(str(body.get("workflow_id") or "")) or {}
+        nodes = saved_workflow.get("nodes")
+        workflow_nodes = list(nodes) if isinstance(nodes, list) else []
+    return workflow_nodes, saved_workflow
+
+
 def _workflow_nodes_from_body(body: dict[str, Any]) -> list[Any]:
     """Accept both API-native and workflow-object draft shapes."""
     if isinstance(body.get("workflow_nodes"), list):
@@ -841,6 +915,62 @@ def _workflow_nodes_from_body(body: dict[str, Any]) -> list[Any]:
     if isinstance(workflow, dict) and isinstance(workflow.get("nodes"), list):
         return list(workflow["nodes"])
     return []
+
+
+def _trigger_workflow_nodes(workflow_nodes: list[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in workflow_nodes:
+        if not isinstance(row, dict):
+            continue
+        capability = row.get("capability") if isinstance(row.get("capability"), dict) else row
+        if str(capability.get("kind") or "") == "trigger":
+            rows.append(row)
+    return rows
+
+
+async def _execute_workflow_trigger_node(
+    row: dict[str, Any],
+    *,
+    dry_run: bool,
+    operator_mode: bool,
+) -> dict[str, Any]:
+    from parrot.web_console.memory_ops import draft_trigger_event, fire_trigger_event
+
+    capability = row.get("capability") if isinstance(row.get("capability"), dict) else row
+    sample_payload = capability.get("sample_payload") if isinstance(capability.get("sample_payload"), dict) else {}
+    event = sample_payload.get("event") if isinstance(sample_payload.get("event"), dict) else {}
+    if not event:
+        event = {
+            "type": "workflow_capability_fire",
+            "kind": str(capability.get("trigger_name") or capability.get("capability_id") or "trigger"),
+            "source": "runtime_flow_workbench",
+        }
+    event = {
+        **event,
+        "workflow_node_id": str(row.get("workflow_node_id") or ""),
+        "workflow_capability_id": str(capability.get("capability_id") or ""),
+    }
+    body = {
+        **sample_payload,
+        "trigger_name": str(sample_payload.get("trigger_name") or capability.get("trigger_name") or ""),
+        "event": event,
+        "dry_run": dry_run,
+        "operator_mode": operator_mode,
+    }
+    receipt = (
+        await fire_trigger_event(body)
+        if operator_mode and not dry_run
+        else draft_trigger_event(body)
+    )
+    return {
+        "workflow_node_id": str(row.get("workflow_node_id") or ""),
+        "capability_id": str(capability.get("capability_id") or ""),
+        "trigger_name": body["trigger_name"],
+        "receipt": receipt,
+        "success": bool(receipt.get("success")),
+        "action": receipt.get("action"),
+        "published": bool((receipt.get("data") or {}).get("published")) if isinstance(receipt.get("data"), dict) else False,
+    }
 
 
 def _safe_step_id(value: str) -> str:
@@ -988,4 +1118,5 @@ __all__ = [
     "draft_workflow_plan",
     "draft_human_gate_decision",
     "pending_human_gates",
+    "run_workflow_draft",
 ]

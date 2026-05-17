@@ -47,6 +47,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  runtimeWorkflowRun: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/runtime/workflow/run", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   runtimeWorkflowDrafts: () => json<RuntimeWorkflowDrafts>("/api/runtime/workflows/drafts"),
   runtimeWorkflowDraftGet: (workflowId: string) =>
     json<Receipt>(`/api/runtime/workflows/drafts/${encodeURIComponent(workflowId)}`),

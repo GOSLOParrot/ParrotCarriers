@@ -161,6 +161,7 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
     ).json()
     loaded = client.get("/api/runtime/workflows/drafts/monitor-workflow").json()
     plan = client.post("/api/runtime/workflow/plan-draft", json={"workflow_id": "monitor-workflow"}).json()
+    run = client.post("/api/runtime/workflow/run", json={"workflow_id": "monitor-workflow"}).json()
     deleted = client.delete("/api/runtime/workflows/drafts/monitor-workflow").json()
 
     assert any(row["capability_id"] == "runtime.workflow_drafts.registry" for row in catalog["capabilities"])
@@ -168,6 +169,8 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
     assert loaded["draft"]["nodes"][0]["capability"]["sample_payload"]["api_token"] == "[REDACTED]"
     assert plan["success"] is True
     assert plan["data"]["steps"][0]["expected_tool"] == "ref_scan"
+    assert run["success"] is True
+    assert run["data"]["plan_receipt"]["data"]["steps"][0]["expected_tool"] == "ref_scan"
     assert deleted["deleted"] is True
 
 

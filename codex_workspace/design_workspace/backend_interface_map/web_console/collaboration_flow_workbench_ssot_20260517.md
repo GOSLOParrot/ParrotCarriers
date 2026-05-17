@@ -386,3 +386,42 @@ Remaining gaps after second slice:
   not a reviewed Plan/Scheduler result-routing schema.
 - Trigger nodes can execute directly from the workbench, but durable trigger
   nodes inside Plan/HITL still need a separate target-state design.
+
+## 2026-05-17 Third Slice Completion
+
+Implemented:
+
+- Added `POST /api/runtime/workflow/run` to preview or run a whole Collaboration
+  Flow draft.
+- The route accepts inline workflow nodes or a saved `workflow_id`.
+- Trigger nodes are routed through the existing DSG trigger draft/fire path.
+- Nanobot-compatible nodes are routed through the existing
+  `/api/runtime/workflow/plan-draft` Plan/HITL path.
+- Unsupported nodes are reported as skipped.
+- React Runtime exposes a `Run` button next to Save and Import Plan.
+- ECS `8790` app-monitor exposes the same route for remote parity.
+
+Design decision:
+
+- This is a Web orchestration route, not a new shared Scheduler workflow
+  protocol. It composes existing true routes and receipts while keeping the
+  Scheduler/Plan schema stable.
+
+Verification:
+
+- `py_compile` passed for the touched runtime/app-monitor files.
+- `pytest tests/test_web_console/test_web_console_server.py -q` -> `91 passed`.
+- `pytest tests/test_brain/test_app_v1_monitor.py -q` -> `11 passed`.
+- `npm run typecheck` -> passed.
+- `npm run build` -> passed with the existing chunk warning.
+- Local `7893` HTTP smoke saved `wf-run-smoke`, ran it in preview, returned one
+  `dsg.trigger.draft_event` receipt matched to `intent_event_boundary`, one
+  `runtime.workflow.plan_draft` receipt with one `ref_scan` step, and deleted
+  the draft.
+
+Remaining gaps after third slice:
+
+- Real operator workflow run can publish trigger events and create Plan/HITL
+  gates, but trigger/message HITL is still not durable beyond receipts.
+- Plan result destinations remain metadata inside step inputs; they are not yet
+  an enforced Scheduler result-routing contract.

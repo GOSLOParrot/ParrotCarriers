@@ -329,6 +329,7 @@ const dict = {
     saveWorkflow: "Save",
     loadWorkflow: "Load",
     deleteWorkflow: "Delete",
+    runWorkflow: "Run",
     savedWorkflows: "Saved workflows",
     noWorkflowNodes: "No workflow nodes inserted yet.",
     noSavedWorkflows: "No saved workflows.",
@@ -529,6 +530,7 @@ const dict = {
     saveWorkflow: "保存",
     loadWorkflow: "加载",
     deleteWorkflow: "删除",
+    runWorkflow: "运行",
     savedWorkflows: "已保存工作流",
     noWorkflowNodes: "还没有插入工作流节点。",
     noSavedWorkflows: "暂无已保存工作流。",
@@ -2913,6 +2915,24 @@ function RuntimeFlowWorkspace({
     }
   };
 
+  const runWorkflow = async () => {
+    if (!workflowDraft.length) {
+      pushReceipt(localReceipt("runtime.workflow.run", false, { error: "empty_workflow_draft" }));
+      return;
+    }
+    try {
+      pushReceipt(await api.runtimeWorkflowRun({
+        title: workflowTitle,
+        workflow_id: savedWorkflowId,
+        workflow_nodes: workflowDraft,
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.run", exc, { workflow_node_count: workflowDraft.length }));
+    }
+  };
+
   const draftGate = async (gate: Record<string, unknown>, decision: string, apply = false) => {
     const execution = apply
       ? { dry_run: !operatorMode, operator_mode: operatorMode }
@@ -3029,6 +3049,9 @@ function RuntimeFlowWorkspace({
               <span className="workflow-draft-actions">
                 <button className="button small" onClick={() => void saveWorkflowDraft()}>
                   <Save size={14} /> {t.saveWorkflow}
+                </button>
+                <button className="button small" onClick={() => void runWorkflow()}>
+                  <Play size={14} /> {t.runWorkflow}
                 </button>
                 <button className="button small" onClick={() => void importWorkflowPlan()}>
                   <UploadCloud size={14} /> {t.draftPlan}

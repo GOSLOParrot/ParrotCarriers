@@ -279,6 +279,10 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
             "/api/runtime/workflow/plan-draft",
             json={"workflow_id": "wf-demo", "dry_run": False, "operator_mode": True},
         ).json()
+        run_preview = client.post(
+            "/api/runtime/workflow/run",
+            json={"workflow_id": "wf-demo", "dry_run": True},
+        ).json()
         deleted = client.delete("/api/runtime/workflows/drafts/wf-demo").json()
         missing = client.get("/api/runtime/workflows/drafts/wf-demo").json()
 
@@ -294,6 +298,12 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         assert preview_plan["data"]["steps"][0]["expected_tool"] == "ref_scan"
         assert applied_plan["success"] is True
         assert registry.get(applied_plan["data"]["created_plan_id"]) is not None
+        assert run_preview["action"] == "runtime.workflow.run"
+        assert run_preview["success"] is True
+        assert run_preview["data"]["trigger_node_count"] == 1
+        assert run_preview["data"]["plan_compatible_count"] == 1
+        assert run_preview["data"]["trigger_receipts"][0]["action"] == "dsg.trigger.draft_event"
+        assert run_preview["data"]["plan_receipt"]["data"]["steps"][0]["expected_tool"] == "ref_scan"
         assert deleted["deleted"] is True
         assert missing["success"] is False
     finally:

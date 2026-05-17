@@ -45,8 +45,9 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-8 | done-first-slice | Result destination policy design and Plan gap note. | Catalog exposes `result_destinations`; durable Plan result routing remains a documented follow-up. |
 | CFW-9 | done | Post-implementation review/bugfix/ECS release if needed. | First slice committed/pushed as `1137475` and ECS services were updated/restarted. |
 | CFW-10 | done | Durable Web workflow draft registry. | Added save/list/get/delete routes, secret redaction, local UI save/load/delete controls, and `workflow_id` Plan import. |
-| CFW-11 | pending | Durable result-destination contract for Plan/Scheduler results. | Needs a reviewed schema before autonomous chained workflows. |
+| CFW-11 | done-first-slice | Whole workflow run/preview. | `POST /api/runtime/workflow/run` splits trigger nodes to DSG trigger routes and Nanobot-compatible nodes to Plan/HITL without changing Scheduler schema. |
 | CFW-12 | pending | Trigger/message HITL state machine. | Current trigger fire remains operator-gated receipt-based execution. |
+| CFW-13 | pending | Durable result-destination contract for Plan/Scheduler results. | Needs a reviewed schema before autonomous chained workflows. |
 
 ## First Slice Design
 
@@ -197,3 +198,15 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `http://8.216.45.45:8790` smoke returned workflow catalog registry row,
   saved `ecs-smoke-workflow`, loaded `[REDACTED]` for `api_token`, imported it
   by `workflow_id` into one `ref_scan` Plan step, and deleted it.
+- 2026-05-17: Implemented CFW-11 whole workflow run/preview route:
+  `POST /api/runtime/workflow/run`. The route loads inline nodes or a saved
+  `workflow_id`, sends trigger nodes through the existing DSG trigger
+  draft/fire path, sends Nanobot-compatible nodes through
+  `/api/runtime/workflow/plan-draft`, and reports unsupported nodes as skipped.
+  This deliberately stays a Web orchestration route rather than a shared
+  Scheduler workflow protocol. Verification: Web route tests `91 passed`;
+  app-monitor tests `11 passed`; frontend typecheck/build passed. Local 7893
+  HTTP smoke saved `wf-run-smoke`, ran it in preview, got one
+  `dsg.trigger.draft_event` receipt matched to `intent_event_boundary`, one
+  `runtime.workflow.plan_draft` receipt with one `ref_scan` step, then deleted
+  the draft.
