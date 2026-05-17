@@ -526,6 +526,12 @@ def build_app(
 
         return await intake_workflow_result(payload or {})
 
+    @app.delete("/api/runtime/workflow/result-intake/{entry_id}")
+    async def runtime_workflow_result_intake_delete(entry_id: str) -> dict[str, Any]:
+        from parrot.web_console.workflow_result_intake import delete_workflow_result_intake
+
+        return delete_workflow_result_intake(entry_id)
+
     @app.post("/api/runtime/workflow/run")
     async def runtime_workflow_run(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),

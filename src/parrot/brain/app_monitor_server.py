@@ -437,6 +437,12 @@ def build_app():  # type: ignore[no-untyped-def]
 
         return await intake_workflow_result(payload or {})
 
+    @app.delete("/api/runtime/workflow/result-intake/{entry_id}")
+    async def runtime_workflow_result_intake_delete(entry_id: str):  # type: ignore[no-untyped-def]
+        from parrot.web_console.workflow_result_intake import delete_workflow_result_intake
+
+        return delete_workflow_result_intake(entry_id)
+
     @app.post("/api/runtime/workflow/run")
     async def runtime_workflow_run(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         from parrot.web_console.runtime_flow import run_workflow_draft

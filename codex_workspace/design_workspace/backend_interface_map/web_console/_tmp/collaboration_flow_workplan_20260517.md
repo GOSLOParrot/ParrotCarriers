@@ -256,7 +256,7 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   returned `dsg.trigger.fire_event` with `published=true`; message reject
   returned `state=rejected`; both gates and the draft were deleted.
 - 2026-05-17: Implemented CFW-14 first slice:
-  `GET/POST /api/runtime/workflow/result-intake`. The route consumes
+  `GET/POST/DELETE /api/runtime/workflow/result-intake`. The route consumes
   `workflow_result_contract_v1` or a saved workflow draft, selects result routes
   by `workflow_node_id`/`capability_id`, previews route application, and in
   `operator_mode=true`/`dry_run=false` stages only
@@ -286,3 +286,8 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   are all blocked no longer create an `applied` ledger entry. Regression smoke
   on local `7893` returned `view_state=preview`, `view_applied=false`,
   `blocked_entry_state=blocked`, and `blocked_count=1`.
+- 2026-05-17 CFW-14 cleanup bugfix: result-intake entries now support
+  `DELETE /api/runtime/workflow/result-intake/{entry_id}` on both Web Console
+  and app-monitor, so true 7893/8790 smoke rows can be cleaned through the
+  public operator route instead of manual SSH file edits. React Runtime exposes
+  the delete action in the result-intake ledger list.

@@ -334,6 +334,7 @@ const dict = {
     resultIntake: "Intake",
     resultIntakeLog: "Result intake",
     noResultIntakes: "No result intake entries.",
+    deleteResultIntake: "Delete intake",
     actionGates: "Action gates",
     createGate: "Gate",
     applyGate: "Apply",
@@ -542,6 +543,7 @@ const dict = {
     resultIntake: "结果回流",
     resultIntakeLog: "结果回流",
     noResultIntakes: "暂无结果回流记录。",
+    deleteResultIntake: "删除回流",
     actionGates: "动作 Gate",
     createGate: "建 Gate",
     applyGate: "执行",
@@ -3040,6 +3042,16 @@ function RuntimeFlowWorkspace({
     }
   };
 
+  const deleteWorkflowResultIntake = async (entryId: string) => {
+    try {
+      const receipt = await api.runtimeWorkflowResultIntakeDelete(entryId);
+      pushReceipt(receipt);
+      await refreshWorkflowResultIntakes();
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.result_intake.delete", exc, { entry_id: entryId }));
+    }
+  };
+
   const runWorkflow = async () => {
     if (!workflowDraft.length) {
       pushReceipt(localReceipt("runtime.workflow.run", false, { error: "empty_workflow_draft" }));
@@ -3275,6 +3287,13 @@ function RuntimeFlowWorkspace({
                         <small>{`${String(entry.route_count ?? 0)} route(s) / ${String(entry.staged_ref_count ?? 0)} staged`}</small>
                       </span>
                       <small>{String(entry.result_channel || entry.task_id || entry.state || "")}</small>
+                      <button
+                        className="button tiny danger"
+                        onClick={() => void deleteWorkflowResultIntake(String(entry.entry_id || ""))}
+                        aria-label={t.deleteResultIntake}
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   ))}
                 </div>

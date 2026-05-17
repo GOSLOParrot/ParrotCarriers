@@ -323,6 +323,10 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
             },
         ).json()
         result_intakes = client.get("/api/runtime/workflow/result-intake").json()
+        result_intake_delete = client.delete(
+            f"/api/runtime/workflow/result-intake/{result_intake['data']['entry']['entry_id']}",
+        ).json()
+        result_intakes_after_delete = client.get("/api/runtime/workflow/result-intake").json()
         view_preview = client.post(
             "/api/runtime/workflow/result-intake",
             json={
@@ -382,6 +386,9 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         assert result_intake["data"]["route_results"][0]["staged_ref"]["ref_id"]
         assert "hide-me" not in str(result_intake)
         assert result_intakes["count"] == 1
+        assert result_intake_delete["success"] is True
+        assert result_intake_delete["deleted"] is True
+        assert result_intakes_after_delete["count"] == 0
         assert get_intent_workspace().list_by_role("workflow_result")
         assert view_preview["success"] is True
         assert view_preview["data"]["route_results"][0]["intake_state"] == "preview"

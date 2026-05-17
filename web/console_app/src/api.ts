@@ -59,6 +59,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  runtimeWorkflowResultIntakeDelete: (entryId: string) =>
+    json<Receipt>(`/api/runtime/workflow/result-intake/${encodeURIComponent(entryId)}`, { method: "DELETE" }),
   runtimeWorkflowRun: (body: Record<string, unknown>) =>
     json<Receipt>("/api/runtime/workflow/run", {
       method: "POST",

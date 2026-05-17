@@ -542,6 +542,7 @@ Implemented:
 - Added Web-only workflow result intake:
   - `GET /api/runtime/workflow/result-intake`
   - `POST /api/runtime/workflow/result-intake`
+  - `DELETE /api/runtime/workflow/result-intake/{entry_id}`
 - The route consumes either an explicit `workflow_result_contract_v1` or a
   saved/inline workflow draft, selects routes by `workflow_node_id` or
   `capability_id`, and returns per-route intake decisions.
@@ -551,7 +552,8 @@ Implemented:
 - `view_only` and `return_to_goslo` remain receipt/context drafts.
 - `write_to_memory_draft`, `write_graphiti_episode`, and `materialize_l2b`
   remain blocked until their explicit operator routes are reviewed.
-- React Runtime exposes a `Result intake` action and a small intake ledger list.
+- React Runtime exposes a `Result intake` action, a small intake ledger list,
+  and operator/smoke cleanup for individual intake entries.
 - ECS `8790` app-monitor exposes the same route subset for remote parity.
 
 Design decision:
@@ -595,3 +597,10 @@ Bugfix after sixth slice:
   `applied=true`.
 - Operator attempts whose destinations are blocked now record ledger
   `state=blocked` instead of `state=applied`.
+
+Bugfix after route-state fix:
+
+- Result-intake now has an explicit cleanup route instead of requiring SSH
+  ledger edits after true 7893/8790 smoke tests.
+- React Runtime can delete individual result-intake rows, and the capability
+  catalog marks the route as `GET/POST/DELETE`.

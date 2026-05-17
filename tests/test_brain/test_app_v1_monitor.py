@@ -194,6 +194,7 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
         },
     ).json()
     intake_list = client.get("/api/runtime/workflow/result-intake").json()
+    intake_missing_delete = client.delete("/api/runtime/workflow/result-intake/missing-entry").json()
     contract = client.post("/api/runtime/workflow/result-contract", json={"workflow_id": "monitor-workflow"}).json()
     plan = client.post("/api/runtime/workflow/plan-draft", json={"workflow_id": "monitor-workflow"}).json()
     run = client.post("/api/runtime/workflow/run", json={"workflow_id": "monitor-workflow"}).json()
@@ -214,6 +215,8 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
     assert intake["data"]["route_results"][0]["would_stage"] is True
     assert intake["data"]["recorded"] is False
     assert intake_list["count"] == 0
+    assert intake_missing_delete["success"] is False
+    assert intake_missing_delete["deleted"] is False
     assert contract["success"] is True
     assert contract["data"]["result_contract"]["schema"] == "workflow_result_contract_v1"
     assert plan["success"] is True

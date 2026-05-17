@@ -36,6 +36,24 @@ def list_workflow_result_intakes(*, q: str = "", limit: int = 50) -> dict[str, A
     }
 
 
+def delete_workflow_result_intake(entry_id: str) -> dict[str, Any]:
+    """Hard-delete one Web-only result intake entry for operator smoke cleanup."""
+    entry_id = _safe_id(entry_id)
+    store = _load_store()
+    before = len(store["entries"])
+    store["entries"] = [row for row in store["entries"] if row.get("entry_id") != entry_id]
+    deleted = len(store["entries"]) != before
+    if deleted:
+        _write_store(store)
+    return {
+        "success": deleted,
+        "action": "runtime.workflow.result_intake.delete",
+        "entry_id": entry_id,
+        "deleted": deleted,
+        "audit": _audit(),
+    }
+
+
 async def intake_workflow_result(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Preview or apply result routes for a workflow result payload.
 
@@ -513,6 +531,7 @@ def _iso_now() -> str:
 
 
 __all__ = [
+    "delete_workflow_result_intake",
     "intake_workflow_result",
     "list_workflow_result_intakes",
 ]
