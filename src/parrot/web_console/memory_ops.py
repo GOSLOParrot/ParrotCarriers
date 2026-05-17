@@ -4115,6 +4115,8 @@ def _google_calendar_credentials_path() -> Path:
     if appdata:
         base = Path(appdata) / "google-workspace-mcp" / "credentials"
         candidates.extend([base / "credentials_python.json", base / "credentials.json"])
+    base = Path.home() / ".nanobot" / "google-workspace-credentials"
+    candidates.extend([base / "credentials_python.json", base / "credentials.json"])
     base = Path.home() / ".local" / "share" / "google-workspace-mcp" / "credentials"
     candidates.extend([base / "credentials_python.json", base / "credentials.json"])
     for candidate in candidates:
@@ -4128,7 +4130,10 @@ def _google_calendar_credential_source(path: Path) -> str:
         "GOOGLE_WORKSPACE_CREDENTIALS_PATH"
     ):
         return "configured_oauth_file"
-    if "google-workspace-mcp" in {part.lower() for part in path.parts}:
+    path_parts = {part.lower() for part in path.parts}
+    if ".nanobot" in path_parts and "google-workspace-credentials" in path_parts:
+        return "ecs_nanobot_google_workspace_mcp"
+    if "google-workspace-mcp" in path_parts:
         return "local_google_workspace_mcp"
     return "local_oauth_file"
 

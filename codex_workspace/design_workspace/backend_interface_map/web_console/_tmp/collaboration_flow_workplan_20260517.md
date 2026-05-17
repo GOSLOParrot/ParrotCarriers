@@ -495,3 +495,11 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   reported `106 passed`. ECS proof remains the required post-release step:
   confirm Google API/Nanobot fetch through `8790`, and re-run a lightweight
   `noble_etiquette` Graphiti subgraph search.
+- 2026-05-18 true-connection bugfix 3: the first ECS Calendar API smoke found
+  `api-fetch` still failed with missing OAuth credentials even though Nanobot
+  MCP fetch worked. Root cause: Web's official API credential resolver checked
+  local google-workspace-mcp locations but not the ECS/nanobot mount from the
+  OAuth workflow. Added `~/.nanobot/google-workspace-credentials` as a first
+  class fallback and tagged it as `ecs_nanobot_google_workspace_mcp`.
+  Validation: backend `py_compile` passed; Web Console plus flow CLI tests
+  reported `107 passed`; app-monitor tests reported `12 passed`.

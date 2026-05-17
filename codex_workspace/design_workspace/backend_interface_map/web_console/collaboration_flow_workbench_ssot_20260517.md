@@ -944,3 +944,15 @@ Post-release proof required:
 - `POST /api/google/calendar/api-fetch` through ECS `8790`.
 - One lightweight `POST /api/graphiti/subgraph/search` through ECS `8790` for
   `noble_etiquette`.
+
+Bugfix during ECS smoke:
+
+- The Nanobot Google Workspace MCP route succeeded, but official API
+  `api-fetch` initially failed because the Web credential resolver did not
+  search the ECS/nanobot OAuth mount.
+- Added `~/.nanobot/google-workspace-credentials/credentials_python.json` and
+  `credentials.json` to the credential candidates, before the local
+  google-workspace-mcp fallback.
+- Credential receipts now label that source as
+  `ecs_nanobot_google_workspace_mcp`, keeping it distinct from local desktop
+  OAuth files and explicit operator configuration.

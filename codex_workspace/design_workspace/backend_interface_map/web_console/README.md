@@ -593,6 +593,9 @@ Keep active Web Console implementation in these locations:
 - `src/scripts/start_web_console.py` now accepts explicit Graphiti, Nanobot,
   and Google credential overrides so local `7893` true-proxy runs are
   repeatable instead of depending on hidden shell state.
+- Google Calendar official API fetch now also discovers the ECS/nanobot OAuth
+  mount at `~/.nanobot/google-workspace-credentials`, the same location used by
+  the Nanobot Google Workspace MCP path.
 
 ## Write Rules
 

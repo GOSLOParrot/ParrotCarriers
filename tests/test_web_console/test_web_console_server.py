@@ -2142,6 +2142,27 @@ def test_google_calendar_api_fetch_uses_official_api_preview(monkeypatch) -> Non
     assert "access_token" not in str(body).lower()
 
 
+def test_google_calendar_credentials_path_accepts_ecs_nanobot_mount(
+    monkeypatch, tmp_path
+) -> None:
+    memory_ops = import_module("parrot.web_console.memory_ops")
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_GOOGLE_CREDENTIALS_PATH", raising=False)
+    monkeypatch.delenv("GOOGLE_WORKSPACE_CREDENTIALS_PATH", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.setattr(memory_ops.Path, "home", lambda: tmp_path)
+
+    credentials_dir = tmp_path / ".nanobot" / "google-workspace-credentials"
+    credentials_dir.mkdir(parents=True)
+    credentials_path = credentials_dir / "credentials_python.json"
+    credentials_path.write_text("{}", encoding="utf-8")
+
+    assert memory_ops._google_calendar_credentials_path() == credentials_path
+    assert (
+        memory_ops._google_calendar_credential_source(credentials_path)
+        == "ecs_nanobot_google_workspace_mcp"
+    )
+
+
 def test_google_calendar_nanobot_fetch_uses_ecs_mcp_preview(monkeypatch) -> None:
     client = TestClient(build_app(status_fetcher=_fake_fetcher))
     calls: list[dict[str, Any]] = []
