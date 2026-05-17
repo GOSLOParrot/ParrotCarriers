@@ -518,6 +518,12 @@ Verification:
   `dsg.trigger.draft_event`, applied a real operator reject decision on the
   message gate, listed two gates before cleanup, then deleted both gates and
   the draft.
+- ECS `8790` smoke after commit `f749acc` saved
+  `ecs-action-gate-smoke-*`, confirmed the catalog row, created trigger and
+  `message_check` gates, applied the trigger gate with
+  `operator_mode=true`/`dry_run=false`, got `dsg.trigger.fire_event` with
+  `published=true`, rejected the message gate to `state=rejected`, listed two
+  gates before cleanup, then deleted both gates and the workflow draft.
 
 Remaining gaps after fifth slice:
 

@@ -246,3 +246,11 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   trigger apply through `dsg.trigger.draft_event`, applied a real operator
   `reject` decision on the message gate (`state=rejected`), listed two gates,
   and cleaned up both gates plus the workflow draft.
+- 2026-05-17 remote CFW-12 proof after commit `f749acc`: ECS
+  `/opt/parrot/ParrotCarriers` and `/opt/parrotcarriers` fast-forwarded to
+  `f749acc`, six services restarted active, and `8790` saved
+  `ecs-action-gate-smoke-*`. The catalog exposed
+  `runtime.workflow.action_gates`; trigger and `message_check` gates were
+  created; trigger apply ran with `operator_mode=true`/`dry_run=false` and
+  returned `dsg.trigger.fire_event` with `published=true`; message reject
+  returned `state=rejected`; both gates and the draft were deleted.
