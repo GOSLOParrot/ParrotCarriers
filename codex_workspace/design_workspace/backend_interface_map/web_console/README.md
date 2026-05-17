@@ -23,6 +23,7 @@ entries when a file stops being active.
 | `graphiti_l2b_ref_identity_design_20260517.md` | in_progress | WEB-014, WEB-016, CORE-006, CORE-013, CORE-015 | Durable research/design note for Graphiti raw preservation, L2-B UUID resolution, Edge filter/view classes, IdentityMap, RefIndex/RefNode, and nanobot/git/MCP ref management ownership. |
 | `collaboration_flow_workbench_ssot_20260517.md` | active_design | WEB-012, CORE-010, CORE-011, CORE-015 | Runtime/Collaboration Flow workbench SSOT for searchable capability catalog, triggers/modules insertion, workflow draft, Plan/Nanobot compatibility, GOSLO behavior modes, and true-connection standards. |
 | `collaboration_flow_architecture_cli_research_20260517.md` | active_research | WEB-012, CORE-010, CORE-011, CORE-015 | Comparative architecture research for LangGraph/Claude Code/Codex/ComfyUI/Node-RED/n8n/Temporal/Prefect patterns, Web layout direction, and the Web-plus-thin-CLI decision. |
+| `goslo_calendar_collaboration_policy_20260518.md` | active_design | CORE-008, CORE-009, CORE-010, CORE-011, CORE-013 | Baseline for GOSLO-facing Calendar tools, source-to-DSG buffer policy, Plan/HITL/nanobot role split, IntentWorkspace/L1.5/L2-B sync semantics, and preserved user requirements before implementation. |
 
 ## Temporary Working Archives
 
