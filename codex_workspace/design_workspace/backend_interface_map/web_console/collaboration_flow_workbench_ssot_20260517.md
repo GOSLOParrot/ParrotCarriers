@@ -902,3 +902,8 @@ Bugfix after workflow-id table fix:
   `result_payload`, `result`, or `payload`.
 - This preserves task-result source ids as data while using the workflow/route
   flags for intake routing.
+- ECS proof after commit `dd6884b4`: remote `result-intake preview` accepted a
+  raw result payload containing its own `workflow_id`, used the supplied
+  workflow route context (`workflow_id=ecs-payload-fix`), returned
+  `route_count=1`, `recorded=false`, `dry_run=true`, and kept secret fields
+  redacted.

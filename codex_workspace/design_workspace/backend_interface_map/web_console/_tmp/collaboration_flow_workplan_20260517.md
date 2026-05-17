@@ -476,4 +476,9 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   CLI tests reported `15 passed`; Web Console route tests reported `91 passed`;
   app-monitor tests reported `11 passed`; manual smoke changed from exit `2`
   to success with `workflow_id=cli-payload-fix`, `route_count=1`,
-  `recorded=false`, and secret redaction intact.
+  `recorded=false`, and secret redaction intact. ECS proof after commit
+  `dd6884b4`: release completed with all six services active; remote
+  `result-intake preview` on `/opt/parrot/ParrotCarriers` accepted a raw result
+  payload containing its own `workflow_id`, routed it through
+  `workflow_id=ecs-payload-fix`, returned `route_count=1`, `recorded=false`,
+  `dry_run=true`, and kept secret fields redacted.
