@@ -596,6 +596,13 @@ Keep active Web Console implementation in these locations:
 - Google Calendar official API fetch now also discovers the ECS/nanobot OAuth
   mount at `~/.nanobot/google-workspace-credentials`, the same location used by
   the Nanobot Google Workspace MCP path.
+- ECS proof after `e9289bd`: 8790 Calendar API fetch, Calendar Nanobot fetch,
+  Graphiti `noble_etiquette` subgraph search, Graphiti import-plan preview,
+  operator L2-B materialization, and L2-B context read all succeeded.
+- Service-user OAuth install rule: app-monitor runs as `parrot`, so ECS
+  credentials must be installed under
+  `/home/parrot/.nanobot/google-workspace-credentials` with `parrot:parrot`
+  ownership; `/root/.nanobot/...` is not enough for the HTTP service.
 
 ## Write Rules
 

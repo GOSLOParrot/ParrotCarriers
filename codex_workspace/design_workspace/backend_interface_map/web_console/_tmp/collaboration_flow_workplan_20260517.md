@@ -503,3 +503,18 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   class fallback and tagged it as `ecs_nanobot_google_workspace_mcp`.
   Validation: backend `py_compile` passed; Web Console plus flow CLI tests
   reported `107 passed`; app-monitor tests reported `12 passed`.
+- 2026-05-18 ECS true-connection proof after `e9289bd`: copied the existing
+  OAuth files into the service user's
+  `/home/parrot/.nanobot/google-workspace-credentials` directory with
+  `parrot:parrot` ownership and `600/700` modes. ECS `8790`
+  `google.calendar.api_fetch` then succeeded with
+  `credential_source=ecs_nanobot_google_workspace_mcp` and `count=0`;
+  `google.calendar.nanobot_fetch` succeeded with `nanobot_success=true` and
+  `count=0`; `graphiti.subgraph.search` for
+  `noble_etiquette / etiquette calling card visit` returned one hit, three
+  nodes, one edge, and fact UUID `ed386742-4e4e-4065-8151-6511960902b9`.
+  The follow-on L2-B chain also passed: import-plan returned
+  `graphiti_bundle_to_l2b_rustworkx_preview` with `direct_l2b_write=false`;
+  operator materialize wrote the pointer graph with `direct_l2b_write=true`,
+  `nodes_upserted=3`, `edges_added=3`; context read returned three nodes and
+  three edges.

@@ -129,5 +129,23 @@ node_path.write_text(json.dumps(token_data_node, indent=2))
 print(f"\n[SAVED] Token files:")
 print(f"  Python: {py_path}")
 print(f"  Node:   {node_path}")
-print(f"\n[NEXT] scp command:")
-print(f'  scp -r "{creds_dir}\\" root@<ECS_IP>:/root/.nanobot/google-workspace-credentials/')
+print(f"\n[NEXT] ECS install commands:")
+print(
+    "  ssh root@<ECS_IP> "
+    "\"install -d -m 700 -o parrot -g parrot "
+    "/home/parrot/.nanobot/google-workspace-credentials\""
+)
+print(
+    f'  scp "{py_path}" "{node_path}" '
+    "root@<ECS_IP>:/tmp/"
+)
+print(
+    "  ssh root@<ECS_IP> "
+    "\"install -m 600 -o parrot -g parrot "
+    "/tmp/credentials_python.json "
+    "/home/parrot/.nanobot/google-workspace-credentials/credentials_python.json && "
+    "install -m 600 -o parrot -g parrot "
+    "/tmp/credentials.json "
+    "/home/parrot/.nanobot/google-workspace-credentials/credentials.json && "
+    "rm -f /tmp/credentials_python.json /tmp/credentials.json\""
+)

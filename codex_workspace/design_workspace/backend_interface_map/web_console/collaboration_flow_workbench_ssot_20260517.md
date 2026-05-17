@@ -956,3 +956,25 @@ Bugfix during ECS smoke:
 - Credential receipts now label that source as
   `ecs_nanobot_google_workspace_mcp`, keeping it distinct from local desktop
   OAuth files and explicit operator configuration.
+
+ECS proof after `e9289bd`:
+
+- Installed the OAuth files for the `parrot` service user under
+  `/home/parrot/.nanobot/google-workspace-credentials`.
+- `POST /api/google/calendar/api-fetch` through `8790` returned
+  `success=true`, `credential_source=ecs_nanobot_google_workspace_mcp`, and
+  `count=0`.
+- `POST /api/google/calendar/nanobot-fetch` through `8790` returned
+  `success=true`, `nanobot_success=true`, and `count=0`.
+- `POST /api/graphiti/subgraph/search` through `8790` for
+  `noble_etiquette / etiquette calling card visit` returned one real Graphiti
+  fact hit, three nodes, one edge, and UUID
+  `ed386742-4e4e-4065-8151-6511960902b9`.
+- `POST /api/graphiti/subgraph/import-plan` preserved the Graphiti bundle and
+  returned `graphiti_bundle_to_l2b_rustworkx_preview` with
+  `direct_l2b_write=false`.
+- `POST /api/graphiti/subgraph/materialize-l2b` with operator mode wrote the
+  pointer graph with `direct_l2b_write=true`, `nodes_upserted=3`, and
+  `edges_added=3`.
+- `POST /api/l2b/subgraphs/context` then read the materialized UUID back with
+  three nodes and three edges.
