@@ -373,6 +373,10 @@ Verification:
 - HTTP smoke saved `wf-smoke`, listed it, loaded it with `api_token` redacted to
   `[REDACTED]`, imported it by `workflow_id` into one `ref_scan` Plan step, and
   deleted it.
+- ECS parity fix: `parrot-app-monitor` on `8790` is not the full 7893 Web BFF,
+  so the workflow draft routes must be mounted there explicitly for true remote
+  smoke. `src/parrot/brain/app_monitor_server.py` now exposes the same runtime
+  capability catalog, workflow draft registry, and plan-draft route subset.
 
 Remaining gaps after second slice:
 

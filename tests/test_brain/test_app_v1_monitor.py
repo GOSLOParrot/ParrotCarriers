@@ -135,6 +135,42 @@ def test_monitor_exposes_graphiti_materialize_and_l2b_context_routes() -> None:
     assert context["data"]["error"] == "missing_node_selection"
 
 
+def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_WORKFLOW_DRAFTS_PATH", str(tmp_path / "workflow_drafts.json"))
+    client = TestClient(build_app())
+    nodes = [
+        {
+            "workflow_node_id": "wf-ref-scan",
+            "capability": {
+                "capability_id": "nanobot.ref_scan",
+                "title": "Ref scan",
+                "kind": "nanobot_task",
+                "nanobot_task_type": "ref_scan",
+                "plan_step_compatible": True,
+                "sample_payload": {"api_token": "redact-me"},
+            },
+        }
+    ]
+
+    catalog = client.get("/api/runtime/capabilities/catalog?q=workflow&kind=workflow_template").json()
+    saved = client.post(
+        "/api/runtime/workflows/drafts",
+        json={"workflow_id": "monitor-workflow", "title": "Monitor workflow", "workflow_nodes": nodes},
+    ).json()
+    loaded = client.get("/api/runtime/workflows/drafts/monitor-workflow").json()
+    plan = client.post("/api/runtime/workflow/plan-draft", json={"workflow_id": "monitor-workflow"}).json()
+    deleted = client.delete("/api/runtime/workflows/drafts/monitor-workflow").json()
+
+    assert any(row["capability_id"] == "runtime.workflow_drafts.registry" for row in catalog["capabilities"])
+    assert saved["success"] is True
+    assert loaded["draft"]["nodes"][0]["capability"]["sample_payload"]["api_token"] == "[REDACTED]"
+    assert plan["success"] is True
+    assert plan["data"]["steps"][0]["expected_tool"] == "ref_scan"
+    assert deleted["deleted"] is True
+
+
 def test_monitor_personas_endpoint_lists_selector_metadata() -> None:
     from fastapi.testclient import TestClient
 

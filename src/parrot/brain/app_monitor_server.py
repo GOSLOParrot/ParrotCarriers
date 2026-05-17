@@ -403,6 +403,46 @@ def build_app():  # type: ignore[no-untyped-def]
 
         return graph_health_snapshot()
 
+    @app.get("/api/runtime/capabilities/catalog")
+    async def runtime_capabilities_catalog(
+        q: str = "",
+        kind: str = "",
+        execution_policy: str = "",
+    ):  # type: ignore[no-untyped-def]
+        from parrot.web_console.capability_catalog import build_runtime_capability_catalog
+
+        return build_runtime_capability_catalog(q=q, kind=kind, execution_policy=execution_policy)
+
+    @app.post("/api/runtime/workflow/plan-draft")
+    async def runtime_workflow_plan_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.runtime_flow import draft_workflow_plan
+
+        return await draft_workflow_plan(payload or {})
+
+    @app.get("/api/runtime/workflows/drafts")
+    async def runtime_workflow_drafts(q: str = "", limit: int = 50):  # type: ignore[no-untyped-def]
+        from parrot.web_console.workflow_drafts import list_workflow_drafts
+
+        return list_workflow_drafts(q=q, limit=limit)
+
+    @app.get("/api/runtime/workflows/drafts/{workflow_id}")
+    async def runtime_workflow_draft_get(workflow_id: str):  # type: ignore[no-untyped-def]
+        from parrot.web_console.workflow_drafts import get_workflow_draft
+
+        return get_workflow_draft(workflow_id)
+
+    @app.post("/api/runtime/workflows/drafts")
+    async def runtime_workflow_draft_save(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.workflow_drafts import save_workflow_draft
+
+        return save_workflow_draft(payload or {})
+
+    @app.delete("/api/runtime/workflows/drafts/{workflow_id}")
+    async def runtime_workflow_draft_delete(workflow_id: str):  # type: ignore[no-untyped-def]
+        from parrot.web_console.workflow_drafts import delete_workflow_draft
+
+        return delete_workflow_draft(workflow_id)
+
     @app.get("/api/graphiti/status")
     async def graphiti_status_endpoint():  # type: ignore[no-untyped-def]
         return graphiti_status().as_json()

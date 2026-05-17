@@ -183,3 +183,10 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   build` passed with the existing chunk warning. HTTP smoke on restarted 7893
   saved `wf-smoke`, listed it, loaded it with `[REDACTED]` token payload,
   imported it by `workflow_id` into one `ref_scan` Plan step, then deleted it.
+- 2026-05-17 ECS deployment fix: after pushing CFW-10, remote `8790`
+  `parrot-app-monitor` returned 404 for `/api/runtime/workflows/drafts`
+  because app-monitor is not the full 7893 Web BFF. Added the runtime
+  capability catalog, workflow plan-draft, and workflow draft registry routes
+  to `src/parrot/brain/app_monitor_server.py` as the ECS-facing parity slice.
+  Verification: `py_compile` passed; `tests/test_brain/test_app_v1_monitor.py`
+  reported `11 passed`; focused Web workflow tests passed.
