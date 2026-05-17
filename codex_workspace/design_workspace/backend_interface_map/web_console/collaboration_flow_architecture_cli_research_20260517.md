@@ -348,7 +348,9 @@ Do not start with a broad CLI. Start with:
    Done as a local-helper command slice.
 5. Focused CLI wrapper for Plan draft and workflow run preview. Done as a
    local-helper command slice that forces `dry_run=true`.
-6. Then add result-intake preview and local/ECS smoke commands.
+6. Focused CLI wrapper for result-intake preview. Done as a preview-only
+   command slice that forces `dry_run=true`.
+7. Then add local/ECS smoke commands.
 
 ## Recommended Staging
 
@@ -366,6 +368,7 @@ Stage 2: add thin CLI.
 - Second slice is complete: `workflow export` and preview-only
   `workflow import`.
 - Third slice is complete: `workflow plan-draft` and `workflow run` preview.
+- Fourth slice is complete: `result-intake preview`.
 - Support catalog list, workflow validate, workflow run preview, Plan draft,
   result-intake preview, local/ECS smoke.
 - Reuse the BFF/service functions and return the same receipt schemas as Web.
@@ -389,7 +392,9 @@ Stage 3: promote durable shared workflow storage if needed.
   same CLI module.
 - Add `workflow run --dry-run` and Plan draft. Done through the same CLI
   module and intentionally preview-only.
-- Add result-intake preview next.
+- Add result-intake preview. Done through the same CLI module and intentionally
+  preview-only.
+- Add local/ECS smoke commands next.
 - Add `parrot-flow smoke ecs` only after it can call existing release/smoke
   contracts without duplicating ECS deployment logic.
 - Keep C4/I0 as future policy-only until safe-turn/interrupt gates are designed.

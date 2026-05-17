@@ -62,6 +62,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-21 | done-first-slice | True-connection smoke pack for local/ECS workflow artifact path. | Local 7894 and ECS 8790 both proved save/validate/export/import-preview/delete with redaction; ECS also proved Plan draft still maps the imported workflow to `ref_scan`. |
 | CFW-22 | done-ecs | Thin CLI workflow export/import dry-run. | Added `workflow export <workflow_id>` and `workflow import <workflow.json> --target-workflow ...` to `python -m parrot.web_console.flow_cli`; both reuse backend schema helpers, emit JSON/table receipts, redact secrets, and perform no writes. Local and ECS CLI smoke passed after release. |
 | CFW-23 | done-ecs | Thin CLI workflow Plan/run preview. | Added `workflow plan-draft <workflow.json>` and `workflow run <workflow.json>` to the same CLI; both force `dry_run=true`/`operator_mode=false`, reuse existing Web runtime helpers, redact secret payload keys, and do not publish triggers or create Plans. Local and ECS CLI smoke passed after release. |
+| CFW-24 | done-local | Thin CLI result-intake preview. | Added `result-intake preview <result.json>` to the CLI; it reuses `intake_workflow_result()` with `dry_run=true`/`operator_mode=false`, can derive routes from a workflow/contract/routes file, redacts secret payload keys, and does not record ledger rows or stage IntentWorkspace refs. ECS proof follows commit/push/release. |
 
 ## First Slice Design
 
@@ -426,3 +427,17 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `dsg.trigger.draft_event` receipt plus one `runtime.workflow.plan_draft`
   receipt; `dry_run=true`, `operator_mode=false`, and
   `ecs-cli-run-secret` stayed out of output.
+- 2026-05-18 CFW-24 implementation: extended
+  `python -m parrot.web_console.flow_cli` with
+  `result-intake preview <result.json>`. The command can use
+  `--workflow <workflow.json>`, `--workflow-id`, `--workflow-node-id`,
+  `--capability-id`, `--contract <contract.json>`, or `--routes <routes.json>`
+  to choose routes, then calls `intake_workflow_result()` with
+  `dry_run=true` and `operator_mode=false`. It does not expose operator apply,
+  so no Web intake ledger row, IntentWorkspace staged ref, Graphiti Episode, or
+  L2-B materialization can be created through this CLI command.
+- 2026-05-18 CFW-24 local validation: `py_compile` passed for `flow_cli.py`;
+  focused CLI tests reported `13 passed`; full Web Console route tests remained
+  `91 passed`; local CLI smoke returned `runtime.workflow.result_intake` with
+  two preview routes (`stage_to_intent_workspace`, `return_to_goslo`),
+  `recorded=false`, and `cli-intake-smoke-secret` stayed out of output.

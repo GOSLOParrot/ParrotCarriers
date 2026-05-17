@@ -17,6 +17,7 @@ from typing import Any, TextIO
 
 from parrot.web_console.capability_catalog import build_runtime_capability_catalog
 from parrot.web_console.runtime_flow import draft_workflow_plan, run_workflow_draft
+from parrot.web_console.workflow_result_intake import intake_workflow_result
 from parrot.web_console.workflow_drafts import (
     export_workflow_artifact,
     preview_workflow_import,
@@ -54,6 +55,10 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None, stderr:
         return 0 if receipt.get("success") else 2
     if args.command == "workflow" and args.workflow_command == "run":
         receipt = _workflow_run_preview(args)
+        _emit(receipt, out, table=args.output == "table")
+        return 0 if receipt.get("success") else 2
+    if args.command == "result-intake" and args.result_intake_command == "preview":
+        receipt = _result_intake_preview(args)
         _emit(receipt, out, table=args.output == "table")
         return 0 if receipt.get("success") else 2
     parser.print_help(err)
@@ -105,6 +110,21 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--rationale", default="", help="Optional rationale carried in the preview receipt.")
     run.add_argument("--dry-run", action="store_true", default=True, help="Preview only. No trigger publish or Plan creation.")
     _add_output_flags(run)
+
+    result_intake = sub.add_parser("result-intake", help="Preview workflow result intake routes.")
+    result_intake_sub = result_intake.add_subparsers(dest="result_intake_command", required=True)
+    result_preview = result_intake_sub.add_parser("preview", help="Preview result-route intake without recording or staging.")
+    result_preview.add_argument("path", help="Result payload JSON path, full intake body JSON path, or '-' for stdin.")
+    result_preview.add_argument("--workflow", default="", help="Optional workflow JSON path used to derive a result contract.")
+    result_preview.add_argument("--workflow-id", default="", help="Optional saved workflow draft id used to derive a result contract.")
+    result_preview.add_argument("--workflow-node-id", default="", help="Optional workflow node id to select routes.")
+    result_preview.add_argument("--capability-id", default="", help="Optional capability id to select routes.")
+    result_preview.add_argument("--contract", default="", help="Optional workflow_result_contract_v1 JSON path.")
+    result_preview.add_argument("--routes", default="", help="Optional result_routes JSON path, either a list or an object with result_routes.")
+    result_preview.add_argument("--task-id", default="", help="Optional task id metadata.")
+    result_preview.add_argument("--result-channel", default="", help="Optional result channel metadata.")
+    result_preview.add_argument("--dry-run", action="store_true", default=True, help="Preview only. No result intake row is recorded.")
+    _add_output_flags(result_preview)
     return parser
 
 
@@ -188,6 +208,78 @@ def _workflow_run_preview(args: argparse.Namespace) -> dict[str, Any]:
     if _is_error_receipt(body_or_error):
         return body_or_error
     return asyncio.run(run_workflow_draft(body_or_error))
+
+
+def _result_intake_preview(args: argparse.Namespace) -> dict[str, Any]:
+    try:
+        payload = _read_json(args.path)
+    except Exception as exc:
+        return _error_receipt("runtime.workflow.result_intake", "invalid_json", str(exc))
+    body = _result_intake_body_from_payload(payload)
+    body.update({
+        "dry_run": True,
+        "operator_mode": False,
+    })
+    if args.workflow:
+        try:
+            workflow = _read_json(args.workflow)
+        except Exception as exc:
+            return _error_receipt("runtime.workflow.result_intake", "invalid_workflow_json", str(exc))
+        if not isinstance(workflow, dict):
+            return _error_receipt("runtime.workflow.result_intake", "workflow_json_not_object", "Workflow JSON must be an object.")
+        body["workflow"] = workflow
+    if args.contract:
+        try:
+            contract = _read_json(args.contract)
+        except Exception as exc:
+            return _error_receipt("runtime.workflow.result_intake", "invalid_contract_json", str(exc))
+        if not isinstance(contract, dict):
+            return _error_receipt("runtime.workflow.result_intake", "contract_json_not_object", "Result contract JSON must be an object.")
+        body["result_contract"] = contract
+    if args.routes:
+        try:
+            routes_payload = _read_json(args.routes)
+        except Exception as exc:
+            return _error_receipt("runtime.workflow.result_intake", "invalid_routes_json", str(exc))
+        routes = routes_payload.get("result_routes") if isinstance(routes_payload, dict) else routes_payload
+        if not isinstance(routes, list):
+            return _error_receipt("runtime.workflow.result_intake", "routes_json_not_list", "Result routes JSON must be a list.")
+        body["result_routes"] = routes
+    for arg_name, body_key in (
+        ("workflow_id", "workflow_id"),
+        ("workflow_node_id", "workflow_node_id"),
+        ("capability_id", "capability_id"),
+        ("task_id", "task_id"),
+        ("result_channel", "result_channel"),
+    ):
+        value = getattr(args, arg_name, "")
+        if value:
+            body[body_key] = value
+    if not any(body.get(key) for key in ("result_contract", "workflow", "workflow_id", "result_routes")):
+        return _error_receipt(
+            "runtime.workflow.result_intake",
+            "result_contract_required",
+            "Provide --workflow, --workflow-id, --contract, or --routes for intake preview.",
+        )
+    return asyncio.run(intake_workflow_result(body))
+
+
+def _result_intake_body_from_payload(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, dict) and any(
+        key in payload
+        for key in (
+            "result_payload",
+            "result",
+            "payload",
+            "workflow_id",
+            "workflow_node_id",
+            "capability_id",
+            "result_contract",
+            "result_routes",
+        )
+    ):
+        return dict(payload)
+    return {"result_payload": payload}
 
 
 def _workflow_preview_body(args: argparse.Namespace, *, action: str) -> dict[str, Any]:
@@ -294,6 +386,9 @@ def _table(receipt: dict[str, Any]) -> str:
         f"workflow_node_count\t{data.get('workflow_node_count') or 0}",
         f"plan_compatible_count\t{data.get('plan_compatible_count') or data.get('compatible_step_count') or 0}",
         f"trigger_node_count\t{data.get('trigger_node_count') or 0}",
+        f"route_count\t{data.get('route_count') or 0}",
+        f"preview_route_count\t{data.get('preview_route_count') or 0}",
+        f"recorded\t{bool(data.get('recorded'))}",
         f"errors\t{len(errors)}",
         f"warnings\t{len(warnings)}",
     ]

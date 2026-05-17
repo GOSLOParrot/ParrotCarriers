@@ -313,3 +313,77 @@ def test_flow_cli_workflow_run_requires_json_or_saved_workflow_id() -> None:
     assert code == 2
     assert body["success"] is False
     assert body["data"]["errors"][0]["code"] == "workflow_input_required"
+
+
+def test_flow_cli_result_intake_preview_uses_workflow_contract_and_redacts(tmp_path) -> None:
+    workflow_path = tmp_path / "intake-workflow.json"
+    result_path = tmp_path / "result.json"
+    workflow_path.write_text(
+        json.dumps(
+            {
+                "workflow_id": "cli-intake",
+                "title": "CLI Intake",
+                "nodes": [
+                    {
+                        "workflow_node_id": "wf-ref-scan",
+                        "capability": {
+                            "capability_id": "nanobot.ref_scan",
+                            "kind": "nanobot_task",
+                            "nanobot_task_type": "ref_scan",
+                            "plan_step_compatible": True,
+                            "result_destinations": ["stage_to_intent_workspace", "return_to_goslo"],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result_path.write_text(
+        json.dumps({"summary": "Ref scan finished", "api_token": "intake-secret"}),
+        encoding="utf-8",
+    )
+    out = io.StringIO()
+
+    code = main(
+        [
+            "result-intake",
+            "preview",
+            str(result_path),
+            "--workflow",
+            str(workflow_path),
+            "--workflow-id",
+            "cli-intake",
+            "--workflow-node-id",
+            "wf-ref-scan",
+        ],
+        stdout=out,
+    )
+    body = json.loads(out.getvalue())
+
+    assert code == 0
+    assert body["action"] == "runtime.workflow.result_intake"
+    assert body["dry_run"] is True
+    assert body["operator_mode"] is False
+    assert body["data"]["recorded"] is False
+    assert body["data"]["route_count"] == 2
+    assert body["data"]["preview_route_count"] == 2
+    assert {row["destination"] for row in body["data"]["route_results"]} == {
+        "stage_to_intent_workspace",
+        "return_to_goslo",
+    }
+    assert any(row.get("would_stage") for row in body["data"]["route_results"])
+    assert "intake-secret" not in out.getvalue()
+
+
+def test_flow_cli_result_intake_preview_requires_contract_source(tmp_path) -> None:
+    result_path = tmp_path / "result.json"
+    result_path.write_text(json.dumps({"summary": "No contract"}), encoding="utf-8")
+    out = io.StringIO()
+
+    code = main(["result-intake", "preview", str(result_path)], stdout=out)
+    body = json.loads(out.getvalue())
+
+    assert code == 2
+    assert body["success"] is False
+    assert body["data"]["errors"][0]["code"] == "result_contract_required"

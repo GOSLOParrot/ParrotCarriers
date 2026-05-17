@@ -825,3 +825,47 @@ Remaining gaps after this slice:
 - `workflow run` has no operator execution path by design; real trigger fire
   and Plan creation remain Web/HITL operations.
 - `result-intake preview` and `smoke local/ecs` remain future CLI slices.
+
+## 2026-05-18 Thin CLI Result-Intake Preview Slice
+
+Implemented:
+
+- Extended `python -m parrot.web_console.flow_cli` with
+  `result-intake preview <result.json>`.
+- The command accepts a result payload JSON path, full intake body JSON path, or
+  stdin.
+- Route sources:
+  - `--workflow <workflow.json>` derives `workflow_result_contract_v1` from a
+    workflow artifact.
+  - `--workflow-id <id>` derives from a saved local workflow draft.
+  - `--contract <contract.json>` supplies an explicit result contract.
+  - `--routes <routes.json>` supplies explicit result routes.
+- Route selection can use `--workflow-node-id` and `--capability-id`.
+- Metadata can carry `--task-id` and `--result-channel`.
+- The command always calls `intake_workflow_result()` with `dry_run=true` and
+  `operator_mode=false`.
+- It applies the same CLI secret redaction pass as workflow plan/run preview.
+
+Design decision:
+
+- This is a preview-only inspection command. It proves result contracts can be
+  consumed by the same route logic as Web, but it does not record intake ledger
+  entries, stage IntentWorkspace refs, write Graphiti Episodes, materialize
+  L2-B, or return context to GOSLO automatically.
+
+Verification:
+
+- `py_compile` passed for `flow_cli.py`.
+- `pytest tests/test_web_console/test_flow_cli.py -q` -> `13 passed`.
+- `pytest tests/test_web_console/test_web_console_server.py -q` -> `91 passed`.
+- Local CLI smoke returned `runtime.workflow.result_intake` with two preview
+  routes (`stage_to_intent_workspace` and `return_to_goslo`),
+  `recorded=false`, `preview_route_count=2`, and
+  `cli-intake-smoke-secret` absent from output.
+
+Remaining gaps after this slice:
+
+- The CLI still has no remote HTTP `--base-url` mode.
+- Operator result-intake apply remains Web/HITL only.
+- `smoke local/ecs` remains the next CLI slice; it should wrap existing safe
+  checks without duplicating `infra/ecs-release.ps1`.
