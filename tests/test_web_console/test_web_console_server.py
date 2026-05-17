@@ -139,6 +139,9 @@ def test_runtime_capability_catalog_indexes_real_workbench_routes() -> None:
     assert by_id["runtime.workflow.result_contract"]["route"] == "/api/runtime/workflow/result-contract"
     assert by_id["runtime.workflow.result_contract"]["execution_policy"] == "draft_only"
     assert "L2" in by_id["runtime.workflow.result_contract"]["interaction_modes"]
+    assert by_id["runtime.workflow.validate"]["route"] == "/api/runtime/workflow/validate"
+    assert by_id["runtime.workflow.export"]["route"] == "/api/runtime/workflow/export"
+    assert by_id["runtime.workflow.import_preview"]["route"] == "/api/runtime/workflow/import-preview"
     assert by_id["runtime.workflow.action_gates"]["route"] == "/api/runtime/workflow/action-gates"
     assert by_id["runtime.workflow.action_gates"]["kind"] == "hitl_gate"
     assert by_id["graphiti.subgraph.search"]["true_connection"]["state"] == "ecs_proxy"
@@ -298,6 +301,26 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         ).json()
         listed = client.get("/api/runtime/workflows/drafts?q=demo").json()
         loaded = client.get("/api/runtime/workflows/drafts/wf-demo").json()
+        validated = client.post(
+            "/api/runtime/workflow/validate",
+            json={"workflow": loaded["draft"]},
+        ).json()
+        exported = client.get("/api/runtime/workflow/export?workflow_id=wf-demo").json()
+        import_preview = client.post(
+            "/api/runtime/workflow/import-preview",
+            json={
+                "workflow": exported["data"]["workflow"],
+                "target_workflow": {
+                    "workflow_id": "wf-target",
+                    "title": "Target durable workflow",
+                    "nodes": [nodes[0]],
+                },
+            },
+        ).json()
+        invalid_validation = client.post(
+            "/api/runtime/workflow/validate",
+            json={"workflow": {"title": "Bad workflow", "nodes": [{"workflow_node_id": "bad", "capability": {}}]}},
+        ).json()
         action_gate = client.post(
             "/api/runtime/workflow/action-gates",
             json={"workflow_id": "wf-demo", "workflow_node_id": "wf-trigger"},
@@ -378,6 +401,20 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         assert saved["summary"]["trigger_count"] == 1
         assert saved["summary"]["plan_compatible_count"] == 1
         assert listed["count"] == 1
+        assert validated["action"] == "runtime.workflow.validate"
+        assert validated["success"] is True
+        assert validated["data"]["schema"] == "workflow_schema_v1"
+        assert exported["action"] == "runtime.workflow.export"
+        assert exported["success"] is True
+        assert exported["data"]["workflow"]["schema"] == "workflow_schema_v1"
+        assert "should-not-persist" not in str(exported)
+        assert import_preview["action"] == "runtime.workflow.import_preview"
+        assert import_preview["success"] is True
+        assert import_preview["data"]["would_save"] is False
+        assert import_preview["data"]["diff"]["added_nodes"] == ["wf-trigger"]
+        assert import_preview["data"]["diff"]["kept_nodes"] == ["wf-ref-scan"]
+        assert invalid_validation["success"] is False
+        assert invalid_validation["data"]["errors"][0]["code"] == "capability_missing_identity"
         assert loaded["draft"]["nodes"][0]["capability"]["sample_payload"]["api_token"] == "[REDACTED]"
         assert action_gate["action"] == "runtime.workflow.action_gate.draft"
         assert action_gate["success"] is True

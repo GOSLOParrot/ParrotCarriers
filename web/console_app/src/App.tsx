@@ -329,6 +329,12 @@ const dict = {
     workflowDraft: "Workflow draft",
     workflowTitle: "Workflow title",
     saveWorkflow: "Save",
+    validateWorkflow: "Validate",
+    exportWorkflow: "Export",
+    importPreview: "Import preview",
+    loadImport: "Load import",
+    workflowImportJson: "workflow_schema_v1 JSON",
+    workflowDiff: "Import diff",
     loadWorkflow: "Load",
     deleteWorkflow: "Delete",
     runWorkflow: "Run",
@@ -540,6 +546,12 @@ const dict = {
     workflowDraft: "工作流草稿",
     workflowTitle: "工作流标题",
     saveWorkflow: "保存",
+    validateWorkflow: "校验",
+    exportWorkflow: "导出",
+    importPreview: "导入预览",
+    loadImport: "载入导入",
+    workflowImportJson: "workflow_schema_v1 JSON",
+    workflowDiff: "导入差异",
     loadWorkflow: "加载",
     deleteWorkflow: "删除",
     runWorkflow: "运行",
@@ -2655,6 +2667,8 @@ function RuntimeFlowWorkspace({
   const [savedWorkflowId, setSavedWorkflowId] = useState("");
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraftNode[]>([]);
   const [workflowDrafts, setWorkflowDrafts] = useState<RuntimeWorkflowDrafts>({});
+  const [workflowImportText, setWorkflowImportText] = useState("");
+  const [workflowImportPreview, setWorkflowImportPreview] = useState<Record<string, unknown> | null>(null);
   const [workflowActionGates, setWorkflowActionGates] = useState<Array<Record<string, unknown>>>([]);
   const [workflowResultIntakes, setWorkflowResultIntakes] = useState<Array<Record<string, unknown>>>([]);
   const [evidenceRefreshSeq, setEvidenceRefreshSeq] = useState(0);
@@ -2861,6 +2875,114 @@ function RuntimeFlowWorkspace({
 
   const removeWorkflowNode = (nodeId: string) => {
     setWorkflowDraft((rows) => rows.filter((row) => row.workflow_node_id !== nodeId));
+  };
+
+  const currentWorkflowArtifact = (): Record<string, unknown> => ({
+    schema: "workflow_schema_v1",
+    schema_version: 1,
+    workflow_id: savedWorkflowId,
+    title: workflowTitle,
+    nodes: workflowDraft,
+    edges: []
+  });
+
+  const extractWorkflowArtifact = (raw: unknown): Record<string, unknown> => {
+    const record = recordFromUnknown(raw);
+    const directWorkflow = recordFromUnknown(record.workflow);
+    if (Object.keys(directWorkflow).length) return directWorkflow;
+    const draft = recordFromUnknown(record.draft);
+    if (Object.keys(draft).length) return draft;
+    const dataWorkflow = recordFromUnknown(recordFromUnknown(record.data).workflow);
+    if (Object.keys(dataWorkflow).length) return dataWorkflow;
+    return record;
+  };
+
+  const parseWorkflowImportArtifact = (): Record<string, unknown> | null => {
+    try {
+      const parsed = JSON.parse(workflowImportText);
+      const artifact = extractWorkflowArtifact(parsed);
+      if (!Object.keys(artifact).length) {
+        pushReceipt(localReceipt("runtime.workflow.import_parse", false, { error: "empty_workflow_json" }));
+        return null;
+      }
+      return artifact;
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.import_parse", exc));
+      return null;
+    }
+  };
+
+  const applyWorkflowArtifact = (artifact: Record<string, unknown>) => {
+    const rows = Array.isArray(artifact.nodes) ? artifact.nodes : [];
+    setWorkflowDraft(rows
+      .map((row) => recordFromUnknown(row))
+      .filter((row) => Object.keys(row).length)
+      .map((row, index) => ({
+        workflow_node_id: String(row.workflow_node_id || `wf-import-${index + 1}`),
+        capability: recordFromUnknown(row.capability).capability_id ? recordFromUnknown(row.capability) : row,
+        created_at: String(row.created_at || artifact.updated_at || new Date().toISOString())
+      })));
+    setWorkflowTitle(String(artifact.title || "Runtime Flow custom workflow"));
+    setSavedWorkflowId(String(artifact.workflow_id || ""));
+  };
+
+  const validateWorkflowDraft = async () => {
+    try {
+      const receipt = await api.runtimeWorkflowValidate({ workflow: currentWorkflowArtifact() });
+      setWorkflowImportPreview(recordFromUnknown(receipt.data));
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.validate", exc, { workflow_node_count: workflowDraft.length }));
+    }
+  };
+
+  const exportWorkflowDraft = async () => {
+    try {
+      const receipt = savedWorkflowId
+        ? await api.runtimeWorkflowExport(savedWorkflowId)
+        : await api.runtimeWorkflowValidate({ workflow: currentWorkflowArtifact() });
+      const data = recordFromUnknown(receipt.data);
+      const artifact = extractWorkflowArtifact(data);
+      if (Object.keys(artifact).length) {
+        setWorkflowImportText(JSON.stringify(artifact, null, 2));
+      }
+      setWorkflowImportPreview(recordFromUnknown(data.validation).valid !== undefined ? recordFromUnknown(data.validation) : data);
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.export", exc, { workflow_id: savedWorkflowId }));
+    }
+  };
+
+  const previewWorkflowImport = async () => {
+    const artifact = parseWorkflowImportArtifact();
+    if (!artifact) return;
+    try {
+      const receipt = await api.runtimeWorkflowImportPreview({
+        workflow: artifact,
+        target_workflow: currentWorkflowArtifact()
+      });
+      setWorkflowImportPreview(recordFromUnknown(receipt.data));
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.import_preview", exc));
+    }
+  };
+
+  const loadWorkflowImport = async () => {
+    const artifact = parseWorkflowImportArtifact();
+    if (!artifact) return;
+    try {
+      const receipt = await api.runtimeWorkflowValidate({ workflow: artifact });
+      const data = recordFromUnknown(receipt.data);
+      const workflow = extractWorkflowArtifact(data);
+      setWorkflowImportPreview(data);
+      pushReceipt(receipt);
+      if (receipt.success && Object.keys(workflow).length) {
+        applyWorkflowArtifact(workflow);
+      }
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.import_load", exc));
+    }
   };
 
   const saveWorkflowDraft = async () => {
@@ -3208,6 +3330,18 @@ function RuntimeFlowWorkspace({
                 <button className="button small" onClick={() => void saveWorkflowDraft()}>
                   <Save size={14} /> {t.saveWorkflow}
                 </button>
+                <button className="button small" onClick={() => void validateWorkflowDraft()}>
+                  <CheckCircle2 size={14} /> {t.validateWorkflow}
+                </button>
+                <button className="button small" onClick={() => void exportWorkflowDraft()}>
+                  <Download size={14} /> {t.exportWorkflow}
+                </button>
+                <button className="button small" onClick={() => void previewWorkflowImport()}>
+                  <GitBranch size={14} /> {t.importPreview}
+                </button>
+                <button className="button small" onClick={() => void loadWorkflowImport()}>
+                  <UploadCloud size={14} /> {t.loadImport}
+                </button>
                 <button className="button small" onClick={() => void runWorkflow()}>
                   <Play size={14} /> {t.runWorkflow}
                 </button>
@@ -3226,6 +3360,20 @@ function RuntimeFlowWorkspace({
               <span>{t.workflowTitle}</span>
               <input value={workflowTitle} onChange={(event) => setWorkflowTitle(event.target.value)} />
             </label>
+            <label className="workflow-title-field workflow-import-field">
+              <span>{t.workflowImportJson}</span>
+              <textarea
+                value={workflowImportText}
+                onChange={(event) => setWorkflowImportText(event.target.value)}
+                spellCheck={false}
+              />
+            </label>
+            {workflowImportPreview ? (
+              <div className="workflow-import-preview">
+                <strong>{t.workflowDiff}</strong>
+                <small>{workflowImportPreviewSummary(workflowImportPreview)}</small>
+              </div>
+            ) : null}
             {workflowDraft.length ? (
               <div className="workflow-draft-list">
                 {workflowDraft.map((node, index) => (
@@ -4270,6 +4418,17 @@ function workflowNodeCanGate(node: WorkflowDraftNode): boolean {
     String(node.capability.kind || "") === "trigger"
     || String(node.capability.nanobot_task_type || "") === "message_check"
   );
+}
+
+function workflowImportPreviewSummary(data: Record<string, unknown>): string {
+  const diff = recordFromUnknown(data.diff);
+  const added = stringsFromUnknown(diff.added_nodes);
+  const removed = stringsFromUnknown(diff.removed_nodes);
+  const kept = stringsFromUnknown(diff.kept_nodes);
+  const errors = Array.isArray(data.errors) ? data.errors.length : 0;
+  const warnings = Array.isArray(data.warnings) ? data.warnings.length : 0;
+  const valid = data.valid === false ? "invalid" : "valid";
+  return `${valid} / +${added.length} node(s), -${removed.length}, ${kept.length} kept / ${errors} error(s), ${warnings} warning(s)`;
 }
 
 function capabilityMatchesQuery(row: Record<string, unknown>, query: string): boolean {

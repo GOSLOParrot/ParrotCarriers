@@ -285,25 +285,25 @@ TODO Pre for the next implementation slice:
 
 TODO During:
 
-- [ ] Keep writes behind `operator_mode=true` and default preview/dry-run where
+- [x] Keep writes behind `operator_mode=true` and default preview/dry-run where
   possible.
-- [ ] Use structured parsing/validation for workflow JSON, not ad hoc string
+- [x] Use structured parsing/validation for workflow JSON, not ad hoc string
   checks.
-- [ ] Preserve unknown future fields under an `extensions`/`raw` area rather
+- [x] Preserve unknown future fields under an `extensions`/`raw` area rather
   than dropping data.
 - [ ] Return precise `route_state` and `policy_skipped_reason` for unsupported
   nodes.
-- [ ] Keep ECS app-monitor route parity if local Web BFF route is needed for
+- [x] Keep ECS app-monitor route parity if local Web BFF route is needed for
   true remote testing.
 
 TODO After:
 
-- [ ] Run focused pytest for Web/app-monitor routes.
-- [ ] Run frontend typecheck/build if React changed.
-- [ ] Smoke local 7893 with one saved/exported/imported workflow.
+- [x] Run focused pytest for Web/app-monitor routes.
+- [x] Run frontend typecheck/build if React changed.
+- [x] Smoke a local Web BFF with one saved/exported/imported workflow.
 - [ ] Smoke remote 8790 after commit/push/ECS release when runtime code changed.
-- [ ] Audit requirement drift against the table below.
-- [ ] Record ledger results in the workplan.
+- [x] Audit requirement drift against the table below.
+- [x] Record ledger results in the workplan.
 
 ## Requirement Drift Audit
 

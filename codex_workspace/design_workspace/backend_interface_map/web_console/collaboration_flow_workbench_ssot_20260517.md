@@ -614,3 +614,59 @@ Bugfix after route-state fix:
   ledger edits after true 7893/8790 smoke tests.
 - React Runtime can delete individual result-intake rows, and the capability
   catalog marks the route as `GET/POST/DELETE`.
+
+## 2026-05-17 Workflow Schema Import/Export Slice
+
+Implemented:
+
+- Added portable `workflow_schema_v1` normalization and validation in
+  `src/parrot/web_console/workflow_drafts.py`.
+- Added shared routes on both Web Console `7893` and app-monitor `8790`:
+  - `POST /api/runtime/workflow/validate`
+  - `GET /api/runtime/workflow/export`
+  - `POST /api/runtime/workflow/import-preview`
+- Saved workflow drafts now carry `schema: workflow_schema_v1` while
+  preserving the existing Web-only audit and Save/Load/Delete behavior.
+- Exported artifacts preserve nodes, edges, tags, result destinations,
+  timestamps, source, safe unknown extension fields, and redacted raw payloads.
+- Import preview validates without writing and returns node/capability diff
+  fields such as `added_nodes`, `removed_nodes`, `kept_nodes`,
+  `added_capabilities`, and `removed_capabilities`.
+- Runtime Flow exposes Validate, Export, Import preview, Load import, a JSON
+  artifact field, and a compact diff summary.
+- Capability catalog exposes schema helpers as searchable workflow-template
+  capabilities.
+
+Design decision:
+
+- `workflow_schema_v1` is an operator artifact format, not a Scheduler workflow
+  protocol. It is deliberately portable and reviewable first; execution still
+  goes through existing Plan, run, gate, result-contract, and result-intake
+  routes.
+- Import preview is non-mutating. Saving an imported artifact still requires
+  the operator-visible Save action, so an imported JSON blob cannot silently
+  replace a draft.
+- Secrets and credentials remain outside workflow JSON. Secret-like keys are
+  redacted during draft save/export/validation receipts.
+
+Verification:
+
+- `py_compile` passed for `workflow_drafts.py`, `server.py`,
+  `app_monitor_server.py`, and `capability_catalog.py`.
+- `pytest tests/test_web_console/test_web_console_server.py -q` -> `91 passed`.
+- `pytest tests/test_brain/test_app_v1_monitor.py -q` -> `11 passed`.
+- `npm run typecheck` -> passed.
+- `npm run build` -> passed with the existing 523 KiB chunk-size warning.
+- `git diff --check` reported only existing CRLF warnings.
+- Temporary local HTTP smoke on port `7894` saved `wf-schema-smoke`, validated
+  it, exported `workflow_schema_v1`, import-previewed a diff with
+  `wf-trigger` added and `wf-ref-scan` kept, confirmed `smoke-secret` was
+  absent from the export, then deleted the draft.
+
+Remaining gaps after this slice:
+
+- ECS `8790` still needs commit/push/release proof for these new schema routes.
+- Thin CLI `workflow validate` / `catalog list` is still a follow-up and must
+  reuse these helper functions instead of inventing another schema parser.
+- Rich canvas layout, subflow reuse, loops, and deploy/activate semantics remain
+  future work until the schema and operator review model are stable.

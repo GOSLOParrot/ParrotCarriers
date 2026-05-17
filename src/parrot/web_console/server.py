@@ -511,6 +511,28 @@ def build_app(
 
         return await draft_workflow_result_contract(payload or {})
 
+    @app.post("/api/runtime/workflow/validate")
+    async def runtime_workflow_validate(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.workflow_drafts import validate_workflow_artifact
+
+        return validate_workflow_artifact(payload or {})
+
+    @app.get("/api/runtime/workflow/export")
+    async def runtime_workflow_export(workflow_id: str) -> dict[str, Any]:
+        from parrot.web_console.workflow_drafts import export_workflow_artifact
+
+        return export_workflow_artifact(workflow_id)
+
+    @app.post("/api/runtime/workflow/import-preview")
+    async def runtime_workflow_import_preview(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.workflow_drafts import preview_workflow_import
+
+        return preview_workflow_import(payload or {})
+
     @app.get("/api/runtime/workflow/result-intake")
     async def runtime_workflow_result_intake_list(
         q: str = "",

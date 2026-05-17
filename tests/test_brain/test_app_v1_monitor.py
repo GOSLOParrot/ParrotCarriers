@@ -176,6 +176,12 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
         json={"workflow_id": "monitor-workflow", "title": "Monitor workflow", "workflow_nodes": nodes},
     ).json()
     loaded = client.get("/api/runtime/workflows/drafts/monitor-workflow").json()
+    validated = client.post("/api/runtime/workflow/validate", json={"workflow": loaded["draft"]}).json()
+    exported = client.get("/api/runtime/workflow/export?workflow_id=monitor-workflow").json()
+    import_preview = client.post(
+        "/api/runtime/workflow/import-preview",
+        json={"workflow": exported["data"]["workflow"], "target_workflow": {"nodes": [nodes[0]]}},
+    ).json()
     gate = client.post(
         "/api/runtime/workflow/action-gates",
         json={"workflow_id": "monitor-workflow", "workflow_node_id": "wf-message-check"},
@@ -205,10 +211,16 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
     assert any(row["capability_id"] == "runtime.workflow.action_gates" for row in gates_catalog["capabilities"])
     assert any(row["capability_id"] == "runtime.workflow.result_intake" for row in intake_catalog["capabilities"])
     assert any(row["capability_id"] == "runtime.workflow.result_contract" for row in catalog["capabilities"])
+    assert any(row["capability_id"] == "runtime.workflow.validate" for row in catalog["capabilities"])
     assert c3_catalog["capabilities"]
     assert all("C3" in row["interaction_modes"] for row in c3_catalog["capabilities"])
     assert saved["success"] is True
     assert loaded["draft"]["nodes"][0]["capability"]["sample_payload"]["api_token"] == "[REDACTED]"
+    assert validated["success"] is True
+    assert exported["data"]["workflow"]["schema"] == "workflow_schema_v1"
+    assert "redact-me" not in str(exported)
+    assert import_preview["success"] is True
+    assert import_preview["data"]["diff"]["added_nodes"] == ["wf-message-check"]
     assert gate["success"] is True
     assert gate["data"]["gate"]["action_kind"] == "message_check"
     assert gate_list["count"] == 1

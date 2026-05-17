@@ -56,10 +56,10 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-15 | done-first-slice | Interaction-mode catalog and filter. | Capability rows now carry `interaction_modes` on the L0/L1/L2/C3/C4/I0 ladder; React Runtime can filter capabilities by mode. C4/I0 stay future-policy definitions with no automatic execution. |
 | CFW-16 | done-research | Comparative architecture and CLI decision research. | Recorded `../collaboration_flow_architecture_cli_research_20260517.md`: Web remains the primary workbench; a thin Parrot CLI is recommended later for catalog/workflow validation, import/export, Plan draft, result-intake preview, and ECS smoke. |
 | CFW-17 | done-research | Deep objective scheme analysis and next-slice gates. | Expanded `../collaboration_flow_architecture_cli_research_20260517.md` with Dify/Langflow/Flowise/AutoGen patterns, core/non-core requirements, task distribution, TODO pre/during/after, drift audit, true-connection test matrix, and recommendation to start with `workflow_schema_v1` + Web import/export/diff. |
-| CFW-18 | pending | `workflow_schema_v1` validator and redacted export/import helper. | Must validate known-good/bad workflow JSON, preserve safe unknown fields, redact secrets, and power both Web and later CLI. |
-| CFW-19 | pending | Web import/export/diff preview for workflow drafts. | Operator can export saved draft, import it back, preview diff, and run existing plan/run/result-contract routes unchanged. |
+| CFW-18 | done | `workflow_schema_v1` validator and redacted export/import helper. | Added shared validate/export/import-preview helpers and routes on both 7893 Web BFF and 8790 app-monitor parity surface. Tests cover good/bad JSON, diff preview, secret redaction, and catalog rows. |
+| CFW-19 | done-first-slice | Web import/export/diff preview for workflow drafts. | Runtime Flow now has Validate, Export, Import preview, Load import, JSON artifact textarea, and diff summary. Imported artifacts still persist only through the existing Save route after operator review. |
 | CFW-20 | pending | Thin CLI first slice: `workflow validate` and `catalog list`. | CLI must reuse backend/schema functions, default JSON output, and not execute writes. |
-| CFW-21 | pending | True-connection smoke pack for local/ECS workflow artifact path. | Local 7893 and ECS 8790 prove catalog, schema, import/export, Plan draft, gate, result-intake, and Graphiti bundle preservation where applicable. |
+| CFW-21 | in_progress | True-connection smoke pack for local/ECS workflow artifact path. | Local 7894 smoke proved save/validate/export/import-preview/delete against the real HTTP BFF with redaction. ECS 8790 proof follows commit/push/release. |
 
 ## First Slice Design
 
@@ -334,3 +334,24 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   generic Code Nodes, arbitrary HTTP nodes, direct C4/I0 execution, direct
   Graphiti/L2-B writes without route-specific gates, and nanobot gateway/CLI as
   the main control plane.
+- 2026-05-17 CFW-18/19 implementation: added shared
+  `workflow_schema_v1` helpers in `workflow_drafts.py` plus
+  `POST /api/runtime/workflow/validate`,
+  `GET /api/runtime/workflow/export`, and
+  `POST /api/runtime/workflow/import-preview` on both 7893 Web Console and
+  8790 app-monitor. The schema normalizes nodes/edges, keeps safe unknown
+  fields under `extensions`, redacts secret-like keys, validates good/bad
+  workflows, and returns a non-mutating import diff. Runtime Flow now exposes
+  Validate, Export, Import preview, Load import, a JSON artifact field, and an
+  import-diff summary while leaving persistence behind the existing Save
+  operator action.
+- 2026-05-17 CFW-18/19 validation: `py_compile` passed for
+  `workflow_drafts.py`, `server.py`, `app_monitor_server.py`, and
+  `capability_catalog.py`; Web Console route tests reported `91 passed`;
+  app-monitor route tests reported `11 passed`; frontend `npm run typecheck`
+  passed; `npm run build` passed with the existing 523 KiB chunk warning; and
+  `git diff --check` reported only existing CRLF warnings. A temporary local
+  HTTP smoke on port `7894` saved `wf-schema-smoke`, validated it, exported
+  `workflow_schema_v1`, import-previewed a diff with `wf-trigger` added and
+  `wf-ref-scan` kept, confirmed `smoke-secret` was redacted, then deleted the
+  draft. ECS 8790 proof remains pending until commit/push/release.

@@ -52,6 +52,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  runtimeWorkflowValidate: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/runtime/workflow/validate", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  runtimeWorkflowExport: (workflowId: string) =>
+    json<Receipt>("/api/runtime/workflow/export?workflow_id=" + encodeURIComponent(workflowId)),
+  runtimeWorkflowImportPreview: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/runtime/workflow/import-preview", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   runtimeWorkflowResultIntakes: () =>
     json<{ entries?: Array<Record<string, unknown>>; count?: number }>("/api/runtime/workflow/result-intake"),
   runtimeWorkflowResultIntake: (body: Record<string, unknown>) =>
