@@ -119,6 +119,16 @@ Design decision:
 - C3 is the default for useful context. C4/I0 require explicit policy and
   later HITL/interrupt design.
 
+Implemented interaction-mode read model:
+
+- `GET /api/runtime/capabilities/catalog` returns the stable mode ladder as
+  `interaction_modes` and assigns each capability row its applicable mode ids.
+- The route accepts `interaction_mode=L0|L1|L2|C3|C4|I0` for filtering on both
+  Web Console and ECS app-monitor.
+- React Runtime exposes the interaction-mode filter in the capability catalog.
+- C4/I0 are visible as future-policy definitions only; no current workflow node
+  can auto-speak or interrupt through this catalog.
+
 ## Capability Taxonomy For The Workbench
 
 Every searchable capability row should carry:

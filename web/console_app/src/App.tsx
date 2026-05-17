@@ -322,7 +322,9 @@ const dict = {
     capabilityCatalog: "Capability Catalog",
     capabilitySearch: "Search interfaces, triggers, refs, nodes...",
     capabilityKind: "Kind",
+    interactionMode: "Interaction mode",
     allKinds: "All kinds",
+    allInteractionModes: "All modes",
     insertWorkflowNode: "Insert",
     workflowDraft: "Workflow draft",
     workflowTitle: "Workflow title",
@@ -531,7 +533,9 @@ const dict = {
     capabilityCatalog: "能力目录",
     capabilitySearch: "搜索接口、触发器、Refs、Nodes...",
     capabilityKind: "类型",
+    interactionMode: "互动模式",
     allKinds: "全部类型",
+    allInteractionModes: "全部模式",
     insertWorkflowNode: "插入",
     workflowDraft: "工作流草稿",
     workflowTitle: "工作流标题",
@@ -2646,6 +2650,7 @@ function RuntimeFlowWorkspace({
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
   const [capabilityQuery, setCapabilityQuery] = useState("");
   const [capabilityKind, setCapabilityKind] = useState("");
+  const [capabilityInteractionMode, setCapabilityInteractionMode] = useState("");
   const [workflowTitle, setWorkflowTitle] = useState("Runtime Flow custom workflow");
   const [savedWorkflowId, setSavedWorkflowId] = useState("");
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraftNode[]>([]);
@@ -2662,12 +2667,17 @@ function RuntimeFlowWorkspace({
     [capabilityCatalog]
   );
   const capabilityKinds = useMemo(() => capabilityKindOptions(capabilityRows), [capabilityRows]);
+  const capabilityInteractionModes = useMemo(
+    () => capabilityInteractionModeOptions(capabilityCatalog, capabilityRows),
+    [capabilityCatalog, capabilityRows]
+  );
   const filteredCapabilities = useMemo(
     () => capabilityRows
       .filter((row) => !capabilityKind || String(row.kind || "") === capabilityKind)
+      .filter((row) => !capabilityInteractionMode || stringsFromUnknown(row.interaction_modes).includes(capabilityInteractionMode))
       .filter((row) => capabilityMatchesQuery(row, capabilityQuery))
       .slice(0, 36),
-    [capabilityRows, capabilityKind, capabilityQuery]
+    [capabilityRows, capabilityKind, capabilityInteractionMode, capabilityQuery]
   );
   const savedWorkflowRows = useMemo(
     () => (workflowDrafts.drafts ?? []).filter((row) => row && typeof row === "object"),
@@ -3138,6 +3148,17 @@ function RuntimeFlowWorkspace({
                 <option value="">{t.allKinds}</option>
                 {capabilityKinds.map((kind) => (
                   <option key={kind} value={kind}>{kind}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{t.interactionMode}</span>
+              <select value={capabilityInteractionMode} onChange={(event) => setCapabilityInteractionMode(event.target.value)}>
+                <option value="">{t.allInteractionModes}</option>
+                {capabilityInteractionModes.map((mode) => (
+                  <option key={mode.id} value={mode.id}>
+                    {mode.id} {mode.label}{mode.count ? ` (${mode.count})` : ""}
+                  </option>
                 ))}
               </select>
             </label>
@@ -4226,6 +4247,24 @@ function capabilityKindOptions(rows: Array<Record<string, unknown>>): string[] {
   return uniqueStrings(rows.map((row) => String(row.kind || "")).filter(Boolean));
 }
 
+function capabilityInteractionModeOptions(
+  catalog: RuntimeCapabilityCatalog,
+  rows: Array<Record<string, unknown>>
+): Array<{ id: string; label: string; count: number }> {
+  const fromCatalog = Array.isArray(catalog.interaction_modes)
+    ? catalog.interaction_modes
+      .map((mode) => ({
+        id: String(mode.id || "").trim(),
+        label: String(mode.label || mode.title || "").trim(),
+        count: Number(mode.count ?? 0)
+      }))
+      .filter((mode) => Boolean(mode.id))
+    : [];
+  if (fromCatalog.length) return fromCatalog;
+  return uniqueStrings(rows.flatMap((row) => stringsFromUnknown(row.interaction_modes)))
+    .map((id) => ({ id, label: id, count: rows.filter((row) => stringsFromUnknown(row.interaction_modes).includes(id)).length }));
+}
+
 function workflowNodeCanGate(node: WorkflowDraftNode): boolean {
   return (
     String(node.capability.kind || "") === "trigger"
@@ -4248,6 +4287,7 @@ function capabilityMatchesQuery(row: Record<string, unknown>, query: string): bo
     row.trigger_name,
     row.nanobot_task_type,
     trueConnection.state,
+    ...stringsFromUnknown(row.interaction_modes),
     ...stringsFromUnknown(row.ascent_channels),
     ...stringsFromUnknown(row.interaction_modules),
     ...stringsFromUnknown(row.information_tags),
@@ -4259,6 +4299,7 @@ function capabilityMatchesQuery(row: Record<string, unknown>, query: string): bo
 
 function capabilityTags(row: Record<string, unknown>): string[] {
   return uniqueStrings([
+    ...stringsFromUnknown(row.interaction_modes),
     ...stringsFromUnknown(row.ascent_channels),
     ...stringsFromUnknown(row.interaction_modules),
     ...stringsFromUnknown(row.information_tags)

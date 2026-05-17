@@ -49,6 +49,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-12 | done-first-slice | Trigger/message HITL state machine. | Added Web-only workflow action gates for trigger nodes and `message_check`; still separate from Plan HITL and not a shared App DTO. |
 | CFW-13 | done-first-slice | Durable result-destination contract for Plan/Scheduler results. | Added `workflow_result_contract_v1` preview and carries result routes in Plan step inputs; Scheduler enforcement remains a reviewed follow-up before autonomous chained workflows. |
 | CFW-14 | done-first-slice | Workflow result intake and reviewed result-route consumption. | Added Web-only result intake for `workflow_result_contract_v1`; operator mode can stage reviewed results to IntentWorkspace and records a bounded Web ledger. |
+| CFW-15 | done-first-slice | Interaction-mode catalog and filter. | Capability rows now carry `interaction_modes` on the L0/L1/L2/C3/C4/I0 ladder; React Runtime can filter capabilities by mode. C4/I0 stay future-policy definitions with no automatic execution. |
 
 ## First Slice Design
 
@@ -291,3 +292,18 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   and app-monitor, so true 7893/8790 smoke rows can be cleaned through the
   public operator route instead of manual SSH file edits. React Runtime exposes
   the delete action in the result-intake ledger list.
+- 2026-05-17 CFW-15 interaction-mode slice: `GET /api/runtime/capabilities/catalog`
+  now returns stable `interaction_modes` definitions for `L0`, `L1`, `L2`,
+  `C3`, `C4`, and `I0`, and every capability row carries inferred
+  `interaction_modes` derived from execution policy, modules, tags, and result
+  destinations. The route supports `interaction_mode=` filtering on Web Console
+  and ECS app-monitor. React Runtime exposes a mode filter next to the existing
+  kind/search controls and shows mode chips in capability rows. This is a
+  read-model/policy classification layer only; C4 safe-turn speech and I0
+  interruption remain explicit future policy, not executable workflow nodes.
+- CFW-15 review fix: the first live smoke showed `runtime.flow.snapshot`
+  incorrectly classified as C3 because it references IntentWorkspace as a
+  module. The inference was tightened so C3 is derived from explicit
+  `return_to_goslo` / `stage_to_intent_workspace` result destinations, not from
+  module membership alone. Retest: snapshot modes are `L0,L2`, while C3 filter
+  still returns context-capable rows.

@@ -384,6 +384,7 @@ def build_app(
         q: str = "",
         kind: str = "",
         execution_policy: str = "",
+        interaction_mode: str = "",
     ) -> dict[str, Any]:
         from parrot.web_console.capability_catalog import build_runtime_capability_catalog
 
@@ -391,6 +392,7 @@ def build_app(
             q=q,
             kind=kind,
             execution_policy=execution_policy,
+            interaction_mode=interaction_mode,
         )
 
     @app.get("/api/runtime/flow/changes")

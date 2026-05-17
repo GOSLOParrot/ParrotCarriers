@@ -132,13 +132,19 @@ def test_runtime_capability_catalog_indexes_real_workbench_routes() -> None:
     assert body["action"] == "runtime.capabilities.catalog"
     assert body["success"] is True
     assert body["audit"]["web_only"] is True
+    assert {row["id"] for row in body["interaction_modes"]} == {"L0", "L1", "L2", "C3", "C4", "I0"}
+    assert body["groups"]["interaction_mode"]
     assert by_id["runtime.flow.snapshot"]["route"] == "/api/runtime/flow"
+    assert "L0" in by_id["runtime.flow.snapshot"]["interaction_modes"]
     assert by_id["runtime.workflow.result_contract"]["route"] == "/api/runtime/workflow/result-contract"
     assert by_id["runtime.workflow.result_contract"]["execution_policy"] == "draft_only"
+    assert "L2" in by_id["runtime.workflow.result_contract"]["interaction_modes"]
     assert by_id["runtime.workflow.action_gates"]["route"] == "/api/runtime/workflow/action-gates"
     assert by_id["runtime.workflow.action_gates"]["kind"] == "hitl_gate"
     assert by_id["graphiti.subgraph.search"]["true_connection"]["state"] == "ecs_proxy"
+    assert "C3" in by_id["graphiti.subgraph.search"]["interaction_modes"]
     assert by_id["graphiti.materialize_l2b"]["execution_policy"] == "operator_gated"
+    assert "L1" in by_id["graphiti.materialize_l2b"]["interaction_modes"]
     assert by_id["l2b.subgraph.context"]["execution_policy"] == "read_only"
     assert by_id["refs.ref_scan.dispatch"]["nanobot_task_type"] == "ref_scan"
     assert by_id["nanobot.calendar_fetch"]["plan_step_compatible"] is True
@@ -152,6 +158,10 @@ def test_runtime_capability_catalog_indexes_real_workbench_routes() -> None:
     assert filtered["capabilities"]
     assert all(row["kind"] == "graphiti_search" for row in filtered["capabilities"])
     assert all("graphiti" in str(row).lower() for row in filtered["capabilities"])
+
+    c3 = client.get("/api/runtime/capabilities/catalog?interaction_mode=C3").json()
+    assert c3["capabilities"]
+    assert all("C3" in row["interaction_modes"] for row in c3["capabilities"])
 
 
 def test_runtime_workflow_plan_draft_imports_nanobot_capabilities_to_hitl() -> None:

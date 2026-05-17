@@ -93,6 +93,7 @@ export type RuntimeCapabilityCatalog = {
   capabilities?: Array<Record<string, unknown>>;
   groups?: Record<string, unknown>;
   result_destinations?: string[];
+  interaction_modes?: Array<Record<string, unknown>>;
   audit?: Record<string, unknown>;
 };
 

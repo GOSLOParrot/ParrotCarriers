@@ -408,10 +408,16 @@ def build_app():  # type: ignore[no-untyped-def]
         q: str = "",
         kind: str = "",
         execution_policy: str = "",
+        interaction_mode: str = "",
     ):  # type: ignore[no-untyped-def]
         from parrot.web_console.capability_catalog import build_runtime_capability_catalog
 
-        return build_runtime_capability_catalog(q=q, kind=kind, execution_policy=execution_policy)
+        return build_runtime_capability_catalog(
+            q=q,
+            kind=kind,
+            execution_policy=execution_policy,
+            interaction_mode=interaction_mode,
+        )
 
     @app.post("/api/runtime/workflow/plan-draft")
     async def runtime_workflow_plan_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]

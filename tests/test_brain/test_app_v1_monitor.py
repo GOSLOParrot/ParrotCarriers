@@ -170,6 +170,7 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
     catalog = client.get("/api/runtime/capabilities/catalog?q=workflow&kind=workflow_template").json()
     gates_catalog = client.get("/api/runtime/capabilities/catalog?q=action_gates").json()
     intake_catalog = client.get("/api/runtime/capabilities/catalog?q=result_intake").json()
+    c3_catalog = client.get("/api/runtime/capabilities/catalog?interaction_mode=C3").json()
     saved = client.post(
         "/api/runtime/workflows/drafts",
         json={"workflow_id": "monitor-workflow", "title": "Monitor workflow", "workflow_nodes": nodes},
@@ -204,6 +205,8 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
     assert any(row["capability_id"] == "runtime.workflow.action_gates" for row in gates_catalog["capabilities"])
     assert any(row["capability_id"] == "runtime.workflow.result_intake" for row in intake_catalog["capabilities"])
     assert any(row["capability_id"] == "runtime.workflow.result_contract" for row in catalog["capabilities"])
+    assert c3_catalog["capabilities"]
+    assert all("C3" in row["interaction_modes"] for row in c3_catalog["capabilities"])
     assert saved["success"] is True
     assert loaded["draft"]["nodes"][0]["capability"]["sample_payload"]["api_token"] == "[REDACTED]"
     assert gate["success"] is True

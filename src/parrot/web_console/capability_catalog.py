@@ -17,12 +17,70 @@ _RESULT_DESTINATIONS = [
     "materialize_l2b",
 ]
 
+_INTERACTION_MODES: list[dict[str, Any]] = [
+    {
+        "id": "L0",
+        "label": "record_only",
+        "title": "L0 record only",
+        "description": "Archive or audit without surfacing into GOSLO context.",
+        "mutation_allowed": False,
+        "requires_operator": False,
+        "current_status": "implemented",
+    },
+    {
+        "id": "L1",
+        "label": "working_set",
+        "title": "L1 working set",
+        "description": "Keep selected refs/nodes/results in local working memory or L1.5/L2-B staging.",
+        "mutation_allowed": True,
+        "requires_operator": True,
+        "current_status": "implemented",
+    },
+    {
+        "id": "L2",
+        "label": "blackboard_notice",
+        "title": "L2 blackboard notice",
+        "description": "Make the result readable to Scheduler/Plan/runtime surfaces without direct speech.",
+        "mutation_allowed": False,
+        "requires_operator": False,
+        "current_status": "implemented",
+    },
+    {
+        "id": "C3",
+        "label": "context_notice",
+        "title": "C3 context notice",
+        "description": "Stage or return context that may affect the next GOSLO reply without interrupting.",
+        "mutation_allowed": True,
+        "requires_operator": True,
+        "current_status": "implemented",
+    },
+    {
+        "id": "C4",
+        "label": "safe_turn_speech",
+        "title": "C4 safe-turn speech",
+        "description": "Future reviewed safe-turn speech; current workbench must not auto-speak.",
+        "mutation_allowed": False,
+        "requires_operator": True,
+        "current_status": "future_policy",
+    },
+    {
+        "id": "I0",
+        "label": "interrupt",
+        "title": "I0 interrupt",
+        "description": "Future immediate interruption channel; not available to workflow capabilities today.",
+        "mutation_allowed": False,
+        "requires_operator": True,
+        "current_status": "future_policy",
+    },
+]
+
 
 def build_runtime_capability_catalog(
     *,
     q: str = "",
     kind: str = "",
     execution_policy: str = "",
+    interaction_mode: str = "",
 ) -> dict[str, Any]:
     """Return searchable Web capability rows backed by existing BFF routes."""
     capabilities = _all_capabilities()
@@ -31,6 +89,7 @@ def build_runtime_capability_catalog(
         q=str(q or "").strip(),
         kind=str(kind or "").strip(),
         execution_policy=str(execution_policy or "").strip(),
+        interaction_mode=str(interaction_mode or "").strip(),
     )
     return {
         "success": True,
@@ -38,6 +97,7 @@ def build_runtime_capability_catalog(
         "capabilities": capabilities,
         "groups": _groups(capabilities),
         "result_destinations": _RESULT_DESTINATIONS,
+        "interaction_modes": _interaction_modes_with_counts(capabilities),
         "audit": {
             "web_only": True,
             "read_model": True,
@@ -555,8 +615,20 @@ def _capability(
     plan_step_compatible: bool = False,
     nanobot_task_type: str = "",
     result_destinations: list[str] | None = None,
+    interaction_modes: list[str] | None = None,
     notes: str = "",
 ) -> dict[str, Any]:
+    destinations = result_destinations or ["view_only"]
+    mode_ids = _normalize_interaction_modes(
+        interaction_modes
+        or _infer_interaction_modes(
+            kind=kind,
+            execution_policy=execution_policy,
+            modules=modules or [],
+            tags=tags or [],
+            result_destinations=destinations,
+        )
+    )
     return {
         "capability_id": capability_id,
         "title": title,
@@ -574,7 +646,8 @@ def _capability(
         "sample_payload": sample_payload or {},
         "plan_step_compatible": bool(plan_step_compatible),
         "nanobot_task_type": nanobot_task_type,
-        "result_destinations": result_destinations or ["view_only"],
+        "result_destinations": destinations,
+        "interaction_modes": mode_ids,
         "true_connection": {
             "state": true_connection_state,
             "proof_route": route,
@@ -590,6 +663,7 @@ def _filter_capabilities(
     q: str,
     kind: str,
     execution_policy: str,
+    interaction_mode: str,
 ) -> list[dict[str, Any]]:
     if kind:
         capabilities = [
@@ -600,6 +674,12 @@ def _filter_capabilities(
         capabilities = [
             row for row in capabilities
             if str(row.get("execution_policy") or "") == execution_policy
+        ]
+    if interaction_mode:
+        mode = _interaction_mode_id(interaction_mode)
+        capabilities = [
+            row for row in capabilities
+            if mode in _strings(row.get("interaction_modes"))
         ]
     if q:
         needle = q.casefold()
@@ -617,10 +697,13 @@ def _groups(capabilities: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
         "ascent_channel": defaultdict(int),
         "interaction_module": defaultdict(int),
         "information_tag": defaultdict(int),
+        "interaction_mode": defaultdict(int),
     }
     for row in capabilities:
         grouped["kind"][str(row.get("kind") or "unknown")] += 1
         grouped["execution_policy"][str(row.get("execution_policy") or "unknown")] += 1
+        for value in _strings(row.get("interaction_modes")):
+            grouped["interaction_mode"][value] += 1
         for value in _strings(row.get("ascent_channels")):
             grouped["ascent_channel"][value] += 1
         for value in _strings(row.get("interaction_modules")):
@@ -653,10 +736,66 @@ def _search_blob(row: dict[str, Any]) -> str:
         values.append(str(row.get(key) or ""))
     values.extend(_strings(row.get("ascent_channels")))
     values.extend(_strings(row.get("interaction_modules")))
+    values.extend(_strings(row.get("interaction_modes")))
     values.extend(_strings(row.get("information_tags")))
     values.extend(_strings(row.get("result_destinations")))
     values.extend(_strings(row.get("fire_kinds")))
     return " ".join(values).casefold()
+
+
+def _infer_interaction_modes(
+    *,
+    kind: str,
+    execution_policy: str,
+    modules: list[str],
+    tags: list[str],
+    result_destinations: list[str],
+) -> list[str]:
+    """Map capability metadata to the stable L0/L1/L2/C3/C4/I0 policy ladder."""
+    values = set(modules) | set(tags) | set(result_destinations)
+    modes: list[str] = []
+    if execution_policy in {"read_only", "draft_only"} or kind == "runtime_read":
+        modes.append("L0")
+    if values & {"write_to_memory_draft", "materialize_l2b", "l1_5_pool", "l2_b_graph", "staged_ref"}:
+        modes.append("L1")
+    if values & {"scheduler_nanobot", "plan_registry", "status_notice", "plan_request", "nanobot_task"}:
+        modes.append("L2")
+    if values & {"return_to_goslo", "stage_to_intent_workspace"}:
+        modes.append("C3")
+    return modes or ["L0"]
+
+
+def _interaction_modes_with_counts(capabilities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    counts: dict[str, int] = defaultdict(int)
+    for row in capabilities:
+        for mode in _strings(row.get("interaction_modes")):
+            counts[mode] += 1
+    return [
+        {**mode, "count": counts[str(mode["id"])]}
+        for mode in _INTERACTION_MODES
+    ]
+
+
+def _normalize_interaction_modes(values: list[str]) -> list[str]:
+    known = {str(mode["id"]).casefold(): str(mode["id"]) for mode in _INTERACTION_MODES}
+    known.update({str(mode["label"]).casefold(): str(mode["id"]) for mode in _INTERACTION_MODES})
+    result: list[str] = []
+    for raw in values:
+        mode = _interaction_mode_id(raw)
+        if mode in known.values() and mode not in result:
+            result.append(mode)
+    return result or ["L0"]
+
+
+def _interaction_mode_id(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    folded = raw.casefold()
+    for mode in _INTERACTION_MODES:
+        if folded in {str(mode["id"]).casefold(), str(mode["label"]).casefold()}:
+            return str(mode["id"])
+    return raw.upper()
 
 
 def _strings(value: Any) -> list[str]:
