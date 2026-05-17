@@ -226,3 +226,9 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   step inputs as `result_routes`. This makes result destinations visible to
   Nanobot/Scheduler dispatch payloads without making Scheduler enforce chained
   routing yet.
+- 2026-05-17: Released CFW-13 to ECS as commit `8902965`. Remote `8790` smoke
+  saved `ecs-result-contract-smoke-20260517214654`, returned
+  `workflow_result_contract_v1` with destination counts
+  `stage_to_intent_workspace:1`, `return_to_goslo:2`, `view_only:1`, confirmed
+  `scheduler_enforced=false`, confirmed Plan preview carried two result routes
+  on the `ref_scan` step, then deleted the draft.

@@ -459,6 +459,17 @@ Contract states:
 - `metadata_only`: visible to the plan/result consumer but not enforced.
 - `not_implemented`: declared future destination only.
 
+Verification:
+
+- Local `7893` smoke saved `local-result-contract-smoke-20260517214347`,
+  returned `workflow_result_contract_v1`, confirmed destination counts
+  `stage_to_intent_workspace:1`, `return_to_goslo:2`, `view_only:1`, confirmed
+  `scheduler_enforced=false`, confirmed Plan preview carried two result routes
+  on the `ref_scan` step, then deleted the draft.
+- ECS commit `8902965` remote smoke on `8790` saved
+  `ecs-result-contract-smoke-20260517214654`, returned the same contract shape
+  and Plan step result-route metadata, then deleted the draft.
+
 Remaining gaps after fourth slice:
 
 - Scheduler/Nanobot still needs a reviewed result-routing consumer before it
