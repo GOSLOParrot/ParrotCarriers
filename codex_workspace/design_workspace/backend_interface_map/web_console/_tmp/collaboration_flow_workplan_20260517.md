@@ -460,4 +460,7 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   show `data.error` rows. Validation: `py_compile` passed; CLI tests reported
   `14 passed`; Web Console route tests reported `91 passed`; app-monitor tests
   reported `11 passed`; manual table smoke confirmed all three CLI commands now
-  print `workflow_id=cli-table-smoke`.
+  print `workflow_id=cli-table-smoke`. ECS proof after commit `34bcb763`:
+  release completed with all six services active; remote CLI table smoke on
+  `/opt/parrot/ParrotCarriers` confirmed `workflow plan-draft`, `workflow run`,
+  and `result-intake preview` all print `workflow_id=ecs-table-smoke`.

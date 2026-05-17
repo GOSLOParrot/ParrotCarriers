@@ -888,3 +888,6 @@ Bugfix after CFW-24:
 - Fixed CLI table rendering to also read workflow ids from `data.workflow_id`,
   `data.source_workflow_id`, and `data.result_contract.workflow_id`, and to
   render `data.error` as an error row.
+- ECS proof after commit `34bcb763`: remote table smoke confirmed
+  `workflow plan-draft`, `workflow run`, and `result-intake preview` all print
+  `workflow_id=ecs-table-smoke`.
