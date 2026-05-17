@@ -3973,6 +3973,7 @@ function GraphitiSourceCard({
   const [graphitiRefWritebackPlan, setGraphitiRefWritebackPlan] = useState<Record<string, unknown> | null>(null);
   const [graphitiRefApplying, setGraphitiRefApplying] = useState(false);
   const [graphitiBundle, setGraphitiBundle] = useState<Record<string, unknown> | null>(null);
+  const [graphitiMaterialization, setGraphitiMaterialization] = useState<Record<string, unknown> | null>(null);
   const [importPolicy, setImportPolicy] = useState<Record<string, unknown> | null>(null);
   const [policySkippedReason, setPolicySkippedReason] = useState("");
   const [flowSteps, setFlowSteps] = useState<string[]>([]);
@@ -4041,6 +4042,7 @@ function GraphitiSourceCard({
     setGraphitiRefWritebackStatus("");
     setGraphitiRefWritebackPlan(null);
     setGraphitiBundle(null);
+    setGraphitiMaterialization(null);
     setImportPolicy(null);
     setPolicySkippedReason(reason);
     setFlowSteps([]);
@@ -4186,6 +4188,44 @@ function GraphitiSourceCard({
   const showExportReceipt = (receipt: Receipt) => {
     const data = receipt.data ?? {};
     const nextBundle = recordFromUnknown(data.graphiti_bundle);
+    const topTransform = recordFromUnknown(data.transform_preview);
+    const isMaterializeReceipt = String(receipt.action || "") === "graphiti.subgraph.materialize_l2b"
+      || "would_materialize" in data
+      || ("direct_l2b_write" in data && "node_count" in data);
+    const materialization = isMaterializeReceipt ? {
+      materialization_state: String(data.materialization_state || (data.direct_l2b_write ? "materialized_l2b_pointer_graph" : "preview_only_not_materialized")),
+      direct_l2b_write: Boolean(data.direct_l2b_write),
+      would_materialize: Boolean(data.would_materialize),
+      node_count: data.node_count ?? recordArrayFrom(topTransform, "l2b_nodes").length,
+      edge_count: data.edge_count ?? (recordArrayFrom(topTransform, "l2b_edges").length + recordArrayFrom(topTransform, "episode_links").length),
+      nodes_upserted: data.nodes_upserted ?? 0,
+      edges_added: data.edges_added ?? 0,
+      edges_skipped_duplicate: data.edges_skipped_duplicate ?? 0,
+      context_node_uuids: Array.isArray(data.context_node_uuids) ? data.context_node_uuids.map(String) : [],
+      context_route: String(data.context_route || "/api/l2b/subgraphs/context"),
+      remote_proxy: recordFromUnknown(data.remote_proxy)
+    } : {};
+    let displayBundle = nextBundle;
+    if (Object.keys(nextBundle).length && Object.keys(topTransform).length) {
+      const overlay = recordFromUnknown(nextBundle.import_overlay);
+      const contextPolicy = recordFromUnknown(overlay.context_route_policy);
+      displayBundle = {
+        ...nextBundle,
+        import_overlay: {
+          ...overlay,
+          destination: String(data.destination || overlay.destination || destination),
+          materialization_state: String(data.materialization_state || overlay.materialization_state || "preview_or_materialized_l2b_pointer_graph"),
+          transform_preview: topTransform,
+          apply_route: "/api/graphiti/subgraph/materialize-l2b",
+          context_route_policy: {
+            ...contextPolicy,
+            route: String(data.context_route || contextPolicy.route || "/api/l2b/subgraphs/context"),
+            requires_materialized_l2b_uuid: true,
+            preview_uuid_prefix: "graphiti:"
+          }
+        }
+      };
+    }
     setExportObservations(receiptArray(receipt, "observations"));
     setEdgeDrafts(receiptArray(receipt, "edge_drafts"));
     const nextIdentityRefDrafts = receiptArray(receipt, "identity_ref_drafts");
@@ -4202,7 +4242,8 @@ function GraphitiSourceCard({
     setPolicySkippedReason(String(data.policy_skipped_reason || data.error || ""));
     const steps = Array.isArray(data.flow_steps) ? data.flow_steps.map(String) : [];
     setFlowSteps(steps);
-    setGraphitiBundle(Object.keys(nextBundle).length ? nextBundle : null);
+    setGraphitiMaterialization(Object.keys(materialization).length ? materialization : null);
+    setGraphitiBundle(Object.keys(displayBundle).length ? displayBundle : null);
     pushReceipt(receipt);
   };
   const exportDraft = async () => {
@@ -4808,9 +4849,40 @@ function GraphitiSourceCard({
         }) : <small className="muted">{t.noHits}</small>}
       </div>
       {graphitiBundle ? <GraphitiBundlePanel bundle={graphitiBundle} /> : null}
+      {graphitiMaterialization ? (
+        <div className="edge-resolver-panel graphiti-materialization-panel">
+          <div className="edge-resolver-head">
+            <strong>L2-B materialization</strong>
+            <small>{String(graphitiMaterialization.materialization_state || "preview_only_not_materialized")}</small>
+          </div>
+          <div className="graphiti-bundle-stats">
+            <span>
+              <strong>{String(graphitiMaterialization.node_count ?? 0)}</strong>
+              <small>pointer nodes</small>
+            </span>
+            <span>
+              <strong>{String(graphitiMaterialization.edge_count ?? 0)}</strong>
+              <small>pointer edges</small>
+            </span>
+            <span>
+              <strong>{String(graphitiMaterialization.nodes_upserted ?? 0)}</strong>
+              <small>upserted</small>
+            </span>
+            <span>
+              <strong>{`${String(graphitiMaterialization.edges_added ?? 0)}/${String(graphitiMaterialization.edges_skipped_duplicate ?? 0)}`}</strong>
+              <small>edge add/skip</small>
+            </span>
+          </div>
+          <div className="preview-row import-plan-row">
+            <span>{graphitiMaterialization.direct_l2b_write ? "direct L2-B write confirmed" : "dry-run materialization preview"}</span>
+            <small>{String(graphitiMaterialization.context_route || "/api/l2b/subgraphs/context")}</small>
+            <small>{(Array.isArray(graphitiMaterialization.context_node_uuids) ? graphitiMaterialization.context_node_uuids : []).slice(0, 2).map(String).join(", ") || "context UUIDs appear after projection"}</small>
+          </div>
+        </div>
+      ) : null}
       {exportObservations.length || edgeDrafts.length || identityRefDrafts.length || policySkippedReason ? (
         <div className="note-preview-list graphiti-export-plan">
-          <strong>Export plan</strong>
+          <strong>Import plan</strong>
           <small>{`${exportObservations.length} L1.5 observation(s) / ${edgeDrafts.length} Edge draft(s) / ${identityRefDrafts.length} Ref draft(s)`}</small>
           {policySkippedReason ? <small className="warn-text">{policySkippedReason}</small> : null}
           {edgePolicy ? <small className="muted">{edgePolicy}</small> : null}
@@ -6404,6 +6476,13 @@ function receiptSummary(data: Record<string, unknown>): string {
   if (error) return String(error);
   const matched = data.matched_triggers;
   if (Array.isArray(matched) && matched.length) return `matched: ${matched.map(String).join(", ")}`;
+  if ("would_materialize" in data || ("direct_l2b_write" in data && ("nodes_upserted" in data || "edges_added" in data))) {
+    const mode = data.direct_l2b_write ? "wrote" : "preview";
+    const nodes = String(data.nodes_upserted ?? data.node_count ?? 0);
+    const edges = String(data.edges_added ?? data.edge_count ?? 0);
+    const skipped = Number(data.edges_skipped_duplicate ?? 0);
+    return `Graphiti -> L2-B ${mode}: ${nodes} node(s), ${edges} edge(s)${skipped ? `, ${skipped} duplicate edge(s)` : ""}`;
+  }
   const skipped = data.publish_skipped_reason || data.apply_skipped_reason || data.dispatch_skipped_reason;
   if (skipped) return String(skipped);
   if ("l2b_nodes" in data || "l15_buckets" in data) {
