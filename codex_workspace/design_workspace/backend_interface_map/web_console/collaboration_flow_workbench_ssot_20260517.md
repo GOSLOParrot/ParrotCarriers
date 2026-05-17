@@ -993,3 +993,13 @@ Durability correction after the proof:
 - New `L2BGraph` singleton instances hydrate this store once, so
   `l2b.subgraphs.context` can read materialized Graphiti UUIDs after a service
   restart without repeating the Graphiti search/import-plan flow.
+
+ECS proof after `80ee1017`:
+
+- Materialized one `noble_etiquette` Graphiti fact into L2-B and persisted the
+  pointer store with three nodes and three edges.
+- The persisted store reported `rwx_indices_persisted=False`, preserving the
+  rule that RustWorkX indices are runtime handles only.
+- After restarting `parrot-app-monitor`, a context-only read for the
+  materialized UUID returned three nodes, three edges, zero missing UUIDs, and
+  preserved raw Graphiti metadata.

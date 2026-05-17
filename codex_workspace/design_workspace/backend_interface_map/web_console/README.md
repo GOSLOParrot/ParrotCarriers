@@ -608,6 +608,10 @@ Keep active Web Console implementation in these locations:
   stable Graphiti/L2-B pointer UUIDs and raw Graphiti metadata, never RustWorkX
   integer indices, so `l2b.subgraphs.context` can recover reviewed Graphiti
   imports after app-monitor restart.
+- ECS proof after `80ee1017`: materialized `noble_etiquette` into the pointer
+  store, restarted `parrot-app-monitor`, and `l2b.subgraphs.context` read back
+  the materialized UUID with three nodes, three edges, and preserved raw
+  Graphiti metadata.
 
 ## Write Rules
 

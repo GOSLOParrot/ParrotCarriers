@@ -530,3 +530,17 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   backend `py_compile` passed; focused materialize/context restart test passed;
   Web Console plus flow CLI tests reported `107 passed`; L2-B DSG tests
   reported `37 passed`; app-monitor tests reported `12 passed`.
+- 2026-05-18 ECS durability proof after `80ee1017`: Graphiti
+  `noble_etiquette / etiquette calling card visit` search returned fact UUID
+  `ed386742-4e4e-4065-8151-6511960902b9`; import-plan stayed preview-only with
+  `direct_l2b_write=false`; operator materialize returned
+  `direct_l2b_write=true`, `nodes_upserted=3`, `edges_added=3`, and
+  `persistent_l2b_pointer_store.persisted=true` at
+  `data/web_console/l2b_materialized_graphiti_pointers.json`. Remote store
+  inspection showed `node_count=3`, `edge_count=3`,
+  `rwx_indices_persisted=False`. After `systemctl restart parrot-app-monitor`,
+  a context-only request for
+  `graphiti:noble_etiquette:entity:0a05fb8a-c23a-4e9d-93ad-c6759723ce41`
+  succeeded with zero missing UUIDs, three nodes, three edges, preserved raw
+  metadata, and first edge Graphiti UUID
+  `ed386742-4e4e-4065-8151-6511960902b9`.
