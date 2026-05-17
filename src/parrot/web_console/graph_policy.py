@@ -377,6 +377,14 @@ def live_subgraph_context(payload: dict[str, Any] | None = None) -> dict[str, An
     nodes_by_uuid = {str(node.uuid): node for node in all_nodes if str(getattr(node, "uuid", "") or "")}
     selected = tuple(uuid for uuid in node_uuids if uuid in nodes_by_uuid)
     missing = tuple(uuid for uuid in node_uuids if uuid not in nodes_by_uuid)
+    missing_graphiti_preview_uuids = tuple(
+        uuid for uuid in missing if uuid.startswith("graphiti:")
+    )
+    context_lookup_hint = (
+        "graphiti_preview_uuid_requires_l2b_materialization"
+        if missing_graphiti_preview_uuids
+        else ""
+    )
     adjacency: dict[str, set[str]] = {}
     for src, dst, _edge in all_edges:
         src_uuid = str(getattr(src, "uuid", "") or "")
@@ -468,6 +476,8 @@ def live_subgraph_context(payload: dict[str, Any] | None = None) -> dict[str, An
             "core_candidate": "CORE-013",
             "selected_node_uuids": selected,
             "missing_node_uuids": missing,
+            "missing_graphiti_preview_node_uuids": missing_graphiti_preview_uuids,
+            "context_lookup_hint": context_lookup_hint,
             "depth": depth,
             "depth_cap": 4,
             "nodes": node_rows,
@@ -498,6 +508,8 @@ def live_subgraph_context(payload: dict[str, Any] | None = None) -> dict[str, An
                 "graphiti_raw_policy": "Graphiti UUIDs/raw metadata already present on L2-B payloads are returned; this route does not re-query Graphiti.",
                 "search_policy": "Use Graphiti /api/graphiti/subgraph/search before import, then use this live L2-B context route after materialization.",
                 "write_policy": "No topology writes; persistent overlay/apply is a future operator-reviewed route.",
+                "materialized_l2b_uuid_required": True,
+                "graphiti_preview_uuid_policy": "UUIDs with graphiti: prefix are import-plan projection pointers, not live L2-B node UUIDs until an operator-reviewed materialization path writes them.",
             },
             "audit": _core013_audit(),
         },

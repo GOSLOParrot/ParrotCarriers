@@ -854,6 +854,14 @@ def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch
     assert plan["data"]["graphiti_bundle"]["sections"]["facts"][0]["raw"]["target_node"]["name"] == "Rhodes Island"
     assert plan["data"]["graphiti_bundle"]["import_overlay"]["destination"] == "isolated_compartment"
     assert plan["data"]["graphiti_bundle"]["import_overlay"]["apply_route"] == "/api/graphiti/subgraph/export"
+    assert plan["data"]["direct_graphiti_write"] is False
+    assert plan["data"]["direct_l2b_write"] is False
+    assert plan["data"]["materialization_state"] == "preview_only_not_materialized"
+    assert plan["data"]["context_route_policy"]["requires_materialized_l2b_uuid"] is True
+    assert (
+        plan["data"]["graphiti_bundle"]["import_overlay"]["context_route_policy"]["preview_uuid_status"]
+        == "not_queryable_until_l2b_materialization"
+    )
     transform_preview = plan["data"]["l2b_transform_preview"]
     assert transform_preview["projection_kind"] == "graphiti_bundle_to_l2b_rustworkx_preview"
     assert transform_preview["section_counts"] == {
@@ -2849,7 +2857,11 @@ def test_l2b_subgraph_context_reads_live_l2b_without_rwx_index(monkeypatch) -> N
             "/api/l2b/subgraphs/context",
             json={
                 "label": "Etiquette context",
-                "node_uuids": ["ctx_a", "missing_ctx"],
+                "node_uuids": [
+                    "ctx_a",
+                    "missing_ctx",
+                    "graphiti:noble_etiquette:entity:preview",
+                ],
                 "depth": 1,
                 "dry_run": False,
                 "operator_mode": True,
@@ -2868,7 +2880,15 @@ def test_l2b_subgraph_context_reads_live_l2b_without_rwx_index(monkeypatch) -> N
         assert body["data"]["true_connection"]["used_live_l2b_graph"] is True
         assert body["data"]["true_connection"]["source"] == "parrot.dsg.l2b_graph.get_l2b_graph"
         assert body["data"]["true_connection"]["rwx_idx_exposed"] is False
-        assert body["data"]["missing_node_uuids"] == ["missing_ctx"]
+        assert body["data"]["missing_node_uuids"] == [
+            "missing_ctx",
+            "graphiti:noble_etiquette:entity:preview",
+        ]
+        assert body["data"]["missing_graphiti_preview_node_uuids"] == [
+            "graphiti:noble_etiquette:entity:preview"
+        ]
+        assert body["data"]["context_lookup_hint"] == "graphiti_preview_uuid_requires_l2b_materialization"
+        assert body["data"]["policies"]["materialized_l2b_uuid_required"] is True
         assert body["data"]["selected_node_uuids"] == ["ctx_a"]
         assert {row["uuid"] for row in body["data"]["nodes"]} == {"ctx_a", "ctx_b"}
         assert body["data"]["nodes"][0]["graphiti_uuid"] == "graphiti-node-a"

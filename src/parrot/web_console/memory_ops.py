@@ -1423,6 +1423,7 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
         graphiti_bundle["import_overlay"] = {
             "destination": body.get("destination") or "isolated_compartment",
             "source_kind": "graphiti",
+            "materialization_state": "preview_only_not_materialized",
             "import_policy": policy_data.get("policy", {}),
             "import_draft": policy_data.get("draft", {}),
             "transform_preview": transform_data,
@@ -1432,6 +1433,12 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
                 "dry_run": False,
                 "operator_mode": True,
                 "edge_apply": "separate L2-B edge route after node UUID resolution",
+            },
+            "context_route_policy": {
+                "route": "/api/l2b/subgraphs/context",
+                "requires_materialized_l2b_uuid": True,
+                "preview_uuid_prefix": "graphiti:",
+                "preview_uuid_status": "not_queryable_until_l2b_materialization",
             },
         }
     return _receipt(
@@ -1461,6 +1468,16 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
             "transform_receipt_id": str(
                 ((transform_receipt or {}).get("receipt") or {}).get("receipt_id", "")
             ),
+            "direct_graphiti_write": False,
+            "direct_l2b_write": False,
+            "materialization_state": "preview_only_not_materialized",
+            "context_route_policy": {
+                "route": "/api/l2b/subgraphs/context",
+                "requires_materialized_l2b_uuid": True,
+                "preview_uuid_prefix": "graphiti:",
+                "preview_uuid_status": "not_queryable_until_l2b_materialization",
+                "reason": "import-plan returns Graphiti bundle projection UUIDs; live context reads get_l2b_graph() by durable L2-B UUID only.",
+            },
             "policy_skipped_reason": policy_skipped_reason,
             "flow_steps": [
                 "Graphiti.search scoped by partition",
