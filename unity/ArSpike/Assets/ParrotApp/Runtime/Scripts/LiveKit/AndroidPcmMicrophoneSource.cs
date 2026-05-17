@@ -30,6 +30,7 @@ namespace ParrotApp.LiveKit
         public bool IsNativeRecording { get; private set; }
         public string LastNativeState { get; private set; } = "not_started";
         public string LastNativeError { get; private set; } = "";
+        public string LastNativeSourceName { get; private set; } = "";
 
         public AndroidPcmMicrophoneSource(int sampleRate, int channels, string routeHint)
             : base(Mathf.Clamp(channels, 1, 2), RtcAudioSourceType.AudioSourceMicrophone)
@@ -58,6 +59,11 @@ namespace ParrotApp.LiveKit
                 {
                     _native = new AndroidJavaObject("com.parrotcarriers.audio.AndroidPcmMicCapture");
                     _callback = new AndroidPcmAudioCallbackProxy(this);
+                    // Java starts its capture thread immediately after
+                    // AudioRecord.startRecording(). Mark the source as started
+                    // before crossing the bridge so the first PCM frames are not
+                    // discarded by OnNativePcmFrame on fast devices.
+                    _started = true;
                     bool ok = _native.Call<bool>(
                         "start",
                         activity,
@@ -74,18 +80,15 @@ namespace ParrotApp.LiveKit
             }
             catch (Exception e)
             {
-                LastNativeError = string.IsNullOrWhiteSpace(LastNativeError)
-                    ? e.GetType().Name
-                    : LastNativeError;
+                LastNativeError = BuildNativeStartError(e, LastNativeError);
                 LastNativeState = string.IsNullOrWhiteSpace(LastNativeState)
-                    ? "start_exception:" + e.GetType().Name
+                    ? "start_exception:" + LastNativeError
                     : LastNativeState;
+                _started = false;
                 CleanupNative();
                 base.Stop();
                 throw;
             }
-
-            _started = true;
 #else
             base.Stop();
             throw new PlatformNotSupportedException("AndroidPcmMicrophoneSource is Android-only");
@@ -129,7 +132,7 @@ namespace ParrotApp.LiveKit
                 return;
 
             IsNativeRecording = true;
-            int safeLength = Mathf.Min(length, samples.Length);
+            int safeLength = Math.Min(length, samples.Length);
             if (safeLength <= 0)
                 return;
 
@@ -139,7 +142,8 @@ namespace ParrotApp.LiveKit
                 frame = new float[safeLength];
                 Array.Copy(samples, frame, safeLength);
             }
-            AudioRead?.Invoke(frame, Mathf.Clamp(channels, 1, 2), sampleRate > 0 ? sampleRate : _sampleRate);
+            int safeChannels = channels <= 1 ? 1 : 2;
+            AudioRead?.Invoke(frame, safeChannels, sampleRate > 0 ? sampleRate : _sampleRate);
         }
 
         private void RefreshNativeError(string state)
@@ -165,19 +169,48 @@ namespace ParrotApp.LiveKit
 #endif
         }
 
+        private static string BuildNativeStartError(Exception exception, string existingError)
+        {
+            if (!string.IsNullOrWhiteSpace(existingError))
+                return existingError;
+            if (exception == null)
+                return "android_pcm_start_exception";
+
+            string message = exception.Message ?? "";
+            string marker = message.IndexOf("com.parrotcarriers.audio.AndroidPcmMicCapture", StringComparison.Ordinal) >= 0
+                ? "android_pcm_bridge_unavailable"
+                : "android_pcm_start_exception";
+            return marker + ":" + exception.GetType().Name + ":" + ShortMessage(message);
+        }
+
+        private static string ShortMessage(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return "no_message";
+            message = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
+            const int max = 160;
+            return message.Length <= max ? message : message.Substring(0, max);
+        }
+
         private void OnNativeState(string json)
         {
             LastNativeState = string.IsNullOrWhiteSpace(json) ? "native_state_empty" : json;
             IsNativeRecording = LastNativeState.Contains("\"recording\":true");
-            int errorStart = LastNativeState.IndexOf("\"error\":\"", StringComparison.Ordinal);
-            if (errorStart >= 0)
-            {
-                errorStart += "\"error\":\"".Length;
-                int errorEnd = LastNativeState.IndexOf('"', errorStart);
-                LastNativeError = errorEnd > errorStart
-                    ? LastNativeState.Substring(errorStart, errorEnd - errorStart)
-                    : "";
-            }
+            LastNativeError = ExtractJsonString(LastNativeState, "error");
+            LastNativeSourceName = ExtractJsonString(LastNativeState, "source_name");
+        }
+
+        private static string ExtractJsonString(string json, string field)
+        {
+            if (string.IsNullOrWhiteSpace(json) || string.IsNullOrWhiteSpace(field))
+                return "";
+            string marker = "\"" + field + "\":\"";
+            int start = json.IndexOf(marker, StringComparison.Ordinal);
+            if (start < 0)
+                return "";
+            start += marker.Length;
+            int end = json.IndexOf('"', start);
+            return end > start ? json.Substring(start, end - start) : "";
         }
 
         private sealed class AndroidPcmAudioCallbackProxy : AndroidJavaProxy

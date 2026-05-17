@@ -469,6 +469,205 @@ rollback story.
   returned hits into L1.5 under operator mode. This proves connection + import;
   exact Graphiti UUID CRUD lookup remains the next upgrade.
 
+2026-05-17 M13 update:
+
+- Exact UUID lookup is now implemented at `/api/graphiti/lookup` and uses
+  Graphiti official `get_by_uuid` helpers scoped to the requested partition
+  graph. It can inspect entity/fact/episode UUIDs without relying on fuzzy
+  search misses.
+- Subgraph search enriches hits with full raw Graphiti fact/source/target
+  lookup objects before L1.5 import, so L2-B receives a complete Graphiti
+  evidence envelope instead of a lossy EdgeKind conversion.
+- The local 7893 BFF proxies non-dry-run Episode writes and operator subgraph
+  export to ECS 8790 when `PARROT_WEB_CONSOLE_GRAPHITI_URL` is configured.
+- ECS FalkorDB persistence now mounts the actual image data path
+  `/var/lib/falkordb/data` and enables AOF/everysec/noeviction through
+  `REDIS_ARGS`. After a real FalkorDB restart, 7893 still found persisted
+  `arknights_test` facts and enriched 16/16 requested Graphiti UUID objects.
+- Because Graphiti hybrid search can be cold after restart while persisted
+  facts exist, Web has a bounded read-only FalkorDB partition-graph fallback.
+  It only returns Graphiti UUID/fact/source/target rows and then uses the same
+  lookup/enrichment path; it is not a separate ontology or direct write path.
+
+2026-05-17 M14 research update:
+
+- Official Graphiti docs confirm the Web Console should treat Episodes as
+  ingestion/provenance history, Graphiti search as hybrid/natural-language
+  retrieval, and CRUD `get_by_uuid` as the exact inspection path for
+  entity/fact/episode UUIDs. This matches the current 7893 -> ECS 8790 test
+  bench direction.
+- Graphiti `group_id` namespacing must stay visible in every Web operation:
+  add Episode, search, lookup, export, import, and fallback scans. The
+  partition is not optional state hidden in the server.
+- Custom Graphiti entity/edge types should be introduced only as additive
+  extraction guidance after the Ref/Identity model is stable. Web should not
+  solve L2-B filtering by inventing one Graphiti edge type per visual view.
+- rustworkx docs correct the identity policy: graph indices are stable only as
+  runtime handles and may be reused after deletion. L2-B must keep external
+  UUID maps and rebuild graph handles instead of persisting rustworkx indices.
+- Ref management needs a mutable RefIndex/IdentityBinding layer next to
+  Graphiti, not inside Episode text alone. Moving a file should update
+  RefIndex and emit a Graphiti audit Episode; historical Episodes should stay
+  historical.
+- Nanobot + git + MCP is a good management loop only if Web keeps plan/apply
+  control: nanobot proposes scans/repairs, MCP checks file/cloud/ECS state,
+  git records manifest deltas, and Graphiti records audit Episodes after
+  approved changes.
+
+2026-05-17 M14 implementation update:
+
+- Web now has semantic CORE-015 write-back routes for this research result:
+  `POST /api/memory/identity-ref-index/graphiti-ref/draft` and
+  `POST /api/memory/identity-ref-index/graphiti-ref/apply`.
+- These routes are narrower than the generic IdentityRefIndex apply route:
+  they require a Graphiti UUID, build a GraphitiRecordRef, bind reviewed
+  ExternalRefRecords, draft RefMoveEvents for locator changes, and return a
+  Graphiti audit Episode draft.
+- Bugfix boundary: an empty locator does not create a placeholder
+  ExternalRefRecord. GraphitiRecordRef-only identity binding is allowed, but
+  mutable external refs require locator, canonical URI, or content hash.
+- Default operator apply persists only the IdentityRefIndex JSON. It does not
+  write L2-B, mutate Graphiti/FalkorDB, move files, update ECS paths, or change
+  App DTOs.
+- The next business proof should start from a real Graphiti search/lookup
+  result, bind an Obsidian/ECS/local/file ref through this route, verify
+  RefIndex persistence, then explicitly decide whether to write the generated
+  audit Episode through `/api/graphiti/episode`.
+- Live canary completed for the first half of that proof: the local updated BFF
+  searched real ECS Graphiti `arknights_test`, selected fact UUID
+  `0ea2009c-402d-4332-81b4-31fa57e67688`, and applied a temporary RefIndex
+  binding with `dry_run=false` / `operator_mode=true`. Direct Graphiti and
+  L2-B writes stayed false; the audit Episode was returned as `draft_only`.
+- Audit write canary also passed when the operator explicitly set
+  `write_graphiti_audit_episode=true`. Because ECS Graphiti writes may take
+  longer than normal search/lookup, the successful canary used
+  `PARROT_WEB_CONSOLE_GRAPHITI_TIMEOUT_S=240`; the receipt reported remote
+  message `episode written` and mutation scope
+  `memory_identity_ref_index_json_and_graphiti_audit_episode`.
+- The existing 7893 React Source Board now exposes that business path under the
+  Graphiti Export plan: selected search hits produce `identity_ref_drafts`, the
+  operator chooses a Graphiti fact/entity/episode pointer, edits Ref ID/kind and
+  locator/URL, previews the M14 write-back, and optionally enables the audit
+  Episode write during apply. Runtime smoke after restarting 7893 with ECS
+  proxy and 240s timeout confirmed true ECS search and search -> export draft ->
+  identity_ref_drafts -> Graphiti-ref draft.
+- Regression validation: the blank-locator write-back case now returns no
+  external ref payloads, no ExternalRefRecords, and no RefMoveEvents.
+
+2026-05-17 M15 SearchConfig update:
+
+- `/api/graphiti/search` and `/api/graphiti/subgraph/search` now accept
+  `search_recipe`, `node_labels`, and `edge_types` in addition to the existing
+  partition/query/limit/focal controls.
+- When local Graphiti exposes low-level `_search` or `search_`, Web maps recipe
+  aliases to Graphiti SearchConfig recipes for combined, edge, node, and
+  community search families. The route passes `group_id`, bounded config limit,
+  optional focal UUID, and optional SearchFilters into Graphiti instead of
+  inventing a local relation taxonomy.
+- The receipt records `search_config.mode`, the requested recipe, the mapped
+  recipe constant, low-level availability, and fallback reason if Web had to
+  call public `search()` instead. This gives operators a truthful answer to
+  "did this run Graphiti's recipe path or not?"
+- The 7893 Source Board now exposes local expansion Strategy separately from
+  Graphiti Recipe, plus Node labels / Edge types inputs. Edge type inputs are
+  retrieval filters and view aids; they are not a plan to mirror every Graphiti
+  predicate into a local `EdgeKind`.
+- Focused regression proves `combined_rrf` plus filters reach `_search` as
+  config/filter/group_id, and subgraph preview upgrades endpoint placeholders
+  when Graphiti also returns the full entity node for the same UUID. Full Web
+  route tests report `83 passed`, frontend typecheck/build passed, and the
+  restarted 7893 sidecar returned true ECS results for
+  `strategy=iterative_hybrid + search_recipe=combined_rrf` with `Entity` /
+  `CrisisFact` filters. Live ECS receipts will show `_search` mode only after
+  ECS/app-monitor is deployed with this M15 adapter.
+2026-05-17 M16 Graphiti bundle update:
+
+- `/api/graphiti/subgraph/search`, `/export-draft`, `/export`, and
+  `/import-plan` now return `graphiti_bundle` as the reviewable unit for
+  one-click import.
+- The bundle preserves raw Graphiti selected-hit envelopes, fact/entity/
+  episode/community sections, enriched UUID lookup payloads, search plan/config,
+  Graphiti recipe/filter settings, edge drafts, and CORE-015 identity/ref
+  drafts.
+- Import-plan adds `graphiti_bundle.import_overlay` with CORE-013 destination
+  policy, import draft, apply route, and operator preconditions. This is an
+  overlay on preserved Graphiti data, not a conversion into local EdgeKind
+  enums.
+- L2-B remains a rustworkx projection layer: bundle receipts explicitly keep
+  `preserve_raw_graphiti=true`, `direct_graphiti_write=false`,
+  `direct_falkordb_write=false`, and `edge_materialization_policy` requiring
+  resolved L2-B node UUIDs.
+- Regression validation: full Web route tests report `83 passed`. The next
+  live proof should deploy the M15/M16 adapter to ECS/app-monitor and verify
+  a real 7893 -> 8790 receipt with `_search` mode plus bundle section counts.
+
+2026-05-17 M17 Source Board bundle UI:
+
+- The 7893 React Source Board now renders a `Graphiti bundle` review panel
+  whenever search/export/import-plan receipts include `graphiti_bundle`.
+- Operators can see bundle schema/selection count, facts/entities/episodes/
+  communities, strategy/recipe/search-plan/lookup summary, projection policy,
+  import overlay destination, and sample raw Graphiti rows without opening the
+  JSON receipt rail.
+- This is still read-model/UI surfacing: no new backend DTO, no direct
+  Graphiti/FalkorDB write, and no L2-B edge materialization without resolved
+  endpoint UUIDs.
+- Validation: frontend typecheck/build passed, Web route tests remain
+  `83 passed`, and 7893 live canary against ECS Graphiti returned true
+  `arknights_test` bundle counts `facts=3/entities=4/episodes=0/communities=0`
+  with first fact UUID `0ea2009c-402d-4332-81b4-31fa57e67688`. Remote
+  `_search` mode proof still requires deploying the M15/M16 adapter to ECS
+  8790.
+
+2026-05-17 M18 ECS/app-monitor SearchConfig deployment:
+
+- ECS 8790 now runs the Graphiti adapter itself, rather than relying on the
+  local 7893 BFF to preserve bundle/search metadata.
+- App-monitor route parity was fixed: `/api/graphiti/search` and
+  `/api/graphiti/subgraph/search` forward `search_recipe`, `node_labels`, and
+  `edge_types`; `/api/graphiti/subgraph/import-plan` is exposed remotely for
+  draft-only L2-B import overlay review.
+- Deployment was intentionally narrow: `app_monitor_server.py`,
+  `graphiti_console.py`, and `memory_ops.py` were backed up, installed on ECS,
+  compiled, and `parrot-app-monitor` was restarted.
+- Remote 8790 canary against `arknights_test / Amiya Chernobog` with
+  `combined_rrf`, `Entity`, and `CrisisFact` returned
+  `search_config.mode="_search"`, `fallback=false`, `low_level="_search"`,
+  first fact UUID `0ea2009c-402d-4332-81b4-31fa57e67688`, bundle counts
+ `facts=3/entities=4/episodes=3/communities=0`, and UUID lookup `10/10`.
+- Remote import-plan returned `import_overlay.destination=isolated_compartment`
+  with one fact section, four IdentityRef drafts, and one L1.5 observation
+  while preserving the preview-only `dry_run=true/operator_mode=false` policy.
+- The existing 7893 Web Console now sees the same remote `_search` and bundle
+  proof through `PARROT_WEB_CONSOLE_GRAPHITI_URL=http://8.216.45.45:8790`.
+
+2026-05-17 M19 Graphiti bundle projection preview:
+
+- Graphiti import-plan now calls the CORE-013
+  `graphiti_bundle_projection` transform and embeds the result as
+  `l2b_transform_preview` plus
+  `graphiti_bundle.import_overlay.transform_preview`.
+- The transform consumes preserved bundle sections instead of reparsing labels:
+  Graphiti entities/episodes/communities become pointer-style L2-B preview
+  nodes, facts become `graphiti_fact` preview edges, episode UUIDs become
+  support links, and fact records remain available as Graphiti ref pointers.
+- Raw Graphiti payloads stay attached under `meta.graphiti_raw` and
+  `source_envelope`; L2-B only adds placement/preview metadata. This keeps the
+  design aligned with the requirement that L2-B adapts to Graphiti rather than
+  breaking or over-normalizing Graphiti data.
+- RustWorkX is used only for an in-memory `PyDiGraph` topology preview:
+  `node_count`, `edge_count`, weak-component samples, and
+  `uuid_to_rwx_idx_preview` are useful review/debug fields, but
+  `rwx_idx_policy=ephemeral_do_not_persist` is explicit.
+- ECS 8790 was updated with `graph_policy.py` and `memory_ops.py`, backed up,
+  compiled, and restarted to PID `127087`.
+- True connection proof: both remote 8790 and local 7893 passthrough searched
+  `arknights_test / Amiya Chernobog` through `_search`, returned first fact
+  UUID `0ea2009c-402d-4332-81b4-31fa57e67688`, bundle counts
+  `facts=3/entities=4/episodes=3/communities=0`, and import-plan projection
+  counts `l2b_nodes=3`, `l2b_edges=1`, `episode_links=2`, RustWorkX
+  `nodes=3/edges=3`, with `direct_l2b_write=false`.
+
 ### D. Observable Completion Signal
 
 - Web shows Graphiti dependency/config status and available partitions.

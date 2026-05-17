@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import Any
+
 import py_trees
 import pytest
 
@@ -218,6 +221,95 @@ def test_console_action_endpoints_drive_app_tool_flows() -> None:
     assert artifacts["magnifier_focus"]["locations"]["ref_registry"]["present"] is True
     assert artifacts["boundary_box"]["locations"]["ref_registry"]["present"] is True
     assert artifacts["workdesk_notes"]["locations"]["intent_workspace"]["present"] is True
+
+
+def test_monitor_graphiti_routes_forward_search_config_recipe_and_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+    from parrot.brain import graphiti_console
+    from parrot.memory import graphiti_client
+
+    calls: list[dict[str, Any]] = []
+
+    class FakeConfig:
+        def __init__(self) -> None:
+            self.limit = 0
+
+        def model_copy(self, deep: bool = True) -> "FakeConfig":
+            assert deep is True
+            return FakeConfig()
+
+    class FakeGraphiti:
+        async def _search(self, **kwargs: Any) -> SimpleNamespace:
+            calls.append(dict(kwargs))
+            return SimpleNamespace(
+                edges=[
+                    SimpleNamespace(
+                        uuid="fact-monitor-rrf-1",
+                        fact="Amiya protects Chernobog civilians.",
+                        source_node_uuid="node-monitor-amiya",
+                        target_node_uuid="node-monitor-chernobog",
+                        score=0.92,
+                    )
+                ],
+                nodes=[],
+                communities=[],
+            )
+
+    async def fake_get_graphiti() -> FakeGraphiti:
+        return FakeGraphiti()
+
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: True)
+    monkeypatch.setattr(graphiti_console, "_load_search_config_recipe", lambda recipe: FakeConfig())
+    monkeypatch.setattr(
+        graphiti_console,
+        "_build_graphiti_search_filter",
+        lambda **kwargs: {
+            "node_labels": list(kwargs["node_labels"]),
+            "edge_types": list(kwargs["edge_types"]),
+        },
+    )
+    monkeypatch.setattr(graphiti_client, "get_graphiti", fake_get_graphiti)
+    client = TestClient(build_app())
+
+    search = client.post(
+        "/api/graphiti/search",
+        json={
+            "query": "Amiya Chernobog",
+            "partition": "arknights_test",
+            "limit": 4,
+            "search_recipe": "combined_rrf",
+            "node_labels": ["Entity"],
+            "edge_types": ["CrisisFact"],
+        },
+    ).json()
+    subgraph = client.post(
+        "/api/graphiti/subgraph/search",
+        json={
+            "query": "Amiya Chernobog",
+            "partition": "arknights_test",
+            "limit": 4,
+            "strategy": "hybrid",
+            "search_recipe": "combined_rrf",
+            "node_labels": ["Entity"],
+            "edge_types": ["CrisisFact"],
+            "enrich": False,
+        },
+    ).json()
+
+    assert search["success"] is True
+    assert search["data"]["search_config"]["mode"] == "_search"
+    assert subgraph["success"] is True
+    assert subgraph["data"]["search_plan"][0]["search_config"]["mode"] == "_search"
+    assert len(calls) == 2
+    assert calls[0]["group_id"] == "arknights_test"
+    assert calls[0]["config"].limit == 4
+    assert calls[0]["search_filter"] == {
+        "node_labels": ["Entity"],
+        "edge_types": ["CrisisFact"],
+    }
+    assert calls[1]["search_filter"] == calls[0]["search_filter"]
 
 
 def test_lineb_monitor_endpoints_update_voice_pipeline_refs() -> None:

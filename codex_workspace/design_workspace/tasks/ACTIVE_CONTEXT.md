@@ -84,7 +84,7 @@ The formal App frontend is **not complete**.
   Bluetooth-off routes. In both cases local capture still produced no frames
   (`Mic wait`, `frames=0`, `readSr=0`) even though the route/permission/focus
   looked valid. `MicrophonePublisher` still retries SCO at 48 kHz and can
-  temporarily ask the Android route bridge for `AudioRoutePreference.PhoneMic`.
+  temporarily ask the Android route bridge for `AudioRoutePreference.SystemDefault`.
   If Unity exposes no microphone devices, or if Unity exposes a device but
   `MicrophoneSource` still times out with `AudioRead frames=0`, the final
   attempt now uses the formal `AndroidPcmMicrophoneSource` backed by Android
@@ -103,8 +103,11 @@ The formal App frontend is **not complete**.
   may report `bluetooth_sco` only when `getCommunicationDevice()` confirms SCO
   is actually selected; otherwise connected A2DP output plus phone mic is the
   safer formal voice path. The PhoneMic capture fallback is now a temporary
-  native route override and does not change the user's durable App preference;
-  Auto/Bluetooth can be restored on real device add/remove events. This targets
+  native route override and does not change the user's durable App preference.
+  It is intentionally sticky until the user changes route preference or the
+  session restarts, because restoring Auto/Bluetooth on `device_added` /
+  `device_removed` can immediately undo the fallback that made uplink work.
+  This targets
   the iQOO symptom where HUD showed a Bluetooth/SCO or phone route but local
   audio frames stayed at zero. Phone proof still has to show `AudioRead`
   frames increasing before LineA/LineB voice is considered usable.
@@ -126,6 +129,20 @@ The formal App frontend is **not complete**.
   instead of only `InvalidOperationException`. Rebuilt iQOO proof remains
   required; success means HUD `frames/ch/readSr/peak` become non-zero, not
   merely `LK on` or audible Parrot output.
+- Latest greeting-only uplink fix: iQOO now proves downlink/Brain enough to play
+  placement greeting, but user speech still did not drive follow-up dialogue.
+  Treat this as local uplink capture / LiveKit frame delivery, not Mint or Brain
+  presence. `AndroidPcmMicCapture` now prefers Android `MIC` before
+  `VOICE_COMMUNICATION`, because the communication source can initialize while
+  still gating or silencing near-end capture on some phones. Native state now
+  includes `source_name`; `AndroidPcmMicrophoneSource.Start()` accepts Java PCM
+  callbacks immediately during native startup and rolls back on exception; and
+  automatic AudioRecord retries stay on `system_default` so Bluetooth/A2DP
+  downlink is not pinned back to phone speaker by a forced PhoneMic override.
+  Explicit PhoneMic forcing is deferred to a future manual recovery control.
+  Next iQOO proof must show increasing `frames`, non-zero `ch/readSr`, and
+  non-flat `peak`; if those are healthy but Brain still ignores speech, shift
+  the investigation to remote track subscription / STT ingestion.
 - Follow-up audio sweep: Android route ownership now recognizes BLE headset
   voice routes (`TYPE_BLE_HEADSET`) in addition to classic SCO, and fallback
   diagnostics recognize BLE speaker/hearing-aid output classes. Java
@@ -133,6 +150,27 @@ The formal App frontend is **not complete**.
   swallowing `AndroidJavaProxy` PCM callback failures. `MicrophonePublisher`
   also owns local source detach/stop/dispose after every retry because the
   pinned LiveKit Unity SDK does not stop the C# source for us on unpublish.
+- Output-only Bluetooth correction: `auto` routing no longer forces
+  speaker/earpiece when Android exposes Bluetooth A2DP/BLE output but no
+  selectable SCO/BLE headset communication device. If an older speaker/earpiece
+  communication device is already pinned, the Android bridge now clears that
+  explicit selection so the system can keep Bluetooth media/downlink output
+  while Unity captures from phone/default mic. The capture fallback tries
+  `system_default` first so headset downlink can stay active, then only forces
+  `phone_mic` on the final low-rate AudioRecord recovery attempt. iQOO proof is
+  still required for both uplink frames and headset output retention.
+- Audio callback-thread hygiene: native AudioRecord PCM enters via an Android
+  Java callback thread. App-owned peak/channel diagnostics now use pure C# math
+  instead of `Mathf.*` on that path, keeping `pcm_callback_failed:*` focused on
+  actual JNI/LiveKit issues.
+- Latest SCO/AudioRecord diagnostics: a confirmed Android SCO communication
+  device now gets only a short settle/probe window before the formal executor
+  falls through to system/default or phone-mic recovery, so a dead Bluetooth
+  voice path should not stall the App through repeated full mic timeouts. If the
+  native `AudioRecord` bridge is missing or not packaged into the APK, HUD/debug
+  now surfaces `android_pcm_bridge_unavailable:*` rather than a generic startup
+  exception. iQOO proof still requires non-zero `frames/ch/readSr/peak`, or a
+  specific `native=` / `nerr=` blocker.
 - Latest Parrot pose fix: `GOSLO.glb` was confirmed to import with a neutral
   `body` node; the body block appeared to jut forward because the formal
   `AnimationDriver` was applying the full Minecraft Java body pitch to standing
@@ -142,6 +180,15 @@ The formal App frontend is **not complete**.
   world-upright on accepted horizontal AR planes instead of tilting the whole
   model to noisy blanket/desk normals. Phone proof is still required, but this
   should stop the placed model from looking hunched forward.
+- Latest Brain RoomIO binding fix: iQOO now proves placement RPC/downlink well
+  enough for an audible greeting, but the long-lived Castle room can still make
+  LiveKit Agents auto-bind audio/video input to the first old/diagnostic remote
+  participant instead of the current phone. Brain now rebinds
+  `session.room_io` to the Unity `caller_identity` on `onSceneReady` and
+  `onGosloPlaced`. This is not a phone-route change: no Mint, room reconnect,
+  Brain dispatch, RoomSetting, or Android audio route is touched. Next proof is
+  HUD non-zero uplink plus Castle logs showing `RoomIO input participant
+  rebound` and transcript events from the current Unity identity.
 - Unity App RoomSetting ECS persistence is verified as of 2026-05-15:
   `New` returns an unsaved draft, `Save` persists a user Room through App HTTP,
   reload lists it from ECS, and save does not apply or change active Room.
@@ -702,13 +749,15 @@ These are useful test evidence only. They must not be used as App completion evi
   two relevant mobile risks: Unity Android Bluetooth microphone capture can
   fail even when permission and route look correct, and
   `AudioSettings.OnAudioConfigurationChanged` is not a reliable headset-change
-  signal. `MicrophonePublisher` now does a native `phone_mic` route override
-  before the final phone fallback, and the fallback can now create
-  `AndroidPcmMicrophoneSource` backed by Android `AudioRecord` even when Unity
-  lists a microphone device but never emits frames. This fallback must remain
-  local-only: no LiveKit reconnect, no Mint token refresh, and no Brain
-  dispatch. The next phone run must prove HUD audio frames/channels/sample-rate
-  become non-zero before voice can be treated as connected.
+  signal. `MicrophonePublisher` now keeps automatic recovery on
+  `system_default` so Android can preserve Bluetooth/A2DP downlink while the
+  fallback creates `AndroidPcmMicrophoneSource` backed by Android
+  `AudioRecord`. It handles both "Unity lists no mic" and "Unity emits no or
+  fake-silent frames" cases; explicit PhoneMic forcing is deferred to a manual
+  recovery control. This fallback must remain local-only: no LiveKit reconnect,
+  no Mint token refresh, and no Brain dispatch. The next phone run must prove
+  HUD audio `frames/ch/readSr/peak/nz` and native `nsrc` diagnostics before
+  voice can be treated as connected.
 - 2026-05-13 homepage/LiveKit continuation audit: Brain RPC testing does not
   require phone or voice, but it does require a Brain / LiveKit Agents
   participant in the same room. Phone/device testing is still required for AR
@@ -725,6 +774,11 @@ These are useful test evidence only. They must not be used as App completion evi
   next iQOO run should use these fields plus `frames/ch/readSr/peak` to tell
   whether the App is on Unity mic, Android AudioRecord fallback, or a started
   capture path that still emits no frames.
+- 2026-05-17 fake-silence guard: fresh frames with all-zero PCM are no longer
+  accepted as healthy Unity microphone capture. The watchdog degrades
+  `uplink_watchdog_zero_peak_unity_microphone` and forces the next local-track
+  rebuild into Android AudioRecord attempts. HUD `nz=` is the age since source
+  start or latest non-zero peak.
 
 ## App Frontend Longline
 

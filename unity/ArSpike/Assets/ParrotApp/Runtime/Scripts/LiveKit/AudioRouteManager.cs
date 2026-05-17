@@ -37,7 +37,7 @@ namespace ParrotApp.LiveKit
         {
             ResolveFallbackDetector();
             SubscribeFallbackDetector();
-            CurrentPolicy = fallbackDetector != null ? fallbackDetector.CurrentPolicy : AudioRoutePolicy.Default();
+            CurrentPolicy = AudioRoutePolicy.Default();
 
             if (preferNativeAndroid)
             {
@@ -93,8 +93,9 @@ namespace ParrotApp.LiveKit
         {
             // Capture recovery can briefly force the Android communication
             // device away from a dead SCO mic without changing the user's
-            // durable App preference. The next headset topology change restores
-            // the public preference so Auto can prefer Bluetooth again.
+            // durable App preference. Do not auto-restore on headset topology
+            // callbacks: that can immediately undo a successful phone/default
+            // mic fallback and put the App back into a SCO retry loop.
             if (!NativeAvailable)
             {
                 RefreshCurrentPolicy(trigger ?? "temporary_route_preference_unavailable");
@@ -182,12 +183,10 @@ namespace ParrotApp.LiveKit
 
         private static bool ShouldRestoreTemporaryPreference(string reason)
         {
-            // Do not restore on communication_device_changed: our own temporary
-            // phone-mic fallback can trigger that callback while the capture
-            // retry is still settling. Actual headset topology changes arrive
-            // through device_added/device_removed.
-            return string.Equals(reason, "device_added", StringComparison.OrdinalIgnoreCase)
-                   || string.Equals(reason, "device_removed", StringComparison.OrdinalIgnoreCase);
+            // Temporary capture overrides are sticky until the user changes
+            // preference or a new session starts. Restoring on device_added or
+            // device_removed can undo the fallback that just made uplink work.
+            return false;
         }
 
         private void ApplyFallbackPolicy(string trigger)
@@ -234,7 +233,7 @@ namespace ParrotApp.LiveKit
             OnSnapshotChanged?.Invoke(snapshot);
 
             bool changed = !old.Equals(policy);
-            if (changed || (snapshot != null && snapshot.requires_mic_republish))
+            if (changed)
             {
                 Debug.Log("[AudioRouteManager] route accepted via " + trigger + ": " + old + " -> " + policy);
                 OnRoutePolicyChanged?.Invoke(old, policy);

@@ -38,12 +38,9 @@ services:
     ports:
       - "6380:6379"
     volumes:
-      - falkordb_data:/data
-    command: >
-      redis-server
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --loadmodule /FalkorDB/bin/linux-x64-release/src/falkordb.so
+      - falkordb_data:/var/lib/falkordb/data
+    environment:
+      - REDIS_ARGS=--maxmemory 256mb --maxmemory-policy noeviction --appendonly yes --appendfsync everysec --save 60 1
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

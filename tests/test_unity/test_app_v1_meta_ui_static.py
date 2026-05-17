@@ -50,6 +50,21 @@ FORMAL_HOME_MENU_CONTROLLER = (
 FORMAL_HOME_TOOL_CONTROLLER = (
     SCRIPT_ROOT / "UI" / "FormalHomeToolController.cs"
 )
+FORMAL_CAMERA_MODE_CONTROLLER = (
+    SCRIPT_ROOT / "UI" / "FormalCameraModeController.cs"
+)
+VISUAL_TOOL_PACKET_BUILDER = (
+    SCRIPT_ROOT / "VisualTools" / "VisualToolPacketBuilder.cs"
+)
+VISUAL_TOOL_HTTP_CLIENT = (
+    SCRIPT_ROOT / "VisualTools" / "VisualToolHttpClient.cs"
+)
+BBOX_VISUAL_TOOL_CONTROLLER = (
+    SCRIPT_ROOT / "VisualTools" / "BBoxVisualToolController.cs"
+)
+MAGNIFIER_VISUAL_TOOL_CONTROLLER = (
+    SCRIPT_ROOT / "VisualTools" / "MagnifierVisualToolController.cs"
+)
 FORMAL_MODEL_REMOTE_CONTROLLER = (
     SCRIPT_ROOT / "UI" / "FormalModelRemoteController.cs"
 )
@@ -782,6 +797,14 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "host.AddComponent<EcpEventPublisher>()" in flow
     assert "FormalHomeToolController homeToolController" in flow
     assert "host.AddComponent<FormalHomeToolController>()" in flow
+    assert "FormalCameraModeController cameraModeController" in flow
+    assert "host.AddComponent<FormalCameraModeController>()" in flow
+    assert "VisualToolHttpClient visualToolHttpClient" in flow
+    assert "host.AddComponent<VisualToolHttpClient>()" in flow
+    assert "BBoxVisualToolController bboxVisualToolController" in flow
+    assert "host.AddComponent<BBoxVisualToolController>()" in flow
+    assert "MagnifierVisualToolController magnifierVisualToolController" in flow
+    assert "host.AddComponent<MagnifierVisualToolController>()" in flow
     assert "FormalModelRemoteController modelRemoteController" in flow
     assert "host.AddComponent<FormalModelRemoteController>()" in flow
     assert "FormalXrHandPerchController xrHandPerchController" in flow
@@ -867,9 +890,12 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "SetPreference(AudioRoutePreference" in route_manager
     assert "ApplyTemporaryNativePreference(AudioRoutePreference" in route_manager
     assert "ShouldRestoreTemporaryPreference" in route_manager
-    assert '"device_added"' in route_manager
-    assert '"device_removed"' in route_manager
-    assert "Do not restore on communication_device_changed" in route_manager
+    assert "return false;" in route_manager
+    assert 'return string.Equals(reason, "device_added"' not in route_manager
+    assert "can undo the fallback that just made uplink work" in route_manager
+    assert "CurrentPolicy = AudioRoutePolicy.Default();" in route_manager
+    assert "if (changed)" in route_manager
+    assert "changed ||" not in route_manager
     assert "OnRoutePolicyChanged" in route_manager
     assert "AudioRouteDetector" in route_manager
     assert "fallback/diagnostic" in route_manager
@@ -913,7 +939,11 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "sampleRateCandidates" not in android_pcm_capture_java
     assert "MediaRecorder.AudioSource.VOICE_COMMUNICATION" in android_pcm_capture_java
     assert "MediaRecorder.AudioSource.MIC" in android_pcm_capture_java
+    assert android_pcm_capture_java.index("MediaRecorder.AudioSource.MIC") < android_pcm_capture_java.index("MediaRecorder.AudioSource.VOICE_COMMUNICATION")
+    assert "gates or silences near-end capture" in android_pcm_capture_java
     assert "rate=\" + activeSampleRate" in android_pcm_capture_java
+    assert "source_name" in android_pcm_capture_java
+    assert "+ \"\\\",\\\"recording\\\":\" + isRecording()" in android_pcm_capture_java
     assert "pcm_callback_failed" in android_pcm_capture_java
     assert "com.unity3d.player.UnityPlayer" not in android_pcm_capture_java
     assert "AndroidJavaProxy" in android_pcm_source
@@ -922,8 +952,18 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "AndroidPcmMicrophoneSource is Android-only" in android_pcm_source
     assert "RefreshNativeError(\"start_returned_false\")" in android_pcm_source
     assert "_native.Call<string>(\"lastError\")" in android_pcm_source
+    assert "BuildNativeStartError" in android_pcm_source
+    assert "android_pcm_bridge_unavailable" in android_pcm_source
+    assert "ShortMessage" in android_pcm_source
+    assert "LastNativeSourceName" in android_pcm_source
+    assert "ExtractJsonString(LastNativeState, \"source_name\")" in android_pcm_source
     assert android_pcm_source.index("if (_started) return;") < android_pcm_source.index("base.Start();")
+    assert android_pcm_source.index("_started = true;") < android_pcm_source.index("_native.Call<bool>(")
+    assert "LastNativeState = string.IsNullOrWhiteSpace(LastNativeState)" in android_pcm_source
+    assert "_started = false;\n                CleanupNative();" in android_pcm_source
     assert "CleanupNative();\n                base.Stop();" in android_pcm_source
+    assert "Math.Min(length, samples.Length)" in android_pcm_source
+    assert "Mathf.Min(length, samples.Length)" not in android_pcm_source
     assert "TYPE_BLUETOOTH_SCO" in android_route_java
     assert "TYPE_BLUETOOTH_A2DP" in android_route_java
     assert "TYPE_BLE_HEADSET" in android_route_java
@@ -931,6 +971,9 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "TYPE_HEARING_AID" in android_route_java
     assert "isBluetoothVoiceType" in android_route_java
     assert "hasBluetoothOutputType" in android_route_java
+    assert "shouldClearCommunicationDeviceForOutputBluetooth" in android_route_java
+    assert "communication_device_cleared_for_output_bluetooth" in android_route_java
+    assert "Clearing here lets Android keep Bluetooth media" in android_route_java
     assert "bluetooth_connect_permission" in android_route_java
     assert "getDevices() is only an availability list" in android_route_java
     assert 'if (hasDeviceType(inputs, AudioDeviceInfo.TYPE_BLUETOOTH_SCO)) {' not in android_route_java
@@ -940,10 +983,18 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "requires_mic_republish" in route_snapshot
     assert "recommended_sample_rate_hz" in route_snapshot
     assert "KindFromRoutes" in route_snapshot
+    assert "This policy drives the microphone source" in route_snapshot
+    assert "output route is A2DP" in route_snapshot
     assert "RefreshCurrentPolicy" in route_detector
     assert "ReevaluateAndFire" in route_detector
     assert "TryDetectAndroidDevices" in route_detector
     assert '"getDevices"' in route_detector
+    assert '"getCommunicationDevice"' in route_detector
+    assert '"communication=" + communicationType' in route_detector
+    assert "getDevices(GET_DEVICES_INPUTS) is an availability list" in route_detector
+    assert "falsely force the formal App into bt-sco@16k" in route_detector
+    assert "HasAnyDeviceType(inputs, typeBluetoothSco" not in route_detector
+    assert "HasAnyDeviceType(inputs, typeWiredHeadset" not in route_detector
     assert "GET_DEVICES_INPUTS" in route_detector
     assert "GET_DEVICES_OUTPUTS" in route_detector
     assert "TYPE_BLUETOOTH_SCO" in route_detector
@@ -967,6 +1018,11 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "IsAndroidMicInputRoute" in mic
     assert "CreateAudioSourceForAttempt" in mic
     assert "ShouldUseAndroidAudioRecordFallbackSource" in mic
+    assert "uplinkWatchdogZeroPeakSeconds" in mic
+    assert "uplink_watchdog_zero_peak_unity_microphone" in mic
+    assert "_forceAndroidAudioRecordNextPublish = true" in mic
+    assert "ShouldPromoteSilentUnityStreamToAndroidAudioRecord" in mic
+    assert "AddAndroidAudioRecordFallbackAttempts" in mic
     assert "new AndroidPcmMicrophoneSource(_configuredSampleRate, 1" in mic
     assert "new MicrophoneSource(" in mic
     assert "requiresUnityMicrophonePosition = false" in mic
@@ -1028,18 +1084,33 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "FormalArSessionBaselineReporter arSessionBaselineReporter" in home_hud
     assert "FormalArRuntimeBootstrap arRuntimeBootstrap" in home_hud
     assert "FormalXrHandPerchController xrHandPerchController" in home_hud
+    assert "FormalCameraModeController cameraModeController" in home_hud
+    assert "BBoxVisualToolController bboxVisualToolController" in home_hud
+    assert "MagnifierVisualToolController magnifierVisualToolController" in home_hud
     assert "AudioRouteHudLabel" in home_hud
     assert "MicrophoneHudLabel" in home_hud
     assert "MicrophoneDeviceHudLabel" in home_hud
     assert "UplinkHudLabel" in home_hud
     assert "UsingMic" in home_hud
     assert "Uplink " in home_hud
+    assert '" nz="' in home_hud
+    assert "microphonePublisher.LastNonSilentAudioAgeSeconds" in home_hud
     assert "MicPublishSummary(health)" in home_hud
     assert "health.AudioPublishAttempted ? \"wait\" : \"idle\"" in home_hud
     assert "PlacementHudLabel" in home_hud
     assert "ArHudLabel" in home_hud
     assert "Hand {XrHandHudLabel()}" in home_hud
     assert "XrHandHudLabel" in home_hud
+    assert "Camera {CameraHudLabel()}" in home_hud
+    assert "CameraHudLabel" in home_hud
+    assert "cameraModeController.LastHttpStatus" in home_hud
+    assert "cameraModeController.LastPhotoStatus" in home_hud
+    assert "VTool {VisualToolsHudLabel()}" in home_hud
+    assert "VisualToolsHudLabel" in home_hud
+    assert "VisualToolHudPart" in home_hud
+    assert "controller.LastRenderStatus" in home_hud
+    assert "controller.LastHttpStatus" in home_hud
+    assert "controller.LastAssetStatus" in home_hud
     assert "modelPlacementController.LastDiagnosticSummary" in home_hud
     assert "arSessionBaselineReporter.LastStatus" in home_hud
     assert "arRuntimeBootstrap.LastSpatialVisualStatus" in home_hud
@@ -1077,12 +1148,14 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "microphonePublisher.LastCaptureFallbackStatus" in home_hud
     assert "microphonePublisher.NativeAudioRecordState" in home_hud
     assert "microphonePublisher.NativeAudioRecordError" in home_hud
+    assert "microphonePublisher.NativeAudioRecordSource" in home_hud
+    assert "\" nsrc=\"" in home_hud
     assert "microphonePublisher.UplinkWatchdogMicrophoneRecording" in home_hud
     assert "microphonePublisher.UplinkWatchdogRecoveryCount" in home_hud
     assert "microphonePublisher.PublishedRouteVersion" in home_hud
     assert "microphonePublisher.RouteVersion" in home_hud
     assert "VerticalWrapMode.Overflow" in home_hud
-    assert "new Vector2(980f, 450f)" in home_hud
+    assert "new Vector2(980f, 528f)" in home_hud
     assert "SafeLabel(modelPlacementController.LastDiagnosticSummary + rpc)" in home_hud
     assert "ShortRoute" in home_hud
     assert "ShortRouteSource" in home_hud
@@ -1092,6 +1165,7 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "startupFlow.LastError" in home_hud
     assert 'Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")' in home_hud
     assert "Arial.ttf" not in home_hud
+    assert "AddComponent<AudioRouteManager>()" not in route_reporter
 
     assert "var persistentRoot = gameObject" in room_manager
     assert "transform.SetParent(null, true)" in room_manager
@@ -1118,6 +1192,19 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "OnLifecycleStateChanged" in mic
     assert "lifecycle_resumed" in mic
     assert "routeManager.OnRoutePolicyChanged += OnAudioRouteChanged" in mic
+    assert "RequiresMicRebuild" in mic
+    assert "CaptureClass" in mic
+    assert "route changed without mic rebuild" in mic
+    assert "route version changed during publish without mic rebuild" in mic
+    assert "microphoneStartTimeoutSeconds, routeRepublishDebounceSeconds" in mic
+    assert "bluetoothScoRouteSettleSeconds = 0.75f" in mic
+    assert "bluetoothScoStartTimeoutSeconds = 2f" in mic
+    assert "StartupTimeoutSeconds" in mic
+    assert "PreStartDelaySeconds" in mic
+    assert "scoProbeTimeout" in mic
+    assert "scoPreStartSettle" in mic
+    assert "capture_route_settle" in mic
+    assert "attempt.StartupTimeoutSeconds > 0f" in mic
     assert "RequestFreshTokenReconnect" not in mic
     assert "RequestFreshTokenReconnect" not in route_manager
     assert "Room.Connect" not in route_manager
@@ -1132,8 +1219,10 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "ActiveAudioSourceKind" in mic
     assert "NativeAudioRecordState" in mic
     assert "NativeAudioRecordError" in mic
+    assert "NativeAudioRecordSource" in mic
     assert "_lastNativeAudioRecordState" in mic
     assert "_lastNativeAudioRecordError" in mic
+    assert "_lastNativeAudioRecordSource" in mic
     assert "CacheNativeAudioRecordDiagnostics" in mic
     assert "uplinkRuntimeWatchdogEnabled = true" in mic
     assert "UplinkRuntimeWatchdogLoop" in mic
@@ -1153,12 +1242,12 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "ApplyCaptureRouteOverride" in mic
     assert "RouteOverridePreference" in mic
     assert "AudioRoutePreference.SystemDefault" in mic
-    assert "AudioRoutePreference.PhoneMic" in mic
+    assert "explicit/manual recovery" in mic
     assert "ApplyTemporaryNativePreference(" in mic
     assert "SetPreference(AudioRoutePreference.PhoneMic)" not in mic
     assert "route_override:\" + overrideLabel" in mic
     assert "capture_route_override" in mic
-    assert "Prefer system" in mic and "A2DP/BLE output stays on the headset" in mic
+    assert "Prefer system" in mic and "A2DP/BLE output can stay on" in mic
     assert "route change accepted during capture override without republish" in mic
     assert 'string.Equals(_selectedDevice, "phone_default_microphone"' in mic
     assert "LastCaptureFallbackStatus" in mic
@@ -1172,6 +1261,7 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "(source as IDisposable)?.Dispose()" in mic
     assert "Room.Connect" not in mic
     assert "OnMicrophoneAudioRead" in mic
+    assert "Mathf.Abs(data[i])" not in mic
     assert "_micSource.AudioRead += OnMicrophoneAudioRead" in mic
     assert "source.AudioRead -= OnMicrophoneAudioRead" in mic
     assert "PublishedRouteVersion" in mic
@@ -1204,6 +1294,11 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     menu_loader = FORMAL_HOME_MENU_LOADER.read_text(encoding="utf-8")
     menu_controller = FORMAL_HOME_MENU_CONTROLLER.read_text(encoding="utf-8")
     tool_controller = FORMAL_HOME_TOOL_CONTROLLER.read_text(encoding="utf-8")
+    camera_mode_controller = FORMAL_CAMERA_MODE_CONTROLLER.read_text(encoding="utf-8")
+    visual_packet = VISUAL_TOOL_PACKET_BUILDER.read_text(encoding="utf-8")
+    visual_http = VISUAL_TOOL_HTTP_CLIENT.read_text(encoding="utf-8")
+    bbox_visual = BBOX_VISUAL_TOOL_CONTROLLER.read_text(encoding="utf-8")
+    mag_visual = MAGNIFIER_VISUAL_TOOL_CONTROLLER.read_text(encoding="utf-8")
     model_remote = FORMAL_MODEL_REMOTE_CONTROLLER.read_text(encoding="utf-8")
     xrhand_perch = FORMAL_XRHAND_PERCH_CONTROLLER.read_text(encoding="utf-8")
     hand_gesture = HAND_GESTURE_SOURCE.read_text(encoding="utf-8")
@@ -1293,12 +1388,24 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "ToolButtonSettings" in menu_controller
     assert "AppHomeMenuClient homeMenuClient" in menu_controller
     assert "FormalHomeToolController homeToolController" in menu_controller
+    assert "FormalCameraModeController cameraModeController" in menu_controller
+    assert "cameraModeController?.SetModeLocal" in menu_controller
+    assert "cameraModeController?.MarkHttpPending(nextMode)" in menu_controller
+    assert "cameraModeController?.MarkHttpResult(mode, true)" in menu_controller
+    assert "cameraModeController?.MarkHttpResult(_cameraMode, false" in menu_controller
+    assert "cameraModeController?.MarkPhotoCaptureStatus" in menu_controller
+    assert "BBoxVisualToolController bboxVisualToolController" in menu_controller
+    assert "MagnifierVisualToolController magnifierVisualToolController" in menu_controller
     assert "CapturePhotoTool" in menu_controller
-    assert "DeferMagnifierTool" in menu_controller
-    assert "DeferBBoxTool" in menu_controller
+    assert "ToggleMagnifierTool" in menu_controller
+    assert "ToggleBBoxTool" in menu_controller
     assert "homeToolController.CapturePhoto()" in menu_controller
     assert "homeToolController.ToggleMagnifier()" not in menu_controller
     assert "homeToolController.ToggleBBox()" not in menu_controller
+    assert "magnifierVisualToolController.ToggleTool()" in menu_controller
+    assert "bboxVisualToolController.ToggleTool()" in menu_controller
+    assert "ToolStatusForMenu" in menu_controller
+    assert "dev_flag_off" in menu_controller
     assert "MAG after phone stability" in menu_controller
     assert "BOX after phone stability" in menu_controller
     assert "OpenMagnifierPlaceholder" not in menu_controller
@@ -1400,6 +1507,36 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "Arial.ttf" not in menu_controller
     assert "AppV1SmokeReferenceUiController" not in menu_controller
 
+    assert "class FormalCameraModeController" in camera_mode_controller
+    assert "FormalCameraModeCanvas" in camera_mode_controller
+    assert "FormalCameraModeOverlay_TransparentWysiwyg" in camera_mode_controller
+    assert "FormalCameraModeTinyTopEdge" in camera_mode_controller
+    assert "FormalCameraModeTinyBottomEdge" in camera_mode_controller
+    assert "CameraGestureRail_Zoom" in camera_mode_controller
+    assert "CameraExposureRail" in camera_mode_controller
+    assert "CameraProSettingsPanel" in camera_mode_controller
+    assert "CameraToolbox_PixelBBoxStamp" in camera_mode_controller
+    assert "FormalCameraModeShutterButton" in camera_mode_controller
+    assert "SetModeLocal" in camera_mode_controller
+    assert "MarkHttpPending" in camera_mode_controller
+    assert "MarkHttpResult" in camera_mode_controller
+    assert "CapturePhotoFromCameraMode" in camera_mode_controller
+    assert "homeToolController.CapturePhoto()" in camera_mode_controller
+    assert "SetZoom" in camera_mode_controller
+    assert "SetExposure" in camera_mode_controller
+    assert "CycleFilter" in camera_mode_controller
+    assert "Slider" in camera_mode_controller
+    assert '"preview"' in camera_mode_controller
+    assert '"photo_ready"' in camera_mode_controller
+    assert '"capture_locked"' in camera_mode_controller
+    assert "WYSIWYG" in camera_mode_controller
+    assert "CameraPreviewFrame" not in camera_mode_controller
+    assert "PhotoController photoController" not in camera_mode_controller
+    assert "captureSnapshot" not in camera_mode_controller
+    assert "CaptureSnapshot" not in camera_mode_controller
+    assert "PerformRpc" not in camera_mode_controller
+    assert "AppV1SmokeReferenceUiController" not in camera_mode_controller
+
     assert "class FormalHomeToolController" in tool_controller
     assert "FormalHomeToolCanvas" in tool_controller
     assert "PhotoController photoController" in tool_controller
@@ -1430,9 +1567,132 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "identify_object" not in tool_controller
     assert "AppV1SmokeReferenceUiController" not in tool_controller
 
+    assert "class VisualToolLifecyclePacket" in visual_packet
+    assert "VisualToolRegion" in visual_packet
+    assert "VisualToolTimebase" in visual_packet
+    assert '"preview_start"' in visual_packet
+    assert '"drag_update"' in visual_packet
+    assert '"resize_update"' in visual_packet
+    assert '"confirm"' in visual_packet
+    assert '"explicit_send"' in visual_packet
+    assert '"screen_normalized"' in visual_packet
+    assert '"unity:formal_app"' in visual_packet
+    assert '"c4"' not in visual_packet
+    assert "public const string C4" not in visual_packet
+    assert "GenerateToolId" in visual_packet
+    assert "ToJson(VisualToolLifecyclePacket packet)" in visual_packet
+    assert "asset_path" in visual_packet
+    assert "mime_type" in visual_packet
+
+    assert "class VisualToolHttpClient" in visual_http
+    assert '"/api/app/visual-tool/event"' in visual_http
+    assert '"/api/app/visual-tool/asset/"' in visual_http
+    assert '"X-Parrot-Tool-Id"' in visual_http
+    assert '"X-Parrot-Timebase"' in visual_http
+    assert '"X-Parrot-Region"' in visual_http
+    assert "config.appApiUrl" in visual_http
+    assert "config.appApiSecret" in visual_http
+    assert "UploadHandlerRaw" in visual_http
+
+    assert "class VisualToolControllerBase" in (SCRIPT_ROOT / "VisualTools" / "VisualToolControllerBase.cs").read_text(encoding="utf-8")
+    visual_base = (SCRIPT_ROOT / "VisualTools" / "VisualToolControllerBase.cs").read_text(encoding="utf-8")
+    assert "visualToolDevEnabled" in visual_base
+    assert "visualToolHttpEnabled" in visual_base
+    assert "allowLowFrequencyUpdateEvents" in visual_base
+    assert "PointerSample" in visual_base
+    assert "TryReadPrimaryPointer" in visual_base
+    assert "ScreenToNormalizedTopLeft" in visual_base
+    assert "ScreenDeltaToNormalizedTopLeft" in visual_base
+    assert "EnsureEventSystemForDevCanvas" in visual_base
+    assert "UpdateLocalRegion" in visual_base
+    assert "DwellTick" in visual_base
+    assert "ConfirmWithRenderedAsset" in visual_base
+    assert "ApplyStablePhaseLocalState(VisualToolPhases.Confirm)" in visual_base
+    rendered_asset_block = visual_base[
+        visual_base.index("public virtual string ConfirmWithRenderedAsset"):
+        visual_base.index("public virtual string ConfirmWithScreenRegionAsset")
+    ]
+    assert rendered_asset_block.index("ApplyStablePhaseLocalState(VisualToolPhases.Confirm)") < rendered_asset_block.index("if (!RuntimeHttpEnabled || !sendHttpLifecycleEvents)")
+    assert "ConfirmWithScreenRegionAsset" in visual_base
+    assert "ExplicitSendWithScreenRegionAsset" in visual_base
+    assert "QueueScreenRegionAssetLifecycle" in visual_base
+    assert "ApplyStablePhaseLocalState(phase)" in visual_base
+    screen_asset_block = visual_base[
+        visual_base.index("protected string QueueScreenRegionAssetLifecycle"):
+        visual_base.index("protected struct PointerSample")
+    ]
+    assert screen_asset_block.index("ApplyStablePhaseLocalState(phase)") < screen_asset_block.index("if (!enableScreenRegionAssetCapture)")
+    assert "string.Equals(phase, VisualToolPhases.ExplicitSend" in visual_base
+    assert "CaptureScreenRegionAssetThenLifecycle" in visual_base
+    assert "WaitForEndOfFrame" in visual_base
+    assert "ReadPixels" in visual_base
+    assert "EncodeToPNG" in visual_base
+    assert "SetOverlayVisibleForScreenRegionAsset" in visual_base
+    assert "hideOverlayDuringAssetCapture" in visual_base
+    assert "sendLifecycleIfAssetCaptureFails" in visual_base
+    assert "sendLifecycleIfAssetUploadFails" in visual_base
+    assert "AddMetaField" in visual_base
+    assert '"asset_status"' in visual_base
+    assert "asset_upload_failed" in visual_base
+    assert "yield return SendLifecycle(packet)" in visual_base
+    assert "UploadAssetThenLifecycle" in visual_base
+    assert "LastAssetStatus" in visual_base
+    assert "IntentWorkspace" not in visual_base
+    assert "Graphiti" not in visual_base
+    assert "Blackboard" not in visual_base
+    assert "captureSnapshot" not in visual_base
+    assert "CaptureSnapshot" not in visual_base
+    assert "bbox.placed" not in visual_base
+    assert "focus.anchored" not in visual_base
+
+    assert "class BBoxVisualToolController" in bbox_visual
+    assert "VisualToolKinds.BBox" in bbox_visual
+    assert "formal_home.bbox" in bbox_visual
+    assert "BBoxVisualToolDevCanvas" in bbox_visual
+    assert "BBoxVisualToolLocalRegion" in bbox_visual
+    assert "BBoxInteractionMode" in bbox_visual
+    assert "HandlePointerInput" in bbox_visual
+    assert "HitTestInteraction" in bbox_visual
+    assert "ApplyInteractionDelta" in bbox_visual
+    assert "VisualToolPhases.ResizeUpdate" in bbox_visual
+    assert "BBoxDevConfirmButton" in bbox_visual
+    assert "BBoxDevAssetConfirmButton" in bbox_visual
+    assert "BBoxDevExplicitSendButton" in bbox_visual
+    assert "ConfirmWithScreenRegionAsset" in bbox_visual
+    assert "ExplicitSendWithScreenRegionAsset" in bbox_visual
+    assert "SetOverlayVisibleForScreenRegionAsset" in bbox_visual
+    assert "emitLockOnPointerRelease" in bbox_visual
+    assert "ConfirmAttentionHint => 1.0f" in bbox_visual
+    assert "raycastTarget = false" in bbox_visual
+    assert "PlaceBBox" not in bbox_visual
+    assert "bbox.placed" not in bbox_visual
+
+    assert "class MagnifierVisualToolController" in mag_visual
+    assert "VisualToolKinds.Mag" in mag_visual
+    assert "formal_home.mag" in mag_visual
+    assert "MagnifierVisualToolDevCanvas" in mag_visual
+    assert "MagnifierVisualToolLocalLens" in mag_visual
+    assert "HandlePointerInput" in mag_visual
+    assert "HandleDwellTick" in mag_visual
+    assert "emitDwellTicks" in mag_visual
+    assert "SetZoom" in mag_visual
+    assert "AdjustZoom" in mag_visual
+    assert "MagnifierDevExplicitSendButton" in mag_visual
+    assert "MagnifierDevAssetConfirmButton" in mag_visual
+    assert "MagnifierDevZoomInButton" in mag_visual
+    assert "ConfirmWithScreenRegionAsset" in mag_visual
+    assert "ExplicitSendWithScreenRegionAsset" in mag_visual
+    assert "SetOverlayVisibleForScreenRegionAsset" in mag_visual
+    assert "VisualToolDeliveryPreferences.IntentOnly" in mag_visual
+    assert "VisualToolDeliveryPreferences.C3" in mag_visual
+    assert "AnchorFocus" not in mag_visual
+    assert "focus.anchored" not in mag_visual
+
     assert "public string photoUploadUrl" in runtime_config
     assert "public string photoUploadHost" in runtime_config
     assert "public int photoUploadPort" in runtime_config
+    assert "public bool visualToolDevEnabled" in runtime_config
+    assert "public bool visualToolHttpEnabled" in runtime_config
     assert "public string UploadEndpointLabel" in photo_controller
     assert 'brainScheme = "http"' in photo_controller
     assert 'brainScheme = string.Equals(uri.Scheme, Uri.UriSchemeHttps' in photo_controller
@@ -1440,6 +1700,8 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "public bool IsUploadEndpointLoopback" in photo_controller
     assert "public void ConfigureUploadEndpoint" in photo_controller
     assert "public bool TryConfigureUploadEndpoint" in photo_controller
+    assert '"X-Parrot-Timebase"' in photo_controller
+    assert "BuildUploadTimebaseJson" in photo_controller
 
     assert "class FormalModelReadyReporter" in model_reporter
     assert "ModelManifestDto.LoadFromResources" in model_reporter
@@ -1499,6 +1761,12 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "baseScale * minMultiplier" in model_placement
     assert "baseScale * maxMultiplier" in model_placement
     assert "SyncTemplateTransformerScaleRange(PlacedModel)" in model_placement
+    assert "selectionHitboxPaddingMeters" in model_placement
+    assert "_templateSelectionHitbox" in model_placement
+    assert "EnsureArMobileTemplateCollider(PlacedModel)" in model_placement
+    assert "box.isTrigger = false" in model_placement
+    assert "collider.Raycast(ray" in model_placement
+    assert 'SelectPlacedModel(true, "xri_release")' in model_placement
     assert "SnapPlacedModelBottomToLastSurface" in model_placement
     assert "Keep the visual bottom on the" in model_placement
     assert "RebasePlacedAnimationDrivers()" in model_placement
@@ -1608,14 +1876,35 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "CurrentLiftInput" in model_remote
     assert "FormalModelLiftPad" in model_remote
     assert "new Vector2(417f, 417f)" in model_remote
-    assert "new Vector2(252f, 417f)" in model_remote
+    assert model_remote.count("new Vector2(417f, 417f)") >= 2
     assert "new Vector2(138f, 138f)" in model_remote
-    assert "new Vector2(123f, 123f)" in model_remote
+    assert "JoystickPadColor" in model_remote
+    assert "JoystickKnobColor" in model_remote
+    assert "GetJoystickCircleSprite" in model_remote
+    assert "Sprite.Create" in model_remote
     assert "JoystickAxis.Vertical" in model_remote
     assert "SetLiftInput" in model_remote
     assert "ApplyModelFlight" in model_remote
+    assert "fallbackFlightHorizontalSpeedMetersPerSecond = 0.4f" in model_remote
+    assert "fallbackFlightVerticalSpeedMetersPerSecond = 0.5f" in model_remote
     assert "fallbackFlightVerticalSpeedMetersPerSecond" in model_remote
     assert "remoteFlightMaxHeightMeters" in model_remote
+    assert "experimentalBirdFlightEnabled" in model_remote
+    assert "randomizeRemoteFlightStyle" in model_remote
+    assert "RemoteFlightStyle" in model_remote
+    assert "ShortFlutter" in model_remote
+    assert "ShortGlide" in model_remote
+    assert "AnimationCurve" in model_remote
+    assert "remoteFlightFlutterCurve.Evaluate" in model_remote
+    assert "remoteFlightGlideCurve.Evaluate" in model_remote
+    assert "Mathf.PerlinNoise" in model_remote
+    assert "Vector3.SmoothDamp" in model_remote
+    assert "liftInput < -0.05f && _remoteFlightVelocity.y > desiredVelocity.y" in model_remote
+    assert "LiftJoystickDirectionDeadZone" in model_remote
+    assert ": input.y;" in model_remote
+    assert "Mathf.Sign(input.y) * input.magnitude" not in model_remote
+    assert "input * (_radius * 0.68f)" in model_remote
+    assert "new Vector2(0f, lift *" not in model_remote
     assert "SetState(AnimationDriver.BodyState.Fly)" in model_remote
     assert "EndRemoteFlight(landed: true" in model_remote
     assert "SetState(landed && continueWalking" in model_remote
@@ -1641,6 +1930,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
 
     assert "class FormalXrHandPerchController" in xrhand_perch
     assert "using ParrotApp.Hands;" in xrhand_perch
+    assert "using UnityEngine.UI;" in xrhand_perch
     assert "FormalMainReadyGate mainReadyGate" in xrhand_perch
     assert "FormalModelPlacementController placementController" in xrhand_perch
     assert "HandGestureSource handGestureSource" in xrhand_perch
@@ -1663,6 +1953,16 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "camera_cv_tracking_active_perch_owner_mounted" in xrhand_perch
     assert "xrhand_owner_mounted_waiting_tracking" in xrhand_perch
     assert "xrhand_tracking_active_perch_owner_mounted" in xrhand_perch
+    assert "showRuntimeDiagnostics = true" in xrhand_perch
+    assert "ShouldShowDiagnosticOverlay" in xrhand_perch
+    assert "startupFlow.MainUiReadyOnce" in xrhand_perch
+    assert "FormalXrHandDiagnosticsCanvas" in xrhand_perch
+    assert "FormalXrHandDiagnosticsText" in xrhand_perch
+    assert "BuildDiagnosticText" in xrhand_perch
+    assert "ShortDiagnostic(gestureDebug)" in xrhand_perch
+    assert "handGestureSource.LastGestureDebugSummary" in xrhand_perch
+    assert "_mountedPerch.LastPerchLifecycle" in xrhand_perch
+    assert "_mountedPerch.LastPerchStatus" in xrhand_perch
     assert "_mountedPerch != null && _mountedPerch != perch" in xrhand_perch
     assert "DebugFireBranchGesture" in xrhand_perch
     assert "CallBrainRpc" not in xrhand_perch
@@ -1675,6 +1975,16 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "ApplyCameraHandPose(CameraHandPoseFrame frame)" in hand_gesture
     assert "DetectGesture(CameraHandPoseFrame frame" in hand_gesture
     assert "RealCameraCvCompiled" in hand_gesture
+    assert "LastGestureConfidence" in hand_gesture
+    assert "LastGestureDebugSummary" in hand_gesture
+    assert "LastGestureRejectReason" in hand_gesture
+    assert "DebugSummary" in hand_gesture
+    assert "TrackingStatus" in hand_gesture
+    assert "ResolveFingerGesture" in hand_gesture
+    assert "ResolveBranchRejectReason" in hand_gesture
+    assert "index_not_horizontal" in hand_gesture
+    assert "confidence_low" in hand_gesture
+    assert "bends=" in hand_gesture
     assert '"[HandGestureSource] "' in hand_gesture
     assert "camera_cv_provider_created" in hand_gesture
     assert "camera_cv_provider_subscribed" in hand_gesture
@@ -1705,11 +2015,18 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
 
     assert "TryRequestReturnToView" in perch_on_hand
     assert "HandGestureSource _subscribedHandTracker" in perch_on_hand
+    assert "LastPerchStatus" in perch_on_hand
+    assert "LastPerchLifecycle" in perch_on_hand
+    assert "LastPerchRejectReason" in perch_on_hand
+    assert "SetPerchStatus" in perch_on_hand
     assert "ResolveReferences(force: true)" in perch_on_hand
     assert "GetComponentInChildren<AnimationDriver>(true)" in perch_on_hand
     assert "_subscribedHandTracker.OnGestureSnapshot -= OnGesture" in perch_on_hand
     assert "ResolveFootAnchor(force: true)" in perch_on_hand
     assert "tracking_lost_hold_on_hand" in perch_on_hand
+    assert 'ReportBodyState("flying")' in perch_on_hand
+    assert 'ReportBodyState("perched_on_hand")' in perch_on_hand
+    assert 'ReportBodyState("idle")' in perch_on_hand
     assert "ResolveReturnToViewPosition" in perch_on_hand
     assert "PlayHeadTiltOnce()" in perch_on_hand
     assert "public void PlayHeadTiltOnce()" in animation

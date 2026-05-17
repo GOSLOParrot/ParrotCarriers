@@ -22,6 +22,7 @@ namespace ParrotApp.UI
     public class FormalModelRemoteController : MonoBehaviour
     {
         private const string BodyLock = "body";
+        private const float LiftJoystickDirectionDeadZone = 0.12f;
         private static readonly Color JoystickPadColor = new Color(1f, 1f, 1f, 0.16f);
         private static readonly Color JoystickKnobColor = new Color(1f, 1f, 1f, 0.38f);
         private static Sprite _joystickCircleSprite;
@@ -31,8 +32,8 @@ namespace ParrotApp.UI
         [SerializeField] private FormalModelPlacementController placementController;
         [SerializeField] private float fallbackWalkSpeedMetersPerSecond = 0.28f;
         [SerializeField] private float fallbackTurnSpeed = 8f;
-        [SerializeField] private float fallbackFlightHorizontalSpeedMetersPerSecond = 0.36f;
-        [SerializeField] private float fallbackFlightVerticalSpeedMetersPerSecond = 0.45f;
+        [SerializeField] private float fallbackFlightHorizontalSpeedMetersPerSecond = 0.4f;
+        [SerializeField] private float fallbackFlightVerticalSpeedMetersPerSecond = 0.5f;
         [SerializeField] private float remoteFlightMaxHeightMeters = 1.2f;
         [SerializeField] private float remoteLandingEpsilonMeters = 0.025f;
         [SerializeField] private bool experimentalBirdFlightEnabled = true;
@@ -521,6 +522,74 @@ namespace ParrotApp.UI
             LifecycleHeartbeatPublisher.Instance?.ReportBodyState(bodyStateWire);
         }
 
+        private void BeginRemoteFlightStyle()
+        {
+            _remoteFlightStartedAt = Time.unscaledTime;
+            _remoteFlightNoiseSeed = UnityEngine.Random.Range(0f, 1000f);
+            PickRemoteFlightStyle();
+            _remoteFlightVelocity = Vector3.zero;
+            _remoteFlightVelocityRef = Vector3.zero;
+        }
+
+        private void MaybeSwitchRemoteFlightStyle()
+        {
+            if (!experimentalBirdFlightEnabled || !randomizeRemoteFlightStyle)
+                return;
+            if (Time.unscaledTime < _nextRemoteFlightStyleAt)
+                return;
+            PickRemoteFlightStyle();
+        }
+
+        private void PickRemoteFlightStyle()
+        {
+            _remoteFlightStyle = randomizeRemoteFlightStyle && UnityEngine.Random.value > 0.5f
+                ? RemoteFlightStyle.ShortGlide
+                : RemoteFlightStyle.ShortFlutter;
+            float minSeconds = Mathf.Max(0.5f, remoteFlightStyleMinSeconds);
+            float maxSeconds = Mathf.Max(minSeconds, remoteFlightStyleMaxSeconds);
+            _nextRemoteFlightStyleAt = Time.unscaledTime + UnityEngine.Random.Range(minSeconds, maxSeconds);
+        }
+
+        private Vector3 ResolveBirdFlightVelocity(Vector3 planar, float liftInput)
+        {
+            float activity = Mathf.Clamp01(planar.magnitude + Mathf.Abs(liftInput));
+            if (activity <= 0.001f)
+                return Vector3.zero;
+
+            float flightT = Mathf.Max(0f, Time.unscaledTime - _remoteFlightStartedAt);
+            float descendingScale = liftInput < -0.05f ? 0.35f : 1f;
+            float curvePhase;
+            float vertical;
+            switch (_remoteFlightStyle)
+            {
+                case RemoteFlightStyle.ShortGlide:
+                    curvePhase = Mathf.Repeat(flightT * 0.85f, 1f);
+                    vertical = remoteFlightGlideCurve.Evaluate(curvePhase)
+                               * remoteFlightFlutterMetersPerSecond
+                               * 0.45f
+                               * activity
+                               * descendingScale;
+                    break;
+                case RemoteFlightStyle.ShortFlutter:
+                default:
+                    curvePhase = Mathf.Repeat(flightT * 3.8f, 1f);
+                    vertical = remoteFlightFlutterCurve.Evaluate(curvePhase)
+                               * remoteFlightFlutterMetersPerSecond
+                               * activity
+                               * descendingScale;
+                    break;
+            }
+
+            Vector3 side = Vector3.zero;
+            if (planar.sqrMagnitude > 0.0001f)
+            {
+                float noise = Mathf.PerlinNoise(_remoteFlightNoiseSeed, flightT * 1.4f) - 0.5f;
+                side = Vector3.Cross(Vector3.up, planar.normalized)
+                       * (noise * 2f * remoteFlightSwayMetersPerSecond * activity);
+            }
+            return side + Vector3.up * vertical;
+        }
+
         private void ApplyFallbackTranslate(Transform target, Vector2 input, float deltaTime)
         {
             if (target == null) return;
@@ -609,13 +678,13 @@ namespace ParrotApp.UI
             scaler.matchWidthOrHeight = 0.5f;
             canvasObject.AddComponent<GraphicRaycaster>();
 
-            _root = CreatePanel("FormalModelRemotePad", canvasObject.transform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(46f, 34f), new Vector2(417f, 417f), new Color(0.08f, 0.06f, 0.045f, 0.58f));
+            _root = CreatePanel("FormalModelRemotePad", canvasObject.transform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(46f, 34f), new Vector2(417f, 417f), JoystickPadColor);
             var pad = _root.gameObject.AddComponent<JoystickPad>();
             pad.Bind(this, _root, JoystickAxis.Planar, out _knob);
 
             _statusText = CreateText("FormalModelRemoteStatus", _root, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(-18f, 32f), 13, TextAnchor.MiddleCenter);
 
-            _liftRoot = CreatePanel("FormalModelLiftPad", canvasObject.transform, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-56f, 38f), new Vector2(252f, 417f), new Color(0.045f, 0.07f, 0.08f, 0.58f));
+            _liftRoot = CreatePanel("FormalModelLiftPad", canvasObject.transform, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-46f, 34f), new Vector2(417f, 417f), JoystickPadColor);
             var liftPad = _liftRoot.gameObject.AddComponent<JoystickPad>();
             liftPad.Bind(this, _liftRoot, JoystickAxis.Vertical, out _liftKnob);
             _liftStatusText = CreateText("FormalModelLiftStatus", _liftRoot, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(-14f, 32f), 13, TextAnchor.MiddleCenter);
@@ -638,7 +707,7 @@ namespace ParrotApp.UI
                 if (!RemoteVisible)
                     _liftStatusText.text = "";
                 else if (_remoteFlying)
-                    _liftStatusText.text = "FLY " + Mathf.Abs(CurrentLiftInput).ToString("0.0");
+                    _liftStatusText.text = "FLY " + CurrentLiftInput.ToString("+0.0;-0.0;0.0");
                 else
                     _liftStatusText.text = Mathf.Abs(CurrentLiftInput) > 0.01f ? "LIFT" : "";
             }
@@ -666,8 +735,34 @@ namespace ParrotApp.UI
             rt.anchoredPosition = anchoredPosition;
             rt.sizeDelta = size;
             var image = go.AddComponent<Image>();
+            image.sprite = GetJoystickCircleSprite();
+            image.preserveAspect = true;
             image.color = color;
             return rt;
+        }
+
+        private static Sprite GetJoystickCircleSprite()
+        {
+            if (_joystickCircleSprite != null) return _joystickCircleSprite;
+
+            const int Size = 64;
+            var texture = new Texture2D(Size, Size, TextureFormat.ARGB32, false);
+            texture.wrapMode = TextureWrapMode.Clamp;
+            texture.filterMode = FilterMode.Bilinear;
+            Vector2 center = new Vector2((Size - 1) * 0.5f, (Size - 1) * 0.5f);
+            float radius = (Size - 1) * 0.5f;
+            for (int y = 0; y < Size; y++)
+            {
+                for (int x = 0; x < Size; x++)
+                {
+                    float d = Vector2.Distance(new Vector2(x, y), center) / radius;
+                    float alpha = d <= 1f ? Mathf.SmoothStep(1f, 0f, Mathf.Clamp01((d - 0.88f) / 0.12f)) : 0f;
+                    texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+                }
+            }
+            texture.Apply();
+            _joystickCircleSprite = Sprite.Create(texture, new Rect(0f, 0f, Size, Size), new Vector2(0.5f, 0.5f), Size);
+            return _joystickCircleSprite;
         }
 
         private static Text CreateText(string name, Transform parent, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 anchoredPosition, Vector2 size, int fontSize, TextAnchor anchor)
@@ -684,7 +779,7 @@ namespace ParrotApp.UI
             text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             text.fontSize = fontSize;
             text.alignment = anchor;
-            text.color = new Color(0.92f, 0.82f, 0.66f, 0.94f);
+            text.color = new Color(1f, 1f, 1f, 0.78f);
             text.raycastTarget = false;
             return text;
         }
@@ -710,6 +805,12 @@ namespace ParrotApp.UI
             Vertical,
         }
 
+        private enum RemoteFlightStyle
+        {
+            ShortFlutter,
+            ShortGlide,
+        }
+
         private sealed class JoystickPad : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
         {
             private FormalModelRemoteController _owner;
@@ -723,12 +824,10 @@ namespace ParrotApp.UI
                 _owner = owner;
                 _pad = pad;
                 _axis = axis;
-                _radius = axis == JoystickAxis.Vertical
-                    ? pad.sizeDelta.y * 0.38f
-                    : Mathf.Min(pad.sizeDelta.x, pad.sizeDelta.y) * 0.38f;
+                _radius = Mathf.Min(pad.sizeDelta.x, pad.sizeDelta.y) * 0.38f;
                 string knobName = axis == JoystickAxis.Vertical ? "FormalModelLiftKnob" : "FormalModelRemoteKnob";
-                Vector2 knobSize = axis == JoystickAxis.Vertical ? new Vector2(123f, 123f) : new Vector2(138f, 138f);
-                _knob = CreatePanel(knobName, pad, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, knobSize, new Color(0.78f, 0.58f, 0.34f, 0.76f));
+                Vector2 knobSize = new Vector2(138f, 138f);
+                _knob = CreatePanel(knobName, pad, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, knobSize, JoystickKnobColor);
                 knob = _knob;
             }
 
@@ -768,16 +867,17 @@ namespace ParrotApp.UI
                     (0.5f - _pad.pivot.y) * _pad.rect.height);
                 Vector2 localFromCenter = local - center;
 
+                Vector2 input = Vector2.ClampMagnitude(localFromCenter / Mathf.Max(1f, _radius), 1f);
+                if (_knob != null) _knob.anchoredPosition = input * (_radius * 0.68f);
                 if (_axis == JoystickAxis.Vertical)
                 {
-                    float lift = Mathf.Clamp(localFromCenter.y / Mathf.Max(1f, _radius), -1f, 1f);
-                    if (_knob != null) _knob.anchoredPosition = new Vector2(0f, lift * (_radius * 0.68f));
+                    float lift = Mathf.Abs(input.y) < LiftJoystickDirectionDeadZone
+                        ? 0f
+                        : input.y;
                     _owner.SetLiftInput(lift);
                     return;
                 }
 
-                Vector2 input = Vector2.ClampMagnitude(localFromCenter / Mathf.Max(1f, _radius), 1f);
-                if (_knob != null) _knob.anchoredPosition = input * (_radius * 0.68f);
                 _owner.SetJoystickInput(input);
             }
         }

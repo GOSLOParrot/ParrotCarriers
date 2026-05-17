@@ -6,6 +6,7 @@ using ParrotApp.Config;
 using ParrotApp.Ecp;
 using ParrotApp.LiveKit;
 using ParrotApp.UI;
+using ParrotApp.VisualTools;
 using UnityEngine;
 
 namespace ParrotApp.Lifecycle
@@ -38,6 +39,10 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private FormalHomeMenuLoader homeMenuLoader;
         [SerializeField] private FormalHomeMenuController homeMenuController;
         [SerializeField] private FormalHomeToolController homeToolController;
+        [SerializeField] private FormalCameraModeController cameraModeController;
+        [SerializeField] private VisualToolHttpClient visualToolHttpClient;
+        [SerializeField] private BBoxVisualToolController bboxVisualToolController;
+        [SerializeField] private MagnifierVisualToolController magnifierVisualToolController;
         [SerializeField] private FormalModelReadyReporter modelReadyReporter;
         [SerializeField] private FormalModelPlacementController modelPlacementController;
         [SerializeField] private FormalModelRemoteController modelRemoteController;
@@ -1276,6 +1281,39 @@ namespace ParrotApp.Lifecycle
                     ? lifecycleManager.gameObject
                     : (roomManager != null ? roomManager.gameObject : gameObject);
                 homeToolController = host.AddComponent<FormalHomeToolController>();
+            }
+            if (cameraModeController == null) cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            if (cameraModeController == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                cameraModeController = host.AddComponent<FormalCameraModeController>();
+            }
+            if (visualToolHttpClient == null) visualToolHttpClient = FindObjectOfType<VisualToolHttpClient>();
+            if (visualToolHttpClient == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                visualToolHttpClient = host.AddComponent<VisualToolHttpClient>();
+            }
+            if (bboxVisualToolController == null) bboxVisualToolController = FindObjectOfType<BBoxVisualToolController>();
+            if (bboxVisualToolController == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                bboxVisualToolController = host.AddComponent<BBoxVisualToolController>();
+            }
+            if (magnifierVisualToolController == null)
+                magnifierVisualToolController = FindObjectOfType<MagnifierVisualToolController>();
+            if (magnifierVisualToolController == null)
+            {
+                var host = lifecycleManager != null
+                    ? lifecycleManager.gameObject
+                    : (roomManager != null ? roomManager.gameObject : gameObject);
+                magnifierVisualToolController = host.AddComponent<MagnifierVisualToolController>();
             }
             if (modelReadyReporter == null) modelReadyReporter = FindObjectOfType<FormalModelReadyReporter>();
             if (modelReadyReporter == null)

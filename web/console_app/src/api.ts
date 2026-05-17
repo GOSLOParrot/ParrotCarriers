@@ -139,6 +139,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  memoryIdentityRefGraphitiRefDraft: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/memory/identity-ref-index/graphiti-ref/draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  memoryIdentityRefGraphitiRefApply: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/memory/identity-ref-index/graphiti-ref/apply", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   obsidianVaultScan: (vaultPath = "") => {
     const params = new URLSearchParams({ limit: "24" });
     if (vaultPath.trim()) params.set("vault_path", vaultPath.trim());
@@ -172,6 +182,11 @@ export const api = {
   graphitiStatus: () => json<Record<string, unknown>>("/api/graphiti/status"),
   graphitiSubgraphSearch: (body: Record<string, unknown>) =>
     json<Receipt>("/api/graphiti/subgraph/search", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  graphitiLookup: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/graphiti/lookup", {
       method: "POST",
       body: JSON.stringify(body)
     }),
@@ -232,6 +247,11 @@ export const api = {
     }),
   l2bSubgraphDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/l2b/subgraphs/draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  l2bSubgraphContext: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l2b/subgraphs/context", {
       method: "POST",
       body: JSON.stringify(body)
     }),

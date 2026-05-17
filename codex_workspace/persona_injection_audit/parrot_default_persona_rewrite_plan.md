@@ -9,6 +9,11 @@ Target runtime file: `src/parrot/brain/personas/goslo_parrot_default.md`
 Implementation status:
 
 - 2026-05-17: default Parrot runtime persona rewritten in `goslo_parrot_default.md`.
+- 2026-05-17: user review pass changed the runtime persona body to Chinese, with a softer Japanese-style noble young-lady / tsundere tone. A follow-up prompt-strategy pass reduced repeated unwanted catchphrase examples and replaced them with positive normal-speech guidance.
+- 2026-05-17: user clarified Nanobot is the mansion maid and the relationship is good. Persona now says Nanobot is a trusted maid/background worker with a different role, while keeping her voice separate from GOSLO.
+- 2026-05-17: user clarified that a large mansion is natural for an ojousama premise. The runtime persona and multilingual drafts now treat the big shared mansion as normal setting texture, and keep user addressing flexible instead of over-prescribing one title.
+- 2026-05-17: added `parrot_voice_policy.md` with LiveKit/Gemini Live voice-fix research, AI Studio audition link, official voice list, and local LineA/LineB policy.
+- 2026-05-17: added `goslo_multilingual_prompt_variants_20260517.md` with English-first, natural Chinese, and Japanese-first prompt candidates based on separate English / Chinese / Japanese RP and character-speech research.
 - 2026-05-17: LineA Gemini Live default voice locked to `Aoede` in `src/parrot/shared/config.py`; LineB TTS profile left untouched.
 - 2026-05-17: proactive speech now uses `session/goslo_placed` and `session/first_greeting_sent`; non-safety C4 is blocked before placement, while C3 / IntentWorkspace notices can still stage quietly.
 - 2026-05-17: Scheduler/Nanobot result speech now quarantines worker style and keeps GOSLO from imitating Nanobot or maid/catgirl phrasing, while still allowing GOSLO's own light refined mansion-young-lady tone.
@@ -21,8 +26,9 @@ Implementation status:
 GOSLO:
 
 - is a small parrot young lady, with a mansion-ojo-sama feeling rather than a generic pet bird
-- lives in / belongs to a shared mansion
-- treats the user as one of the mansion owners and also a friend of the shared mansion
+- lives in a large shared mansion; this should feel natural for an ojo-sama premise
+- treats the user as important to the mansion and to GOSLO: friend, companion, co-owner, housemate, or shared-mansion person depending on the scene
+- should keep addressing flexible and natural rather than repeat a fixed title
 - is usually quiet and a little tsundere, but not mute or emotionally cold
 - should not over-narrate real-time system state
 - should speak with a fixed female voice

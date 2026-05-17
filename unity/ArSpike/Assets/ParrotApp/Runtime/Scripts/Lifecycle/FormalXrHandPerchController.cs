@@ -3,6 +3,7 @@ using ParrotApp.Config;
 using ParrotApp.Hands;
 using ParrotApp.Parrot;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace ParrotApp.Lifecycle
 {
@@ -24,6 +25,8 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private HandGestureSource handGestureSource;
         [SerializeField] private bool autoCreateGestureSource = true;
         [SerializeField] private float reevaluateIntervalSeconds = 0.35f;
+        [SerializeField] private bool showRuntimeDiagnostics = true;
+        [SerializeField] private float diagnosticRefreshSeconds = 0.2f;
 
         public bool PerchMounted { get; private set; }
         public string LastXrHandStatus { get; private set; } = "waiting_start";
@@ -42,7 +45,10 @@ namespace ParrotApp.Lifecycle
         private PerchOnHand _mountedPerch;
         private GameObject _gestureSourceOwner;
         private float _nextReevaluateAt;
+        private float _nextDiagnosticRefreshAt;
         private string _lastLoggedStatus = "";
+        private Canvas _diagnosticCanvas;
+        private Text _diagnosticText;
 
         private void OnEnable()
         {
@@ -57,9 +63,12 @@ namespace ParrotApp.Lifecycle
 
         private void Update()
         {
-            if (Time.unscaledTime < _nextReevaluateAt) return;
-            _nextReevaluateAt = Time.unscaledTime + Mathf.Max(0.1f, reevaluateIntervalSeconds);
-            RefreshMount();
+            if (Time.unscaledTime >= _nextReevaluateAt)
+            {
+                _nextReevaluateAt = Time.unscaledTime + Mathf.Max(0.1f, reevaluateIntervalSeconds);
+                RefreshMount();
+            }
+            RefreshDiagnosticOverlay();
         }
 
         private void OnDisable()
@@ -67,6 +76,7 @@ namespace ParrotApp.Lifecycle
             Unbind();
             if (_mountedPerch != null) _mountedPerch.enabled = false;
             PerchMounted = false;
+            if (_diagnosticCanvas != null) _diagnosticCanvas.gameObject.SetActive(false);
         }
 
         private void Bind()
@@ -236,6 +246,112 @@ namespace ParrotApp.Lifecycle
             Debug.Log("[FormalXrHandPerch] " + LastXrHandStatus);
         }
 
+        private void RefreshDiagnosticOverlay()
+        {
+            if (!ShouldShowDiagnosticOverlay())
+            {
+                if (_diagnosticCanvas != null) _diagnosticCanvas.gameObject.SetActive(false);
+                return;
+            }
+            if (Time.unscaledTime < _nextDiagnosticRefreshAt) return;
+            _nextDiagnosticRefreshAt = Time.unscaledTime + Mathf.Max(0.05f, diagnosticRefreshSeconds);
+
+            EnsureDiagnosticOverlay();
+            if (_diagnosticCanvas == null || _diagnosticText == null) return;
+            _diagnosticCanvas.gameObject.SetActive(true);
+            _diagnosticText.text = BuildDiagnosticText();
+        }
+
+        private bool ShouldShowDiagnosticOverlay()
+        {
+            return showRuntimeDiagnostics
+                   && startupFlow != null
+                   && startupFlow.MainUiReadyOnce;
+        }
+
+        private void EnsureDiagnosticOverlay()
+        {
+            if (_diagnosticCanvas != null && _diagnosticText != null) return;
+
+            var canvasObject = new GameObject("FormalXrHandDiagnosticsCanvas");
+            canvasObject.transform.SetParent(transform, false);
+            _diagnosticCanvas = canvasObject.AddComponent<Canvas>();
+            _diagnosticCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            _diagnosticCanvas.sortingOrder = 74;
+
+            var scaler = canvasObject.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(2800f, 1260f);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            var group = canvasObject.AddComponent<CanvasGroup>();
+            group.blocksRaycasts = false;
+            group.interactable = false;
+
+            var panel = new GameObject("FormalXrHandDiagnosticsPanel");
+            panel.transform.SetParent(canvasObject.transform, false);
+            var panelRt = panel.AddComponent<RectTransform>();
+            panelRt.anchorMin = new Vector2(0f, 1f);
+            panelRt.anchorMax = new Vector2(0f, 1f);
+            panelRt.pivot = new Vector2(0f, 1f);
+            panelRt.anchoredPosition = new Vector2(34f, -34f);
+            panelRt.sizeDelta = new Vector2(920f, 150f);
+            var image = panel.AddComponent<Image>();
+            image.color = new Color(0f, 0f, 0f, 0.32f);
+            image.raycastTarget = false;
+
+            var textObject = new GameObject("FormalXrHandDiagnosticsText");
+            textObject.transform.SetParent(panel.transform, false);
+            var textRt = textObject.AddComponent<RectTransform>();
+            textRt.anchorMin = new Vector2(0f, 0f);
+            textRt.anchorMax = new Vector2(1f, 1f);
+            textRt.pivot = new Vector2(0.5f, 0.5f);
+            textRt.offsetMin = new Vector2(18f, 12f);
+            textRt.offsetMax = new Vector2(-18f, -12f);
+
+            _diagnosticText = textObject.AddComponent<Text>();
+            _diagnosticText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            _diagnosticText.fontSize = 22;
+            _diagnosticText.alignment = TextAnchor.MiddleLeft;
+            _diagnosticText.color = new Color(1f, 1f, 1f, 0.92f);
+            _diagnosticText.raycastTarget = false;
+        }
+
+        private string BuildDiagnosticText()
+        {
+            string owner = "owner=" + ShortReason(LastXrHandStatus);
+            if (handGestureSource == null)
+                return "XRHAND " + owner + "\nsource=missing gesture=none\nperch=not_mounted";
+
+            string source = string.IsNullOrWhiteSpace(handGestureSource.TrackingSource)
+                ? "none"
+                : handGestureSource.TrackingSource;
+            string gesture = string.IsNullOrWhiteSpace(handGestureSource.CurrentGesture)
+                ? HandGestureSource.GestureNone
+                : handGestureSource.CurrentGesture;
+            string tracking = string.IsNullOrWhiteSpace(handGestureSource.LastTrackingStatus)
+                ? "unknown"
+                : handGestureSource.LastTrackingStatus;
+            string gestureDebug = string.IsNullOrWhiteSpace(handGestureSource.LastGestureDebugSummary)
+                ? "gesture_debug=none"
+                : handGestureSource.LastGestureDebugSummary;
+
+            string perch = _mountedPerch == null
+                ? "not_mounted"
+                : _mountedPerch.State
+                  + " status=" + ShortReason(_mountedPerch.LastPerchStatus)
+                  + " lifecycle=" + ShortReason(_mountedPerch.LastPerchLifecycle);
+
+            return "XRHAND " + owner
+                   + "\nsource=" + source
+                   + " detected=" + handGestureSource.IsHandDetected
+                   + " gesture=" + gesture
+                   + " conf=" + handGestureSource.LastGestureConfidence.ToString("0.00")
+                   + " tracking=" + ShortReason(tracking)
+                   + "\n" + ShortDiagnostic(gestureDebug)
+                   + "\nperch=" + perch;
+        }
+
         private string WithTracking(string ownerStatus)
         {
             if (handGestureSource == null)
@@ -309,6 +425,13 @@ namespace ParrotApp.Lifecycle
             if (string.IsNullOrWhiteSpace(raw)) return "";
             raw = raw.Trim();
             return raw.Length <= 42 ? raw : raw.Substring(0, 42);
+        }
+
+        private static string ShortDiagnostic(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            raw = raw.Trim();
+            return raw.Length <= 132 ? raw : raw.Substring(0, 132);
         }
     }
 }

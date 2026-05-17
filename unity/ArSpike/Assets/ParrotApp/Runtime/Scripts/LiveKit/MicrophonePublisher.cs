@@ -101,6 +101,12 @@ namespace ParrotApp.LiveKit
         [Tooltip("Guard against fake uplink success: after LiveKit PublishTrack succeeds, wait for microphone progress or native Android AudioRecord readiness plus LiveKit audio frames before reporting audio_published=true.")]
         [SerializeField] private float microphoneStartTimeoutSeconds = 4f;
 
+        [Tooltip("When Android reports a SCO route, wait briefly before probing Unity Microphone so the async Bluetooth voice path can settle.")]
+        [SerializeField] private float bluetoothScoRouteSettleSeconds = 0.75f;
+
+        [Tooltip("SCO probes must fail fast. If no frames arrive quickly, fall back to system/default phone mic instead of spending several full startup timeouts on a dead headset path.")]
+        [SerializeField] private float bluetoothScoStartTimeoutSeconds = 2f;
+
         [Header("Uplink Watchdog")]
         [Tooltip("After startup capture succeeds, keep checking that microphone recording and LiveKit AudioRead frames remain alive.")]
         [SerializeField] private bool uplinkRuntimeWatchdogEnabled = true;
@@ -110,6 +116,12 @@ namespace ParrotApp.LiveKit
 
         [Tooltip("If no LiveKit audio-source frame arrives for this long, republish the local mic track.")]
         [SerializeField] private float uplinkWatchdogStaleSeconds = 2.5f;
+
+        [Tooltip("If Unity MicrophoneSource emits fresh but all-zero frames for this long, treat it as a fake uplink and rebuild with Android AudioRecord.")]
+        [SerializeField] private float uplinkWatchdogZeroPeakSeconds = 4f;
+
+        [Tooltip("Peak below this value counts as digital silence for the fake-uplink guard. Real phone mics normally report non-zero room noise.")]
+        [SerializeField] private float uplinkWatchdogZeroPeakThreshold = 0.0001f;
 
         [Tooltip("Small Android route-settle wait before the phone mic fallback starts after SCO capture produced no frames.")]
         [SerializeField] private float phoneMicFallbackRouteSettleSeconds = 0.25f;
@@ -135,6 +147,7 @@ namespace ParrotApp.LiveKit
         private int _lastAudioReadChannels;
         private float _lastAudioReadPeak;
         private long _lastAudioReadUtcTicks;
+        private long _lastNonSilentAudioUtcTicks;
         private Coroutine _uplinkWatchdogCoroutine;
         private string _uplinkWatchdogState = "idle";
         private string _uplinkWatchdogLastRecoveryReason = "";
@@ -144,6 +157,8 @@ namespace ParrotApp.LiveKit
         private string _activeAudioSourceKind = "none";
         private string _lastNativeAudioRecordState = "";
         private string _lastNativeAudioRecordError = "";
+        private string _lastNativeAudioRecordSource = "";
+        private bool _forceAndroidAudioRecordNextPublish;
         private float _suppressRouteRepublishUntil;
 
         private sealed class CaptureAttemptSpec
@@ -155,6 +170,8 @@ namespace ParrotApp.LiveKit
             public readonly bool ForceAndroidAudioRecord;
             public readonly bool HasRouteOverride;
             public readonly AudioRoutePreference RouteOverridePreference;
+            public readonly float StartupTimeoutSeconds;
+            public readonly float PreStartDelaySeconds;
 
             public CaptureAttemptSpec(
                 string deviceName,
@@ -163,7 +180,9 @@ namespace ParrotApp.LiveKit
                 string reason,
                 bool forceAndroidAudioRecord = false,
                 bool hasRouteOverride = false,
-                AudioRoutePreference routeOverridePreference = AudioRoutePreference.SystemDefault)
+                AudioRoutePreference routeOverridePreference = AudioRoutePreference.SystemDefault,
+                float startupTimeoutSeconds = 0f,
+                float preStartDelaySeconds = 0f)
             {
                 DeviceName = deviceName;
                 DeviceLabel = string.IsNullOrWhiteSpace(deviceLabel) ? "android_default_microphone" : deviceLabel;
@@ -172,6 +191,8 @@ namespace ParrotApp.LiveKit
                 ForceAndroidAudioRecord = forceAndroidAudioRecord;
                 HasRouteOverride = hasRouteOverride;
                 RouteOverridePreference = routeOverridePreference;
+                StartupTimeoutSeconds = startupTimeoutSeconds;
+                PreStartDelaySeconds = preStartDelaySeconds;
             }
         }
 
@@ -204,7 +225,8 @@ namespace ParrotApp.LiveKit
         public int LastAudioReadSampleRate => Volatile.Read(ref _lastAudioReadSampleRate);
         public int LastAudioReadChannels => Volatile.Read(ref _lastAudioReadChannels);
         public float LastAudioReadPeak => _lastAudioReadPeak;
-        public float LastAudioReadAgeSeconds => LastAudioReadAgeSecondsInternal();
+        public float LastAudioReadAgeSeconds => AgeSecondsSinceTicks(Interlocked.Read(ref _lastAudioReadUtcTicks));
+        public float LastNonSilentAudioAgeSeconds => AgeSecondsSinceTicks(Interlocked.Read(ref _lastNonSilentAudioUtcTicks));
         public string UplinkWatchdogState => _uplinkWatchdogState;
         public string UplinkWatchdogLastRecoveryReason => _uplinkWatchdogLastRecoveryReason;
         public bool UplinkWatchdogMicrophoneRecording => _uplinkWatchdogMicrophoneRecording;
@@ -238,6 +260,20 @@ namespace ParrotApp.LiveKit
                 }
 #endif
                 return _lastNativeAudioRecordError;
+            }
+        }
+        public string NativeAudioRecordSource
+        {
+            get
+            {
+#if UNITY_ANDROID && !UNITY_EDITOR
+                if (_micSource is AndroidPcmMicrophoneSource nativePcmSource)
+                {
+                    _lastNativeAudioRecordSource = nativePcmSource.LastNativeSourceName;
+                    return nativePcmSource.LastNativeSourceName;
+                }
+#endif
+                return _lastNativeAudioRecordSource;
             }
         }
         public string UplinkDeviceLabel => string.IsNullOrWhiteSpace(_selectedDevice) ? "none" : _selectedDevice;
@@ -354,7 +390,6 @@ namespace ParrotApp.LiveKit
             // Pull the detector before publishing so the route policy is fresh.
             if (routeManager != null)
             {
-                routeManager.RequestCommunicationMode(true);
                 RefreshActivePolicy(routeManager.RefreshCurrentPolicy("room_connected"), "room_connected");
             }
             else if (routeDetector != null) RefreshActivePolicy(routeDetector.DetectNow(), "room_connected");
@@ -400,7 +435,6 @@ namespace ParrotApp.LiveKit
             _shutdownInitiated = false;
             if (RoomManager.Instance?.IsConnected == true && !_isPublishing && !_publishInProgress)
             {
-                routeManager?.RequestCommunicationMode(true);
                 StartCoroutine(RequestAndPublish(initialReason: $"policy_enabled:{reason}"));
             }
         }
@@ -547,9 +581,38 @@ namespace ParrotApp.LiveKit
             string selectedDevice,
             string selectedDeviceLabel)
         {
+            if (_forceAndroidAudioRecordNextPublish)
+            {
+                _forceAndroidAudioRecordNextPublish = false;
+#if UNITY_ANDROID && !UNITY_EDITOR
+                if (ShouldUseAndroidAudioRecordFallbackSourceNow())
+                {
+                    var forcedAttempts = new List<CaptureAttemptSpec>();
+                    AddAndroidAudioRecordFallbackAttempts(
+                        forcedAttempts,
+                        "android_audio_record_after_zero_peak",
+                        "android_audio_record_44100_after_zero_peak",
+                        "android_audio_record_16000_after_zero_peak");
+                    return forcedAttempts.ToArray();
+                }
+#endif
+            }
+
+            float scoProbeTimeout = publishPolicy.Kind == AudioRouteKind.BluetoothSco
+                ? Mathf.Max(0.5f, bluetoothScoStartTimeoutSeconds)
+                : 0f;
+            float scoPreStartSettle = publishPolicy.Kind == AudioRouteKind.BluetoothSco
+                ? Mathf.Max(0f, bluetoothScoRouteSettleSeconds)
+                : 0f;
             var attempts = new List<CaptureAttemptSpec>
             {
-                new CaptureAttemptSpec(selectedDevice, selectedDeviceLabel, publishPolicy, "primary")
+                new CaptureAttemptSpec(
+                    selectedDevice,
+                    selectedDeviceLabel,
+                    publishPolicy,
+                    "primary",
+                    startupTimeoutSeconds: scoProbeTimeout,
+                    preStartDelaySeconds: scoPreStartSettle)
             };
 
             if (publishPolicy.Kind == AudioRouteKind.BluetoothSco
@@ -563,7 +626,8 @@ namespace ParrotApp.LiveKit
                     selectedDevice,
                     selectedDeviceLabel,
                     new AudioRoutePolicy(AudioRouteKind.BluetoothSco, "bluetooth_sco_capture_48k", 48000),
-                    "sco_capture_48k_retry"));
+                    "sco_capture_48k_retry",
+                    startupTimeoutSeconds: scoProbeTimeout));
             }
 
             if (publishPolicy.Kind == AudioRouteKind.BluetoothSco)
@@ -589,40 +653,69 @@ namespace ParrotApp.LiveKit
                 // show a failure class where Unity's MicrophoneSource exists and
                 // publishes, but never emits AudioRead frames. This final attempt
                 // bypasses UnityEngine.Microphone and feeds LiveKit from Android
-                // AudioRecord. Each rate is a separate LiveKit source because
+                // AudioRecord. Keep every automatic AudioRecord retry on
+                // system_default so Android may preserve Bluetooth/A2DP output
+                // while the Java bridge captures the phone MIC source. Forcing
+                // phone_mic is reserved for explicit/manual recovery because it
+                // can pin downlink audio back to the phone speaker. Each rate is
+                // a separate LiveKit source because
                 // the SDK/FFI rejects PCM frames whose sample rate differs from
                 // the source created by RtcAudioSource.DefaultMicrophoneSampleRate.
                 // It remains a local-track fallback only: no room reconnect,
                 // token mint, or Brain dispatch.
-                attempts.Add(new CaptureAttemptSpec(
-                    null,
-                    "phone_default_microphone",
-                    new AudioRoutePolicy(AudioRouteKind.Speaker, "android_audio_record_after_unity_timeout", 48000),
+                AddAndroidAudioRecordFallbackAttempts(
+                    attempts,
                     "android_audio_record_after_unity_timeout",
-                    forceAndroidAudioRecord: true,
-                    hasRouteOverride: true,
-                    routeOverridePreference: AudioRoutePreference.SystemDefault));
-                attempts.Add(new CaptureAttemptSpec(
-                    null,
-                    "phone_default_microphone",
-                    new AudioRoutePolicy(AudioRouteKind.Speaker, "android_audio_record_44100_after_unity_timeout", 44100),
                     "android_audio_record_44100_after_unity_timeout",
-                    forceAndroidAudioRecord: true,
-                    hasRouteOverride: true,
-                    routeOverridePreference: AudioRoutePreference.SystemDefault));
-                attempts.Add(new CaptureAttemptSpec(
-                    null,
-                    "phone_default_microphone",
-                    new AudioRoutePolicy(AudioRouteKind.Speaker, "android_audio_record_16000_after_unity_timeout", 16000),
-                    "android_audio_record_16000_after_unity_timeout",
-                    forceAndroidAudioRecord: true,
-                    hasRouteOverride: true,
-                    routeOverridePreference: AudioRoutePreference.PhoneMic));
+                    "android_audio_record_16000_after_unity_timeout");
             }
 #endif
 
             return attempts.ToArray();
         }
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+        private static void AddAndroidAudioRecordFallbackAttempts(
+            List<CaptureAttemptSpec> attempts,
+            string reason48000,
+            string reason44100,
+            string reason16000)
+        {
+            string reason48 = string.IsNullOrWhiteSpace(reason48000)
+                ? "android_audio_record"
+                : reason48000;
+            string reason44 = string.IsNullOrWhiteSpace(reason44100)
+                ? reason48 + "_44100"
+                : reason44100;
+            string reason16 = string.IsNullOrWhiteSpace(reason16000)
+                ? reason48 + "_16000"
+                : reason16000;
+            attempts.Add(new CaptureAttemptSpec(
+                null,
+                "phone_default_microphone",
+                new AudioRoutePolicy(AudioRouteKind.Speaker, reason48, 48000),
+                reason48,
+                forceAndroidAudioRecord: true,
+                hasRouteOverride: true,
+                routeOverridePreference: AudioRoutePreference.SystemDefault));
+            attempts.Add(new CaptureAttemptSpec(
+                null,
+                "phone_default_microphone",
+                new AudioRoutePolicy(AudioRouteKind.Speaker, reason44, 44100),
+                reason44,
+                forceAndroidAudioRecord: true,
+                hasRouteOverride: true,
+                routeOverridePreference: AudioRoutePreference.SystemDefault));
+            attempts.Add(new CaptureAttemptSpec(
+                null,
+                "phone_default_microphone",
+                new AudioRoutePolicy(AudioRouteKind.Speaker, reason16, 16000),
+                reason16,
+                forceAndroidAudioRecord: true,
+                hasRouteOverride: true,
+                routeOverridePreference: AudioRoutePreference.SystemDefault));
+        }
+#endif
 
         private IEnumerator PublishCaptureAttempt(
             Room room,
@@ -639,9 +732,10 @@ namespace ParrotApp.LiveKit
                 // zero MicrophoneSource frames on some Android phones. Passing
                 // null to MicrophoneSource is not sufficient if Android's route
                 // is still pinned to a dead headset profile. Prefer system
-                // default first so A2DP/BLE output stays on the headset; only
-                // the final low-rate AudioRecord retry forces phone_mic as a
-                // last-ditch capture path. This remains a local capture fallback
+                // default for automatic recovery so A2DP/BLE output can stay on
+                // the headset while Android AudioRecord captures the plain phone
+                // MIC source. Explicit PhoneMic routing is reserved for a future
+                // manual recovery control. This remains a local capture fallback
                 // only: no room reconnect, no mint token, and no Brain dispatch.
                 string overrideLabel = AudioRouteSnapshotDto.PreferenceWireValue(attempt.RouteOverridePreference);
                 _lastPublishStage = "capture_route_override";
@@ -651,6 +745,15 @@ namespace ParrotApp.LiveKit
                 if (settle > 0f)
                     yield return new WaitForSeconds(settle);
                 effectivePublishRouteVersion = _routeVersion;
+            }
+
+            if (attempt.PreStartDelaySeconds > 0f)
+            {
+                _lastPublishStage = "capture_route_settle";
+                _lastCaptureFallbackStatus = string.IsNullOrWhiteSpace(_lastCaptureFallbackStatus)
+                    ? "settle:" + attempt.Reason
+                    : _lastCaptureFallbackStatus + ";settle:" + attempt.Reason;
+                yield return new WaitForSeconds(attempt.PreStartDelaySeconds);
             }
 
             _lastPublishStage = "configure_sample_rate";
@@ -670,11 +773,13 @@ namespace ParrotApp.LiveKit
                 {
                     _lastNativeAudioRecordState = "created";
                     _lastNativeAudioRecordError = "";
+                    _lastNativeAudioRecordSource = "";
                 }
                 else
                 {
                     _lastNativeAudioRecordState = "";
                     _lastNativeAudioRecordError = "";
+                    _lastNativeAudioRecordSource = "";
                 }
                 _micSource.AudioRead += OnMicrophoneAudioRead;
                 _audioTrack = LocalAudioTrack.CreateAudioTrack("microphone", _micSource, room);
@@ -726,6 +831,12 @@ namespace ParrotApp.LiveKit
 
             _lastPublishStage = "microphone_start";
             int audioReadBaseline = AudioReadFrameCount;
+            // Start the zero-peak timer from this capture source's start. A
+            // real phone mic usually reports non-zero room noise quickly; if
+            // Unity only emits digital zeroes beyond the watchdog window, we
+            // promote to Android AudioRecord instead of treating the track as
+            // a usable uplink.
+            Interlocked.Exchange(ref _lastNonSilentAudioUtcTicks, DateTime.UtcNow.Ticks);
             bool microphoneStartException = false;
             try
             {
@@ -758,7 +869,11 @@ namespace ParrotApp.LiveKit
             bool microphonePositionReady = !requiresUnityMicrophonePosition;
             bool audioReadReady = false;
             string probeError = requiresUnityMicrophonePosition ? "" : "android_audio_record";
-            float timeout = Mathf.Max(0.1f, microphoneStartTimeoutSeconds);
+            float timeout = Mathf.Max(
+                0.1f,
+                attempt.StartupTimeoutSeconds > 0f
+                    ? attempt.StartupTimeoutSeconds
+                    : microphoneStartTimeoutSeconds);
             while (elapsed < timeout)
             {
                 if (!publishIntentEnabled || _shutdownInitiated || RoomManager.Instance?.IsConnected != true)
@@ -850,9 +965,18 @@ namespace ParrotApp.LiveKit
 
             if (effectivePublishRouteVersion != _routeVersion && publishIntentEnabled && !_shutdownInitiated)
             {
-                QueueRouteRepublish(
-                    _activePolicy,
-                    $"route_changed_during_publish_to_{_activePolicy.RouteName}");
+                if (RequiresMicRebuild(attempt.Policy, _activePolicy))
+                {
+                    QueueRouteRepublish(
+                        _activePolicy,
+                        $"route_changed_during_publish_to_{_activePolicy.RouteName}");
+                }
+                else
+                {
+                    Debug.Log(
+                        $"[MicrophonePublisher] route version changed during publish without mic rebuild: " +
+                        $"{attempt.Policy} -> {_activePolicy}");
+                }
             }
 
             result.Success = true;
@@ -996,11 +1120,13 @@ namespace ParrotApp.LiveKit
             {
                 for (int i = 0; i < data.Length; i++)
                 {
-                    float abs = Mathf.Abs(data[i]);
+                    float abs = data[i] < 0f ? -data[i] : data[i];
                     if (abs > peak) peak = abs;
                 }
             }
             _lastAudioReadPeak = peak;
+            if (peak > Mathf.Max(0.000001f, uplinkWatchdogZeroPeakThreshold))
+                Interlocked.Exchange(ref _lastNonSilentAudioUtcTicks, DateTime.UtcNow.Ticks);
         }
 
         private void StartUplinkWatchdog(string reason)
@@ -1068,13 +1194,33 @@ namespace ParrotApp.LiveKit
                 }
                 _uplinkWatchdogMicrophoneRecording = recordingKnown && isRecording;
 
-                float lastFrameAge = LastAudioReadAgeSecondsInternal();
+                float lastFrameAge = LastAudioReadAgeSeconds;
                 // AudioRead freshness is the stronger formal-app signal: quiet rooms still
                 // produce captured frames, while Android default inputs can make
                 // Microphone.IsRecording(null) noisy or unknown on some devices.
                 bool hasRecentFrames = lastFrameAge >= 0f && lastFrameAge <= staleSeconds;
                 if (hasRecentFrames)
                 {
+                    if (ShouldPromoteSilentUnityStreamToAndroidAudioRecord())
+                    {
+                        string recoveryReason = "uplink_watchdog_zero_peak_unity_microphone";
+                        _forceAndroidAudioRecordNextPublish = true;
+                        _uplinkWatchdogState = recoveryReason;
+                        _uplinkWatchdogLastRecoveryReason = recoveryReason;
+                        _uplinkWatchdogRecoveryCount++;
+                        _lastError = recoveryReason;
+                        _lastPublishStage = "uplink_watchdog_recovering";
+                        HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), recoveryReason);
+                        Debug.LogWarning(
+                            $"[MicrophonePublisher] watchdog promoting silent Unity mic to Android AudioRecord " +
+                            $"frames={AudioReadFrameCount} peak={_lastAudioReadPeak:0.000000} " +
+                            $"lastNonSilentAge={LastNonSilentAudioAgeSeconds:0.00}s");
+
+                        _uplinkWatchdogCoroutine = null;
+                        QueueRouteRepublish(_activePolicy, recoveryReason);
+                        yield break;
+                    }
+
                     _uplinkWatchdogState = recordingKnown
                         ? (isRecording ? "healthy" : "healthy_frames_recording_false")
                         : "healthy_frames_recording_unknown";
@@ -1194,6 +1340,31 @@ namespace ParrotApp.LiveKit
 #endif
         }
 
+        private bool ShouldPromoteSilentUnityStreamToAndroidAudioRecord()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (!allowAndroidAudioRecordAfterUnityTimeout)
+                return false;
+            if (!string.Equals(_activeAudioSourceKind, "unity_microphone", StringComparison.Ordinal))
+                return false;
+            if (AudioReadFrameCount <= 0)
+                return false;
+            float zeroPeakWindow = Mathf.Max(1f, uplinkWatchdogZeroPeakSeconds);
+            float threshold = Mathf.Max(0.000001f, uplinkWatchdogZeroPeakThreshold);
+            if (_lastAudioReadPeak > threshold)
+                return false;
+
+            float nonSilentAge = LastNonSilentAudioAgeSeconds;
+            if (nonSilentAge >= 0f && nonSilentAge < zeroPeakWindow)
+                return false;
+
+            float frameAge = LastAudioReadAgeSeconds;
+            return frameAge >= 0f && frameAge <= Mathf.Max(0.2f, uplinkWatchdogIntervalSeconds * 1.5f);
+#else
+            return false;
+#endif
+        }
+
         private static bool IsAndroidMicInputRoute(string route)
         {
             return string.Equals(route, "phone_mic", StringComparison.OrdinalIgnoreCase)
@@ -1235,9 +1406,10 @@ namespace ParrotApp.LiveKit
                 return;
 
             float settle = Mathf.Max(0.25f, phoneMicFallbackRouteSettleSeconds);
+            float guard = settle + Mathf.Max(microphoneStartTimeoutSeconds, routeRepublishDebounceSeconds) + 1f;
             _suppressRouteRepublishUntil = Mathf.Max(
                 _suppressRouteRepublishUntil,
-                Time.unscaledTime + settle + 0.5f);
+                Time.unscaledTime + guard);
 
             try
             {
@@ -1280,12 +1452,12 @@ namespace ParrotApp.LiveKit
                 return;
             _lastNativeAudioRecordState = nativePcmSource.LastNativeState ?? "";
             _lastNativeAudioRecordError = nativePcmSource.LastNativeError ?? "";
+            _lastNativeAudioRecordSource = nativePcmSource.LastNativeSourceName ?? "";
 #endif
         }
 
-        private float LastAudioReadAgeSecondsInternal()
+        private static float AgeSecondsSinceTicks(long ticks)
         {
-            long ticks = Interlocked.Read(ref _lastAudioReadUtcTicks);
             if (ticks <= 0)
                 return -1f;
             double seconds = (DateTime.UtcNow.Ticks - ticks) / (double)TimeSpan.TicksPerSecond;
@@ -1377,6 +1549,12 @@ namespace ParrotApp.LiveKit
         {
             // Cache route state even when not publishing; the next publish uses it.
             RefreshActivePolicy(newPolicy, "route_changed");
+
+            if (!RequiresMicRebuild(oldPolicy, newPolicy))
+            {
+                Debug.Log($"[MicrophonePublisher] route changed without mic rebuild: {oldPolicy} -> {newPolicy}");
+                return;
+            }
 
             if (_publishInProgress && Time.unscaledTime < _suppressRouteRepublishUntil)
             {
@@ -1486,6 +1664,27 @@ namespace ParrotApp.LiveKit
             }
 
             QueueRouteRepublish(_activePolicy, "mic_device_changed:" + safeReason);
+        }
+
+        private static bool RequiresMicRebuild(AudioRoutePolicy oldPolicy, AudioRoutePolicy newPolicy)
+        {
+            return CaptureClass(oldPolicy.Kind) != CaptureClass(newPolicy.Kind)
+                   || oldPolicy.PreferredSampleRate != newPolicy.PreferredSampleRate;
+        }
+
+        private static int CaptureClass(AudioRouteKind kind)
+        {
+            switch (kind)
+            {
+                case AudioRouteKind.BluetoothSco:
+                    return 1;
+                case AudioRouteKind.WiredHeadset:
+                    return 2;
+                default:
+                    // Speaker, earpiece, A2DP output-only, and unknown all use
+                    // the system/default phone microphone capture path.
+                    return 0;
+            }
         }
 
         private IEnumerator RouteRepublishLoop()

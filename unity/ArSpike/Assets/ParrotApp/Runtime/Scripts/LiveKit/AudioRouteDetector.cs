@@ -218,16 +218,34 @@ namespace ParrotApp.LiveKit
                     int typeSpeaker = SafeStaticInt(deviceInfoClass, "TYPE_BUILTIN_SPEAKER", 2);
                     int typeEarpiece = SafeStaticInt(deviceInfoClass, "TYPE_BUILTIN_EARPIECE", 1);
 
-                    summary = "inputs=[" + DeviceTypesSummary(inputs) + "],outputs=[" + DeviceTypesSummary(outputs) + "]";
+                    int communicationType = SafeDeviceType(SafeGetCommunicationDevice(audioManager));
+                    summary = "communication=" + communicationType
+                              + ",inputs=[" + DeviceTypesSummary(inputs) + "]"
+                              + ",outputs=[" + DeviceTypesSummary(outputs) + "]";
 
-                    if (HasAnyDeviceType(inputs, typeBluetoothSco, typeBleHeadset))
+                    // getDevices(GET_DEVICES_INPUTS) is an availability list,
+                    // not the active communication route. Only
+                    // getCommunicationDevice() may promote SCO/BLE headset to
+                    // the mic-capture policy; otherwise a connected headset can
+                    // falsely force the formal App into bt-sco@16k.
+                    if (communicationType == typeBluetoothSco || communicationType == typeBleHeadset)
                     {
                         policy = AudioRoutePolicy.ForKind(AudioRouteKind.BluetoothSco);
                         return true;
                     }
-                    if (HasAnyDeviceType(inputs, typeWiredHeadset, typeUsbHeadset))
+                    if (communicationType == typeWiredHeadset || communicationType == typeUsbHeadset)
                     {
                         policy = AudioRoutePolicy.ForKind(AudioRouteKind.WiredHeadset);
+                        return true;
+                    }
+                    if (communicationType == typeSpeaker)
+                    {
+                        policy = AudioRoutePolicy.ForKind(AudioRouteKind.Speaker);
+                        return true;
+                    }
+                    if (communicationType == typeEarpiece)
+                    {
+                        policy = AudioRoutePolicy.ForKind(AudioRouteKind.Earpiece);
                         return true;
                     }
                     if (HasAnyDeviceType(outputs, typeBluetoothA2dp, typeBleHeadset, typeBleSpeaker, typeHearingAid))
@@ -264,6 +282,19 @@ namespace ParrotApp.LiveKit
         {
             try { return audioManager.Call<AndroidJavaObject[]>("getDevices", flags) ?? new AndroidJavaObject[0]; }
             catch (Exception) { return new AndroidJavaObject[0]; }
+        }
+
+        private static AndroidJavaObject SafeGetCommunicationDevice(AndroidJavaObject audioManager)
+        {
+            try { return audioManager.Call<AndroidJavaObject>("getCommunicationDevice"); }
+            catch (Exception) { return null; }
+        }
+
+        private static int SafeDeviceType(AndroidJavaObject device)
+        {
+            if (device == null) return 0;
+            try { return device.Call<int>("getType"); }
+            catch (Exception) { return 0; }
         }
 
         private static bool HasAnyDeviceType(AndroidJavaObject[] devices, params int[] types)

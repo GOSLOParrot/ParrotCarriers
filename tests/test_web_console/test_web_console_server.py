@@ -239,6 +239,17 @@ def test_graphiti_subgraph_export_routes_are_l15_dry_run_and_secret_safe(monkeyp
     assert draft["data"]["subgraph"]["partition"] == "arknights_test"
     assert draft["data"]["graphiti_raw_envelopes"][0]["episode_uuids"] == ["episode-main-00"]
     assert draft["data"]["graphiti_raw_envelopes"][0]["raw"]["valid_at"] == "1096-12-23T00:00:00Z"
+    bundle = draft["data"]["graphiti_bundle"]
+    assert bundle["schema_version"] == 1
+    assert bundle["bundle_kind"] == "graphiti_search_subgraph_bundle"
+    assert bundle["selection"]["fact_uuids"] == ["graphiti-hit-1"]
+    assert bundle["selection"]["node_uuids"] == ["source-amiya", "target-chernobog"]
+    assert bundle["selection"]["episode_uuids"] == ["episode-main-00"]
+    assert bundle["sections"]["facts"][0]["raw"]["custom_payload"]["rarity"] == 5
+    assert bundle["sections"]["entities"][0]["uuid"] == "source-amiya"
+    assert bundle["sections"]["episodes"][0]["raw"]["pointer_only"] is True
+    assert bundle["l2b_projection_policy"]["preserve_raw_graphiti"] is True
+    assert bundle["l2b_projection_policy"]["direct_falkordb_write"] is False
     identity_ref_drafts = draft["data"]["identity_ref_drafts"]
     assert {
         row.get("ref_kind")
@@ -339,6 +350,361 @@ def test_graphiti_subgraph_search_expands_real_search_hops(monkeypatch) -> None:
     assert body["data"]["search_plan"][1]["query"] == "Amiya Rhodes Island"
 
 
+def test_graphiti_subgraph_search_uses_search_config_recipe_and_filters(monkeypatch) -> None:
+    from parrot.brain import graphiti_console
+    from parrot.memory import graphiti_client
+
+    calls: list[dict[str, Any]] = []
+
+    class FakeConfig:
+        def __init__(self) -> None:
+            self.limit = 0
+
+        def model_copy(self, deep: bool = True) -> "FakeConfig":
+            assert deep is True
+            return FakeConfig()
+
+    class FakeGraphiti:
+        async def _search(self, **kwargs: Any) -> SimpleNamespace:
+            calls.append(dict(kwargs))
+            return SimpleNamespace(
+                edges=[
+                    SimpleNamespace(
+                        uuid="fact-rrf-1",
+                        fact="Amiya protects Chernobog civilians.",
+                        source_node_uuid="node-amiya-rrf",
+                        target_node_uuid="node-chernobog-rrf",
+                        score=0.92,
+                    )
+                ],
+                nodes=[
+                    SimpleNamespace(
+                        uuid="node-amiya-rrf",
+                        name="Amiya",
+                        summary="Rhodes Island operator.",
+                        score=0.71,
+                    )
+                ],
+                communities=[],
+            )
+
+    async def fake_get_graphiti() -> FakeGraphiti:
+        return FakeGraphiti()
+
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: True)
+    monkeypatch.setattr(graphiti_console, "_load_search_config_recipe", lambda recipe: FakeConfig())
+    monkeypatch.setattr(
+        graphiti_console,
+        "_build_graphiti_search_filter",
+        lambda **kwargs: {
+            "node_labels": list(kwargs["node_labels"]),
+            "edge_types": list(kwargs["edge_types"]),
+        },
+    )
+    monkeypatch.setattr(graphiti_client, "get_graphiti", fake_get_graphiti)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    body = client.post(
+        "/api/graphiti/subgraph/search",
+        json={
+            "query": "Amiya Chernobog",
+            "partition": "arknights_test",
+            "limit": 4,
+            "strategy": "combined_rrf",
+            "search_recipe": "combined_rrf",
+            "node_labels": ["Entity", "Operator"],
+            "edge_types": ["CrisisFact"],
+            "enrich": False,
+        },
+    ).json()
+
+    assert body["success"] is True
+    assert calls
+    assert calls[0]["query"] == "Amiya Chernobog"
+    assert calls[0]["group_id"] == "arknights_test"
+    assert calls[0]["config"].limit == 4
+    assert calls[0]["search_filter"] == {
+        "node_labels": ["Entity", "Operator"],
+        "edge_types": ["CrisisFact"],
+    }
+    assert body["data"]["strategy"] == "combined_rrf"
+    assert body["data"]["search_recipe"] == "combined_rrf"
+    assert body["data"]["node_labels"] == ["Entity", "Operator"]
+    assert body["data"]["edge_types"] == ["CrisisFact"]
+    assert body["data"]["search_plan"][0]["search_config"]["mode"] == "_search"
+    assert body["data"]["search_plan"][0]["search_config"]["recipe"] == "COMBINED_HYBRID_SEARCH_RRF"
+    assert body["data"]["search_plan"][0]["search_config"]["low_level_method"] == "_search"
+    assert body["data"]["hits"][0]["graphiti_kind"] == "edge"
+    assert body["data"]["graphiti_bundle"]["search"]["search_recipe"] == "combined_rrf"
+    assert body["data"]["graphiti_bundle"]["search"]["node_labels"] == ["Entity", "Operator"]
+    assert body["data"]["graphiti_bundle"]["selection"]["fact_uuids"] == ["fact-rrf-1"]
+    nodes = {row["graphiti_uuid"]: row for row in body["data"]["subgraph"]["nodes"]}
+    assert nodes["fact-rrf-1"]["kind"] == "graphiti_fact"
+    assert nodes["node-amiya-rrf"]["kind"] == "graphiti_entity"
+
+
+def test_graphiti_subgraph_search_enriches_hits_with_uuid_lookup(monkeypatch) -> None:
+    from parrot.brain import graphiti_console
+    from parrot.brain.graphiti_console import GraphitiConsoleResult
+
+    async def fake_search_graphiti(**kwargs: Any) -> GraphitiConsoleResult:
+        rows = [
+            {
+                "text": "Amiya works with Rhodes Island.",
+                "uuid": "fact-rich-1",
+                "source_node_uuid": "node-amiya-rich",
+                "target_node_uuid": "node-rhodes-rich",
+            }
+        ]
+        return GraphitiConsoleResult(
+            action="search_graphiti",
+            success=True,
+            available=True,
+            message="1 result(s)",
+            data={
+                "query": str(kwargs.get("query") or ""),
+                "partition": "arknights_test",
+                "limit": 1,
+                "results": rows,
+            },
+        )
+
+    async def fake_lookup_graphiti_uuids(**kwargs: Any) -> GraphitiConsoleResult:
+        requested = list(kwargs.get("uuids") or [])
+        raw_by_uuid = {
+            "fact-rich-1": {
+                "uuid": "fact-rich-1",
+                "fact": "Amiya works with Rhodes Island.",
+                "group_id": "arknights_test",
+            },
+            "node-amiya-rich": {
+                "uuid": "node-amiya-rich",
+                "name": "Amiya",
+                "summary": "Rhodes Island operator.",
+                "group_id": "arknights_test",
+            },
+            "node-rhodes-rich": {
+                "uuid": "node-rhodes-rich",
+                "name": "Rhodes Island",
+                "summary": "Pharmaceutical organization.",
+                "group_id": "arknights_test",
+            },
+        }
+        return GraphitiConsoleResult(
+            action="graphiti.lookup",
+            success=True,
+            available=True,
+            message="3/3 found",
+            data={
+                "partition": "arknights_test",
+                "results": [
+                    {
+                        "uuid": item,
+                        "found": item in raw_by_uuid,
+                        "graphiti_kind": "entity_edge" if item.startswith("fact") else "entity_node",
+                        "partition": "arknights_test",
+                        "matches_partition": True,
+                        "raw": raw_by_uuid.get(item, {}),
+                    }
+                    for item in requested
+                ],
+            },
+        )
+
+    monkeypatch.setattr(graphiti_console, "search_graphiti", fake_search_graphiti)
+    monkeypatch.setattr(graphiti_console, "lookup_graphiti_uuids", fake_lookup_graphiti_uuids)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    body = client.post(
+        "/api/graphiti/subgraph/search",
+        json={
+            "query": "Amiya Rhodes",
+            "partition": "arknights_test",
+            "limit": 1,
+            "enrich": True,
+        },
+    ).json()
+    hit = body["data"]["hits"][0]
+    nodes = {row["graphiti_uuid"]: row for row in body["data"]["subgraph"]["nodes"]}
+
+    assert body["success"] is True
+    assert body["data"]["graphiti_lookup"]["found_count"] == 3
+    assert hit["graphiti_lookup"]["fact"]["raw"]["fact"] == "Amiya works with Rhodes Island."
+    assert hit["graphiti_raw"]["lookup"]["source_node"]["raw"]["name"] == "Amiya"
+    bundle = body["data"]["graphiti_bundle"]
+    assert bundle["sections"]["facts"][0]["raw"]["lookup"]["fact"]["raw"]["uuid"] == "fact-rich-1"
+    entities = {row["uuid"]: row for row in bundle["sections"]["entities"]}
+    assert entities["node-amiya-rich"]["raw"]["name"] == "Amiya"
+    assert entities["node-rhodes-rich"]["raw"]["name"] == "Rhodes Island"
+    assert bundle["search"]["lookup"]["found_count"] == 3
+    assert bundle["l2b_projection_policy"]["edge_materialization_policy"] == "requires_resolved_l2b_node_uuid"
+    assert nodes["node-amiya-rich"]["label"] == "Amiya"
+    assert nodes["node-rhodes-rich"]["graphiti_raw"]["summary"] == "Pharmaceutical organization."
+
+
+def test_graphiti_lookup_route_returns_lookup_receipt(monkeypatch) -> None:
+    from parrot.brain import graphiti_console
+    from parrot.brain.graphiti_console import GraphitiConsoleResult
+
+    async def fake_lookup_graphiti_uuids(**kwargs: Any) -> GraphitiConsoleResult:
+        return GraphitiConsoleResult(
+            action="graphiti.lookup",
+            success=True,
+            available=True,
+            message="1/1 found",
+            data={
+                "partition": str(kwargs.get("partition") or ""),
+                "results": [
+                    {
+                        "uuid": str(kwargs.get("uuid") or ""),
+                        "found": True,
+                        "graphiti_kind": "entity_node",
+                        "raw": {"uuid": str(kwargs.get("uuid") or ""), "name": "Amiya"},
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(graphiti_console, "lookup_graphiti_uuids", fake_lookup_graphiti_uuids)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    body = client.post(
+        "/api/graphiti/lookup",
+        json={"uuid": "node-amiya-rich", "partition": "arknights_test"},
+    ).json()
+
+    assert body["action"] == "graphiti.lookup"
+    assert body["success"] is True
+    assert body["data"]["results"][0]["raw"]["name"] == "Amiya"
+
+
+def test_graphiti_add_episode_proxies_to_remote_when_extra_missing(monkeypatch) -> None:
+    import asyncio
+
+    from parrot.brain import graphiti_console
+
+    calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    def fake_remote(path: str, *, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        calls.append((path, payload))
+        return {
+            "success": True,
+            "available": True,
+            "message": "episode written",
+            "data": {"episode": {"name": payload["name"] if payload else ""}},
+        }
+
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_GRAPHITI_URL", "http://ecs-graphiti")
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
+    monkeypatch.setattr(graphiti_console, "_remote_graphiti_request", fake_remote)
+
+    result = asyncio.run(graphiti_console.add_episode(
+        name="remote_episode",
+        body="Amiya works with Rhodes Island.",
+        partition="arknights_test",
+        source_description="web-console-test",
+        dry_run=False,
+    ))
+
+    assert result.success is True
+    assert result.message.startswith("remote:")
+    assert calls[0][0] == "/api/graphiti/episode"
+    assert calls[0][1]["dry_run"] is False
+    assert result.data["remote_proxy"]["base_url"] == "http://ecs-graphiti"
+
+
+def test_graphiti_execute_export_proxies_when_remote_url_configured(monkeypatch) -> None:
+    import asyncio
+
+    from parrot.brain import graphiti_console
+
+    calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    def fake_remote(path: str, *, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        calls.append((path, payload))
+        return {
+            "action": "graphiti.subgraph.export",
+            "success": True,
+            "dry_run": False,
+            "operator_mode": True,
+            "data": {"selected_count": 1, "admit_outcome": {"rejected": []}},
+        }
+
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_GRAPHITI_URL", "http://ecs-graphiti")
+    monkeypatch.setattr(graphiti_console, "_remote_graphiti_request", fake_remote)
+
+    receipt = asyncio.run(graphiti_console.export_graphiti_subgraph({
+        "partition": "arknights_test",
+        "query": "Amiya",
+        "hits": [{"uuid": "fact-1", "text": "Amiya works with Rhodes Island."}],
+        "dry_run": False,
+        "operator_mode": True,
+    }))
+
+    assert receipt["success"] is True
+    assert calls[0][0] == "/api/graphiti/subgraph/export"
+    assert calls[0][1]["_remote_proxy_disable"] is True
+    assert receipt["data"]["remote_proxy"]["enabled"] is True
+
+
+def test_graphiti_search_falls_back_to_partition_fact_scan(monkeypatch) -> None:
+    import asyncio
+
+    from parrot.brain import graphiti_console
+    from parrot.memory import graphiti_client
+
+    class FakeDriver:
+        def with_database(self, database: str) -> "FakeDriver":
+            assert database == "arknights_test"
+            return self
+
+        async def execute_query(self, cypher: str, **params: Any) -> tuple[list[dict[str, Any]], list[str], None]:
+            assert "MATCH (source)-[edge]->(target)" in cypher
+            assert params["partition"] == "arknights_test"
+            return (
+                [
+                    {
+                        "uuid": "fact-fallback-1",
+                        "group_id": "arknights_test",
+                        "name": "PROTECTS",
+                        "fact": "Rhodes Island protects Amiya near Chernobog.",
+                        "episode_uuids": ["episode-1"],
+                        "source_node_uuid": "node-rhodes",
+                        "target_node_uuid": "node-amiya",
+                        "source_node_name": "Rhodes Island",
+                        "target_node_name": "Amiya",
+                        "source_labels": ["Entity"],
+                        "target_labels": ["Entity"],
+                    }
+                ],
+                [],
+                None,
+            )
+
+    class FakeGraphiti:
+        driver = FakeDriver()
+
+        async def search(self, **kwargs: Any) -> list[Any]:
+            return []
+
+    async def fake_get_graphiti() -> FakeGraphiti:
+        return FakeGraphiti()
+
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: True)
+    monkeypatch.setattr(graphiti_client, "get_graphiti", fake_get_graphiti)
+
+    result = asyncio.run(graphiti_console.search_graphiti(
+        query="Amiya Chernobog",
+        partition="arknights_test",
+        limit=2,
+    ))
+
+    assert result.success is True
+    assert result.data["fallback_search"]["strategy"] == "falkordb_partition_fact_scan"
+    assert result.data["results"][0]["uuid"] == "fact-fallback-1"
+    assert result.data["results"][0]["graphiti_raw"]["source_node"]["name"] == "Rhodes Island"
+
+
 def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch) -> None:
     from parrot.brain import graphiti_console
 
@@ -385,6 +751,24 @@ def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch
     assert plan["data"]["selected_count"] == 1
     assert plan["data"]["observations"][0]["graphiti_uuid"] == "graphiti-hit-plan-1"
     assert plan["data"]["graphiti_raw_envelopes"][0]["raw"]["source_node"]["name"] == "Amiya"
+    assert plan["data"]["graphiti_bundle"]["sections"]["facts"][0]["raw"]["target_node"]["name"] == "Rhodes Island"
+    assert plan["data"]["graphiti_bundle"]["import_overlay"]["destination"] == "isolated_compartment"
+    assert plan["data"]["graphiti_bundle"]["import_overlay"]["apply_route"] == "/api/graphiti/subgraph/export"
+    transform_preview = plan["data"]["l2b_transform_preview"]
+    assert transform_preview["projection_kind"] == "graphiti_bundle_to_l2b_rustworkx_preview"
+    assert transform_preview["section_counts"] == {
+        "facts": 1,
+        "entities": 2,
+        "episodes": 1,
+        "communities": 0,
+    }
+    assert transform_preview["l2b_edges"][0]["kind"] == "graphiti_fact"
+    assert transform_preview["l2b_edges"][0]["source"] == "graphiti:arknights_test:entity:source-amiya"
+    assert transform_preview["l2b_edges"][0]["target"] == "graphiti:arknights_test:entity:target-rhodes"
+    assert transform_preview["l2b_edges"][0]["meta"]["graphiti_raw"]["target_node"]["name"] == "Rhodes Island"
+    assert transform_preview["rustworkx_preview"]["rwx_idx_policy"] == "ephemeral_do_not_persist"
+    assert transform_preview["policies"]["preserve_raw_graphiti"] is True
+    assert plan["data"]["graphiti_bundle"]["import_overlay"]["transform_preview"]["projection_kind"] == "graphiti_bundle_to_l2b_rustworkx_preview"
     assert plan["data"]["identity_ref_drafts"][0]["graphiti_raw"]["raw"]["target_node"]["name"] == "Rhodes Island"
     assert plan["data"]["identity_ref_drafts"][0]["apply_route"] == "/api/memory/identity-ref-index/apply"
     assert plan["data"]["edge_drafts"][0]["source_graphiti_uuid"] == "source-amiya"
@@ -2128,6 +2512,40 @@ def test_l2b_graph_policy_draft_routes_are_core013_and_dry_run() -> None:
             "label": "Wrapped work selection",
         },
     ).json()
+    graphiti_projection = client.post(
+        "/api/l2b/transforms/draft",
+        json={
+            "transform_kind": "graphiti_bundle_projection",
+            "graphiti_bundle": {
+                "bundle_kind": "graphiti_search_subgraph_bundle",
+                "partition": "arknights_test",
+                "query": "Amiya Chernobog",
+                "sections": {
+                    "facts": [
+                        {
+                            "kind": "graphiti_fact",
+                            "uuid": "fact-a",
+                            "raw": {
+                                "uuid": "fact-a",
+                                "fact": "Amiya protects Rhodes Island.",
+                                "source_node": {"uuid": "node-amiya", "name": "Amiya"},
+                                "target_node": {"uuid": "node-rhodes", "name": "Rhodes Island"},
+                            },
+                            "source_envelope": {
+                                "uuid": "fact-a",
+                                "source_node_uuid": "node-amiya",
+                                "target_node_uuid": "node-rhodes",
+                                "episode_uuids": ["episode-a"],
+                            },
+                        }
+                    ],
+                    "entities": [],
+                    "episodes": [],
+                    "communities": [],
+                },
+            },
+        },
+    ).json()
     llm_context = client.post(
         "/api/l2b/transforms/draft",
         json={"transform_kind": "send_context_to_llm", "node_uuids": ["node_a"]},
@@ -2159,6 +2577,12 @@ def test_l2b_graph_policy_draft_routes_are_core013_and_dry_run() -> None:
     assert transform["action"] == "l2b.transform.draft"
     assert transform["data"]["draft"]["transform_kind"] == "wrap_selection"
     assert transform["data"]["draft"]["proposed_overlay"]["label"] == "Wrapped work selection"
+    assert graphiti_projection["success"] is True
+    assert graphiti_projection["data"]["transform_kind"] == "graphiti_bundle_projection"
+    assert graphiti_projection["data"]["l2b_edges"][0]["kind"] == "graphiti_fact"
+    assert graphiti_projection["data"]["l2b_nodes"][0]["is_pointer"] is True
+    assert graphiti_projection["data"]["rustworkx_preview"]["rwx_idx_policy"] == "ephemeral_do_not_persist"
+    assert graphiti_projection["data"]["policies"]["direct_l2b_write"] is False
     assert llm_context["data"]["draft"]["requires_operator"] is False
     assert llm_context["data"]["operator_required_for_apply"] is False
     delta = GraphDeltaEvent(
@@ -2242,6 +2666,82 @@ def test_l2b_graph_health_route_is_read_only(monkeypatch) -> None:
     assert edge["target_graphiti_uuid"] == "target-graphiti-1"
     assert edge["ref_ids"] == ["ref-graphiti-1"]
     assert edge["meta"]["view_classes"] == ["graphiti", "semantic"]
+
+
+def test_l2b_subgraph_context_reads_live_l2b_without_rwx_index(monkeypatch) -> None:
+    import parrot.dsg.l2b_graph as l2b_graph_module
+    from parrot.dsg.l2b_graph import L2BGraph
+    from parrot.dsg.l2b_types import EdgeKind, NodeKind, SemanticEdge, SemanticNode
+
+    graph = L2BGraph()
+    graph.upsert_node(
+        SemanticNode(
+            uuid="ctx_a",
+            kind=NodeKind.OBJECT,
+            label="Etiquette bell",
+            graphiti_uuid="graphiti-node-a",
+            obsidian_uuid="obsidian-node-a",
+            known_facts=["Bell placement marks a formal greeting ritual."],
+            reference_image_path="data/snapshots/objects/ctx_a/reference.jpg",
+            provenance_stream_id="web:graphiti:etiquette:graphiti-node-a",
+        )
+    )
+    graph.upsert_node(SemanticNode(uuid="ctx_b", kind=NodeKind.EVENT, label="Greeting lesson"))
+    graph.upsert_node(SemanticNode(uuid="ctx_c", kind=NodeKind.PHOTO, label="Unselected photo"))
+    graph.connect(
+        "ctx_a",
+        "ctx_b",
+        SemanticEdge(
+            kind=EdgeKind.GRAPHITI_FACT,
+            source="graphiti",
+            graphiti_uuid="graphiti-fact-a",
+            source_graphiti_uuid="graphiti-node-a",
+            target_graphiti_uuid="graphiti-node-b",
+            ref_ids=("ref-etiquette-page-1",),
+            meta={"graphiti_raw": {"fact": "The bell is used before the formal greeting."}},
+        ),
+    )
+    monkeypatch.setattr(l2b_graph_module, "_instance", graph)
+
+    try:
+        client = TestClient(build_app(status_fetcher=_fake_fetcher))
+        body = client.post(
+            "/api/l2b/subgraphs/context",
+            json={
+                "label": "Etiquette context",
+                "node_uuids": ["ctx_a", "missing_ctx"],
+                "depth": 1,
+                "dry_run": False,
+                "operator_mode": True,
+            },
+        ).json()
+
+        assert body["action"] == "l2b.subgraph.context"
+        assert body["success"] is True
+        assert body["dry_run"] is True
+        assert body["operator_mode"] is False
+        assert body["data"]["requested_execution"] == {
+            "dry_run": False,
+            "operator_mode": True,
+            "ignored_for_context": True,
+        }
+        assert body["data"]["true_connection"]["used_live_l2b_graph"] is True
+        assert body["data"]["true_connection"]["source"] == "parrot.dsg.l2b_graph.get_l2b_graph"
+        assert body["data"]["true_connection"]["rwx_idx_exposed"] is False
+        assert body["data"]["missing_node_uuids"] == ["missing_ctx"]
+        assert body["data"]["selected_node_uuids"] == ["ctx_a"]
+        assert {row["uuid"] for row in body["data"]["nodes"]} == {"ctx_a", "ctx_b"}
+        assert body["data"]["nodes"][0]["graphiti_uuid"] == "graphiti-node-a"
+        assert body["data"]["nodes"][0]["refs"]["reference_image_path"].endswith("reference.jpg")
+        assert body["data"]["edges"][0]["graphiti_uuid"] == "graphiti-fact-a"
+        assert body["data"]["edges"][0]["ref_ids"] == ["ref-etiquette-page-1"]
+        assert body["data"]["edges"][0]["meta"]["graphiti_raw"]["fact"].startswith("The bell")
+        assert body["data"]["clusters"][0]["selected_member_uuids"] == ["ctx_a"]
+        assert body["data"]["overlay"]["overlay_kind"] == "live_l2b_ego_subgraph"
+        assert body["data"]["overlay"]["member_ref_ids"] == ["ref-etiquette-page-1"]
+        assert "_rx_index" not in str(body)
+    finally:
+        l2b_graph_module._instance = None
 
 
 def test_google_message_routes_use_nanobot_and_trigger_drafts() -> None:
@@ -2545,6 +3045,255 @@ def test_memory_identity_ref_index_merge_policy_preserves_conflicts(
     assert identities["canon-b"]["l2b_uuid"] == "l2b-b"
     assert identities["canon-c"]["l2b_uuid"] == "l2b-b"
     assert identities["canon-a"]["conflicts"][0]["policy"] == "preserve_without_auto_merge"
+
+
+def test_memory_identity_ref_index_graphiti_ref_writeback_drafts_and_applies(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    index_path = tmp_path / "memory_identity_ref_index.json"
+    old_ref = tmp_path / "old_amiya.md"
+    new_ref = tmp_path / "new_amiya.md"
+    old_ref.write_text("old", encoding="utf-8")
+    new_ref.write_text("new", encoding="utf-8")
+    monkeypatch.setenv("PARROT_MEMORY_IDENTITY_REF_INDEX_PATH", str(index_path))
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    client.post(
+        "/api/memory/identity-ref-index/apply",
+        json={
+            "canonical_uuid": "canon-m14-amiya",
+            "l2b_uuid": "l2b-m14-amiya",
+            "graphiti_entity_uuid": "graphiti-m14-amiya",
+            "ref_id": "ref-m14-amiya-doc",
+            "ref_kind": "obsidian_doc",
+            "locator": str(old_ref),
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    )
+    missing = client.post(
+        "/api/memory/identity-ref-index/graphiti-ref/draft",
+        json={
+            "ref_id": "ref-without-graphiti",
+            "locator": str(new_ref),
+        },
+    ).json()
+    draft = client.post(
+        "/api/memory/identity-ref-index/graphiti-ref/draft",
+        json={
+            "partition": "arknights_test",
+            "graphiti_kind": "entity",
+            "graphiti_uuid": "graphiti-m14-amiya",
+            "graphiti_raw": {
+                "uuid": "graphiti-m14-amiya",
+                "name": "Amiya",
+                "labels": ["Entity", "Operator"],
+            },
+            "external_refs": [
+                {
+                    "ref_id": "ref-m14-amiya-doc",
+                    "ref_kind": "obsidian_doc",
+                    "locator": str(new_ref),
+                    "content_hash": "sha256:new",
+                    "managed_by": "git",
+                    "git_commit": "m14",
+                }
+            ],
+            "requested_by": "pytest",
+        },
+    ).json()
+    snapshot_after_draft = client.get("/api/memory/identity-ref-index").json()
+    preview = client.post(
+        "/api/memory/identity-ref-index/graphiti-ref/apply",
+        json={
+            "partition": "arknights_test",
+            "graphiti_kind": "entity",
+            "graphiti_uuid": "graphiti-m14-amiya",
+            "external_refs": [
+                {
+                    "ref_id": "ref-m14-amiya-doc",
+                    "ref_kind": "obsidian_doc",
+                    "locator": str(new_ref),
+                }
+            ],
+            "dry_run": True,
+            "operator_mode": False,
+        },
+    ).json()
+    applied = client.post(
+        "/api/memory/identity-ref-index/graphiti-ref/apply",
+        json={
+            "partition": "arknights_test",
+            "graphiti_kind": "entity",
+            "graphiti_uuid": "graphiti-m14-amiya",
+            "graphiti_raw": {"uuid": "graphiti-m14-amiya", "name": "Amiya"},
+            "external_refs": [
+                {
+                    "ref_id": "ref-m14-amiya-doc",
+                    "ref_kind": "obsidian_doc",
+                    "locator": str(new_ref),
+                    "content_hash": "sha256:new",
+                    "managed_by": "git",
+                    "git_commit": "m14",
+                }
+            ],
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+    snapshot_after_apply = client.get("/api/memory/identity-ref-index").json()
+
+    assert missing["action"] == "memory.identity_ref_index.graphiti_ref_writeback_draft"
+    assert missing["success"] is False
+    assert missing["data"]["error"] == "missing_graphiti_uuid"
+    assert draft["action"] == "memory.identity_ref_index.graphiti_ref_writeback_draft"
+    assert draft["success"] is True
+    assert draft["data"]["would_persist"] is False
+    assert draft["data"]["graphiti_record_ref"]["partition"] == "arknights_test"
+    assert draft["data"]["graphiti_record_ref"]["graphiti_kind"] == "entity"
+    assert draft["data"]["identity_binding"]["canonical_uuid"] == "canon-m14-amiya"
+    assert draft["data"]["external_ref_records"][0]["ref_id"] == "ref-m14-amiya-doc"
+    assert draft["data"]["ref_move_events"][0]["event_type"] == "locator_added"
+    assert draft["data"]["ref_move_events"][0]["old_locators"] == [str(old_ref)]
+    assert draft["data"]["ref_move_events"][0]["new_locators"] == [
+        str(old_ref),
+        str(new_ref),
+    ]
+    assert draft["data"]["audit_episode_draft"]["write_status"] == "draft_only"
+    assert "ref-m14-amiya-doc" in draft["data"]["audit_episode_draft"]["body"]
+    assert snapshot_after_draft["data"]["refs"][0]["locators"] == [str(old_ref)]
+    assert preview["action"] == "memory.identity_ref_index.graphiti_ref_writeback_apply"
+    assert preview["data"]["would_persist"] is True
+    assert preview["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
+    assert applied["success"] is True
+    assert applied["dry_run"] is False
+    assert applied["operator_mode"] is True
+    assert applied["data"]["mutated"] is True
+    assert applied["data"]["mutation_scope"] == "memory_identity_ref_index_json_only"
+    assert applied["data"]["direct_l2b_write"] is False
+    assert applied["data"]["direct_graphiti_write"] is False
+    assert applied["data"]["direct_file_move"] is False
+    assert applied["data"]["graphiti_audit_episode"]["written"] is False
+    persisted_ref = {
+        item["ref_id"]: item for item in snapshot_after_apply["data"]["refs"]
+    }["ref-m14-amiya-doc"]
+    assert persisted_ref["locators"] == [str(old_ref), str(new_ref)]
+    assert persisted_ref["content_hash"] == "sha256:new"
+    assert persisted_ref["meta"]["graphiti_record_ref"]["graphiti_uuid"] == "graphiti-m14-amiya"
+
+
+def test_memory_identity_ref_index_graphiti_ref_writeback_skips_empty_external_ref(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    index_path = tmp_path / "memory_identity_ref_index.json"
+    monkeypatch.setenv("PARROT_MEMORY_IDENTITY_REF_INDEX_PATH", str(index_path))
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    payload = {
+        "partition": "arknights_test",
+        "graphiti_kind": "edge",
+        "graphiti_uuid": "graphiti-m14-empty-ref",
+        "external_refs": [
+            {
+                "ref_id": "ref-m14-empty",
+                "ref_kind": "graphiti_fact",
+            }
+        ],
+        "dry_run": False,
+        "operator_mode": True,
+    }
+    draft = client.post(
+        "/api/memory/identity-ref-index/graphiti-ref/draft",
+        json=payload,
+    ).json()
+    applied = client.post(
+        "/api/memory/identity-ref-index/graphiti-ref/apply",
+        json=payload,
+    ).json()
+    snapshot = client.get("/api/memory/identity-ref-index").json()
+
+    assert draft["success"] is True
+    assert draft["data"]["external_ref_payloads"] == []
+    assert draft["data"]["external_ref_records"] == []
+    assert draft["data"]["ref_move_events"] == []
+    assert applied["success"] is True
+    assert applied["data"]["identity_binding"]["graphiti_edge_uuids"] == [
+        "graphiti-m14-empty-ref"
+    ]
+    assert applied["data"]["external_ref_records"] == []
+    assert snapshot["data"]["identity_count"] == 1
+    assert snapshot["data"]["ref_count"] == 0
+
+
+def test_memory_identity_ref_index_graphiti_ref_writeback_can_write_audit_episode(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    index_path = tmp_path / "memory_identity_ref_index.json"
+    monkeypatch.setenv("PARROT_MEMORY_IDENTITY_REF_INDEX_PATH", str(index_path))
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    calls: list[dict[str, Any]] = []
+
+    class FakeGraphitiResult:
+        def as_json(self) -> dict[str, Any]:
+            return {
+                "action": "add_episode",
+                "success": True,
+                "available": True,
+                "message": "episode written",
+                "data": {"episode_uuid": "episode-m14-audit"},
+            }
+
+    async def fake_add_episode(**kwargs: Any) -> FakeGraphitiResult:
+        calls.append(kwargs)
+        return FakeGraphitiResult()
+
+    graphiti_console = import_module("parrot.brain.graphiti_console")
+    monkeypatch.setattr(graphiti_console, "add_episode", fake_add_episode)
+
+    applied = client.post(
+        "/api/memory/identity-ref-index/graphiti-ref/apply",
+        json={
+            "partition": "arknights_test",
+            "graphiti_kind": "edge",
+            "graphiti_uuid": "graphiti-m14-fact",
+            "graphiti_raw": {
+                "uuid": "graphiti-m14-fact",
+                "fact": "Amiya has an audit ref.",
+            },
+            "external_refs": [
+                {
+                    "ref_id": "ref-m14-audit",
+                    "ref_kind": "url",
+                    "url": "https://example.com/m14-audit",
+                    "managed_by": "git",
+                }
+            ],
+            "write_graphiti_audit_episode": True,
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+
+    assert applied["action"] == "memory.identity_ref_index.graphiti_ref_writeback_apply"
+    assert applied["success"] is True
+    assert applied["data"]["direct_graphiti_write"] is True
+    assert applied["data"]["graphiti_audit_episode_written"] is True
+    assert applied["data"]["mutation_scope"] == (
+        "memory_identity_ref_index_json_and_graphiti_audit_episode"
+    )
+    assert applied["data"]["graphiti_audit_episode"]["written"] is True
+    assert applied["data"]["graphiti_audit_episode"]["result"]["data"]["episode_uuid"] == (
+        "episode-m14-audit"
+    )
+    assert calls
+    assert calls[0]["partition"] == "arknights_test"
+    assert calls[0]["dry_run"] is False
+    assert calls[0]["source_description"] == "parrot-web-console-ref-writeback-audit"
+    assert "ref-m14-audit" in calls[0]["body"]
+    assert index_path.exists() is True
 
 
 def test_memory_identity_ref_index_resolves_graphiti_edges_without_l2b_write(

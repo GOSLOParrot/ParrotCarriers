@@ -5,6 +5,7 @@ using ParrotApp.Config;
 using ParrotApp.Health;
 using ParrotApp.Lifecycle;
 using ParrotApp.LiveKit;
+using ParrotApp.VisualTools;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -38,6 +39,9 @@ namespace ParrotApp.UI
         [SerializeField] private FormalHomeMenuLoader menuLoader;
         [SerializeField] private FormalModelPlacementController modelPlacementController;
         [SerializeField] private FormalHomeToolController homeToolController;
+        [SerializeField] private FormalCameraModeController cameraModeController;
+        [SerializeField] private BBoxVisualToolController bboxVisualToolController;
+        [SerializeField] private MagnifierVisualToolController magnifierVisualToolController;
         [SerializeField] private AudioRouteManager audioRouteManager;
         [SerializeField] private AudioRouteDetector audioRouteDetector;
         [SerializeField] private AudioRoutePolicyBrainReporter audioRouteReporter;
@@ -136,6 +140,9 @@ namespace ParrotApp.UI
             if (menuLoader == null) menuLoader = FindObjectOfType<FormalHomeMenuLoader>();
             if (modelPlacementController == null) modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
             if (homeToolController == null) homeToolController = FindObjectOfType<FormalHomeToolController>();
+            if (cameraModeController == null) cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            if (bboxVisualToolController == null) bboxVisualToolController = FindObjectOfType<BBoxVisualToolController>();
+            if (magnifierVisualToolController == null) magnifierVisualToolController = FindObjectOfType<MagnifierVisualToolController>();
             if (audioRouteManager == null) audioRouteManager = FindObjectOfType<AudioRouteManager>();
             if (audioRouteDetector == null) audioRouteDetector = FindObjectOfType<AudioRouteDetector>();
             if (audioRouteReporter == null) audioRouteReporter = FindObjectOfType<AudioRoutePolicyBrainReporter>();
@@ -213,6 +220,9 @@ namespace ParrotApp.UI
             _audioRouteReportPending = false;
             _workspaceApplyPending = false;
             homeToolController?.CloseAllTools();
+            cameraModeController?.SetModeLocal("off");
+            bboxVisualToolController?.Release();
+            magnifierVisualToolController?.Release();
             SetVisible(false);
             ClearContent();
         }
@@ -315,8 +325,8 @@ namespace ParrotApp.UI
 
             _toolbarRoot = CreatePanel("FormalHomeToolbar", root.transform, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-32f, 30f), new Vector2(642f, 104f), new Color(0.10f, 0.075f, 0.050f, 0.72f));
             CreateToolbarButton("ToolButtonCamera", 0, 6, "CAM", CapturePhotoTool);
-            CreateToolbarButton("ToolButtonMagnifier", 1, 6, "MAG", DeferMagnifierTool);
-            CreateToolbarButton("ToolButtonBBox", 2, 6, "BOX", DeferBBoxTool);
+            CreateToolbarButton("ToolButtonMagnifier", 1, 6, "MAG", ToggleMagnifierTool);
+            CreateToolbarButton("ToolButtonBBox", 2, 6, "BOX", ToggleBBoxTool);
             CreateToolbarButton("ToolButtonCanvasMenu", 3, 6, "MENU", ToggleDrawer);
             CreateToolbarButton("ToolButtonWorkspace", 4, 6, "2D", TryOpen2DWorkspace);
             CreateToolbarButton("ToolButtonSettings", 5, 6, "SET", ToggleSettingsPanel);
@@ -479,6 +489,10 @@ namespace ParrotApp.UI
                 if (string.Equals(module.module_id, "photo_camera", StringComparison.OrdinalIgnoreCase))
                     _cameraMode = module.state.Trim();
             }
+
+            if (cameraModeController == null)
+                cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            cameraModeController?.SetModeLocal(_cameraMode, !string.Equals(_cameraMode, "off", StringComparison.OrdinalIgnoreCase));
         }
 
         private void CycleCameraMode()
@@ -491,6 +505,10 @@ namespace ParrotApp.UI
 
             string nextMode = NextCameraMode(_cameraMode);
             _pendingCameraMode = nextMode;
+            if (cameraModeController == null)
+                cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            cameraModeController?.SetModeLocal(nextMode);
+            cameraModeController?.MarkHttpPending(nextMode);
             StartCoroutine(ApplyCameraModeHttp(nextMode));
             RefreshQuickActions();
             SetStatus("Camera HTTP " + nextMode, warning: true);
@@ -629,19 +647,47 @@ namespace ParrotApp.UI
             }
 
             string status = homeToolController.CapturePhoto();
-            SetStatus(status, !status.Contains("missing") && !status.Contains("waits") && !status.Contains("not_phone_safe"));
+            bool photoOk = !status.Contains("missing") && !status.Contains("waits") && !status.Contains("not_phone_safe");
+            if (cameraModeController == null)
+                cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            if (photoOk)
+                cameraModeController?.SetModeLocal("capture_locked");
+            cameraModeController?.MarkPhotoCaptureStatus(status, photoOk);
+            SetStatus(status, photoOk);
         }
 
-        private void DeferMagnifierTool()
+        private void ToggleMagnifierTool()
         {
-            SetActivePanel(HomePanelKind.CanvasMenu);
-            SetStatus("MAG after phone stability", warning: false);
+            if (magnifierVisualToolController == null)
+                magnifierVisualToolController = FindObjectOfType<MagnifierVisualToolController>();
+            if (magnifierVisualToolController == null)
+            {
+                SetActivePanel(HomePanelKind.CanvasMenu);
+                SetStatus("MAG controller missing", warning: false);
+                return;
+            }
+
+            string status = magnifierVisualToolController.ToggleTool();
+            if (!magnifierVisualToolController.FeatureEnabled)
+                SetActivePanel(HomePanelKind.CanvasMenu);
+            SetStatus(ToolStatusForMenu(status, "MAG after phone stability"), ToolStatusLooksOk(status));
         }
 
-        private void DeferBBoxTool()
+        private void ToggleBBoxTool()
         {
-            SetActivePanel(HomePanelKind.CanvasMenu);
-            SetStatus("BOX after phone stability", warning: false);
+            if (bboxVisualToolController == null)
+                bboxVisualToolController = FindObjectOfType<BBoxVisualToolController>();
+            if (bboxVisualToolController == null)
+            {
+                SetActivePanel(HomePanelKind.CanvasMenu);
+                SetStatus("BOX controller missing", warning: false);
+                return;
+            }
+
+            string status = bboxVisualToolController.ToggleTool();
+            if (!bboxVisualToolController.FeatureEnabled)
+                SetActivePanel(HomePanelKind.CanvasMenu);
+            SetStatus(ToolStatusForMenu(status, "BOX after phone stability"), ToolStatusLooksOk(status));
         }
 
         private void TryOpen2DWorkspace()
@@ -730,10 +776,17 @@ namespace ParrotApp.UI
             if (result.Success)
             {
                 _cameraMode = mode;
+                if (cameraModeController == null)
+                    cameraModeController = FindObjectOfType<FormalCameraModeController>();
+                cameraModeController?.MarkHttpResult(mode, true);
                 SetStatus("Camera " + _cameraMode, warning: true);
             }
             else
             {
+                if (cameraModeController == null)
+                    cameraModeController = FindObjectOfType<FormalCameraModeController>();
+                cameraModeController?.SetModeLocal(_cameraMode);
+                cameraModeController?.MarkHttpResult(_cameraMode, false, result.Error);
                 SetStatus("Camera HTTP failed " + ShortLabel(result.Error, "unknown", 28), warning: false);
             }
             RefreshQuickActions();
@@ -1233,6 +1286,23 @@ namespace ParrotApp.UI
             return string.IsNullOrWhiteSpace(pending)
                 ? ShortLabel(current, fallback, 18)
                 : "...";
+        }
+
+        private static string ToolStatusForMenu(string status, string flagOffLabel)
+        {
+            if (string.IsNullOrWhiteSpace(status)) return flagOffLabel;
+            if (status.Contains("dev_flag_off")) return flagOffLabel;
+            if (status.Contains("http_missing")) return status + " / check App HTTP";
+            return status;
+        }
+
+        private static bool ToolStatusLooksOk(string status)
+        {
+            if (string.IsNullOrWhiteSpace(status)) return false;
+            return !status.Contains("missing")
+                   && !status.Contains("failed")
+                   && !status.Contains("dev_flag_off")
+                   && !status.Contains("not_phone_safe");
         }
 
         private string AudioRouteStatusLabel()

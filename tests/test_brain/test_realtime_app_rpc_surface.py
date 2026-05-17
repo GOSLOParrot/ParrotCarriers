@@ -53,6 +53,19 @@ def test_realtime_app_rpc_surface_is_classified_and_compact() -> None:
         assert f'register_rpc_method("{method}")' in text
 
 
+def test_scene_ready_rpcs_rebind_roomio_to_current_unity_caller() -> None:
+    text = AGENT.read_text(encoding="utf-8")
+
+    assert "def _bind_room_io_to_rpc_caller" in text
+    assert "LiveKit Agents auto-selects the first accepted remote participant" in text
+    assert 'getattr(data, "caller_identity"' in text
+    assert 'identity.lower().startswith("unity")' in text
+    assert "active_room_io = session.room_io" in text
+    assert "active_room_io.set_participant(identity)" in text
+    assert '_bind_room_io_to_rpc_caller(data, "onSceneReady")' in text
+    assert '_bind_room_io_to_rpc_caller(data, "onGosloPlaced")' in text
+
+
 def test_full_app_menu_and_roomsetting_surfaces_stay_http_owned() -> None:
     text = APP_MONITOR.read_text(encoding="utf-8")
 

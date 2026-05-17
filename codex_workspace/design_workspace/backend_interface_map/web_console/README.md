@@ -31,7 +31,8 @@ Promote durable decisions back into the active business files above.
 |:--|:--|:--|
 | `_tmp/runtime_flow_memory_upgrade_research_20260513.md` | temporary-active | React + Vite migration, Runtime Flow workspace, Memory Graph workspace, HITL, runtime-flow read model, audit checklist. |
 | `_tmp/l15_graphiti_import_test_20260515.md` | temporary-active | L1.5 source board, Obsidian profile import, Google Calendar mapping, Graphiti natural-language search, Arknights test partition, and Graphiti-to-L2-B subgraph export. |
-| `_tmp/graphiti_l2b_ref_identity_workplan_20260517.md` | temporary-active | CORE-015 questionnaire index, TODO-before/during/after gates, completed M1 health verifier, completed M2 merge/conflict policy, completed M3 Graphiti raw envelopes, completed M4 GraphitiResolver preview, completed M5 L2-B edge apply, completed M6 Source Board controls, completed M7 ref scan plan, completed M8 dispatch/results intake, completed M9 fallback ref_scan worker, completed M10 live ECS Redis ref_scan smoke, completed M11 optional URL/Graphiti/ECS-guard remote probes, and execution ledger. |
+| `_tmp/graphiti_l2b_ref_identity_workplan_20260517.md` | temporary-active | CORE-015 questionnaire index, TODO-before/during/after gates, completed M1 health verifier, completed M2 merge/conflict policy, completed M3 Graphiti raw envelopes, completed M4 GraphitiResolver preview, completed M5 L2-B edge apply, completed M6 Source Board controls, completed M7 ref scan plan, completed M8 dispatch/results intake, completed M9 fallback ref_scan worker, completed M10 live ECS Redis ref_scan smoke, completed M11 optional URL/Graphiti/ECS-guard remote probes, completed M12/M13 true Graphiti search/UUID lookup/ECS persistence, completed M14 Graphiti Ref write-back, completed M15 SearchConfig recipe/filter adapter, completed M16 Graphiti subgraph bundle preservation, completed M17 bundle UI, completed M18 ECS/app-monitor SearchConfig deployment, completed M19 Graphiti bundle -> L2-B/RustWorkX preview, completed M20R review/research gate, and execution ledger. |
+| `_tmp/l2b_subgraph_tools_workplan_20260517.md` | temporary-active | L2-B operation-page subgraph tools research index, true-connection standard, TODO-before/during/after gates, and implementation ledger for live bounded subgraph context. |
 
 ## Related Project Skill Drafts
 
@@ -56,9 +57,9 @@ planned. Detailed business rationale stays in the active files above.
 | Trigger and message lab | `GET /api/dsg/triggers/catalog`, `POST /api/dsg/triggers/draft-event`, `POST /api/dsg/triggers/fire-event`, `POST /api/google/messages/check`, `POST /api/google/messages/push-test`. | `observability_runtime_business_flow_20260513.md` | Web-only receipt surface; real fire publishes to `CH_DSG_EVENTS` only with explicit operator mode. React Runtime preset buttons now obey the global Settings `Mode`: the browser defaults to real operator testing, while preview mode still calls draft/dry-run paths. Gmail check uses Scheduler/Nanobot dispatch; message results now enter L1.5 as `GOOGLE_MESSAGE` observations. |
 | Trigger/Awareness taxonomy | No new route; documents `TriggerOutcome`, Photo/Evidence Awareness, ContextInjector C3/C4 policy, and future clustered trigger rendering. | `observability_runtime_business_flow_20260513.md`, `.cursor/memory/architecture/Interface/goslo_trigger_awareness_taxonomy_20260515.md` | Classifies trigger families separately from delivery/body-feel levels. Legacy `notify_gemini` is now treated as C3 by default; C4/interrupt remains explicit future policy. |
 | Live memory snapshot | `GET /api/app/live-state?limit=...`, `GET /api/memory/live-state/changes?since=...&limit=...`, `GET /api/memory/live-state/stream?since=...`, `GET /api/memory/blackboard/activity?limit=...`; grouped Blackboard key rows, grouped IntentWorkspace ref rows, Ref registry, React Flow L2-B graph/detail panel, bounded changed-since events, bounded SSE memory deltas, and bounded Blackboard activity rows. | `memory_graph_workspace_business_flow_20260513.md` | Implemented as bounded active-view renderer with filters, new-node diff highlight, and soft Intent/Ref-to-L2-B links when linked nodes exist. 2026-05-15 Memory changed-since V1 lets React skip no-op broad snapshot repainting. 2026-05-16 adds a Web-only read SSE wrapper over the same `memory_runtime_delta_v1` event shape; receipt stream remains separate. |
-| L1.5/L2-B operator drafts | `GET /api/l15/pool`, `GET /api/l15/obsidian-vault/scan`, `POST /api/l15/obsidian-vault/import-draft`, `POST /api/l15/obsidian-vault/import-plan`, `POST /api/l15/obsidian-vault/import`, `POST /api/l15/bucket-op/draft`, `POST /api/l15/bucket-op`, `POST /api/l15/obsidian-node/draft`, `POST /api/l15/obsidian-node`, `POST /api/l2b/node/draft`, `POST /api/l2b/node`, `POST /api/l2b/node/delete`, `POST /api/l2b/edge/draft`, `POST /api/l2b/edge`, `POST /api/l2b/edge/update`, `POST /api/l2b/edge/delete`, `POST /api/l2b/graph-policy/import-draft`, `POST /api/l2b/subgraphs/draft`, `POST /api/l2b/transforms/draft`, `GET /api/l2b/analysis/health`, `POST /api/refs/binding/draft`, `POST /api/refs/binding/apply`, `GET /api/memory/identity-ref-index`, `POST /api/memory/identity-ref-index/draft`, `POST /api/memory/identity-ref-index/apply`, `POST /api/memory/identity-ref-index/verify`, `POST /api/memory/identity-ref-index/resolve-graphiti`, `POST /api/memory/identity-ref-index/apply-graphiti-edge`, `POST /api/memory/identity-ref-index/ref-scan-plan`, `POST /api/memory/identity-ref-index/ref-scan-dispatch`, `GET /api/memory/identity-ref-index/ref-scan-results`, `GET /api/photos/asset/{day}/{photo_id}`. | `memory_graph_workspace_business_flow_20260513.md`, `graphiti_l2b_ref_identity_design_20260517.md` | Backend routes remain receipt/audit gated. Node create/update routes through `L15Pool.admit(Observation(source=USER_EXPLICIT))`; delete uses `L15Pool.evict`; real edge connect/update/delete requires operator mode. Edge update/delete identify runtime edges by endpoints plus optional kind/source filters instead of exposing RustWorkX edge indexes. WEB-016 adds CORE-013 candidate-only graph policy drafts for import destination, subgraph overlays, transforms, and read-only health metrics; no apply route or shared DTO promotion yet. React Memory Canvas now exposes policy/overlay/transform/health preview controls plus the global Settings `Mode`: default real operator testing sends direct Node/Edge/bucket actions to apply routes with `dry_run=false` / `operator_mode=true`, while preview mode keeps them as dry-run receipts. Source Board Graphiti/Obsidian/Google can all preview a unified source -> L1.5 -> L2-B import plan before any operator apply; import-plan receipts are forced draft-only, and empty source selections return `policy_skipped_reason` with no destination policy. L2-B fallback de-dup uses stable source IDs first, then `NodeKind + exact label`; visible labels/tags are not graph-wide unique identity keys. Session RefBinding now has CORE-006 draft/apply receipts that update only the session registry. CORE-015 IdentityRefIndex has a file-backed Web prototype for canonical UUID equivalence and mutable ref locators, deterministic health verification for local paths, unknown URL/remote locators, supplied Graphiti/Obsidian UUID status maps, `merge_report` / `conflicts[]` receipts for duplicate Graphiti/L2-B/ref signals, a read-only GraphitiResolver preview that resolves fact endpoints, an operator-only `apply-graphiti-edge` route that materializes already-resolved Graphiti facts through the existing L2-B edge writer with raw metadata preserved, a plan-only `ref-scan-plan` route for Nanobot/MCP/git ref health checks, an operator-gated read-only `ref-scan-dispatch`, and a read-only `ref-scan-results` ledger view. M10 live smoke proved Scheduler -> Nanobot -> Scheduler ledger over ECS Redis DB15. M11 adds opt-in URL HEAD and Graphiti search-probe checkers plus an ECS-local stat/hash checker guarded by ECS-side confirmation; live smoke with `--remote-checks` returned URL 404 as `missing`, Graphiti search-probe as `unknown`, ECS as guarded `unknown`, local path ok/hash, and no automatic write-back. It preserves collisions without auto-rebinding existing records and does not write Graphiti/FalkorDB, Obsidian, ECS files, manifests, RefIndex health, or App DTOs. Photo thumbnails are read-only cache-root previews and do not expose arbitrary local paths. |
-| Source Board CORE-015 controls | Existing Graphiti Source Board controls inside 7893 static Console | `web/console_app/src/App.tsx`, `api.ts` | The Graphiti card now loads IdentityIndex counts, runs deterministic ref verification, drafts a `Ref Scan Plan` Nanobot/MCP/git contract, optionally requests `Remote probes`, dispatches read-only `ref_scan` tasks through Scheduler/Nanobot, reads `memory_ref_scan_result` ledger rows, resolves Graphiti edge drafts, previews `apply-graphiti-edge`, and operator-materializes selected resolved facts into L2-B through CORE-015. M10 adds a repeatable backend smoke script proving that ledger path against ECS Redis DB15; M11 extends it with `--remote-checks` for URL HEAD and Graphiti search-probe validation. `npm run build` writes the updated controls to `web/console_dist`, so no separate Web Console port is required. |
-| Graphiti console | `GET /api/graphiti/status`, `POST /api/graphiti/search`, `POST /api/graphiti/episode/draft`, `POST /api/graphiti/episode`, `POST /api/graphiti/subgraph/search`, `POST /api/graphiti/subgraph/export-draft`, `POST /api/graphiti/subgraph/import-plan`, `POST /api/graphiti/subgraph/export`; preview/apply split. | `graphiti_management_business_flow_20260513.md` | Implemented safe seed plus `arknights_test`/DeepSeek config and Graphiti-to-L1.5 subgraph export receipts. React Source Board supports selected-hit subgraph preview, inline Export plan, `edge_drafts`, `graphiti_raw_envelopes`, CORE-015 `identity_ref_drafts`, unified import plan with CORE-013 destination policy, tolerant search limit parsing, normalized partition provenance, empty-hit `policy_skipped_reason`, and an `Import to L1.5` action that now obeys global Settings `Mode` (default real operator testing, preview mode dry-run). M12 adds Strategy / Depth / Focal UUID controls and an `iterative_hybrid` mode that performs real follow-up Graphiti searches and returns a `search_plan`; GOSLO Intent `query_memory` uses the same subgraph path. If the lightweight 7893 BFF lacks local Graphiti dependencies, status/search can read through an explicit `PARROT_WEB_CONSOLE_GRAPHITI_URL` / `PARROT_GRAPHITI_REMOTE_URL` app-monitor target such as local/ECS `8790`; this proxy is read-only and opt-in. M12 live smoke restarted 7893 against ECS 8790, wrote a real `arknights_test` Episode, searched back 9 hits / 19 nodes / 9 edges, and admitted 2 L1.5 nodes. Full Graphiti/FalkorDB surgery and direct L2-B Edge writes remain future operator work. |
+| L1.5/L2-B operator drafts | `GET /api/l15/pool`, `GET /api/l15/obsidian-vault/scan`, `POST /api/l15/obsidian-vault/import-draft`, `POST /api/l15/obsidian-vault/import-plan`, `POST /api/l15/obsidian-vault/import`, `POST /api/l15/bucket-op/draft`, `POST /api/l15/bucket-op`, `POST /api/l15/obsidian-node/draft`, `POST /api/l15/obsidian-node`, `POST /api/l2b/node/draft`, `POST /api/l2b/node`, `POST /api/l2b/node/delete`, `POST /api/l2b/edge/draft`, `POST /api/l2b/edge`, `POST /api/l2b/edge/update`, `POST /api/l2b/edge/delete`, `POST /api/l2b/graph-policy/import-draft`, `POST /api/l2b/subgraphs/draft`, `POST /api/l2b/transforms/draft`, `GET /api/l2b/analysis/health`, `POST /api/refs/binding/draft`, `POST /api/refs/binding/apply`, `GET /api/memory/identity-ref-index`, `POST /api/memory/identity-ref-index/draft`, `POST /api/memory/identity-ref-index/apply`, `POST /api/memory/identity-ref-index/graphiti-ref/draft`, `POST /api/memory/identity-ref-index/graphiti-ref/apply`, `POST /api/memory/identity-ref-index/verify`, `POST /api/memory/identity-ref-index/resolve-graphiti`, `POST /api/memory/identity-ref-index/apply-graphiti-edge`, `POST /api/memory/identity-ref-index/ref-scan-plan`, `POST /api/memory/identity-ref-index/ref-scan-dispatch`, `GET /api/memory/identity-ref-index/ref-scan-results`, `GET /api/photos/asset/{day}/{photo_id}`. | `memory_graph_workspace_business_flow_20260513.md`, `graphiti_l2b_ref_identity_design_20260517.md` | Backend routes remain receipt/audit gated. Node create/update routes through `L15Pool.admit(Observation(source=USER_EXPLICIT))`; delete uses `L15Pool.evict`; real edge connect/update/delete requires operator mode. Edge update/delete identify runtime edges by endpoints plus optional kind/source filters instead of exposing RustWorkX edge indexes. WEB-016 adds CORE-013 candidate-only graph policy drafts for import destination, subgraph overlays, transforms, and read-only health metrics; no apply route or shared DTO promotion yet. React Memory Canvas now exposes policy/overlay/transform/health preview controls plus the global Settings `Mode`: default real operator testing sends direct Node/Edge/bucket actions to apply routes with `dry_run=false` / `operator_mode=true`, while preview mode keeps them as dry-run receipts. Source Board Graphiti/Obsidian/Google can all preview a unified source -> L1.5 -> L2-B import plan before any operator apply; import-plan receipts are forced draft-only, and empty source selections return `policy_skipped_reason` with no destination policy. L2-B fallback de-dup uses stable source IDs first, then `NodeKind + exact label`; visible labels/tags are not graph-wide unique identity keys. Session RefBinding now has CORE-006 draft/apply receipts that update only the session registry. CORE-015 IdentityRefIndex has a file-backed Web prototype for canonical UUID equivalence and mutable ref locators, deterministic health verification for local paths, unknown URL/remote locators, supplied Graphiti/Obsidian UUID status maps, `merge_report` / `conflicts[]` receipts for duplicate Graphiti/L2-B/ref signals, semantic M14 Graphiti-ref write-back draft/apply routes that bind GraphitiRecordRef to ExternalRefRecords and draft RefMoveEvents/audit Episodes, a read-only GraphitiResolver preview that resolves fact endpoints, an operator-only `apply-graphiti-edge` route that materializes already-resolved Graphiti facts through the existing L2-B edge writer with raw metadata preserved, a plan-only `ref-scan-plan` route for Nanobot/MCP/git ref health checks, an operator-gated read-only `ref-scan-dispatch`, and a read-only `ref-scan-results` ledger view. M10 live smoke proved Scheduler -> Nanobot -> Scheduler ledger over ECS Redis DB15. M11 adds opt-in URL HEAD and Graphiti search-probe checkers plus an ECS-local stat/hash checker guarded by ECS-side confirmation; live smoke with `--remote-checks` returned URL 404 as `missing`, Graphiti search-probe as `unknown`, ECS as guarded `unknown`, local path ok/hash, and no automatic write-back. It preserves collisions without auto-rebinding existing records and does not write Graphiti/FalkorDB, Obsidian, ECS files, manifests, RefIndex health, or App DTOs. Photo thumbnails are read-only cache-root previews and do not expose arbitrary local paths. |
+| Source Board CORE-015 controls | Existing Graphiti Source Board controls inside 7893 static Console | `web/console_app/src/App.tsx`, `api.ts` | The Graphiti card now loads IdentityIndex counts, runs deterministic ref verification, drafts a `Ref Scan Plan` Nanobot/MCP/git contract, optionally requests `Remote probes`, dispatches read-only `ref_scan` tasks through Scheduler/Nanobot, reads `memory_ref_scan_result` ledger rows, resolves Graphiti edge drafts, previews `apply-graphiti-edge`, operator-materializes selected resolved facts into L2-B through CORE-015, and surfaces M14 Graphiti Ref Write-back controls for generated fact/entity/episode Ref drafts. Operators can preview RefIndex write-back, edit Ref ID/kind/locator, and explicitly opt into Graphiti audit Episode writes. M15 adds a separate Graphiti SearchConfig Recipe selector plus Node label / Edge type filter inputs, so Web can combine local multi-hop Strategy with Graphiti combined/edge/node/community retrieval recipes before import. M16 backend receipts attach `graphiti_bundle`; M17 renders that bundle directly in the Source Board with fact/entity/episode/community counts, search/lookup summary, projection policy, import overlay, and sample rows. M19 adds `L2-B transform preview` rows from the import overlay, including preview node/edge samples and rustworkx ephemeral-index policy. M10 adds a repeatable backend smoke script proving that ledger path against ECS Redis DB15; M11 extends it with `--remote-checks` for URL HEAD and Graphiti search-probe validation. `npm run build` writes the updated controls to `web/console_dist`, so no separate Web Console port is required. |
+| Graphiti console | `GET /api/graphiti/status`, `POST /api/graphiti/search`, `POST /api/graphiti/episode/draft`, `POST /api/graphiti/episode`, `POST /api/graphiti/lookup`, `POST /api/graphiti/subgraph/search`, `POST /api/graphiti/subgraph/export-draft`, `POST /api/graphiti/subgraph/import-plan`, `POST /api/graphiti/subgraph/export`; preview/apply split. | `graphiti_management_business_flow_20260513.md` | Implemented safe seed plus `arknights_test`/DeepSeek config and Graphiti-to-L1.5 subgraph export receipts. React Source Board supports selected-hit subgraph preview, inline Export plan, `edge_drafts`, `graphiti_raw_envelopes`, CORE-015 `identity_ref_drafts`, unified import plan with CORE-013 destination policy, tolerant search limit parsing, normalized partition provenance, empty-hit `policy_skipped_reason`, and an `Import to L1.5` action that now obeys global Settings `Mode` (default real operator testing, preview mode dry-run). M12 adds Strategy / Depth / Focal UUID controls and an `iterative_hybrid` mode that performs real follow-up Graphiti searches and returns a `search_plan`; GOSLO Intent `query_memory` uses the same subgraph path. M13 adds exact Graphiti UUID lookup/enrichment and ECS 8790 write/export proxying. M15 adds SearchConfig recipe/filter controls and receipts that show whether low-level `_search` or fallback public search ran. M16 adds `graphiti_bundle` on search/export/import-plan receipts: raw envelopes, fact/entity/episode/community sections, lookup payloads, search plan/config, edge/ref drafts, and L2-B import overlay are preserved together. M18 deploys this adapter to ECS app-monitor, so 8790 itself and 7893 passthrough now prove `_search`, bundle counts, UUID lookup, and import overlay against real Graphiti data. M19 adds a preview-only Graphiti bundle -> L2-B/RustWorkX projection inside import-plan receipts, preserving raw Graphiti payloads and marking rustworkx indices as non-persistent preview handles. If the lightweight 7893 BFF lacks local Graphiti dependencies, status/search can read through an explicit `PARROT_WEB_CONSOLE_GRAPHITI_URL` / `PARROT_GRAPHITI_REMOTE_URL` app-monitor target such as local/ECS `8790`; this proxy is opt-in. Full Graphiti/FalkorDB surgery and direct L2-B Edge writes remain future operator work. |
 | Google Calendar source import | `POST /api/google/calendar/fetch`, `GET /api/google/calendar/results`, `POST /api/google/calendar/preview`, `POST /api/google/calendar/import-draft`, `POST /api/google/calendar/import-plan`, `POST /api/google/calendar/import`; Scheduler/Nanobot fetch request or raw event -> normalized CalendarTrigger event -> `GOOGLE_CALENDAR` Observation -> optional L1.5 admit. | `memory_graph_workspace_business_flow_20260513.md`, `observability_runtime_business_flow_20260513.md` | Preview/plan buttons remain explicit previews; fetch/import execute buttons obey global Settings `Mode` and default to real operator testing. Calendar import preserves event time fields during L1.5 import, returns Web-only mapping rows plus a unified CORE-013 destination plan, reads a bounded Scheduler trigger-result ledger without browser-held Google OAuth, and marks cancelled/deleted rows as historical tombstone EVENT nodes rather than evicting by default. |
 | Time-aligned evidence debug | `GET /api/vision/evidence/status`, `GET /api/vision/evidence/timeline`, `POST /api/vision/evidence/request`, `POST /api/vision/evidence/stage-hint`, `POST /api/vision/evidence/memory-draft`, `POST /api/vision/evidence/frame-cache/upload`, `POST /api/vision/evidence/tool-lifecycle`, `GET /api/vision/evidence/screen-share-smoke`, `GET /api/vision/evidence/{evidence_id}`, `POST /api/app/test/visual-attention`; React Runtime Time/Evidence panel. | `observability_runtime_business_flow_20260513.md`, `memory_graph_workspace_business_flow_20260513.md`, `.cursor/memory/architecture/Interface/time_aligned_evidence_interface_20260515.md` | Web/backend-first CORE-012 prototype now has an Interface SSOT for implemented backend/Web behavior, without promoting Unity/App top-level DTO fields. Consumes optional ECP payload/meta `timebase`; records photo/snapshot/attention/frame rows; `identify_object` requests stored evidence instead of old snapshot RPC and will not attach a missing BBox/Focus ref to the room's newest unrelated frame. `parrot.brain.vision.frame_cache.record_livekit_frame_bytes()` is the storage-backed producer entry point, the Web upload route is only an operator/debug ingress, and `parrot.brain.vision.livekit_sampler` is the Brain room-scoped low-FPS LiveKit track consumer. `/api/vision/evidence/status` includes secret-free `livekit_sampler` status plus frame-cache/sampler freshness fields (`latest_frame_age_ms`, `latest_frame_fresh`, per-track summaries including `publication_source`), and `src/scripts/smoke_livekit_frame_sampler.py` is the manual real-room video ingestion smoke. The sampler recognizes camera and screen-share publications, including `SOURCE_SCREEN_SHARE`; React Runtime now prefers LiveKit `setScreenShareEnabled(true)` for screen-share publish, falls back to manual `getDisplayMedia + publishTrack`, and its `检查采样` button calls server-side read-only smoke verdict `GET /api/vision/evidence/screen-share-smoke`, which requires a single fresh candidate row with screen-share-looking source hints, renders the verdict inline with next steps, and does not write pending evidence rows on failure. `parrot.brain.vision.evidence_image` prepares local stored images/crops for VLM describe, letting `identify_object` enrich L0/L1 search without inline image transport. `parrot.brain.vision.evidence_awareness` stages `visual_evidence_hint` refs into IntentWorkspace and writes `transient/evidence_awareness_notice`; Photo Awareness writes `transient/photo_awareness_notice` for App menu notification levels; `ContextInjector` consumes allowed evidence/photo notices as C3 chat-context hints and deliberately keeps C4/speech as a later safe-turn policy. WEB-015.12 adds the conservative `attention.threshold.crossed` auto bridge: nearest stored frame/photo is staged as `visual_evidence_hint` or recorded as a pending request, with no capture, no L2-B write, and no direct speech/interrupt. WEB-015.14 adds the CORE-014 BBox/MAG lifecycle backend/App V1 surface: `/api/app/visual-tool/event`, `/api/app/visual-tool/asset/{asset_id}`, ECP `visual_tool.lifecycle`, and Web debug `/api/vision/evidence/tool-lifecycle`; BBox confirm defaults to C3, MAG confirm defaults to IntentWorkspace-only, and C4 requests are downgraded. WEB-015.9 adds `memory-draft`, a preview-only Evidence -> L1.5/Ref/L2-B promotion receipt with no apply route until CORE-012/CORE-006 review. Live Unity/Web screen-share/LiveKit video smoke, reference-image VLM compare, and C4 safe-turn review remain WEB-015 follow-ups. |
 
@@ -380,6 +381,146 @@ Audit result:
 - Validation signal: Web route tests `37 passed`, `npm run typecheck`,
   `npm run build`, browser Node-detail smoke with zero console errors, and
   frontend/backend secret scan.
+
+### WEB-014.17 M13 Checkpoint
+
+- Graphiti UUID lookup is now real: `/api/graphiti/lookup` uses partition-
+  scoped Graphiti CRUD helpers and subgraph search enriches fact/source/target
+  hits with raw Graphiti objects before L1.5 import.
+- The existing 7893 Web Console can act as a lightweight BFF while ECS owns
+  Graphiti: non-dry-run Episode writes and operator subgraph export proxy to
+  8790 when `PARROT_WEB_CONSOLE_GRAPHITI_URL` is set.
+- ECS FalkorDB persistence was fixed by mounting `/var/lib/falkordb/data` and
+  enabling AOF/noeviction through `REDIS_ARGS`.
+- Live smoke after a real FalkorDB restart returned persisted `arknights_test`
+  search results through 7893, enriched 16/16 Graphiti UUID objects, and
+  executed remote operator export with raw envelopes/edge drafts preserved.
+
+### WEB-014.17 M14 Checkpoint
+
+- Added semantic CORE-015 write-back routes:
+  `POST /api/memory/identity-ref-index/graphiti-ref/draft` and
+  `/graphiti-ref/apply`.
+- The routes bind a reviewed GraphitiRecordRef to ExternalRefRecords, draft
+  RefMoveEvents for locator changes, preserve raw Graphiti envelopes, and
+  return a Graphiti audit Episode draft.
+- Empty locator write-back is filtered: a GraphitiRecordRef can bind identity
+  by itself, but ExternalRefRecords and RefMoveEvents are created only when a
+  reviewed locator, canonical URI, or content hash exists.
+- Default apply writes only the IdentityRefIndex JSON and does not write L2-B,
+  Graphiti/FalkorDB, files/ECS paths, manifests, or App DTOs.
+- Live canary used real ECS Graphiti `arknights_test`, selected fact UUID
+  `0ea2009c-402d-4332-81b4-31fa57e67688`, and persisted a temporary RefIndex
+  binding with `identity_count=1` and `ref_count=1`.
+- Audit-write canary then enabled `write_graphiti_audit_episode=true`: 60s
+  timeout failed cleanly, while
+  `PARROT_WEB_CONSOLE_GRAPHITI_TIMEOUT_S=240` wrote the audit Episode to ECS
+  Graphiti via 7893 -> 8790 and returned `direct_graphiti_write=true`.
+- UI surfacing is now in the 7893 Graphiti Source Board Export plan. After
+  `npm run build`, 7893 was restarted with ECS proxy/240s timeout and runtime
+  smoke confirmed real ECS search plus search -> export draft ->
+  identity_ref_drafts -> Graphiti-ref draft.
+- Regression validation: full Web route tests report `82 passed`; runtime smoke
+  for the blank-locator case returned `external_payloads=0`,
+  `external_records=0`, and `move_events=0`.
+
+### WEB-014.17 M16 Checkpoint
+
+- Graphiti search/export/import-plan receipts now preserve `graphiti_bundle`.
+- The bundle separates Graphiti facts, endpoint entities, episode pointers or
+  lookup rows, communities, raw envelopes, search plan/config, edge drafts, and
+  IdentityRef drafts.
+- L2-B adds only projection/import overlay policy: raw Graphiti data is
+  preserved, direct Graphiti/FalkorDB writes stay false, and fact-edge
+  materialization still requires resolved L2-B endpoint UUIDs.
+- Validation signal: full Web route tests report `83 passed`. ECS/app-monitor
+  still needs this adapter deployed before live 7893 receipts can prove M15
+  `_search` mode plus M16 bundle sections remotely.
+
+### WEB-014.17 M17 Checkpoint
+
+- The existing 7893 Source Board now renders a `Graphiti bundle` panel from
+  receipt data instead of requiring operators to open raw JSON details.
+- The panel exposes schema/selected count, fact/entity/episode/community
+  section counts, strategy/recipe/lookup/search-plan summary, projection policy,
+  import overlay destination, and sample rows for facts/entities/episodes.
+- Validation signal: `npm run typecheck`, `npm run build`, and Web route tests
+  `83 passed`.
+- Live canary: restarted 7893 with
+  `PARROT_WEB_CONSOLE_GRAPHITI_URL=http://8.216.45.45:8790`; 7893 status showed
+  remote proxy, subgraph search returned real Graphiti UUID
+  `0ea2009c-402d-4332-81b4-31fa57e67688`, bundle counts
+  `facts=3/entities=4/episodes=0/communities=0`, and import-plan overlay
+  destination `isolated_compartment`.
+- Remaining caveat: ECS 8790 still needs the M15/M16 adapter before live
+  receipts can prove remote `search_config.mode=_search`.
+
+### WEB-014.17 M18 Checkpoint
+
+- Fixed app-monitor route parity: ECS 8790 now forwards Graphiti
+  `search_recipe`, `node_labels`, and `edge_types`, and exposes
+  `/api/graphiti/subgraph/import-plan`.
+- Deployed the minimal Graphiti backend file set to ECS with backups, compiled
+  remotely, and restarted `parrot-app-monitor`.
+- Validation signal: app-monitor tests report `9 passed`; Web route tests
+  still report `83 passed`.
+- Remote canary: ECS 8790 `/api/graphiti/search` and
+  `/api/graphiti/subgraph/search` for `Amiya Chernobog / arknights_test`
+  returned `search_config.mode="_search"`, `fallback=false`,
+  `low_level="_search"`, first UUID
+  `0ea2009c-402d-4332-81b4-31fa57e67688`, and bundle counts
+  `facts=3/entities=4/episodes=3/communities=0`.
+- Import-plan canary: ECS 8790 returned `import_overlay.destination` as
+  `isolated_compartment`, one fact section, four IdentityRef drafts, and one
+  L1.5 observation while staying draft-only.
+- 7893 passthrough canary now shows the same remote `_search` mode and bundle
+  counts; served assets include the `Graphiti bundle` UI.
+
+### WEB-014.17 M19 Checkpoint
+
+- Added preview-only CORE-013 transform kind `graphiti_bundle_projection`.
+  `POST /api/l2b/transforms/draft` can now consume a preserved
+  `graphiti_bundle` and return `projection_kind=graphiti_bundle_to_l2b_rustworkx_preview`.
+- Graphiti import-plan embeds that same transform under
+  `data.l2b_transform_preview` and
+  `graphiti_bundle.import_overlay.transform_preview`.
+- The projection creates pointer-style L2-B preview nodes, `graphiti_fact`
+  preview edges, episode support links, Graphiti fact pointers, and a
+  `rustworkx.PyDiGraph` topology summary while preserving raw Graphiti payloads.
+- Policy remains strict: `direct_l2b_write=false`,
+  `direct_graphiti_write=false`, and
+  `rwx_idx_policy=ephemeral_do_not_persist`.
+- Validation signal: backend `py_compile`, Web route tests `83 passed`,
+  frontend `npm run typecheck`, and `npm run build` passed.
+- ECS 8790 was updated with `graph_policy.py` and `memory_ops.py`, backed up
+  under `codex_backups/m19_graphiti_transform_20260517164126`, compiled, and
+  restarted to PID `127087`.
+- Remote 8790 and 7893 passthrough canaries both returned true Graphiti
+  `_search`, first fact UUID `0ea2009c-402d-4332-81b4-31fa57e67688`, bundle
+  counts `facts=3/entities=4/episodes=3/communities=0`, import-plan success,
+  L2-B preview counts `nodes=3/edges=1/episode_links=2`, and RustWorkX preview
+  counts `nodes=3/edges=3`.
+
+### WEB-014.17 M20R Review Gate
+
+- Reviewed the M12-M19 implementation against the original Graphiti-to-L2-B
+  requirement. Current status: real Graphiti `_search(SearchConfig)` works via
+  ECS 8790 and 7893, raw `graphiti_bundle` data is preserved, and L2-B /
+  RustWorkX currently adds a preview-only projection layer.
+- Node/Edge design is intentionally a view/algorithm projection, not a drifted
+  Graphiti ontology copy. Graphiti fact names, labels, UUIDs, source/target
+  UUIDs, episode provenance, and raw envelopes stay in bundle metadata.
+- Remaining gaps are now explicit: preview UUIDs are not canonical L2-B UUIDs,
+  the RefIndex prototype is file-backed rather than database-backed, and durable
+  apply still needs operator-gated materialization through IdentityRefIndex.
+- Added durable research anchors to
+  `graphiti_l2b_ref_identity_design_20260517.md`: official Graphiti
+  SearchConfig/Episodes/group_id/custom-type docs, `graphiti-core==0.28.2`,
+  RustWorkX `0.17.1`, HippoRAG, AriGraph, GAT, DySAT, GraphGPS, AGCN, and the
+  rustworkx paper.
+- Next slice remains M20 implementation: selected bundle sections -> canonical
+  IdentityBinding -> Ref/locator state -> optional L1.5/L2-B materialization,
+  with rollback/audit receipts and no hidden direct FalkorDB or file mutation.
 
 ## Implementation Anchors
 

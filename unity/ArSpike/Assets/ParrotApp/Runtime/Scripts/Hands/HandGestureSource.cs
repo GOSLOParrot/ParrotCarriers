@@ -37,6 +37,7 @@ namespace ParrotApp.Hands
         [SerializeField] private float curledDistanceRatio = 0.86f;
         [SerializeField] private float indexHorizontalMaxAbsDotUp = 0.42f;
         [SerializeField] private float minBranchConfidence = 0.55f;
+        [SerializeField] private bool logGestureMetrics = true;
 
         [Header("Perch pose")]
         [SerializeField] private float middleSegmentBlend = 0.5f;
@@ -59,6 +60,9 @@ namespace ParrotApp.Hands
         public Vector3 PalmNormal { get; private set; } = Vector3.up;
         public HandPerchPose CurrentPerchPose { get; private set; }
         public bool RealCameraCvCompiled => MediaPipeCameraHandPoseProvider.RealMediaPipeCompiled;
+        public float LastGestureConfidence { get; private set; }
+        public string LastGestureDebugSummary { get; private set; } = "not_started";
+        public string LastGestureRejectReason { get; private set; } = "not_started";
 
         public event Action<HandGestureSnapshot> OnGestureSnapshot;
 
@@ -89,6 +93,8 @@ namespace ParrotApp.Hands
             public string Source;
             public float Confidence;
             public float Timestamp;
+            public string TrackingStatus;
+            public string DebugSummary;
         }
 
         private struct FingerJoints
@@ -209,6 +215,8 @@ namespace ParrotApp.Hands
             CurrentGesture = frame.PerchPose.IsValid
                 ? DetectGesture(frame, frame.Confidence)
                 : GestureNone;
+            if (!frame.PerchPose.IsValid)
+                SetGestureDebug(GestureNone, TrackingSource, frame.Confidence, "perch_pose_invalid");
             LastTrackingStatus = string.IsNullOrWhiteSpace(frame.Status) ? "camera_cv_tracking" : frame.Status;
             LogGestureIfChanged(frame.Confidence);
             MaybeFireSnapshot();
@@ -292,6 +300,7 @@ namespace ParrotApp.Hands
                 CurrentGesture = GestureNone;
                 CurrentPerchPose = default;
                 LastTrackingStatus = "required_joints_unavailable";
+                SetGestureDebug(GestureNone, "xr_hands", 0f, "required_joints_unavailable");
                 MaybeFireSnapshot();
                 return;
             }
@@ -305,6 +314,7 @@ namespace ParrotApp.Hands
             IsHandDetected = true;
             CurrentGesture = DetectGesture(hand, confidence);
             LastTrackingStatus = "tracking";
+            LogGestureIfChanged(confidence);
             MaybeFireSnapshot();
         }
 
@@ -381,35 +391,27 @@ namespace ParrotApp.Hands
         private string DetectGesture(XRHand hand, float poseConfidence)
         {
             if (!TryGetFinger(hand, XRHandJointID.IndexProximal, XRHandJointID.IndexIntermediate, XRHandJointID.IndexTip, out FingerJoints index))
+            {
+                SetGestureDebug(GestureNone, "xr_hands", poseConfidence, "index_joints_missing");
                 return GestureNone;
+            }
             if (!TryGetFinger(hand, XRHandJointID.MiddleProximal, XRHandJointID.MiddleIntermediate, XRHandJointID.MiddleTip, out FingerJoints middle))
+            {
+                SetGestureDebug(GestureNone, "xr_hands", poseConfidence, "middle_joints_missing");
                 return GestureNone;
+            }
             if (!TryGetFinger(hand, XRHandJointID.RingProximal, XRHandJointID.RingIntermediate, XRHandJointID.RingTip, out FingerJoints ring))
+            {
+                SetGestureDebug(GestureNone, "xr_hands", poseConfidence, "ring_joints_missing");
                 return GestureNone;
+            }
             if (!TryGetFinger(hand, XRHandJointID.LittleProximal, XRHandJointID.LittleIntermediate, XRHandJointID.LittleTip, out FingerJoints little))
+            {
+                SetGestureDebug(GestureNone, "xr_hands", poseConfidence, "little_joints_missing");
                 return GestureNone;
+            }
 
-            float indexBend = BendAngle(index);
-            float middleBend = BendAngle(middle);
-            float ringBend = BendAngle(ring);
-            float littleBend = BendAngle(little);
-
-            float indexPalmDistance = Vector3.Distance(PalmPosition, index.Tip);
-            bool indexExtended = indexBend <= indexStraightMaxBendDegrees;
-            bool middleCurled = IsCurled(middle, middleBend, indexPalmDistance);
-            bool ringCurled = IsCurled(ring, ringBend, indexPalmDistance);
-            bool littleCurled = IsCurled(little, littleBend, indexPalmDistance);
-            bool horizontal = Mathf.Abs(Vector3.Dot(IndexDirection, Vector3.up)) <= indexHorizontalMaxAbsDotUp;
-
-            if (indexExtended && middleCurled && ringCurled && littleCurled && horizontal && poseConfidence >= minBranchConfidence)
-                return GestureBranch;
-
-            int extendedCount = 0;
-            if (indexExtended) extendedCount++;
-            if (middleBend <= indexStraightMaxBendDegrees) extendedCount++;
-            if (ringBend <= indexStraightMaxBendDegrees) extendedCount++;
-            if (littleBend <= indexStraightMaxBendDegrees) extendedCount++;
-            return extendedCount == 0 ? GestureFist : GestureNone;
+            return ResolveFingerGesture(index, middle, ring, little, poseConfidence, "xr_hands");
         }
 
         private bool TryGetFinger(XRHand hand, XRHandJointID proximal, XRHandJointID intermediate, XRHandJointID tip, out FingerJoints joints)
@@ -451,7 +453,10 @@ namespace ParrotApp.Hands
         private string DetectGesture(CameraHandPoseFrame frame, float poseConfidence)
         {
             if (!frame.HasFingerJoints)
+            {
+                SetGestureDebug(GestureNone, TrackingSource, poseConfidence, "finger_joints_missing");
                 return GestureNone;
+            }
 
             var index = new FingerJoints
             {
@@ -482,27 +487,122 @@ namespace ParrotApp.Hands
                 Valid = true,
             };
 
+            PalmPosition = frame.PalmPosition;
+            return ResolveFingerGesture(index, middle, ring, little, poseConfidence, TrackingSource);
+        }
+
+        private string ResolveFingerGesture(
+            FingerJoints index,
+            FingerJoints middle,
+            FingerJoints ring,
+            FingerJoints little,
+            float poseConfidence,
+            string source)
+        {
             float indexBend = BendAngle(index);
             float middleBend = BendAngle(middle);
             float ringBend = BendAngle(ring);
             float littleBend = BendAngle(little);
 
-            float indexPalmDistance = Vector3.Distance(frame.PalmPosition, index.Tip);
+            float indexPalmDistance = Vector3.Distance(PalmPosition, index.Tip);
             bool indexExtended = indexBend <= indexStraightMaxBendDegrees;
             bool middleCurled = IsCurled(middle, middleBend, indexPalmDistance);
             bool ringCurled = IsCurled(ring, ringBend, indexPalmDistance);
             bool littleCurled = IsCurled(little, littleBend, indexPalmDistance);
-            bool horizontal = Mathf.Abs(Vector3.Dot(IndexDirection, Vector3.up)) <= indexHorizontalMaxAbsDotUp;
+            float verticalDot = Mathf.Abs(Vector3.Dot(IndexDirection, Vector3.up));
+            bool horizontal = verticalDot <= indexHorizontalMaxAbsDotUp;
+            bool enoughConfidence = poseConfidence >= minBranchConfidence;
 
-            if (indexExtended && middleCurled && ringCurled && littleCurled && horizontal && poseConfidence >= minBranchConfidence)
-                return GestureBranch;
+            string reason = ResolveBranchRejectReason(
+                indexExtended,
+                middleCurled,
+                ringCurled,
+                littleCurled,
+                horizontal,
+                enoughConfidence);
+            string gesture = GestureNone;
+            if (reason == "branch")
+            {
+                gesture = GestureBranch;
+            }
+            else
+            {
+                int extendedCount = 0;
+                if (indexExtended) extendedCount++;
+                if (middleBend <= indexStraightMaxBendDegrees) extendedCount++;
+                if (ringBend <= indexStraightMaxBendDegrees) extendedCount++;
+                if (littleBend <= indexStraightMaxBendDegrees) extendedCount++;
+                if (extendedCount == 0)
+                {
+                    gesture = GestureFist;
+                    reason = "fist";
+                }
+            }
 
-            int extendedCount = 0;
-            if (indexExtended) extendedCount++;
-            if (middleBend <= indexStraightMaxBendDegrees) extendedCount++;
-            if (ringBend <= indexStraightMaxBendDegrees) extendedCount++;
-            if (littleBend <= indexStraightMaxBendDegrees) extendedCount++;
-            return extendedCount == 0 ? GestureFist : GestureNone;
+            SetGestureDebug(
+                gesture,
+                source,
+                poseConfidence,
+                reason,
+                indexBend,
+                middleBend,
+                ringBend,
+                littleBend,
+                verticalDot);
+            return gesture;
+        }
+
+        private static string ResolveBranchRejectReason(
+            bool indexExtended,
+            bool middleCurled,
+            bool ringCurled,
+            bool littleCurled,
+            bool horizontal,
+            bool enoughConfidence)
+        {
+            if (!indexExtended) return "index_not_straight";
+            if (!middleCurled) return "middle_not_curled";
+            if (!ringCurled) return "ring_not_curled";
+            if (!littleCurled) return "little_not_curled";
+            if (!horizontal) return "index_not_horizontal";
+            if (!enoughConfidence) return "confidence_low";
+            return "branch";
+        }
+
+        private void SetGestureDebug(string gesture, string source, float confidence, string reason)
+        {
+            LastGestureConfidence = confidence;
+            LastGestureRejectReason = string.IsNullOrWhiteSpace(reason) ? "" : reason;
+            LastGestureDebugSummary =
+                "gesture=" + (gesture ?? GestureNone)
+                + " source=" + (string.IsNullOrWhiteSpace(source) ? TrackingSource : source)
+                + " conf=" + confidence.ToString("0.00")
+                + " reason=" + LastGestureRejectReason;
+        }
+
+        private void SetGestureDebug(
+            string gesture,
+            string source,
+            float confidence,
+            string reason,
+            float indexBend,
+            float middleBend,
+            float ringBend,
+            float littleBend,
+            float verticalDot)
+        {
+            LastGestureConfidence = confidence;
+            LastGestureRejectReason = string.IsNullOrWhiteSpace(reason) ? "" : reason;
+            LastGestureDebugSummary =
+                "gesture=" + (gesture ?? GestureNone)
+                + " source=" + (string.IsNullOrWhiteSpace(source) ? TrackingSource : source)
+                + " conf=" + confidence.ToString("0.00")
+                + " reason=" + LastGestureRejectReason
+                + " bends=" + indexBend.ToString("0")
+                + "/" + middleBend.ToString("0")
+                + "/" + ringBend.ToString("0")
+                + "/" + littleBend.ToString("0")
+                + " vertical=" + verticalDot.ToString("0.00");
         }
 
         private static float BendAngle(FingerJoints finger)
@@ -528,6 +628,9 @@ namespace ParrotApp.Hands
             TrackingSource = "none";
             LastTrackingStatus = reason;
             CurrentPerchPose = default;
+            LastGestureConfidence = 0f;
+            LastGestureRejectReason = reason;
+            LastGestureDebugSummary = "gesture=none source=none conf=0.00 reason=" + reason;
             LogStatusIfChanged();
             if (changed) FireSnapshot();
         }
@@ -560,6 +663,8 @@ namespace ParrotApp.Hands
                 Source = TrackingSource,
                 Confidence = CurrentPerchPose.Confidence,
                 Timestamp = Time.time,
+                TrackingStatus = LastTrackingStatus,
+                DebugSummary = LastGestureDebugSummary,
             };
 
             try { OnGestureSnapshot?.Invoke(snap); }
@@ -613,6 +718,7 @@ namespace ParrotApp.Hands
                 Confidence = 1f,
                 Source = "debug",
             };
+            SetGestureDebug(GestureBranch, TrackingSource, 1f, "debug_branch");
             FireSnapshot();
         }
 
@@ -623,6 +729,7 @@ namespace ParrotApp.Hands
             CurrentGesture = GestureFist;
             TrackingSource = "debug";
             LastTrackingStatus = "debug_fist";
+            SetGestureDebug(GestureFist, TrackingSource, 1f, "debug_fist");
             FireSnapshot();
         }
 
@@ -652,7 +759,8 @@ namespace ParrotApp.Hands
             DebugLog(
                 "gesture=" + CurrentGesture
                 + " source=" + TrackingSource
-                + " confidence=" + confidence.ToString("0.00"));
+                + " confidence=" + confidence.ToString("0.00")
+                + (logGestureMetrics ? " metrics=" + LastGestureDebugSummary : ""));
         }
 
         private void DebugLog(string message)

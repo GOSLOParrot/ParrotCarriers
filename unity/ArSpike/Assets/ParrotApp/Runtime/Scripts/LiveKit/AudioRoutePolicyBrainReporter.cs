@@ -255,8 +255,6 @@ namespace ParrotApp.LiveKit
             if (routeManager == null && microphonePublisher != null)
                 routeManager = microphonePublisher.RouteManager;
             if (routeManager == null) routeManager = FindObjectOfType<AudioRouteManager>();
-            if (routeManager == null && microphonePublisher != null)
-                routeManager = microphonePublisher.gameObject.AddComponent<AudioRouteManager>();
             if (routeDetector == null) routeDetector = FindObjectOfType<AudioRouteDetector>();
         }
 

@@ -23,6 +23,7 @@ public final class AndroidPcmMicCapture {
     private volatile boolean running = false;
     private int activeSampleRate = 48000;
     private int activeChannels = 1;
+    private String activeSourceName = "unknown";
     private String lastError = "";
 
     public boolean start(
@@ -117,8 +118,13 @@ public final class AndroidPcmMicCapture {
         // new LiveKit source for each retry rate.
         int[] sampleRates = new int[] { requestedSampleRate > 0 ? requestedSampleRate : 48000 };
         int[] sources = new int[] {
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            MediaRecorder.AudioSource.MIC
+            // Formal App rule: the Android AudioRecord bridge is a last-resort
+            // phone-mic fallback after Unity's MicrophoneSource has failed to
+            // emit frames. Prefer the plain MIC source first because some
+            // devices report a healthy VOICE_COMMUNICATION recorder while the
+            // communication stack gates or silences near-end capture.
+            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION
         };
         String lastAttemptError = "";
 
@@ -127,6 +133,7 @@ public final class AndroidPcmMicCapture {
             for (int j = 0; j < sources.length; j++) {
                 AudioRecord record = buildAudioRecord(sources[j]);
                 if (record != null && record.getState() == AudioRecord.STATE_INITIALIZED) {
+                    activeSourceName = sourceName(sources[j]);
                     lastError = "";
                     return record;
                 }
@@ -265,7 +272,8 @@ public final class AndroidPcmMicCapture {
             + "\",\"route_hint\":\"" + escape(routeHint)
             + "\",\"sample_rate\":" + activeSampleRate
             + ",\"channels\":" + activeChannels
-            + ",\"recording\":" + isRecording()
+            + ",\"source_name\":\"" + escape(activeSourceName)
+            + "\",\"recording\":" + isRecording()
             + "}";
         try {
             cb.onPcmState(json);

@@ -3,6 +3,7 @@ using ParrotApp.Config;
 using ParrotApp.Health;
 using ParrotApp.Lifecycle;
 using ParrotApp.LiveKit;
+using ParrotApp.VisualTools;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -31,6 +32,9 @@ namespace ParrotApp.UI
         [SerializeField] private FormalArSessionBaselineReporter arSessionBaselineReporter;
         [SerializeField] private FormalArRuntimeBootstrap arRuntimeBootstrap;
         [SerializeField] private FormalXrHandPerchController xrHandPerchController;
+        [SerializeField] private FormalCameraModeController cameraModeController;
+        [SerializeField] private BBoxVisualToolController bboxVisualToolController;
+        [SerializeField] private MagnifierVisualToolController magnifierVisualToolController;
 
         private Canvas _canvas;
         private Text _statusText;
@@ -81,6 +85,10 @@ namespace ParrotApp.UI
             if (arSessionBaselineReporter == null) arSessionBaselineReporter = FindObjectOfType<FormalArSessionBaselineReporter>();
             if (arRuntimeBootstrap == null) arRuntimeBootstrap = FindObjectOfType<FormalArRuntimeBootstrap>();
             if (xrHandPerchController == null) xrHandPerchController = FindObjectOfType<FormalXrHandPerchController>();
+            if (cameraModeController == null) cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            if (bboxVisualToolController == null) bboxVisualToolController = FindObjectOfType<BBoxVisualToolController>();
+            if (magnifierVisualToolController == null)
+                magnifierVisualToolController = FindObjectOfType<MagnifierVisualToolController>();
 
             if (startupFlow != null)
             {
@@ -182,7 +190,7 @@ namespace ParrotApp.UI
             panelRect.anchorMax = new Vector2(0f, 1f);
             panelRect.pivot = new Vector2(0f, 1f);
             panelRect.anchoredPosition = new Vector2(24f, -20f);
-            panelRect.sizeDelta = new Vector2(980f, 450f);
+            panelRect.sizeDelta = new Vector2(980f, 528f);
             var panelImage = panel.AddComponent<Image>();
             panelImage.color = new Color(0.08f, 0.07f, 0.06f, 0.62f);
             panelImage.raycastTarget = false;
@@ -260,6 +268,8 @@ namespace ParrotApp.UI
                 + $"AR {ArHudLabel()}\n"
                 + $"Place {PlacementHudLabel()}\n"
                 + $"Hand {XrHandHudLabel()}\n"
+                + $"Camera {CameraHudLabel()}\n"
+                + $"VTool {VisualToolsHudLabel()}\n"
                 + $"Home {(ready ? "ready" : "loading")}  {alert}";
         }
 
@@ -310,6 +320,43 @@ namespace ParrotApp.UI
                 return "owner?";
             string mounted = xrHandPerchController.PerchMounted ? "mounted " : "wait ";
             return mounted + SafeLabel(xrHandPerchController.LastXrHandStatus);
+        }
+
+        private string VisualToolsHudLabel()
+        {
+            if (bboxVisualToolController == null)
+                bboxVisualToolController = FindObjectOfType<BBoxVisualToolController>();
+            if (magnifierVisualToolController == null)
+                magnifierVisualToolController = FindObjectOfType<MagnifierVisualToolController>();
+
+            return VisualToolHudPart("BOX", bboxVisualToolController)
+                   + " / " + VisualToolHudPart("MAG", magnifierVisualToolController);
+        }
+
+        private string CameraHudLabel()
+        {
+            if (cameraModeController == null)
+                cameraModeController = FindObjectOfType<FormalCameraModeController>();
+            if (cameraModeController == null)
+                return "owner?";
+            return SafeLabel(cameraModeController.CurrentMode)
+                   + " z=" + cameraModeController.Zoom.ToString("0.0")
+                   + " ev=" + cameraModeController.Exposure.ToString("0.0")
+                   + " http=" + ShortLabel(cameraModeController.LastHttpStatus, 18)
+                   + " photo=" + ShortLabel(cameraModeController.LastPhotoStatus, 18);
+        }
+
+        private static string VisualToolHudPart(string label, VisualToolControllerBase controller)
+        {
+            if (controller == null)
+                return label + " owner?";
+            if (!controller.FeatureEnabled)
+                return label + " flag-off";
+            string open = controller.IsOpen ? "open" : "idle";
+            string local = ShortLabel(controller.LastRenderStatus, 18);
+            string http = ShortLabel(controller.LastHttpStatus, 18);
+            string asset = ShortLabel(controller.LastAssetStatus, 18);
+            return label + " " + open + " " + local + " http=" + http + " asset=" + asset;
         }
 
         private string AudioRouteHudLabel()
@@ -409,8 +456,10 @@ namespace ParrotApp.UI
                    + " readSr=" + microphonePublisher.LastAudioReadSampleRate
                    + " peak=" + microphonePublisher.LastAudioReadPeak.ToString("0.000")
                    + " age=" + microphonePublisher.LastAudioReadAgeSeconds.ToString("0.0")
+                   + " nz=" + microphonePublisher.LastNonSilentAudioAgeSeconds.ToString("0.0")
                    + " wd=" + ShortLabel(microphonePublisher.UplinkWatchdogState, 24)
                    + " fb=" + ShortLabel(microphonePublisher.LastCaptureFallbackStatus, 24)
+                   + " nsrc=" + ShortLabel(microphonePublisher.NativeAudioRecordSource, 14)
                    + " native=" + ShortLabel(microphonePublisher.NativeAudioRecordState, 24)
                    + " nerr=" + ShortLabel(microphonePublisher.NativeAudioRecordError, 18)
                    + " rec=" + (microphonePublisher.UplinkWatchdogMicrophoneRecording ? "on" : "off")

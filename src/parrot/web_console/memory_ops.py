@@ -612,6 +612,140 @@ def apply_memory_identity_ref_index(payload: dict[str, Any] | None = None) -> di
     )
 
 
+def draft_graphiti_ref_writeback(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft the M14 GraphitiRecordRef -> ExternalRefRecord binding plan."""
+
+    from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    index = MemoryIdentityRefIndex()
+    plan = index.upsert_graphiti_ref_writeback(body)
+    if not plan.get("ok"):
+        return _receipt(
+            action="memory.identity_ref_index.graphiti_ref_writeback_draft",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                **plan,
+                "path": str(index.path),
+                "core_candidate": "CORE-015",
+                "shared_status": "candidate_only",
+                "mutated": False,
+                "direct_l2b_write": False,
+                "direct_graphiti_write": False,
+                "direct_file_move": False,
+                "app_dto": False,
+            },
+        )
+    return _receipt(
+        action="memory.identity_ref_index.graphiti_ref_writeback_draft",
+        success=True,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            **plan,
+            "path": str(index.path),
+            "would_persist": False,
+            "apply_route": "/api/memory/identity-ref-index/graphiti-ref/apply",
+            "core_candidate": "CORE-015",
+            "shared_status": "candidate_only",
+            "mutated": False,
+            "direct_l2b_write": False,
+            "direct_graphiti_write": False,
+            "direct_file_move": False,
+            "app_dto": False,
+            "operator_required_for_execute": True,
+            "policy": (
+                "Draft only. GraphitiRecordRef and ExternalRefRecord are reviewed "
+                "together; Graphiti audit Episode is returned as a draft."
+            ),
+        },
+    )
+
+
+async def apply_graphiti_ref_writeback(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Persist an M14 Graphiti/ref binding under Web operator mode.
+
+    The default apply only writes the IdentityRefIndex JSON. Graphiti audit
+    Episode writing is opt-in through ``write_graphiti_audit_episode`` so the
+    operator can review the generated Episode body first.
+    """
+
+    from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    preview = draft_graphiti_ref_writeback(
+        {**body, "dry_run": dry_run, "operator_mode": operator_mode}
+    )
+    preview["action"] = "memory.identity_ref_index.graphiti_ref_writeback_apply"
+    if not preview.get("success"):
+        return preview
+    preview_data = preview.get("data") if isinstance(preview.get("data"), dict) else {}
+    if dry_run or not operator_mode:
+        preview_data["would_persist"] = True
+        preview_data["apply_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        preview_data["mutated"] = False
+        return preview
+
+    index = MemoryIdentityRefIndex()
+    plan = index.upsert_graphiti_ref_writeback(body)
+    if not plan.get("ok"):
+        return _receipt(
+            action="memory.identity_ref_index.graphiti_ref_writeback_apply",
+            success=False,
+            dry_run=False,
+            operator_mode=True,
+            data={
+                **plan,
+                "path": str(index.path),
+                "core_candidate": "CORE-015",
+                "shared_status": "candidate_only",
+                "mutated": False,
+                "direct_l2b_write": False,
+                "direct_graphiti_write": False,
+                "direct_file_move": False,
+                "app_dto": False,
+            },
+        )
+    index.save()
+    graphiti_audit = await _maybe_write_graphiti_ref_audit_episode(body, plan)
+    direct_graphiti_write = bool(graphiti_audit.get("written"))
+    mutation_scope = (
+        "memory_identity_ref_index_json_and_graphiti_audit_episode"
+        if direct_graphiti_write
+        else "memory_identity_ref_index_json_only"
+    )
+    return _receipt(
+        action="memory.identity_ref_index.graphiti_ref_writeback_apply",
+        success=True,
+        dry_run=False,
+        operator_mode=True,
+        data={
+            **plan,
+            "path": str(index.path),
+            "snapshot": index.snapshot(limit=80),
+            "would_persist": True,
+            "persisted": True,
+            "mutated": True,
+            "mutation_scope": mutation_scope,
+            "graphiti_audit_episode": graphiti_audit,
+            "graphiti_audit_episode_written": direct_graphiti_write,
+            "direct_l2b_write": False,
+            "direct_graphiti_write": direct_graphiti_write,
+            "direct_file_move": False,
+            "app_dto": False,
+            "core_candidate": "CORE-015",
+            "shared_status": "candidate_only",
+            "write_path": "MemoryIdentityRefIndex.upsert_graphiti_ref_writeback(payload).save()",
+        },
+    )
+
+
 def verify_memory_identity_ref_index(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Verify IdentityRefIndex ref health without touching external systems."""
 
@@ -1182,7 +1316,10 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
     """
 
     from parrot.brain.graphiti_console import draft_graphiti_subgraph_export
-    from parrot.web_console.graph_policy import draft_import_destination
+    from parrot.web_console.graph_policy import (
+        draft_graphiti_bundle_projection,
+        draft_import_destination,
+    )
 
     body = payload or {}
     requested_execution = {
@@ -1210,6 +1347,11 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
     raw_envelopes = [
         row for row in export_data.get("graphiti_raw_envelopes", []) if isinstance(row, dict)
     ]
+    graphiti_bundle = (
+        dict(export_data.get("graphiti_bundle"))
+        if isinstance(export_data.get("graphiti_bundle"), dict)
+        else {}
+    )
     identity_ref_drafts = [
         row for row in export_data.get("identity_ref_drafts", []) if isinstance(row, dict)
     ]
@@ -1261,6 +1403,37 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
     policy_data = dict((policy_receipt or {}).get("data") or {})
     policy_success = bool(policy_receipt and policy_receipt.get("success"))
     success = bool(export_draft.get("success")) and bool(observations) and policy_success
+    transform_receipt: dict[str, Any] | None = None
+    transform_data: dict[str, Any] = {}
+    if graphiti_bundle:
+        transform_receipt = draft_graphiti_bundle_projection(
+            {
+                "graphiti_bundle": graphiti_bundle,
+                "partition": partition,
+                "query": query,
+                "destination": body.get("destination") or "isolated_compartment",
+                "subgraph_id": body.get("subgraph_id") or "",
+                "label": body.get("subgraph_label") or query or partition,
+                "dry_run": True,
+                "operator_mode": False,
+            }
+        )
+        transform_data = dict(transform_receipt.get("data") or {})
+    if graphiti_bundle:
+        graphiti_bundle["import_overlay"] = {
+            "destination": body.get("destination") or "isolated_compartment",
+            "source_kind": "graphiti",
+            "import_policy": policy_data.get("policy", {}),
+            "import_draft": policy_data.get("draft", {}),
+            "transform_preview": transform_data,
+            "policy_skipped_reason": policy_skipped_reason,
+            "apply_route": "/api/graphiti/subgraph/export",
+            "apply_preconditions": {
+                "dry_run": False,
+                "operator_mode": True,
+                "edge_apply": "separate L2-B edge route after node UUID resolution",
+            },
+        }
     return _receipt(
         action="graphiti.subgraph.import_plan",
         success=success,
@@ -1273,6 +1446,7 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
             "observations": observations,
             "edge_drafts": edge_drafts,
             "graphiti_raw_envelopes": raw_envelopes,
+            "graphiti_bundle": graphiti_bundle,
             "identity_ref_drafts": identity_ref_drafts,
             "identity_ref_write_policy": export_data.get("identity_ref_write_policy", ""),
             "subgraph": export_data.get("subgraph", {}),
@@ -1283,12 +1457,17 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
             "edge_write_policy": export_data.get("edge_write_policy", ""),
             "import_policy": policy_data.get("policy", {}),
             "import_draft": policy_data.get("draft", {}),
+            "l2b_transform_preview": transform_data,
+            "transform_receipt_id": str(
+                ((transform_receipt or {}).get("receipt") or {}).get("receipt_id", "")
+            ),
             "policy_skipped_reason": policy_skipped_reason,
             "flow_steps": [
                 "Graphiti.search scoped by partition",
                 "operator selects hits",
                 "draft Observation(source=USER_EXPLICIT) rows",
                 "preview CORE-013 import destination / overlay policy",
+                "preview Graphiti bundle -> L2-B/RustWorkX projection without persisting rwx indices",
                 "real export, if chosen later, must admit through L1.5 under operator mode",
             ],
             "operator_required_for_execute": True,
@@ -3717,6 +3896,57 @@ def _graphiti_l2b_edge_apply_payload(
         "ref_ids": draft.get("ref_ids") or meta.get("ref_ids") or (),
         "meta": meta,
     }
+
+
+async def _maybe_write_graphiti_ref_audit_episode(
+    body: dict[str, Any],
+    plan: dict[str, Any],
+) -> dict[str, Any]:
+    audit_draft = (
+        dict(plan.get("audit_episode_draft"))
+        if isinstance(plan.get("audit_episode_draft"), dict)
+        else {}
+    )
+    if not _body_bool(body.get("write_graphiti_audit_episode"), False):
+        return {
+            "written": False,
+            "write_skipped_reason": "write_graphiti_audit_episode_not_requested",
+            "draft": audit_draft,
+            "direct_graphiti_write": False,
+        }
+    try:
+        from parrot.brain.graphiti_console import add_episode
+
+        result = await add_episode(
+            name=str(audit_draft.get("name") or "ref_writeback_audit"),
+            body=str(audit_draft.get("body") or ""),
+            partition=str(audit_draft.get("partition") or body.get("partition") or "goslo"),
+            source_description=str(
+                audit_draft.get("source_description")
+                or "parrot-web-console-ref-writeback-audit"
+            ),
+            dry_run=False,
+        )
+        payload = result.as_json() if hasattr(result, "as_json") else _jsonable(result)
+        return {
+            "written": bool(
+                isinstance(payload, dict)
+                and payload.get("success") is True
+                and not payload.get("dry_run", False)
+            ),
+            "write_skipped_reason": "",
+            "draft": audit_draft,
+            "result": payload,
+            "direct_graphiti_write": True,
+        }
+    except Exception as exc:
+        return {
+            "written": False,
+            "write_skipped_reason": "graphiti_audit_episode_write_failed",
+            "draft": audit_draft,
+            "error": str(exc),
+            "direct_graphiti_write": False,
+        }
 
 
 def _selected_graphiti_raw_edge_body(body: dict[str, Any], selected_index: int) -> dict[str, Any]:

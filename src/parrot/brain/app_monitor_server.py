@@ -27,7 +27,10 @@ from parrot.brain.app_v1_self_check import run_app_v1_self_check
 from parrot.brain.graphiti_console import (
     add_episode,
     draft_episode,
+    draft_graphiti_subgraph_export,
+    export_graphiti_subgraph,
     graphiti_status,
+    lookup_graphiti_uuids,
     search_graphiti,
     search_graphiti_subgraph,
 )
@@ -400,6 +403,9 @@ def build_app():  # type: ignore[no-untyped-def]
             partition=str(body.get("partition") or "goslo"),
             limit=body.get("limit") or 5,
             focal_node_uuid=str(body.get("focal_node_uuid") or ""),
+            search_recipe=str(body.get("search_recipe") or body.get("strategy") or ""),
+            node_labels=body.get("node_labels"),
+            edge_types=body.get("edge_types"),
         )).as_json()
 
     @app.post("/api/graphiti/subgraph/search")
@@ -413,7 +419,37 @@ def build_app():  # type: ignore[no-untyped-def]
             depth=body.get("depth") or 1,
             expansion_limit=body.get("expansion_limit") or 3,
             focal_node_uuid=str(body.get("focal_node_uuid") or ""),
+            search_recipe=str(body.get("search_recipe") or ""),
+            node_labels=body.get("node_labels"),
+            edge_types=body.get("edge_types"),
+            enrich=body.get("enrich", True),
         )
+
+    @app.post("/api/graphiti/lookup")
+    async def graphiti_lookup_endpoint(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        raw_uuids = body.get("uuids")
+        uuids = raw_uuids if isinstance(raw_uuids, list) else []
+        return (await lookup_graphiti_uuids(
+            uuids=[str(item) for item in uuids],
+            uuid=str(body.get("uuid") or ""),
+            partition=str(body.get("partition") or "goslo"),
+            kind=str(body.get("kind") or ""),
+        )).as_json()
+
+    @app.post("/api/graphiti/subgraph/export-draft")
+    async def graphiti_subgraph_export_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        return draft_graphiti_subgraph_export(payload or {})
+
+    @app.post("/api/graphiti/subgraph/import-plan")
+    async def graphiti_subgraph_import_plan(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import draft_graphiti_l2b_import_plan
+
+        return draft_graphiti_l2b_import_plan(payload or {})
+
+    @app.post("/api/graphiti/subgraph/export")
+    async def graphiti_subgraph_export_endpoint(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        return await export_graphiti_subgraph(payload or {})
 
     @app.post("/api/graphiti/episode/draft")
     async def graphiti_episode_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]

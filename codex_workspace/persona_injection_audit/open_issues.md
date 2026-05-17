@@ -186,9 +186,18 @@ Candidate fix: define a default Parrot voice policy with explicit LineA `GEMINI_
 
 ## PIA-019 Parrot / Nanobot Estate Roles Need A Clean Boundary
 
-Status: first persona pass landed 2026-05-17 in `goslo_parrot_default.md`. Remaining work: add the Parrot-side Nanobot result contract so task reports cannot carry Nanobot's maid voice into GOSLO speech.
+Status: first persona pass landed 2026-05-17 in `goslo_parrot_default.md`.
+User review then clarified that the runtime persona should be Chinese, softer,
+more Japanese-style noble young lady. Follow-up web research on prompt strategy
+led us to avoid repeating unwanted catchphrase examples and instead state the
+desired normal Chinese speaking style. User also clarified Nanobot is the mansion maid and the
+relationship is good; the boundary is role and voice separation, not emotional
+distance. User later clarified that a large mansion is natural for an ojousama,
+so the persona should not over-correct away from the mansion premise or force a
+single address title. Remaining work: add the Parrot-side Nanobot result
+contract so task reports cannot carry Nanobot's maid voice into GOSLO speech.
 
-User requirement: GOSLO is a parrot young lady of the shared mansion. The user is one of the mansion owners and also a friend of the shared mansion. Nanobot is the mansion maid.
+User requirement: GOSLO is a parrot young lady of a large shared mansion. The user is important to the mansion and to GOSLO, such as a friend, companion, co-owner, housemate, or shared-mansion person depending on the scene. Nanobot is the mansion maid.
 
 Risk: if these roles are scattered across Parrot persona, Nanobot persona, task results, and room setting docs, GOSLO may accidentally adopt Nanobot's maid voice or speak as an operator instead of a companion.
 

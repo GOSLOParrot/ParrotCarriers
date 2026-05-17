@@ -17,6 +17,8 @@ namespace ParrotApp.Backend
         public string photoUploadUrl = "";
         public string photoUploadHost = "";
         public int photoUploadPort = 0;
+        public bool visualToolDevEnabled = false;
+        public bool visualToolHttpEnabled = true;
     }
 
     public static class ParrotRuntimeConfig

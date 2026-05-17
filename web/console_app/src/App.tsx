@@ -273,6 +273,12 @@ const dict = {
     graphHealth: "Graph health",
     refreshHealth: "Refresh health",
     overlayDraft: "Overlay preview",
+    inspectContext: "Inspect context",
+    contextDepth: "Depth",
+    contextNodes: "Live nodes",
+    contextEdges: "Live edges",
+    contextClusters: "Clusters",
+    trueConnection: "True connection",
     statusColors: "Status color overlay",
     messageCheck: "Message Check",
     messagePush: "Message Push",
@@ -354,6 +360,10 @@ const dict = {
     resolveGraphitiEdges: "Resolve Edges",
     previewGraphitiEdge: "Preview Edge Apply",
     materializeGraphitiEdge: "Import Edge to L2-B",
+    graphitiRefWriteback: "Graphiti Ref Write-back",
+    draftGraphitiRef: "Preview Ref",
+    applyGraphitiRef: "Apply RefIndex",
+    writeAuditEpisode: "Write audit Episode",
     resolverPreview: "Resolver preview",
     selectedHits: "Selected hits",
     selectAll: "Select all",
@@ -977,6 +987,8 @@ function MemoryGraphWorkspace({
   const [tagText, setTagText] = useState("");
   const [filterKind, setFilterKind] = useState("all");
   const [subgraphLabel, setSubgraphLabel] = useState("Work subgraph");
+  const [subgraphDepth, setSubgraphDepth] = useState("1");
+  const [subgraphContext, setSubgraphContext] = useState<Record<string, unknown> | null>(null);
   const [graphDestination, setGraphDestination] = useState("isolated_compartment");
   const [graphTransformKind, setGraphTransformKind] = useState("wrap_selection");
   const [graphHealth, setGraphHealth] = useState<Record<string, unknown> | null>(null);
@@ -1789,6 +1801,31 @@ function MemoryGraphWorkspace({
     }
   };
 
+  const inspectLiveSubgraphContext = async () => {
+    const label = subgraphLabel.trim() || "Live L2-B context";
+    const nodeSelection = policyNodeSelection();
+    if (!nodeSelection.length) {
+      pushReceipt(localReceipt("l2b.subgraph.context", false, { error: "missing_node_selection" }));
+      return;
+    }
+    try {
+      const receipt = await api.l2bSubgraphContext({
+        label,
+        node_uuids: nodeSelection,
+        depth: Number.parseInt(subgraphDepth || "1", 10),
+        include_clusters: true,
+        dry_run: true,
+        operator_mode: false
+      });
+      if (receipt.success !== false) {
+        setSubgraphContext(receipt.data ?? null);
+      }
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("l2b.subgraph.context", exc, { label, node_uuids: nodeSelection }));
+    }
+  };
+
   const draftGraphTransform = async () => {
     try {
       pushReceipt(await api.l2bTransformDraft({
@@ -1971,6 +2008,9 @@ function MemoryGraphWorkspace({
               setStateColors={setStateColors}
               subgraphLabel={subgraphLabel}
               setSubgraphLabel={setSubgraphLabel}
+              subgraphDepth={subgraphDepth}
+              setSubgraphDepth={setSubgraphDepth}
+              subgraphContext={subgraphContext}
               graphDestination={graphDestination}
               setGraphDestination={setGraphDestination}
               graphTransformKind={graphTransformKind}
@@ -1983,6 +2023,7 @@ function MemoryGraphWorkspace({
               onDeleteEdge={() => void deleteSelectedEdgeDraft()}
               onDraftImportPolicy={() => void draftImportPolicy()}
               onCreateSubgraph={() => void createSubgraphPreview()}
+              onInspectSubgraphContext={() => void inspectLiveSubgraphContext()}
               onDraftTransform={() => void draftGraphTransform()}
               onRefreshHealth={() => void refreshGraphHealth()}
               onDraftTag={draftTagForSelection}
@@ -2138,6 +2179,9 @@ function MemoryToolPanel({
   setStateColors,
   subgraphLabel,
   setSubgraphLabel,
+  subgraphDepth,
+  setSubgraphDepth,
+  subgraphContext,
   graphDestination,
   setGraphDestination,
   graphTransformKind,
@@ -2150,6 +2194,7 @@ function MemoryToolPanel({
   onDeleteEdge,
   onDraftImportPolicy,
   onCreateSubgraph,
+  onInspectSubgraphContext,
   onDraftTransform,
   onRefreshHealth,
   onDraftTag,
@@ -2186,6 +2231,9 @@ function MemoryToolPanel({
   setStateColors: (value: boolean) => void;
   subgraphLabel: string;
   setSubgraphLabel: (value: string) => void;
+  subgraphDepth: string;
+  setSubgraphDepth: (value: string) => void;
+  subgraphContext: Record<string, unknown> | null;
   graphDestination: string;
   setGraphDestination: (value: string) => void;
   graphTransformKind: string;
@@ -2198,6 +2246,7 @@ function MemoryToolPanel({
   onDeleteEdge: () => void;
   onDraftImportPolicy: () => void;
   onCreateSubgraph: () => void;
+  onInspectSubgraphContext: () => void;
   onDraftTransform: () => void;
   onRefreshHealth: () => void;
   onDraftTag: () => void;
@@ -2243,10 +2292,15 @@ function MemoryToolPanel({
     );
   }
   if (activeTool === "subgraph") {
+    const contextNodes = subgraphContext ? recordArrayFrom(subgraphContext, "nodes") : [];
+    const contextEdges = subgraphContext ? recordArrayFrom(subgraphContext, "edges") : [];
+    const contextClusters = subgraphContext ? recordArrayFrom(subgraphContext, "clusters") : [];
+    const trueConnection = recordFromUnknown(subgraphContext?.true_connection);
     return (
       <section className="tool-panel">
         <ToolPanelHead icon={<Layers size={16} />} title={t.subgraph} onClose={onClose} />
         <label><span>{t.nodeLabel}</span><input value={subgraphLabel} onChange={(event) => setSubgraphLabel(event.target.value)} /></label>
+        <label><span>{t.contextDepth}</span><input value={subgraphDepth} onChange={(event) => setSubgraphDepth(event.target.value)} inputMode="numeric" /></label>
         <label>
           <span>{t.importDestination}</span>
           <select value={graphDestination} onChange={(event) => setGraphDestination(event.target.value)}>
@@ -2262,8 +2316,19 @@ function MemoryToolPanel({
         <div className="button-row">
           <button className="button" onClick={onDraftImportPolicy}><Workflow size={16} /> {t.previewPolicy}</button>
           <button className="button primary" onClick={onCreateSubgraph}><Layers size={16} /> {t.overlayDraft}</button>
+          <button className="button" onClick={onInspectSubgraphContext}><Search size={16} /> {t.inspectContext}</button>
           <button className="button" onClick={onDraftTransform}><Activity size={16} /> {t.previewTransform}</button>
         </div>
+        {subgraphContext ? (
+          <div className="subgraph-context-card">
+            <div className="subgraph-context-grid">
+              <span><small>{t.contextNodes}</small><strong>{contextNodes.length}</strong></span>
+              <span><small>{t.contextEdges}</small><strong>{contextEdges.length}</strong></span>
+              <span><small>{t.contextClusters}</small><strong>{contextClusters.length}</strong></span>
+            </div>
+            <small>{`${t.trueConnection}: ${trueConnection.used_live_l2b_graph === true ? "live L2-B" : "unknown"} · depth ${String(subgraphContext.depth ?? "")}`}</small>
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -3869,14 +3934,18 @@ function GraphitiSourceCard({
   const [query, setQuery] = useState("Amiya Chernobog");
   const [limit, setLimit] = useState(6);
   const [searchStrategy, setSearchStrategy] = useState("iterative_hybrid");
+  const [searchRecipe, setSearchRecipe] = useState("");
   const [searchDepth, setSearchDepth] = useState(2);
   const [focalNodeUuid, setFocalNodeUuid] = useState("");
+  const [searchNodeLabelsText, setSearchNodeLabelsText] = useState("");
+  const [searchEdgeTypesText, setSearchEdgeTypesText] = useState("");
   const [hits, setHits] = useState<Array<Record<string, unknown>>>([]);
   const [subgraphNodes, setSubgraphNodes] = useState<Array<Record<string, unknown>>>([]);
   const [subgraphEdges, setSubgraphEdges] = useState<Array<Record<string, unknown>>>([]);
   const [selectedHitKeys, setSelectedHitKeys] = useState<string[]>([]);
   const [exportObservations, setExportObservations] = useState<Array<Record<string, unknown>>>([]);
   const [edgeDrafts, setEdgeDrafts] = useState<Array<Record<string, unknown>>>([]);
+  const [identityRefDrafts, setIdentityRefDrafts] = useState<Array<Record<string, unknown>>>([]);
   const [edgePolicy, setEdgePolicy] = useState("");
   const [identityIndex, setIdentityIndex] = useState<Record<string, unknown> | null>(null);
   const [identityHealth, setIdentityHealth] = useState<Record<string, unknown> | null>(null);
@@ -3889,6 +3958,15 @@ function GraphitiSourceCard({
   const [selectedGraphitiEdgeIndex, setSelectedGraphitiEdgeIndex] = useState(0);
   const [graphitiEdgeApplyStatus, setGraphitiEdgeApplyStatus] = useState("");
   const [graphitiEdgeApplying, setGraphitiEdgeApplying] = useState(false);
+  const [selectedIdentityRefDraftIndex, setSelectedIdentityRefDraftIndex] = useState(0);
+  const [graphitiRefId, setGraphitiRefId] = useState("");
+  const [graphitiRefKind, setGraphitiRefKind] = useState("graphiti_fact");
+  const [graphitiRefLocator, setGraphitiRefLocator] = useState("");
+  const [graphitiRefWriteAudit, setGraphitiRefWriteAudit] = useState(false);
+  const [graphitiRefWritebackStatus, setGraphitiRefWritebackStatus] = useState("");
+  const [graphitiRefWritebackPlan, setGraphitiRefWritebackPlan] = useState<Record<string, unknown> | null>(null);
+  const [graphitiRefApplying, setGraphitiRefApplying] = useState(false);
+  const [graphitiBundle, setGraphitiBundle] = useState<Record<string, unknown> | null>(null);
   const [importPolicy, setImportPolicy] = useState<Record<string, unknown> | null>(null);
   const [policySkippedReason, setPolicySkippedReason] = useState("");
   const [flowSteps, setFlowSteps] = useState<string[]>([]);
@@ -3897,11 +3975,28 @@ function GraphitiSourceCard({
   const [operatorImporting, setOperatorImporting] = useState(false);
   const operatorImportingRef = useRef(false);
   const graphitiEdgeApplyingRef = useRef(false);
+  const graphitiRefApplyingRef = useRef(false);
   const refScanDispatchingRef = useRef(false);
   const selectedHits = useMemo(
     () => hits.filter((hit, index) => selectedHitKeys.includes(graphitiHitKey(hit, index))),
     [hits, selectedHitKeys]
   );
+  const selectedIdentityRefDraft = useMemo(
+    () => identityRefDrafts[Math.min(selectedIdentityRefDraftIndex, Math.max(0, identityRefDrafts.length - 1))] ?? null,
+    [identityRefDrafts, selectedIdentityRefDraftIndex]
+  );
+  useEffect(() => {
+    const draft = selectedIdentityRefDraft;
+    if (!draft) {
+      setGraphitiRefId("");
+      setGraphitiRefKind("graphiti_fact");
+      setGraphitiRefLocator("");
+      return;
+    }
+    setGraphitiRefId(String(draft.ref_id || ""));
+    setGraphitiRefKind(String(draft.ref_kind || graphitiRefKindFromDraft(draft)));
+    setGraphitiRefLocator(graphitiRefLocatorFromDraft(draft));
+  }, [selectedIdentityRefDraft]);
   const selectedPreview = () => buildGraphitiPreviewPayload({
     hits: selectedHits,
     subgraphNodes,
@@ -3931,10 +4026,15 @@ function GraphitiSourceCard({
   const clearGraphitiPlanState = (reason = "") => {
     setExportObservations([]);
     setEdgeDrafts([]);
+    setIdentityRefDrafts([]);
     setEdgePolicy("");
     setResolvedGraphitiEdges([]);
     setSelectedGraphitiEdgeIndex(0);
     setGraphitiEdgeApplyStatus("");
+    setSelectedIdentityRefDraftIndex(0);
+    setGraphitiRefWritebackStatus("");
+    setGraphitiRefWritebackPlan(null);
+    setGraphitiBundle(null);
     setImportPolicy(null);
     setPolicySkippedReason(reason);
     setFlowSteps([]);
@@ -4008,12 +4108,17 @@ function GraphitiSourceCard({
         partition,
         limit,
         strategy: searchStrategy,
+        search_recipe: searchRecipe,
         depth: searchDepth,
         expansion_limit: 3,
-        focal_node_uuid: focalNodeUuid.trim()
+        focal_node_uuid: focalNodeUuid.trim(),
+        node_labels: parseTags(searchNodeLabelsText),
+        edge_types: parseTags(searchEdgeTypesText),
+        enrich: true
       });
       const nextHits = receiptArray(receipt, "hits");
       const subgraph = receiptRecord(receipt, "subgraph");
+      const nextBundle = receiptRecord(receipt, "graphiti_bundle");
       const nextSubgraphNodes = recordArrayFrom(subgraph, "nodes");
       const nextSubgraphEdges = recordArrayFrom(subgraph, "edges");
       setHits(nextHits);
@@ -4021,6 +4126,7 @@ function GraphitiSourceCard({
       setSubgraphEdges(nextSubgraphEdges);
       setSelectedHitKeys(nextHits.map((hit, index) => graphitiHitKey(hit, index)));
       clearGraphitiPlanState("");
+      setGraphitiBundle(Object.keys(nextBundle).length ? nextBundle : null);
       if (receipt.success === false || (!nextHits.length && !nextSubgraphNodes.length)) {
         clearGraphitiPreview("");
       }
@@ -4054,6 +4160,18 @@ function GraphitiSourceCard({
     clearGraphitiPlanState(nextKeys.length ? "" : "no_hits_selected");
     refreshSelectionPreview(nextKeys);
   };
+  const lookupFocalUuid = async () => {
+    const uuid = focalNodeUuid.trim();
+    if (!uuid) {
+      pushReceipt(localReceipt("graphiti.lookup", false, { error: "missing_uuid", partition }));
+      return;
+    }
+    try {
+      pushReceipt(await api.graphitiLookup({ uuid, partition }));
+    } catch (exc) {
+      showGraphitiError("graphiti.lookup", exc, { partition, uuid });
+    }
+  };
   const clearHitSelection = () => {
     setSelectedHitKeys([]);
     clearGraphitiPlanState("no_hits_selected");
@@ -4061,8 +4179,14 @@ function GraphitiSourceCard({
   };
   const showExportReceipt = (receipt: Receipt) => {
     const data = receipt.data ?? {};
+    const nextBundle = recordFromUnknown(data.graphiti_bundle);
     setExportObservations(receiptArray(receipt, "observations"));
     setEdgeDrafts(receiptArray(receipt, "edge_drafts"));
+    const nextIdentityRefDrafts = receiptArray(receipt, "identity_ref_drafts");
+    setIdentityRefDrafts(nextIdentityRefDrafts);
+    setSelectedIdentityRefDraftIndex(0);
+    setGraphitiRefWritebackPlan(null);
+    setGraphitiRefWritebackStatus(nextIdentityRefDrafts.length ? "" : "no_identity_ref_drafts");
     setEdgePolicy(String(data.edge_write_policy || ""));
     setResolvedGraphitiEdges([]);
     setSelectedGraphitiEdgeIndex(0);
@@ -4072,6 +4196,7 @@ function GraphitiSourceCard({
     setPolicySkippedReason(String(data.policy_skipped_reason || data.error || ""));
     const steps = Array.isArray(data.flow_steps) ? data.flow_steps.map(String) : [];
     setFlowSteps(steps);
+    setGraphitiBundle(Object.keys(nextBundle).length ? nextBundle : null);
     pushReceipt(receipt);
   };
   const exportDraft = async () => {
@@ -4242,6 +4367,90 @@ function GraphitiSourceCard({
       pushReceipt(errorReceipt("memory.identity_ref_index.ref_scan_results", exc));
     }
   };
+  const graphitiRefWritebackPayload = (execute: boolean) => {
+    const draft = selectedIdentityRefDraft ?? {};
+    const graphitiKind = graphitiRefKindFromDraft(draft);
+    const graphitiUuid = graphitiRefUuidFromDraft(draft);
+    const refKind = graphitiRefKind.trim() || String(draft.ref_kind || graphitiKind);
+    const refId = graphitiRefId.trim() || String(draft.ref_id || `graphiti:${partition}:${graphitiKind}:${graphitiUuid}`);
+    const locator = graphitiRefLocator.trim();
+    const externalRef: Record<string, unknown> = {
+      ref_id: refId,
+      ref_kind: refKind,
+      managed_by: "web_console_operator",
+      meta: {
+        source_tool: "web_console.graphiti_ref_writeback_panel",
+        graphiti_partition: partition,
+        graphiti_kind: graphitiKind
+      }
+    };
+    if (locator) {
+      if (/^https?:\/\//i.test(locator)) {
+        externalRef.url = locator;
+      } else {
+        externalRef.locator = locator;
+      }
+    }
+    const externalRefs = locator ? [externalRef] : [];
+    return {
+      ...draft,
+      partition,
+      graphiti_kind: graphitiKind,
+      graphiti_uuid: graphitiUuid,
+      graphiti_raw: Object.keys(recordFromUnknown(draft.graphiti_raw)).length ? draft.graphiti_raw : draft,
+      external_refs: externalRefs,
+      requested_by: "web_console_source_board",
+      dry_run: !execute || !operatorMode,
+      operator_mode: execute && operatorMode,
+      write_graphiti_audit_episode: execute && operatorMode && graphitiRefWriteAudit
+    };
+  };
+  const previewGraphitiRefWriteback = async () => {
+    if (!selectedIdentityRefDraft || !graphitiRefUuidFromDraft(selectedIdentityRefDraft)) {
+      setGraphitiRefWritebackStatus("no_identity_ref_draft");
+      pushReceipt(localReceipt("memory.identity_ref_index.graphiti_ref_writeback_draft", false, { error: "no_identity_ref_draft", partition, query }));
+      return;
+    }
+    try {
+      const receipt = await api.memoryIdentityRefGraphitiRefDraft(graphitiRefWritebackPayload(false));
+      setGraphitiRefWritebackPlan(receipt.data ?? null);
+      setGraphitiRefWritebackStatus(String((receipt.data ?? {}).error || "preview_ready"));
+      pushReceipt(receipt);
+    } catch (exc) {
+      setGraphitiRefWritebackStatus(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("memory.identity_ref_index.graphiti_ref_writeback_draft", exc, { partition, query }));
+    }
+  };
+  const applyGraphitiRefWriteback = async () => {
+    if (graphitiRefApplyingRef.current) {
+      pushReceipt(localReceipt("memory.identity_ref_index.graphiti_ref_writeback_apply", false, { error: "graphiti_ref_apply_in_flight", partition, query }));
+      return;
+    }
+    if (!selectedIdentityRefDraft || !graphitiRefUuidFromDraft(selectedIdentityRefDraft)) {
+      setGraphitiRefWritebackStatus("no_identity_ref_draft");
+      pushReceipt(localReceipt("memory.identity_ref_index.graphiti_ref_writeback_apply", false, { error: "no_identity_ref_draft", partition, query }));
+      return;
+    }
+    graphitiRefApplyingRef.current = true;
+    setGraphitiRefApplying(true);
+    try {
+      const receipt = await api.memoryIdentityRefGraphitiRefApply(graphitiRefWritebackPayload(true));
+      const data = receipt.data ?? {};
+      const snapshot = recordFromUnknown(data.snapshot);
+      if (Object.keys(snapshot).length) {
+        setIdentityIndex(snapshot);
+      }
+      setGraphitiRefWritebackPlan(data);
+      setGraphitiRefWritebackStatus(String(data.error || data.apply_skipped_reason || data.mutation_scope || "ref_writeback_done"));
+      pushReceipt(receipt);
+    } catch (exc) {
+      setGraphitiRefWritebackStatus(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("memory.identity_ref_index.graphiti_ref_writeback_apply", exc, { partition, query }));
+    } finally {
+      graphitiRefApplyingRef.current = false;
+      setGraphitiRefApplying(false);
+    }
+  };
   const graphitiEdgeResolverPayload = () => ({
     partition,
     edge_drafts: edgeDrafts,
@@ -4348,6 +4557,10 @@ function GraphitiSourceCard({
     setSearchStrategy(value);
     clearGraphitiSearchResults();
   };
+  const updateSearchRecipe = (value: string) => {
+    setSearchRecipe(value);
+    clearGraphitiSearchResults();
+  };
   const updateSearchDepth = (value: string) => {
     setSearchDepth(Math.max(1, Math.min(3, Number(value) || 1)));
     clearGraphitiSearchResults();
@@ -4356,6 +4569,22 @@ function GraphitiSourceCard({
     setFocalNodeUuid(value);
     clearGraphitiSearchResults();
   };
+  const updateSearchNodeLabels = (value: string) => {
+    setSearchNodeLabelsText(value);
+    clearGraphitiSearchResults();
+  };
+  const updateSearchEdgeTypes = (value: string) => {
+    setSearchEdgeTypesText(value);
+    clearGraphitiSearchResults();
+  };
+  const graphitiRefPlanData = graphitiRefWritebackPlan ?? {};
+  const graphitiRecordRef = recordFromUnknown(graphitiRefPlanData.graphiti_record_ref);
+  const graphitiAuditDraft = recordFromUnknown(graphitiRefPlanData.audit_episode_draft);
+  const graphitiExternalRefs = Array.isArray(graphitiRefPlanData.external_ref_records)
+    ? graphitiRefPlanData.external_ref_records.filter(
+      (row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row)
+    )
+    : [];
 
   return (
     <article className="source-card graphiti-source-card">
@@ -4460,6 +4689,26 @@ function GraphitiSourceCard({
         </select>
       </label>
       <label>
+        <span>Recipe</span>
+        <select value={searchRecipe} onChange={(event) => updateSearchRecipe(event.target.value)}>
+          <option value="">public/default</option>
+          <option value="combined_rrf">combined RRF</option>
+          <option value="combined_mmr">combined MMR</option>
+          <option value="combined_cross_encoder">combined cross encoder</option>
+          <option value="edge_rrf">edge RRF</option>
+          <option value="edge_mmr">edge MMR</option>
+          <option value="edge_node_distance">edge node distance</option>
+          <option value="edge_episode_mentions">edge episode mentions</option>
+          <option value="edge_cross_encoder">edge cross encoder</option>
+          <option value="node_rrf">node RRF</option>
+          <option value="node_mmr">node MMR</option>
+          <option value="node_node_distance">node node distance</option>
+          <option value="node_episode_mentions">node episode mentions</option>
+          <option value="node_cross_encoder">node cross encoder</option>
+          <option value="community_rrf">community RRF</option>
+        </select>
+      </label>
+      <label>
         <span>Depth</span>
         <input
           type="number"
@@ -4478,6 +4727,22 @@ function GraphitiSourceCard({
         />
       </label>
       <label>
+        <span>Node labels</span>
+        <input
+          value={searchNodeLabelsText}
+          onChange={(event) => updateSearchNodeLabels(event.target.value)}
+          placeholder="Entity, Person"
+        />
+      </label>
+      <label>
+        <span>Edge types</span>
+        <input
+          value={searchEdgeTypesText}
+          onChange={(event) => updateSearchEdgeTypes(event.target.value)}
+          placeholder="RELATES_TO, CrisisFact"
+        />
+      </label>
+      <label>
         <span>{t.importDestination}</span>
         <select value={destination} onChange={(event) => updateDestination(event.target.value)}>
           {GRAPH_IMPORT_DESTINATIONS.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -4485,6 +4750,7 @@ function GraphitiSourceCard({
       </label>
       <div className="button-row">
         <button className="button primary" onClick={() => void search()}><Search size={16} /> {t.searchGraphiti}</button>
+        <button className="button" onClick={() => void lookupFocalUuid()}><CircleDot size={16} /> Lookup UUID</button>
         <button className="button" onClick={previewSelectedOnCanvas}><GitBranch size={16} /> {t.previewOnCanvas}</button>
         <button className="button" onClick={() => void previewImportPolicy()}><Workflow size={16} /> {t.previewPolicy}</button>
         <button className="button" onClick={() => void exportDraft()}><UploadCloud size={16} /> {t.exportSubgraphDraft}</button>
@@ -4531,10 +4797,11 @@ function GraphitiSourceCard({
           );
         }) : <small className="muted">{t.noHits}</small>}
       </div>
-      {exportObservations.length || edgeDrafts.length || policySkippedReason ? (
+      {graphitiBundle ? <GraphitiBundlePanel bundle={graphitiBundle} /> : null}
+      {exportObservations.length || edgeDrafts.length || identityRefDrafts.length || policySkippedReason ? (
         <div className="note-preview-list graphiti-export-plan">
           <strong>Export plan</strong>
-          <small>{`${exportObservations.length} L1.5 observation(s) / ${edgeDrafts.length} Edge draft(s)`}</small>
+          <small>{`${exportObservations.length} L1.5 observation(s) / ${edgeDrafts.length} Edge draft(s) / ${identityRefDrafts.length} Ref draft(s)`}</small>
           {policySkippedReason ? <small className="warn-text">{policySkippedReason}</small> : null}
           {edgePolicy ? <small className="muted">{edgePolicy}</small> : null}
           <ImportLandingMap
@@ -4547,6 +4814,84 @@ function GraphitiSourceCard({
             edgeCount={edgeDrafts.length}
             applyRoute="/api/graphiti/subgraph/export"
           />
+          {identityRefDrafts.length ? (
+            <div className="edge-resolver-panel graphiti-ref-writeback-panel">
+              <div className="edge-resolver-head">
+                <strong>{t.graphitiRefWriteback}</strong>
+                <small>{`${selectedIdentityRefDraftIndex + 1}/${identityRefDrafts.length}`}</small>
+              </div>
+              <label>
+                <span>Graphiti record</span>
+                <select
+                  value={selectedIdentityRefDraftIndex}
+                  onChange={(event) => {
+                    setSelectedIdentityRefDraftIndex(Number(event.target.value) || 0);
+                    setGraphitiRefWritebackPlan(null);
+                    setGraphitiRefWritebackStatus("");
+                  }}
+                >
+                  {identityRefDrafts.map((row, index) => (
+                    <option key={`${graphitiRefUuidFromDraft(row) || index}:identity-ref-draft`} value={index}>
+                      {`${index + 1}. ${graphitiRefKindFromDraft(row)} / ${String(row.alias || row.ref_id || graphitiRefUuidFromDraft(row)).slice(0, 56)}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="graphiti-ref-input-grid">
+                <label>
+                  <span>Ref ID</span>
+                  <input value={graphitiRefId} onChange={(event) => setGraphitiRefId(event.target.value)} />
+                </label>
+                <label>
+                  <span>Ref kind</span>
+                  <select value={graphitiRefKind} onChange={(event) => setGraphitiRefKind(event.target.value)}>
+                    <option value="graphiti_fact">graphiti_fact</option>
+                    <option value="graphiti_entity">graphiti_entity</option>
+                    <option value="graphiti_episode">graphiti_episode</option>
+                    <option value="obsidian_doc">obsidian_doc</option>
+                    <option value="url">url</option>
+                    <option value="file_path">file_path</option>
+                    <option value="ecs_path">ecs_path</option>
+                    <option value="photo">photo</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                <span>Locator / URL</span>
+                <input value={graphitiRefLocator} onChange={(event) => setGraphitiRefLocator(event.target.value)} placeholder="path, ECS path, photo path, or URL" />
+              </label>
+              <label className="identity-ref-remote-toggle">
+                <input type="checkbox" checked={graphitiRefWriteAudit} onChange={(event) => setGraphitiRefWriteAudit(event.target.checked)} />
+                <span>{t.writeAuditEpisode}</span>
+              </label>
+              <div className="button-row compact">
+                <button className="button small" onClick={() => void previewGraphitiRefWriteback()}><ShieldCheck size={14} /> {t.draftGraphitiRef}</button>
+                <button className="button small ghost" onClick={() => void applyGraphitiRefWriteback()} disabled={graphitiRefApplying}><UploadCloud size={14} /> {operatorMode ? t.applyGraphitiRef : t.dryApply}</button>
+              </div>
+              {graphitiRefWritebackStatus ? <small className="muted">{graphitiRefWritebackStatus}</small> : null}
+              {Object.keys(graphitiRecordRef).length ? (
+                <div className="preview-row mapping-row">
+                  <span>{String(graphitiRecordRef.graphiti_kind || "graphiti_record")}</span>
+                  <small>{`${String(graphitiRecordRef.partition || partition)} / ${String(graphitiRecordRef.graphiti_uuid || "-")}`}</small>
+                  <small>{String(graphitiRefPlanData.write_path || graphitiRefPlanData.policy || "GraphitiRecordRef + ExternalRefRecord")}</small>
+                </div>
+              ) : null}
+              {graphitiExternalRefs.slice(0, 3).map((row, index) => (
+                <div className="preview-row import-plan-row" key={`${String(row.ref_id || index)}:graphiti-ref-writeback`}>
+                  <span>{String(row.ref_id || "external_ref")}</span>
+                  <small>{`${String(row.kind || row.ref_kind || "-")} / ${String(row.health || "unknown")}`}</small>
+                  <small>{String(row.primary_locator || row.url || row.locator || "")}</small>
+                </div>
+              ))}
+              {Object.keys(graphitiAuditDraft).length ? (
+                <div className="preview-row mapping-row">
+                  <span>{String(graphitiAuditDraft.name || "audit Episode")}</span>
+                  <small>{String(graphitiAuditDraft.write_status || "draft_only")}</small>
+                  <small>{String(graphitiAuditDraft.source_description || "parrot-web-console-ref-writeback-audit")}</small>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {edgeDrafts.length ? (
             <div className="edge-resolver-panel">
               <div className="edge-resolver-head">
@@ -4617,6 +4962,107 @@ function GraphitiSourceCard({
         </div>
       ) : null}
     </article>
+  );
+}
+
+function GraphitiBundlePanel({ bundle }: { bundle: Record<string, unknown> }) {
+  const selection = recordFromUnknown(bundle.selection);
+  const sectionCounts = recordFromUnknown(selection.section_counts);
+  const search = recordFromUnknown(bundle.search);
+  const sections = recordFromUnknown(bundle.sections);
+  const overlay = recordFromUnknown(bundle.import_overlay);
+  const transformPreview = recordFromUnknown(overlay.transform_preview || bundle.l2b_transform_preview);
+  const rustworkxPreview = recordFromUnknown(transformPreview.rustworkx_preview);
+  const projectionPolicy = recordFromUnknown(bundle.l2b_projection_policy);
+  const facts = recordArrayFrom(sections, "facts");
+  const entities = recordArrayFrom(sections, "entities");
+  const episodes = recordArrayFrom(sections, "episodes");
+  const communities = recordArrayFrom(sections, "communities");
+  const l2bNodes = recordArrayFrom(transformPreview, "l2b_nodes");
+  const l2bEdges = recordArrayFrom(transformPreview, "l2b_edges");
+  const searchPlan = Array.isArray(search.search_plan) ? search.search_plan : [];
+  const lookup = recordFromUnknown(search.lookup);
+  const selectedCount = String(selection.selected_count ?? 0);
+  const schema = String(bundle.schema_version || "1");
+  const recipe = String(search.search_recipe || "public/default");
+  const strategy = String(search.strategy || "hybrid");
+  const destination = String(overlay.destination || "");
+
+  return (
+    <div className="edge-resolver-panel graphiti-bundle-panel">
+      <div className="edge-resolver-head">
+        <strong>Graphiti bundle</strong>
+        <small>{`schema v${schema} / ${selectedCount} selected`}</small>
+      </div>
+      <div className="graphiti-bundle-stats">
+        <span>
+          <strong>{String(sectionCounts.facts ?? facts.length)}</strong>
+          <small>facts</small>
+        </span>
+        <span>
+          <strong>{String(sectionCounts.entities ?? entities.length)}</strong>
+          <small>entities</small>
+        </span>
+        <span>
+          <strong>{String(sectionCounts.episodes ?? episodes.length)}</strong>
+          <small>episodes</small>
+        </span>
+        <span>
+          <strong>{String(sectionCounts.communities ?? communities.length)}</strong>
+          <small>communities</small>
+        </span>
+      </div>
+      <div className="graphiti-bundle-meta">
+        <div className="preview-row mapping-row">
+          <span>{`${strategy} / ${recipe}`}</span>
+          <small>{`search_plan ${searchPlan.length} / lookup ${String(lookup.found_count ?? "-")}/${String(lookup.requested_count ?? "-")}`}</small>
+          <small>{String(search.node_labels || search.edge_types || "Graphiti SearchConfig and local expansion are preserved")}</small>
+        </div>
+        <div className={destination ? "preview-row import-plan-row" : "preview-row mapping-row"}>
+          <span>{destination ? `Import overlay: ${destination}` : "Projection policy"}</span>
+          <small>{String(projectionPolicy.edge_materialization_policy || "requires_resolved_l2b_node_uuid")}</small>
+          <small>{String(projectionPolicy.l2b_role || "L2-B preserves Graphiti raw data and adds overlay/buff policy")}</small>
+        </div>
+        {Object.keys(transformPreview).length ? (
+          <div className="preview-row import-plan-row">
+            <span>{String(transformPreview.projection_kind || "L2-B transform preview")}</span>
+            <small>{`L2-B preview ${l2bNodes.length} node(s) / ${l2bEdges.length} edge(s)`}</small>
+            <small>{`RustWorkX ${String(rustworkxPreview.node_count ?? "-")}/${String(rustworkxPreview.edge_count ?? "-")} / ${String(rustworkxPreview.rwx_idx_policy || "ephemeral preview only")}`}</small>
+          </div>
+        ) : null}
+      </div>
+      <GraphitiBundleSection title="facts" rows={facts} />
+      <GraphitiBundleSection title="entities" rows={entities} />
+      <GraphitiBundleSection title="episodes" rows={episodes} />
+      {communities.length ? <GraphitiBundleSection title="communities" rows={communities} /> : null}
+      <GraphitiBundleSection title="l2b preview nodes" rows={l2bNodes} />
+      <GraphitiBundleSection title="l2b preview edges" rows={l2bEdges} />
+    </div>
+  );
+}
+
+function GraphitiBundleSection({
+  title,
+  rows
+}: {
+  title: string;
+  rows: Array<Record<string, unknown>>;
+}) {
+  if (!rows.length) return null;
+  return (
+    <div className="graphiti-bundle-section">
+      <div className="graphiti-bundle-section-head">
+        <span>{title}</span>
+        <small>{`${rows.length} row(s)`}</small>
+      </div>
+      {rows.slice(0, 4).map((row, index) => (
+        <div className="preview-row" key={`${title}:${String(row.uuid || index)}`}>
+          <span>{graphitiBundleRowLabel(row, index)}</span>
+          <small>{graphitiBundleRowMeta(row)}</small>
+          <small>{graphitiBundleRowUuid(row)}</small>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -5635,6 +6081,55 @@ function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return result;
 }
 
+function graphitiBundleRowLabel(row: Record<string, unknown>, index: number): string {
+  const raw = recordFromUnknown(row.raw);
+  const sourceEnvelope = recordFromUnknown(row.source_envelope);
+  const text = String(
+    raw.name
+    || raw.label
+    || raw.title
+    || raw.fact
+    || sourceEnvelope.text
+    || sourceEnvelope.label
+    || row.label
+    || row.uuid
+    || ""
+  ).replace(/\s+/g, " ").trim();
+  return text ? text.slice(0, 96) : `Graphiti row ${index + 1}`;
+}
+
+function graphitiBundleRowMeta(row: Record<string, unknown>): string {
+  const raw = recordFromUnknown(row.raw);
+  const sourceEnvelope = recordFromUnknown(row.source_envelope);
+  const sourceNode = recordFromUnknown(raw.source_node || sourceEnvelope.source_node);
+  const targetNode = recordFromUnknown(raw.target_node || sourceEnvelope.target_node);
+  const sourceName = String(sourceNode.name || row.source_node_uuid || sourceEnvelope.source_node_uuid || "").trim();
+  const targetName = String(targetNode.name || row.target_node_uuid || sourceEnvelope.target_node_uuid || "").trim();
+  const previewSource = String(row.source || "").trim();
+  const previewTarget = String(row.target || "").trim();
+  const kind = String(row.kind || row.node_kind || raw.kind || sourceEnvelope.kind || "graphiti").trim();
+  const score = row.score ?? sourceEnvelope.score ?? raw.score;
+  const parts = [kind];
+  if (sourceName || targetName) parts.push(`${sourceName || "-"} -> ${targetName || "-"}`);
+  if (previewSource || previewTarget) parts.push(`${previewSource || "-"} -> ${previewTarget || "-"}`);
+  if (score !== undefined && score !== null && score !== "") parts.push(`score ${String(score)}`);
+  return parts.join(" / ");
+}
+
+function graphitiBundleRowUuid(row: Record<string, unknown>): string {
+  const raw = recordFromUnknown(row.raw);
+  const sourceEnvelope = recordFromUnknown(row.source_envelope);
+  return String(
+    row.uuid
+    || row.graphiti_uuid
+    || raw.uuid
+    || sourceEnvelope.uuid
+    || sourceEnvelope.graphiti_edge_uuid
+    || sourceEnvelope.parent_fact_uuid
+    || ""
+  );
+}
+
 function graphitiHitKey(hit: Record<string, unknown>, index: number): string {
   return String(
     hit.uuid
@@ -5719,6 +6214,28 @@ function graphitiHitLabel(hit: Record<string, unknown>, index: number): string {
   if (!raw) return `Graphiti hit ${index + 1}`;
   const firstClause = raw.split(/[.。:：]/, 1)[0] || raw;
   return firstClause.slice(0, 72);
+}
+
+function graphitiRefKindFromDraft(draft: Record<string, unknown>): string {
+  if (draft.graphiti_episode_uuid) return "episode";
+  if (draft.graphiti_entity_uuid) return "entity";
+  if (draft.graphiti_edge_uuid || draft.hit_graphiti_uuid) return "edge";
+  return String(draft.graphiti_kind || "edge");
+}
+
+function graphitiRefUuidFromDraft(draft: Record<string, unknown>): string {
+  return String(
+    draft.graphiti_uuid
+    || draft.graphiti_edge_uuid
+    || draft.graphiti_entity_uuid
+    || draft.graphiti_episode_uuid
+    || draft.hit_graphiti_uuid
+    || ""
+  ).trim();
+}
+
+function graphitiRefLocatorFromDraft(draft: Record<string, unknown>): string {
+  return String(draft.locator || draft.url || draft.path || "").trim();
 }
 
 function memoryNode(row: Record<string, unknown>, index: number, stateColors = true): Node {

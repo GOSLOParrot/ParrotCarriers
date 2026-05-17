@@ -485,7 +485,10 @@ P1 implementation update:
   no `MicrophoneSource.AudioRead` frames. Formal App response is a native
   Android `AudioRecord` fallback (`AndroidPcmMicCapture` +
   `AndroidPcmMicrophoneSource`) as the final capture attempt after a temporary
-  PhoneMic route override. This fallback is allowed even if Unity lists a mic
+  route override. The automatic ladder now keeps that override at
+  `system_default` to preserve Bluetooth/A2DP downlink when possible; explicit
+  PhoneMic forcing is deferred to a future manual recovery control. This
+  fallback is allowed even if Unity lists a mic
   device, provided that the Unity capture attempts timed out at `frames=0`.
   This is a local capture source replacement, not a LiveKit room reconnect,
   token mint, or Brain dispatch. The next phone gate is simple: HUD
@@ -565,3 +568,146 @@ The next local sweep found three more formal-App risks:
 Validation remains code-level only until a phone run shows uplink frames and
 speech-responsive peak. Do not mark Bluetooth/phone mic production-stable from
 these static checks alone.
+
+## 2026-05-17 Output-only Bluetooth Correction
+
+Follow-up issue: normal phone behavior is not "Bluetooth or force speaker".
+Many Android devices expose Bluetooth A2DP/BLE output even when no
+bidirectional communication mic is selectable. For the App this means:
+
+- if a true communication headset is available (`TYPE_BLUETOOTH_SCO` or
+  `TYPE_BLE_HEADSET`), prefer it for both input and output;
+- if only output Bluetooth is available (`TYPE_BLUETOOTH_A2DP`,
+  `TYPE_BLE_SPEAKER`, hearing-aid style output), preserve that output and use
+  the system/default or phone mic for input fallback;
+- do not force `phone_mic` automatically, because it can pull downlink audio
+  back to speaker/earpiece. Keep that for a future explicit/manual recovery
+  action if `system_default` cannot capture.
+
+Implementation update:
+
+- `AndroidAudioRouteManager.chooseCommunicationDevice()` now returns no
+  explicit target when output-only Bluetooth is present and no communication
+  headset target exists. That leaves Android's system output route intact
+  instead of stealing Parrot audio back to phone speaker.
+- `MicrophonePublisher` fallback attempts now carry an explicit route override:
+  system-default for automatic A2DP-preserving capture retries. PhoneMic is not
+  in the automatic ladder.
+
+This is still not a production pass until iQOO screenshots/logs prove non-zero
+uplink frames and the desired headset/phone-mic fallback behavior.
+
+Threading note:
+
+- Android `AudioRecord` fallback frames enter Unity through an
+  `AndroidJavaProxy` callback on a Java capture thread. The LiveKit Unity
+  source path already permits off-main-thread audio reads, but App-owned
+  diagnostics on that path must stay pure C# and avoid UnityEngine APIs. The
+  formal code now avoids `Mathf.*` in the native PCM callback and peak meter.
+
+## 2026-05-17 Route Truth-source Correction
+
+Follow-up audit after iQOO Bluetooth/phone-mic failures tightened the route
+rules:
+
+- `AudioManager.getDevices(...)` is an availability/diagnostic list. It must not
+  be used to decide that Bluetooth SCO is the active capture path.
+- `AudioManager.getCommunicationDevice()` is the active communication-device
+  truth source on API 31+; only that route can promote the mic policy to
+  `bluetooth_sco`.
+- Java `requires_mic_republish` is a snapshot hint, not a direct rebuild
+  command. Unity rebuilds only when the accepted capture class or sample rate
+  changes.
+- Temporary phone/default-mic recovery must be sticky. Topology callbacks can
+  arrive while Android is settling the route; restoring Auto/Bluetooth on those
+  callbacks can recreate the exact SCO retry loop the fallback was trying to
+  escape.
+- Output-only Bluetooth must clear any previously selected speaker/earpiece
+  communication device before returning no explicit target. Otherwise the App
+  can remain pinned to phone speaker after A2DP connects.
+
+These are formal App rules, not smoke-test rules. They apply to
+`Assets/ParrotApp/Runtime/Scripts/LiveKit/**` and
+`Assets/Plugins/Android/ParrotAudioRoute.androidlib/**`; old ParrotDev/Smoke
+scripts remain connectivity references only.
+
+## 2026-05-17 SCO Settling / Bridge Failure Diagnostics
+
+Follow-up implementation after the route-loop audit:
+
+- SCO is still a valid bidirectional Bluetooth microphone route only when
+  Android's active communication device confirms it. However, even a confirmed
+  SCO route can need a short async settle period before Unity/LiveKit capture
+  produces frames. `MicrophonePublisher` now waits briefly before the first SCO
+  probe, then uses a short SCO-specific startup timeout. If the route produces
+  no `AudioRead` frames quickly, it falls through to the system/default or
+  phone-mic recovery ladder instead of delaying the session through multiple
+  full 4-second microphone timeouts.
+- Native Android PCM fallback failures are now classified. If
+  `AndroidPcmMicrophoneSource` cannot instantiate
+  `com.parrotcarriers.audio.AndroidPcmMicCapture`, the surfaced marker is
+  `android_pcm_bridge_unavailable:*`. If Java starts but the PCM proxy fails,
+  Java already emits `pcm_callback_failed:*`. This keeps APK packaging, JNI
+  callback, native AudioRecord init, and Brain/STT consumption as separate
+  diagnosis buckets.
+
+Validation remains static/code-level until the rebuilt iQOO App proves non-zero
+HUD `frames/ch/readSr/peak`. Do not mark APP-015.23 or APP-024 stable from the
+successful static guard alone.
+
+## 2026-05-17 AudioRecord Source / Bluetooth Downlink Correction
+
+Follow-up phone evidence showed a narrower failure: the App could play the
+placement greeting, but user speech still did not drive further dialogue. That
+means Mint, LiveKit room join, Brain presence, and downlink audio are alive; the
+remaining blocker is local uplink capture or LiveKit frame delivery.
+
+Implementation correction:
+
+- `AndroidPcmMicCapture` now tries `MediaRecorder.AudioSource.MIC` before
+  `VOICE_COMMUNICATION`. The AudioRecord bridge is a last-resort phone-mic
+  fallback after Unity's `MicrophoneSource` has produced no LiveKit
+  `AudioRead` frames. On some devices a `VOICE_COMMUNICATION` recorder can
+  initialize while the communication stack gates or silences near-end capture,
+  so the plain MIC source is the safer product fallback.
+- Native AudioRecord state now includes `source_name` so the HUD/debug stream can
+  show whether the fallback is actually using `mic` or
+  `voice_communication`.
+- `AndroidPcmMicrophoneSource.Start()` marks the C# source as started before
+  crossing into Java `start(...)`, then rolls it back on exception. This avoids
+  dropping the first PCM callbacks on fast devices while preserving retry
+  cleanup if the bridge or native recorder fails.
+- Automatic AudioRecord retries now keep the route override at
+  `system_default` for all retry rates. Forcing `phone_mic` can pin Parrot
+  downlink back to the phone speaker; keep that for future explicit/manual
+  recovery. The desired automatic behavior is Bluetooth/A2DP downlink retained
+  by Android, with the Java bridge capturing the plain phone MIC source.
+
+Phone gate remains open: the next iQOO run must prove non-zero HUD
+`frames/ch/readSr/peak` and audible user speech reaching LineA/LineB. If frames
+increase but Brain still does not respond, the next bucket is remote
+track/STT/Brain consumption rather than Android route selection.
+
+## 2026-05-17 Fake-Silence Uplink Guard
+
+Additional review of the "greeting only" symptom found one more false-success
+class: Unity can emit regular `AudioRead` callbacks while the sample peak stays
+at digital zero. That would make the local source look alive while Brain only
+receives silence.
+
+Implementation correction:
+
+- `MicrophonePublisher` now records the age since source start or the latest
+  non-zero peak. If the active source is still `unity_microphone`, frames are
+  fresh, and peak remains under the zero threshold for the watchdog window, the
+  App marks the uplink degraded with
+  `uplink_watchdog_zero_peak_unity_microphone`.
+- That recovery sets a one-shot flag so the next publish skips the same Unity
+  path and starts with Android `AudioRecord` attempts at 48 kHz, 44.1 kHz, then
+  16 kHz. It is still a local mic-track rebuild only: no LiveKit reconnect, no
+  token mint, and no Brain job churn.
+- HUD adds `nz=` next to `frames/ch/readSr/peak` so the next iQOO run can tell
+  whether the source is producing real non-zero samples or only fresh silence.
+- Native AudioRecord state JSON now quotes `source_name` correctly before
+  `recording`, so `nsrc=mic` / `nsrc=voice_communication` diagnostics are not
+  lost.

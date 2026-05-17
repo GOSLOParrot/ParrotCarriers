@@ -90,6 +90,7 @@ namespace ParrotApp.Photo
             /// <summary>Cached full-res JPEG bytes for reconnect retry when Status=Failed.
             /// Held until Status=Uploaded or app quits. Spike-acceptable memory cost (~100-500KB/photo).</summary>
             public byte[] FullResJpeg;
+            public string TimebaseJson;
         }
 
         // ─── State ────────────────────────────────────────────────────
@@ -193,7 +194,7 @@ namespace ParrotApp.Photo
                             // Preview reached Brain → retry HTTP POST only
                             retriedCount++;
                             p.Status = UploadStatus.Pending;
-                            _ = UploadAssetAsync(p.PhotoId, p.FullResJpeg, p.PreviewEventId);
+                            _ = UploadAssetAsync(p.PhotoId, p.FullResJpeg, p.PreviewEventId, p.TimebaseJson);
                         }
                         else
                         {
@@ -254,6 +255,7 @@ namespace ParrotApp.Photo
 
             // 6. Build 12-field payload JSON (schema_version=1, entry §8.3 + bb_schema.py transient/last_photo_event)
             long tsMs = EcpEventBuilder.UnixMilliseconds();
+            string uploadTimebaseJson = BuildUploadTimebaseJson(tsMs);
             string payloadJson = BuildPreviewPayloadJson(
                 photoId: photoId,
                 poseJson: poseJson,
@@ -316,6 +318,7 @@ namespace ParrotApp.Photo
                 Status = UploadStatus.Pending,
                 PreviewSent = previewSent,
                 FullResJpeg = fullResJpeg,
+                TimebaseJson = uploadTimebaseJson,
             };
 
             Debug.Log(
@@ -325,7 +328,7 @@ namespace ParrotApp.Photo
                 $"candidate={candidateSubjectUuid} previewSent={previewSent}");
 
             // 10. HTTP POST full-res asset (async, non-blocking)
-            _ = UploadAssetAsync(photoId, fullResJpeg, previewEventId);
+            _ = UploadAssetAsync(photoId, fullResJpeg, previewEventId, uploadTimebaseJson);
         }
 
         // ─── Frame capture ────────────────────────────────────────────
@@ -515,6 +518,21 @@ namespace ParrotApp.Photo
         // Using System.Net.Http.HttpClient bypasses Unity's UnityWebRequest
         // Android cleartext-traffic security layer, which blocks http:// in
         // Editor Play Mode when the build target is Android.
+        private static string BuildUploadTimebaseJson(long wallTimeMs)
+        {
+            var ci = CultureInfo.InvariantCulture;
+            long monotonicMs = (long)Math.Round(Time.realtimeSinceStartupAsDouble * 1000.0);
+            return "{"
+                   + "\"clock_domain\":\"unity\","
+                   + "\"wall_time_ms\":" + wallTimeMs.ToString(ci) + ","
+                   + "\"monotonic_ms\":" + monotonicMs.ToString(ci) + ","
+                   + "\"media_time_us\":0,"
+                   + "\"sequence\":0,"
+                   + "\"estimated\":false,"
+                   + "\"source_id\":\"unity-photo-controller\""
+                   + "}";
+        }
+
         private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 
         // ─── Active refs helpers ──────────────────────────────────────
@@ -543,7 +561,7 @@ namespace ParrotApp.Photo
         /// traffic security layer (which blocks http:// in Editor with Android build target).
         /// Retry up to 3 times: 1s / 2s / 4s exponential backoff.
         /// </summary>
-        private async Task UploadAssetAsync(string photoId, byte[] fullResJpeg, string previewEventId)
+        private async Task UploadAssetAsync(string photoId, byte[] fullResJpeg, string previewEventId, string timebaseJson)
         {
             string url = $"{brainScheme}://{brainHost}:{brainPort}/upload/photo/{photoId}";
             // 4 total attempts = initial attempt + 3 retries (1s / 2s / 4s backoff)
@@ -568,6 +586,8 @@ namespace ParrotApp.Photo
                     request.Content = content;
                     // Required: Brain uses this as correlation_id for photo.asset_uploaded event
                     request.Headers.TryAddWithoutValidation("X-Photo-Preview-Event-Id", previewEventId);
+                    if (!string.IsNullOrWhiteSpace(timebaseJson))
+                        request.Headers.TryAddWithoutValidation("X-Parrot-Timebase", timebaseJson);
 
                     using var response = await _httpClient.SendAsync(request);
                     int statusCode = (int)response.StatusCode;

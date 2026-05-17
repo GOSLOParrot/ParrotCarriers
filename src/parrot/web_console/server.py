@@ -594,6 +594,22 @@ def build_app(
 
         return apply_memory_identity_ref_index(payload or {})
 
+    @app.post("/api/memory/identity-ref-index/graphiti-ref/draft")
+    async def memory_identity_ref_index_graphiti_ref_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_graphiti_ref_writeback
+
+        return draft_graphiti_ref_writeback(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/graphiti-ref/apply")
+    async def memory_identity_ref_index_graphiti_ref_apply(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_graphiti_ref_writeback
+
+        return await apply_graphiti_ref_writeback(payload or {})
+
     @app.post("/api/memory/identity-ref-index/verify")
     async def memory_identity_ref_index_verify(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -728,6 +744,14 @@ def build_app(
 
         return draft_subgraph_overlay(payload or {})
 
+    @app.post("/api/l2b/subgraphs/context")
+    async def l2b_subgraphs_context(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.graph_policy import live_subgraph_context
+
+        return live_subgraph_context(payload or {})
+
     @app.post("/api/l2b/transforms/draft")
     async def l2b_transforms_draft(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -839,6 +863,9 @@ def build_app(
                 partition=str(body.get("partition") or "goslo"),
                 limit=body.get("limit") or 5,
                 focal_node_uuid=str(body.get("focal_node_uuid") or ""),
+                search_recipe=str(body.get("search_recipe") or body.get("strategy") or ""),
+                node_labels=body.get("node_labels"),
+                edge_types=body.get("edge_types"),
             )
         ).as_json()
 
@@ -857,7 +884,29 @@ def build_app(
             depth=body.get("depth") or 1,
             expansion_limit=body.get("expansion_limit") or 3,
             focal_node_uuid=str(body.get("focal_node_uuid") or ""),
+            search_recipe=str(body.get("search_recipe") or ""),
+            node_labels=body.get("node_labels"),
+            edge_types=body.get("edge_types"),
+            enrich=body.get("enrich", True),
         )
+
+    @app.post("/api/graphiti/lookup")
+    async def graphiti_lookup_endpoint(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.brain.graphiti_console import lookup_graphiti_uuids
+
+        body = payload or {}
+        raw_uuids = body.get("uuids")
+        uuids = raw_uuids if isinstance(raw_uuids, list) else []
+        return (
+            await lookup_graphiti_uuids(
+                uuids=[str(item) for item in uuids],
+                uuid=str(body.get("uuid") or ""),
+                partition=str(body.get("partition") or "goslo"),
+                kind=str(body.get("kind") or ""),
+            )
+        ).as_json()
 
     @app.post("/api/graphiti/subgraph/export-draft")
     async def graphiti_subgraph_export_draft(  # type: ignore[misc]

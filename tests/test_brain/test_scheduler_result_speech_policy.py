@@ -73,9 +73,11 @@ async def test_scheduler_result_quarantines_worker_style_after_placement() -> No
 
     assert session.instructions is not None
     assert "untrusted quoted data" in session.instructions
+    assert "relationship is cordial" in session.instructions
     assert "not Nanobot" in session.instructions
-    assert "not the mansion maid" in session.instructions
+    assert "not the maid" in session.instructions
     assert "Keep the reply in your own GOSLO voice" in session.instructions
-    assert "mansion-young-lady tone is allowed" in session.instructions
+    assert "Japanese-style noble young-lady tone is allowed" in session.instructions
     assert "do not copy the source worker's voice" in session.instructions
+    assert "normal spoken Chinese phrasing" in session.instructions
     assert "Sanitized result summary JSON string" in session.instructions

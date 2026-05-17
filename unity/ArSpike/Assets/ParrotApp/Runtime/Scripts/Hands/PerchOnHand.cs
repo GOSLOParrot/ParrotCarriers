@@ -50,6 +50,9 @@ namespace ParrotApp.Hands
         public PerchState State { get; private set; } = PerchState.IDLE;
         public string ActivePerchCommandId { get; private set; } = "";
         public string ActiveTrigger { get; private set; } = "";
+        public string LastPerchStatus { get; private set; } = "idle";
+        public string LastPerchLifecycle { get; private set; } = "";
+        public string LastPerchRejectReason { get; private set; } = "";
 
         private Vector3 _returnPosition;
         private Quaternion _returnRotation;
@@ -134,6 +137,7 @@ namespace ParrotApp.Hands
             ActivePerchCommandId = "";
             ActiveTrigger = "";
             _perchedTrackingLost = false;
+            SetPerchStatus("disabled", "disabled");
         }
 
         private void OnDestroy()
@@ -190,6 +194,7 @@ namespace ParrotApp.Hands
             if (State == PerchState.PERCHED)
             {
                 reason = "already_perched";
+                SetPerchStatus("accepted", reason);
                 completion?.TrySetResult(PerchRpcResult.Completed());
                 return true;
             }
@@ -197,6 +202,7 @@ namespace ParrotApp.Hands
             if (State != PerchState.IDLE)
             {
                 reason = "body_busy";
+                SetPerchStatus("rejected", reason);
                 return false;
             }
 
@@ -229,12 +235,14 @@ namespace ParrotApp.Hands
             if (State == PerchState.IDLE)
             {
                 reason = "already_in_view";
+                SetPerchStatus("accepted", reason);
                 completion?.TrySetResult(PerchRpcResult.Completed());
                 return true;
             }
             if (State == PerchState.RETURNING)
             {
                 reason = "already_returning";
+                SetPerchStatus("rejected", reason);
                 return false;
             }
 
@@ -264,7 +272,8 @@ namespace ParrotApp.Hands
                     if (snap.HandDetected && snap.Gesture == HandGestureSource.GestureBranch)
                     {
                         string commandId = "gesture_perch_" + Mathf.RoundToInt(Time.unscaledTime * 1000f);
-                        BeginPerch("gesture", commandId, null, true, out _);
+                        if (!BeginPerch("gesture", commandId, null, true, out string reason))
+                            SetPerchStatus("gesture_rejected", reason);
                     }
                     break;
 
@@ -305,6 +314,7 @@ namespace ParrotApp.Hands
             if (handTracker == null || !handTracker.IsHandDetected || !handTracker.CurrentPerchPose.IsValid)
             {
                 reason = "hand_pose_unavailable";
+                SetPerchStatus("rejected", reason);
                 completion?.TrySetResult(PerchRpcResult.Rejected(reason));
                 return false;
             }
@@ -312,6 +322,7 @@ namespace ParrotApp.Hands
             if (requireBranchGesture && handTracker.CurrentGesture != HandGestureSource.GestureBranch)
             {
                 reason = "branch_gesture_required";
+                SetPerchStatus("rejected", reason);
                 completion?.TrySetResult(PerchRpcResult.Rejected(reason));
                 return false;
             }
@@ -319,6 +330,7 @@ namespace ParrotApp.Hands
             if (animDriver == null)
             {
                 reason = "animation_driver_unavailable";
+                SetPerchStatus("rejected", reason);
                 completion?.TrySetResult(PerchRpcResult.Rejected(reason));
                 return false;
             }
@@ -334,6 +346,7 @@ namespace ParrotApp.Hands
 
             LifecycleHeartbeatPublisher.Instance?.ReportActiveCommand(ActivePerchCommandId, new[] { BodyLock });
             PublishPerchLifecycle("started", "");
+            SetPerchStatus("accepted", trigger);
             TransitionTo(PerchState.FLYING_TO_HAND);
             PlanRouteToCurrentHandPose(force: true);
             return true;
@@ -345,6 +358,7 @@ namespace ParrotApp.Hands
             {
                 CompleteActiveRpc(false, reason);
                 PublishPerchLifecycle("abort", reason);
+                SetPerchStatus("abort", reason);
                 TransitionTo(PerchState.RETURNING);
                 return;
             }
@@ -353,6 +367,7 @@ namespace ParrotApp.Hands
             {
                 CompleteActiveRpc(false, "branch_gesture_lost");
                 PublishPerchLifecycle("abort", "branch_gesture_lost");
+                SetPerchStatus("abort", "branch_gesture_lost");
                 TransitionTo(PerchState.RETURNING);
                 return;
             }
@@ -389,6 +404,7 @@ namespace ParrotApp.Hands
             {
                 CompleteActiveRpc(false, "timeout");
                 PublishPerchLifecycle("abort", "timeout");
+                SetPerchStatus("abort", "timeout");
                 TransitionTo(PerchState.RETURNING);
             }
         }
@@ -400,6 +416,7 @@ namespace ParrotApp.Hands
                 PublishPerchLifecycle("preempted", AnimationDriver.BodyStateToWire(animDriver.CurrentState));
                 LifecycleHeartbeatPublisher.Instance?.ClearActiveCommand(ActivePerchCommandId);
                 CompleteActiveRpc(false, "preempted");
+                SetPerchStatus("preempted", AnimationDriver.BodyStateToWire(animDriver.CurrentState));
                 State = PerchState.IDLE;
                 ActivePerchCommandId = "";
                 ActiveTrigger = "";
@@ -447,6 +464,7 @@ namespace ParrotApp.Hands
             if (_perchedTrackingLost) return;
             _perchedTrackingLost = true;
             PublishPerchLifecycle("tracking_lost_hold_on_hand", reason);
+            SetPerchStatus("tracking_lost_hold_on_hand", reason);
         }
 
         private bool CanUseCurrentHandPose(out HandPerchPose pose, out string reason)
@@ -547,6 +565,7 @@ namespace ParrotApp.Hands
             if (State == next) return;
             PerchState prev = State;
             State = next;
+            SetPerchStatus("state_" + next.ToString().ToLowerInvariant(), ActiveTrigger);
             Debug.Log($"[PerchOnHand] {prev} -> {next} trigger={ActiveTrigger} cmd={ActivePerchCommandId}");
 
             switch (next)
@@ -555,22 +574,26 @@ namespace ParrotApp.Hands
                     _perchedTrackingLost = false;
                     animDriver.SetState(AnimationDriver.BodyState.Fly);
                     animDriver.SetHeadState(AnimationDriver.HeadState.Forward);
+                    LifecycleHeartbeatPublisher.Instance?.ReportBodyState("flying");
                     break;
                 case PerchState.PERCHED:
                     HideTrail();
                     animDriver.SetState(AnimationDriver.BodyState.PerchedOnHand);
                     animDriver.PlayHeadTiltOnce();
+                    LifecycleHeartbeatPublisher.Instance?.ReportBodyState("perched_on_hand");
                     LifecycleHeartbeatPublisher.Instance?.ClearActiveCommand(ActivePerchCommandId);
                     break;
                 case PerchState.RETURNING:
                     _perchedTrackingLost = false;
                     animDriver.SetState(AnimationDriver.BodyState.Fly);
                     animDriver.SetHeadState(AnimationDriver.HeadState.Forward);
+                    LifecycleHeartbeatPublisher.Instance?.ReportBodyState("flying");
                     break;
                 case PerchState.IDLE:
                     HideTrail();
                     animDriver.SetState(AnimationDriver.BodyState.Idle);
                     animDriver.SetHeadState(AnimationDriver.HeadState.Forward);
+                    LifecycleHeartbeatPublisher.Instance?.ReportBodyState("idle");
                     LifecycleHeartbeatPublisher.Instance?.ClearActiveCommand(ActivePerchCommandId);
                     ActivePerchCommandId = "";
                     ActiveTrigger = "";
@@ -612,9 +635,18 @@ namespace ParrotApp.Hands
 
         private void PublishPerchLifecycle(string phase, string reason)
         {
+            LastPerchLifecycle =
+                (string.IsNullOrWhiteSpace(phase) ? "unknown" : phase)
+                + (string.IsNullOrWhiteSpace(reason) ? "" : ":" + reason);
             Debug.Log(
                 $"[PerchOnHand] lifecycle phase={phase ?? ""} reason={reason ?? ""} " +
                 $"trigger={ActiveTrigger ?? ""} cmd={ActivePerchCommandId ?? ""} state={State}");
+        }
+
+        private void SetPerchStatus(string status, string reason)
+        {
+            LastPerchStatus = string.IsNullOrWhiteSpace(status) ? "unknown" : status;
+            LastPerchRejectReason = string.IsNullOrWhiteSpace(reason) ? "" : reason;
         }
 
         private void ResolveReferences(bool force = false)

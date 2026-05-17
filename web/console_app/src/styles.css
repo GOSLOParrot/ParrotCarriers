@@ -736,6 +736,42 @@ select {
   white-space: nowrap;
 }
 
+.subgraph-context-card {
+  border: 1px solid rgba(58, 63, 74, 0.78);
+  border-radius: 8px;
+  background: rgba(23, 25, 31, 0.58);
+  color: #aeb7c5;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.subgraph-context-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.subgraph-context-grid span {
+  border: 1px solid rgba(58, 63, 74, 0.65);
+  border-radius: 7px;
+  background: rgba(32, 34, 40, 0.72);
+  padding: 8px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.subgraph-context-grid small,
+.subgraph-context-card > small {
+  color: #9aa4b2;
+  font-size: 11px;
+}
+
+.subgraph-context-grid strong {
+  color: #dfe7f2;
+}
+
 .canvas-help-chip {
   position: absolute;
   z-index: 7;
@@ -1747,6 +1783,81 @@ select {
 .ref-scan-panel {
   border-color: rgba(111, 220, 151, 0.28);
   background: rgba(23, 34, 30, 0.52);
+}
+
+.graphiti-ref-writeback-panel {
+  border-color: rgba(123, 217, 159, 0.32);
+  background: rgba(22, 36, 32, 0.56);
+}
+
+.graphiti-bundle-panel {
+  border-color: rgba(111, 220, 151, 0.3);
+  background: rgba(22, 33, 31, 0.54);
+}
+
+.graphiti-bundle-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.graphiti-bundle-stats > span {
+  min-width: 0;
+  border: 1px solid rgba(58, 63, 74, 0.66);
+  border-radius: 6px;
+  background: rgba(20, 23, 29, 0.62);
+  padding: 6px 7px;
+  display: grid;
+  gap: 1px;
+}
+
+.graphiti-bundle-stats strong,
+.graphiti-bundle-stats small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graphiti-bundle-stats small {
+  color: #9aa4b2;
+  font-size: 11px;
+}
+
+.graphiti-bundle-meta,
+.graphiti-bundle-section {
+  display: grid;
+  gap: 6px;
+}
+
+.graphiti-bundle-section {
+  border-top: 1px solid rgba(58, 63, 74, 0.54);
+  padding-top: 6px;
+}
+
+.graphiti-bundle-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.graphiti-bundle-section-head span {
+  color: #bfeccf;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.graphiti-bundle-section-head small {
+  color: #9aa4b2;
+  white-space: nowrap;
+}
+
+.graphiti-ref-input-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(120px, 0.7fr);
+  gap: 7px;
+  align-items: end;
 }
 
 .edge-resolver-head {

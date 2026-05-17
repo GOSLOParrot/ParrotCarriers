@@ -14,8 +14,9 @@ namespace ParrotApp.UI
     /// This controller deliberately does not issue Brain RPCs and does not send
     /// image bytes through LiveKit. CAM delegates to PhotoController, which owns
     /// the split path: compact photo.taken_preview ECP metadata plus HTTP upload
-    /// of the full image asset. MAG/BOX are intentionally deferred until the
-    /// phone stability pass and the refreshed SVA/ECP visual-evidence contract.
+    /// of the full image asset. MAG/BOX live in separate feature-flagged
+    /// visual-tool controllers so CAM/Photo cannot be polluted by visual
+    /// evidence lifecycle experiments.
     /// </summary>
     [DisallowMultipleComponent]
     public class FormalHomeToolController : MonoBehaviour

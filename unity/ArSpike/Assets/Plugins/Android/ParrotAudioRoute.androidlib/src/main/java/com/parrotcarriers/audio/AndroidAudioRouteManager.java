@@ -158,6 +158,11 @@ public final class AndroidAudioRouteManager {
         try {
             AudioDeviceInfo target = chooseCommunicationDevice();
             if (target == null) {
+                if (shouldClearCommunicationDeviceForOutputBluetooth()) {
+                    clearCommunicationDevice();
+                    sendSnapshot("communication_device_cleared_for_output_bluetooth");
+                    return true;
+                }
                 sendSnapshot("apply_preferred_device_no_target");
                 return false;
             }
@@ -307,6 +312,25 @@ public final class AndroidAudioRouteManager {
         AudioDeviceInfo speaker = firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
         if (speaker != null) return speaker;
         return firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
+    }
+
+    private boolean shouldClearCommunicationDeviceForOutputBluetooth() {
+        if (audioManager == null || Build.VERSION.SDK_INT < 31) return false;
+        if (!"auto".equals(preference) && !"bluetooth".equals(preference)) return false;
+        if (!hasBluetoothConnectPermission()) return false;
+        if (!hasBluetoothOutputType(getDevices(AudioManager.GET_DEVICES_OUTPUTS))) return false;
+
+        try {
+            AudioDeviceInfo current = audioManager.getCommunicationDevice();
+            if (current == null) return false;
+            // When a previous no-Bluetooth route selected speaker/earpiece,
+            // leaving it pinned keeps Parrot output on the phone speaker after
+            // A2DP connects. Clearing here lets Android keep Bluetooth media
+            // output while Unity captures from phone/default mic.
+            return !isBluetoothVoiceType(current.getType());
+        } catch (Throwable ignored) {
+            return true;
+        }
     }
 
     private void sendSnapshot(String reason) {

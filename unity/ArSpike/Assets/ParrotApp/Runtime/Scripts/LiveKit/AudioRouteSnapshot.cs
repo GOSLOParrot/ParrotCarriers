@@ -86,14 +86,19 @@ namespace ParrotApp.LiveKit
                 return AudioRouteKind.BluetoothSco;
             if (EqualsRoute(inputRoute, "wired_headset") || EqualsRoute(outputRoute, "wired_headset"))
                 return AudioRouteKind.WiredHeadset;
-            if (EqualsRoute(outputRoute, "bluetooth_a2dp"))
-                return AudioRouteKind.BluetoothA2dp;
+            // This policy drives the microphone source, not durable output UI.
+            // If Android says the input is phone/default mic, keep the capture
+            // policy on the phone route even when the output route is A2DP.
+            // The output route remains available on the snapshot for HUD/Brain
+            // reports without forcing a local mic-track rebuild.
+            if (EqualsRoute(inputRoute, "phone_mic") || EqualsRoute(inputRoute, "system_default_microphone"))
+                return AudioRouteKind.Speaker;
             if (EqualsRoute(outputRoute, "speaker"))
                 return AudioRouteKind.Speaker;
             if (EqualsRoute(outputRoute, "earpiece"))
                 return AudioRouteKind.Earpiece;
-            if (EqualsRoute(inputRoute, "phone_mic") || EqualsRoute(inputRoute, "system_default_microphone"))
-                return AudioRouteKind.Speaker;
+            if (EqualsRoute(outputRoute, "bluetooth_a2dp"))
+                return AudioRouteKind.BluetoothA2dp;
             return AudioRouteKind.Unknown;
         }
 

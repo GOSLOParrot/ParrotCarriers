@@ -597,9 +597,408 @@ class MemoryIdentityRefIndex:
             "pointer_candidate": {} if status == "resolved_l2b" else pointer_candidate,
         }
 
+    def upsert_graphiti_ref_writeback(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Bind one Graphiti record pointer to mutable external refs.
+
+        This is the M14 reviewed write-back helper. It mutates only this
+        in-memory index instance; callers decide whether to save it. Graphiti
+        audit is returned as an Episode draft rather than written here.
+        """
+
+        plan = _graphiti_ref_writeback_plan(payload, index=self)
+        if not plan["ok"]:
+            self.last_upsert_report = {
+                "merge_policy": MERGE_POLICY,
+                "target_reason": "invalid_graphiti_ref_writeback",
+                "conflict_count": 0,
+                "conflicts": [],
+                "error": plan["error"],
+            }
+            return plan
+
+        identity, _ = self.upsert(plan["identity_payload"])
+        merge_reports = [dict(self.last_upsert_report)]
+        external_ref_records: list[dict[str, Any]] = []
+        for ref_payload in plan["external_ref_payloads"]:
+            ref_payload["canonical_uuid"] = identity.canonical_uuid
+            ref_payload.setdefault(plan["graphiti_signal_key"], plan["graphiti_uuid"])
+            ref_payload.setdefault("graphiti_raw", plan["identity_payload"].get("graphiti_raw", {}))
+            identity, ref = self.upsert(ref_payload)
+            merge_reports.append(dict(self.last_upsert_report))
+            if ref is not None:
+                external_ref_records.append(ref.to_dict())
+
+        plan.update(
+            {
+                "identity_binding": identity.to_dict(),
+                "external_ref_records": external_ref_records,
+                "merge_reports": merge_reports,
+                "audit_episode_draft": _graphiti_ref_audit_episode_draft(
+                    identity=identity,
+                    graphiti_record_ref=plan["graphiti_record_ref"],
+                    external_ref_records=external_ref_records,
+                    ref_move_events=plan["ref_move_events"],
+                    requested_by=str(payload.get("requested_by") or "web_console"),
+                ),
+                "mutated_index_instance": True,
+            }
+        )
+        self.last_upsert_report = {
+            "merge_policy": MERGE_POLICY,
+            "target_canonical_uuid": identity.canonical_uuid,
+            "target_reason": "graphiti_ref_writeback",
+            "conflict_count": sum(
+                int(report.get("conflict_count") or 0) for report in merge_reports
+            ),
+            "conflicts": [
+                conflict
+                for report in merge_reports
+                for conflict in report.get("conflicts", [])
+                if isinstance(conflict, dict)
+            ],
+            "resolution_state": identity.resolution_state,
+        }
+        return plan
+
 
 def _new_canonical_uuid() -> str:
     return f"canon_{uuid.uuid4().hex[:12]}"
+
+
+def _graphiti_ref_writeback_plan(
+    payload: dict[str, Any],
+    *,
+    index: MemoryIdentityRefIndex,
+) -> dict[str, Any]:
+    graphiti_record_ref = _graphiti_record_ref_from_payload(payload)
+    graphiti_uuid = str(graphiti_record_ref.get("graphiti_uuid") or "")
+    graphiti_kind = str(graphiti_record_ref.get("graphiti_kind") or "entity")
+    if not graphiti_uuid:
+        return {
+            "ok": False,
+            "error": "missing_graphiti_uuid",
+            "required_any_of": [
+                "graphiti_uuid",
+                "graphiti_entity_uuid",
+                "graphiti_edge_uuid",
+                "graphiti_episode_uuid",
+                "graphiti_record.uuid",
+            ],
+            "mutated_index_instance": False,
+        }
+    signal_key = _graphiti_writeback_signal_key(graphiti_kind)
+    raw_envelope = _dict(payload.get("graphiti_raw") or payload.get("raw_envelope"))
+    identity_payload = {
+        "canonical_uuid": str(payload.get("canonical_uuid") or "").strip(),
+        "l2b_uuid": str(payload.get("l2b_uuid") or "").strip(),
+        signal_key: graphiti_uuid,
+        "aliases": _multi_values(payload, "alias", "aliases", "label", "name"),
+        "confidence": _float(payload.get("confidence"), 0.65),
+        "resolution_state": str(payload.get("resolution_state") or "weak"),
+        "graphiti_raw": {
+            "schema_version": 1,
+            "graphiti_record_ref": graphiti_record_ref,
+            "raw_envelope": raw_envelope,
+            "preservation_policy": "preserve_raw_graphiti_envelope",
+        },
+        "meta": {
+            **_dict(payload.get("meta")),
+            "m14_writeback": True,
+            "identity_owner": "MemoryIdentityRefIndex",
+            "graphiti_partition": graphiti_record_ref["partition"],
+            "graphiti_kind": graphiti_kind,
+        },
+    }
+    identity_payload = {
+        key: value
+        for key, value in identity_payload.items()
+        if value not in ("", [], {})
+    }
+    ref_move_events: list[dict[str, Any]] = []
+    external_ref_payloads = [
+        _external_ref_writeback_payload(
+            ref_payload,
+            graphiti_record_ref=graphiti_record_ref,
+            signal_key=signal_key,
+            graphiti_uuid=graphiti_uuid,
+            index=index,
+            ref_move_events=ref_move_events,
+        )
+        for ref_payload in _external_ref_inputs(payload)
+    ]
+    return {
+        "ok": True,
+        "error": "",
+        "schema_version": SCHEMA_VERSION,
+        "partition": graphiti_record_ref["partition"],
+        "graphiti_uuid": graphiti_uuid,
+        "graphiti_kind": graphiti_kind,
+        "graphiti_signal_key": signal_key,
+        "graphiti_record_ref": graphiti_record_ref,
+        "identity_payload": identity_payload,
+        "external_ref_payloads": external_ref_payloads,
+        "ref_move_events": ref_move_events,
+        "writeback_model": {
+            "identity_binding_owner": "MemoryIdentityRefIndex",
+            "graphiti_record_ref_owner": "Graphiti",
+            "external_ref_owner": "RefIndex",
+            "audit_owner": "Graphiti Episode draft",
+            "l2b_owner": "runtime projection only",
+        },
+        "write_policy": (
+            "Preview/apply split. Apply may persist IdentityRefIndex JSON only; "
+            "Graphiti audit Episode and external file moves require separate operator routes."
+        ),
+        "mutated_index_instance": False,
+    }
+
+
+def _graphiti_record_ref_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    record = _dict(payload.get("graphiti_record"))
+    raw_envelope = _dict(payload.get("graphiti_raw") or payload.get("raw_envelope"))
+    graphiti_kind = _normalize_graphiti_record_kind(
+        payload.get("graphiti_kind")
+        or payload.get("graphiti_record_kind")
+        or record.get("kind")
+        or record.get("type")
+        or _graphiti_kind_from_payload_keys(payload)
+    )
+    graphiti_uuid = _clean_graphiti_uuid(
+        payload.get("graphiti_uuid")
+        or payload.get("uuid")
+        or payload.get("graphiti_entity_uuid")
+        or payload.get("graphiti_edge_uuid")
+        or payload.get("graphiti_episode_uuid")
+        or record.get("uuid")
+        or raw_envelope.get("uuid")
+    )
+    labels = _unique_strings(
+        payload.get("raw_type_labels")
+        or payload.get("labels")
+        or record.get("labels")
+        or raw_envelope.get("labels")
+    )
+    name = str(
+        payload.get("graphiti_name")
+        or payload.get("name")
+        or record.get("name")
+        or raw_envelope.get("name")
+        or raw_envelope.get("fact")
+        or ""
+    ).strip()
+    partition = str(
+        payload.get("partition")
+        or payload.get("group_id")
+        or record.get("partition")
+        or record.get("group_id")
+        or raw_envelope.get("group_id")
+        or "goslo"
+    ).strip() or "goslo"
+    ref_scope = "fact" if graphiti_kind == "edge" else graphiti_kind
+    return {
+        "partition": partition,
+        "graphiti_uuid": graphiti_uuid,
+        "graphiti_kind": graphiti_kind,
+        "ref_id": f"graphiti:{partition}:{ref_scope}:{graphiti_uuid}" if graphiti_uuid else "",
+        "name": name,
+        "raw_type_labels": labels,
+        "lookup_status": str(payload.get("lookup_status") or "not_checked_by_writeback_route"),
+        "immutable_pointer": True,
+        "raw_preserved": bool(raw_envelope),
+    }
+
+
+def _graphiti_kind_from_payload_keys(payload: dict[str, Any]) -> str:
+    if payload.get("graphiti_edge_uuid"):
+        return "edge"
+    if payload.get("graphiti_episode_uuid"):
+        return "episode"
+    return "entity"
+
+
+def _normalize_graphiti_record_kind(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"edge", "fact", "entityedge", "entity_edge", "graphiti_edge"}:
+        return "edge"
+    if text in {"episode", "episodic", "episodicnode", "episodic_node"}:
+        return "episode"
+    return "entity"
+
+
+def _graphiti_writeback_signal_key(graphiti_kind: str) -> str:
+    if graphiti_kind == "edge":
+        return "graphiti_edge_uuid"
+    if graphiti_kind == "episode":
+        return "graphiti_episode_uuid"
+    return "graphiti_entity_uuid"
+
+
+def _external_ref_inputs(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_refs = payload.get("external_refs")
+    if raw_refs is None:
+        raw_refs = payload.get("refs")
+    if isinstance(raw_refs, list):
+        refs = [
+            dict(item)
+            for item in raw_refs
+            if isinstance(item, dict) and _has_external_ref_location_signal(item)
+        ]
+    else:
+        refs = []
+    if refs:
+        return refs[:20]
+    if _has_external_ref_location_signal(payload):
+        return [payload]
+    return []
+
+
+def _has_external_ref_location_signal(payload: dict[str, Any]) -> bool:
+    if _writeback_locators(payload):
+        return True
+    return bool(
+        str(payload.get("canonical_uri") or "").strip()
+        or str(payload.get("content_hash") or "").strip()
+    )
+
+
+def _external_ref_writeback_payload(
+    payload: dict[str, Any],
+    *,
+    graphiti_record_ref: dict[str, Any],
+    signal_key: str,
+    graphiti_uuid: str,
+    index: MemoryIdentityRefIndex,
+    ref_move_events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    ref_id = str(payload.get("ref_id") or "").strip()
+    locators = _writeback_locators(payload)
+    existing = index.refs.get(ref_id) if ref_id else None
+    event = _ref_move_event_draft(
+        ref_id=ref_id,
+        existing=existing,
+        incoming_locators=locators,
+        graphiti_record_ref=graphiti_record_ref,
+        requested_by=str(payload.get("requested_by") or "web_console"),
+    )
+    if event:
+        ref_move_events.append(event)
+    ref_meta = {
+        **_dict(payload.get("ref_meta")),
+        "m14_writeback": True,
+        "graphiti_record_ref": graphiti_record_ref,
+        "locator_kind": str(payload.get("locator_kind") or payload.get("ref_kind") or ""),
+    }
+    if event:
+        ref_meta.setdefault("ref_move_events", []).append(event)
+    return {
+        signal_key: graphiti_uuid,
+        "ref_id": ref_id,
+        "ref_kind": str(
+            payload.get("ref_kind")
+            or payload.get("kind")
+            or payload.get("locator_kind")
+            or "external_ref"
+        ),
+        "locators": locators,
+        "canonical_uri": str(payload.get("canonical_uri") or ""),
+        "content_hash": str(payload.get("content_hash") or ""),
+        "size": payload.get("size", 0),
+        "mime_type": str(payload.get("mime_type") or ""),
+        "version": str(payload.get("version") or ""),
+        "health": str(payload.get("health") or "unknown"),
+        "managed_by": str(payload.get("managed_by") or "unknown"),
+        "git_commit": str(payload.get("git_commit") or ""),
+        "ref_meta": ref_meta,
+    }
+
+
+def _writeback_locators(payload: dict[str, Any]) -> list[str]:
+    return _multi_values(
+        payload,
+        "locator",
+        "locators",
+        "locator_value",
+        "path",
+        "url",
+        "ecs_path",
+        "obsidian_path",
+    )
+
+
+def _ref_move_event_draft(
+    *,
+    ref_id: str,
+    existing: RefRecord | None,
+    incoming_locators: list[str],
+    graphiti_record_ref: dict[str, Any],
+    requested_by: str,
+) -> dict[str, Any]:
+    if existing is None:
+        if not incoming_locators:
+            return {}
+        return {
+            "event_type": "ref_created",
+            "ref_id": ref_id,
+            "old_locators": [],
+            "new_locators": incoming_locators,
+            "graphiti_record_ref": graphiti_record_ref,
+            "requested_by": requested_by,
+            "created_at": time.time(),
+            "write_policy": "record_in_refindex_then_emit_graphiti_audit_episode",
+        }
+    old_locators = list(existing.locators)
+    added = [locator for locator in incoming_locators if locator not in old_locators]
+    if not added:
+        return {}
+    return {
+        "event_type": "locator_added",
+        "ref_id": existing.ref_id,
+        "old_locators": old_locators,
+        "new_locators": _merge_unique(old_locators, incoming_locators),
+        "added_locators": added,
+        "graphiti_record_ref": graphiti_record_ref,
+        "requested_by": requested_by,
+        "created_at": time.time(),
+        "write_policy": "record_in_refindex_then_emit_graphiti_audit_episode",
+    }
+
+
+def _graphiti_ref_audit_episode_draft(
+    *,
+    identity: IdentityRecord,
+    graphiti_record_ref: dict[str, Any],
+    external_ref_records: list[dict[str, Any]],
+    ref_move_events: list[dict[str, Any]],
+    requested_by: str,
+) -> dict[str, Any]:
+    partition = str(graphiti_record_ref.get("partition") or "goslo")
+    graphiti_uuid = str(graphiti_record_ref.get("graphiti_uuid") or "")
+    graphiti_kind = str(graphiti_record_ref.get("graphiti_kind") or "entity")
+    ref_ids = [str(item.get("ref_id") or "") for item in external_ref_records]
+    move_count = len(ref_move_events)
+    body = {
+        "type": "parrot_ref_writeback_audit",
+        "requested_by": requested_by,
+        "canonical_uuid": identity.canonical_uuid,
+        "l2b_uuid": identity.l2b_uuid,
+        "graphiti": graphiti_record_ref,
+        "ref_ids": [item for item in ref_ids if item],
+        "ref_move_events": ref_move_events,
+        "policy": (
+            "IdentityRefIndex owns current locators. Historical Graphiti "
+            "Episodes remain immutable provenance."
+        ),
+    }
+    return {
+        "name": f"ref_writeback_{graphiti_kind}_{graphiti_uuid[:12] or 'unknown'}",
+        "partition": partition,
+        "source_description": "parrot-web-console-ref-writeback-audit",
+        "body": json.dumps(body, ensure_ascii=False, sort_keys=True),
+        "body_json": body,
+        "write_route": "/api/graphiti/episode",
+        "write_status": "draft_only",
+        "move_event_count": move_count,
+    }
 
 
 def _extract_graphiti_resolve_edges(payload: dict[str, Any]) -> list[dict[str, Any]]:

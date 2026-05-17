@@ -167,6 +167,85 @@ for the same module-level decision.
   lookup exists; ECS path stat/hash is guarded behind ECS-side worker
   confirmation to avoid local-dev false positives. This remains Web/Scheduler/
   Nanobot receipt plumbing, not a shared repair/write DTO.
+  M12-M13 continuation proved the true Graphiti path: Web subgraph search now
+  supports bounded strategy/depth/focal controls, GOSLO Intent uses the same
+  natural-language Graphiti route, `/api/graphiti/lookup` performs exact
+  partition-scoped UUID lookup for entity/fact/episode objects, subgraph hits
+  are enriched with raw fact/source/target/episode objects, 7893 can proxy
+  non-dry-run Episode writes and operator exports to ECS 8790, and FalkorDB
+  persistence was fixed with the official data path plus AOF/noeviction
+  configuration.
+  M14 research refresh adds the next candidate split before write-back:
+  `IdentityBinding` owns UUID equivalence, `GraphitiRecordRef` owns immutable
+  Graphiti pointers, `ExternalRefRecord` owns mutable locators/health/hash/git
+  state, and `RefMoveEvent` records approved moves/repairs while emitting a
+  Graphiti audit Episode. Official rustworkx docs also correct the index
+  policy: node/edge indices are graph-local volatile handles and can be reused
+  after deletion, so no App/Web/shared DTO should persist a rustworkx index as
+  business identity.
+  M14 first implementation slice adds Web-only semantic write-back routes:
+  `POST /api/memory/identity-ref-index/graphiti-ref/draft` and
+  `/graphiti-ref/apply`. They require a Graphiti UUID, produce an explicit
+  GraphitiRecordRef, bind reviewed ExternalRefRecords, draft RefMoveEvents for
+  new/moved locators, preserve raw Graphiti envelopes in identity metadata, and
+  generate a Graphiti audit Episode draft. Default operator apply persists only
+  the IdentityRefIndex JSON; it does not write L2-B, Graphiti/FalkorDB, ECS or
+  local files, manifests, or App DTOs. Empty external-ref inputs are filtered:
+  GraphitiRecordRef-only identity binding is valid, but ExternalRefRecord and
+  RefMoveEvent drafts require a locator, canonical URI, or content hash. Live
+  canary used real ECS Graphiti search
+  on `arknights_test`, selected fact UUID
+  `0ea2009c-402d-4332-81b4-31fa57e67688`, and persisted a temporary RefIndex
+  binding with direct Graphiti/L2-B writes false. Follow-up audit-write canary
+  enabled `write_graphiti_audit_episode=true`: the default 60s remote timeout
+  failed cleanly without a write, then `PARROT_WEB_CONSOLE_GRAPHITI_TIMEOUT_S=240`
+  successfully wrote the generated audit Episode through 7893 -> ECS 8790 with
+  `direct_graphiti_write=true` and
+  `mutation_scope=memory_identity_ref_index_json_and_graphiti_audit_episode`.
+  The existing 7893 Source Board now surfaces the route as a Web-only operator
+  panel for generated `identity_ref_drafts`; this remains candidate/UI receipt
+  work and does not promote an App DTO.
+  M15 continuation adds Graphiti SearchConfig recipe/filter support to the Web
+  search/import path: `search_recipe`, `node_labels`, and `edge_types` can flow
+  through Graphiti `_search(SearchConfig)` where available, and receipts record
+  whether low-level search or fallback public search ran. This improves the
+  Graphiti-to-L2-B proof without changing CORE-015 ownership: Graphiti remains
+  the temporal/provenance graph, IdentityRefIndex remains the UUID/ref
+  authority, and L2-B remains a rustworkx projection that must preserve raw
+  Graphiti envelopes instead of normalizing them into a fixed local ontology.
+  M16 continuation adds `graphiti_bundle` as the Web receipt/import package for
+  this boundary: search/export/import-plan now carry raw Graphiti envelopes,
+  fact/entity/episode/community sections, exact lookup payloads, SearchConfig
+  and multi-hop search plan data, preview edge drafts, IdentityRef drafts, and
+  an L2-B import overlay in one object. This strengthens CORE-015 without
+  promoting a shared DTO yet: Graphiti remains the provenance graph, RefIndex
+  and IdentityMap own UUID/ref truth, and L2-B materializes only resolved
+  runtime topology.
+  M17 continuation surfaces that same bundle in the Web Source Board as a
+  read-model panel and live-smokes it against ECS Graphiti data. This is UI
+  evidence for the candidate boundary, not a shared App DTO promotion.
+  M18 continuation deploys the same SearchConfig/bundle/import-plan adapter to
+  ECS app-monitor. Remote 8790 and 7893 passthrough both now prove
+  `_search(SearchConfig)`, raw bundle preservation, exact UUID lookup, and
+  L2-B import overlay against real Graphiti data; this is still Web/backend
+  receipt plumbing and does not promote a shared App DTO.
+  M19 continuation adds the first preview-only consumer of that preserved
+  bundle: CORE-013 `graphiti_bundle_projection`. Import-plan now embeds
+  `l2b_transform_preview` with pointer-style L2-B preview nodes,
+  `graphiti_fact` preview edges, episode support links, raw Graphiti metadata,
+  and an in-memory RustWorkX topology summary. Remote 8790 and 7893 passthrough
+  prove the path with true Graphiti data while keeping
+  `direct_l2b_write=false` and `rwx_idx_policy=ephemeral_do_not_persist`.
+  M20R review confirms this is an intentional boundary rather than schema
+  drift: local Node/Edge categories are for filtering, spatial/view grouping,
+  and RustWorkX graph transforms, while Graphiti relation names, UUIDs, labels,
+  source/target pointers, episodes, and raw envelopes stay in
+  `graphiti_bundle`. Canonical UUID/ref truth remains CORE-015
+  `IdentityBinding` + `GraphitiRecordRef` + `ExternalRefRecord` +
+  `RefMoveEvent`; preview ids and rustworkx indices must not become persistent
+  identifiers. Graphiti Episodes are provenance/audit, not the only mutable
+  locator store. Future promotion should require a DB-backed RefIndex review
+  before high-volume external ref sync.
 - CORE-009: 2026-05-15 Web implemented the first concrete Memory
   changed-since polling envelope at
   `GET /api/memory/live-state/changes?since=...&limit=...`. Shape is

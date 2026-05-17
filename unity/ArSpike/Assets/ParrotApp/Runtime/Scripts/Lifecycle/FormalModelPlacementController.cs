@@ -64,6 +64,7 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private float selectionRingWidthMeters = 0.008f;
         [SerializeField] private float selectionRingHeightOffsetMeters = 0.018f;
         [SerializeField] private float selectionRingMaxRadiusMeters = 0.65f;
+        [SerializeField] private float selectionHitboxPaddingMeters = 0.035f;
         [SerializeField] private Color selectionRingColor = new Color(1f, 1f, 1f, 0.72f);
         [SerializeField] private float demoSpawnAngleRangeDegrees = 45f;
         [SerializeField] private float tapMaxSeconds = 0.32f;
@@ -123,6 +124,7 @@ namespace ParrotApp.Lifecycle
         private Vector3 _placedBaseScale = Vector3.one;
         private GameObject _selectionVisual;
         private Material _selectionVisualMaterial;
+        private BoxCollider _templateSelectionHitbox;
         private bool _reportedGosloOutOfView;
         private Coroutine _heightNormalizationCoroutine;
         private bool _userScaleOverrideActive;
@@ -383,6 +385,7 @@ namespace ParrotApp.Lifecycle
                 _heightNormalizationCoroutine = null;
             }
             DestroySelectionVisual();
+            _templateSelectionHitbox = null;
             HasPlacedModel = false;
             HasSelectedModel = false;
             ScaleMultiplier = 1f;
@@ -424,6 +427,7 @@ namespace ParrotApp.Lifecycle
             _userScaleOverrideActive = true;
             ScaleMultiplier = Mathf.Clamp(multiplier, Mathf.Max(0.05f, minScaleMultiplier), Mathf.Max(minScaleMultiplier, maxScaleMultiplier));
             ApplyScaleMultiplier();
+            EnsureArMobileTemplateCollider(PlacedModel);
             LastSelectionStatus = "scaled:" + ScaleMultiplier.ToString("0.00") + ":" + ShortReason(reason);
             NotifyPlacementStateChanged();
         }
@@ -868,6 +872,16 @@ namespace ParrotApp.Lifecycle
             if (placementCamera == null) return false;
 
             var ray = placementCamera.ScreenPointToRay(screenPoint);
+            var colliders = PlacedModel.GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                var collider = colliders[i];
+                if (collider == null || !collider.enabled)
+                    continue;
+                if (collider.Raycast(ray, out RaycastHit hit, 100f))
+                    return true;
+            }
+
             Bounds bounds;
             if (!TryGetPlacedModelBounds(out bounds))
             {
@@ -905,6 +919,7 @@ namespace ParrotApp.Lifecycle
             if (_placedBaseScale.sqrMagnitude < 0.0001f)
                 _placedBaseScale = PlacedModel.transform.localScale;
             PlacedModel.transform.localScale = _placedBaseScale * ScaleMultiplier;
+            EnsureArMobileTemplateCollider(PlacedModel);
             SnapPlacedModelBottomToLastSurface("scale");
             RebasePlacedAnimationDrivers();
         }
@@ -1111,9 +1126,10 @@ namespace ParrotApp.Lifecycle
 
             if (_heightNormalizedOnce)
                 RefreshScaleMultiplierFromPlacedTransform();
+            EnsureArMobileTemplateCollider(PlacedModel);
             RebasePlacedAnimationDrivers();
 
-            SelectPlacedModel(false, "xri_release");
+            SelectPlacedModel(true, "xri_release");
             LastTemplateXriStatus = "released";
         }
 
@@ -1165,24 +1181,25 @@ namespace ParrotApp.Lifecycle
             return false;
         }
 
-        private static void EnsureArMobileTemplateCollider(GameObject go)
+        private void EnsureArMobileTemplateCollider(GameObject go)
         {
-            var colliders = go.GetComponentsInChildren<Collider>(true);
-            for (int i = 0; i < colliders.Length; i++)
-            {
-                if (colliders[i] != null && colliders[i].enabled)
-                    return;
-            }
+            if (go == null) return;
+            if (_templateSelectionHitbox == null || _templateSelectionHitbox.gameObject != go)
+                _templateSelectionHitbox = go.GetComponent<BoxCollider>() ?? go.AddComponent<BoxCollider>();
 
-            var box = go.AddComponent<BoxCollider>();
+            var box = _templateSelectionHitbox;
+            box.enabled = true;
+            box.isTrigger = false;
             if (TryGetObjectRendererBounds(go, out Bounds bounds))
             {
                 box.center = go.transform.InverseTransformPoint(bounds.center);
                 var localSize = go.transform.InverseTransformVector(bounds.size);
+                float localPadding = Mathf.Max(0f, selectionHitboxPaddingMeters)
+                                     / Mathf.Max(0.0001f, MaxAbsComponent(go.transform.lossyScale));
                 box.size = new Vector3(
-                    Mathf.Max(0.04f, Mathf.Abs(localSize.x)),
-                    Mathf.Max(0.04f, Mathf.Abs(localSize.y)),
-                    Mathf.Max(0.04f, Mathf.Abs(localSize.z)));
+                    Mathf.Max(0.04f, Mathf.Abs(localSize.x) + localPadding),
+                    Mathf.Max(0.04f, Mathf.Abs(localSize.y) + localPadding),
+                    Mathf.Max(0.04f, Mathf.Abs(localSize.z) + localPadding));
             }
             else
             {
