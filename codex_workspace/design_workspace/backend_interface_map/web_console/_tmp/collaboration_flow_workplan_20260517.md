@@ -50,6 +50,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-13 | done-first-slice | Durable result-destination contract for Plan/Scheduler results. | Added `workflow_result_contract_v1` preview and carries result routes in Plan step inputs; Scheduler enforcement remains a reviewed follow-up before autonomous chained workflows. |
 | CFW-14 | done-first-slice | Workflow result intake and reviewed result-route consumption. | Added Web-only result intake for `workflow_result_contract_v1`; operator mode can stage reviewed results to IntentWorkspace and records a bounded Web ledger. |
 | CFW-15 | done-first-slice | Interaction-mode catalog and filter. | Capability rows now carry `interaction_modes` on the L0/L1/L2/C3/C4/I0 ladder; React Runtime can filter capabilities by mode. C4/I0 stay future-policy definitions with no automatic execution. |
+| CFW-16 | done-research | Comparative architecture and CLI decision research. | Recorded `../collaboration_flow_architecture_cli_research_20260517.md`: Web remains the primary workbench; a thin Parrot CLI is recommended later for catalog/workflow validation, import/export, Plan draft, result-intake preview, and ECS smoke. |
 
 ## First Slice Design
 
@@ -307,3 +308,12 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `return_to_goslo` / `stage_to_intent_workspace` result destinations, not from
   module membership alone. Retest: snapshot modes are `L0,L2`, while C3 filter
   still returns context-capable rows.
+- 2026-05-17 CFW-16 research: reviewed the existing Collaboration Flow SSOT,
+  nanobot SDK/CLI notes, ECS release workflow, and official docs for LangGraph,
+  Claude Code, OpenAI Codex CLI, ComfyUI, Node-RED, n8n, Temporal, and Prefect.
+  Recorded the comparative decision in
+  `../collaboration_flow_architecture_cli_research_20260517.md`: use Web as the
+  primary operator workbench, add a thin Parrot CLI later for validation,
+  import/export, Plan draft, result-intake preview, and true-connection smokes,
+  and keep nanobot as an embedded worker rather than a CLI/gateway control
+  plane.
