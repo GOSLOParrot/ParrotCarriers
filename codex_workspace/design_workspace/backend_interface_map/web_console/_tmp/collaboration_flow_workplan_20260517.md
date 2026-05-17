@@ -190,3 +190,10 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   to `src/parrot/brain/app_monitor_server.py` as the ECS-facing parity slice.
   Verification: `py_compile` passed; `tests/test_brain/test_app_v1_monitor.py`
   reported `11 passed`; focused Web workflow tests passed.
+- 2026-05-17 remote proof after commit `74f6d27`: ECS `/opt/parrot/ParrotCarriers`
+  and `/opt/parrotcarriers` both fast-forwarded to `74f6d27`; `parrot-app-monitor`,
+  `parrot-scheduler`, `parrot-goslo-chat`, `parrot-maid`,
+  `parrot-orchestrator`, and `parrot-brain` restarted active. Remote
+  `http://8.216.45.45:8790` smoke returned workflow catalog registry row,
+  saved `ecs-smoke-workflow`, loaded `[REDACTED]` for `api_token`, imported it
+  by `workflow_id` into one `ref_scan` Plan step, and deleted it.
