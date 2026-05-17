@@ -25,6 +25,7 @@ import {
   CheckCircle2,
   CircleDot,
   Database,
+  Download,
   FileText,
   Filter,
   GitBranch,
@@ -36,6 +37,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Save,
   Search,
   Settings,
   ShieldCheck,
@@ -59,6 +61,7 @@ import type {
   RuntimeCapabilityCatalog,
   RuntimeFlowChanges,
   RuntimeFlow,
+  RuntimeWorkflowDrafts,
   TriggerCatalog,
   VisionEvidenceStatus,
   VisionEvidenceTimeline
@@ -322,7 +325,13 @@ const dict = {
     allKinds: "All kinds",
     insertWorkflowNode: "Insert",
     workflowDraft: "Workflow draft",
+    workflowTitle: "Workflow title",
+    saveWorkflow: "Save",
+    loadWorkflow: "Load",
+    deleteWorkflow: "Delete",
+    savedWorkflows: "Saved workflows",
     noWorkflowNodes: "No workflow nodes inserted yet.",
+    noSavedWorkflows: "No saved workflows.",
     noCapabilityMatches: "No matching capabilities.",
     executeNode: "Fire",
     draftPlan: "Import Plan",
@@ -516,7 +525,13 @@ const dict = {
     allKinds: "全部类型",
     insertWorkflowNode: "插入",
     workflowDraft: "工作流草稿",
+    workflowTitle: "工作流标题",
+    saveWorkflow: "保存",
+    loadWorkflow: "加载",
+    deleteWorkflow: "删除",
+    savedWorkflows: "已保存工作流",
     noWorkflowNodes: "还没有插入工作流节点。",
+    noSavedWorkflows: "暂无已保存工作流。",
     noCapabilityMatches: "没有匹配的能力。",
     executeNode: "触发",
     draftPlan: "导入 Plan",
@@ -2613,7 +2628,10 @@ function RuntimeFlowWorkspace({
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
   const [capabilityQuery, setCapabilityQuery] = useState("");
   const [capabilityKind, setCapabilityKind] = useState("");
+  const [workflowTitle, setWorkflowTitle] = useState("Runtime Flow custom workflow");
+  const [savedWorkflowId, setSavedWorkflowId] = useState("");
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraftNode[]>([]);
+  const [workflowDrafts, setWorkflowDrafts] = useState<RuntimeWorkflowDrafts>({});
   const [evidenceRefreshSeq, setEvidenceRefreshSeq] = useState(0);
   const pokeEvidenceRefresh = useCallback(() => {
     setEvidenceRefreshSeq((value) => value + 1);
@@ -2631,6 +2649,22 @@ function RuntimeFlowWorkspace({
       .slice(0, 36),
     [capabilityRows, capabilityKind, capabilityQuery]
   );
+  const savedWorkflowRows = useMemo(
+    () => (workflowDrafts.drafts ?? []).filter((row) => row && typeof row === "object"),
+    [workflowDrafts]
+  );
+
+  const refreshWorkflowDrafts = useCallback(async () => {
+    try {
+      setWorkflowDrafts(await api.runtimeWorkflowDrafts());
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow_drafts.list", exc));
+    }
+  }, [pushReceipt]);
+
+  useEffect(() => {
+    void refreshWorkflowDrafts();
+  }, [refreshWorkflowDrafts]);
 
   const nodes = useMemo<Node[]>(() => {
     const lanes = flow.lanes ?? [];
@@ -2771,6 +2805,61 @@ function RuntimeFlowWorkspace({
     setWorkflowDraft((rows) => rows.filter((row) => row.workflow_node_id !== nodeId));
   };
 
+  const saveWorkflowDraft = async () => {
+    if (!workflowDraft.length) {
+      pushReceipt(localReceipt("runtime.workflow_drafts.save", false, { error: "empty_workflow_draft" }));
+      return;
+    }
+    try {
+      const receipt = await api.runtimeWorkflowDraftSave({
+        workflow_id: savedWorkflowId,
+        title: workflowTitle,
+        workflow_nodes: workflowDraft
+      });
+      const saved = recordFromUnknown(receipt);
+      const summary = recordFromUnknown(saved.summary);
+      setSavedWorkflowId(String(saved.workflow_id || summary.workflow_id || savedWorkflowId || ""));
+      pushReceipt(receipt);
+      await refreshWorkflowDrafts();
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow_drafts.save", exc, { workflow_node_count: workflowDraft.length }));
+    }
+  };
+
+  const loadWorkflowDraft = async (workflowId: string) => {
+    try {
+      const receipt = await api.runtimeWorkflowDraftGet(workflowId);
+      const loaded = recordFromUnknown(recordFromUnknown(receipt).draft);
+      const nodes = Array.isArray(loaded.nodes) ? loaded.nodes : [];
+      setWorkflowDraft(nodes
+        .map((row) => recordFromUnknown(row))
+        .filter((row) => Object.keys(row).length)
+        .map((row, index) => ({
+          workflow_node_id: String(row.workflow_node_id || `wf-loaded-${index + 1}`),
+          capability: recordFromUnknown(row.capability).capability_id ? recordFromUnknown(row.capability) : row,
+          created_at: String(row.created_at || loaded.updated_at || new Date().toISOString())
+        })));
+      setWorkflowTitle(String(loaded.title || "Runtime Flow custom workflow"));
+      setSavedWorkflowId(String(loaded.workflow_id || workflowId));
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow_drafts.get", exc, { workflow_id: workflowId }));
+    }
+  };
+
+  const deleteWorkflowDraft = async (workflowId: string) => {
+    try {
+      const receipt = await api.runtimeWorkflowDraftDelete(workflowId);
+      if (workflowId === savedWorkflowId) {
+        setSavedWorkflowId("");
+      }
+      pushReceipt(receipt);
+      await refreshWorkflowDrafts();
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow_drafts.delete", exc, { workflow_id: workflowId }));
+    }
+  };
+
   const executeWorkflowNode = async (node: WorkflowDraftNode) => {
     const capability = node.capability;
     if (String(capability.kind || "") !== "trigger") {
@@ -2813,7 +2902,8 @@ function RuntimeFlowWorkspace({
     }
     try {
       pushReceipt(await api.runtimeWorkflowPlanDraft({
-        title: "Runtime Flow custom workflow",
+        title: workflowTitle,
+        workflow_id: savedWorkflowId,
         workflow_nodes: workflowDraft,
         dry_run: !operatorMode,
         operator_mode: operatorMode
@@ -2936,10 +3026,19 @@ function RuntimeFlowWorkspace({
           <div className="workflow-draft-panel">
             <div className="trigger-catalog-title">
               <strong><Workflow size={15} /> {t.workflowDraft}</strong>
-              <button className="button small" onClick={() => void importWorkflowPlan()}>
-                <UploadCloud size={14} /> {t.draftPlan}
-              </button>
+              <span className="workflow-draft-actions">
+                <button className="button small" onClick={() => void saveWorkflowDraft()}>
+                  <Save size={14} /> {t.saveWorkflow}
+                </button>
+                <button className="button small" onClick={() => void importWorkflowPlan()}>
+                  <UploadCloud size={14} /> {t.draftPlan}
+                </button>
+              </span>
             </div>
+            <label className="workflow-title-field">
+              <span>{t.workflowTitle}</span>
+              <input value={workflowTitle} onChange={(event) => setWorkflowTitle(event.target.value)} />
+            </label>
             {workflowDraft.length ? (
               <div className="workflow-draft-list">
                 {workflowDraft.map((node, index) => (
@@ -2961,6 +3060,30 @@ function RuntimeFlowWorkspace({
                 ))}
               </div>
             ) : <p className="muted">{t.noWorkflowNodes}</p>}
+            <div className="saved-workflow-panel">
+              <strong>{t.savedWorkflows}</strong>
+              {savedWorkflowRows.length ? (
+                <div className="saved-workflow-list">
+                  {savedWorkflowRows.slice(0, 8).map((row) => {
+                    const workflowId = String(row.workflow_id || "");
+                    return (
+                      <div className={workflowId === savedWorkflowId ? "saved-workflow-row active" : "saved-workflow-row"} key={workflowId || String(row.title)}>
+                        <span>
+                          <b>{String(row.title || workflowId || "workflow")}</b>
+                          <small>{`${String(row.node_count ?? 0)} nodes / ${String(row.plan_compatible_count ?? 0)} Plan`}</small>
+                        </span>
+                        <button className="button tiny" onClick={() => void loadWorkflowDraft(workflowId)}>
+                          <Download size={13} /> {t.loadWorkflow}
+                        </button>
+                        <button className="button tiny danger" onClick={() => void deleteWorkflowDraft(workflowId)} aria-label={t.deleteWorkflow}>
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : <p className="muted">{t.noSavedWorkflows}</p>}
+            </div>
           </div>
         </div>
         <div className="trigger-catalog">

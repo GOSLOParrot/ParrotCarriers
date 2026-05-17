@@ -9,6 +9,7 @@ import type {
   RuntimeCapabilityCatalog,
   RuntimeFlow,
   RuntimeFlowChanges,
+  RuntimeWorkflowDrafts,
   TriggerCatalog,
   VisionEvidenceStatus,
   VisionEvidenceTimeline
@@ -46,6 +47,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  runtimeWorkflowDrafts: () => json<RuntimeWorkflowDrafts>("/api/runtime/workflows/drafts"),
+  runtimeWorkflowDraftGet: (workflowId: string) =>
+    json<Receipt>(`/api/runtime/workflows/drafts/${encodeURIComponent(workflowId)}`),
+  runtimeWorkflowDraftSave: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/runtime/workflows/drafts", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  runtimeWorkflowDraftDelete: (workflowId: string) =>
+    json<Receipt>(`/api/runtime/workflows/drafts/${encodeURIComponent(workflowId)}`, { method: "DELETE" }),
   livekitConfig: () => json<LiveKitConfig>("/api/livekit/config"),
   livekitWebToken: (body: Record<string, unknown>) =>
     json<LiveKitToken>("/api/livekit/web-token", {

@@ -129,6 +129,20 @@ def _runtime_capabilities() -> list[dict[str, Any]]:
             tags=["plan_request", "nanobot_task"],
             result_destinations=["stage_to_intent_workspace", "return_to_goslo", "view_only"],
         ),
+        _capability(
+            "runtime.workflow_drafts.registry",
+            "Workflow draft registry",
+            "Save, list, reload, and delete Web-only Collaboration Flow workflow drafts.",
+            kind="workflow_template",
+            route="/api/runtime/workflows/drafts",
+            method="GET/POST/DELETE",
+            execution_policy="operator_gated",
+            true_connection_state="operator_gated_write",
+            modules=["runtime_operator", "plan_registry"],
+            tags=["plan_request", "status_notice"],
+            result_destinations=["view_only", "return_to_goslo"],
+            notes="Durable Web draft storage only; not a shared Scheduler protocol.",
+        ),
     ]
 
 

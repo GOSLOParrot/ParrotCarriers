@@ -268,10 +268,18 @@ async def draft_workflow_plan(payload: dict[str, Any] | None = None) -> dict[str
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
     workflow_nodes = _workflow_nodes_from_body(body)
+    saved_workflow: dict[str, Any] = {}
+    if not workflow_nodes and body.get("workflow_id"):
+        from parrot.web_console.workflow_drafts import get_workflow_draft_record
+
+        saved_workflow = get_workflow_draft_record(str(body.get("workflow_id") or "")) or {}
+        nodes = saved_workflow.get("nodes")
+        workflow_nodes = list(nodes) if isinstance(nodes, list) else []
     workflow = body.get("workflow") if isinstance(body.get("workflow"), dict) else {}
     title = str(
         body.get("title")
         or workflow.get("title")
+        or saved_workflow.get("title")
         or workflow.get("name")
         or "Web Console workflow plan"
     ).strip()
@@ -280,6 +288,7 @@ async def draft_workflow_plan(payload: dict[str, Any] | None = None) -> dict[str
         "title": title,
         "workflow_node_count": len(workflow_nodes),
         "compatible_step_count": len(compatible_steps),
+        "source_workflow_id": str(body.get("workflow_id") or saved_workflow.get("workflow_id") or ""),
         "skipped_nodes": skipped_nodes,
         "steps": [
             {

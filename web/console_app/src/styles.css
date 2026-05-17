@@ -1110,6 +1110,33 @@ select {
   gap: 8px;
 }
 
+.workflow-draft-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.workflow-title-field {
+  display: grid;
+  gap: 4px;
+}
+
+.workflow-title-field span,
+.saved-workflow-panel > strong {
+  color: #aeb7c5;
+  font-size: 12px;
+}
+
+.workflow-title-field input {
+  width: 100%;
+  border: 1px solid #343842;
+  border-radius: 8px;
+  background: #171a21;
+  color: #edf2f7;
+  padding: 8px 10px;
+}
+
 .workflow-draft-list {
   display: grid;
   gap: 6px;
@@ -1141,6 +1168,53 @@ select {
   min-width: 0;
   display: grid;
   gap: 2px;
+}
+
+.saved-workflow-panel {
+  border-top: 1px solid #343842;
+  padding-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.saved-workflow-list {
+  display: grid;
+  gap: 6px;
+}
+
+.saved-workflow-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #343842;
+  border-radius: 8px;
+  background: #191c23;
+  padding: 7px;
+}
+
+.saved-workflow-row.active {
+  border-color: #65c98a;
+  box-shadow: 0 0 0 1px rgba(101, 201, 138, 0.2);
+}
+
+.saved-workflow-row span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.saved-workflow-row b {
+  color: #eef4fb;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-workflow-row small {
+  color: #9aa4b2;
+  font-size: 11px;
 }
 
 .trigger-catalog {

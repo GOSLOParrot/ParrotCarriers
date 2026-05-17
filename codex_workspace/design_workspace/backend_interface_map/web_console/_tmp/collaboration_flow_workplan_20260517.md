@@ -43,7 +43,10 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-6 | done | Draft workflow -> PlanProposal route. | Backend unit test creates a Plan in `AWAITING_USER_CONFIRMATION`; HTTP smoke previews nested workflow -> `ref_scan` step. |
 | CFW-7 | done-first-slice | Nanobot-compatible Plan/Task dispatch preview. | Compatible capability nodes become `PlanStepProposal.expected_tool` values from `NANOBOT_TASK_TYPES`; direct task execution remains Scheduler/Nanobot-gated. |
 | CFW-8 | done-first-slice | Result destination policy design and Plan gap note. | Catalog exposes `result_destinations`; durable Plan result routing remains a documented follow-up. |
-| CFW-9 | in_progress | Post-implementation review/bugfix/ECS release if needed. | Local tests/build/smoke done; commit/push/ECS update still pending. |
+| CFW-9 | done | Post-implementation review/bugfix/ECS release if needed. | First slice committed/pushed as `1137475` and ECS services were updated/restarted. |
+| CFW-10 | done | Durable Web workflow draft registry. | Added save/list/get/delete routes, secret redaction, local UI save/load/delete controls, and `workflow_id` Plan import. |
+| CFW-11 | pending | Durable result-destination contract for Plan/Scheduler results. | Needs a reviewed schema before autonomous chained workflows. |
+| CFW-12 | pending | Trigger/message HITL state machine. | Current trigger fire remains operator-gated receipt-based execution. |
 
 ## First Slice Design
 
@@ -169,3 +172,14 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `7` nodes, and `3` edges; `POST /api/graphiti/subgraph/import-plan` with
   `selected_hits` returned success with `2` observations, `2` bundle facts, and
   `3` bundle entities.
+- 2026-05-17: Implemented CFW-10 durable Web workflow draft registry:
+  `GET/POST/DELETE /api/runtime/workflows/drafts`, `GET
+  /api/runtime/workflows/drafts/{workflow_id}`, and `workflow_id` support in
+  `/api/runtime/workflow/plan-draft`. Drafts preserve capability nodes,
+  result-destination metadata, tags, and audit fields while redacting likely
+  secret/token/password/API-key fields. React Runtime can save, load, delete,
+  and re-import saved workflow drafts. Verification: focused compile/tests and
+  frontend typecheck passed; full Web routes reported `91 passed`; `npm run
+  build` passed with the existing chunk warning. HTTP smoke on restarted 7893
+  saved `wf-smoke`, listed it, loaded it with `[REDACTED]` token payload,
+  imported it by `workflow_id` into one `ref_scan` Plan step, then deleted it.

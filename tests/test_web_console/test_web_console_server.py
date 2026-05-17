@@ -226,6 +226,81 @@ def test_runtime_workflow_plan_draft_imports_nanobot_capabilities_to_hitl() -> N
         set_intent_workspace_for_test(None)
 
 
+def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeypatch, tmp_path) -> None:
+    from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
+    from parrot.brain.plan import PlanRegistry, set_plan_registry_for_test
+
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_WORKFLOW_DRAFTS_PATH", str(tmp_path / "workflow_drafts.json"))
+    set_intent_workspace_for_test(IntentWorkspace())
+    registry = PlanRegistry(dispatch_task=_fake_plan_dispatch)
+    set_plan_registry_for_test(registry)
+    try:
+        client = TestClient(build_app(status_fetcher=_fake_fetcher))
+        nodes = [
+            {
+                "workflow_node_id": "wf-ref-scan",
+                "capability": {
+                    "capability_id": "nanobot.ref_scan",
+                    "title": "Ref scan",
+                    "kind": "nanobot_task",
+                    "nanobot_task_type": "ref_scan",
+                    "plan_step_compatible": True,
+                    "result_destinations": ["stage_to_intent_workspace"],
+                    "sample_payload": {"api_token": "should-not-persist"},
+                },
+            },
+            {
+                "workflow_node_id": "wf-trigger",
+                "capability": {
+                    "capability_id": "trigger.intent_event_boundary",
+                    "title": "Intent boundary",
+                    "kind": "trigger",
+                    "result_destinations": ["return_to_goslo"],
+                },
+            },
+        ]
+
+        saved = client.post(
+            "/api/runtime/workflows/drafts",
+            json={
+                "workflow_id": "wf-demo",
+                "title": "Demo durable workflow",
+                "workflow_nodes": nodes,
+                "tags": ["demo"],
+            },
+        ).json()
+        listed = client.get("/api/runtime/workflows/drafts?q=demo").json()
+        loaded = client.get("/api/runtime/workflows/drafts/wf-demo").json()
+        preview_plan = client.post(
+            "/api/runtime/workflow/plan-draft",
+            json={"workflow_id": "wf-demo", "dry_run": True},
+        ).json()
+        applied_plan = client.post(
+            "/api/runtime/workflow/plan-draft",
+            json={"workflow_id": "wf-demo", "dry_run": False, "operator_mode": True},
+        ).json()
+        deleted = client.delete("/api/runtime/workflows/drafts/wf-demo").json()
+        missing = client.get("/api/runtime/workflows/drafts/wf-demo").json()
+
+        assert saved["action"] == "runtime.workflow_drafts.save"
+        assert saved["success"] is True
+        assert saved["summary"]["node_count"] == 2
+        assert saved["summary"]["trigger_count"] == 1
+        assert saved["summary"]["plan_compatible_count"] == 1
+        assert listed["count"] == 1
+        assert loaded["draft"]["nodes"][0]["capability"]["sample_payload"]["api_token"] == "[REDACTED]"
+        assert preview_plan["success"] is True
+        assert preview_plan["data"]["source_workflow_id"] == "wf-demo"
+        assert preview_plan["data"]["steps"][0]["expected_tool"] == "ref_scan"
+        assert applied_plan["success"] is True
+        assert registry.get(applied_plan["data"]["created_plan_id"]) is not None
+        assert deleted["deleted"] is True
+        assert missing["success"] is False
+    finally:
+        set_plan_registry_for_test(None)
+        set_intent_workspace_for_test(None)
+
+
 def test_graphiti_status_search_and_dry_run_routes_are_exposed(monkeypatch) -> None:
     from parrot.brain import graphiti_console
 

@@ -326,7 +326,8 @@ Verification:
 
 Remaining gaps:
 
-- Workflow drafts are local UI state, not durable workflow documents yet.
+- Workflow drafts now persist in Web-only JSON storage, but they are not shared
+  Scheduler workflow documents yet.
 - Only Nanobot-compatible capabilities become Plan steps. Trigger nodes can be
   executed from the draft, but they are not yet represented as durable Plan
   steps with result-routing semantics.
@@ -337,3 +338,47 @@ Remaining gaps:
 - C4/I0 behavior-mode changes still need explicit safe-turn and interruption
   policy before any realtime Gemini Live surface can mutate memory or fire
   workflows.
+
+## 2026-05-17 Second Slice Completion
+
+Implemented:
+
+- Added Web-only durable workflow draft storage under
+  `PARROT_WEB_CONSOLE_WORKFLOW_DRAFTS_PATH` or
+  `data/web_console/workflow_drafts.json`.
+- Added routes:
+  - `GET /api/runtime/workflows/drafts`
+  - `POST /api/runtime/workflows/drafts`
+  - `GET /api/runtime/workflows/drafts/{workflow_id}`
+  - `DELETE /api/runtime/workflows/drafts/{workflow_id}`
+- Added `workflow_id` support to `POST /api/runtime/workflow/plan-draft`, so a
+  saved draft can be imported into the existing Plan/HITL path after page
+  reload.
+- Draft records preserve workflow title, capability nodes, edges, tags, result
+  destinations, created/updated timestamps, and Web-only audit fields.
+- Draft persistence redacts likely sensitive keys such as `token`, `secret`,
+  `password`, `api_key`, `authorization`, and `credential`.
+- React Runtime now has workflow title, Save, Import Plan, saved workflow list,
+  Load, and Delete controls.
+
+Verification:
+
+- `py_compile` for `workflow_drafts.py`, `runtime_flow.py`, `server.py`, and
+  `capability_catalog.py` passed.
+- Focused route tests passed.
+- `pytest tests/test_web_console/test_web_console_server.py -q` -> `91 passed`.
+- `npm run typecheck` -> passed.
+- `npm run build` -> passed with the existing chunk warning.
+- Restarted local `7893` with temporary draft storage and ECS Graphiti proxy.
+- HTTP smoke saved `wf-smoke`, listed it, loaded it with `api_token` redacted to
+  `[REDACTED]`, imported it by `workflow_id` into one `ref_scan` Plan step, and
+  deleted it.
+
+Remaining gaps after second slice:
+
+- Workflow drafts are durable Web operator artifacts, not shared Scheduler
+  execution graphs.
+- Plan result destinations are still stored in step inputs/catalog metadata,
+  not a reviewed Plan/Scheduler result-routing schema.
+- Trigger nodes can execute directly from the workbench, but durable trigger
+  nodes inside Plan/HITL still need a separate target-state design.

@@ -96,6 +96,14 @@ export type RuntimeCapabilityCatalog = {
   audit?: Record<string, unknown>;
 };
 
+export type RuntimeWorkflowDrafts = {
+  success?: boolean;
+  action?: string;
+  drafts?: Array<Record<string, unknown>>;
+  count?: number;
+  audit?: Record<string, unknown>;
+};
+
 export type VisionEvidenceStatus = {
   action?: string;
   sample_count?: number;

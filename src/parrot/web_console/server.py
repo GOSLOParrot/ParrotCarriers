@@ -501,6 +501,35 @@ def build_app(
 
         return await draft_workflow_plan(payload or {})
 
+    @app.get("/api/runtime/workflows/drafts")
+    async def runtime_workflow_drafts(
+        q: str = "",
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        from parrot.web_console.workflow_drafts import list_workflow_drafts
+
+        return list_workflow_drafts(q=q, limit=limit)
+
+    @app.get("/api/runtime/workflows/drafts/{workflow_id}")
+    async def runtime_workflow_draft_get(workflow_id: str) -> dict[str, Any]:
+        from parrot.web_console.workflow_drafts import get_workflow_draft
+
+        return get_workflow_draft(workflow_id)
+
+    @app.post("/api/runtime/workflows/drafts")
+    async def runtime_workflow_draft_save(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.workflow_drafts import save_workflow_draft
+
+        return save_workflow_draft(payload or {})
+
+    @app.delete("/api/runtime/workflows/drafts/{workflow_id}")
+    async def runtime_workflow_draft_delete(workflow_id: str) -> dict[str, Any]:
+        from parrot.web_console.workflow_drafts import delete_workflow_draft
+
+        return delete_workflow_draft(workflow_id)
+
     @app.get("/api/dsg/triggers/catalog")
     async def dsg_triggers_catalog() -> dict[str, Any]:
         from parrot.web_console.memory_ops import trigger_catalog
