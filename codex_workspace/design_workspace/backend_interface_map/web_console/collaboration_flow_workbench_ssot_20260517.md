@@ -758,6 +758,13 @@ Verification:
   redacted.
 - Local CLI import preview reported `wf-trigger` as added,
   `wf-ref-scan` as kept, and kept `cli-import-secret` out of the receipt.
+- ECS release to commit `e2fc57c5` completed through
+  `infra/ecs-release.ps1`; all six services returned active.
+- ECS CLI smoke on `/opt/parrot/ParrotCarriers` exported `ecs-cli-export-*`
+  from a temporary draft store with `ecs-cli-export-secret` redacted, then
+  import-previewed `ecs-cli-import` against `ecs-cli-target` with
+  `wf-trigger` added, `wf-ref-scan` kept, `ecs-cli-import-secret` redacted,
+  and `would_save=false`.
 
 Remaining gaps after this slice:
 

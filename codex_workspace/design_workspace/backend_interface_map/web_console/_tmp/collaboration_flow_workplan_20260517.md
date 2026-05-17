@@ -60,7 +60,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-19 | done-first-slice | Web import/export/diff preview for workflow drafts. | Runtime Flow now has Validate, Export, Import preview, Load import, JSON artifact textarea, and diff summary. Imported artifacts still persist only through the existing Save route after operator review. |
 | CFW-20 | done-first-slice | Thin CLI first slice: `workflow validate` and `catalog list`. | Added `python -m parrot.web_console.flow_cli` with JSON-first `catalog list` and `workflow validate`; it reuses backend catalog/schema helpers, performs no writes, returns nonzero for invalid workflows, redacts secrets, and accepts UTF-8 BOM JSON from Windows tools. |
 | CFW-21 | done-first-slice | True-connection smoke pack for local/ECS workflow artifact path. | Local 7894 and ECS 8790 both proved save/validate/export/import-preview/delete with redaction; ECS also proved Plan draft still maps the imported workflow to `ref_scan`. |
-| CFW-22 | done-local | Thin CLI workflow export/import dry-run. | Added `workflow export <workflow_id>` and `workflow import <workflow.json> --target-workflow ...` to `python -m parrot.web_console.flow_cli`; both reuse backend schema helpers, emit JSON/table receipts, redact secrets, and perform no writes. ECS proof follows commit/push/release. |
+| CFW-22 | done-ecs | Thin CLI workflow export/import dry-run. | Added `workflow export <workflow_id>` and `workflow import <workflow.json> --target-workflow ...` to `python -m parrot.web_console.flow_cli`; both reuse backend schema helpers, emit JSON/table receipts, redact secrets, and perform no writes. Local and ECS CLI smoke passed after release. |
 
 ## First Slice Design
 
@@ -393,3 +393,12 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `91 passed`; CLI smoke exported `cli-export-smoke` with
   `cli-export-secret` redacted and import-previewed `cli-import-smoke` with
   `wf-trigger` added, `wf-ref-scan` kept, and `cli-import-secret` redacted.
+- 2026-05-17 CFW-22 ECS validation: committed/pushed `e2fc57c5`
+  (`Add flow CLI export import preview`) and released with
+  `infra/ecs-release.ps1 -Branch master -AllowLocalDirty`; all six ECS services
+  returned active. Remote CLI smoke on `/opt/parrot/ParrotCarriers` exported
+  `ecs-cli-export-*` from a temporary draft store with
+  `ecs-cli-export-secret` redacted, then import-previewed
+  `ecs-cli-import` against `ecs-cli-target` with `wf-trigger` added,
+  `wf-ref-scan` kept, `ecs-cli-import-secret` redacted, and
+  `would_save=false`.
