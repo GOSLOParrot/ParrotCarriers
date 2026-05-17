@@ -6,6 +6,7 @@ import type {
   LiveState,
   MemoryLiveStateChanges,
   Receipt,
+  RuntimeCapabilityCatalog,
   RuntimeFlow,
   RuntimeFlowChanges,
   TriggerCatalog,
@@ -39,6 +40,12 @@ export const api = {
     ),
   l15Pool: () => json<L15Pool>("/api/l15/pool"),
   runtimeFlow: () => json<RuntimeFlow>("/api/runtime/flow"),
+  runtimeCapabilities: () => json<RuntimeCapabilityCatalog>("/api/runtime/capabilities/catalog"),
+  runtimeWorkflowPlanDraft: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/runtime/workflow/plan-draft", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   livekitConfig: () => json<LiveKitConfig>("/api/livekit/config"),
   livekitWebToken: (body: Record<string, unknown>) =>
     json<LiveKitToken>("/api/livekit/web-token", {

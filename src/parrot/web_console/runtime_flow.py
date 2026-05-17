@@ -21,6 +21,7 @@ from parrot.brain.plan import (
     get_plan_registry,
 )
 from parrot.brain.plan.plan_lifecycle import PlanLifecycle
+from parrot.scheduler.task_catalog import is_nanobot_task_type
 from parrot.web_console.runtime_flow_models import (
     RuntimeFlowChanges,
     RuntimeFlowEdge,
@@ -258,6 +259,93 @@ async def apply_human_gate_decision(payload: dict[str, Any] | None = None) -> di
             dry_run=False,
             operator_mode=True,
             data={**draft["data"], "applied": False, "error": f"{type(exc).__name__}: {exc}"},
+        )
+
+
+async def draft_workflow_plan(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Convert workbench capability nodes into a Plan awaiting HITL review."""
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    workflow_nodes = _workflow_nodes_from_body(body)
+    workflow = body.get("workflow") if isinstance(body.get("workflow"), dict) else {}
+    title = str(
+        body.get("title")
+        or workflow.get("title")
+        or workflow.get("name")
+        or "Web Console workflow plan"
+    ).strip()
+    compatible_steps, skipped_nodes = _workflow_plan_steps(workflow_nodes)
+    data: dict[str, Any] = {
+        "title": title,
+        "workflow_node_count": len(workflow_nodes),
+        "compatible_step_count": len(compatible_steps),
+        "skipped_nodes": skipped_nodes,
+        "steps": [
+            {
+                "step_id": step.step_id,
+                "title": step.title,
+                "expected_tool": step.expected_tool,
+                "inputs": step.inputs,
+                "depends_on": list(step.depends_on),
+            }
+            for step in compatible_steps
+        ],
+        "operator_required_for_execute": True,
+        "would_create_plan": bool(compatible_steps),
+    }
+    if not compatible_steps:
+        data["error"] = "no_plan_compatible_workflow_nodes"
+        return _receipt(
+            action="runtime.workflow.plan_draft",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data=data,
+        )
+    if dry_run or not operator_mode:
+        data["apply_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        return _receipt(
+            action="runtime.workflow.plan_draft",
+            success=True,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data=data,
+        )
+
+    try:
+        proposal = PlanProposal(
+            proposed_by="web_console.collaboration_flow",
+            title=title,
+            rationale=str(body.get("rationale") or "Imported from Runtime Flow capability workbench."),
+            suggested_steps=tuple(compatible_steps),
+            blocks_conversation=_body_bool(body.get("blocks_conversation"), False),
+        )
+        registry = get_plan_registry()
+        plan = await registry.draft(proposal)
+        await registry.submit_for_confirmation(plan.plan_id)
+        data.update({
+            "created_plan_id": plan.plan_id,
+            "plan_state": _plan_state_value(plan),
+            "pending_gate_id": f"plan:{plan.plan_id}",
+            "staged_ref_id": getattr(plan, "staged_ref_id", ""),
+            "blackboard_namespace": getattr(plan, "blackboard_namespace", ""),
+            "created": True,
+        })
+        return _receipt(
+            action="runtime.workflow.plan_draft",
+            success=True,
+            dry_run=False,
+            operator_mode=True,
+            data=data,
+        )
+    except Exception as exc:
+        return _receipt(
+            action="runtime.workflow.plan_draft",
+            success=False,
+            dry_run=False,
+            operator_mode=True,
+            data={**data, "created": False, "error": f"{type(exc).__name__}: {exc}"},
         )
 
 
@@ -691,6 +779,66 @@ def _revision_proposal(body: dict[str, Any]) -> PlanProposal:
     )
 
 
+def _workflow_plan_steps(workflow_nodes: list[Any]) -> tuple[list[PlanStepProposal], list[dict[str, Any]]]:
+    steps: list[PlanStepProposal] = []
+    skipped: list[dict[str, Any]] = []
+    previous_step_id = ""
+    for idx, row in enumerate(workflow_nodes[:24]):
+        if not isinstance(row, dict):
+            skipped.append({"index": idx, "reason": "invalid_workflow_node"})
+            continue
+        capability = row.get("capability") if isinstance(row.get("capability"), dict) else row
+        capability_id = str(capability.get("capability_id") or row.get("capability_id") or "").strip()
+        task_type = str(capability.get("nanobot_task_type") or row.get("nanobot_task_type") or "").strip()
+        if not task_type or not is_nanobot_task_type(task_type):
+            skipped.append({
+                "index": idx,
+                "capability_id": capability_id,
+                "reason": "not_nanobot_plan_compatible",
+            })
+            continue
+        step_id = _safe_step_id(str(row.get("workflow_node_id") or capability_id or f"step_{idx + 1}"))
+        inputs = {
+            "source": "runtime_flow_workbench",
+            "workflow_node_id": str(row.get("workflow_node_id") or ""),
+            "capability_id": capability_id,
+            "route": str(capability.get("route") or ""),
+            "draft_route": str(capability.get("draft_route") or ""),
+            "execution_policy": str(capability.get("execution_policy") or ""),
+            "result_destinations": capability.get("result_destinations")
+            if isinstance(capability.get("result_destinations"), list)
+            else [],
+            "sample_payload": capability.get("sample_payload")
+            if isinstance(capability.get("sample_payload"), dict)
+            else {},
+        }
+        depends_on = (previous_step_id,) if previous_step_id else ()
+        steps.append(PlanStepProposal(
+            step_id=step_id,
+            title=str(capability.get("title") or capability_id or f"Workflow step {idx + 1}"),
+            expected_tool=task_type,
+            inputs=inputs,
+            depends_on=depends_on,
+        ))
+        previous_step_id = step_id
+    return steps, skipped
+
+
+def _workflow_nodes_from_body(body: dict[str, Any]) -> list[Any]:
+    """Accept both API-native and workflow-object draft shapes."""
+    if isinstance(body.get("workflow_nodes"), list):
+        return list(body["workflow_nodes"])
+    workflow = body.get("workflow")
+    if isinstance(workflow, dict) and isinstance(workflow.get("nodes"), list):
+        return list(workflow["nodes"])
+    return []
+
+
+def _safe_step_id(value: str) -> str:
+    clean = "".join(ch if ch.isalnum() else "_" for ch in value.lower()).strip("_")
+    return (clean or f"step_{uuid.uuid4().hex[:6]}")[:48]
+
+
 def _receipt(
     *,
     action: str,
@@ -828,6 +976,7 @@ __all__ = [
     "apply_human_gate_decision",
     "build_runtime_flow_changes",
     "build_runtime_flow_snapshot",
+    "draft_workflow_plan",
     "draft_human_gate_decision",
     "pending_human_gates",
 ]

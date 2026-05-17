@@ -56,6 +56,7 @@ import type {
   LiveState,
   MemoryLiveStateChanges,
   Receipt,
+  RuntimeCapabilityCatalog,
   RuntimeFlowChanges,
   RuntimeFlow,
   TriggerCatalog,
@@ -74,6 +75,12 @@ type RuntimeAction =
   | "calendar_test"
   | "scene_switch"
   | "roleplay_open";
+
+type WorkflowDraftNode = {
+  workflow_node_id: string;
+  capability: Record<string, unknown>;
+  created_at: string;
+};
 
 type MemoryNodeData = {
   label: string;
@@ -309,6 +316,18 @@ const dict = {
     noSelection: "Select an item on the canvas.",
     noReceipts: "No records yet.",
     triggerPalette: "Trigger Palette",
+    capabilityCatalog: "Capability Catalog",
+    capabilitySearch: "Search interfaces, triggers, refs, nodes...",
+    capabilityKind: "Kind",
+    allKinds: "All kinds",
+    insertWorkflowNode: "Insert",
+    workflowDraft: "Workflow draft",
+    noWorkflowNodes: "No workflow nodes inserted yet.",
+    noCapabilityMatches: "No matching capabilities.",
+    executeNode: "Fire",
+    draftPlan: "Import Plan",
+    planCompatible: "Plan compatible",
+    capabilityPolicy: "Policy",
     operatorSafe: "preview mode",
     dryRunOnly: "preview only",
     previewMode: "preview",
@@ -491,6 +510,18 @@ const dict = {
     noSelection: "在画布上选择一个项目。",
     noReceipts: "暂无操作记录。",
     triggerPalette: "触发器面板",
+    capabilityCatalog: "能力目录",
+    capabilitySearch: "搜索接口、触发器、Refs、Nodes...",
+    capabilityKind: "类型",
+    allKinds: "全部类型",
+    insertWorkflowNode: "插入",
+    workflowDraft: "工作流草稿",
+    noWorkflowNodes: "还没有插入工作流节点。",
+    noCapabilityMatches: "没有匹配的能力。",
+    executeNode: "触发",
+    draftPlan: "导入 Plan",
+    planCompatible: "可进 Plan",
+    capabilityPolicy: "策略",
     operatorSafe: "预演模式",
     dryRunOnly: "仅预演",
     previewMode: "预演",
@@ -694,6 +725,7 @@ export function App() {
   const [l15Pool, setL15Pool] = useState<L15Pool>({});
   const [runtimeFlow, setRuntimeFlow] = useState<RuntimeFlow>({});
   const [triggerCatalog, setTriggerCatalog] = useState<TriggerCatalog>({});
+  const [capabilityCatalog, setCapabilityCatalog] = useState<RuntimeCapabilityCatalog>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [memoryTransport, setMemoryTransport] = useState<TransportMode>("connecting");
@@ -717,7 +749,7 @@ export function App() {
     setLoading(true);
     setError("");
     try {
-      const [nextConfig, memoryChanges, nextPool, flowChanges, nextTriggerCatalog] = await Promise.all([
+      const [nextConfig, memoryChanges, nextPool, flowChanges, nextTriggerCatalog, nextCapabilityCatalog] = await Promise.all([
         api.config(),
         memorySseOpenRef.current
           ? Promise.resolve({ changed: false, sequence: memorySequenceRef.current } as MemoryLiveStateChanges)
@@ -726,7 +758,8 @@ export function App() {
         runtimeSseOpenRef.current
           ? Promise.resolve({ changed: false, sequence: runtimeSequenceRef.current } as RuntimeFlowChanges)
           : api.runtimeFlowChanges(runtimeSequenceRef.current),
-        api.triggerCatalog()
+        api.triggerCatalog(),
+        api.runtimeCapabilities()
       ]);
       setConfig(nextConfig);
       if (typeof memoryChanges.sequence === "number") {
@@ -743,6 +776,7 @@ export function App() {
         setRuntimeFlow(flowChanges.snapshot);
       }
       setTriggerCatalog(nextTriggerCatalog);
+      setCapabilityCatalog(nextCapabilityCatalog);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -960,7 +994,7 @@ export function App() {
         {view === "memory" ? (
           <MemoryGraphWorkspace liveState={liveState} l15Pool={l15Pool} pushReceipt={pushReceipt} t={t} operatorMode={operatorMode} onRefreshMemory={refreshMemoryNow} />
         ) : (
-          <RuntimeFlowWorkspace flow={runtimeFlow} triggerCatalog={triggerCatalog} pushReceipt={pushReceipt} t={t} operatorMode={operatorMode} />
+          <RuntimeFlowWorkspace flow={runtimeFlow} triggerCatalog={triggerCatalog} capabilityCatalog={capabilityCatalog} pushReceipt={pushReceipt} t={t} operatorMode={operatorMode} />
         )}
       </main>
 
@@ -2564,22 +2598,39 @@ function SelectionInspector({
 function RuntimeFlowWorkspace({
   flow,
   triggerCatalog,
+  capabilityCatalog,
   pushReceipt,
   t,
   operatorMode
 }: {
   flow: RuntimeFlow;
   triggerCatalog: TriggerCatalog;
+  capabilityCatalog: RuntimeCapabilityCatalog;
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
   operatorMode: boolean;
 }) {
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
+  const [capabilityQuery, setCapabilityQuery] = useState("");
+  const [capabilityKind, setCapabilityKind] = useState("");
+  const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraftNode[]>([]);
   const [evidenceRefreshSeq, setEvidenceRefreshSeq] = useState(0);
   const pokeEvidenceRefresh = useCallback(() => {
     setEvidenceRefreshSeq((value) => value + 1);
   }, []);
   const catalogGroups = useMemo(() => groupTriggerCatalog(triggerCatalog), [triggerCatalog]);
+  const capabilityRows = useMemo(
+    () => (capabilityCatalog.capabilities ?? []).filter((row) => row && typeof row === "object"),
+    [capabilityCatalog]
+  );
+  const capabilityKinds = useMemo(() => capabilityKindOptions(capabilityRows), [capabilityRows]);
+  const filteredCapabilities = useMemo(
+    () => capabilityRows
+      .filter((row) => !capabilityKind || String(row.kind || "") === capabilityKind)
+      .filter((row) => capabilityMatchesQuery(row, capabilityQuery))
+      .slice(0, 36),
+    [capabilityRows, capabilityKind, capabilityQuery]
+  );
 
   const nodes = useMemo<Node[]>(() => {
     const lanes = flow.lanes ?? [];
@@ -2699,6 +2750,79 @@ function RuntimeFlowWorkspace({
     }
   };
 
+  const insertCapability = (capability: Record<string, unknown>) => {
+    const node: WorkflowDraftNode = {
+      workflow_node_id: `wf-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+      capability,
+      created_at: new Date().toISOString()
+    };
+    setWorkflowDraft((rows) => [...rows, node].slice(-24));
+    setSelected(capability);
+    pushReceipt(localReceipt("runtime.workflow.node_insert", true, {
+      workflow_node_id: node.workflow_node_id,
+      capability_id: String(capability.capability_id || ""),
+      kind: String(capability.kind || ""),
+      route: String(capability.route || ""),
+      plan_step_compatible: Boolean(capability.plan_step_compatible)
+    }));
+  };
+
+  const removeWorkflowNode = (nodeId: string) => {
+    setWorkflowDraft((rows) => rows.filter((row) => row.workflow_node_id !== nodeId));
+  };
+
+  const executeWorkflowNode = async (node: WorkflowDraftNode) => {
+    const capability = node.capability;
+    if (String(capability.kind || "") !== "trigger") {
+      pushReceipt(localReceipt("runtime.workflow.node_execute", false, {
+        workflow_node_id: node.workflow_node_id,
+        capability_id: String(capability.capability_id || ""),
+        error: "only_trigger_capabilities_execute_in_first_slice"
+      }));
+      return;
+    }
+    const samplePayload = recordFromUnknown(capability.sample_payload);
+    const event = Object.keys(recordFromUnknown(samplePayload.event)).length
+      ? recordFromUnknown(samplePayload.event)
+      : {
+        type: "workflow_capability_fire",
+        kind: String(capability.trigger_name || capability.capability_id || "trigger"),
+        source: "runtime_flow_workbench"
+      };
+    const body = {
+      ...samplePayload,
+      trigger_name: String(samplePayload.trigger_name || capability.trigger_name || ""),
+      event,
+      dry_run: !operatorMode,
+      operator_mode: operatorMode
+    };
+    try {
+      pushReceipt(await (operatorMode ? api.triggerFire(body) : api.triggerDraft(body)));
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.node_execute", exc, {
+        workflow_node_id: node.workflow_node_id,
+        capability_id: String(capability.capability_id || "")
+      }));
+    }
+  };
+
+  const importWorkflowPlan = async () => {
+    if (!workflowDraft.length) {
+      pushReceipt(localReceipt("runtime.workflow.plan_draft", false, { error: "empty_workflow_draft" }));
+      return;
+    }
+    try {
+      pushReceipt(await api.runtimeWorkflowPlanDraft({
+        title: "Runtime Flow custom workflow",
+        workflow_nodes: workflowDraft,
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.plan_draft", exc, { workflow_node_count: workflowDraft.length }));
+    }
+  };
+
   const draftGate = async (gate: Record<string, unknown>, decision: string, apply = false) => {
     const execution = apply
       ? { dry_run: !operatorMode, operator_mode: operatorMode }
@@ -2746,6 +2870,98 @@ function RuntimeFlowWorkspace({
               </div>
             </section>
           ))}
+        </div>
+        <div className="capability-workbench">
+          <div className="trigger-catalog-title">
+            <strong><Search size={15} /> {t.capabilityCatalog}</strong>
+            <small>{capabilityRows.length} / {filteredCapabilities.length}</small>
+          </div>
+          <div className="capability-filters">
+            <label>
+              <span>{t.capabilitySearch}</span>
+              <input
+                value={capabilityQuery}
+                onChange={(event) => setCapabilityQuery(event.target.value)}
+                placeholder={t.capabilitySearch}
+              />
+            </label>
+            <label>
+              <span>{t.capabilityKind}</span>
+              <select value={capabilityKind} onChange={(event) => setCapabilityKind(event.target.value)}>
+                <option value="">{t.allKinds}</option>
+                {capabilityKinds.map((kind) => (
+                  <option key={kind} value={kind}>{kind}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="capability-grid">
+            {filteredCapabilities.length ? filteredCapabilities.map((capability) => (
+              <div
+                className="capability-row"
+                key={String(capability.capability_id)}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelected(capability)}
+                onDoubleClick={() => insertCapability(capability)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") insertCapability(capability);
+                }}
+              >
+                <span>
+                  <strong>{String(capability.title || capability.capability_id || "capability")}</strong>
+                  <small>{String(capability.route || "")}</small>
+                </span>
+                <b>{String(capability.kind || "")}</b>
+                <small>{`${t.capabilityPolicy}: ${String(capability.execution_policy || "-")}`}</small>
+                <div>
+                  {capabilityTags(capability).slice(0, 4).map((tag) => (
+                    <i key={tag}>{tag}</i>
+                  ))}
+                </div>
+                <em>{Boolean(capability.plan_step_compatible) ? t.planCompatible : String(recordFromUnknown(capability.true_connection).state || "")}</em>
+                <button
+                  className="button tiny"
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    insertCapability(capability);
+                  }}
+                >
+                  <Plus size={13} /> {t.insertWorkflowNode}
+                </button>
+              </div>
+            )) : <p className="muted">{t.noCapabilityMatches}</p>}
+          </div>
+          <div className="workflow-draft-panel">
+            <div className="trigger-catalog-title">
+              <strong><Workflow size={15} /> {t.workflowDraft}</strong>
+              <button className="button small" onClick={() => void importWorkflowPlan()}>
+                <UploadCloud size={14} /> {t.draftPlan}
+              </button>
+            </div>
+            {workflowDraft.length ? (
+              <div className="workflow-draft-list">
+                {workflowDraft.map((node, index) => (
+                  <div className="workflow-draft-row" key={node.workflow_node_id}>
+                    <b>{index + 1}</b>
+                    <span>
+                      <strong>{String(node.capability.title || node.capability.capability_id || "capability")}</strong>
+                      <small>{String(node.capability.nanobot_task_type || node.capability.route || node.capability.kind || "")}</small>
+                    </span>
+                    {String(node.capability.kind || "") === "trigger" ? (
+                      <button className="button tiny" onClick={() => void executeWorkflowNode(node)}>
+                        <Play size={13} /> {t.executeNode}
+                      </button>
+                    ) : null}
+                    <button className="button tiny danger" onClick={() => removeWorkflowNode(node.workflow_node_id)} aria-label={t.clear}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="muted">{t.noWorkflowNodes}</p>}
+          </div>
         </div>
         <div className="trigger-catalog">
           <div className="trigger-catalog-title">
@@ -3666,6 +3882,42 @@ function runtimeActionGroups(t: ConsoleCopy): Array<{
       ]
     }
   ];
+}
+
+function capabilityKindOptions(rows: Array<Record<string, unknown>>): string[] {
+  return uniqueStrings(rows.map((row) => String(row.kind || "")).filter(Boolean));
+}
+
+function capabilityMatchesQuery(row: Record<string, unknown>, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const trueConnection = recordFromUnknown(row.true_connection);
+  const values = [
+    row.capability_id,
+    row.title,
+    row.description,
+    row.kind,
+    row.route,
+    row.draft_route,
+    row.execution_policy,
+    row.trigger_name,
+    row.nanobot_task_type,
+    trueConnection.state,
+    ...stringsFromUnknown(row.ascent_channels),
+    ...stringsFromUnknown(row.interaction_modules),
+    ...stringsFromUnknown(row.information_tags),
+    ...stringsFromUnknown(row.result_destinations),
+    ...stringsFromUnknown(row.fire_kinds)
+  ];
+  return values.join(" ").toLowerCase().includes(needle);
+}
+
+function capabilityTags(row: Record<string, unknown>): string[] {
+  return uniqueStrings([
+    ...stringsFromUnknown(row.ascent_channels),
+    ...stringsFromUnknown(row.interaction_modules),
+    ...stringsFromUnknown(row.information_tags)
+  ]);
 }
 
 type TriggerCatalogGroup = {

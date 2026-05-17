@@ -87,6 +87,15 @@ export type TriggerCatalog = {
   audit?: Record<string, unknown>;
 };
 
+export type RuntimeCapabilityCatalog = {
+  success?: boolean;
+  action?: string;
+  capabilities?: Array<Record<string, unknown>>;
+  groups?: Record<string, unknown>;
+  result_destinations?: string[];
+  audit?: Record<string, unknown>;
+};
+
 export type VisionEvidenceStatus = {
   action?: string;
   sample_count?: number;

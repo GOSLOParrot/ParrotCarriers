@@ -123,6 +123,109 @@ def test_livekit_web_token_mints_without_exposing_api_secret(monkeypatch) -> Non
     assert "very-secret-livekit-api-secret" not in str(token)
 
 
+def test_runtime_capability_catalog_indexes_real_workbench_routes() -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    body = client.get("/api/runtime/capabilities/catalog").json()
+    by_id = {row["capability_id"]: row for row in body["capabilities"]}
+
+    assert body["action"] == "runtime.capabilities.catalog"
+    assert body["success"] is True
+    assert body["audit"]["web_only"] is True
+    assert by_id["runtime.flow.snapshot"]["route"] == "/api/runtime/flow"
+    assert by_id["graphiti.subgraph.search"]["true_connection"]["state"] == "ecs_proxy"
+    assert by_id["graphiti.materialize_l2b"]["execution_policy"] == "operator_gated"
+    assert by_id["l2b.subgraph.context"]["execution_policy"] == "read_only"
+    assert by_id["refs.ref_scan.dispatch"]["nanobot_task_type"] == "ref_scan"
+    assert by_id["nanobot.calendar_fetch"]["plan_step_compatible"] is True
+
+    trigger_rows = [row for row in body["capabilities"] if row["kind"] == "trigger"]
+    assert trigger_rows
+    assert any(row["route"] == "/api/dsg/triggers/fire-event" for row in trigger_rows)
+    assert any(row["sample_payload"].get("trigger_name") for row in trigger_rows)
+
+    filtered = client.get("/api/runtime/capabilities/catalog?q=graphiti&kind=graphiti_search").json()
+    assert filtered["capabilities"]
+    assert all(row["kind"] == "graphiti_search" for row in filtered["capabilities"])
+    assert all("graphiti" in str(row).lower() for row in filtered["capabilities"])
+
+
+def test_runtime_workflow_plan_draft_imports_nanobot_capabilities_to_hitl() -> None:
+    from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
+    from parrot.brain.plan import PlanRegistry, PlanState, set_plan_registry_for_test
+
+    set_intent_workspace_for_test(IntentWorkspace())
+    registry = PlanRegistry(dispatch_task=_fake_plan_dispatch)
+    set_plan_registry_for_test(registry)
+    try:
+        client = TestClient(build_app(status_fetcher=_fake_fetcher))
+        workflow_nodes = [
+            {
+                "workflow_node_id": "wf-ref-scan",
+                "capability": {
+                    "capability_id": "nanobot.ref_scan",
+                    "title": "Ref scan",
+                    "route": "/api/memory/identity-ref-index/ref-scan-dispatch",
+                    "execution_policy": "nanobot_dispatch",
+                    "plan_step_compatible": True,
+                    "nanobot_task_type": "ref_scan",
+                    "result_destinations": ["stage_to_intent_workspace"],
+                },
+            },
+            {
+                "workflow_node_id": "wf-trigger",
+                "capability": {
+                    "capability_id": "trigger.intent_event_boundary",
+                    "title": "Trigger boundary",
+                    "plan_step_compatible": False,
+                },
+            },
+        ]
+
+        preview = client.post(
+            "/api/runtime/workflow/plan-draft",
+            json={"title": "Workbench plan", "workflow_nodes": workflow_nodes, "dry_run": True},
+        ).json()
+        nested_preview = client.post(
+            "/api/runtime/workflow/plan-draft",
+            json={
+                "workflow": {
+                    "title": "Nested workbench plan",
+                    "nodes": workflow_nodes,
+                },
+                "dry_run": True,
+            },
+        ).json()
+        applied = client.post(
+            "/api/runtime/workflow/plan-draft",
+            json={
+                "title": "Workbench plan",
+                "workflow_nodes": workflow_nodes,
+                "dry_run": False,
+                "operator_mode": True,
+            },
+        ).json()
+        pending = client.get("/api/runtime/hitl/pending").json()
+
+        assert preview["action"] == "runtime.workflow.plan_draft"
+        assert preview["success"] is True
+        assert preview["data"]["compatible_step_count"] == 1
+        assert preview["data"]["steps"][0]["expected_tool"] == "ref_scan"
+        assert preview["data"]["skipped_nodes"][0]["reason"] == "not_nanobot_plan_compatible"
+        assert nested_preview["success"] is True
+        assert nested_preview["data"]["title"] == "Nested workbench plan"
+        assert nested_preview["data"]["workflow_node_count"] == 2
+        assert applied["success"] is True
+        assert applied["dry_run"] is False
+        plan_id = applied["data"]["created_plan_id"]
+        assert registry.get(plan_id).state == PlanState.AWAITING_USER_CONFIRMATION
+        assert applied["data"]["pending_gate_id"] == f"plan:{plan_id}"
+        assert any(gate["gate_id"] == f"plan:{plan_id}" for gate in pending["gates"])
+    finally:
+        set_plan_registry_for_test(None)
+        set_intent_workspace_for_test(None)
+
+
 def test_graphiti_status_search_and_dry_run_routes_are_exposed(monkeypatch) -> None:
     from parrot.brain import graphiti_console
 
@@ -838,6 +941,17 @@ def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch
             "operator_mode": True,
         },
     ).json()
+    selected_hits_alias = client.post(
+        "/api/graphiti/subgraph/import-plan",
+        json={
+            "partition": "arknights_test",
+            "query": "Amiya Chernobog",
+            "selected_hits": [hit],
+            "destination": "isolated_compartment",
+            "dry_run": True,
+            "operator_mode": False,
+        },
+    ).json()
 
     assert plan["action"] == "graphiti.subgraph.import_plan"
     assert plan["success"] is True
@@ -849,6 +963,8 @@ def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch
         "ignored_for_plan": True,
     }
     assert plan["data"]["selected_count"] == 1
+    assert selected_hits_alias["success"] is True
+    assert selected_hits_alias["data"]["selected_count"] == 1
     assert plan["data"]["observations"][0]["graphiti_uuid"] == "graphiti-hit-plan-1"
     assert plan["data"]["graphiti_raw_envelopes"][0]["raw"]["source_node"]["name"] == "Amiya"
     assert plan["data"]["graphiti_bundle"]["sections"]["facts"][0]["raw"]["target_node"]["name"] == "Rhodes Island"

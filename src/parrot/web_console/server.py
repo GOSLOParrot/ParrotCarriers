@@ -379,6 +379,20 @@ def build_app(
 
         return build_runtime_flow_snapshot()
 
+    @app.get("/api/runtime/capabilities/catalog")
+    async def runtime_capabilities_catalog(
+        q: str = "",
+        kind: str = "",
+        execution_policy: str = "",
+    ) -> dict[str, Any]:
+        from parrot.web_console.capability_catalog import build_runtime_capability_catalog
+
+        return build_runtime_capability_catalog(
+            q=q,
+            kind=kind,
+            execution_policy=execution_policy,
+        )
+
     @app.get("/api/runtime/flow/changes")
     async def runtime_flow_changes(since: int = 0) -> dict[str, Any]:
         from parrot.web_console.runtime_flow import build_runtime_flow_changes
@@ -478,6 +492,14 @@ def build_app(
         from parrot.web_console.runtime_flow import apply_human_gate_decision
 
         return await apply_human_gate_decision(payload or {})
+
+    @app.post("/api/runtime/workflow/plan-draft")
+    async def runtime_workflow_plan_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.runtime_flow import draft_workflow_plan
+
+        return await draft_workflow_plan(payload or {})
 
     @app.get("/api/dsg/triggers/catalog")
     async def dsg_triggers_catalog() -> dict[str, Any]:

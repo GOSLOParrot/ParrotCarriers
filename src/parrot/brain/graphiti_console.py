@@ -2678,6 +2678,8 @@ def _graphiti_bundle_projection_policy() -> dict[str, Any]:
 def _extract_export_hits(body: dict[str, Any]) -> list[dict[str, Any]]:
     raw = body.get("hits")
     if raw is None:
+        raw = body.get("selected_hits")
+    if raw is None:
         raw = body.get("results")
     if raw is None:
         raw = (body.get("subgraph") or {}).get("nodes") if isinstance(body.get("subgraph"), dict) else []

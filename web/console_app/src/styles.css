@@ -145,6 +145,12 @@ select {
   font-size: 13px;
 }
 
+.button.tiny {
+  min-height: 28px;
+  padding: 4px 7px;
+  font-size: 12px;
+}
+
 .button:disabled {
   opacity: 0.48;
   cursor: not-allowed;
@@ -984,6 +990,157 @@ select {
 
 .action-tile small {
   color: #9aa4b2;
+}
+
+.capability-workbench {
+  border-top: 1px solid #343842;
+  padding-top: 10px;
+  display: grid;
+  gap: 9px;
+}
+
+.capability-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(140px, 220px);
+  gap: 8px;
+}
+
+.capability-filters label {
+  display: grid;
+  gap: 5px;
+  color: #9aa4b2;
+  font-size: 12px;
+}
+
+.capability-filters input,
+.capability-filters select {
+  min-width: 0;
+  border: 1px solid #343842;
+  border-radius: 8px;
+  background: #17191f;
+  color: #e7e9ee;
+  padding: 9px 10px;
+}
+
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 8px;
+}
+
+.capability-row {
+  border: 1px solid #343842;
+  border-radius: 8px;
+  background: #22252d;
+  color: #e7e9ee;
+  padding: 9px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 9px;
+  align-items: center;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.capability-row:hover,
+.capability-row:focus {
+  border-color: #6d8f7a;
+  background: #26352d;
+  outline: none;
+}
+
+.capability-row > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.capability-row strong,
+.workflow-draft-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capability-row small,
+.workflow-draft-row small {
+  color: #9aa4b2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capability-row b {
+  border: 1px solid #3a3f4a;
+  border-radius: 999px;
+  color: #7bd99f;
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.capability-row > div {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.capability-row i {
+  border: 1px solid #3a3f4a;
+  border-radius: 999px;
+  color: #bac3d0;
+  font-size: 11px;
+  font-style: normal;
+  padding: 3px 6px;
+}
+
+.capability-row em {
+  color: #b8bfca;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.workflow-draft-panel {
+  border: 1px solid #343842;
+  border-radius: 8px;
+  background: #22252d;
+  padding: 9px;
+  display: grid;
+  gap: 8px;
+}
+
+.workflow-draft-list {
+  display: grid;
+  gap: 6px;
+}
+
+.workflow-draft-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #343842;
+  border-radius: 8px;
+  background: #1d2027;
+  padding: 7px;
+}
+
+.workflow-draft-row > b {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(123, 217, 159, 0.12);
+  color: #7bd99f;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+}
+
+.workflow-draft-row > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
 }
 
 .trigger-catalog {
