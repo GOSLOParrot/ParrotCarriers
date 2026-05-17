@@ -86,11 +86,17 @@ cd "`$REMOTE_DIR"
 git fetch origin "`$BRANCH"
 target_head="`$(git rev-parse "origin/`$BRANCH")"
 current_head="`$(git rev-parse HEAD)"
-dirty_status="`$(git status --porcelain)"
+tracked_dirty_status="`$(git status --porcelain --untracked-files=no)"
+untracked_status="`$(git status --porcelain --untracked-files=normal | grep '^??' || true)"
 
-if [ -n "`$dirty_status" ]; then
-  echo "[remote] dirty worktree detected:"
-  printf '%s\n' "`$dirty_status"
+if [ -n "`$untracked_status" ]; then
+  echo "[remote] untracked runtime files present; preserving them:"
+  printf '%s\n' "`$untracked_status"
+fi
+
+if [ -n "`$tracked_dirty_status" ]; then
+  echo "[remote] tracked/index worktree drift detected:"
+  printf '%s\n' "`$tracked_dirty_status"
   if [ "`$FORCE_RESET" != "1" ]; then
     echo "[remote] refusing to update dirty ECS worktree without -ForceResetWorktree"
     exit 23
@@ -99,7 +105,7 @@ if [ -n "`$dirty_status" ]; then
   stamp="`$(date -u +%Y%m%dT%H%M%SZ)"
   backup_dir="`$REMOTE_DIR/codex_backups/ecs_release_`$stamp"
   mkdir -p "`$backup_dir"
-  git status --short > "`$backup_dir/status.txt" || true
+  git status --short --untracked-files=no > "`$backup_dir/status.txt" || true
   git diff > "`$backup_dir/worktree.diff" || true
   git diff --cached > "`$backup_dir/index.diff" || true
   git diff --stat > "`$backup_dir/worktree.stat" || true
@@ -190,7 +196,10 @@ if ($localHead -ne $remoteHead) {
 }
 
 if ($PSCmdlet.ShouldProcess($HostName, "Update $RemoteDir to origin/$Branch and restart Parrot services")) {
-    $remoteScript | & ssh $HostName "bash -s"
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    $remoteScriptBase64 = [Convert]::ToBase64String($utf8NoBom.GetBytes($remoteScript))
+    $remoteCommand = "printf '%s' '$remoteScriptBase64' | base64 -d | bash"
+    & ssh $HostName $remoteCommand
     if ($LASTEXITCODE -ne 0) {
         throw "ECS release failed with exit code $LASTEXITCODE"
     }

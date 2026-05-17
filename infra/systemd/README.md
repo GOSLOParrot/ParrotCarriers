@@ -78,8 +78,9 @@ parrot-goslo-chat
 parrot-brain
 ```
 
-If the ECS repo has local drift, the script refuses to update by default. After
-auditing the drift, run with `-ForceResetWorktree` to back up tracked status and
-diffs under `/opt/parrot/ParrotCarriers/codex_backups/ecs_release_*` before
-resetting tracked files to `origin/<branch>`. It does not delete untracked ECS
-files.
+If the ECS repo has tracked or staged local drift, the script refuses to update
+by default. After auditing the drift, run with `-ForceResetWorktree` to back up
+tracked status and diffs under
+`/opt/parrot/ParrotCarriers/codex_backups/ecs_release_*` before resetting
+tracked files to `origin/<branch>`. Untracked ECS runtime files are reported and
+preserved; they do not block release.

@@ -372,9 +372,10 @@ Dirty-tree policy:
 - Local dirty files make the script fail unless `-AllowLocalDirty` is passed
   after explicitly auditing that the remaining dirty files are unrelated to the
   release.
-- ECS dirty files make the script fail unless `-ForceResetWorktree` is passed.
-  With that flag, the script first writes status and tracked diffs under
-  `/opt/parrot/ParrotCarriers/codex_backups/ecs_release_*`, then runs
-  `git reset --hard origin/<branch>`. It does not delete untracked ECS files.
+- ECS tracked/staged drift makes the script fail unless `-ForceResetWorktree`
+  is passed. With that flag, the script first writes status and tracked diffs
+  under `/opt/parrot/ParrotCarriers/codex_backups/ecs_release_*`, then runs
+  `git reset --hard origin/<branch>`. Untracked ECS runtime files are reported
+  and preserved; they do not block release.
 
 Use `-WhatIf` to print the exact remote Bash body before touching ECS.
