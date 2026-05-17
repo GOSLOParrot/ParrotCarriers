@@ -341,10 +341,11 @@ Scheduler workflow promotion yet.
 
 Do not start with a broad CLI. Start with:
 
-1. `workflow_schema_v1` validator and redacted export helper.
-2. Web export/import/diff preview.
-3. Focused CLI wrapper for `workflow validate` only.
-4. Then add `catalog list` and `workflow run --dry-run`.
+1. `workflow_schema_v1` validator and redacted export helper. Done.
+2. Web export/import/diff preview. Done.
+3. Focused CLI wrapper for `workflow validate` and `catalog list`. Done.
+4. Then add `workflow run --dry-run`, `workflow export/import --dry-run`,
+   result-intake preview, and local/ECS smoke commands.
 
 ## Recommended Staging
 
@@ -358,6 +359,7 @@ Stage 1: stabilize artifacts.
 Stage 2: add thin CLI.
 
 - Implement `python -m parrot.web_console.flow_cli`.
+- First slice is complete: `catalog list` and `workflow validate`.
 - Support catalog list, workflow validate, workflow run preview, Plan draft,
   result-intake preview, local/ECS smoke.
 - Reuse the BFF/service functions and return the same receipt schemas as Web.

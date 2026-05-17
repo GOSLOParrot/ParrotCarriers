@@ -58,7 +58,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-17 | done-research | Deep objective scheme analysis and next-slice gates. | Expanded `../collaboration_flow_architecture_cli_research_20260517.md` with Dify/Langflow/Flowise/AutoGen patterns, core/non-core requirements, task distribution, TODO pre/during/after, drift audit, true-connection test matrix, and recommendation to start with `workflow_schema_v1` + Web import/export/diff. |
 | CFW-18 | done | `workflow_schema_v1` validator and redacted export/import helper. | Added shared validate/export/import-preview helpers and routes on both 7893 Web BFF and 8790 app-monitor parity surface. Tests cover good/bad JSON, diff preview, secret redaction, and catalog rows. |
 | CFW-19 | done-first-slice | Web import/export/diff preview for workflow drafts. | Runtime Flow now has Validate, Export, Import preview, Load import, JSON artifact textarea, and diff summary. Imported artifacts still persist only through the existing Save route after operator review. |
-| CFW-20 | pending | Thin CLI first slice: `workflow validate` and `catalog list`. | CLI must reuse backend/schema functions, default JSON output, and not execute writes. |
+| CFW-20 | done-first-slice | Thin CLI first slice: `workflow validate` and `catalog list`. | Added `python -m parrot.web_console.flow_cli` with JSON-first `catalog list` and `workflow validate`; it reuses backend catalog/schema helpers, performs no writes, returns nonzero for invalid workflows, redacts secrets, and accepts UTF-8 BOM JSON from Windows tools. |
 | CFW-21 | done-first-slice | True-connection smoke pack for local/ECS workflow artifact path. | Local 7894 and ECS 8790 both proved save/validate/export/import-preview/delete with redaction; ECS also proved Plan draft still maps the imported workflow to `ref_scan`. |
 
 ## First Slice Design
@@ -364,3 +364,19 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   as added and `wf-ref-scan` as kept; confirmed `ecs-schema-secret` was
   redacted; Plan draft still produced one `ref_scan` step; and the temporary
   draft was deleted.
+- 2026-05-17 CFW-20 implementation: added
+  `python -m parrot.web_console.flow_cli` as the first thin Parrot Flow CLI.
+  `catalog list` calls the same `build_runtime_capability_catalog()` helper as
+  Web/ECS and supports query/kind/policy/interaction-mode/limit filters.
+  `workflow validate` reads a file or stdin, calls
+  `validate_workflow_artifact()`, emits JSON by default, supports table output,
+  returns exit code `2` for invalid workflows or invalid JSON, and performs no
+  writes. A Windows smoke initially exposed UTF-8 BOM JSON as invalid; the CLI
+  now reads files with `utf-8-sig`, matching the earlier Google OAuth encoding
+  lesson.
+- 2026-05-17 CFW-20 validation: `py_compile` passed for `flow_cli.py`; focused
+  CLI tests reported `5 passed`; full Web Console route tests remained
+  `91 passed`; command smoke for `catalog list --kind workflow_template --q
+  workflow_schema --limit 2` returned workflow schema rows; command smoke for
+  `workflow validate` returned `workflow_schema_v1`, workflow id `cli-smoke`,
+  and did not print `cli-smoke-secret`.

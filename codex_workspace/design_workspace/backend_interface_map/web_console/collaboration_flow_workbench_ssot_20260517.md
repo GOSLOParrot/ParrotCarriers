@@ -673,7 +673,52 @@ Verification:
 
 Remaining gaps after this slice:
 
-- Thin CLI `workflow validate` / `catalog list` is still a follow-up and must
-  reuse these helper functions instead of inventing another schema parser.
+- Broader CLI commands such as workflow dry-run, result-intake preview, and
+  local/ECS smoke remain future slices and must reuse these helper functions
+  instead of inventing another schema parser.
 - Rich canvas layout, subflow reuse, loops, and deploy/activate semantics remain
   future work until the schema and operator review model are stable.
+
+## 2026-05-17 Thin CLI First Slice
+
+Implemented:
+
+- Added `python -m parrot.web_console.flow_cli`.
+- Added `catalog list`, backed by the same
+  `build_runtime_capability_catalog()` helper used by 7893/8790.
+- Added `workflow validate`, backed by `validate_workflow_artifact()`.
+- CLI output defaults to JSON for automation and supports `--output table` for
+  quick human inspection.
+- `workflow validate` accepts a JSON file path or `-` for stdin, returns exit
+  code `0` for valid workflows and `2` for invalid workflow artifacts or
+  invalid JSON.
+- The CLI is read-only. It does not save drafts, run workflows, fire triggers,
+  dispatch Plan steps, write Graphiti Episodes, or materialize L2-B.
+- File reads use `utf-8-sig` so JSON written by Windows/PowerShell with a UTF-8
+  BOM still validates correctly.
+
+Design decision:
+
+- This CLI is a companion control plane, not a nanobot gateway and not a
+  replacement for the Web workbench. It exists so Codex/CI/operators can run
+  repeatable catalog and schema checks against the same artifact definitions
+  the Web UI uses.
+
+Verification:
+
+- `py_compile` passed for `flow_cli.py`.
+- `pytest tests/test_web_console/test_flow_cli.py -q` -> `5 passed`.
+- `pytest tests/test_web_console/test_web_console_server.py -q` -> `91 passed`.
+- CLI smoke `catalog list --kind workflow_template --q workflow_schema --limit
+  2` returned workflow schema capability rows.
+- CLI smoke `workflow validate` over a PowerShell-written JSON file returned
+  `workflow_schema_v1`, workflow id `cli-smoke`, and did not print the
+  embedded `cli-smoke-secret`.
+
+Remaining gaps after this slice:
+
+- `workflow run --dry-run`, `workflow export`, `workflow import --dry-run`,
+  `result-intake preview`, and `smoke ecs/local` are still future CLI slices.
+- The CLI still uses local helper functions, not remote HTTP targeting. Remote
+  ECS proof remains covered by the Web/app-monitor HTTP routes until a CLI
+  `--base-url` mode is deliberately designed.
