@@ -543,3 +543,45 @@ Implementation correction:
   `sync_policy=preview`.
 - The fallback is still read-only: no Google Calendar write, no L1.5 import, no
   L2-B mutation, and no Graphiti write happen inside the T1 tool.
+
+### 2026-05-18 - GOSLO Calendar Draft And Status Tools
+
+Implemented the next two GOSLO-facing Calendar tools:
+
+- `calendar_change_request`
+  - File: `src/parrot/brain/tools/calendar_change_request.py`.
+  - Category: T2 Intent Plan / HITL draft.
+  - Purpose: convert GOSLO's proposed Calendar create/patch/delete decision
+    into an IntentWorkspace `calendar_draft` paper note.
+  - Supported action normalization: create/add/insert/new -> `create`;
+    patch/update/edit/modify -> `patch`; delete/remove/cancel -> `delete`.
+  - Draft payload records the future Nanobot task type
+    (`calendar_create`, `calendar_patch`, or `calendar_delete`),
+    `result_channel=calendar_result`, Plan/step ids when provided, HITL
+    requirement, and the post-execution sync route.
+  - Mutation policy: no direct Google Calendar write, no Nanobot dispatch, no
+    L1.5 import, no L2-B mutation, and no Graphiti write. It only stages the
+    decision payload for later user/Plan/HITL approval.
+
+- `calendar_task_status`
+  - File: `src/parrot/brain/tools/calendar_task_status.py`.
+  - Category: T1/T3 monitor.
+  - Purpose: let GOSLO check whether a Calendar background task has returned
+    without blocking conversation.
+  - Read model: bounded Redis ledgers only:
+    `parrot.nanobot.dispatch` and `parrot.trigger.results.stream`.
+  - It can show a specific `task_id` or recent Calendar task/result rows.
+  - Mutation policy: no Google Calendar write, no Nanobot dispatch, no L1.5
+    import, no L2-B mutation, and no Graphiti write.
+
+Registration:
+
+- Both tools are exported in `src/parrot/brain/tools/__init__.py`, included in
+  `ALL_TOOLS`, and included in `tools_for_active_model()` so GOSLO can see
+  them on both body-capable and non-body model profiles.
+
+Current minimal GOSLO Calendar tool surface:
+
+- `calendar_context`: quick T1 schedule read with T3 fallback.
+- `calendar_change_request`: T2 draft/HITL staging for writes.
+- `calendar_task_status`: quick monitor over background task/result ledgers.
