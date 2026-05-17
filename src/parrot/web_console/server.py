@@ -509,6 +509,23 @@ def build_app(
 
         return await draft_workflow_result_contract(payload or {})
 
+    @app.get("/api/runtime/workflow/result-intake")
+    async def runtime_workflow_result_intake_list(
+        q: str = "",
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        from parrot.web_console.workflow_result_intake import list_workflow_result_intakes
+
+        return list_workflow_result_intakes(q=q, limit=limit)
+
+    @app.post("/api/runtime/workflow/result-intake")
+    async def runtime_workflow_result_intake(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.workflow_result_intake import intake_workflow_result
+
+        return await intake_workflow_result(payload or {})
+
     @app.post("/api/runtime/workflow/run")
     async def runtime_workflow_run(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),

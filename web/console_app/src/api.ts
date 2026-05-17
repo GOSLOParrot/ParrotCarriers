@@ -52,6 +52,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  runtimeWorkflowResultIntakes: () =>
+    json<{ entries?: Array<Record<string, unknown>>; count?: number }>("/api/runtime/workflow/result-intake"),
+  runtimeWorkflowResultIntake: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/runtime/workflow/result-intake", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   runtimeWorkflowRun: (body: Record<string, unknown>) =>
     json<Receipt>("/api/runtime/workflow/run", {
       method: "POST",

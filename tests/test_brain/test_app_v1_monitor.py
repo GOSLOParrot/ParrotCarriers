@@ -140,6 +140,7 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
 
     monkeypatch.setenv("PARROT_WEB_CONSOLE_WORKFLOW_DRAFTS_PATH", str(tmp_path / "workflow_drafts.json"))
     monkeypatch.setenv("PARROT_WEB_CONSOLE_ACTION_GATES_PATH", str(tmp_path / "workflow_action_gates.json"))
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_RESULT_INTAKE_PATH", str(tmp_path / "workflow_result_intake.json"))
     client = TestClient(build_app())
     nodes = [
         {
@@ -150,6 +151,7 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
                 "kind": "nanobot_task",
                 "nanobot_task_type": "ref_scan",
                 "plan_step_compatible": True,
+                "result_destinations": ["stage_to_intent_workspace"],
                 "sample_payload": {"api_token": "redact-me"},
             },
         },
@@ -167,6 +169,7 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
 
     catalog = client.get("/api/runtime/capabilities/catalog?q=workflow&kind=workflow_template").json()
     gates_catalog = client.get("/api/runtime/capabilities/catalog?q=action_gates").json()
+    intake_catalog = client.get("/api/runtime/capabilities/catalog?q=result_intake").json()
     saved = client.post(
         "/api/runtime/workflows/drafts",
         json={"workflow_id": "monitor-workflow", "title": "Monitor workflow", "workflow_nodes": nodes},
@@ -181,6 +184,16 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
         "/api/runtime/workflow/action-gates/decision",
         json={"gate_id": gate["data"]["gate"]["gate_id"], "decision": "apply", "dry_run": True},
     ).json()
+    intake = client.post(
+        "/api/runtime/workflow/result-intake",
+        json={
+            "workflow_id": "monitor-workflow",
+            "workflow_node_id": "wf-ref-scan",
+            "result_payload": {"summary": "monitor result"},
+            "dry_run": True,
+        },
+    ).json()
+    intake_list = client.get("/api/runtime/workflow/result-intake").json()
     contract = client.post("/api/runtime/workflow/result-contract", json={"workflow_id": "monitor-workflow"}).json()
     plan = client.post("/api/runtime/workflow/plan-draft", json={"workflow_id": "monitor-workflow"}).json()
     run = client.post("/api/runtime/workflow/run", json={"workflow_id": "monitor-workflow"}).json()
@@ -188,6 +201,7 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
 
     assert any(row["capability_id"] == "runtime.workflow_drafts.registry" for row in catalog["capabilities"])
     assert any(row["capability_id"] == "runtime.workflow.action_gates" for row in gates_catalog["capabilities"])
+    assert any(row["capability_id"] == "runtime.workflow.result_intake" for row in intake_catalog["capabilities"])
     assert any(row["capability_id"] == "runtime.workflow.result_contract" for row in catalog["capabilities"])
     assert saved["success"] is True
     assert loaded["draft"]["nodes"][0]["capability"]["sample_payload"]["api_token"] == "[REDACTED]"
@@ -195,11 +209,15 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
     assert gate["data"]["gate"]["action_kind"] == "message_check"
     assert gate_list["count"] == 1
     assert gate_preview["data"]["preview_receipt"]["action"] == "google.message_check.draft"
+    assert intake["success"] is True
+    assert intake["data"]["route_results"][0]["would_stage"] is True
+    assert intake["data"]["recorded"] is False
+    assert intake_list["count"] == 0
     assert contract["success"] is True
     assert contract["data"]["result_contract"]["schema"] == "workflow_result_contract_v1"
     assert plan["success"] is True
     assert plan["data"]["steps"][0]["expected_tool"] == "ref_scan"
-    assert plan["data"]["steps"][0]["inputs"]["result_routes"][0]["destination"] == "view_only"
+    assert plan["data"]["steps"][0]["inputs"]["result_routes"][0]["destination"] == "stage_to_intent_workspace"
     assert run["success"] is True
     assert run["data"]["plan_receipt"]["data"]["steps"][0]["expected_tool"] == "ref_scan"
     assert deleted["deleted"] is True

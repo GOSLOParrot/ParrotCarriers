@@ -242,11 +242,12 @@ def test_runtime_workflow_plan_draft_imports_nanobot_capabilities_to_hitl() -> N
 
 
 def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeypatch, tmp_path) -> None:
-    from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
+    from parrot.brain.intent_workspace import IntentWorkspace, get_intent_workspace, set_intent_workspace_for_test
     from parrot.brain.plan import PlanRegistry, set_plan_registry_for_test
 
     monkeypatch.setenv("PARROT_WEB_CONSOLE_WORKFLOW_DRAFTS_PATH", str(tmp_path / "workflow_drafts.json"))
     monkeypatch.setenv("PARROT_WEB_CONSOLE_ACTION_GATES_PATH", str(tmp_path / "workflow_action_gates.json"))
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_RESULT_INTAKE_PATH", str(tmp_path / "workflow_result_intake.json"))
     set_intent_workspace_for_test(IntentWorkspace())
     registry = PlanRegistry(dispatch_task=_fake_plan_dispatch)
     set_plan_registry_for_test(registry)
@@ -309,6 +310,19 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
             "/api/runtime/workflow/result-contract",
             json={"workflow_id": "wf-demo"},
         ).json()
+        result_intake = client.post(
+            "/api/runtime/workflow/result-intake",
+            json={
+                "workflow_id": "wf-demo",
+                "workflow_node_id": "wf-ref-scan",
+                "task_id": "task-demo",
+                "result_channel": "memory_ref_scan_result",
+                "result_payload": {"summary": "Ref scan complete", "api_token": "hide-me"},
+                "dry_run": False,
+                "operator_mode": True,
+            },
+        ).json()
+        result_intakes = client.get("/api/runtime/workflow/result-intake").json()
         preview_plan = client.post(
             "/api/runtime/workflow/plan-draft",
             json={"workflow_id": "wf-demo", "dry_run": True},
@@ -342,6 +356,13 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         assert route_contract["success"] is True
         assert route_contract["data"]["result_contract"]["workflow_id"] == "wf-demo"
         assert route_contract["data"]["result_contract"]["destination_counts"]["return_to_goslo"] == 1
+        assert result_intake["success"] is True
+        assert result_intake["data"]["recorded"] is True
+        assert result_intake["data"]["staged_refs"][0]["role"] == "workflow_result"
+        assert result_intake["data"]["route_results"][0]["staged_ref"]["ref_id"]
+        assert "hide-me" not in str(result_intake)
+        assert result_intakes["count"] == 1
+        assert get_intent_workspace().list_by_role("workflow_result")
         assert preview_plan["success"] is True
         assert preview_plan["data"]["source_workflow_id"] == "wf-demo"
         assert preview_plan["data"]["steps"][0]["expected_tool"] == "ref_scan"

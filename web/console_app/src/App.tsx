@@ -331,6 +331,9 @@ const dict = {
     deleteWorkflow: "Delete",
     runWorkflow: "Run",
     resultRoutes: "Routes",
+    resultIntake: "Intake",
+    resultIntakeLog: "Result intake",
+    noResultIntakes: "No result intake entries.",
     actionGates: "Action gates",
     createGate: "Gate",
     applyGate: "Apply",
@@ -536,6 +539,9 @@ const dict = {
     deleteWorkflow: "删除",
     runWorkflow: "运行",
     resultRoutes: "结果路由",
+    resultIntake: "结果回流",
+    resultIntakeLog: "结果回流",
+    noResultIntakes: "暂无结果回流记录。",
     actionGates: "动作 Gate",
     createGate: "建 Gate",
     applyGate: "执行",
@@ -2643,6 +2649,7 @@ function RuntimeFlowWorkspace({
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraftNode[]>([]);
   const [workflowDrafts, setWorkflowDrafts] = useState<RuntimeWorkflowDrafts>({});
   const [workflowActionGates, setWorkflowActionGates] = useState<Array<Record<string, unknown>>>([]);
+  const [workflowResultIntakes, setWorkflowResultIntakes] = useState<Array<Record<string, unknown>>>([]);
   const [evidenceRefreshSeq, setEvidenceRefreshSeq] = useState(0);
   const pokeEvidenceRefresh = useCallback(() => {
     setEvidenceRefreshSeq((value) => value + 1);
@@ -2668,6 +2675,10 @@ function RuntimeFlowWorkspace({
     () => workflowActionGates.filter((row) => String(row.state || "") === "pending"),
     [workflowActionGates]
   );
+  const resultIntakeRows = useMemo(
+    () => workflowResultIntakes.filter((row) => row && typeof row === "object"),
+    [workflowResultIntakes]
+  );
 
   const refreshWorkflowDrafts = useCallback(async () => {
     try {
@@ -2686,10 +2697,20 @@ function RuntimeFlowWorkspace({
     }
   }, [pushReceipt]);
 
+  const refreshWorkflowResultIntakes = useCallback(async () => {
+    try {
+      const body = await api.runtimeWorkflowResultIntakes();
+      setWorkflowResultIntakes((body.entries ?? []).filter((row) => row && typeof row === "object"));
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.result_intake.list", exc));
+    }
+  }, [pushReceipt]);
+
   useEffect(() => {
     void refreshWorkflowDrafts();
     void refreshWorkflowActionGates();
-  }, [refreshWorkflowDrafts, refreshWorkflowActionGates]);
+    void refreshWorkflowResultIntakes();
+  }, [refreshWorkflowDrafts, refreshWorkflowActionGates, refreshWorkflowResultIntakes]);
 
   const nodes = useMemo<Node[]>(() => {
     const lanes = flow.lanes ?? [];
@@ -2990,6 +3011,35 @@ function RuntimeFlowWorkspace({
     }
   };
 
+  const intakeWorkflowResult = async () => {
+    if (!workflowDraft.length) {
+      pushReceipt(localReceipt("runtime.workflow.result_intake", false, { error: "empty_workflow_draft" }));
+      return;
+    }
+    try {
+      const firstPlanNode = workflowDraft.find((node) => Boolean(node.capability.plan_step_compatible));
+      const body: Record<string, unknown> = {
+        title: workflowTitle,
+        workflow_id: savedWorkflowId,
+        workflow_nodes: workflowDraft,
+        workflow_node_id: firstPlanNode?.workflow_node_id || workflowDraft[0]?.workflow_node_id || "",
+        result_payload: {
+          source: "runtime_flow_workbench",
+          summary: "Operator-reviewed workflow result intake probe.",
+          workflow_title: workflowTitle,
+          created_at: new Date().toISOString()
+        },
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      };
+      const receipt = await api.runtimeWorkflowResultIntake(body);
+      pushReceipt(receipt);
+      await refreshWorkflowResultIntakes();
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.result_intake", exc, { workflow_node_count: workflowDraft.length }));
+    }
+  };
+
   const runWorkflow = async () => {
     if (!workflowDraft.length) {
       pushReceipt(localReceipt("runtime.workflow.run", false, { error: "empty_workflow_draft" }));
@@ -3131,6 +3181,9 @@ function RuntimeFlowWorkspace({
                 <button className="button small" onClick={() => void previewWorkflowResultRoutes()}>
                   <GitBranch size={14} /> {t.resultRoutes}
                 </button>
+                <button className="button small" onClick={() => void intakeWorkflowResult()}>
+                  <Download size={14} /> {t.resultIntake}
+                </button>
                 <button className="button small" onClick={() => void importWorkflowPlan()}>
                   <UploadCloud size={14} /> {t.draftPlan}
                 </button>
@@ -3210,6 +3263,22 @@ function RuntimeFlowWorkspace({
                   ))}
                 </div>
               ) : <p className="muted">{t.noPendingGate}</p>}
+            </div>
+            <div className="saved-workflow-panel">
+              <strong>{t.resultIntakeLog}</strong>
+              {resultIntakeRows.length ? (
+                <div className="saved-workflow-list">
+                  {resultIntakeRows.slice(0, 8).map((entry) => (
+                    <div className="saved-workflow-row" key={String(entry.entry_id || entry.created_at)}>
+                      <span>
+                        <b>{String(entry.workflow_id || entry.entry_id || "result intake")}</b>
+                        <small>{`${String(entry.route_count ?? 0)} route(s) / ${String(entry.staged_ref_count ?? 0)} staged`}</small>
+                      </span>
+                      <small>{String(entry.result_channel || entry.task_id || entry.state || "")}</small>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="muted">{t.noResultIntakes}</p>}
             </div>
           </div>
         </div>
@@ -7077,6 +7146,10 @@ function receiptSummary(data: Record<string, unknown>): string {
       .map(([key, value]) => `${key}:${String(value)}`)
       .join(", ");
     return `Result routes ${nodeCount} node(s)${destinations ? ` / ${destinations}` : ""}`;
+  }
+  if ("route_results" in data || "staged_refs" in data) {
+    const staged = Array.isArray(data.staged_refs) ? data.staged_refs.length : 0;
+    return `Result intake ${String(data.route_count ?? 0)} route(s) / ${staged} staged`;
   }
   const gate = recordFromUnknown(data.gate);
   if (gate.gate_id) {

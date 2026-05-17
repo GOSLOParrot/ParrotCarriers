@@ -48,6 +48,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-11 | done-first-slice | Whole workflow run/preview. | `POST /api/runtime/workflow/run` splits trigger nodes to DSG trigger routes and Nanobot-compatible nodes to Plan/HITL without changing Scheduler schema. |
 | CFW-12 | done-first-slice | Trigger/message HITL state machine. | Added Web-only workflow action gates for trigger nodes and `message_check`; still separate from Plan HITL and not a shared App DTO. |
 | CFW-13 | done-first-slice | Durable result-destination contract for Plan/Scheduler results. | Added `workflow_result_contract_v1` preview and carries result routes in Plan step inputs; Scheduler enforcement remains a reviewed follow-up before autonomous chained workflows. |
+| CFW-14 | done-first-slice | Workflow result intake and reviewed result-route consumption. | Added Web-only result intake for `workflow_result_contract_v1`; operator mode can stage reviewed results to IntentWorkspace and records a bounded Web ledger. |
 
 ## First Slice Design
 
@@ -254,3 +255,20 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   created; trigger apply ran with `operator_mode=true`/`dry_run=false` and
   returned `dsg.trigger.fire_event` with `published=true`; message reject
   returned `state=rejected`; both gates and the draft were deleted.
+- 2026-05-17: Implemented CFW-14 first slice:
+  `GET/POST /api/runtime/workflow/result-intake`. The route consumes
+  `workflow_result_contract_v1` or a saved workflow draft, selects result routes
+  by `workflow_node_id`/`capability_id`, previews route application, and in
+  `operator_mode=true`/`dry_run=false` stages only
+  `stage_to_intent_workspace` as a `RICH_REPORT` with role
+  `workflow_result`. `view_only` and `return_to_goslo` remain receipt/context
+  drafts, while Graphiti/L2-B/materialization destinations are blocked until
+  explicit route-specific operator flows are reviewed.
+- 2026-05-17 CFW-14 validation: Python compile passed for the touched runtime
+  files; Web Console route tests reported `91 passed`; app-monitor route tests
+  reported `11 passed`; frontend `npm run typecheck` and `npm run build`
+  passed with the existing chunk-size warning. Local `7893` smoke saved
+  `local-result-intake-smoke-*`, confirmed catalog row
+  `runtime.workflow.result_intake`, previewed result intake with
+  `would_stage=true` and `recorded=false`, then applied operator intake with
+  `recorded=true`, `staged_ref_count=1`, and result-intake list count `1`.

@@ -534,3 +534,50 @@ Remaining gaps after fifth slice:
   task ledger and the non-enforced `workflow_result_contract_v1` metadata.
 - Autonomous chained workflow behavior remains blocked until Scheduler consumes
   result routes and trigger/message gates are reviewed for shared promotion.
+
+## 2026-05-17 Sixth Slice Completion
+
+Implemented:
+
+- Added Web-only workflow result intake:
+  - `GET /api/runtime/workflow/result-intake`
+  - `POST /api/runtime/workflow/result-intake`
+- The route consumes either an explicit `workflow_result_contract_v1` or a
+  saved/inline workflow draft, selects routes by `workflow_node_id` or
+  `capability_id`, and returns per-route intake decisions.
+- Operator apply currently mutates only IntentWorkspace:
+  `stage_to_intent_workspace` becomes a `StagedRefKind.RICH_REPORT` with
+  custom role `workflow_result`.
+- `view_only` and `return_to_goslo` remain receipt/context drafts.
+- `write_to_memory_draft`, `write_graphiti_episode`, and `materialize_l2b`
+  remain blocked until their explicit operator routes are reviewed.
+- React Runtime exposes a `Result intake` action and a small intake ledger list.
+- ECS `8790` app-monitor exposes the same route subset for remote parity.
+
+Design decision:
+
+- This is the first reviewed result-route consumer, not Scheduler enforcement.
+  It proves the contract can be consumed and safely staged for GOSLO context
+  without silently mutating Graphiti, L2-B, files, or App DTOs.
+
+Verification:
+
+- Python compile passed for `workflow_result_intake.py`, `server.py`,
+  `app_monitor_server.py`, and `capability_catalog.py`.
+- `pytest tests/test_web_console/test_web_console_server.py -q` -> `91 passed`.
+- `pytest tests/test_brain/test_app_v1_monitor.py -q` -> `11 passed`.
+- `npm run typecheck` -> passed.
+- `npm run build` -> passed with the existing chunk-size warning.
+- Local `7893` smoke saved `local-result-intake-smoke-*`, confirmed catalog row
+  `runtime.workflow.result_intake`, previewed intake with `would_stage=true`
+  and `recorded=false`, then applied operator intake with `recorded=true`,
+  one IntentWorkspace staged ref, and one ledger row.
+
+Remaining gaps after sixth slice:
+
+- Scheduler still does not automatically consume result routes from
+  Nanobot task completion.
+- The intake ledger is Web-only JSON storage, not the shared Scheduler result
+  ledger.
+- Graphiti/L2-B/materialization result routes are intentionally blocked until
+  each destination has its own audited apply path.
