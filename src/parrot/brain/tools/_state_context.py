@@ -122,15 +122,27 @@ def format_state_header(snapshot: dict[str, Any] | None = None) -> str:
 
     parts: list[str] = []
 
+    ecp_state = snap.get("ecp_state")
+
     body = snap.get("body_state")
+    if isinstance(ecp_state, dict):
+        ecp_body = ecp_state.get("body_state")
+        if ecp_body and (body is None or _stringify(body).lower() == _DEFAULT_BODY.value):
+            body = ecp_body
     body_str = _stringify(body).lower()
     # Emit body unless it equals IDLE (default). We compare on string value
     # so unknown raw strings (defensive — e.g. Unity sends a future state
     # before backend enum updates) still surface.
     if body is not None and body_str and body_str != _DEFAULT_BODY.value:
         parts.append(f"body={body_str}")
+    if body_str == "perched_on_hand":
+        parts.append("mode=ON_HAND")
 
     head = snap.get("head_state")
+    if isinstance(ecp_state, dict):
+        ecp_head = ecp_state.get("head_state")
+        if ecp_head and (head is None or _stringify(head) == _DEFAULT_HEAD):
+            head = ecp_head
     head_str = _stringify(head)
     if head is not None and head_str and head_str != _DEFAULT_HEAD:
         parts.append(f"head={head_str}")
@@ -140,7 +152,6 @@ def format_state_header(snapshot: dict[str, Any] | None = None) -> str:
     if cognitive is not None and cognitive_str and cognitive_str != _DEFAULT_COGNITIVE.value:
         parts.append(f"cognitive={cognitive_str}")
 
-    ecp_state = snap.get("ecp_state")
     if isinstance(ecp_state, dict):
         locks = ecp_state.get("active_locks") or ()
         if locks:

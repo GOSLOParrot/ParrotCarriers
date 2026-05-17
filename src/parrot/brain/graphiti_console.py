@@ -9,6 +9,7 @@ graph database is not available.
 from __future__ import annotations
 
 import datetime as _dt
+import inspect
 import json
 import os
 import urllib.error
@@ -136,10 +137,13 @@ async def search_graphiti(
     query: str,
     partition: str = PARTITIONS.GOSLO,
     limit: Any = 5,
+    focal_node_uuid: str = "",
 ) -> GraphitiConsoleResult:
     """Search Graphiti with a scoped partition and graceful failure."""
     installed = _graphiti_core_installed()
     selected_limit = _safe_limit(limit, default=5, maximum=20)
+    selected_partition = _normalize_partition(partition)
+    selected_focal = str(focal_node_uuid or "").strip()
     if not query.strip():
         return GraphitiConsoleResult(
             action="search_graphiti",
@@ -150,13 +154,20 @@ async def search_graphiti(
     if not installed:
         remote = _remote_graphiti_request(
             "/api/graphiti/search",
-            payload={"query": query, "partition": partition, "limit": selected_limit},
+            payload={
+                "query": query,
+                "partition": selected_partition,
+                "limit": selected_limit,
+                "focal_node_uuid": selected_focal,
+            },
         )
         if remote.get("success"):
             remote_data = dict(remote.get("data") or {})
             remote_data.setdefault("query", query)
-            remote_data.setdefault("partition", _normalize_partition(partition))
+            remote_data.setdefault("partition", selected_partition)
             remote_data.setdefault("limit", selected_limit)
+            if selected_focal:
+                remote_data.setdefault("focal_node_uuid", selected_focal)
             remote_data["remote_proxy"] = {
                 "enabled": True,
                 "base_url": _remote_graphiti_base_url(),
@@ -177,7 +188,7 @@ async def search_graphiti(
             message=_GRAPHITI_MISSING_MESSAGE,
             data={
                 "query": query,
-                "partition": partition,
+                "partition": selected_partition,
                 "results": [],
                 "remote_proxy": {
                     "enabled": False,
@@ -190,17 +201,28 @@ async def search_graphiti(
         from parrot.memory.graphiti_client import get_graphiti
 
         g = await get_graphiti()
-        results = await g.search(
+        results = await _call_graphiti_search(
+            g,
             query=query.strip(),
-            group_ids=[_normalize_partition(partition)],
+            partition=selected_partition,
+            limit=selected_limit,
+            focal_node_uuid=selected_focal,
         )
         rows = [_serialize_search_hit(hit) for hit in list(results)[:selected_limit]]
+        data: dict[str, Any] = {
+            "query": query,
+            "partition": selected_partition,
+            "limit": selected_limit,
+            "results": rows,
+        }
+        if selected_focal:
+            data["focal_node_uuid"] = selected_focal
         return GraphitiConsoleResult(
             action="search_graphiti",
             success=True,
             available=True,
             message=f"{len(rows)} result(s)",
-            data={"query": query, "partition": partition, "limit": selected_limit, "results": rows},
+            data=data,
         )
     except Exception as exc:
         return GraphitiConsoleResult(
@@ -208,7 +230,7 @@ async def search_graphiti(
             success=False,
             available=_graphiti_core_installed(),
             message=f"{type(exc).__name__}: {exc}",
-            data={"query": query, "partition": partition},
+            data={"query": query, "partition": selected_partition},
         )
 
 
@@ -217,37 +239,79 @@ async def search_graphiti_subgraph(
     query: str,
     partition: str = PARTITIONS.GOSLO,
     limit: Any = 8,
+    strategy: str = "hybrid",
+    depth: Any = 1,
+    expansion_limit: Any = 3,
+    focal_node_uuid: str = "",
 ) -> dict[str, Any]:
-    """Return a bounded Graphiti search slice shaped for graph renderers."""
+    """Return a bounded Graphiti search slice shaped for graph renderers.
+
+    ``strategy=iterative_hybrid`` performs real follow-up Graphiti searches from
+    endpoint names/facts found in the previous hop. L2-B still receives
+    preserved Graphiti envelopes; it does not reinterpret Graphiti as its own
+    ontology.
+    """
     selected_partition = _normalize_partition(partition)
     selected_limit = _safe_limit(limit, default=8, maximum=20)
-    search = await search_graphiti(
+    selected_strategy = _normalize_search_strategy(strategy)
+    selected_depth = _safe_depth(depth, strategy=selected_strategy)
+    selected_expansion_limit = _safe_limit(expansion_limit, default=3, maximum=8)
+    selected_focal = str(focal_node_uuid or "").strip()
+    collected = await _collect_graphiti_subgraph_hits(
         query=query,
         partition=selected_partition,
         limit=selected_limit,
+        strategy=selected_strategy,
+        depth=selected_depth,
+        expansion_limit=selected_expansion_limit,
+        focal_node_uuid=selected_focal,
     )
-    payload = search.as_json()
-    if not search.success:
+    if not collected["success"]:
+        search = collected["base_search"]
+        payload = search.as_json() if isinstance(search, GraphitiConsoleResult) else {}
+        payload.setdefault("success", False)
+        payload.setdefault("available", False)
+        payload.setdefault("message", "Graphiti search failed")
         payload["action"] = "graphiti.subgraph.search"
-        payload.setdefault("data", {})["subgraph"] = _empty_subgraph(
-            query=query,
-            partition=selected_partition,
+        payload.setdefault("data", {}).update(
+            {
+                "query": query.strip(),
+                "partition": selected_partition,
+                "limit": selected_limit,
+                "strategy": selected_strategy,
+                "depth": selected_depth,
+                "expansion_limit": selected_expansion_limit,
+                "focal_node_uuid": selected_focal,
+                "hits": [],
+                "subgraph": _empty_subgraph(
+                    query=query,
+                    partition=selected_partition,
+                ),
+                "search_plan": collected["search_plan"],
+                "warnings": collected["warnings"],
+            }
         )
         return payload
 
-    hits = list(search.data.get("results") or [])
+    hits = list(collected["hits"])
     subgraph = _hits_to_subgraph(hits, query=query, partition=selected_partition)
     return {
         "action": "graphiti.subgraph.search",
         "success": True,
-        "available": search.available,
+        "available": bool(collected["available"]),
         "message": f"{len(hits)} hit(s), {len(subgraph['nodes'])} node(s)",
         "data": {
             "query": query.strip(),
             "partition": selected_partition,
             "limit": selected_limit,
+            "strategy": selected_strategy,
+            "depth": selected_depth,
+            "expansion_limit": selected_expansion_limit,
+            "focal_node_uuid": selected_focal,
             "hits": hits,
             "subgraph": subgraph,
+            "search_plan": collected["search_plan"],
+            "warnings": collected["warnings"],
         },
         "audit": {
             "web_only": True,
@@ -273,12 +337,16 @@ def draft_graphiti_subgraph_export(payload: dict[str, Any] | None = None) -> dic
         for index, hit in enumerate(hits)
     ]
     subgraph = _hits_to_subgraph(hits, query=str(body.get("query") or ""), partition=partition)
+    raw_envelopes = _hits_to_raw_envelopes(hits, partition=partition)
     edge_drafts = _hits_to_edge_drafts(hits, partition=partition)
+    identity_ref_drafts = _hits_to_identity_ref_drafts(raw_envelopes, partition=partition)
     warnings: list[str] = []
     if not observations:
         warnings.append("no Graphiti hits selected for export")
     if edge_drafts:
         warnings.append("edge_drafts are preview-only until exported nodes resolve to L2-B UUIDs")
+    if identity_ref_drafts:
+        warnings.append("identity_ref_drafts are CORE-015 previews; they do not persist here")
     return _graphiti_receipt(
         action="graphiti.subgraph.export_draft",
         success=bool(observations),
@@ -290,6 +358,12 @@ def draft_graphiti_subgraph_export(payload: dict[str, Any] | None = None) -> dic
             "selected_count": len(observations),
             "observations": observations,
             "subgraph": subgraph,
+            "graphiti_raw_envelopes": raw_envelopes,
+            "identity_ref_drafts": identity_ref_drafts,
+            "identity_ref_write_policy": (
+                "Preview only. Apply through /api/memory/identity-ref-index/apply "
+                "after operator review; this route does not persist IdentityRefIndex."
+            ),
             "edge_drafts": edge_drafts,
             "write_path": "L15Pool.admit(Observation(source=USER_EXPLICIT))",
             "edge_write_policy": (
@@ -353,6 +427,9 @@ async def export_graphiti_subgraph(payload: dict[str, Any] | None = None) -> dic
             "selected_count": len(observations),
             "admit_outcome": _jsonable(outcome),
             "write_path": "L15Pool.admit(Observation(source=USER_EXPLICIT))",
+            "graphiti_raw_envelopes": draft["data"].get("graphiti_raw_envelopes", []),
+            "identity_ref_drafts": draft["data"].get("identity_ref_drafts", []),
+            "identity_ref_write_policy": draft["data"].get("identity_ref_write_policy", ""),
             "edge_drafts": draft["data"].get("edge_drafts", []),
             "edge_write_policy": draft["data"].get("edge_write_policy", ""),
         },
@@ -430,6 +507,253 @@ async def add_episode(
             message=f"{type(exc).__name__}: {exc}",
             data={"draft": episode},
         )
+
+
+async def _call_graphiti_search(
+    graphiti: Any,
+    *,
+    query: str,
+    partition: str,
+    limit: int,
+    focal_node_uuid: str = "",
+) -> Any:
+    """Call Graphiti search across 0.28-compatible parameter spellings."""
+
+    search = getattr(graphiti, "search")
+    focal = str(focal_node_uuid or "").strip()
+    kwargs: dict[str, Any] = {"query": query}
+    try:
+        parameters = inspect.signature(search).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+
+    if not parameters or "group_ids" in parameters:
+        kwargs["group_ids"] = [partition]
+    if not parameters or "num_results" in parameters:
+        kwargs["num_results"] = limit
+    elif "limit" in parameters:
+        kwargs["limit"] = limit
+    if focal:
+        for name in ("focal_node_uuid", "center_node_uuid", "node_uuid"):
+            if not parameters or name in parameters:
+                kwargs[name] = focal
+                break
+
+    try:
+        return await search(**kwargs)
+    except TypeError:
+        if focal:
+            return await search(query, focal, group_ids=[partition], num_results=limit)
+        return await search(query=query, group_ids=[partition], num_results=limit)
+
+
+async def _collect_graphiti_subgraph_hits(
+    *,
+    query: str,
+    partition: str,
+    limit: int,
+    strategy: str,
+    depth: int,
+    expansion_limit: int,
+    focal_node_uuid: str,
+) -> dict[str, Any]:
+    base_query = query.strip()
+    search_plan: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    hits: list[dict[str, Any]] = []
+    seen_hits: set[tuple[str, ...]] = set()
+    visited_queries: set[str] = {base_query.lower()}
+    frontier = [base_query] if base_query else []
+    base_search: GraphitiConsoleResult | None = None
+    available = True
+    max_depth = depth if strategy in {"iterative_hybrid", "node_distance"} else 1
+
+    for hop in range(max_depth):
+        if not frontier:
+            break
+        next_terms: list[str] = []
+        for origin_query in frontier[: max(1, expansion_limit)]:
+            search_limit = limit if hop == 0 else max(1, min(limit, 6))
+            search = await search_graphiti(
+                query=origin_query,
+                partition=partition,
+                limit=search_limit,
+                focal_node_uuid=focal_node_uuid if hop == 0 else "",
+            )
+            if base_search is None:
+                base_search = search
+            available = available and search.available
+            rows = [row for row in search.data.get("results", []) if isinstance(row, dict)]
+            search_plan.append(
+                {
+                    "depth": hop + 1,
+                    "query": origin_query,
+                    "strategy": strategy,
+                    "limit": search_limit,
+                    "success": search.success,
+                    "available": search.available,
+                    "result_count": len(rows),
+                    "message": search.message,
+                }
+            )
+            if not search.success:
+                if hop == 0 and not hits:
+                    return {
+                        "success": False,
+                        "available": search.available,
+                        "base_search": search,
+                        "hits": [],
+                        "search_plan": search_plan,
+                        "warnings": warnings,
+                    }
+                warnings.append(f"{origin_query}: {search.message}")
+                continue
+            for index, row in enumerate(rows):
+                hit = _with_search_context(
+                    row,
+                    base_query=base_query,
+                    origin_query=origin_query,
+                    strategy=strategy,
+                    depth=hop + 1,
+                    result_index=index,
+                )
+                identity = _graphiti_hit_identity(hit, len(hits))
+                if identity in seen_hits:
+                    continue
+                seen_hits.add(identity)
+                hits.append(hit)
+            if hop + 1 < max_depth:
+                next_terms.extend(_expansion_terms_from_hits(rows))
+
+        frontier = []
+        for term in next_terms:
+            normalized = term.lower()
+            if normalized in visited_queries:
+                continue
+            visited_queries.add(normalized)
+            frontier.append(term)
+            if len(frontier) >= expansion_limit:
+                break
+
+    return {
+        "success": bool(base_search and base_search.success),
+        "available": available,
+        "base_search": base_search,
+        "hits": hits[:20],
+        "search_plan": search_plan,
+        "warnings": warnings,
+    }
+
+
+def _with_search_context(
+    hit: dict[str, Any],
+    *,
+    base_query: str,
+    origin_query: str,
+    strategy: str,
+    depth: int,
+    result_index: int,
+) -> dict[str, Any]:
+    row = dict(hit)
+    context = row.get("search_context")
+    if not isinstance(context, dict):
+        context = {}
+    row["search_context"] = {
+        **context,
+        "base_query": base_query,
+        "origin_query": origin_query,
+        "strategy": strategy,
+        "depth": depth,
+        "result_index": result_index,
+    }
+    row.setdefault("graphiti_origin_query", origin_query)
+    row.setdefault("graphiti_search_strategy", strategy)
+    row.setdefault("graphiti_search_depth", depth)
+    return row
+
+
+def _graphiti_hit_identity(hit: dict[str, Any], fallback_index: int) -> tuple[str, ...]:
+    graphiti_uuid = str(hit.get("uuid") or hit.get("graphiti_uuid") or "").strip()
+    if graphiti_uuid:
+        return ("uuid", graphiti_uuid)
+    source_uuid = str(hit.get("source_node_uuid") or "").strip()
+    target_uuid = str(hit.get("target_node_uuid") or "").strip()
+    text = " ".join(str(hit.get("text") or hit.get("summary") or hit.get("label") or "").split())
+    if source_uuid or target_uuid:
+        return ("edge", source_uuid, target_uuid, text[:200])
+    if text:
+        return ("text", text[:240])
+    return ("index", str(fallback_index))
+
+
+def _normalize_search_strategy(raw: str) -> str:
+    value = str(raw or "").strip().lower().replace("-", "_")
+    return value if value in {"hybrid", "iterative_hybrid", "node_distance"} else "hybrid"
+
+
+def _safe_depth(value: Any, *, strategy: str) -> int:
+    default = 2 if strategy == "iterative_hybrid" else 1
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(parsed, 3))
+
+
+def _expansion_terms_from_hits(hits: list[dict[str, Any]]) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for hit in hits:
+        for term in _expansion_terms_from_hit(hit):
+            normalized = term.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            terms.append(term)
+    return terms
+
+
+def _expansion_terms_from_hit(hit: dict[str, Any]) -> list[str]:
+    raw = _graphiti_raw_payload(hit)
+    source_name = _endpoint_name_from_raw(raw, "source") or str(
+        hit.get("source_node_name") or ""
+    ).strip()
+    target_name = _endpoint_name_from_raw(raw, "target") or str(
+        hit.get("target_node_name") or ""
+    ).strip()
+    candidates: list[str] = []
+    if source_name and target_name:
+        candidates.append(f"{source_name} {target_name}")
+    candidates.extend([source_name, target_name])
+    text = str(hit.get("text") or hit.get("summary") or hit.get("label") or "").strip()
+    if text:
+        candidates.append(_label_from_text(text, fallback=text[:120]))
+    clean_terms: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        term = " ".join(str(candidate or "").split())[:160]
+        if len(term) < 3:
+            continue
+        normalized = term.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        clean_terms.append(term)
+    return clean_terms
+
+
+def _endpoint_name_from_raw(raw: dict[str, Any], role: str) -> str:
+    node = raw.get(f"{role}_node")
+    if isinstance(node, dict):
+        for key in ("name", "label", "title", "uuid"):
+            value = str(node.get(key) or "").strip()
+            if value:
+                return value
+    for key in (f"{role}_node_name", f"{role}_name"):
+        value = str(raw.get(key) or "").strip()
+        if value:
+            return value
+    return ""
 
 
 def _partition_values() -> list[str]:
@@ -519,6 +843,7 @@ def _serialize_search_hit(hit: Any) -> dict[str, Any]:
         or getattr(hit, "summary", None)
         or str(hit)
     )
+    raw = _graphiti_raw_payload(hit)
     return {
         "text": str(text)[:800],
         "score": getattr(hit, "score", None),
@@ -527,6 +852,7 @@ def _serialize_search_hit(hit: Any) -> dict[str, Any]:
         "target_node_uuid": getattr(hit, "target_node_uuid", ""),
         "source_url": getattr(hit, "source_url", ""),
         "source_description": getattr(hit, "source_description", ""),
+        "graphiti_raw": raw,
     }
 
 
@@ -557,6 +883,8 @@ def _hits_to_subgraph(
                 "summary": text[:280],
                 "source_url": str(hit.get("source_url") or ""),
                 "source_description": str(hit.get("source_description") or ""),
+                "search_context": _jsonable(hit.get("search_context") or {}),
+                "graphiti_raw": _graphiti_raw_payload(hit),
             },
         )
         source_uuid = str(hit.get("source_node_uuid") or "").strip()
@@ -566,10 +894,11 @@ def _hits_to_subgraph(
                 f"graphiti:{source_uuid}",
                 {
                     "id": f"graphiti:{source_uuid}",
-                    "label": source_uuid[:12],
+                    "label": _endpoint_label(hit, "source", fallback=source_uuid[:12]),
                     "kind": "graphiti_source",
                     "partition": partition,
                     "graphiti_uuid": source_uuid,
+                    "graphiti_raw": _endpoint_raw(hit, "source"),
                 },
             )
         if target_uuid:
@@ -577,10 +906,11 @@ def _hits_to_subgraph(
                 f"graphiti:{target_uuid}",
                 {
                     "id": f"graphiti:{target_uuid}",
-                    "label": target_uuid[:12],
+                    "label": _endpoint_label(hit, "target", fallback=target_uuid[:12]),
                     "kind": "graphiti_target",
                     "partition": partition,
                     "graphiti_uuid": target_uuid,
+                    "graphiti_raw": _endpoint_raw(hit, "target"),
                 },
             )
         if source_uuid and target_uuid:
@@ -592,6 +922,8 @@ def _hits_to_subgraph(
                     "kind": "graphiti_fact",
                     "label": _label_from_text(text, fallback="fact"),
                     "hit_id": node_id,
+                    "graphiti_uuid": str(hit.get("uuid") or hit.get("graphiti_uuid") or ""),
+                    "search_context": _jsonable(hit.get("search_context") or {}),
                 }
             )
     return {
@@ -600,6 +932,21 @@ def _hits_to_subgraph(
         "nodes": list(nodes.values()),
         "edges": edges,
     }
+
+
+def _endpoint_label(hit: dict[str, Any], role: str, *, fallback: str) -> str:
+    raw = _graphiti_raw_payload(hit)
+    name = _endpoint_name_from_raw(raw, role)
+    return name or fallback
+
+
+def _endpoint_raw(hit: dict[str, Any], role: str) -> dict[str, Any]:
+    raw = _graphiti_raw_payload(hit)
+    node = raw.get(f"{role}_node")
+    if isinstance(node, dict):
+        return _jsonable(node)
+    uuid = str(hit.get(f"{role}_node_uuid") or "").strip()
+    return {"uuid": uuid, "role": role} if uuid else {"role": role}
 
 
 def _hits_to_edge_drafts(
@@ -617,6 +964,7 @@ def _hits_to_edge_drafts(
             continue
         text = str(hit.get("text") or hit.get("summary") or hit.get("label") or "").strip()
         graphiti_uuid = str(hit.get("uuid") or hit.get("graphiti_uuid") or "").strip()
+        raw_envelope = _hit_raw_envelope(hit, partition=partition, index=index)
         edge_drafts.append(
             {
                 "kind": "graphiti_fact",
@@ -630,11 +978,186 @@ def _hits_to_edge_drafts(
                     "graphiti_partition": partition,
                     "graphiti_hit_uuid": graphiti_uuid,
                     "fact_text": text[:800],
+                    "graphiti_raw": raw_envelope,
                 },
                 "write_policy": "requires_resolved_l2b_node_uuid",
             }
         )
     return edge_drafts
+
+
+def _hits_to_raw_envelopes(
+    hits: list[dict[str, Any]],
+    *,
+    partition: str,
+) -> list[dict[str, Any]]:
+    return [
+        _hit_raw_envelope(hit, partition=partition, index=index)
+        for index, hit in enumerate(hits[:20])
+    ]
+
+
+def _hit_raw_envelope(
+    hit: dict[str, Any],
+    *,
+    partition: str,
+    index: int,
+) -> dict[str, Any]:
+    text = str(hit.get("text") or hit.get("summary") or hit.get("label") or "").strip()
+    graphiti_uuid = str(hit.get("uuid") or hit.get("graphiti_uuid") or "").strip()
+    source_node_uuid = str(hit.get("source_node_uuid") or "").strip()
+    target_node_uuid = str(hit.get("target_node_uuid") or "").strip()
+    raw = _graphiti_raw_payload(hit)
+    return {
+        "schema_version": 1,
+        "kind": str(hit.get("graphiti_kind") or hit.get("kind") or "graphiti_fact"),
+        "partition": partition,
+        "index": index,
+        "uuid": graphiti_uuid,
+        "graphiti_edge_uuid": graphiti_uuid,
+        "source_node_uuid": source_node_uuid,
+        "target_node_uuid": target_node_uuid,
+        "episode_uuids": _episode_uuids_from_hit(hit),
+        "source_url": str(hit.get("source_url") or ""),
+        "source_description": str(hit.get("source_description") or ""),
+        "score": hit.get("score"),
+        "label": _label_from_text(text, fallback=f"Graphiti hit {index + 1}"),
+        "text": text,
+        "search_context": _jsonable(hit.get("search_context") or {}),
+        "hit": _graphiti_hit_fields(hit),
+        "raw": raw,
+    }
+
+
+def _graphiti_hit_fields(hit: dict[str, Any]) -> dict[str, Any]:
+    """Keep Web/search wrapper fields beside Graphiti's raw object."""
+
+    omitted = {"graphiti_raw", "raw"}
+    return {
+        str(key): _jsonable(value)
+        for key, value in hit.items()
+        if key not in omitted
+    }
+
+
+def _hits_to_identity_ref_drafts(
+    raw_envelopes: list[dict[str, Any]],
+    *,
+    partition: str,
+) -> list[dict[str, Any]]:
+    drafts: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for envelope in raw_envelopes:
+        graphiti_edge_uuid = str(envelope.get("graphiti_edge_uuid") or "").strip()
+        source_node_uuid = str(envelope.get("source_node_uuid") or "").strip()
+        target_node_uuid = str(envelope.get("target_node_uuid") or "").strip()
+        source_url = str(envelope.get("source_url") or "").strip()
+        label = str(envelope.get("label") or "").strip()
+        if graphiti_edge_uuid:
+            drafts.append(
+                _identity_ref_draft(
+                    key=("graphiti_edge_uuid", graphiti_edge_uuid),
+                    seen=seen,
+                    payload={
+                        "graphiti_edge_uuid": graphiti_edge_uuid,
+                        "alias": label,
+                        "confidence": _safe_float(envelope.get("score"), 0.5),
+                        "resolution_state": "weak",
+                        "ref_id": f"graphiti:{partition}:fact:{graphiti_edge_uuid}",
+                        "ref_kind": "graphiti_fact",
+                        "url": source_url,
+                        "graphiti_raw": envelope,
+                        "meta": {
+                            "source_tool": "web_console.graphiti_subgraph_export",
+                            "graphiti_partition": partition,
+                            "graphiti_raw_kind": "fact",
+                        },
+                    },
+                )
+            )
+        for role, entity_uuid in (
+            ("source", source_node_uuid),
+            ("target", target_node_uuid),
+        ):
+            if not entity_uuid:
+                continue
+            drafts.append(
+                _identity_ref_draft(
+                    key=("graphiti_entity_uuid", entity_uuid),
+                    seen=seen,
+                    payload={
+                        "graphiti_entity_uuid": entity_uuid,
+                        "alias": entity_uuid[:12],
+                        "confidence": _safe_float(envelope.get("score"), 0.5),
+                        "resolution_state": "weak",
+                        "ref_id": f"graphiti:{partition}:entity:{entity_uuid}",
+                        "ref_kind": "graphiti_entity",
+                        "url": source_url,
+                        "graphiti_raw": {
+                            "schema_version": 1,
+                            "kind": "graphiti_entity_pointer",
+                            "partition": partition,
+                            "uuid": entity_uuid,
+                            "endpoint_role": role,
+                            "parent_edge_uuid": graphiti_edge_uuid,
+                            "parent_fact": envelope,
+                        },
+                        "meta": {
+                            "source_tool": "web_console.graphiti_subgraph_export",
+                            "graphiti_partition": partition,
+                            "graphiti_raw_kind": "entity_pointer",
+                        },
+                    },
+                )
+            )
+        for episode_uuid in envelope.get("episode_uuids") or []:
+            drafts.append(
+                _identity_ref_draft(
+                    key=("graphiti_episode_uuid", str(episode_uuid)),
+                    seen=seen,
+                    payload={
+                        "graphiti_episode_uuid": str(episode_uuid),
+                        "alias": str(episode_uuid)[:12],
+                        "confidence": _safe_float(envelope.get("score"), 0.5),
+                        "resolution_state": "weak",
+                        "ref_id": f"graphiti:{partition}:episode:{episode_uuid}",
+                        "ref_kind": "graphiti_episode",
+                        "url": source_url,
+                        "graphiti_raw": {
+                            "schema_version": 1,
+                            "kind": "graphiti_episode_pointer",
+                            "partition": partition,
+                            "uuid": str(episode_uuid),
+                            "parent_edge_uuid": graphiti_edge_uuid,
+                            "parent_fact": envelope,
+                        },
+                        "meta": {
+                            "source_tool": "web_console.graphiti_subgraph_export",
+                            "graphiti_partition": partition,
+                            "graphiti_raw_kind": "episode_pointer",
+                        },
+                    },
+                )
+            )
+    return [draft for draft in drafts if draft]
+
+
+def _identity_ref_draft(
+    *,
+    key: tuple[str, str],
+    seen: set[tuple[str, str]],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    if not key[1] or key in seen:
+        return {}
+    seen.add(key)
+    return {
+        **payload,
+        "dry_run": True,
+        "operator_mode": False,
+        "apply_route": "/api/memory/identity-ref-index/apply",
+        "write_policy": "draft_only_from_graphiti_export",
+    }
 
 
 def _extract_export_hits(body: dict[str, Any]) -> list[dict[str, Any]]:
@@ -667,6 +1190,7 @@ def _hit_to_l15_observation_draft(
     target_node_uuid = str(hit.get("target_node_uuid") or "").strip()
     source_url = str(hit.get("source_url") or "").strip()
     source_description = str(hit.get("source_description") or "").strip()
+    raw_envelope = _hit_raw_envelope(hit, partition=partition, index=index)
     return {
         "source": "user_explicit",
         "provenance_stream_id": f"web:graphiti:{partition}:{graphiti_uuid or index}",
@@ -686,6 +1210,7 @@ def _hit_to_l15_observation_draft(
             "source_url": source_url,
             "source_description": source_description,
             "fact_text": text[:800],
+            "graphiti_raw": raw_envelope,
         },
     }
 
@@ -736,6 +1261,18 @@ def _body_bool(value: Any, default: bool) -> bool:
 
 
 def _jsonable(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if hasattr(value, "model_dump"):
+        try:
+            return _jsonable(value.model_dump(mode="json"))
+        except TypeError:
+            return _jsonable(value.model_dump())
+    if hasattr(value, "dict") and not isinstance(value, dict):
+        try:
+            return _jsonable(value.dict())
+        except TypeError:
+            pass
     if hasattr(value, "as_json"):
         return value.as_json()
     if hasattr(value, "__dataclass_fields__"):
@@ -748,8 +1285,46 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_jsonable(item) for item in value]
     if hasattr(value, "value"):
-        return value.value
-    return value
+        return _jsonable(value.value)
+    if hasattr(value, "isoformat"):
+        try:
+            return value.isoformat()
+        except TypeError:
+            pass
+    return str(value)
+
+
+def _graphiti_raw_payload(hit: Any) -> dict[str, Any]:
+    raw_candidate: Any = hit
+    if isinstance(hit, dict):
+        raw_candidate = hit.get("graphiti_raw") or hit.get("raw") or hit
+    raw = _jsonable(raw_candidate)
+    if isinstance(raw, dict):
+        return raw
+    return {"value": raw}
+
+
+def _episode_uuids_from_hit(hit: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in (
+        "episode_uuid",
+        "episode_uuids",
+        "episodes",
+        "source_episode_uuid",
+        "source_episode_uuids",
+    ):
+        raw = hit.get(key)
+        if isinstance(raw, (list, tuple, set)):
+            values.extend(str(item).strip() for item in raw if str(item).strip())
+        elif raw is not None and str(raw).strip():
+            values.append(str(raw).strip())
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
 
 
 def _graphiti_receipt(

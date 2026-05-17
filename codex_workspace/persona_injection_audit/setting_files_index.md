@@ -28,6 +28,7 @@ Updated: 2026-05-17
 
 | Path | Inferred target | Notes |
 | --- | --- | --- |
+| `src/parrot/brain/personas/ner_companion.md` | `persona_loader_only` | Present in `ner_lineb_room.json` `setting_file_refs`, but runtime classifies it as persona-owned and does not append it as a setting source. This is safe in current code but confusing. |
 | `codex_workspace/design_workspace/unity_ar_app/ner_roleplay_setting_obsidian_v0_20260511.md` | `llm+l1_5` | Frontmatter `profile: roleplay`; roleplay and style setting source. |
 | `codex_workspace/design_workspace/unity_ar_app/ner_mochi_scene_v0_20260511.md` | `llm` | Scene/placement/capability setting source. |
 | `.cursor/memory/architecture/Interface/app_v1_lineb_ner_realdevice_config_report_20260511.md` | `reference_only` | Technical report; not prompt-injected by default because it is under `.cursor`. |
@@ -117,4 +118,3 @@ Updated: 2026-05-17
 | `Unity/Temp/**`, `Library/**`, generated XR files | Generated Unity state. |
 | `docs/sprint_archive/**` | Historical source anchors unless a task explicitly needs them. |
 | test output, logs, media captures | Evidence artifacts; not instruction sources unless linked by a current profile. |
-

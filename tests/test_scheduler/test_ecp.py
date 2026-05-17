@@ -130,8 +130,9 @@ def test_ecp_command_meta_unity_dto_field_parity():
         / "unity"
         / "ArSpike"
         / "Assets"
-        / "Scripts"
         / "ParrotApp"
+        / "Runtime"
+        / "Scripts"
         / "RPC"
         / "EcpDtos.cs"
     )

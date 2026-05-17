@@ -27,11 +27,9 @@ File format (markdown with YAML frontmatter):
     deny:
     - ...
 
-The loader is *behaviour-equivalent* to the previous ``brain/soul.py``
-``CORE_INSTRUCTIONS`` / ``COMPANION_INSTRUCTIONS`` / ``PLAYFUL_INSTRUCTIONS``
-/ ``SOUL_CONSTRAINTS`` table, so existing tests / tools see identical output
-from ``get_instructions()`` and ``render_visual_constraints()`` once a
-``PersonaLoader`` is configured.
+The loader preserves the public ``get_instructions()`` and
+``render_visual_constraints()`` contracts while allowing the runtime persona
+text to evolve outside Python source.
 
 Why markdown not toml:
 - ``soul.py`` ships large free-form prompt text. Markdown sections are the
@@ -41,8 +39,8 @@ Why markdown not toml:
   re-writing files.
 
 Single-source-of-truth for default persona:
-- ``src/parrot/brain/personas/goslo_parrot_default.md`` mirrors the original
-  ``soul.py`` text 1:1. ``soul.py`` keeps a thin shim that delegates to the
+- ``src/parrot/brain/personas/goslo_parrot_default.md`` owns the current
+  runtime GOSLO persona. ``soul.py`` keeps a thin shim that delegates to the
   loader so consumers can keep importing ``get_instructions()`` /
   ``render_visual_constraints()``.
 
@@ -144,6 +142,7 @@ _MODE_NAME_TO_FLAG: Mapping[str, BehaviorMode] = {
     "researcher": BehaviorMode.RESEARCHER,
     "playful": BehaviorMode.PLAYFUL,
     "roleplay": BehaviorMode.ROLEPLAY,
+    "on_hand": BehaviorMode.ON_HAND,
 }
 """Section names ``mode.<name>`` → BehaviorMode flag mapping."""
 

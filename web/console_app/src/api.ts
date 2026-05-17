@@ -110,6 +110,35 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  memoryIdentityRefIndex: (limit = 80) =>
+    json<Receipt>("/api/memory/identity-ref-index?limit=" + encodeURIComponent(String(limit))),
+  memoryIdentityRefVerify: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/memory/identity-ref-index/verify", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  memoryIdentityRefScanPlan: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/memory/identity-ref-index/ref-scan-plan", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  memoryIdentityRefScanDispatch: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/memory/identity-ref-index/ref-scan-dispatch", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  memoryIdentityRefScanResults: (limit = 20) =>
+    json<Receipt>("/api/memory/identity-ref-index/ref-scan-results?limit=" + encodeURIComponent(String(limit))),
+  memoryIdentityRefResolveGraphiti: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/memory/identity-ref-index/resolve-graphiti", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  memoryIdentityRefApplyGraphitiEdge: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/memory/identity-ref-index/apply-graphiti-edge", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   obsidianVaultScan: (vaultPath = "") => {
     const params = new URLSearchParams({ limit: "24" });
     if (vaultPath.trim()) params.set("vault_path", vaultPath.trim());
@@ -239,6 +268,16 @@ export const api = {
     }),
   googleCalendarFetch: (body: Record<string, unknown>) =>
     json<Receipt>("/api/google/calendar/fetch", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  googleCalendarApiFetch: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/google/calendar/api-fetch", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  googleCalendarNanobotFetch: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/google/calendar/nanobot-fetch", {
       method: "POST",
       body: JSON.stringify(body)
     }),

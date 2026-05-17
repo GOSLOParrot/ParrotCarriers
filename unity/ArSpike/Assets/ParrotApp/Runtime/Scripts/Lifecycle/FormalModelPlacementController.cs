@@ -52,7 +52,7 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private bool attachArMobileTemplateXriInteractable = true;
         [SerializeField] private bool disableCustomGesturesWhenTemplateXriActive = true;
         [SerializeField] private bool preferHorizontalPlacementPlanes = true;
-        [SerializeField] private float minPlacementPlaneUpDot = 0.5f;
+        [SerializeField] private float minPlacementPlaneUpDot = 0.75f;
         [SerializeField] private bool forceManifestHeightAfterPlacement = true;
         [SerializeField] private int manifestHeightNormalizationPasses = 40;
         [SerializeField] private float manifestHeightNormalizationDelaySeconds = 0.1f;
@@ -128,6 +128,8 @@ namespace ParrotApp.Lifecycle
         private bool _userScaleOverrideActive;
         private bool _heightNormalizedOnce;
         private string _lastHeightNormalizationStatus = "height_idle";
+        private bool _hasLastPlacementSurfacePoint;
+        private Vector3 _lastPlacementSurfacePoint;
 
         private void OnEnable()
         {
@@ -333,6 +335,8 @@ namespace ParrotApp.Lifecycle
             }
 
             PlacedModel.transform.SetParent(modelRoot, worldPositionStays: true);
+            _lastPlacementSurfacePoint = position;
+            _hasLastPlacementSurfacePoint = true;
             PlacedModel.transform.SetPositionAndRotation(position, rotation);
             PlacedModel.SetActive(true);
             if (firstPlacement)
@@ -346,6 +350,7 @@ namespace ParrotApp.Lifecycle
                 StartHeightNormalizationPasses(PlacedModel);
             }
             ApplyScaleMultiplier();
+            SnapPlacedModelBottomToLastSurface("place");
             SelectPlacedModel(true, "placed");
             HasPlacedModel = true;
             LastPlacementStatus = "placed:" + ShortReason(reason);
@@ -386,6 +391,7 @@ namespace ParrotApp.Lifecycle
             _userScaleOverrideActive = false;
             _heightNormalizedOnce = false;
             _lastHeightNormalizationStatus = "height_idle";
+            _hasLastPlacementSurfacePoint = false;
             LastPlacementMode = "none";
             LastVisualSource = "none";
             LastPlacementStatus = "cleared";
@@ -845,6 +851,10 @@ namespace ParrotApp.Lifecycle
 
             Vector3 offset = Vector3.ProjectOnPlane(_dragWorldOffset, surfaceNormal);
             PlacedModel.transform.position = pose.position + offset;
+            _lastPlacementSurfacePoint = pose.position;
+            _hasLastPlacementSurfacePoint = true;
+            SnapPlacedModelBottomToLastSurface("drag");
+            RebasePlacedAnimationDrivers();
             LastPlacementMode = "ar_drag";
             LastPlacementStatus = "placed:ar_drag_plane";
             LastSelectionStatus = "dragging:" + ShortReason(reason);
@@ -895,6 +905,29 @@ namespace ParrotApp.Lifecycle
             if (_placedBaseScale.sqrMagnitude < 0.0001f)
                 _placedBaseScale = PlacedModel.transform.localScale;
             PlacedModel.transform.localScale = _placedBaseScale * ScaleMultiplier;
+            SnapPlacedModelBottomToLastSurface("scale");
+            RebasePlacedAnimationDrivers();
+        }
+
+        private void SnapPlacedModelBottomToLastSurface(string reason)
+        {
+            if (!_hasLastPlacementSurfacePoint || PlacedModel == null)
+                return;
+            if (!TryGetPlacedModelBounds(out Bounds bounds))
+                return;
+
+            float deltaY = _lastPlacementSurfacePoint.y - bounds.min.y;
+            if (Mathf.Abs(deltaY) <= 0.001f)
+                return;
+
+            // The AR Mobile template path is restricted to mostly horizontal
+            // placement planes in this slice. Keep the visual bottom on the
+            // raycast plane after GLB import scale, delayed renderer bounds, or
+            // user pinch changes the root scale.
+            PlacedModel.transform.position += Vector3.up * deltaY;
+            _lastHeightNormalizationStatus =
+                (string.IsNullOrWhiteSpace(_lastHeightNormalizationStatus) ? "height" : _lastHeightNormalizationStatus)
+                + ":snap=" + deltaY.ToString("0.000") + ":" + ShortReason(reason);
         }
 
         private bool ForceManifestHeightAfterPlacement(string reason = "sync")
@@ -933,6 +966,9 @@ namespace ParrotApp.Lifecycle
             _placedBaseScale = PlacedModel.transform.localScale;
             ScaleMultiplier = 1f;
             _heightNormalizedOnce = true;
+            SnapPlacedModelBottomToLastSurface("height:" + ShortReason(reason));
+            SyncTemplateTransformerScaleRange(PlacedModel);
+            RebasePlacedAnimationDrivers();
             _lastHeightNormalizationStatus =
                 "height=" + currentHeight.ToString("0.00")
                 + "->" + targetHeight.ToString("0.00")
@@ -1029,8 +1065,7 @@ namespace ParrotApp.Lifecycle
                 transformer = go.AddComponent<ARTransformer>();
             transformer.objectPlaneTranslationMode = ARTransformer.PlaneTranslationMode.Any;
             transformer.useInteractorOrientation = false;
-            transformer.minScale = minScaleMultiplier;
-            transformer.maxScale = maxScaleMultiplier;
+            SyncTemplateTransformerScaleRange(go);
             transformer.scaleSensitivity = 0.75f;
             transformer.elasticity = 0.15f;
             transformer.enableElasticBreakLimit = true;
@@ -1074,8 +1109,47 @@ namespace ParrotApp.Lifecycle
             if (grab != null && grab.isSelected)
                 return;
 
+            if (_heightNormalizedOnce)
+                RefreshScaleMultiplierFromPlacedTransform();
+            RebasePlacedAnimationDrivers();
+
             SelectPlacedModel(false, "xri_release");
             LastTemplateXriStatus = "released";
+        }
+
+        private void SyncTemplateTransformerScaleRange(GameObject go)
+        {
+            if (go == null) return;
+            var transformer = go.GetComponent<ARTransformer>();
+            if (transformer == null) return;
+
+            float baseScale = MaxAbsComponent(_placedBaseScale);
+            if (baseScale <= 0.0001f)
+                baseScale = MaxAbsComponent(go.transform.localScale);
+            if (baseScale <= 0.0001f)
+                baseScale = 1f;
+
+            // ARTransformer's min/max are absolute root localScale values, not
+            // user-facing multipliers. Keep the demo transformer behavior, but
+            // map it onto the manifest-normalized pet height so importer GLB
+            // scale cannot pull a placed model back to phone-sized geometry.
+            float minMultiplier = Mathf.Max(0.05f, minScaleMultiplier);
+            float maxMultiplier = Mathf.Max(minMultiplier + 0.01f, maxScaleMultiplier);
+            transformer.minScale = Mathf.Max(0.0001f, baseScale * minMultiplier);
+            transformer.maxScale = Mathf.Max(transformer.minScale + 0.0001f, baseScale * maxMultiplier);
+        }
+
+        private static float MaxAbsComponent(Vector3 scale)
+        {
+            return Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
+        }
+
+        private void RebasePlacedAnimationDrivers()
+        {
+            if (PlacedModel == null) return;
+            var drivers = PlacedModel.GetComponentsInChildren<AnimationDriver>(true);
+            for (int i = 0; i < drivers.Length; i++)
+                drivers[i]?.RebaseBaseTransformFromCurrent();
         }
 
         private static bool HasRegisteredSingleGrabTransformer(XRGrabInteractable grab, ARTransformer transformer)
@@ -1461,14 +1535,20 @@ namespace ParrotApp.Lifecycle
             if (placementCamera == null)
                 return Quaternion.LookRotation(ResolvePlaneTangent(normal), normal);
 
+            Vector3 upright = preferHorizontalPlacementPlanes ? Vector3.up : normal;
             Vector3 forward = placementCamera.transform.position - position;
-            forward = Vector3.ProjectOnPlane(forward, normal);
+            forward = Vector3.ProjectOnPlane(forward, upright);
             if (forward.sqrMagnitude < 0.0001f)
-                forward = Vector3.ProjectOnPlane(-placementCamera.transform.forward, normal);
+                forward = Vector3.ProjectOnPlane(-placementCamera.transform.forward, upright);
             if (forward.sqrMagnitude < 0.0001f)
-                forward = ResolvePlaneTangent(normal);
+                forward = ResolvePlaneTangent(upright);
 
-            var rotation = Quaternion.LookRotation(forward.normalized, normal);
+            // The AR Mobile demo can tilt decorative primitives to the detected
+            // plane normal. GOSLO is a companion creature, so on horizontal
+            // placement planes we use the plane only for position and keep the
+            // model world-upright to avoid a sloped blanket normal making the
+            // body look hunched or folded forward.
+            var rotation = Quaternion.LookRotation(forward.normalized, upright);
             if (applyDemoRandomAngleAtSpawn && demoSpawnAngleRangeDegrees > 0.001f)
                 rotation *= Quaternion.AngleAxis(UnityEngine.Random.Range(-demoSpawnAngleRangeDegrees, demoSpawnAngleRangeDegrees), Vector3.up);
             return rotation;

@@ -18,7 +18,8 @@ RUNTIME_MODELS = PARROT_APP / "Resources" / "Models"
 NER_SKIN2_TEXTURE_META = RUNTIME_MODELS / "Ner" / "NerSkin2.png.meta"
 FORMAL_STARTUP_SCENE = PARROT_APP / "Scenes" / "ParrotApp_Startup.unity"
 SCRIPT_ROOT = PARROT_APP / "Runtime" / "Scripts"
-SMOKE_REFERENCE_UI = SCRIPT_ROOT / "UI" / "AppV1SmokeReferenceUiController.cs"
+SMOKE_REFERENCE_UI = UNITY_ROOT / "Tests" / "Smoke" / "Scripts" / "AppV1SmokeReferenceUiController.cs"
+SMOKE_LIFECYCLE_FORCER = UNITY_ROOT / "Tests" / "Smoke" / "Scripts" / "LifecycleSmokeForcer.cs"
 STARTUP_CONFIG = (
     SCRIPT_ROOT / "Config" / "AppStartupConfigDto.cs"
 )
@@ -54,6 +55,21 @@ FORMAL_MODEL_REMOTE_CONTROLLER = (
 )
 FORMAL_XRHAND_PERCH_CONTROLLER = (
     SCRIPT_ROOT / "Lifecycle" / "FormalXrHandPerchController.cs"
+)
+HAND_GESTURE_SOURCE = (
+    SCRIPT_ROOT / "Hands" / "HandGestureSource.cs"
+)
+CAMERA_HAND_POSE_FRAME = (
+    SCRIPT_ROOT / "Hands" / "CameraHandPoseFrame.cs"
+)
+MEDIAPIPE_CAMERA_HAND_PROVIDER = (
+    SCRIPT_ROOT / "Hands" / "MediaPipeCameraHandPoseProvider.cs"
+)
+MEDIAPIPE_HAND_LANDMARKER_MODEL = (
+    PARROT_APP / "Resources" / "MediaPipe" / "hand_landmarker.bytes"
+)
+MEDIAPIPE_UNITY_PACKAGE = (
+    ROOT / "unity" / "ArSpike" / "Packages" / "com.github.homuler.mediapipe-0.16.3.tgz"
 )
 ROOM_SETTING_CLIENT = (
     SCRIPT_ROOT / "Backend" / "AppRoomSettingClient.cs"
@@ -114,6 +130,9 @@ AR_MOBILE_TEMPLATE_SCREEN_RAY_PREFAB = (
 )
 AR_MOBILE_TEMPLATE_SHADOW_FUNCTIONS = (
     PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "ShadowReceiver" / "ShadowReceiverShaderFunctions.hlsl"
+)
+AR_MOBILE_TEMPLATE_PLANE_FALLBACK_SHADER = (
+    PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "ParrotARPlaneFallback.shader"
 )
 AR_MOBILE_TEMPLATE_OBJECT_SPAWNER = (
     SCRIPT_ROOT / "ARMobileTemplate" / "XRIStarterAssets" / "ObjectSpawner.cs"
@@ -226,6 +245,32 @@ ANDROID_AUDIO_ROUTE_CALLBACK_JAVA = (
     / "audio"
     / "AudioRouteSnapshotCallback.java"
 )
+ANDROID_PCM_MIC_CAPTURE_JAVA = (
+    UNITY_ROOT
+    / "Plugins"
+    / "Android"
+    / "ParrotAudioRoute.androidlib"
+    / "src"
+    / "main"
+    / "java"
+    / "com"
+    / "parrotcarriers"
+    / "audio"
+    / "AndroidPcmMicCapture.java"
+)
+ANDROID_PCM_AUDIO_CALLBACK_JAVA = (
+    UNITY_ROOT
+    / "Plugins"
+    / "Android"
+    / "ParrotAudioRoute.androidlib"
+    / "src"
+    / "main"
+    / "java"
+    / "com"
+    / "parrotcarriers"
+    / "audio"
+    / "AndroidPcmAudioCallback.java"
+)
 
 
 def _unity_guid(asset: Path) -> str:
@@ -309,10 +354,18 @@ def test_unity_ar_foundation_and_livekit_version_locks_are_pinned() -> None:
     assert deps["com.unity.xr.arfoundation"] == "5.2.2"
     assert deps["com.unity.xr.arcore"] == "5.2.2"
     assert deps["com.unity.xr.arkit"] == "5.2.2"
+    assert deps["com.github.homuler.mediapipe"] == "file:com.github.homuler.mediapipe-0.16.3.tgz"
     assert deps["io.livekit.livekit-sdk"].endswith(
         "#7d868ef5cc5615c30a3ef4b73ae0dbb5cc4d6796"
     )
-    assert "-define:UNITY_AR_FOUNDATION" in CSC_RSP.read_text(encoding="utf-8")
+    csc_rsp = CSC_RSP.read_text(encoding="utf-8")
+    assert "UNITY_AR_FOUNDATION" in csc_rsp
+    assert "UNITY_XR_HANDS" in csc_rsp
+    assert "UNITY_MEDIAPIPE" in csc_rsp
+    assert MEDIAPIPE_UNITY_PACKAGE.is_file()
+    assert MEDIAPIPE_UNITY_PACKAGE.stat().st_size > 250_000_000
+    assert MEDIAPIPE_HAND_LANDMARKER_MODEL.is_file()
+    assert MEDIAPIPE_HAND_LANDMARKER_MODEL.stat().st_size > 1_000_000
 
     xr = XR_GENERAL_SETTINGS.read_text(encoding="utf-8")
     for provider in ["Android Providers", "iPhone Providers"]:
@@ -490,6 +543,7 @@ def test_ar_mobile_template_plane_assets_are_imported_into_formal_app() -> None:
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "URPShadowReceiver.shader",
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "InteractablePrimitive.shadergraph",
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "PlaneOcclusionShader.shader",
+        AR_MOBILE_TEMPLATE_PLANE_FALLBACK_SHADER,
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "ShadowReceiver" / "ShadowReceiver.shadergraph",
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Shaders" / "ShadowReceiver" / "MainLightShadowsSubgraph.shadersubgraph",
         PARROT_APP / "Resources" / "ARMobileTemplate" / "Textures" / "PlanePatternDot.png",
@@ -512,17 +566,22 @@ def test_ar_mobile_template_plane_assets_are_imported_into_formal_app() -> None:
     assert "ARInteractorSpawnTrigger" in spawn_trigger
     assert "ObjectSpawner" in AR_MOBILE_TEMPLATE_OBJECT_SPAWNER.read_text(encoding="utf-8")
     assert "EnsureRuntimeSafeMaterialFallback" in plane_companion
+    assert "m_UseRuntimeSafeMaterialFallback || Application.isMobilePlatform" in plane_companion
     assert "m_ForceMobileMaterialFallback = false" in plane_companion
     assert "m_ForceMobileMaterialFallback && Application.isMobilePlatform" in plane_companion
     assert "bool m_UseAndroidShaderGraphPlaneFallback = true" in plane_companion
+    assert "!m_UseAndroidShaderGraphPlaneFallback && !Application.isMobilePlatform" in plane_companion
     assert "Root fix remains the demo2 ShaderGraph chain" in plane_companion
     assert "simple translucent white surface" in plane_companion
     assert "Hidden/Shader Graph/FallbackError" in plane_companion
-    assert 'shaderName.Contains("Shader Graphs/")' not in plane_companion
-    assert 'shaderName.Contains("ShadowReceiver")' not in plane_companion
+    assert 'shaderName.Equals("Shader Graphs/ShadowReceiver"' in plane_companion
+    assert "render as Unity's magenta error material" in plane_companion
+    assert 'Resources.Load<Shader>("ARMobileTemplate/Shaders/ParrotARPlaneFallback")' in plane_companion
     assert "m_ReplaceMobileOcclusionSlot = true" in plane_companion
+    assert "m_ReplaceMobileOcclusionSlot || Application.isMobilePlatform" in plane_companion
     assert "ShouldReplaceOcclusionSlot(original)" in plane_companion
     assert 'shaderName.Equals("AR/Occlusion"' in plane_companion
+    assert 'materialName.IndexOf("Occlusion"' in plane_companion
     assert "ParrotRuntimeNoopARPlaneOcclusion" in plane_companion
     assert "Keep the demo2 surface/dot material" in plane_companion
     assert "bool replacedAny = false" in plane_companion
@@ -532,6 +591,14 @@ def test_ar_mobile_template_plane_assets_are_imported_into_formal_app() -> None:
     assert "materialDebugSummary" in plane_companion
     assert "MaterialShaderSummary" in plane_companion
     assert "ParrotRuntimeSafeARPlaneTranslucentWhite" in plane_companion
+    assert "FindRuntimeSafeTransparentShader" in plane_companion
+    assert '"Unlit/Transparent"' in plane_companion
+    assert 'shaderName.Equals("Parrot/ARPlaneFallbackTransparent"' in plane_companion
+    assert plane_companion.index('"Unlit/Transparent"') < plane_companion.index('"Universal Render Pipeline/Unlit"')
+    assert plane_companion.index('"Unlit/Transparent"') < plane_companion.index("ParrotARPlaneFallback")
+    assert "shader != null && shader.isSupported" in plane_companion
+    assert 'SetOverrideTag("RenderType", "Transparent")' in plane_companion
+    assert "CullMode.Off" in plane_companion
     assert "ARMobileTemplate/Textures/PlanePatternDot" in plane_companion
 
     shadow_receiver = (
@@ -669,10 +736,14 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     android_route_gradle = ANDROID_AUDIO_ROUTE_GRADLE.read_text(encoding="utf-8")
     android_route_java = ANDROID_AUDIO_ROUTE_JAVA.read_text(encoding="utf-8")
     android_route_callback_java = ANDROID_AUDIO_ROUTE_CALLBACK_JAVA.read_text(encoding="utf-8")
+    android_pcm_capture_java = ANDROID_PCM_MIC_CAPTURE_JAVA.read_text(encoding="utf-8")
+    android_pcm_callback_java = ANDROID_PCM_AUDIO_CALLBACK_JAVA.read_text(encoding="utf-8")
+    android_pcm_source = (SCRIPT_ROOT / "LiveKit" / "AndroidPcmMicrophoneSource.cs").read_text(encoding="utf-8")
     reconnect_supervisor = RECONNECT_SUPERVISOR.read_text(encoding="utf-8")
     lifecycle = APP_LIFECYCLE_MANAGER.read_text(encoding="utf-8")
     ecp_dto = (SCRIPT_ROOT / "Ecp" / "EcpEventDto.cs").read_text(encoding="utf-8")
     ecp_dispatcher = (SCRIPT_ROOT / "Ecp" / "EcpEventDispatcher.cs").read_text(encoding="utf-8")
+    heartbeat = (SCRIPT_ROOT / "Ecp" / "LifecycleHeartbeatPublisher.cs").read_text(encoding="utf-8")
 
     assert "OrchestratorClient orchestratorClient" in flow
     assert "AppRoomSettingClient roomSettingClient" in flow
@@ -794,6 +865,11 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "AudioRouteSnapshotDto" in route_manager
     assert "RequestCommunicationMode(bool enabled)" in route_manager
     assert "SetPreference(AudioRoutePreference" in route_manager
+    assert "ApplyTemporaryNativePreference(AudioRoutePreference" in route_manager
+    assert "ShouldRestoreTemporaryPreference" in route_manager
+    assert '"device_added"' in route_manager
+    assert '"device_removed"' in route_manager
+    assert "Do not restore on communication_device_changed" in route_manager
     assert "OnRoutePolicyChanged" in route_manager
     assert "AudioRouteDetector" in route_manager
     assert "fallback/diagnostic" in route_manager
@@ -816,7 +892,11 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "preference_changed_cached" in android_route_java
     assert "boolean canUseBluetooth = hasBluetoothConnectPermission()" in android_route_java
     assert 'if (canUseBluetooth && ("bluetooth".equals(preference) || "auto".equals(preference)))' in android_route_java
+    assert "hasBluetoothOutputType(getDevices(AudioManager.GET_DEVICES_OUTPUTS))" in android_route_java
+    assert "do not" in android_route_java and "steal Parrot audio away from the" in android_route_java
     assert "Explicit Bluetooth preference is advisory" in android_route_java
+    assert "AR companion mode is a hands-free voice session" in android_route_java
+    assert android_route_java.index("AudioDeviceInfo speaker = firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)") < android_route_java.index("return firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)")
     assert "bluetooth_connect_denied" not in android_route_java
     assert "class Api31" in android_route_java
     assert "Object communicationDeviceChangedListener" in android_route_java
@@ -825,9 +905,36 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "AudioRouteSnapshotCallback callback" in android_route_java
     assert "callback.onAudioRouteSnapshot(json)" in android_route_java
     assert "interface AudioRouteSnapshotCallback" in android_route_callback_java
+    assert "interface AndroidPcmAudioCallback" in android_pcm_callback_java
+    assert "AudioRecord" in android_pcm_capture_java
+    assert "buildFirstUsableAudioRecord" in android_pcm_capture_java
+    assert "one strict sample rate per Java capture instance" in android_pcm_capture_java
+    assert "requestedSampleRate > 0 ? requestedSampleRate : 48000" in android_pcm_capture_java
+    assert "sampleRateCandidates" not in android_pcm_capture_java
+    assert "MediaRecorder.AudioSource.VOICE_COMMUNICATION" in android_pcm_capture_java
+    assert "MediaRecorder.AudioSource.MIC" in android_pcm_capture_java
+    assert "rate=\" + activeSampleRate" in android_pcm_capture_java
+    assert "pcm_callback_failed" in android_pcm_capture_java
+    assert "com.unity3d.player.UnityPlayer" not in android_pcm_capture_java
+    assert "AndroidJavaProxy" in android_pcm_source
+    assert "com.parrotcarriers.audio.AndroidPcmAudioCallback" in android_pcm_source
+    assert "new AndroidJavaObject(\"com.parrotcarriers.audio.AndroidPcmMicCapture\")" in android_pcm_source
+    assert "AndroidPcmMicrophoneSource is Android-only" in android_pcm_source
+    assert "RefreshNativeError(\"start_returned_false\")" in android_pcm_source
+    assert "_native.Call<string>(\"lastError\")" in android_pcm_source
+    assert android_pcm_source.index("if (_started) return;") < android_pcm_source.index("base.Start();")
+    assert "CleanupNative();\n                base.Stop();" in android_pcm_source
     assert "TYPE_BLUETOOTH_SCO" in android_route_java
     assert "TYPE_BLUETOOTH_A2DP" in android_route_java
+    assert "TYPE_BLE_HEADSET" in android_route_java
+    assert "TYPE_BLE_SPEAKER" in android_route_java
+    assert "TYPE_HEARING_AID" in android_route_java
+    assert "isBluetoothVoiceType" in android_route_java
+    assert "hasBluetoothOutputType" in android_route_java
     assert "bluetooth_connect_permission" in android_route_java
+    assert "getDevices() is only an availability list" in android_route_java
+    assert 'if (hasDeviceType(inputs, AudioDeviceInfo.TYPE_BLUETOOTH_SCO)) {' not in android_route_java
+    assert 'if (hasDeviceType(outputs, AudioDeviceInfo.TYPE_BLUETOOTH_SCO)) {' not in android_route_java
     assert "class AudioRouteSnapshotDto" in route_snapshot
     assert "AudioRoutePreference" in route_snapshot
     assert "requires_mic_republish" in route_snapshot
@@ -841,6 +948,9 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "GET_DEVICES_OUTPUTS" in route_detector
     assert "TYPE_BLUETOOTH_SCO" in route_detector
     assert "TYPE_BLUETOOTH_A2DP" in route_detector
+    assert "TYPE_BLE_HEADSET" in route_detector
+    assert "TYPE_BLE_SPEAKER" in route_detector
+    assert "TYPE_HEARING_AID" in route_detector
     assert "DetectAndroidLegacyFlags" in route_detector
     assert "LastDetectionSource" in route_detector
     assert "LastDeviceSummary" in route_detector
@@ -850,11 +960,19 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "BluetoothA2dp:\n                case AudioRouteKind.WiredHeadset" in route_policy
     assert "allowAndroidDefaultMicrophoneWhenDeviceListEmpty = true" in mic
     assert "ShouldUseAndroidDefaultMicrophoneWhenDeviceListEmpty" in mic
+    assert "Native route snapshots can briefly be stale or unknown" in mic
     assert "android_default_microphone" in mic
     assert 'LastManualDeviceStatus = "auto:android_default_microphone"' in mic
     assert 'return ShouldUseAndroidDefaultMicrophoneWhenDeviceListEmpty()' in mic
     assert "IsAndroidMicInputRoute" in mic
-    assert "new MicrophoneSource(string.IsNullOrEmpty(device) ? null : device" in mic
+    assert "CreateAudioSourceForAttempt" in mic
+    assert "ShouldUseAndroidAudioRecordFallbackSource" in mic
+    assert "new AndroidPcmMicrophoneSource(_configuredSampleRate, 1" in mic
+    assert "new MicrophoneSource(" in mic
+    assert "requiresUnityMicrophonePosition = false" in mic
+    assert 'sourceKind = "android_audio_record"' in mic
+    assert '"source:" + sourceKind' in mic
+    assert "string.IsNullOrEmpty(attempt?.DeviceName) ? null : attempt.DeviceName" in mic
     assert "RequestFreshTokenReconnect" in reconnect_supervisor
     assert "Mathf.Pow(2f" in reconnect_supervisor
     assert "IsBackgroundState" in reconnect_supervisor
@@ -867,6 +985,15 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "FromWireJson" in ecp_dto
     assert "ExtractBalancedJson" in ecp_dto
     assert "EcpEventBuilder.FromWireJson(json)" in ecp_dispatcher
+    assert "AnimationDriver _subscribedAnimationDriver" in heartbeat
+    assert "AnimationDriverBindRetrySeconds" in heartbeat
+    assert "_nextAnimationDriverBindAt" in heartbeat
+    assert "EnsureAnimationDriverBound();" in heartbeat
+    assert "FindObjectOfType<AnimationDriver>()" in heartbeat
+    assert '"animation_driver_bound"' in heartbeat
+    assert "public void ReportBodyState(string bodyStateWire)" in heartbeat
+    assert '"body_state_external"' in heartbeat
+    assert "UnbindAnimationDriver();" in heartbeat
     assert "class FormalMainReadyGate" in main_ready
     assert "OnMainUiReady += HandleStartupMainReady" in main_ready
     assert "ReportRunning()" in main_ready
@@ -900,6 +1027,7 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "FormalModelPlacementController modelPlacementController" in home_hud
     assert "FormalArSessionBaselineReporter arSessionBaselineReporter" in home_hud
     assert "FormalArRuntimeBootstrap arRuntimeBootstrap" in home_hud
+    assert "FormalXrHandPerchController xrHandPerchController" in home_hud
     assert "AudioRouteHudLabel" in home_hud
     assert "MicrophoneHudLabel" in home_hud
     assert "MicrophoneDeviceHudLabel" in home_hud
@@ -910,6 +1038,8 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "health.AudioPublishAttempted ? \"wait\" : \"idle\"" in home_hud
     assert "PlacementHudLabel" in home_hud
     assert "ArHudLabel" in home_hud
+    assert "Hand {XrHandHudLabel()}" in home_hud
+    assert "XrHandHudLabel" in home_hud
     assert "modelPlacementController.LastDiagnosticSummary" in home_hud
     assert "arSessionBaselineReporter.LastStatus" in home_hud
     assert "arRuntimeBootstrap.LastSpatialVisualStatus" in home_hud
@@ -937,10 +1067,22 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "microphonePublisher.LastManualDeviceStatus" in home_hud
     assert "microphonePublisher.UplinkStateLabel" in home_hud
     assert "microphonePublisher.LastPublishStage" in home_hud
+    assert "microphonePublisher.ActiveAudioSourceKind" in home_hud
+    assert "microphonePublisher.AudioReadFrameCount" in home_hud
+    assert "microphonePublisher.LastAudioReadChannels" in home_hud
+    assert "microphonePublisher.LastAudioReadSampleRate" in home_hud
+    assert "microphonePublisher.LastAudioReadPeak" in home_hud
+    assert "microphonePublisher.LastAudioReadAgeSeconds" in home_hud
+    assert "microphonePublisher.UplinkWatchdogState" in home_hud
+    assert "microphonePublisher.LastCaptureFallbackStatus" in home_hud
+    assert "microphonePublisher.NativeAudioRecordState" in home_hud
+    assert "microphonePublisher.NativeAudioRecordError" in home_hud
+    assert "microphonePublisher.UplinkWatchdogMicrophoneRecording" in home_hud
+    assert "microphonePublisher.UplinkWatchdogRecoveryCount" in home_hud
     assert "microphonePublisher.PublishedRouteVersion" in home_hud
     assert "microphonePublisher.RouteVersion" in home_hud
     assert "VerticalWrapMode.Overflow" in home_hud
-    assert "new Vector2(980f, 410f)" in home_hud
+    assert "new Vector2(980f, 450f)" in home_hud
     assert "SafeLabel(modelPlacementController.LastDiagnosticSummary + rpc)" in home_hud
     assert "ShortRoute" in home_hud
     assert "ShortRouteSource" in home_hud
@@ -986,6 +1128,52 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "PublishInProgress" in mic
     assert "LastPublishStage" in mic
     assert "UplinkStateLabel" in mic
+    assert "AudioReadFrameCount" in mic
+    assert "ActiveAudioSourceKind" in mic
+    assert "NativeAudioRecordState" in mic
+    assert "NativeAudioRecordError" in mic
+    assert "_lastNativeAudioRecordState" in mic
+    assert "_lastNativeAudioRecordError" in mic
+    assert "CacheNativeAudioRecordDiagnostics" in mic
+    assert "uplinkRuntimeWatchdogEnabled = true" in mic
+    assert "UplinkRuntimeWatchdogLoop" in mic
+    assert "Microphone.IsRecording" in mic
+    assert "LastAudioReadAgeSeconds" in mic
+    assert "uplink_watchdog_audio_frames_stale" in mic
+    assert "uplink_watchdog_microphone_stopped" in mic
+    assert "BuildCaptureAttempts" in mic
+    assert "sco_capture_48k_retry" in mic
+    assert "bluetooth_sco_capture_48k" in mic
+    assert "phone_default_mic_after_sco_failure" in mic
+    assert "phone_default_microphone" in mic
+    assert "android_audio_record_after_unity_timeout" in mic
+    assert "android_audio_record_44100_after_unity_timeout" in mic
+    assert "android_audio_record_16000_after_unity_timeout" in mic
+    assert "the SDK/FFI rejects PCM frames whose sample rate differs" in mic
+    assert "ApplyCaptureRouteOverride" in mic
+    assert "RouteOverridePreference" in mic
+    assert "AudioRoutePreference.SystemDefault" in mic
+    assert "AudioRoutePreference.PhoneMic" in mic
+    assert "ApplyTemporaryNativePreference(" in mic
+    assert "SetPreference(AudioRoutePreference.PhoneMic)" not in mic
+    assert "route_override:\" + overrideLabel" in mic
+    assert "capture_route_override" in mic
+    assert "Prefer system" in mic and "A2DP/BLE output stays on the headset" in mic
+    assert "route change accepted during capture override without republish" in mic
+    assert 'string.Equals(_selectedDevice, "phone_default_microphone"' in mic
+    assert "LastCaptureFallbackStatus" in mic
+    assert "BuildSuccessFallbackStatus" in mic
+    assert "source:\" + sourceKind" in mic
+    assert "AudioRead freshness is the stronger formal-app signal" in mic
+    assert "Headset/route glitches recover by rebuilding only the local mic track" in mic
+    assert "QueueRouteRepublish(_activePolicy, reason)" in mic
+    assert "StopUplinkWatchdog(reason)" in mic
+    assert "pinned LiveKit Unity SDK does not dispose our C# source" in mic
+    assert "(source as IDisposable)?.Dispose()" in mic
+    assert "Room.Connect" not in mic
+    assert "OnMicrophoneAudioRead" in mic
+    assert "_micSource.AudioRead += OnMicrophoneAudioRead" in mic
+    assert "source.AudioRead -= OnMicrophoneAudioRead" in mic
     assert "PublishedRouteVersion" in mic
     assert "RouteVersion" in mic
     assert "_selectedDevice" in mic
@@ -995,12 +1183,16 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "AvailableDevicesLabel" in mic
     assert "microphoneStartTimeoutSeconds = 4f" in mic
     assert "TryGetMicrophonePosition" in mic
+    assert "audio_read_timeout" in mic
+    assert '_lastPublishStage = "audio_read_timeout"' in mic
+    assert "AudioReadFrameCount > audioReadBaseline" in mic
     assert "microphone_start_timeout" in mic
     assert "microphone_start_exception" in mic
     assert "microphone_start_aborted" in mic
     assert "microphone_ready_aborted" in mic
     assert "audio_track_create_failed" in mic
-    assert 'StopPublishingInner();\n                HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);' in mic
+    assert "StopPublishingInner();" in mic
+    assert "HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);" in mic
     assert "SnapshotRpcHandler" not in flow
     assert "CaptureSnapshotForRpc" not in video
     assert "AsyncGPUReadback.Request" not in video
@@ -1014,6 +1206,12 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     tool_controller = FORMAL_HOME_TOOL_CONTROLLER.read_text(encoding="utf-8")
     model_remote = FORMAL_MODEL_REMOTE_CONTROLLER.read_text(encoding="utf-8")
     xrhand_perch = FORMAL_XRHAND_PERCH_CONTROLLER.read_text(encoding="utf-8")
+    hand_gesture = HAND_GESTURE_SOURCE.read_text(encoding="utf-8")
+    camera_pose_frame = CAMERA_HAND_POSE_FRAME.read_text(encoding="utf-8")
+    mediapipe_provider = MEDIAPIPE_CAMERA_HAND_PROVIDER.read_text(encoding="utf-8")
+    perch_on_hand = (SCRIPT_ROOT / "Hands" / "PerchOnHand.cs").read_text(encoding="utf-8")
+    rpc = (SCRIPT_ROOT / "RPC" / "ParrotRpcHandler.cs").read_text(encoding="utf-8")
+    animation = ANIMATION_DRIVER.read_text(encoding="utf-8")
     model_reporter = FORMAL_MODEL_READY_REPORTER.read_text(encoding="utf-8")
     model_placement = FORMAL_MODEL_PLACEMENT_CONTROLLER.read_text(encoding="utf-8")
     ar_reporter = FORMAL_AR_SESSION_BASELINE_REPORTER.read_text(encoding="utf-8")
@@ -1271,7 +1469,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "fallbackToPreviewWhenArMisses" in model_placement
     assert "fallbackToPreviewWhenArMisses = false" in model_placement
     assert "preferHorizontalPlacementPlanes = true" in model_placement
-    assert "minPlacementPlaneUpDot = 0.5f" in model_placement
+    assert "minPlacementPlaneUpDot = 0.75f" in model_placement
     assert "forceManifestHeightAfterPlacement = true" in model_placement
     assert "EnhancedTouchSupport.Enable()" in model_placement
     assert "HandleInputSystemTouchPlacementAndSelection" in model_placement
@@ -1296,14 +1494,25 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "InteractableFocusMode.Single" in model_placement
     assert "grab.addDefaultGrabTransformers = true" in model_placement
     assert "transformer.objectPlaneTranslationMode = ARTransformer.PlaneTranslationMode.Any" in model_placement
-    assert "transformer.minScale = minScaleMultiplier" in model_placement
-    assert "transformer.maxScale = maxScaleMultiplier" in model_placement
+    assert "SyncTemplateTransformerScaleRange(go)" in model_placement
+    assert "ARTransformer's min/max are absolute root localScale values" in model_placement
+    assert "baseScale * minMultiplier" in model_placement
+    assert "baseScale * maxMultiplier" in model_placement
+    assert "SyncTemplateTransformerScaleRange(PlacedModel)" in model_placement
+    assert "SnapPlacedModelBottomToLastSurface" in model_placement
+    assert "Keep the visual bottom on the" in model_placement
+    assert "RebasePlacedAnimationDrivers()" in model_placement
+    assert "RebaseBaseTransformFromCurrent" in (
+        SCRIPT_ROOT / "Parrot" / "AnimationDriver.cs"
+    ).read_text(encoding="utf-8")
     assert "grab.startingSingleGrabTransformers.Add(transformer)" in model_placement
     assert "grab.AddSingleGrabTransformer(transformer)" in model_placement
     assert "BoxCollider" in model_placement
     assert "ResolveDemoSpawnRotation" in model_placement
     assert "ResolvePlaneTangent" in model_placement
     assert "Vector3.ProjectOnPlane" in model_placement
+    assert "Vector3 upright = preferHorizontalPlacementPlanes ? Vector3.up : normal" in model_placement
+    assert "model world-upright" in model_placement
     assert "TryMoveSelectedModelOnPlane" in model_placement
     assert "CaptureDragOffset" in model_placement
     assert 'SelectPlacedModel(true, "tap_model")' in model_placement
@@ -1362,6 +1571,13 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "SetHeadState(AnimationDriver.HeadState.Tilt)" in model_placement
     assert "SetState(AnimationDriver.BodyState.HeadBob)" in model_placement
     assert 'ApplyCapability("head_bob"' in model_placement
+    assert "minecraftStandingBodyPitchWeight = 0f" in animation
+    assert "minecraftFlyingBodyPitchWeight = 0f" in animation
+    assert "Manual AR hover should flap without folding the body cube forward" in animation
+    assert "ResolveMinecraftBodyXRot" in animation
+    assert "MinecraftParrotPose.OnShoulder" in animation
+    assert "McBodyXRot * Mathf.Clamp(minecraftStandingBodyPitchWeight" in animation
+    assert "McBodyXRot * Mathf.Clamp(minecraftFlyingBodyPitchWeight" in animation
     assert "ReportGosloPlaced()" not in model_reporter
     assert "public string LastBrainRpcStatus" in flow
     assert "LastBrainRpcStatus = method + \":ok\"" in flow
@@ -1377,6 +1593,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
 
     assert "class FormalModelRemoteController" in model_remote
     assert "using ParrotApp.Config;" in model_remote
+    assert "using ParrotApp.Ecp;" in model_remote
     assert "IPointerDownHandler" in model_remote
     assert "IDragHandler" in model_remote
     assert "IPointerUpHandler" in model_remote
@@ -1388,6 +1605,31 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "OnPlacementStateChanged += HandlePlacementStateChanged" in model_remote
     assert "OnPlacementStateChanged -= HandlePlacementStateChanged" in model_remote
     assert 'LastRemoteStatus = "idle";' in model_remote
+    assert "CurrentLiftInput" in model_remote
+    assert "FormalModelLiftPad" in model_remote
+    assert "new Vector2(417f, 417f)" in model_remote
+    assert "new Vector2(252f, 417f)" in model_remote
+    assert "new Vector2(138f, 138f)" in model_remote
+    assert "new Vector2(123f, 123f)" in model_remote
+    assert "JoystickAxis.Vertical" in model_remote
+    assert "SetLiftInput" in model_remote
+    assert "ApplyModelFlight" in model_remote
+    assert "fallbackFlightVerticalSpeedMetersPerSecond" in model_remote
+    assert "remoteFlightMaxHeightMeters" in model_remote
+    assert "SetState(AnimationDriver.BodyState.Fly)" in model_remote
+    assert "EndRemoteFlight(landed: true" in model_remote
+    assert "SetState(landed && continueWalking" in model_remote
+    assert "LifecycleHeartbeatPublisher.Instance?.ReportActiveCommand" in model_remote
+    assert "LifecycleHeartbeatPublisher.Instance?.ClearActiveCommand" in model_remote
+    assert "LifecycleHeartbeatPublisher.Instance?.ReportBodyState" in model_remote
+    assert '"local_remote_"' in model_remote
+    assert "new[] { BodyLock }" in model_remote
+    assert 'PublishRemoteBodyState("flying")' in model_remote
+    assert 'PublishRemoteBodyState("walking")' in model_remote
+    assert 'PublishRemoteBodyState("idle")' in model_remote
+    assert "SetAnimatorBoolIfExists" in model_remote
+    assert "AnimatorControllerParameterType.Bool" in model_remote
+    assert "localFromCenter" in model_remote
     assert "WalkOnPlane(input, deltaTime)" in model_remote
     assert "ApplyCapability(\"spine_walk\"" in model_remote
     assert "ParrotRegistry.Instance.Resolve(modelId)" in model_remote
@@ -1412,13 +1654,68 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "model_no_animation_driver" in xrhand_perch
     assert "SupportsPerch" in xrhand_perch
     assert "AnimationDriver" in xrhand_perch
+    assert "EnsureGestureSource();" in xrhand_perch
+    assert 'WithTracking("home_gates_wait:" + ShortReason(mainReadyGate.LastMissingGates))' in xrhand_perch
+    assert 'WithTracking("waiting_placed_model")' in xrhand_perch
+    assert 'Debug.Log("[FormalXrHandPerch] " + LastXrHandStatus)' in xrhand_perch
     assert "xrhand_debug_only_package_missing" in xrhand_perch
+    assert "camera_cv_owner_mounted_waiting_tracking" in xrhand_perch
+    assert "camera_cv_tracking_active_perch_owner_mounted" in xrhand_perch
     assert "xrhand_owner_mounted_waiting_tracking" in xrhand_perch
     assert "xrhand_tracking_active_perch_owner_mounted" in xrhand_perch
+    assert "_mountedPerch != null && _mountedPerch != perch" in xrhand_perch
     assert "DebugFireBranchGesture" in xrhand_perch
     assert "CallBrainRpc" not in xrhand_perch
     assert "PerformRpc" not in xrhand_perch
     assert "AppV1SmokeReferenceUiController" not in xrhand_perch
+
+    assert "class HandGestureSource" in hand_gesture
+    assert "TrackingMode { Auto, CameraCv, XrHands, DebugOnly }" in hand_gesture
+    assert "MediaPipeCameraHandPoseProvider cameraPoseProvider" in hand_gesture
+    assert "ApplyCameraHandPose(CameraHandPoseFrame frame)" in hand_gesture
+    assert "DetectGesture(CameraHandPoseFrame frame" in hand_gesture
+    assert "RealCameraCvCompiled" in hand_gesture
+    assert '"[HandGestureSource] "' in hand_gesture
+    assert "camera_cv_provider_created" in hand_gesture
+    assert "camera_cv_provider_subscribed" in hand_gesture
+
+    assert "struct CameraHandPoseFrame" in camera_pose_frame
+    assert "HandPerchPose PerchPose" in camera_pose_frame
+    assert "IndexIntermediate" in camera_pose_frame
+    assert "IndexDistal" in camera_pose_frame
+
+    assert "class MediaPipeCameraHandPoseProvider" in mediapipe_provider
+    assert "UNITY_MEDIAPIPE && UNITY_AR_FOUNDATION" in mediapipe_provider
+    assert "HandLandmarker.CreateFromOptions" in mediapipe_provider
+    assert "modelAssetBuffer: handLandmarkerModel.bytes" in mediapipe_provider
+    assert "preferGpuDelegateOnMobile = false" in mediapipe_provider
+    assert "gpu_delegate_failed_fallback_cpu" in mediapipe_provider
+    assert "mediapipe_hand_landmarker_ready_cpu_fallback" in mediapipe_provider
+    assert "ARCameraManager" in mediapipe_provider
+    assert "TryAcquireLatestCpuImage" in mediapipe_provider
+    assert "TryDetectForVideo" in mediapipe_provider
+    assert "bindRetryIntervalSeconds" in mediapipe_provider
+    assert "assumedIndexFingerLengthMeters" in mediapipe_provider
+    assert "EstimateDepth" in mediapipe_provider
+    assert "Resources.Load<TextAsset>(resourcesModelPath)" in mediapipe_provider
+    assert '"MediaPipe/hand_landmarker"' in mediapipe_provider
+    assert "cpu_image_first_frame" in mediapipe_provider
+    assert "first_hand depth=" in mediapipe_provider
+    assert 'PublishLost("mediapipe_detect_failed:" + ShortReason(ex.Message))' in mediapipe_provider
+
+    assert "TryRequestReturnToView" in perch_on_hand
+    assert "HandGestureSource _subscribedHandTracker" in perch_on_hand
+    assert "ResolveReferences(force: true)" in perch_on_hand
+    assert "GetComponentInChildren<AnimationDriver>(true)" in perch_on_hand
+    assert "_subscribedHandTracker.OnGestureSnapshot -= OnGesture" in perch_on_hand
+    assert "ResolveFootAnchor(force: true)" in perch_on_hand
+    assert "tracking_lost_hold_on_hand" in perch_on_hand
+    assert "ResolveReturnToViewPosition" in perch_on_hand
+    assert "PlayHeadTiltOnce()" in perch_on_hand
+    assert "public void PlayHeadTiltOnce()" in animation
+    assert "_headTiltOneShot" in animation
+    assert 'RegisterRpcMethod("returnToView", HandleReturnToView)' in rpc
+    assert "HandleReturnToView" in rpc
 
     assert "class FormalArSessionBaselineReporter" in ar_reporter
     assert "FormalArRuntimeBootstrap arRuntimeBootstrap" in ar_reporter
@@ -1515,6 +1812,8 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
 
 def test_smoke_scene_builder_mounts_reference_ui_and_wires_existing_tools() -> None:
     text = SMOKE_BUILDER.read_text(encoding="utf-8")
+    reference_ui = SMOKE_REFERENCE_UI.read_text(encoding="utf-8")
+    lifecycle_forcer = SMOKE_LIFECYCLE_FORCER.read_text(encoding="utf-8")
 
     assert "using ParrotApp.UI;" in text
     assert "AddComponent<AppV1SmokeReferenceUiController>()" in text
@@ -1537,6 +1836,10 @@ def test_smoke_scene_builder_mounts_reference_ui_and_wires_existing_tools() -> N
     assert "LOCAL PREVIEW" in text
     assert "Magnifier creates a draggable Focus overlay" in text
     assert "Bottom-left joystick walks the parrot on the plane" in text
+    assert reference_ui.startswith("#if UNITY_EDITOR")
+    assert lifecycle_forcer.startswith("#if UNITY_EDITOR")
+    assert "homepage reference extraction only" in reference_ui
+    assert "Smoke-scene-only helper" in lifecycle_forcer
 
 
 def test_parrot_joystick_uses_existing_parrot_controller_boundary() -> None:
@@ -1806,6 +2109,8 @@ def test_unity_project_has_no_legacy_duplicate_app_roots() -> None:
         assert not path.exists(), f"legacy Unity path should be removed: {path}"
 
     assert SCRIPT_ROOT.is_dir()
+    assert not (SCRIPT_ROOT / "UI" / "AppV1SmokeReferenceUiController.cs").exists()
+    assert SMOKE_REFERENCE_UI.is_file()
     assert (PARROT_APP / "Resources" / "parrot_models").is_dir()
     assert (PARROT_APP / "Resources" / "Models").is_dir()
     assert (PARROT_APP / "Art" / "AppV1").is_dir()

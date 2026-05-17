@@ -274,6 +274,21 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         "Current app capability mode: silent / voice-only / voice+video / full AR.",
         event_driven=True,
     ),
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/goslo_placed",
+        "bool",
+        "brain.session_policy",
+        "Whether Unity has explicitly completed GOSLO AR placement for this LiveKit session.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.SESSION,
+        "session/first_greeting_sent",
+        "bool",
+        "brain.session_policy",
+        "Whether the placement-gated first greeting has already been generated this session.",
+    ),
     # App v1 menu-canvas policy keys. Single writer is the App facade so Unity
     # buttons and the temporary Web monitor cannot bypass backend policy gates.
     BlackboardKey(
@@ -489,11 +504,11 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
         BbScope.TRANSIENT,
         "transient/hand_gesture",
         "dict[str, Any]",
-        # Writer reassigned in Sprint 1 S1.A2 (see sprint0_completion §10.4):
-        # `brain.gesture_source` was a speculative standalone module; the actual
-        # data source is XRHandTracker → DataChannel → telemetry_receiver.
-        "brain.telemetry_receiver",
-        "{kind, hand_pose, since} — expires 2s after last sighting.",
+        # Formal App XRHand path: Unity publishes ECP gesture.recognized,
+        # observer.gesture mirrors it here. Legacy telemetry_receiver may still
+        # parse old parrot.event hand_gesture packets, but it is not the owner.
+        "brain.observer.gesture",
+        "{kind, detected, confidence, source, hand_pose, since} — expires 2s after last sighting.",
         event_driven=True,
     ),
     BlackboardKey(

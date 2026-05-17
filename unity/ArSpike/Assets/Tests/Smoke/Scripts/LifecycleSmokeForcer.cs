@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 
 namespace ParrotApp.Lifecycle
@@ -36,3 +37,4 @@ namespace ParrotApp.Lifecycle
         }
     }
 }
+#endif

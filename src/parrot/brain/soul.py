@@ -14,9 +14,8 @@ Resolution order on import / call:
 2. ``$PARROT_ACTIVE_PERSONA`` env override (smoke / pytest)
 3. ``DEFAULT_PERSONA_ID`` = ``goslo_parrot_default``
 
-The default persona file mirrors the original prompt text 1:1 — running
-``soul.get_instructions()`` before / after this refactor produces the same
-string modulo whitespace normalisation.
+The default persona file owns the current runtime GOSLO character contract.
+It no longer tries to mirror the old in-code prompt text 1:1.
 """
 
 from __future__ import annotations

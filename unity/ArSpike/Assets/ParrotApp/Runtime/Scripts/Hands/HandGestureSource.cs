@@ -16,10 +16,18 @@ namespace ParrotApp.Hands
         public const string GestureBranch = "index_finger_branch";
         public const string GestureFist = "closed_fist";
 
+        public enum TrackingMode { Auto, CameraCv, XrHands, DebugOnly }
+
+        [Header("Tracking")]
+        [SerializeField] private TrackingMode trackingMode = TrackingMode.Auto;
+        [SerializeField] private bool preferCameraCvOnMobile = true;
+        [SerializeField] private bool autoCreateCameraCvProvider = true;
+        [SerializeField] private MediaPipeCameraHandPoseProvider cameraPoseProvider;
+        [SerializeField] private bool diagnosticLog = true;
+
 #if UNITY_XR_HANDS
         public enum PreferredHand { Left, Right }
 
-        [Header("Tracking")]
         [SerializeField] private PreferredHand preferredHand = PreferredHand.Right;
 #endif
 
@@ -50,6 +58,7 @@ namespace ParrotApp.Hands
         public Vector3 IndexDirection { get; private set; } = Vector3.right;
         public Vector3 PalmNormal { get; private set; } = Vector3.up;
         public HandPerchPose CurrentPerchPose { get; private set; }
+        public bool RealCameraCvCompiled => MediaPipeCameraHandPoseProvider.RealMediaPipeCompiled;
 
         public event Action<HandGestureSnapshot> OnGestureSnapshot;
 
@@ -57,6 +66,9 @@ namespace ParrotApp.Hands
         private string _lastSnapshotGesture = GestureNone;
         private bool _lastSnapshotDetected;
         private float _nextSubsystemRetryAt;
+        private bool _cameraProviderSubscribed;
+        private string _lastStatusLog = "";
+        private string _lastGestureLog = GestureNone;
 
 #if UNITY_XR_HANDS
         private XRHandSubsystem _handSubsystem;
@@ -89,6 +101,17 @@ namespace ParrotApp.Hands
 
         private void Start()
         {
+            DebugLog("start trackingMode=" + trackingMode + " mobile=" + Application.isMobilePlatform);
+            EnsureCameraCvProviderIfSelected();
+            if (ShouldUseCameraCvProvider())
+            {
+                LastTrackingStatus = cameraPoseProvider != null
+                    ? "camera_cv_owner_mounted_waiting_tracking"
+                    : "camera_cv_provider_missing";
+                LogStatusIfChanged();
+                return;
+            }
+
 #if UNITY_XR_HANDS
             TryBindSubsystem();
 #else
@@ -101,6 +124,15 @@ namespace ParrotApp.Hands
 
         private void Update()
         {
+            if (ShouldUseCameraCvProvider())
+            {
+                EnsureCameraCvProviderIfSelected();
+                if (cameraPoseProvider != null && !string.IsNullOrWhiteSpace(cameraPoseProvider.LastStatus))
+                    LastTrackingStatus = cameraPoseProvider.LastStatus;
+                LogStatusIfChanged();
+                return;
+            }
+
 #if UNITY_XR_HANDS
             if ((_handSubsystem == null || !_handSubsystem.running) && Time.unscaledTime >= _nextSubsystemRetryAt)
             {
@@ -114,9 +146,72 @@ namespace ParrotApp.Hands
 
         private void OnDestroy()
         {
+            UnsubscribeCameraCvProvider();
 #if UNITY_XR_HANDS
             UnsubscribeSubsystem();
 #endif
+        }
+
+        private bool ShouldUseCameraCvProvider()
+        {
+            if (trackingMode == TrackingMode.CameraCv) return true;
+            if (trackingMode == TrackingMode.XrHands || trackingMode == TrackingMode.DebugOnly) return false;
+            return preferCameraCvOnMobile && Application.isMobilePlatform;
+        }
+
+        private void EnsureCameraCvProviderIfSelected()
+        {
+            if (!ShouldUseCameraCvProvider()) return;
+            if (cameraPoseProvider == null)
+                cameraPoseProvider = GetComponent<MediaPipeCameraHandPoseProvider>();
+            if (cameraPoseProvider == null)
+                cameraPoseProvider = FindObjectOfType<MediaPipeCameraHandPoseProvider>();
+            if (cameraPoseProvider == null && autoCreateCameraCvProvider)
+            {
+                cameraPoseProvider = gameObject.AddComponent<MediaPipeCameraHandPoseProvider>();
+                DebugLog("camera_cv_provider_created");
+            }
+            if (cameraPoseProvider == null) return;
+
+            if (_cameraProviderSubscribed) return;
+            cameraPoseProvider.OnHandPose += ApplyCameraHandPose;
+            _cameraProviderSubscribed = true;
+            DebugLog("camera_cv_provider_subscribed compiled=" + RealCameraCvCompiled);
+        }
+
+        private void UnsubscribeCameraCvProvider()
+        {
+            if (!_cameraProviderSubscribed || cameraPoseProvider == null) return;
+            cameraPoseProvider.OnHandPose -= ApplyCameraHandPose;
+            _cameraProviderSubscribed = false;
+        }
+
+        public void ApplyCameraHandPose(CameraHandPoseFrame frame)
+        {
+            if (!frame.HandDetected)
+            {
+                MarkHandLost(string.IsNullOrWhiteSpace(frame.Status) ? "camera_cv_hand_lost" : frame.Status);
+                return;
+            }
+
+            CurrentPerchPose = frame.PerchPose;
+            PalmPosition = frame.PalmPosition;
+            PalmNormal = frame.PalmNormal.sqrMagnitude > 0.00001f ? frame.PalmNormal.normalized : Vector3.up;
+            IndexTipPosition = frame.IndexTip;
+            IndexIntermediatePosition = frame.IndexIntermediate;
+            IndexDistalPosition = frame.IndexDistal;
+            IndexPerchPosition = frame.PerchPose.Position;
+            IndexDirection = frame.PerchPose.FingerDirection.sqrMagnitude > 0.00001f
+                ? frame.PerchPose.FingerDirection.normalized
+                : (frame.IndexTip - frame.IndexProximal).normalized;
+            TrackingSource = string.IsNullOrWhiteSpace(frame.Source) ? "camera_cv" : frame.Source;
+            IsHandDetected = true;
+            CurrentGesture = frame.PerchPose.IsValid
+                ? DetectGesture(frame, frame.Confidence)
+                : GestureNone;
+            LastTrackingStatus = string.IsNullOrWhiteSpace(frame.Status) ? "camera_cv_tracking" : frame.Status;
+            LogGestureIfChanged(frame.Confidence);
+            MaybeFireSnapshot();
         }
 
 #if UNITY_XR_HANDS
@@ -353,6 +448,63 @@ namespace ParrotApp.Hands
         }
 #endif
 
+        private string DetectGesture(CameraHandPoseFrame frame, float poseConfidence)
+        {
+            if (!frame.HasFingerJoints)
+                return GestureNone;
+
+            var index = new FingerJoints
+            {
+                Proximal = frame.IndexProximal,
+                Intermediate = frame.IndexIntermediate,
+                Tip = frame.IndexTip,
+                Valid = true,
+            };
+            var middle = new FingerJoints
+            {
+                Proximal = frame.MiddleProximal,
+                Intermediate = frame.MiddleIntermediate,
+                Tip = frame.MiddleTip,
+                Valid = true,
+            };
+            var ring = new FingerJoints
+            {
+                Proximal = frame.RingProximal,
+                Intermediate = frame.RingIntermediate,
+                Tip = frame.RingTip,
+                Valid = true,
+            };
+            var little = new FingerJoints
+            {
+                Proximal = frame.LittleProximal,
+                Intermediate = frame.LittleIntermediate,
+                Tip = frame.LittleTip,
+                Valid = true,
+            };
+
+            float indexBend = BendAngle(index);
+            float middleBend = BendAngle(middle);
+            float ringBend = BendAngle(ring);
+            float littleBend = BendAngle(little);
+
+            float indexPalmDistance = Vector3.Distance(frame.PalmPosition, index.Tip);
+            bool indexExtended = indexBend <= indexStraightMaxBendDegrees;
+            bool middleCurled = IsCurled(middle, middleBend, indexPalmDistance);
+            bool ringCurled = IsCurled(ring, ringBend, indexPalmDistance);
+            bool littleCurled = IsCurled(little, littleBend, indexPalmDistance);
+            bool horizontal = Mathf.Abs(Vector3.Dot(IndexDirection, Vector3.up)) <= indexHorizontalMaxAbsDotUp;
+
+            if (indexExtended && middleCurled && ringCurled && littleCurled && horizontal && poseConfidence >= minBranchConfidence)
+                return GestureBranch;
+
+            int extendedCount = 0;
+            if (indexExtended) extendedCount++;
+            if (middleBend <= indexStraightMaxBendDegrees) extendedCount++;
+            if (ringBend <= indexStraightMaxBendDegrees) extendedCount++;
+            if (littleBend <= indexStraightMaxBendDegrees) extendedCount++;
+            return extendedCount == 0 ? GestureFist : GestureNone;
+        }
+
         private static float BendAngle(FingerJoints finger)
         {
             Vector3 a = finger.Intermediate - finger.Proximal;
@@ -376,6 +528,7 @@ namespace ParrotApp.Hands
             TrackingSource = "none";
             LastTrackingStatus = reason;
             CurrentPerchPose = default;
+            LogStatusIfChanged();
             if (changed) FireSnapshot();
         }
 
@@ -477,6 +630,36 @@ namespace ParrotApp.Hands
         public void DebugFireHandLost()
         {
             MarkHandLost("debug_hand_lost");
+        }
+
+        private void LogStatusIfChanged()
+        {
+            if (!diagnosticLog)
+                return;
+            string status = TrackingSource + ":" + LastTrackingStatus + ":detected=" + IsHandDetected;
+            if (string.Equals(status, _lastStatusLog, StringComparison.Ordinal))
+                return;
+            _lastStatusLog = status;
+            DebugLog("status=" + status);
+        }
+
+        private void LogGestureIfChanged(float confidence)
+        {
+            LogStatusIfChanged();
+            if (!diagnosticLog || string.Equals(CurrentGesture, _lastGestureLog, StringComparison.Ordinal))
+                return;
+            _lastGestureLog = CurrentGesture;
+            DebugLog(
+                "gesture=" + CurrentGesture
+                + " source=" + TrackingSource
+                + " confidence=" + confidence.ToString("0.00"));
+        }
+
+        private void DebugLog(string message)
+        {
+            if (!diagnosticLog)
+                return;
+            Debug.Log("[HandGestureSource] " + message);
         }
     }
 }

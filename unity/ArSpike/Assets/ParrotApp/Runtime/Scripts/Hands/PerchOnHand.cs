@@ -15,6 +15,7 @@ namespace ParrotApp.Hands
         [Header("References")]
         [SerializeField] private HandGestureSource handTracker;
         [SerializeField] private AnimationDriver animDriver;
+        [SerializeField] private float referenceRetryIntervalSeconds = 0.5f;
 
         [Header("Flight route")]
         [SerializeField] private float flyToSpeed = 1.8f;
@@ -40,6 +41,8 @@ namespace ParrotApp.Hands
         [SerializeField] private float returnSpeed = 1.8f;
         [SerializeField] private float returnArrivalDistance = 0.05f;
         [SerializeField] private Vector3 explicitReturnPosition = Vector3.zero;
+        [SerializeField] private float returnToViewDistance = 0.75f;
+        [SerializeField] private float returnToViewVerticalOffset = -0.12f;
 
         [Header("RPC")]
         [SerializeField] private float maxRpcWaitSeconds = 5f;
@@ -57,9 +60,12 @@ namespace ParrotApp.Hands
         private TaskCompletionSource<PerchRpcResult> _activeRpcCompletion;
         private bool _activeRequiresBranchGesture;
         private bool _footAnchorResolved;
+        private HandGestureSource _subscribedHandTracker;
+        private bool _perchedTrackingLost;
         private Vector3 _resolvedFootAnchorLocalOffset;
         private string _lastGestureEvent = HandGestureSource.GestureNone;
         private float _perchStartedAt;
+        private float _nextReferenceRetryAt;
 
         public enum PerchState
         {
@@ -91,31 +97,35 @@ namespace ParrotApp.Hands
 
         private void Awake()
         {
-            if (animDriver == null) animDriver = GetComponentInChildren<AnimationDriver>();
-            if (animDriver == null) animDriver = FindObjectOfType<AnimationDriver>();
-            ResolveFootAnchor();
+            ResolveReferences(force: true);
+            ResolveFootAnchor(force: true);
         }
 
         private void Start()
         {
-            if (handTracker == null) handTracker = FindObjectOfType<HandGestureSource>();
+            ResolveReferences(force: true);
             if (handTracker == null)
             {
-                Debug.LogWarning("[PerchOnHand] No HandGestureSource found; hand perch disabled.");
-                enabled = false;
+                Debug.LogWarning("[PerchOnHand] No HandGestureSource found yet; hand perch will retry when re-enabled.");
                 return;
             }
             if (animDriver == null)
             {
-                Debug.LogWarning("[PerchOnHand] No AnimationDriver found; hand perch disabled.");
-                enabled = false;
+                Debug.LogWarning("[PerchOnHand] No AnimationDriver found yet; hand perch will retry when re-enabled.");
                 return;
             }
-            handTracker.OnGestureSnapshot += OnGesture;
+            TrySubscribe();
+        }
+
+        private void OnEnable()
+        {
+            ResolveReferences(force: true);
+            TrySubscribe();
         }
 
         private void OnDisable()
         {
+            Unsubscribe();
             HideTrail();
             CompleteActiveRpc(false, "disabled");
             if (State != PerchState.IDLE)
@@ -123,15 +133,36 @@ namespace ParrotApp.Hands
             State = PerchState.IDLE;
             ActivePerchCommandId = "";
             ActiveTrigger = "";
+            _perchedTrackingLost = false;
         }
 
         private void OnDestroy()
         {
-            if (handTracker != null) handTracker.OnGestureSnapshot -= OnGesture;
+            Unsubscribe();
+        }
+
+        private void TrySubscribe()
+        {
+            ResolveReferences();
+            if (_subscribedHandTracker == handTracker && _subscribedHandTracker != null) return;
+            Unsubscribe();
+            if (handTracker == null) return;
+            handTracker.OnGestureSnapshot += OnGesture;
+            _subscribedHandTracker = handTracker;
+        }
+
+        private void Unsubscribe()
+        {
+            if (_subscribedHandTracker == null) return;
+            _subscribedHandTracker.OnGestureSnapshot -= OnGesture;
+            _subscribedHandTracker = null;
         }
 
         private void Update()
         {
+            if (_subscribedHandTracker == null || handTracker == null || animDriver == null)
+                TrySubscribe();
+
             switch (State)
             {
                 case PerchState.FLYING_TO_HAND:
@@ -186,6 +217,43 @@ namespace ParrotApp.Hands
             TransitionTo(PerchState.RETURNING);
         }
 
+        public bool TryRequestReturnToView(
+            string commandId,
+            TaskCompletionSource<PerchRpcResult> completion,
+            out string reason)
+        {
+            commandId = string.IsNullOrWhiteSpace(commandId)
+                ? "cmd_return_to_view_" + Guid.NewGuid().ToString("N").Substring(0, 8)
+                : commandId.Trim();
+
+            if (State == PerchState.IDLE)
+            {
+                reason = "already_in_view";
+                completion?.TrySetResult(PerchRpcResult.Completed());
+                return true;
+            }
+            if (State == PerchState.RETURNING)
+            {
+                reason = "already_returning";
+                return false;
+            }
+
+            CompleteActiveRpc(false, "return_to_view");
+            _returnPosition = ResolveReturnToViewPosition();
+            _returnRotation = ResolveReturnToViewRotation(_returnPosition);
+            _activeRpcCompletion = completion;
+            _activeRequiresBranchGesture = false;
+            ActivePerchCommandId = commandId;
+            ActiveTrigger = "goslo_return_to_view";
+            _perchedTrackingLost = false;
+
+            LifecycleHeartbeatPublisher.Instance?.ReportActiveCommand(ActivePerchCommandId, new[] { BodyLock });
+            PublishPerchLifecycle("return_requested", "");
+            TransitionTo(PerchState.RETURNING);
+            reason = "";
+            return true;
+        }
+
         private void OnGesture(HandGestureSource.HandGestureSnapshot snap)
         {
             PublishGestureEventIfChanged(snap);
@@ -201,13 +269,25 @@ namespace ParrotApp.Hands
                     break;
 
                 case PerchState.FLYING_TO_HAND:
-                case PerchState.PERCHED:
                     if (!snap.HandDetected || snap.Gesture == HandGestureSource.GestureFist)
                     {
                         string reason = !snap.HandDetected ? "hand_lost" : "gesture_release";
                         CompleteActiveRpc(false, reason);
                         PublishPerchLifecycle("release", reason);
                         TransitionTo(PerchState.RETURNING);
+                    }
+                    break;
+
+                case PerchState.PERCHED:
+                    if (snap.Gesture == HandGestureSource.GestureFist)
+                    {
+                        CompleteActiveRpc(false, "gesture_release");
+                        PublishPerchLifecycle("release", "gesture_release");
+                        TransitionTo(PerchState.RETURNING);
+                    }
+                    else if (!snap.HandDetected)
+                    {
+                        HandlePerchedTrackingLost("hand_lost");
                     }
                     break;
             }
@@ -221,6 +301,7 @@ namespace ParrotApp.Hands
             out string reason)
         {
             reason = "";
+            ResolveReferences(force: true);
             if (handTracker == null || !handTracker.IsHandDetected || !handTracker.CurrentPerchPose.IsValid)
             {
                 reason = "hand_pose_unavailable";
@@ -235,6 +316,13 @@ namespace ParrotApp.Hands
                 return false;
             }
 
+            if (animDriver == null)
+            {
+                reason = "animation_driver_unavailable";
+                completion?.TrySetResult(PerchRpcResult.Rejected(reason));
+                return false;
+            }
+
             _returnPosition = explicitReturnPosition == Vector3.zero ? transform.position : explicitReturnPosition;
             _returnRotation = transform.rotation;
             _activeRpcCompletion = completion;
@@ -242,6 +330,7 @@ namespace ParrotApp.Hands
             ActivePerchCommandId = commandId ?? "";
             ActiveTrigger = trigger ?? "";
             _perchStartedAt = Time.unscaledTime;
+            ResolveFootAnchor(force: true);
 
             LifecycleHeartbeatPublisher.Instance?.ReportActiveCommand(ActivePerchCommandId, new[] { BodyLock });
             PublishPerchLifecycle("started", "");
@@ -319,10 +408,14 @@ namespace ParrotApp.Hands
 
             if (!CanUseCurrentHandPose(out HandPerchPose pose, out string reason))
             {
-                CompleteActiveRpc(false, reason);
-                PublishPerchLifecycle("abort", reason);
-                TransitionTo(PerchState.RETURNING);
+                HandlePerchedTrackingLost(reason);
                 return;
+            }
+
+            if (_perchedTrackingLost)
+            {
+                _perchedTrackingLost = false;
+                PublishPerchLifecycle("tracking_resumed", "");
             }
 
             Pose targetRoot = ResolveRootPose(pose);
@@ -343,9 +436,17 @@ namespace ParrotApp.Hands
             if (Vector3.Distance(transform.position, _returnPosition) < returnArrivalDistance)
             {
                 transform.SetPositionAndRotation(_returnPosition, _returnRotation);
+                CompleteActiveRpc(true, EcpAckJson.ReasonApplied);
                 PublishPerchLifecycle("returned", "");
                 TransitionTo(PerchState.IDLE);
             }
+        }
+
+        private void HandlePerchedTrackingLost(string reason)
+        {
+            if (_perchedTrackingLost) return;
+            _perchedTrackingLost = true;
+            PublishPerchLifecycle("tracking_lost_hold_on_hand", reason);
         }
 
         private bool CanUseCurrentHandPose(out HandPerchPose pose, out string reason)
@@ -370,6 +471,28 @@ namespace ParrotApp.Hands
             ResolveFootAnchor();
             Vector3 rootPosition = pose.ToRootPosition(_resolvedFootAnchorLocalOffset, rootClearanceLocalOffset);
             return new Pose(rootPosition, pose.Rotation);
+        }
+
+        private Vector3 ResolveReturnToViewPosition()
+        {
+            Camera cam = Camera.main;
+            if (cam != null)
+            {
+                return cam.transform.position
+                       + cam.transform.forward * Mathf.Max(0.25f, returnToViewDistance)
+                       + cam.transform.up * returnToViewVerticalOffset;
+            }
+            if (explicitReturnPosition != Vector3.zero) return explicitReturnPosition;
+            return _returnPosition;
+        }
+
+        private Quaternion ResolveReturnToViewRotation(Vector3 returnPosition)
+        {
+            Camera cam = Camera.main;
+            if (cam == null) return _returnRotation;
+            Vector3 towardCamera = cam.transform.position - returnPosition;
+            if (towardCamera.sqrMagnitude < 0.0001f) return _returnRotation;
+            return Quaternion.LookRotation(towardCamera.normalized, Vector3.up);
         }
 
         private void PlanRouteToCurrentHandPose(bool force)
@@ -429,15 +552,18 @@ namespace ParrotApp.Hands
             switch (next)
             {
                 case PerchState.FLYING_TO_HAND:
+                    _perchedTrackingLost = false;
                     animDriver.SetState(AnimationDriver.BodyState.Fly);
                     animDriver.SetHeadState(AnimationDriver.HeadState.Forward);
                     break;
                 case PerchState.PERCHED:
                     HideTrail();
                     animDriver.SetState(AnimationDriver.BodyState.PerchedOnHand);
-                    animDriver.SetHeadState(AnimationDriver.HeadState.Tilt);
+                    animDriver.PlayHeadTiltOnce();
+                    LifecycleHeartbeatPublisher.Instance?.ClearActiveCommand(ActivePerchCommandId);
                     break;
                 case PerchState.RETURNING:
+                    _perchedTrackingLost = false;
                     animDriver.SetState(AnimationDriver.BodyState.Fly);
                     animDriver.SetHeadState(AnimationDriver.HeadState.Forward);
                     break;
@@ -449,6 +575,7 @@ namespace ParrotApp.Hands
                     ActivePerchCommandId = "";
                     ActiveTrigger = "";
                     _activeRequiresBranchGesture = false;
+                    _perchedTrackingLost = false;
                     break;
             }
         }
@@ -490,9 +617,19 @@ namespace ParrotApp.Hands
                 $"trigger={ActiveTrigger ?? ""} cmd={ActivePerchCommandId ?? ""} state={State}");
         }
 
-        private void ResolveFootAnchor()
+        private void ResolveReferences(bool force = false)
         {
-            if (_footAnchorResolved) return;
+            if (!force && Time.unscaledTime < _nextReferenceRetryAt) return;
+            _nextReferenceRetryAt = Time.unscaledTime + Mathf.Max(0.1f, referenceRetryIntervalSeconds);
+
+            if (handTracker == null) handTracker = FindObjectOfType<HandGestureSource>();
+            if (animDriver == null) animDriver = GetComponentInChildren<AnimationDriver>(true);
+            if (animDriver == null) animDriver = FindObjectOfType<AnimationDriver>();
+        }
+
+        private void ResolveFootAnchor(bool force = false)
+        {
+            if (_footAnchorResolved && !force) return;
             _resolvedFootAnchorLocalOffset = footAnchorLocalOffset;
             _footAnchorResolved = true;
             if (!autoResolveFootAnchor) return;

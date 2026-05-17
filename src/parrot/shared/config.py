@@ -17,6 +17,58 @@ def _load_env() -> None:
 _load_env()
 
 
+GEMINI_LIVE_VOICE_DEFAULT = "Aoede"
+"""Default LineA Gemini Live voice for GOSLO.
+
+LineB has its own TTS profile. This default only applies to LineA
+``google.realtime.RealtimeModel`` when ``GEMINI_LIVE_VOICE`` is unset or
+invalid.
+"""
+
+GEMINI_LIVE_SUPPORTED_VOICES = (
+    "Zephyr",
+    "Puck",
+    "Charon",
+    "Kore",
+    "Fenrir",
+    "Leda",
+    "Orus",
+    "Aoede",
+    "Callirrhoe",
+    "Autonoe",
+    "Enceladus",
+    "Iapetus",
+    "Umbriel",
+    "Algieba",
+    "Despina",
+    "Erinome",
+    "Algenib",
+    "Rasalgethi",
+    "Laomedeia",
+    "Achernar",
+    "Alnilam",
+    "Schedar",
+    "Gacrux",
+    "Pulcherrima",
+    "Achird",
+    "Zubenelgenubi",
+    "Vindemiatrix",
+    "Sadachbia",
+    "Sadaltager",
+    "Sulafat",
+)
+
+
+def _gemini_live_voice() -> str:
+    configured = os.getenv("GEMINI_LIVE_VOICE", "").strip()
+    if not configured:
+        return GEMINI_LIVE_VOICE_DEFAULT
+    supported_by_lower = {
+        voice.lower(): voice for voice in GEMINI_LIVE_SUPPORTED_VOICES
+    }
+    return supported_by_lower.get(configured.lower(), GEMINI_LIVE_VOICE_DEFAULT)
+
+
 @dataclass(frozen=True)
 class RedisConfig:
     host: str = os.getenv("REDIS_HOST", "localhost")
@@ -50,16 +102,16 @@ class FalkorDBConfig:
 class GeminiConfig:
     """Gemini Live (Brain voice) + reranker + embedding model selection.
 
-    Preview 模型（*-native-audio-preview-MM-YYYY）生命周期短，通过 env 切换避免
-    每次换模型都要改代码。默认值保持当前可用的 preview，若遇到 WS 1008
-    policy violation 请优先把 live_model 切回稳定的 `gemini-2.0-flash-live-001`。
+    Preview native-audio model ids change quickly, so model selection stays
+    env-configurable. LineA voice defaults to the fixed GOSLO voice above
+    unless ``GEMINI_LIVE_VOICE`` names another supported Live voice.
     """
 
     live_model: str = os.getenv(
         "GEMINI_LIVE_MODEL",
         "gemini-2.5-flash-native-audio-preview-12-2025",
     )
-    live_voice: str = os.getenv("GEMINI_LIVE_VOICE", "Puck")
+    live_voice: str = field(default_factory=_gemini_live_voice)
     reranker_model: str = os.getenv("GEMINI_RERANKER_MODEL", "gemini-2.5-flash")
     embedding_model: str = os.getenv(
         "GEMINI_EMBEDDING_MODEL", "gemini-embedding-001",

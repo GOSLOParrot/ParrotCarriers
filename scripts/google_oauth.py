@@ -18,7 +18,8 @@ if not CLIENT_ID or not CLIENT_SECRET:
     # 尝试从 .env 手动读取
     env_path = Path(__file__).resolve().parents[1] / ".env"
     if env_path.exists():
-        for line in env_path.read_text().splitlines():
+        env_text = env_path.read_text(encoding="utf-8-sig", errors="replace")
+        for line in env_text.splitlines():
             if line.startswith("GOOGLE_CLIENT_ID="):
                 CLIENT_ID = line.split("=", 1)[1].strip().strip('"')
             elif line.startswith("GOOGLE_CLIENT_SECRET="):

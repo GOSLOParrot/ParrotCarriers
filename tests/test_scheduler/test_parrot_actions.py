@@ -26,6 +26,6 @@ def test_parrot_animation_values():
 
 
 def test_parrot_body_state_values():
-    expected = {"idle", "flying", "perching", "dancing", "frozen"}
+    expected = {"idle", "flying", "perching", "perched_on_hand", "dancing", "frozen"}
     actual = {s.value for s in ParrotBodyState}
     assert actual == expected

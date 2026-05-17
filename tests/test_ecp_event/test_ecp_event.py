@@ -264,6 +264,7 @@ def test_event_type_registry_matches_entry_doc_8_3():
         "bbox.removed",
         "focus.anchored",
         "focus.released",
+        "visual_tool.lifecycle",
         "attention.threshold.crossed",
         "attention.config.echo",  # Phase 4 W6-7 F-05 fix (Unity B chat)
         "photo.taken_preview",

@@ -346,6 +346,15 @@ const dict = {
     previewOnCanvas: "Preview on canvas",
     exportSubgraphDraft: "Export Draft",
     applyExportDryRun: "Preview Apply",
+    identityIndex: "Identity Index",
+    verifyRefs: "Verify Refs",
+    refScanPlan: "Ref Scan Plan",
+    dispatchRefScan: "Dispatch Scan",
+    refScanResults: "Scan Results",
+    resolveGraphitiEdges: "Resolve Edges",
+    previewGraphitiEdge: "Preview Edge Apply",
+    materializeGraphitiEdge: "Import Edge to L2-B",
+    resolverPreview: "Resolver preview",
     selectedHits: "Selected hits",
     selectAll: "Select all",
     selectedOf: "selected",
@@ -377,6 +386,8 @@ const dict = {
     googleCalendar: "Google Calendar",
     calendarFetch: "Fetch Preview",
     calendarFetchExecute: "Dispatch Fetch",
+    calendarApiFetch: "Local API",
+    calendarNanobotFetch: "ECS Nanobot",
     calendarPreview: "Calendar Preview",
     calendarPayload: "Google/Nanobot JSON",
     calendarImportExecute: "Import to L1.5",
@@ -541,6 +552,8 @@ const dict = {
     googleCalendar: "Google 日程",
     calendarFetch: "请求获取",
     calendarFetchExecute: "真实请求",
+    calendarApiFetch: "本地 API",
+    calendarNanobotFetch: "ECS Nanobot",
     calendarPreview: "日程预览",
     calendarPayload: "Google/Nanobot JSON",
     calendarImportExecute: "导入 L1.5",
@@ -3855,6 +3868,9 @@ function GraphitiSourceCard({
   const [partition, setPartition] = useState("arknights_test");
   const [query, setQuery] = useState("Amiya Chernobog");
   const [limit, setLimit] = useState(6);
+  const [searchStrategy, setSearchStrategy] = useState("iterative_hybrid");
+  const [searchDepth, setSearchDepth] = useState(2);
+  const [focalNodeUuid, setFocalNodeUuid] = useState("");
   const [hits, setHits] = useState<Array<Record<string, unknown>>>([]);
   const [subgraphNodes, setSubgraphNodes] = useState<Array<Record<string, unknown>>>([]);
   const [subgraphEdges, setSubgraphEdges] = useState<Array<Record<string, unknown>>>([]);
@@ -3862,6 +3878,17 @@ function GraphitiSourceCard({
   const [exportObservations, setExportObservations] = useState<Array<Record<string, unknown>>>([]);
   const [edgeDrafts, setEdgeDrafts] = useState<Array<Record<string, unknown>>>([]);
   const [edgePolicy, setEdgePolicy] = useState("");
+  const [identityIndex, setIdentityIndex] = useState<Record<string, unknown> | null>(null);
+  const [identityHealth, setIdentityHealth] = useState<Record<string, unknown> | null>(null);
+  const [refScanPlanRows, setRefScanPlanRows] = useState<Array<Record<string, unknown>>>([]);
+  const [refScanResultRows, setRefScanResultRows] = useState<Array<Record<string, unknown>>>([]);
+  const [refScanPlanStatus, setRefScanPlanStatus] = useState("");
+  const [refScanRemoteChecks, setRefScanRemoteChecks] = useState(false);
+  const [refScanDispatching, setRefScanDispatching] = useState(false);
+  const [resolvedGraphitiEdges, setResolvedGraphitiEdges] = useState<Array<Record<string, unknown>>>([]);
+  const [selectedGraphitiEdgeIndex, setSelectedGraphitiEdgeIndex] = useState(0);
+  const [graphitiEdgeApplyStatus, setGraphitiEdgeApplyStatus] = useState("");
+  const [graphitiEdgeApplying, setGraphitiEdgeApplying] = useState(false);
   const [importPolicy, setImportPolicy] = useState<Record<string, unknown> | null>(null);
   const [policySkippedReason, setPolicySkippedReason] = useState("");
   const [flowSteps, setFlowSteps] = useState<string[]>([]);
@@ -3869,6 +3896,8 @@ function GraphitiSourceCard({
   const [status, setStatus] = useState<GraphitiStatusSummary | null>(null);
   const [operatorImporting, setOperatorImporting] = useState(false);
   const operatorImportingRef = useRef(false);
+  const graphitiEdgeApplyingRef = useRef(false);
+  const refScanDispatchingRef = useRef(false);
   const selectedHits = useMemo(
     () => hits.filter((hit, index) => selectedHitKeys.includes(graphitiHitKey(hit, index))),
     [hits, selectedHitKeys]
@@ -3903,6 +3932,9 @@ function GraphitiSourceCard({
     setExportObservations([]);
     setEdgeDrafts([]);
     setEdgePolicy("");
+    setResolvedGraphitiEdges([]);
+    setSelectedGraphitiEdgeIndex(0);
+    setGraphitiEdgeApplyStatus("");
     setImportPolicy(null);
     setPolicySkippedReason(reason);
     setFlowSteps([]);
@@ -3971,7 +4003,15 @@ function GraphitiSourceCard({
       return;
     }
     try {
-      const receipt = await api.graphitiSubgraphSearch({ query: query.trim(), partition, limit });
+      const receipt = await api.graphitiSubgraphSearch({
+        query: query.trim(),
+        partition,
+        limit,
+        strategy: searchStrategy,
+        depth: searchDepth,
+        expansion_limit: 3,
+        focal_node_uuid: focalNodeUuid.trim()
+      });
       const nextHits = receiptArray(receipt, "hits");
       const subgraph = receiptRecord(receipt, "subgraph");
       const nextSubgraphNodes = recordArrayFrom(subgraph, "nodes");
@@ -4024,6 +4064,9 @@ function GraphitiSourceCard({
     setExportObservations(receiptArray(receipt, "observations"));
     setEdgeDrafts(receiptArray(receipt, "edge_drafts"));
     setEdgePolicy(String(data.edge_write_policy || ""));
+    setResolvedGraphitiEdges([]);
+    setSelectedGraphitiEdgeIndex(0);
+    setGraphitiEdgeApplyStatus("");
     const nextPolicy = recordFromUnknown(data.import_policy);
     setImportPolicy(Object.keys(nextPolicy).length ? nextPolicy : null);
     setPolicySkippedReason(String(data.policy_skipped_reason || data.error || ""));
@@ -4114,6 +4157,168 @@ function GraphitiSourceCard({
       showGraphitiError("graphiti.subgraph.import_plan", exc, { partition, query, destination });
     }
   };
+  const loadIdentityIndex = async () => {
+    try {
+      const receipt = await api.memoryIdentityRefIndex(80);
+      setIdentityIndex(receipt.data ?? {});
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("memory.identity_ref_index.snapshot", exc));
+    }
+  };
+  const verifyIdentityRefs = async () => {
+    try {
+      const receipt = await api.memoryIdentityRefVerify({
+        update_index: false,
+        dry_run: true,
+        operator_mode: false
+      });
+      setIdentityHealth(receipt.data ?? {});
+      pushReceipt(receipt);
+    } catch (exc) {
+      pushReceipt(errorReceipt("memory.identity_ref_index.verify", exc));
+    }
+  };
+  const refScanRemotePayload = () => ({
+    remote_checks: refScanRemoteChecks ? ["url", "ecs", "graphiti"] : []
+  });
+  const draftRefScanPlan = async () => {
+    try {
+      const receipt = await api.memoryIdentityRefScanPlan({
+        limit: 80,
+        priority: "low",
+        ...refScanRemotePayload()
+      });
+      const rows = receiptArray(receipt, "ref_scan_plan");
+      setRefScanPlanRows(rows);
+      const counts = recordFromUnknown((receipt.data ?? {}).counts);
+      setRefScanPlanStatus(String((receipt.data ?? {}).error || `${rows.length} ref(s) / ${String(counts.ref_count ?? rows.length)} planned`));
+      pushReceipt(receipt);
+    } catch (exc) {
+      setRefScanPlanStatus(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("memory.identity_ref_index.ref_scan_plan", exc));
+    }
+  };
+  const dispatchRefScan = async () => {
+    if (refScanDispatchingRef.current) {
+      pushReceipt(localReceipt("memory.identity_ref_index.ref_scan_dispatch", false, { error: "ref_scan_dispatch_in_flight", partition, query }));
+      return;
+    }
+    refScanDispatchingRef.current = true;
+    setRefScanDispatching(true);
+    try {
+      const receipt = await api.memoryIdentityRefScanDispatch({
+        limit: 80,
+        priority: "low",
+        dry_run: !operatorMode,
+        operator_mode: operatorMode,
+        ...refScanRemotePayload()
+      });
+      const rows = receiptArray(receipt, "ref_scan_plan");
+      if (rows.length) {
+        setRefScanPlanRows(rows);
+      }
+      setRefScanPlanStatus(String((receipt.data ?? {}).error || (receipt.data ?? {}).dispatch_skipped_reason || (receipt.data ?? {}).task_id || "ref_scan_dispatched"));
+      pushReceipt(receipt);
+    } catch (exc) {
+      setRefScanPlanStatus(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("memory.identity_ref_index.ref_scan_dispatch", exc));
+    } finally {
+      refScanDispatchingRef.current = false;
+      setRefScanDispatching(false);
+    }
+  };
+  const loadRefScanResults = async () => {
+    try {
+      const receipt = await api.memoryIdentityRefScanResults(12);
+      const rows = receiptArray(receipt, "rows");
+      setRefScanResultRows(rows);
+      setRefScanPlanStatus((receipt.data ?? {}).available === false
+        ? String((receipt.data ?? {}).error || "ref_scan_results_unavailable")
+        : `${rows.length} result row(s)`);
+      pushReceipt(receipt);
+    } catch (exc) {
+      setRefScanPlanStatus(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("memory.identity_ref_index.ref_scan_results", exc));
+    }
+  };
+  const graphitiEdgeResolverPayload = () => ({
+    partition,
+    edge_drafts: edgeDrafts,
+    edge_index: selectedGraphitiEdgeIndex
+  });
+  const resolveGraphitiEdgeDrafts = async () => {
+    if (!edgeDrafts.length) {
+      setResolvedGraphitiEdges([]);
+      setGraphitiEdgeApplyStatus("no_edge_drafts");
+      pushReceipt(localReceipt("memory.identity_ref_index.resolve_graphiti", false, { error: "no_edge_drafts", partition, query }));
+      return;
+    }
+    try {
+      const receipt = await api.memoryIdentityRefResolveGraphiti({
+        partition,
+        edge_drafts: edgeDrafts
+      });
+      const edges = receiptArray(receipt, "edges");
+      setResolvedGraphitiEdges(edges);
+      setGraphitiEdgeApplyStatus(String((receipt.data ?? {}).error || `${edges.length} edge(s) resolved`));
+      pushReceipt(receipt);
+    } catch (exc) {
+      setGraphitiEdgeApplyStatus(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("memory.identity_ref_index.resolve_graphiti", exc, { partition, query }));
+    }
+  };
+  const previewGraphitiEdgeApply = async () => {
+    if (!edgeDrafts.length) {
+      setGraphitiEdgeApplyStatus("no_edge_drafts");
+      pushReceipt(localReceipt("memory.identity_ref_index.apply_graphiti_edge", false, { error: "no_edge_drafts", partition, query }));
+      return;
+    }
+    try {
+      const receipt = await api.memoryIdentityRefApplyGraphitiEdge({
+        ...graphitiEdgeResolverPayload(),
+        dry_run: true,
+        operator_mode: false
+      });
+      setResolvedGraphitiEdges(receiptArray(receipt, "edges").length ? receiptArray(receipt, "edges") : resolvedGraphitiEdges);
+      setGraphitiEdgeApplyStatus(String((receipt.data ?? {}).error || (receipt.data ?? {}).apply_skipped_reason || "preview_ready"));
+      pushReceipt(receipt);
+    } catch (exc) {
+      setGraphitiEdgeApplyStatus(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("memory.identity_ref_index.apply_graphiti_edge", exc, graphitiEdgeResolverPayload()));
+    }
+  };
+  const materializeGraphitiEdge = async () => {
+    if (graphitiEdgeApplyingRef.current) {
+      pushReceipt(localReceipt("memory.identity_ref_index.apply_graphiti_edge", false, { error: "edge_apply_in_flight", partition, query }));
+      return;
+    }
+    if (!edgeDrafts.length) {
+      setGraphitiEdgeApplyStatus("no_edge_drafts");
+      pushReceipt(localReceipt("memory.identity_ref_index.apply_graphiti_edge", false, { error: "no_edge_drafts", partition, query }));
+      return;
+    }
+    graphitiEdgeApplyingRef.current = true;
+    setGraphitiEdgeApplying(true);
+    try {
+      const receipt = await api.memoryIdentityRefApplyGraphitiEdge({
+        ...graphitiEdgeResolverPayload(),
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      });
+      setGraphitiEdgeApplyStatus(String((receipt.data ?? {}).error || (receipt.data ?? {}).apply_skipped_reason || (receipt.data ?? {}).mutation_scope || "edge_apply_done"));
+      pushReceipt(receipt);
+      if (receipt.success !== false && operatorMode) {
+        await onSourceApplied();
+      }
+    } catch (exc) {
+      setGraphitiEdgeApplyStatus(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("memory.identity_ref_index.apply_graphiti_edge", exc, graphitiEdgeResolverPayload()));
+    } finally {
+      graphitiEdgeApplyingRef.current = false;
+      setGraphitiEdgeApplying(false);
+    }
+  };
   const previewSelectedOnCanvas = () => {
     if (!selectedHits.length) {
       clearGraphitiPlanState("no_hits_selected");
@@ -4139,6 +4344,18 @@ function GraphitiSourceCard({
     setLimit(Math.max(1, Math.min(20, Number(value) || 1)));
     clearGraphitiSearchResults();
   };
+  const updateSearchStrategy = (value: string) => {
+    setSearchStrategy(value);
+    clearGraphitiSearchResults();
+  };
+  const updateSearchDepth = (value: string) => {
+    setSearchDepth(Math.max(1, Math.min(3, Number(value) || 1)));
+    clearGraphitiSearchResults();
+  };
+  const updateFocalNodeUuid = (value: string) => {
+    setFocalNodeUuid(value);
+    clearGraphitiSearchResults();
+  };
 
   return (
     <article className="source-card graphiti-source-card">
@@ -4151,6 +4368,65 @@ function GraphitiSourceCard({
         <small>{status ? `${status.installed ? "installed" : "missing"} / secret ${status.secretConfigured ? "ok" : "missing"} / ${status.partitions.length} partitions` : "not checked"}</small>
         <button className="button small" onClick={() => void loadStatus()}><RefreshCw size={14} /> Status</button>
       </div>
+      <div className="identity-index-strip">
+        <span>
+          <strong>{String(identityIndex?.identity_count ?? "-")}</strong>
+          <small>Identity</small>
+        </span>
+        <span>
+          <strong>{String(identityIndex?.ref_count ?? "-")}</strong>
+          <small>Refs</small>
+        </span>
+        <span>
+          <strong>{String(recordFromUnknown(identityHealth?.health_counts).ok ?? "-")}</strong>
+          <small>Ref ok</small>
+        </span>
+        <button className="button small" onClick={() => void loadIdentityIndex()}><Database size={14} /> {t.identityIndex}</button>
+        <button className="button small" onClick={() => void verifyIdentityRefs()}><ShieldCheck size={14} /> {t.verifyRefs}</button>
+        <label className="identity-ref-remote-toggle">
+          <input type="checkbox" checked={refScanRemoteChecks} onChange={(event) => setRefScanRemoteChecks(event.target.checked)} />
+          <span>Remote probes</span>
+        </label>
+        <button className="button small" onClick={() => void draftRefScanPlan()}><Workflow size={14} /> {t.refScanPlan}</button>
+        <button className="button small ghost" onClick={() => void dispatchRefScan()} disabled={refScanDispatching}><Play size={14} /> {operatorMode ? t.dispatchRefScan : t.dryApply}</button>
+        <button className="button small" onClick={() => void loadRefScanResults()}><RefreshCw size={14} /> {t.refScanResults}</button>
+      </div>
+      {refScanPlanRows.length || refScanResultRows.length || refScanPlanStatus ? (
+        <div className="edge-resolver-panel ref-scan-panel">
+          <div className="edge-resolver-head">
+            <strong>{t.refScanPlan}</strong>
+            <small>{`${refScanPlanRows.length} ref(s) / ${refScanResultRows.length} result(s)`}</small>
+          </div>
+          {refScanPlanStatus ? <small className="muted">{refScanPlanStatus}</small> : null}
+          {refScanPlanRows.slice(0, 4).map((row, index) => {
+            const scanTargets = Array.isArray(row.scan_targets)
+              ? (row.scan_targets as Array<Record<string, unknown>>)
+              : [];
+            const checks = Array.isArray(row.nanobot_checks)
+              ? row.nanobot_checks.map(String)
+              : [];
+            return (
+              <div className="preview-row mapping-row" key={`${String(row.ref_id || index)}:ref-scan-plan`}>
+                <span>{String(row.ref_id || row.kind || "ref")}</span>
+                <small>{`${String(row.kind || "external")} / ${String(row.risk_level || "unknown")}`}</small>
+                <small>{`${scanTargets.map((target) => String(target.target_type || "-")).join(", ") || "no locator"} / ${checks.slice(0, 3).join(", ")}`}</small>
+              </div>
+            );
+          })}
+          {refScanResultRows.slice(0, 4).map((row, index) => {
+            const samples = Array.isArray(row.ref_result_sample)
+              ? (row.ref_result_sample as Array<Record<string, unknown>>)
+              : [];
+            return (
+              <div className="preview-row import-plan-row" key={`${String(row.stream_id || index)}:ref-scan-result`}>
+                <span>{`${String(row.status || "-")} / ${String(row.task_id || "-")}`}</span>
+                <small>{`${String(row.ref_result_count ?? 0)} ref result(s) / ${String(row.manifest_delta_count ?? 0)} manifest delta(s)`}</small>
+                <small>{samples.map((sample) => `${String(sample.ref_id || "-")}:${String(sample.health || "-")}`).join(", ") || String(row.result_summary || "")}</small>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       <label>
         <span>{t.partition}</span>
         <select value={partition} onChange={(event) => updatePartition(event.target.value)}>
@@ -4173,6 +4449,32 @@ function GraphitiSourceCard({
           max={20}
           value={limit}
           onChange={(event) => updateLimit(event.target.value)}
+        />
+      </label>
+      <label>
+        <span>Strategy</span>
+        <select value={searchStrategy} onChange={(event) => updateSearchStrategy(event.target.value)}>
+          <option value="iterative_hybrid">iterative hybrid</option>
+          <option value="hybrid">hybrid</option>
+          <option value="node_distance">node distance</option>
+        </select>
+      </label>
+      <label>
+        <span>Depth</span>
+        <input
+          type="number"
+          min={1}
+          max={3}
+          value={searchDepth}
+          onChange={(event) => updateSearchDepth(event.target.value)}
+        />
+      </label>
+      <label>
+        <span>Focal UUID</span>
+        <input
+          value={focalNodeUuid}
+          onChange={(event) => updateFocalNodeUuid(event.target.value)}
+          placeholder="optional"
         />
       </label>
       <label>
@@ -4245,6 +4547,48 @@ function GraphitiSourceCard({
             edgeCount={edgeDrafts.length}
             applyRoute="/api/graphiti/subgraph/export"
           />
+          {edgeDrafts.length ? (
+            <div className="edge-resolver-panel">
+              <div className="edge-resolver-head">
+                <strong>{t.resolverPreview}</strong>
+                <small>{`${readyGraphitiEdgeCount(resolvedGraphitiEdges)}/${resolvedGraphitiEdges.length || edgeDrafts.length} ready`}</small>
+              </div>
+              <label>
+                <span>Graphiti Edge</span>
+                <select
+                  value={selectedGraphitiEdgeIndex}
+                  onChange={(event) => setSelectedGraphitiEdgeIndex(Number(event.target.value) || 0)}
+                >
+                  {edgeDrafts.map((row, index) => (
+                    <option key={`${String(row.hit_graphiti_uuid || index)}:edge-option`} value={index}>
+                      {`${index + 1}. ${String(row.label || row.hit_graphiti_uuid || row.graphiti_uuid || "graphiti_fact")}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="button-row compact">
+                <button className="button small" onClick={() => void resolveGraphitiEdgeDrafts()}><Link2 size={14} /> {t.resolveGraphitiEdges}</button>
+                <button className="button small" onClick={() => void previewGraphitiEdgeApply()}><ShieldCheck size={14} /> {t.previewGraphitiEdge}</button>
+                <button className="button small ghost" onClick={() => void materializeGraphitiEdge()} disabled={graphitiEdgeApplying}><UploadCloud size={14} /> {operatorMode ? t.materializeGraphitiEdge : t.dryApply}</button>
+              </div>
+              {graphitiEdgeApplyStatus ? <small className="muted">{graphitiEdgeApplyStatus}</small> : null}
+              {resolvedGraphitiEdges.slice(0, 4).map((row, index) => {
+                const source = recordFromUnknown(row.source);
+                const target = recordFromUnknown(row.target);
+                const ready = row.can_materialize_l2b_edge === true;
+                const blockedReasons = Array.isArray(row.blocked_reasons)
+                  ? row.blocked_reasons.map(String).join(", ")
+                  : "";
+                return (
+                  <div className={ready ? "preview-row import-plan-row" : "preview-row import-error-row"} key={`${String(row.hit_graphiti_uuid || index)}:resolved-edge`}>
+                    <span>{String(row.label || row.hit_graphiti_uuid || "Graphiti fact edge")}</span>
+                    <small>{`${String(source.status || "-")} ${String(source.l2b_uuid || source.value || "")} -> ${String(target.status || "-")} ${String(target.l2b_uuid || target.value || "")}`}</small>
+                    <small>{ready ? "ready for L2-B GRAPHITI_FACT" : blockedReasons || "blocked"}</small>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
           {importPolicy ? (
             <div className="preview-row import-plan-row">
               <span>{`Destination: ${String(importPolicy.destination || destination)}`}</span>
@@ -4345,6 +4689,13 @@ function CalendarSourceCard({
     setFlowSteps(Array.isArray(data.flow_steps) ? data.flow_steps.map(String) : []);
     pushReceipt(receipt);
   };
+  const showCalendarFetchReceipt = (receipt: Receipt) => {
+    showCalendarReceipt(receipt);
+    const fetchedEvents = receiptArray(receipt, "events");
+    if (fetchedEvents.length) {
+      setRawPayload(JSON.stringify(fetchedEvents, null, 2));
+    }
+  };
   const fetchPreview = async () => {
     try {
       pushReceipt(await api.googleCalendarFetch({ dry_run: true, operator_mode: false }));
@@ -4366,6 +4717,20 @@ function CalendarSourceCard({
     } finally {
       operatorFetchingRef.current = false;
       setOperatorFetching(false);
+    }
+  };
+  const fetchLocalApi = async () => {
+    try {
+      showCalendarFetchReceipt(await api.googleCalendarApiFetch({ limit: 20, timezone: "Asia/Shanghai" }));
+    } catch (exc) {
+      showCalendarReceipt(errorReceipt("google.calendar.api_fetch", exc));
+    }
+  };
+  const fetchNanobotApi = async () => {
+    try {
+      showCalendarFetchReceipt(await api.googleCalendarNanobotFetch({ limit: 20, timezone: "Asia/Shanghai" }));
+    } catch (exc) {
+      showCalendarReceipt(errorReceipt("google.calendar.nanobot_fetch", exc));
     }
   };
   const loadResults = async () => {
@@ -4451,6 +4816,8 @@ function CalendarSourceCard({
       <div className="button-row compact">
         <button className="button" onClick={() => void fetchPreview()}><CalendarDays size={16} /> {t.calendarFetch}</button>
         <button className="button ghost" onClick={() => void fetchExecute()} disabled={operatorFetching}><Play size={16} /> {operatorMode ? t.calendarFetchExecute : t.dryApply}</button>
+        <button className="button" onClick={() => void fetchLocalApi()}><RefreshCw size={16} /> {t.calendarApiFetch}</button>
+        <button className="button" onClick={() => void fetchNanobotApi()}><Sparkles size={16} /> {t.calendarNanobotFetch}</button>
         <button className="button" onClick={() => void loadResults()}><RefreshCw size={16} /> {t.calendarResults}</button>
         <button className="button" onClick={() => void preview()}><Bell size={16} /> {t.calendarPreview}</button>
         <button className="button" onClick={() => void importDraft()}><UploadCloud size={16} /> {t.importDraft}</button>
@@ -5239,6 +5606,10 @@ function receiptRecord(receipt: Receipt, key: string): Record<string, unknown> {
   const raw = (receipt.data ?? {})[key];
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   return raw as Record<string, unknown>;
+}
+
+function readyGraphitiEdgeCount(edges: Array<Record<string, unknown>>): number {
+  return edges.filter((row) => row.can_materialize_l2b_edge === true).length;
 }
 
 function recordFromUnknown(raw: unknown): Record<string, unknown> {

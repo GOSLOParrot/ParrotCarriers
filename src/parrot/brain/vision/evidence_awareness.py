@@ -22,7 +22,7 @@ from parrot.brain.intent_workspace import (
     StagedRefRequest,
     get_intent_workspace,
 )
-from parrot.brain.session_policy import should_generate_reply
+from parrot.brain.session_policy import should_stage_context_notice
 from parrot.brain.vision.evidence import (
     ClockDomain,
     TimeAlignedSampleRef,
@@ -163,7 +163,6 @@ async def stage_attention_threshold_for_goslo(
     """
     body = dict(payload or {})
     subject_kind = str(body.get("subject_kind") or "").strip().lower()
-    subject_id = str(body.get("subject_id") or "").strip()
     ref_id = str(body.get("ref_id") or "").strip()
     bbox_ref_id = ref_id if subject_kind == "bbox" else ""
     focus_ref_id = ref_id if subject_kind == "focus" else ""
@@ -191,8 +190,8 @@ async def stage_sample_for_goslo(
 ) -> EvidenceAwarenessDecision:
     """Stage an already-resolved sample in IntentWorkspace."""
     ttl = max(60, min(int(ttl_seconds or _DEFAULT_TTL_SECONDS), 30 * 60))
-    session_allows_speech = should_generate_reply("vision.evidence_awareness")
-    allow_react = bool(notify_requested and session_allows_speech)
+    session_allows_notice = should_stage_context_notice("vision.evidence_awareness")
+    allow_react = bool(notify_requested and session_allows_notice)
     payload = _payload_for_sample(sample, description=description, source=source)
     handle = await get_intent_workspace().stage(StagedRefRequest(
         kind=StagedRefKind.DOC,

@@ -291,6 +291,87 @@ seed, not the limit.
 
 ## Graph Surgery Plan
 
+### 2026-05-17 Graphiti / L2-B / Ref Identity Research
+
+Durable research note:
+`graphiti_l2b_ref_identity_design_20260517.md`.
+
+Conclusion:
+
+- Graphiti search is real and should remain exposed in Web. It supports
+  natural-language hybrid retrieval, node-distance reranking, configurable
+  search recipes, custom entity/edge types, and node/edge CRUD.
+- The current Web Graphiti-to-L2-B path is real but partial: search hits can
+  become L1.5 observations and edge drafts, but Graphiti fact edges cannot be
+  persisted as L2-B edges until endpoint Graphiti UUIDs resolve to L2-B UUIDs.
+- `EdgeKind` should not be a hand-built mirror of Graphiti's extracted
+  predicates. It should stay a coarse filter/view/algorithm class. Preserve
+  Graphiti relation labels, fact text, endpoint UUIDs, episode UUIDs, scores,
+  and raw payloads in metadata.
+- Episode import is provenance, not identity management. The next shared gap is
+  a durable IdentityMap plus RefIndex, staged as CORE-015.
+- Nanobot/git/MCP should manage scans, ref health, moves, imports, and manifest
+  diffs. Graphiti receives provenance episodes/facts about those changes; it
+  should not be the sole authority for mutable ECS/local/Obsidian/URL paths.
+- First backend slice added the Web-only CORE-015 routes
+  `GET /api/memory/identity-ref-index`,
+  `POST /api/memory/identity-ref-index/draft`, and
+  `POST /api/memory/identity-ref-index/apply`. These persist only the
+  IdentityRefIndex JSON under explicit operator mode; they do not write
+  Graphiti/FalkorDB or materialize L2-B fact edges yet.
+- M1 continuation added `POST /api/memory/identity-ref-index/verify`, giving
+  Graphiti/Obsidian UUIDs and ref locators a deterministic health vocabulary
+  before GraphitiResolver tries to materialize fact endpoints.
+- M2 continuation added IdentityRefIndex merge/conflict receipts: one existing
+  Graphiti/L2-B/ref/provider signal merges into its canonical record, while
+  explicit cross-canonical or multi-canonical overlap is preserved in
+  `conflicts[]` and marked `conflicted` without auto-rebinding existing owners.
+- M3 continuation added raw Graphiti envelope receipts:
+  `graphiti_raw_envelopes` preserve fact/entity/episode UUIDs, endpoint UUIDs,
+  labels, custom attrs, scores, source refs, and the raw serialized hit;
+  `identity_ref_drafts` convert those envelopes into CORE-015 fact/entity/
+  episode candidates without writing IdentityRefIndex.
+- M4 continuation added a read-only GraphitiResolver preview route under
+  IdentityRefIndex. It resolves fact endpoints through CORE-015 and blocks edge
+  materialization unless both source and target Graphiti entity UUIDs resolve to
+  L2-B UUIDs.
+- M5 continuation added `POST /api/memory/identity-ref-index/apply-graphiti-edge`.
+  It re-runs endpoint resolution, blocks unresolved/conflicted/tombstoned
+  endpoints, and then uses the existing L2-B edge apply route to create a
+  `GRAPHITI_FACT` `SemanticEdge` with raw Graphiti metadata preserved.
+- M6 continuation exposed these controls in the existing Graphiti Source Board:
+  IdentityIndex load/counts, ref verification, edge resolver preview, preview
+  edge apply, and operator materialize-to-L2-B. The UI still goes through
+  CORE-015 and does not directly write FalkorDB or bypass L2-B.
+- M7 continuation added `POST /api/memory/identity-ref-index/ref-scan-plan`
+  plus a Source Board `Ref Scan Plan` button. This drafts a Nanobot/MCP/git
+  check contract for Graphiti/Obsidian/local/ECS/URL refs while explicitly
+  avoiding Graphiti/FalkorDB mutation, L2-B mutation, manifest writes, file
+  moves, or ECS writes.
+- M8 continuation added `POST /api/memory/identity-ref-index/ref-scan-dispatch`
+  and `GET /api/memory/identity-ref-index/ref-scan-results`. Dispatch is
+  operator-gated and queues only read-only `ref_scan` work; results are read
+  back from the Scheduler ledger as review receipts and do not automatically
+  mutate Graphiti, L2-B, RefIndex health, manifests, or ECS files.
+- M9 continuation gave the Parrot fallback `NanobotConsumer` structured
+  `ref_scan` behavior: local paths are checked read-only, remote URL/ECS/
+  Graphiti locators remain explicit unknowns for future MCP checkers, manifest
+  deltas are proposals only, and mutation requests are refused.
+- M10 continuation live-smoked that path: `src/scripts/smoke_ref_scan.py`
+  created temporary local/URL/ECS/Graphiti refs, dispatched `ref_scan` through
+  Scheduler/Nanobot, and read back a `memory_ref_scan_result` ledger row. The
+  successful run used an SSH tunnel to Castle/ECS Redis on isolated DB15. It
+  proved the result return path and kept Graphiti pointer refs as explicit
+  `unknown` until a real Graphiti/MCP lookup checker is implemented.
+- M11 continuation added opt-in read-only probes to that same path. URL refs
+  can run HEAD-only checks; Graphiti refs can call the app-monitor/Web Graphiti
+  search API as a bounded probe; ECS refs are not mapped to local paths unless
+  the worker is explicitly confirmed to be running on ECS. Live smoke with
+  `--remote-checks` hit the real 8790 Graphiti API and returned a clear warning
+  that search-probe is not a true UUID CRUD lookup, so the next Graphiti work is
+  an explicit UUID lookup route rather than pretending search misses prove
+  absence.
+
 | Plane | Owner | Use for | Write shape |
 |:--|:--|:--|:--|
 | Ref management | App + Web | Add/remove/list/resolve refs that point at L2-B nodes, Graphiti UUIDs, episodes, photos, docs, or UI artifacts. | Shared core candidate; narrow DTO; reversible where possible. |
@@ -368,6 +449,25 @@ another lane needs the same contract. Likely future candidates:
 Direct entity/node CRUD against Graphiti or FalkorDB can be implemented, but it
 stays Web-operator only until there is a backup, dry-run, audit log, and
 rollback story.
+
+2026-05-17 M12 update:
+
+- The existing Web Graphiti search surface is no longer only a one-shot
+  search. `/api/graphiti/subgraph/search` accepts `strategy`, `depth`,
+  `expansion_limit`, and optional `focal_node_uuid`. The first supported
+  expansion strategy, `iterative_hybrid`, performs additional real Graphiti
+  searches from discovered entity/fact terms and returns a `search_plan` so the
+  operator can see which Graphiti queries ran.
+- The 7893 Source Board exposes Strategy / Depth / Focal UUID controls and
+  still imports selected Graphiti hits through L1.5 rather than direct L2-B or
+  FalkorDB mutation.
+- GOSLO Intent `query_memory` now uses this same subgraph search path, so the
+  agent can perform natural-language Graphiti retrieval with bounded subgraph
+  context.
+- Live smoke on 2026-05-17 wrote a real test Episode to ECS 8790
+  `arknights_test`, then queried through 7893 with depth 2 and imported two
+  returned hits into L1.5 under operator mode. This proves connection + import;
+  exact Graphiti UUID CRUD lookup remains the next upgrade.
 
 ### D. Observable Completion Signal
 

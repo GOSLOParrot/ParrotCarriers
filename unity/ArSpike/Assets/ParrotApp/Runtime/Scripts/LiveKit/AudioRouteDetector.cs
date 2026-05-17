@@ -209,6 +209,9 @@ namespace ParrotApp.LiveKit
 
                     int typeBluetoothSco = SafeStaticInt(deviceInfoClass, "TYPE_BLUETOOTH_SCO", 7);
                     int typeBluetoothA2dp = SafeStaticInt(deviceInfoClass, "TYPE_BLUETOOTH_A2DP", 8);
+                    int typeBleHeadset = SafeStaticInt(deviceInfoClass, "TYPE_BLE_HEADSET", 26);
+                    int typeBleSpeaker = SafeStaticInt(deviceInfoClass, "TYPE_BLE_SPEAKER", 27);
+                    int typeHearingAid = SafeStaticInt(deviceInfoClass, "TYPE_HEARING_AID", 23);
                     int typeWiredHeadset = SafeStaticInt(deviceInfoClass, "TYPE_WIRED_HEADSET", 3);
                     int typeWiredHeadphones = SafeStaticInt(deviceInfoClass, "TYPE_WIRED_HEADPHONES", 4);
                     int typeUsbHeadset = SafeStaticInt(deviceInfoClass, "TYPE_USB_HEADSET", 22);
@@ -217,7 +220,7 @@ namespace ParrotApp.LiveKit
 
                     summary = "inputs=[" + DeviceTypesSummary(inputs) + "],outputs=[" + DeviceTypesSummary(outputs) + "]";
 
-                    if (HasDeviceType(inputs, typeBluetoothSco))
+                    if (HasAnyDeviceType(inputs, typeBluetoothSco, typeBleHeadset))
                     {
                         policy = AudioRoutePolicy.ForKind(AudioRouteKind.BluetoothSco);
                         return true;
@@ -227,7 +230,7 @@ namespace ParrotApp.LiveKit
                         policy = AudioRoutePolicy.ForKind(AudioRouteKind.WiredHeadset);
                         return true;
                     }
-                    if (HasDeviceType(outputs, typeBluetoothA2dp))
+                    if (HasAnyDeviceType(outputs, typeBluetoothA2dp, typeBleHeadset, typeBleSpeaker, typeHearingAid))
                     {
                         policy = AudioRoutePolicy.ForKind(AudioRouteKind.BluetoothA2dp);
                         return true;

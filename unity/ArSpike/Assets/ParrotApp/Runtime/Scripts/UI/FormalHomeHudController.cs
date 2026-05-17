@@ -30,6 +30,7 @@ namespace ParrotApp.UI
         [SerializeField] private FormalModelPlacementController modelPlacementController;
         [SerializeField] private FormalArSessionBaselineReporter arSessionBaselineReporter;
         [SerializeField] private FormalArRuntimeBootstrap arRuntimeBootstrap;
+        [SerializeField] private FormalXrHandPerchController xrHandPerchController;
 
         private Canvas _canvas;
         private Text _statusText;
@@ -79,6 +80,7 @@ namespace ParrotApp.UI
             if (modelPlacementController == null) modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
             if (arSessionBaselineReporter == null) arSessionBaselineReporter = FindObjectOfType<FormalArSessionBaselineReporter>();
             if (arRuntimeBootstrap == null) arRuntimeBootstrap = FindObjectOfType<FormalArRuntimeBootstrap>();
+            if (xrHandPerchController == null) xrHandPerchController = FindObjectOfType<FormalXrHandPerchController>();
 
             if (startupFlow != null)
             {
@@ -180,7 +182,7 @@ namespace ParrotApp.UI
             panelRect.anchorMax = new Vector2(0f, 1f);
             panelRect.pivot = new Vector2(0f, 1f);
             panelRect.anchoredPosition = new Vector2(24f, -20f);
-            panelRect.sizeDelta = new Vector2(980f, 410f);
+            panelRect.sizeDelta = new Vector2(980f, 450f);
             var panelImage = panel.AddComponent<Image>();
             panelImage.color = new Color(0.08f, 0.07f, 0.06f, 0.62f);
             panelImage.raycastTarget = false;
@@ -257,6 +259,7 @@ namespace ParrotApp.UI
                 + $"Uplink {UplinkHudLabel()}\n"
                 + $"AR {ArHudLabel()}\n"
                 + $"Place {PlacementHudLabel()}\n"
+                + $"Hand {XrHandHudLabel()}\n"
                 + $"Home {(ready ? "ready" : "loading")}  {alert}";
         }
 
@@ -297,6 +300,16 @@ namespace ParrotApp.UI
                 ? " " + startupFlow.LastBrainRpcStatus
                 : "";
             return SafeLabel(modelPlacementController.LastDiagnosticSummary + rpc);
+        }
+
+        private string XrHandHudLabel()
+        {
+            if (xrHandPerchController == null)
+                xrHandPerchController = FindObjectOfType<FormalXrHandPerchController>();
+            if (xrHandPerchController == null)
+                return "owner?";
+            string mounted = xrHandPerchController.PerchMounted ? "mounted " : "wait ";
+            return mounted + SafeLabel(xrHandPerchController.LastXrHandStatus);
         }
 
         private string AudioRouteHudLabel()
@@ -388,8 +401,20 @@ namespace ParrotApp.UI
 
             return microphonePublisher.UplinkStateLabel
                    + " stage=" + microphonePublisher.LastPublishStage
+                   + " src=" + ShortLabel(microphonePublisher.ActiveAudioSourceKind, 18)
                    + " route=" + ShortRoute(microphonePublisher.ActivePolicy.RouteName)
                    + " sr=" + sampleRate
+                   + " frames=" + microphonePublisher.AudioReadFrameCount
+                   + " ch=" + microphonePublisher.LastAudioReadChannels
+                   + " readSr=" + microphonePublisher.LastAudioReadSampleRate
+                   + " peak=" + microphonePublisher.LastAudioReadPeak.ToString("0.000")
+                   + " age=" + microphonePublisher.LastAudioReadAgeSeconds.ToString("0.0")
+                   + " wd=" + ShortLabel(microphonePublisher.UplinkWatchdogState, 24)
+                   + " fb=" + ShortLabel(microphonePublisher.LastCaptureFallbackStatus, 24)
+                   + " native=" + ShortLabel(microphonePublisher.NativeAudioRecordState, 24)
+                   + " nerr=" + ShortLabel(microphonePublisher.NativeAudioRecordError, 18)
+                   + " rec=" + (microphonePublisher.UplinkWatchdogMicrophoneRecording ? "on" : "off")
+                   + " wr=" + microphonePublisher.UplinkWatchdogRecoveryCount
                    + " v=" + microphonePublisher.PublishedRouteVersion + "/" + microphonePublisher.RouteVersion
                    + " err=" + error
                    + ReporterHudSuffix("");

@@ -29,6 +29,7 @@ from parrot.brain.graphiti_console import (
     draft_episode,
     graphiti_status,
     search_graphiti,
+    search_graphiti_subgraph,
 )
 from parrot.brain.app_live_state import build_app_live_state
 from parrot.brain.l2b_monitor import build_l2b_snapshot
@@ -397,8 +398,22 @@ def build_app():  # type: ignore[no-untyped-def]
         return (await search_graphiti(
             query=str(body.get("query") or ""),
             partition=str(body.get("partition") or "goslo"),
-            limit=int(body.get("limit") or 5),
+            limit=body.get("limit") or 5,
+            focal_node_uuid=str(body.get("focal_node_uuid") or ""),
         )).as_json()
+
+    @app.post("/api/graphiti/subgraph/search")
+    async def graphiti_subgraph_search_endpoint(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        body = payload or {}
+        return await search_graphiti_subgraph(
+            query=str(body.get("query") or ""),
+            partition=str(body.get("partition") or "goslo"),
+            limit=body.get("limit") or 8,
+            strategy=str(body.get("strategy") or "hybrid"),
+            depth=body.get("depth") or 1,
+            expansion_limit=body.get("expansion_limit") or 3,
+            focal_node_uuid=str(body.get("focal_node_uuid") or ""),
+        )
 
     @app.post("/api/graphiti/episode/draft")
     async def graphiti_episode_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]

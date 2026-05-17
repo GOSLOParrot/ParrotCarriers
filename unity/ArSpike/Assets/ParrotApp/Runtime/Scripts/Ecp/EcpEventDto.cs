@@ -91,6 +91,7 @@ namespace ParrotApp.Ecp
         public const string BboxRemoved = "bbox.removed";
         public const string FocusAnchored = "focus.anchored";
         public const string FocusReleased = "focus.released";
+        public const string VisualToolLifecycle = "visual_tool.lifecycle";
         public const string AttentionThresholdCrossed = "attention.threshold.crossed";
 
         // Tool ④ — camera / photo

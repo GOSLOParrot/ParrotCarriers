@@ -7,7 +7,7 @@ using UnityEngine;
 namespace ParrotApp.Lifecycle
 {
     /// <summary>
-    /// Formal homepage owner for the local XRHand-to-perch reflex.
+    /// Formal homepage owner for the local camera/XR hand-to-perch reflex.
     ///
     /// This is intentionally a Unity-local owner. It mounts the existing
     /// HandGestureSource and PerchOnHand only after the formal main-ready and
@@ -42,6 +42,7 @@ namespace ParrotApp.Lifecycle
         private PerchOnHand _mountedPerch;
         private GameObject _gestureSourceOwner;
         private float _nextReevaluateAt;
+        private string _lastLoggedStatus = "";
 
         private void OnEnable()
         {
@@ -109,7 +110,7 @@ namespace ParrotApp.Lifecycle
             if (_mountedPerch != null) _mountedPerch.enabled = false;
             _mountedPerch = null;
             PerchMounted = false;
-            LastXrHandStatus = "waiting_placed_model";
+            SetStatus("waiting_placed_model");
         }
 
         private void HandleMainUiReady(AppStartupConfigDto _)
@@ -121,7 +122,7 @@ namespace ParrotApp.Lifecycle
         {
             if (_mountedPerch != null) _mountedPerch.enabled = false;
             PerchMounted = false;
-            LastXrHandStatus = "startup_failed:" + ShortReason(reason);
+            SetStatus("startup_failed:" + ShortReason(reason));
         }
 
         private void HandleGateChanged(FormalMainReadySnapshot _)
@@ -139,9 +140,11 @@ namespace ParrotApp.Lifecycle
                 return;
             }
 
+            EnsureGestureSource();
+
             if (mainReadyGate != null && !mainReadyGate.IsReady)
             {
-                SetPerchInactive("home_gates_wait:" + ShortReason(mainReadyGate.LastMissingGates));
+                SetPerchInactive(WithTracking("home_gates_wait:" + ShortReason(mainReadyGate.LastMissingGates)));
                 return;
             }
 
@@ -149,7 +152,7 @@ namespace ParrotApp.Lifecycle
                 placementController = FindObjectOfType<FormalModelPlacementController>();
             if (placementController == null || !placementController.HasPlacedModel || placementController.PlacedModel == null)
             {
-                SetPerchInactive("waiting_placed_model");
+                SetPerchInactive(WithTracking("waiting_placed_model"));
                 return;
             }
 
@@ -157,17 +160,16 @@ namespace ParrotApp.Lifecycle
             string modelId = ResolveModelId(model);
             if (!SupportsPerch(model, modelId))
             {
-                SetPerchInactive("model_perch_unsupported:" + ShortReason(modelId));
+                SetPerchInactive(WithTracking("model_perch_unsupported:" + ShortReason(modelId)));
                 return;
             }
 
             if (model.GetComponentInChildren<AnimationDriver>(true) == null)
             {
-                SetPerchInactive("model_no_animation_driver:" + ShortReason(modelId));
+                SetPerchInactive(WithTracking("model_no_animation_driver:" + ShortReason(modelId)));
                 return;
             }
 
-            EnsureGestureSource();
             if (handGestureSource == null)
             {
                 SetPerchInactive("hand_source_missing");
@@ -176,29 +178,35 @@ namespace ParrotApp.Lifecycle
 
             var perch = model.GetComponent<PerchOnHand>();
             if (perch == null) perch = model.AddComponent<PerchOnHand>();
+            if (_mountedPerch != null && _mountedPerch != perch)
+                _mountedPerch.enabled = false;
             perch.enabled = true;
             _mountedPerch = perch;
             PerchMounted = true;
-            if (!RealXrHandsCompiled)
-                LastXrHandStatus = "xrhand_debug_only_package_missing";
+            if (handGestureSource.RealCameraCvCompiled)
+                SetStatus(handGestureSource.IsHandDetected
+                    ? "camera_cv_tracking_active_perch_owner_mounted"
+                    : WithTracking("camera_cv_owner_mounted_waiting_tracking"));
+            else if (!RealXrHandsCompiled)
+                SetStatus("xrhand_debug_only_package_missing");
             else
-                LastXrHandStatus = handGestureSource.IsHandDetected
+                SetStatus(handGestureSource.IsHandDetected
                     ? "xrhand_tracking_active_perch_owner_mounted"
-                    : "xrhand_owner_mounted_waiting_tracking";
+                    : WithTracking("xrhand_owner_mounted_waiting_tracking"));
         }
 
         public void DebugFireBranchGesture()
         {
             EnsureGestureSource();
             handGestureSource?.DebugFireBranchGesture();
-            LastXrHandStatus = "debug_branch_fired";
+            SetStatus("debug_branch_fired");
         }
 
         public void DebugFireFistGesture()
         {
             EnsureGestureSource();
             handGestureSource?.DebugFireFistGesture();
-            LastXrHandStatus = "debug_fist_fired";
+            SetStatus("debug_fist_fired");
         }
 
         private void EnsureGestureSource()
@@ -216,7 +224,31 @@ namespace ParrotApp.Lifecycle
         {
             if (_mountedPerch != null) _mountedPerch.enabled = false;
             PerchMounted = false;
-            LastXrHandStatus = status;
+            SetStatus(status);
+        }
+
+        private void SetStatus(string status)
+        {
+            LastXrHandStatus = string.IsNullOrWhiteSpace(status) ? "unknown" : status;
+            if (string.Equals(_lastLoggedStatus, LastXrHandStatus, StringComparison.Ordinal))
+                return;
+            _lastLoggedStatus = LastXrHandStatus;
+            Debug.Log("[FormalXrHandPerch] " + LastXrHandStatus);
+        }
+
+        private string WithTracking(string ownerStatus)
+        {
+            if (handGestureSource == null)
+                return ownerStatus;
+
+            string detected = handGestureSource.IsHandDetected ? "hand_seen" : "hand_wait";
+            string source = string.IsNullOrWhiteSpace(handGestureSource.TrackingSource)
+                ? "source_none"
+                : handGestureSource.TrackingSource;
+            string tracking = string.IsNullOrWhiteSpace(handGestureSource.LastTrackingStatus)
+                ? "tracking_unknown"
+                : handGestureSource.LastTrackingStatus;
+            return ownerStatus + "/" + detected + "/" + ShortReason(source) + "/" + ShortReason(tracking);
         }
 
         private string ResolveModelId(GameObject model)

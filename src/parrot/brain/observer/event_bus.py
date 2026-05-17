@@ -40,11 +40,12 @@ def register_phase4_observers(ingest: EcpEventIngest) -> None:
     """
     # Lazy import to avoid circular: each observer module may import event_bus
     # symbols (e.g. logger) once Phase 4 W4+ wires real handlers.
-    from parrot.brain.observer import bbox, focus, photo, sighting, snapshot, visual_tool
+    from parrot.brain.observer import bbox, focus, gesture, photo, sighting, snapshot, visual_tool
 
     snapshot.register(ingest)
     sighting.register(ingest)
     photo.register(ingest)
+    gesture.register(ingest)
     visual_tool.register(ingest)
     # W6-7: bbox + focus observers manage RefBinding lifecycle. They must
     # subscribe BEFORE FocusBboxThreshold (which the agent boot registers
@@ -55,7 +56,7 @@ def register_phase4_observers(ingest: EcpEventIngest) -> None:
     focus.register(ingest)
 
     logger.info(
-        "Phase 4 observers registered: snapshot / sighting / photo / visual_tool / bbox / focus"
+        "Phase 4 observers registered: snapshot / sighting / photo / gesture / visual_tool / bbox / focus"
     )
 
 

@@ -88,8 +88,11 @@ namespace ParrotApp.Ecp
         private bool _sending = false;
         private string _lastSentSignature = "";
         private float _lastSentAtUnscaled = 0f;
+        private AnimationDriver _subscribedAnimationDriver;
+        private float _nextAnimationDriverBindAt = 0f;
         // 同一 frame 内多 producer event 合并到一条；1Hz tick 间隔 = 1000ms 远 > 50ms 不影响
         private const float MinSendIntervalSeconds = 0.05f;
+        private const float AnimationDriverBindRetrySeconds = 0.5f;
 
         protected virtual void Awake()
         {
@@ -115,6 +118,7 @@ namespace ParrotApp.Ecp
 
         protected virtual void OnDestroy()
         {
+            UnbindAnimationDriver();
             if (Instance == this) Instance = null;
         }
 
@@ -127,14 +131,7 @@ namespace ParrotApp.Ecp
                     _lifecycle.HealthAggregator.OnChanged += HandleHealthChanged;
             }
 
-            if (animationDriver != null)
-            {
-                animationDriver.OnBodyStateWireChanged += HandleBodyStateWire;
-                animationDriver.OnHeadStateWireChanged += HandleHeadStateWire;
-                // 抓一次初始值，避免 Awake 之前已被设过的 state 漏掉首次上报
-                _bodyStateWire = AnimationDriver.BodyStateToWire(animationDriver.CurrentState);
-                _headStateWire = AnimationDriver.HeadStateToWire(animationDriver.CurrentHeadState);
-            }
+            EnsureAnimationDriverBound();
         }
 
         protected virtual void OnDisable()
@@ -145,18 +142,14 @@ namespace ParrotApp.Ecp
                 if (_lifecycle.HealthAggregator != null)
                     _lifecycle.HealthAggregator.OnChanged -= HandleHealthChanged;
             }
-            if (animationDriver != null)
-            {
-                animationDriver.OnBodyStateWireChanged -= HandleBodyStateWire;
-                animationDriver.OnHeadStateWireChanged -= HandleHeadStateWire;
-            }
+            UnbindAnimationDriver();
         }
 
         protected virtual void Update()
         {
             if (Transport == null || _lifecycle == null || Config == null) return;
+            EnsureAnimationDriverBound();
 
-            // 不在已断开 / 关机中态发心跳，避免 watchdog 把"我自己断了"当 unhealthy
             if (_lifecycle.CurrentState == AppLifecycleState.Disconnected
                 || _lifecycle.CurrentState == AppLifecycleState.ShuttingDown
                 || _lifecycle.CurrentState == AppLifecycleState.ColdStart)
@@ -166,7 +159,6 @@ namespace ParrotApp.Ecp
 
             if (Time.unscaledTime >= _nextSendAt)
             {
-                // 1Hz 全量心跳：绕过 sig 去重，确保 keep-alive 必发
                 SendHeartbeatTick();
                 _nextSendAt = Time.unscaledTime + Config.T_HEARTBEAT_INTERVAL;
             }
@@ -200,6 +192,22 @@ namespace ParrotApp.Ecp
             MaybeSendHeartbeat("active_command_clear");
         }
 
+        /// <summary>
+        /// Local Unity producers that do not pass through an RPC ack path can
+        /// still surface body state through the same EcpState heartbeat stream.
+        /// AnimationDriver remains the preferred producer when present; this is
+        /// the formal fallback for local UI controls and non-standard models.
+        /// </summary>
+        public void ReportBodyState(string bodyStateWire)
+        {
+            string normalized = string.IsNullOrWhiteSpace(bodyStateWire)
+                ? "idle"
+                : bodyStateWire.Trim();
+            if (_bodyStateWire == normalized) return;
+            _bodyStateWire = normalized;
+            MaybeSendHeartbeat("body_state_external");
+        }
+
         // ─── producer event handlers ─────────────────────────────────────
 
         private void HandleBodyStateWire(string wire)
@@ -215,6 +223,46 @@ namespace ParrotApp.Ecp
             _headStateWire = wire ?? "";
             MaybeSendHeartbeat("head_state_change");
         }
+
+        private void EnsureAnimationDriverBound()
+        {
+            if (_subscribedAnimationDriver != null && animationDriver == _subscribedAnimationDriver)
+                return;
+
+            if (_subscribedAnimationDriver != null)
+                UnbindAnimationDriver();
+
+            if (animationDriver == null)
+            {
+                if (Time.unscaledTime < _nextAnimationDriverBindAt)
+                    return;
+                _nextAnimationDriverBindAt = Time.unscaledTime + AnimationDriverBindRetrySeconds;
+                animationDriver = FindObjectOfType<AnimationDriver>();
+            }
+            if (animationDriver == null)
+                return;
+
+            animationDriver.OnBodyStateWireChanged += HandleBodyStateWire;
+            animationDriver.OnHeadStateWireChanged += HandleHeadStateWire;
+            _subscribedAnimationDriver = animationDriver;
+
+            _bodyStateWire = AnimationDriver.BodyStateToWire(animationDriver.CurrentState);
+            _headStateWire = AnimationDriver.HeadStateToWire(animationDriver.CurrentHeadState);
+            MaybeSendHeartbeat("animation_driver_bound");
+        }
+
+        private void UnbindAnimationDriver()
+        {
+            if (_subscribedAnimationDriver == null)
+                return;
+
+            _subscribedAnimationDriver.OnBodyStateWireChanged -= HandleBodyStateWire;
+            _subscribedAnimationDriver.OnHeadStateWireChanged -= HandleHeadStateWire;
+            if (animationDriver == _subscribedAnimationDriver)
+                animationDriver = null;
+            _subscribedAnimationDriver = null;
+        }
+
 
         // ─── send paths ─────────────────────────────────────────────────
 

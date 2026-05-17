@@ -117,6 +117,36 @@ def test_multiple_fields_combine_in_header():
     assert "cognitive=SPEAKING" in header
 
 
+def test_on_hand_body_state_surfaces_situational_mode():
+    body_bb = _bb_writer_for("test_w_body_on_hand", "brain.telemetry_receiver")
+    body_bb.set("tick/body_state", ParrotBodyState.PERCHED_ON_HAND)
+
+    header = format_state_header()
+
+    assert "body=perched_on_hand" in header
+    assert "mode=ON_HAND" in header
+
+
+def test_ecp_state_body_fallback_surfaces_on_hand_when_tick_default():
+    snap = {
+        "body_state": ParrotBodyState.IDLE,
+        "head_state": None,
+        "cognitive_state": CognitiveState.IDLE_MIND,
+        "ecp_state": {
+            "body_state": "perched_on_hand",
+            "head_state": "HEAD_TILT",
+            "active_locks": [],
+            "active_command_id": "",
+        },
+    }
+
+    header = format_state_header(snap)
+
+    assert "body=perched_on_hand" in header
+    assert "mode=ON_HAND" in header
+    assert "head=HEAD_TILT" in header
+
+
 def test_active_locks_and_active_cmd_from_ecp_state():
     """ecp_state dict surfaces active_locks comma-joined + active_command_id."""
     snap = {

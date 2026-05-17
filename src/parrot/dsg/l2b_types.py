@@ -76,6 +76,16 @@ class EdgeKind(str, Enum):
     CO_OCCURRED = "co_occurred"
     SPATIAL_CONTEXT = "spatial_context"
     PART_OF_EPISODE = "part_of_episode"
+    MENTIONS = "mentions"
+    SAME_AS = "same_as"
+    HAS_REF = "has_ref"
+    HAS_EVIDENCE = "has_evidence"
+    DERIVED_FROM = "derived_from"
+    TEMPORAL_NEXT = "temporal_next"
+    CONTAINS = "contains"
+    LOCATED_ON = "located_on"
+    LOCATED_NEAR = "located_near"
+    GRAPHITI_FACT = "graphiti_fact"
     # Sprint4 Phase 4 W8 (2026-04-30, entry doc §8.1 L7) — Photo-specific
     # edges. Wiring connect() calls is mostly Phase 5+ (need full Episode
     # graph + ObjectNode candidate already in L2-B); the enum values land
@@ -86,6 +96,55 @@ class EdgeKind(str, Enum):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+class EdgeViewClass(str, Enum):
+    """Filter and algorithm classes for L2-B edge views."""
+
+    SEMANTIC = "semantic"
+    SPATIAL = "spatial"
+    TEMPORAL = "temporal"
+    EPISODIC = "episodic"
+    IDENTITY = "identity"
+    REF = "ref"
+    EVIDENCE = "evidence"
+    GRAPHITI = "graphiti"
+    HIERARCHY = "hierarchy"
+
+
+EDGE_KIND_VIEW_CLASSES: dict[EdgeKind, tuple[EdgeViewClass, ...]] = {
+    EdgeKind.ASSOCIATED_WITH: (EdgeViewClass.SEMANTIC,),
+    EdgeKind.REMINDS_OF: (EdgeViewClass.SEMANTIC,),
+    EdgeKind.CO_OCCURRED: (EdgeViewClass.SEMANTIC, EdgeViewClass.TEMPORAL),
+    EdgeKind.SPATIAL_CONTEXT: (EdgeViewClass.SPATIAL,),
+    EdgeKind.PART_OF_EPISODE: (EdgeViewClass.EPISODIC, EdgeViewClass.HIERARCHY),
+    EdgeKind.MENTIONS: (EdgeViewClass.SEMANTIC, EdgeViewClass.REF),
+    EdgeKind.SAME_AS: (EdgeViewClass.IDENTITY,),
+    EdgeKind.HAS_REF: (EdgeViewClass.REF,),
+    EdgeKind.HAS_EVIDENCE: (EdgeViewClass.EVIDENCE, EdgeViewClass.REF),
+    EdgeKind.DERIVED_FROM: (EdgeViewClass.REF, EdgeViewClass.EPISODIC),
+    EdgeKind.TEMPORAL_NEXT: (EdgeViewClass.TEMPORAL, EdgeViewClass.EPISODIC),
+    EdgeKind.CONTAINS: (EdgeViewClass.SPATIAL, EdgeViewClass.HIERARCHY),
+    EdgeKind.LOCATED_ON: (EdgeViewClass.SPATIAL,),
+    EdgeKind.LOCATED_NEAR: (EdgeViewClass.SPATIAL,),
+    EdgeKind.GRAPHITI_FACT: (EdgeViewClass.GRAPHITI, EdgeViewClass.SEMANTIC),
+    EdgeKind.HAS_PHOTO: (EdgeViewClass.EVIDENCE, EdgeViewClass.REF),
+    EdgeKind.CAPTURED_VIA: (EdgeViewClass.EVIDENCE,),
+    EdgeKind.CANDIDATE_SUBJECT: (EdgeViewClass.EVIDENCE, EdgeViewClass.IDENTITY),
+}
+
+
+def edge_view_classes(kind: EdgeKind | str) -> tuple[str, ...]:
+    """Return stable classes used by filters, views, and graph algorithms."""
+
+    try:
+        normalized = kind if isinstance(kind, EdgeKind) else EdgeKind(str(kind))
+    except ValueError:
+        return (EdgeViewClass.SEMANTIC.value,)
+    return tuple(
+        item.value
+        for item in EDGE_KIND_VIEW_CLASSES.get(normalized, (EdgeViewClass.SEMANTIC,))
+    )
+
+
 #  Node
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -368,7 +427,25 @@ class SemanticEdge:
     strength: float = 0.5
     source: str = "observation"
     created_at: float = field(default_factory=time.time)
+    graphiti_uuid: str = ""
+    source_graphiti_uuid: str = ""
+    target_graphiti_uuid: str = ""
+    ref_ids: tuple[str, ...] = ()
+    view_classes: tuple[str, ...] = ()
     meta: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.view_classes:
+            self.view_classes = edge_view_classes(self.kind)
+        self.meta.setdefault("view_classes", tuple(self.view_classes))
+        if self.graphiti_uuid:
+            self.meta.setdefault("graphiti_uuid", self.graphiti_uuid)
+        if self.source_graphiti_uuid:
+            self.meta.setdefault("source_graphiti_uuid", self.source_graphiti_uuid)
+        if self.target_graphiti_uuid:
+            self.meta.setdefault("target_graphiti_uuid", self.target_graphiti_uuid)
+        if self.ref_ids:
+            self.meta.setdefault("ref_ids", tuple(self.ref_ids))
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

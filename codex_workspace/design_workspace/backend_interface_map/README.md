@@ -84,6 +84,7 @@ the lane README and module-level Web files.
 | `web_console/observability_runtime_business_flow_20260513.md` | ECS/module health, orchestrator `/status`, Runtime Monitor, React Runtime Flow Workspace, Blackboard/Plan/Scheduler/Nanobot observability, HITL, LineB voice smoke, and trigger palette. |
 | `web_console/memory_graph_workspace_business_flow_20260513.md` | L1.5 pool, L2-B React visual workspace, Memory changed-since route, Blackboard/IntentWorkspace memory renderer, node/photo management, Ref/Evidence Board, and Visual Memory Operations Cockpit. |
 | `web_console/graphiti_management_business_flow_20260513.md` | Graphiti/FalkorDB observe/search/episode draft/dry-run and future Web operator surgery. |
+| `web_console/graphiti_l2b_ref_identity_design_20260517.md` | Graphiti raw preservation, L2-B canonical UUID resolution, durable IdentityMap/RefIndex, Edge filter/view classes, and nanobot/git/MCP ref-management ownership. |
 
 Do not create one-off Web interface files for every UI slice. Add durable
 decisions to these module-level files, keep implementation checkpoints in

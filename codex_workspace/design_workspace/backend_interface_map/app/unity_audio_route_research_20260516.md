@@ -77,8 +77,20 @@ LiveKit guidance:
   Source: https://docs.livekit.io/reference/client-sdk-android/livekit-android-sdk/io.livekit.android.audio/-audio-switch-handler/force-handle-audio-routing.html
 - LiveKit publish paths still need microphone permission and a microphone track. In Unity, the App must keep the room connection separate from local media publish/unpublish.
   Source: https://docs.livekit.io/transport/media/publish/
-- LiveKit Unity is still a developer-preview SDK and Android audio behavior must be phone-proven. A May 2026 Unity SDK issue reports Android `AudioStream` output with no sound on device; this does not prove our exact bug, but it is enough to keep Android audio as an explicit risk until iQOO evidence exists.
+- LiveKit Unity is still a developer-preview SDK and Android audio behavior must
+  be phone-proven. Public issue #77 reports `RtcAudioSource` / microphone
+  streaming failing on some Android brands/devices even when the same hardware
+  works through native Android paths. This does not prove our exact iQOO bug,
+  but it is enough to keep Unity-side audio capture and FFI frame delivery as
+  separate diagnostics instead of treating `PublishTrack` as proof of speech
+  uplink.
   Source: https://github.com/livekit/client-sdk-unity/issues/77
+- LiveKit Unity `MicrophoneSource.AudioRead` is an official SDK event emitted
+  when samples are captured from the underlying source. The formal App now uses
+  it as the first local "SDK source received audio frames" check; it still does
+  not prove remote Brain/STT heard the audio if native FFI capture later logs an
+  error.
+  Source: https://livekit.github.io/client-sdk-unity/api/LiveKit.MicrophoneSource.html
 
 Project skill guidance:
 
@@ -330,10 +342,16 @@ Implemented on 2026-05-16:
   launcher module from colliding with a generated
   `com.parrotcarriers.app.BuildConfig` during dex merge.
 - Uplink truth fix: LiveKit `PublishTrack` only proves the track was accepted by
-  the room. The formal App now waits for Unity `Microphone.GetPosition(...)` to
-  advance after `MicrophoneSource.Start()`. If capture never starts, Unity
-  unpublishes the track and reports `microphone_start_timeout` /
-  `microphone_start_exception` instead of fake `audio_published=true`.
+  the room, and Unity `Microphone.GetPosition(...)` only proves the platform
+  microphone ring buffer advanced. The formal App now also subscribes to
+  LiveKit Unity `MicrophoneSource.AudioRead`; it reports audio published only
+  after both the microphone position advances and at least one captured audio
+  frame reaches the SDK source. If capture never starts, Unity unpublishes the
+  track and reports `microphone_start_timeout` /
+  `microphone_start_exception`; if the Unity microphone advances but no SDK
+  audio frame appears, it reports `audio_read_timeout`. This prevents the
+  formal App from showing fake `audio_published=true` when Android/Unity/LiveKit
+  accepted the track but no voice samples are actually entering the uplink path.
 - If publish intent is disabled, shutdown starts, or the room disconnects while
   Unity is waiting for microphone samples, the startup attempt aborts and cleans
   up instead of later marking the uplink as published.
@@ -342,7 +360,10 @@ Implemented on 2026-05-16:
   or reconnect does not inherit stale local audio state.
 - HUD diagnostic update: formal home now separates `UsingMic` from `Uplink` so
   phone tests can distinguish OS route/device selection from actual LiveKit
-  microphone capture.
+  microphone capture. The `Uplink` line includes SDK audio-frame count,
+  captured channel count, captured sample rate, and latest peak level; use
+  these fields before blaming Brain/STT when the user can hear the agent but the
+  agent cannot hear the phone.
 
 Validation so far:
 
@@ -426,3 +447,121 @@ Do not mark APP-015.23 / APP-024 stable until the formal iQOO Neo9 App proves:
 - LineA and LineB both continue without LiveKit room deadlock
 - route-policy RPC reports business-ok and does not hide `result.success:false`
 - HUD reports degraded state when any track rebuild fails
+
+## 2026-05-17 Deep Audit Follow-up
+
+Follow-up record:
+`backend_interface_map/app/unity_audio_livekit_deep_audit_20260517.md`.
+
+The broader reread confirms this research direction:
+
+- Keep Android native route ownership plus Unity `AudioRouteManager` and
+  `MicrophonePublisher`; do not copy the old ParrotDev/Smoke LineA mic script
+  as formal policy.
+- Keep A2DP output-only and use Bluetooth SCO / communication input only when
+  Android reports a real communication device.
+- Keep route changes local to the microphone track. Do not reconnect the
+  LiveKit room or mint a new token for headset changes.
+- The startup `Microphone.GetPosition(...)` + LiveKit Unity
+  `MicrophoneSource.AudioRead` guard is necessary but not sufficient.
+
+P1 implementation update:
+
+- `MicrophonePublisher` now has a steady-state uplink watchdog after publish
+  succeeds. It checks `Microphone.IsRecording` when available, detects stale
+  `AudioReadFrameCount` / last-frame age, marks degraded state in HUD and
+  health, and queues one serialized local mic republish without reconnecting the
+  room. This is code-complete but not phone-proven.
+- Follow-up iQOO screenshot showed `bt-sco@16k` selected with
+  `microphone_start_timeout` and `frames=0`. The first formal mitigation is a
+  second local capture attempt at 48 kHz (`bluetooth_sco_capture_48k`), then a
+  `phone_default_microphone` 48 kHz fallback, before reporting failure. This
+  keeps the same LiveKit room and Brain job; it is not a reconnect or
+  token-mint workaround.
+- Follow-up iQOO Bluetooth-on/Bluetooth-off screenshots then showed the same
+  no-uplink symptom after native routing fell back to `phone_mic`:
+  microphone permission and audio focus were granted, but either Unity
+  `Microphone.devices` was empty or Unity selected a device and still produced
+  no `MicrophoneSource.AudioRead` frames. Formal App response is a native
+  Android `AudioRecord` fallback (`AndroidPcmMicCapture` +
+  `AndroidPcmMicrophoneSource`) as the final capture attempt after a temporary
+  PhoneMic route override. This fallback is allowed even if Unity lists a mic
+  device, provided that the Unity capture attempts timed out at `frames=0`.
+  This is a local capture source replacement, not a LiveKit room reconnect,
+  token mint, or Brain dispatch. The next phone gate is simple: HUD
+  `frames/ch/readSr` must become non-zero before LineA/LineB voice can be
+  considered connected.
+
+New P2 follow-up:
+
+- If the HUD shows advancing frames / peak but Brain still cannot hear speech,
+  inspect LiveKit Unity `RtcAudioSource` / FFI capture logs before changing
+  backend code. `AudioRead` proves Unity-source capture, not remote Brain/STT
+  consumption.
+- Run APK-level 16 KB alignment verification after the next Android build.
+  Package-level arm64 `liblivekit_ffi.so` currently verifies OK, but the APK is
+  the final truth for Android 15+ devices.
+
+## 2026-05-17 iQOO AudioRecord Start Fix
+
+New evidence: the phone could hear the agent, but user speech never reached the
+agent. HUD showed `LK on` / `Brain on` and valid route permission/focus, but
+`Mic wait`, `Uplink not_published`, `frames=0`, and a final
+`microphone_start_exception` from the `android_audio_record` fallback. This is a
+client-side capture startup failure, not a Brain RPC, Mint, RoomSetting, or STT
+failure.
+
+Implementation update:
+
+- The native route owner now treats no-headset AR companion voice as
+  phone-mic + speaker, preferring `TYPE_BUILTIN_SPEAKER` before earpiece when
+  no Bluetooth SCO or wired communication route is selected.
+- Android AudioRecord sample-rate fallback now happens as distinct
+  Unity-created LiveKit source attempts. Java `AndroidPcmMicCapture` stays
+  strict to the requested rate and only switches between
+  `VOICE_COMMUNICATION` and `MIC` within that rate, because LiveKit FFI rejects
+  PCM frames whose sample rate differs from the `RtcAudioSource` construction
+  rate.
+- `AndroidPcmMicrophoneSource` asks Java for `lastError()` when `start()`
+  returns false and rolls back `base.Start()` when native startup fails.
+- `MicrophonePublisher` caches the last native AudioRecord state/error after a
+  failed start so HUD `native=` / `nerr=` remains useful even after local source
+  cleanup.
+- The empty-device path now tolerates stale/unknown native route snapshots after
+  mic permission is granted, so a transient route label cannot block the
+  Android default/AudioRecord capture fallback with `no_microphone_devices`.
+
+Validation performed:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28 passed.
+- Unity Android Java plugin compiled with Unity 2022.3.62f3 Android classpath.
+
+Next phone gate:
+
+- Rebuild and run on iQOO Neo9.
+- Success requires HUD `Uplink` to show non-zero `frames`, `ch`, `readSr`, and
+  a visible `peak` response when speaking.
+- If it still fails, use HUD `native=` / `nerr=` as the next root-cause input;
+  do not infer success from audible agent output alone.
+
+## 2026-05-17 BLE / Callback / Cleanup Follow-up
+
+The next local sweep found three more formal-App risks:
+
+- Bluetooth voice routing must include Android BLE headset devices, not just
+  classic SCO. `TYPE_BLE_HEADSET` is now accepted as a communication-device
+  target; fallback diagnostics also recognize BLE headset, BLE speaker, and
+  hearing-aid output classes. A connected BLE headset should no longer be
+  misread as "Bluetooth exists but no voice route".
+- Native AudioRecord -> Unity PCM callback failures are now explicit. Java no
+  longer swallows `onPcmFrame(...)` exceptions; it emits
+  `pcm_callback_failed:*` so the HUD can distinguish JNI/proxy failure from
+  AudioRecord init failure, silence, or Brain/STT consumption failure.
+- Because the pinned LiveKit Unity package does not honor `stopOnUnpublish`
+  inside `LocalParticipant.UnpublishTrack`, the product App now treats local
+  source cleanup as its own responsibility. Every retry/republish path detaches,
+  stops, and disposes the current source before clearing `_audioTrack`.
+
+Validation remains code-level only until a phone run shows uplink frames and
+speech-responsive peak. Do not mark Bluetooth/phone mic production-stable from
+these static checks alone.

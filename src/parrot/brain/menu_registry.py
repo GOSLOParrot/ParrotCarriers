@@ -4,7 +4,7 @@ This module is the single Python entry the Unity menu canvas / HUD calls
 into. It surfaces:
 
     * Persona block         — list_personas() / current persona
-    * Mode block            — BehaviorMode flags (BASE..ROLEPLAY)
+    * Mode block            — BehaviorMode flags (BASE..ON_HAND)
     * Scene block           — registered SceneType profiles
     * 2DWorkspace block     — in-app desk/surface, independent from Scene
     * Model block           — ModelManifest list (delegates to the
@@ -158,6 +158,11 @@ _MODE_BLOCK_DESCRIPTORS: tuple[ModeBlockSummary, ...] = (
         flag_name="ROLEPLAY",
         display_name="角色扮演",
         description="临时人格语气；激活 Obsidian roleplay 设定桶。",
+    ),
+    ModeBlockSummary(
+        flag_name="ON_HAND",
+        display_name="On Hand",
+        description="停在用户手上；手机只是 AR 摄像头视图。",
     ),
 )
 

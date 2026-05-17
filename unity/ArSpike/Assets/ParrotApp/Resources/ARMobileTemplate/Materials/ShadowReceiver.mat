@@ -21,8 +21,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: ShadowReceiver
-  m_Shader: {fileID: -6465566751694194690, guid: c395164bee0484f4391b2932dfff0ff8,
-    type: 3}
+  m_Shader: {fileID: 4800000, guid: 9d4f0c0f4b904ace8ff3576d69877a61, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -37,6 +36,10 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
+    - _MainTex:
+        m_Texture: {fileID: 2800000, guid: bad94c7c5841e4b1eac9ec60ccaacb61, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _Texture:
         m_Texture: {fileID: 2800000, guid: bad94c7c5841e4b1eac9ec60ccaacb61, type: 3}
         m_Scale: {x: 1, y: 1}
@@ -74,5 +77,6 @@ Material:
     - _Shadow_Alpha: 1
     - _TextureScale: 4
     m_Colors:
+    - _Color: {r: 1, g: 1, b: 1, a: 0.28}
     - _ShadowColor: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []

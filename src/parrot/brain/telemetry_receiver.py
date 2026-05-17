@@ -1,15 +1,19 @@
-"""DataChannel telemetry receiver — Unity→Python pose/state/hand data.
+"""DataChannel telemetry receiver for Unity -> Python pose/state data.
 
-Sprint 1 S1.A3: receiver now owns three BB_KEYS (writer="brain.telemetry_receiver"):
+Sprint 1 S1.A3: receiver owns BB_KEYS (writer="brain.telemetry_receiver"):
 
-    tick/body_state         ← TelemetryFrame.behavior_state
-    tick/ar_tracking_state  ← TelemetryEvent type="ar_tracking_state"
-    transient/hand_gesture  ← TelemetryEvent type="hand_gesture"
+    tick/body_state         <- TelemetryFrame.behavior_state
+    tick/ar_tracking_state  <- TelemetryEvent type="ar_tracking_state"
 
 `tick/head_state` is also declared with this module as writer but no Unity
 emitter exists yet (head-pose tracking lands in Sprint 2); the key stays
 "declared but unwritten" until then. Readers must guard with try/except
 KeyError on `.get()`.
+
+Legacy `parrot.event` hand_gesture packets are parsed only into this module's
+in-process HandState for backwards-compatible diagnostics. Formal App XRHand
+state reaches the Blackboard through ECP `gesture.recognized` and
+`brain.observer.gesture`; this receiver must not write transient/hand_gesture.
 
 Attach to a LiveKit Room via `attach_telemetry_receiver(room)`.
 """
@@ -17,9 +21,8 @@ Attach to a LiveKit Room via `attach_telemetry_receiver(room)`.
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any, TYPE_CHECKING
 
 from parrot.scheduler.blackboard import open_bb_client
 from parrot.shared.parrot_actions import ParrotBodyState
@@ -92,29 +95,6 @@ def _write_body_state(raw: str) -> None:
         logger.debug("BB tick/body_state: %s → %s", current, body)
 
 
-def _write_hand_gesture() -> None:
-    """Mirror HandState → transient/hand_gesture as {kind, hand_pose, since}."""
-    bb = _ensure_bb()
-    payload: dict[str, Any] = {
-        "kind": _hand_state.gesture,
-        "hand_pose": {
-            "palm": {
-                "x": _hand_state.palm_position.x,
-                "y": _hand_state.palm_position.y,
-                "z": _hand_state.palm_position.z,
-            },
-            "index_tip": {
-                "x": _hand_state.index_tip_position.x,
-                "y": _hand_state.index_tip_position.y,
-                "z": _hand_state.index_tip_position.z,
-            },
-        },
-        "detected": _hand_state.detected,
-        "since": _hand_state.timestamp or time.time(),
-    }
-    bb.set("transient/hand_gesture", payload)
-
-
 def _write_ar_tracking_state(state: str) -> None:
     """Mirror Unity AR session state → tick/ar_tracking_state.
 
@@ -138,7 +118,7 @@ def _write_ar_tracking_state(state: str) -> None:
 
 
 def _parse_hand_event(payload: dict[str, Any]) -> None:
-    """Update hand state from a hand_gesture telemetry event."""
+    """Update diagnostics-only hand state from a legacy hand_gesture event."""
     _hand_state.detected = payload.get("hand_detected", False)
     _hand_state.gesture = payload.get("gesture", "none")
 
@@ -185,10 +165,10 @@ def attach_telemetry_receiver(room: Room) -> None:
 
                 if event.type == "hand_gesture":
                     _parse_hand_event(event.payload)
-                    _write_hand_gesture()
                     if _hand_state.gesture != "none":
                         logger.info(
-                            "Hand: gesture=%s palm=(%.2f,%.2f,%.2f)",
+                            "Legacy hand_gesture telemetry ignored for BB: "
+                            "gesture=%s palm=(%.2f,%.2f,%.2f)",
                             _hand_state.gesture,
                             _hand_state.palm_position.x,
                             _hand_state.palm_position.y,

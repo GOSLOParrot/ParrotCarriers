@@ -37,7 +37,13 @@ from parrot.brain.session_policy import (
     is_silent_session,
     should_generate_reply,
 )
-from parrot.brain.tools import animate, fly_to, play_capability, tools_for_active_model
+from parrot.brain.tools import (
+    animate,
+    fly_to,
+    play_capability,
+    return_to_view,
+    tools_for_active_model,
+)
 from parrot.brain.perception_supervisor import PerceptionSupervisor
 from parrot.scheduler.blackboard import open_bb_client
 from parrot.shared.parrot_actions import BehaviorMode
@@ -492,12 +498,14 @@ def test_tools_for_active_model_hides_parrot_verbs_for_ner() -> None:
 
     assert play_capability in tools
     assert fly_to not in tools
+    assert return_to_view not in tools
     assert animate not in tools
 
     bb.set("global/active_model_id", "GOSLO_default")
     goslo_tools = tools_for_active_model()
 
     assert fly_to in goslo_tools
+    assert return_to_view in goslo_tools
     assert animate in goslo_tools
     assert play_capability in goslo_tools
 

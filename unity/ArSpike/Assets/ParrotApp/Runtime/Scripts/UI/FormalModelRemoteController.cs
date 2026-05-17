@@ -1,5 +1,6 @@
 using System;
 using ParrotApp.Config;
+using ParrotApp.Ecp;
 using ParrotApp.Lifecycle;
 using ParrotApp.Parrot;
 using UnityEngine;
@@ -20,21 +21,61 @@ namespace ParrotApp.UI
     [DisallowMultipleComponent]
     public class FormalModelRemoteController : MonoBehaviour
     {
+        private const string BodyLock = "body";
+        private static readonly Color JoystickPadColor = new Color(1f, 1f, 1f, 0.16f);
+        private static readonly Color JoystickKnobColor = new Color(1f, 1f, 1f, 0.38f);
+        private static Sprite _joystickCircleSprite;
+
         [SerializeField] private AppStartupFlowController startupFlow;
         [SerializeField] private FormalMainReadyGate mainReadyGate;
         [SerializeField] private FormalModelPlacementController placementController;
         [SerializeField] private float fallbackWalkSpeedMetersPerSecond = 0.28f;
         [SerializeField] private float fallbackTurnSpeed = 8f;
+        [SerializeField] private float fallbackFlightHorizontalSpeedMetersPerSecond = 0.36f;
+        [SerializeField] private float fallbackFlightVerticalSpeedMetersPerSecond = 0.45f;
+        [SerializeField] private float remoteFlightMaxHeightMeters = 1.2f;
+        [SerializeField] private float remoteLandingEpsilonMeters = 0.025f;
+        [SerializeField] private bool experimentalBirdFlightEnabled = true;
+        [SerializeField] private bool randomizeRemoteFlightStyle = true;
+        [SerializeField] private float remoteFlightVelocitySmoothTime = 0.1f;
+        [SerializeField] private float remoteFlightFlutterMetersPerSecond = 0.055f;
+        [SerializeField] private float remoteFlightSwayMetersPerSecond = 0.025f;
+        [SerializeField] private float remoteFlightStyleMinSeconds = 1.2f;
+        [SerializeField] private float remoteFlightStyleMaxSeconds = 2.6f;
+        [SerializeField] private AnimationCurve remoteFlightFlutterCurve = new AnimationCurve(
+            new Keyframe(0f, 0f),
+            new Keyframe(0.25f, 1f),
+            new Keyframe(0.5f, 0f),
+            new Keyframe(0.75f, -0.55f),
+            new Keyframe(1f, 0f));
+        [SerializeField] private AnimationCurve remoteFlightGlideCurve = new AnimationCurve(
+            new Keyframe(0f, 0.2f),
+            new Keyframe(0.5f, -0.12f),
+            new Keyframe(1f, 0.2f));
 
         public bool RemoteVisible { get; private set; }
         public Vector2 CurrentInput { get; private set; }
+        public float CurrentLiftInput { get; private set; }
         public string LastRemoteStatus { get; private set; } = "waiting_start";
 
         private Canvas _canvas;
         private RectTransform _root;
         private RectTransform _knob;
+        private RectTransform _liftRoot;
+        private RectTransform _liftKnob;
         private Text _statusText;
+        private Text _liftStatusText;
         private bool _walking;
+        private bool _remoteFlying;
+        private bool _hasFlightGroundY;
+        private float _flightGroundY;
+        private RemoteFlightStyle _remoteFlightStyle = RemoteFlightStyle.ShortFlutter;
+        private Vector3 _remoteFlightVelocity;
+        private Vector3 _remoteFlightVelocityRef;
+        private float _remoteFlightStartedAt;
+        private float _remoteFlightNoiseSeed;
+        private float _nextRemoteFlightStyleAt;
+        private string _remoteControlCommandId = "";
         private float _tick;
         private FormalModelPlacementController _subscribedPlacementController;
 
@@ -54,6 +95,8 @@ namespace ParrotApp.UI
         {
             Unbind();
             EndWalk();
+            PublishRemoteBodyState("idle");
+            EndRemoteBodyControl();
         }
 
         private void Update()
@@ -65,7 +108,26 @@ namespace ParrotApp.UI
                 RefreshVisible();
             }
 
-            if (!RemoteVisible || CurrentInput.sqrMagnitude < 0.01f)
+            bool wantsMove = CurrentInput.sqrMagnitude >= 0.01f;
+            bool wantsLift = Mathf.Abs(CurrentLiftInput) >= 0.01f;
+
+            if (!RemoteVisible)
+            {
+                if (_walking) EndWalk();
+                if (_remoteFlying) EndRemoteFlight(landed: false, continueWalking: false);
+                else EndRemoteBodyControl();
+                return;
+            }
+
+            if (_remoteFlying || wantsLift)
+            {
+                if (_walking) EndWalk(releaseRemoteControl: false);
+                ApplyModelFlight(CurrentInput, CurrentLiftInput, Time.deltaTime);
+                RefreshStatusText();
+                return;
+            }
+
+            if (!wantsMove)
             {
                 if (_walking) EndWalk();
                 return;
@@ -127,6 +189,9 @@ namespace ParrotApp.UI
         private void HandleTransitionStarted(AppStartupConfigDto _)
         {
             CurrentInput = Vector2.zero;
+            CurrentLiftInput = 0f;
+            PublishRemoteBodyState("idle");
+            EndRemoteBodyControl();
             LastRemoteStatus = "waiting_place";
             SetVisible(false);
         }
@@ -139,6 +204,9 @@ namespace ParrotApp.UI
         private void HandleStartupFailed(string reason)
         {
             CurrentInput = Vector2.zero;
+            CurrentLiftInput = 0f;
+            PublishRemoteBodyState("idle");
+            EndRemoteBodyControl();
             LastRemoteStatus = "startup_failed:" + ShortReason(reason);
             SetVisible(false);
         }
@@ -158,8 +226,14 @@ namespace ParrotApp.UI
         private void SetJoystickInput(Vector2 input)
         {
             CurrentInput = Vector2.ClampMagnitude(input, 1f);
-            if (CurrentInput.sqrMagnitude < 0.01f)
+            if (CurrentInput.sqrMagnitude < 0.01f && !_remoteFlying)
                 EndWalk();
+            RefreshStatusText();
+        }
+
+        private void SetLiftInput(float input)
+        {
+            CurrentLiftInput = Mathf.Abs(input) < 0.04f ? 0f : Mathf.Clamp(input, -1f, 1f);
             RefreshStatusText();
         }
 
@@ -181,6 +255,10 @@ namespace ParrotApp.UI
             if (!shouldShow)
             {
                 CurrentInput = Vector2.zero;
+                CurrentLiftInput = 0f;
+                if (_remoteFlying) EndRemoteFlight(landed: false, continueWalking: false);
+                else if (_walking) EndWalk();
+                else EndRemoteBodyControl();
                 if (placementController == null || !placementController.HasPlacedModel)
                     LastRemoteStatus = "waiting_placed_model";
                 else if (!placementController.HasSelectedModel)
@@ -200,6 +278,8 @@ namespace ParrotApp.UI
             RemoteVisible = visible;
             if (_root != null && _root.gameObject.activeSelf != visible)
                 _root.gameObject.SetActive(visible);
+            if (_liftRoot != null && _liftRoot.gameObject.activeSelf != visible)
+                _liftRoot.gameObject.SetActive(visible);
         }
 
         private bool ApplyModelWalk(Vector2 input, float deltaTime)
@@ -210,6 +290,9 @@ namespace ParrotApp.UI
                 LastRemoteStatus = "model_missing";
                 return false;
             }
+
+            BeginRemoteBodyControl("walk");
+            PublishRemoteBodyState("walking");
 
             var parrot = model.GetComponentInChildren<ParrotController>(true);
             if (parrot != null)
@@ -254,7 +337,107 @@ namespace ParrotApp.UI
             return true;
         }
 
-        private void EndWalk()
+        private bool ApplyModelFlight(Vector2 planarInput, float liftInput, float deltaTime)
+        {
+            var model = placementController != null ? placementController.PlacedModel : null;
+            if (model == null)
+            {
+                LastRemoteStatus = "model_missing";
+                return false;
+            }
+
+            Transform target = ResolveMotionTarget(model, out AnimationDriver animationDriver, out Animator animator);
+            if (target == null)
+            {
+                LastRemoteStatus = "flight_target_missing";
+                return false;
+            }
+
+            if (animationDriver != null && animationDriver.CurrentState == AnimationDriver.BodyState.PerchedOnHand)
+            {
+                LastRemoteStatus = "perched_on_hand";
+                PublishRemoteBodyState("perched_on_hand");
+                return false;
+            }
+
+            BeginRemoteBodyControl("flight");
+            PublishRemoteBodyState("flying");
+
+            if (!_remoteFlying)
+            {
+                _remoteFlying = true;
+                _flightGroundY = target.position.y;
+                _hasFlightGroundY = true;
+                BeginRemoteFlightStyle();
+            }
+            if (!_hasFlightGroundY)
+            {
+                _flightGroundY = target.position.y;
+                _hasFlightGroundY = true;
+            }
+            MaybeSwitchRemoteFlightStyle();
+
+            Vector3 planar = ResolveCameraRelativePlanarDirection(planarInput);
+            Vector3 desiredVelocity = planar * fallbackFlightHorizontalSpeedMetersPerSecond
+                                      + Vector3.up * (liftInput * fallbackFlightVerticalSpeedMetersPerSecond);
+            if (experimentalBirdFlightEnabled)
+                desiredVelocity += ResolveBirdFlightVelocity(planar, liftInput);
+
+            float maxSpeed = Mathf.Max(
+                fallbackFlightHorizontalSpeedMetersPerSecond,
+                fallbackFlightVerticalSpeedMetersPerSecond) * 1.8f;
+            _remoteFlightVelocity = Vector3.SmoothDamp(
+                _remoteFlightVelocity,
+                desiredVelocity,
+                ref _remoteFlightVelocityRef,
+                Mathf.Max(0.01f, remoteFlightVelocitySmoothTime),
+                Mathf.Max(0.1f, maxSpeed),
+                deltaTime);
+            if (liftInput < -0.05f && _remoteFlightVelocity.y > desiredVelocity.y)
+                _remoteFlightVelocity.y = desiredVelocity.y;
+
+            Vector3 next = target.position + _remoteFlightVelocity * deltaTime;
+
+            float maxY = _flightGroundY + Mathf.Max(0.05f, remoteFlightMaxHeightMeters);
+            next.y = Mathf.Clamp(next.y, _flightGroundY, maxY);
+
+            bool descendingToGround = liftInput < -0.05f
+                                      && next.y <= _flightGroundY + Mathf.Max(0.001f, remoteLandingEpsilonMeters);
+            if (descendingToGround)
+                next.y = _flightGroundY;
+
+            target.position = next;
+            if (planar.sqrMagnitude > 0.0001f)
+            {
+                target.rotation = Quaternion.Slerp(
+                    target.rotation,
+                    Quaternion.LookRotation(planar, Vector3.up),
+                    fallbackTurnSpeed * deltaTime);
+            }
+
+            if (animationDriver != null)
+            {
+                if (!descendingToGround)
+                    animationDriver.SetState(AnimationDriver.BodyState.Fly);
+                animationDriver.RebaseBaseTransformFromCurrent();
+            }
+            ApplyAnimatorFlight(animator, !descendingToGround, false);
+
+            if (descendingToGround)
+            {
+                bool continueWalking = planarInput.sqrMagnitude >= 0.01f;
+                EndRemoteFlight(landed: true, continueWalking: continueWalking);
+                if (continueWalking)
+                    _walking = ApplyModelWalk(planarInput, deltaTime);
+                return false;
+            }
+
+            float height = Mathf.Max(0f, target.position.y - _flightGroundY);
+            LastRemoteStatus = "flying:remote_lift:" + height.ToString("0.00");
+            return true;
+        }
+
+        private void EndWalk(bool releaseRemoteControl = true)
         {
             var model = placementController != null ? placementController.PlacedModel : null;
             if (model != null)
@@ -274,8 +457,68 @@ namespace ParrotApp.UI
             }
 
             _walking = false;
+            if (releaseRemoteControl && !_remoteFlying)
+            {
+                PublishRemoteBodyState("idle");
+                EndRemoteBodyControl();
+            }
             if (RemoteVisible)
                 LastRemoteStatus = "idle";
+        }
+
+        private void EndRemoteFlight(bool landed, bool continueWalking)
+        {
+            var model = placementController != null ? placementController.PlacedModel : null;
+            if (model != null)
+            {
+                Transform target = ResolveMotionTarget(model, out AnimationDriver animationDriver, out Animator animator);
+                if (landed && target != null && _hasFlightGroundY)
+                {
+                    Vector3 p = target.position;
+                    p.y = _flightGroundY;
+                    target.position = p;
+                }
+
+                if (animationDriver != null)
+                {
+                    animationDriver.RebaseBaseTransformFromCurrent();
+                    animationDriver.SetState(landed && continueWalking
+                        ? AnimationDriver.BodyState.Walk
+                        : AnimationDriver.BodyState.Idle);
+                }
+                ApplyAnimatorFlight(animator, false, landed && continueWalking);
+            }
+
+            _remoteFlying = false;
+            _hasFlightGroundY = false;
+            _remoteFlightVelocity = Vector3.zero;
+            _remoteFlightVelocityRef = Vector3.zero;
+            PublishRemoteBodyState(landed && continueWalking ? "walking" : "idle");
+            if (!continueWalking)
+                EndRemoteBodyControl();
+            LastRemoteStatus = landed && continueWalking ? "walking:landed" : (landed ? "idle:landed" : "idle");
+        }
+
+        private void BeginRemoteBodyControl(string mode)
+        {
+            if (string.IsNullOrEmpty(_remoteControlCommandId))
+            {
+                string suffix = Mathf.RoundToInt(Time.unscaledTime * 1000f).ToString();
+                _remoteControlCommandId = "local_remote_" + (string.IsNullOrWhiteSpace(mode) ? "body" : mode) + "_" + suffix;
+            }
+            LifecycleHeartbeatPublisher.Instance?.ReportActiveCommand(_remoteControlCommandId, new[] { BodyLock });
+        }
+
+        private void EndRemoteBodyControl()
+        {
+            if (string.IsNullOrEmpty(_remoteControlCommandId)) return;
+            LifecycleHeartbeatPublisher.Instance?.ClearActiveCommand(_remoteControlCommandId);
+            _remoteControlCommandId = "";
+        }
+
+        private static void PublishRemoteBodyState(string bodyStateWire)
+        {
+            LifecycleHeartbeatPublisher.Instance?.ReportBodyState(bodyStateWire);
         }
 
         private void ApplyFallbackTranslate(Transform target, Vector2 input, float deltaTime)
@@ -301,6 +544,55 @@ namespace ParrotApp.UI
                 fallbackTurnSpeed * deltaTime);
         }
 
+        private Transform ResolveMotionTarget(GameObject model, out AnimationDriver animationDriver, out Animator animator)
+        {
+            animationDriver = model != null ? model.GetComponentInChildren<AnimationDriver>(true) : null;
+            animator = model != null ? model.GetComponentInChildren<Animator>(true) : null;
+            if (animationDriver != null) return animationDriver.transform;
+
+            var parrot = model != null ? model.GetComponentInChildren<ParrotController>(true) : null;
+            if (parrot != null) return parrot.transform;
+            return model != null ? model.transform : null;
+        }
+
+        private static void ApplyAnimatorFlight(Animator animator, bool flying, bool walking)
+        {
+            if (animator == null) return;
+            SetAnimatorBoolIfExists(animator, "isFlying", flying);
+            SetAnimatorBoolIfExists(animator, "isWalking", walking);
+        }
+
+        private static void SetAnimatorBoolIfExists(Animator animator, string parameterName, bool value)
+        {
+            if (animator == null || string.IsNullOrEmpty(parameterName)) return;
+            foreach (var parameter in animator.parameters)
+            {
+                if (parameter.type == AnimatorControllerParameterType.Bool
+                    && string.Equals(parameter.name, parameterName, StringComparison.Ordinal))
+                {
+                    animator.SetBool(parameterName, value);
+                    return;
+                }
+            }
+        }
+
+        private static Vector3 ResolveCameraRelativePlanarDirection(Vector2 input)
+        {
+            Vector2 clamped = Vector2.ClampMagnitude(input, 1f);
+            if (clamped.sqrMagnitude < 0.001f) return Vector3.zero;
+
+            Camera camera = Camera.main;
+            Vector3 forward = camera != null ? camera.transform.forward : Vector3.forward;
+            Vector3 right = camera != null ? camera.transform.right : Vector3.right;
+            forward.y = 0f;
+            right.y = 0f;
+            if (forward.sqrMagnitude < 0.001f) forward = Vector3.forward;
+            if (right.sqrMagnitude < 0.001f) right = Vector3.right;
+            forward.Normalize();
+            right.Normalize();
+            return Vector3.ClampMagnitude(right * clamped.x + forward * clamped.y, 1f);
+        }
+
         private void EnsureUi()
         {
             if (_canvas != null) return;
@@ -317,11 +609,16 @@ namespace ParrotApp.UI
             scaler.matchWidthOrHeight = 0.5f;
             canvasObject.AddComponent<GraphicRaycaster>();
 
-            _root = CreatePanel("FormalModelRemotePad", canvasObject.transform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(46f, 34f), new Vector2(214f, 214f), new Color(0.08f, 0.06f, 0.045f, 0.58f));
+            _root = CreatePanel("FormalModelRemotePad", canvasObject.transform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(46f, 34f), new Vector2(417f, 417f), new Color(0.08f, 0.06f, 0.045f, 0.58f));
             var pad = _root.gameObject.AddComponent<JoystickPad>();
-            pad.Bind(this, _root, out _knob);
+            pad.Bind(this, _root, JoystickAxis.Planar, out _knob);
 
             _statusText = CreateText("FormalModelRemoteStatus", _root, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(-18f, 32f), 13, TextAnchor.MiddleCenter);
+
+            _liftRoot = CreatePanel("FormalModelLiftPad", canvasObject.transform, new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-56f, 38f), new Vector2(252f, 417f), new Color(0.045f, 0.07f, 0.08f, 0.58f));
+            var liftPad = _liftRoot.gameObject.AddComponent<JoystickPad>();
+            liftPad.Bind(this, _liftRoot, JoystickAxis.Vertical, out _liftKnob);
+            _liftStatusText = CreateText("FormalModelLiftStatus", _liftRoot, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(-14f, 32f), 13, TextAnchor.MiddleCenter);
             SetVisible(false);
         }
 
@@ -336,6 +633,15 @@ namespace ParrotApp.UI
             _statusText.text = CurrentInput.sqrMagnitude > 0.01f
                 ? "MOVE " + CurrentInput.magnitude.ToString("0.0")
                 : ShortReason(LastRemoteStatus);
+            if (_liftStatusText != null)
+            {
+                if (!RemoteVisible)
+                    _liftStatusText.text = "";
+                else if (_remoteFlying)
+                    _liftStatusText.text = "FLY " + Mathf.Abs(CurrentLiftInput).ToString("0.0");
+                else
+                    _liftStatusText.text = Mathf.Abs(CurrentLiftInput) > 0.01f ? "LIFT" : "";
+            }
         }
 
         private static bool Supports(IParrotController controller, string capabilityId)
@@ -398,19 +704,31 @@ namespace ParrotApp.UI
             public float deltaTime;
         }
 
+        private enum JoystickAxis
+        {
+            Planar,
+            Vertical,
+        }
+
         private sealed class JoystickPad : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
         {
             private FormalModelRemoteController _owner;
             private RectTransform _pad;
             private RectTransform _knob;
+            private JoystickAxis _axis;
             private float _radius;
 
-            public void Bind(FormalModelRemoteController owner, RectTransform pad, out RectTransform knob)
+            public void Bind(FormalModelRemoteController owner, RectTransform pad, JoystickAxis axis, out RectTransform knob)
             {
                 _owner = owner;
                 _pad = pad;
-                _radius = Mathf.Min(pad.sizeDelta.x, pad.sizeDelta.y) * 0.38f;
-                _knob = CreatePanel("FormalModelRemoteKnob", pad, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(72f, 72f), new Color(0.78f, 0.58f, 0.34f, 0.76f));
+                _axis = axis;
+                _radius = axis == JoystickAxis.Vertical
+                    ? pad.sizeDelta.y * 0.38f
+                    : Mathf.Min(pad.sizeDelta.x, pad.sizeDelta.y) * 0.38f;
+                string knobName = axis == JoystickAxis.Vertical ? "FormalModelLiftKnob" : "FormalModelRemoteKnob";
+                Vector2 knobSize = axis == JoystickAxis.Vertical ? new Vector2(123f, 123f) : new Vector2(138f, 138f);
+                _knob = CreatePanel(knobName, pad, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, knobSize, new Color(0.78f, 0.58f, 0.34f, 0.76f));
                 knob = _knob;
             }
 
@@ -427,7 +745,10 @@ namespace ParrotApp.UI
             public void OnPointerUp(PointerEventData eventData)
             {
                 if (_knob != null) _knob.anchoredPosition = Vector2.zero;
-                _owner?.SetJoystickInput(Vector2.zero);
+                if (_axis == JoystickAxis.Vertical)
+                    _owner?.SetLiftInput(0f);
+                else
+                    _owner?.SetJoystickInput(Vector2.zero);
             }
 
             private void UpdatePointer(PointerEventData eventData)
@@ -442,7 +763,20 @@ namespace ParrotApp.UI
                     return;
                 }
 
-                Vector2 input = Vector2.ClampMagnitude(local / Mathf.Max(1f, _radius), 1f);
+                Vector2 center = new Vector2(
+                    (0.5f - _pad.pivot.x) * _pad.rect.width,
+                    (0.5f - _pad.pivot.y) * _pad.rect.height);
+                Vector2 localFromCenter = local - center;
+
+                if (_axis == JoystickAxis.Vertical)
+                {
+                    float lift = Mathf.Clamp(localFromCenter.y / Mathf.Max(1f, _radius), -1f, 1f);
+                    if (_knob != null) _knob.anchoredPosition = new Vector2(0f, lift * (_radius * 0.68f));
+                    _owner.SetLiftInput(lift);
+                    return;
+                }
+
+                Vector2 input = Vector2.ClampMagnitude(localFromCenter / Mathf.Max(1f, _radius), 1f);
                 if (_knob != null) _knob.anchoredPosition = input * (_radius * 0.68f);
                 _owner.SetJoystickInput(input);
             }

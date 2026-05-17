@@ -18,7 +18,7 @@ The concrete first-slice formal homepage HUD/menu implementation prep is
 
 - Formal Unity entry remains `Assets/ParrotApp/Scenes/ParrotApp_Startup.unity`.
   The formal scene contains `RuntimeServices` and the startup UI controller. It
-  does not mount `UI/AppV1SmokeReferenceUiController.cs`.
+  does not mount `Assets/Tests/Smoke/Scripts/AppV1SmokeReferenceUiController.cs`.
 - App HTTP surfaces exist on app-monitor for RoomSetting, personas, line
   profiles, canvas, modules, tool cabinet, and assets.
 - Brain in-room RPC handlers now expose only compact real-time controls:
@@ -155,7 +155,7 @@ Formal sources to build from:
 
 Reference/test only:
 
-- `Runtime/Scripts/UI/AppV1SmokeReferenceUiController.cs` is useful for HUD,
+- `Assets/Tests/Smoke/Scripts/AppV1SmokeReferenceUiController.cs` is useful for HUD,
   tool drawer, paper notes, workdesk, camera panel, Focus/BBox overlays, and
   joystick ideas. It is already demoted/renamed as Smoke/reference-only and
   must not be mistaken for production App UI.

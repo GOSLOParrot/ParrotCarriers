@@ -268,19 +268,31 @@ public final class AndroidAudioRouteManager {
         boolean canUseBluetooth = hasBluetoothConnectPermission();
 
         if ("phone_mic".equals(preference)) {
-            AudioDeviceInfo earpiece = firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
-            if (earpiece != null) return earpiece;
             AudioDeviceInfo speaker = firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
             if (speaker != null) return speaker;
+            AudioDeviceInfo earpiece = firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
+            if (earpiece != null) return earpiece;
             return devices.get(0);
         }
 
         if (canUseBluetooth && ("bluetooth".equals(preference) || "auto".equals(preference))) {
-            AudioDeviceInfo bluetooth = firstDevice(devices, AudioDeviceInfo.TYPE_BLUETOOTH_SCO);
+            AudioDeviceInfo bluetooth = firstAnyDevice(
+                devices,
+                AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+                AudioDeviceInfo.TYPE_BLE_HEADSET);
             if (bluetooth != null) return bluetooth;
-            // Explicit Bluetooth preference is advisory. When no SCO device is
-            // connected, the formal App must keep voice usable through the
-            // phone mic instead of blocking LiveKit publish on a missing route.
+            if (hasBluetoothOutputType(getDevices(AudioManager.GET_DEVICES_OUTPUTS))) {
+                // A2DP/BLE speaker/hearing-aid output can be available without
+                // a matching communication mic. In auto/bluetooth mode, do not
+                // force speaker/earpiece and steal Parrot audio away from the
+                // headset. Leave the communication device unset; Unity's mic
+                // publisher will fall back to system/default or phone mic input
+                // while Android keeps the output route it can actually use.
+                return null;
+            }
+            // Explicit Bluetooth preference is advisory. When no Bluetooth
+            // output or voice route is connected, the formal App must keep
+            // voice usable through the phone route instead of blocking LiveKit.
         }
 
         AudioDeviceInfo wired = firstAnyDevice(
@@ -288,9 +300,13 @@ public final class AndroidAudioRouteManager {
             AudioDeviceInfo.TYPE_WIRED_HEADSET,
             AudioDeviceInfo.TYPE_USB_HEADSET);
         if (wired != null) return wired;
-        AudioDeviceInfo earpiece = firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
-        if (earpiece != null) return earpiece;
-        return firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
+        // AR companion mode is a hands-free voice session: without Bluetooth or
+        // a wired headset, keep input on the phone mic and output on the
+        // speaker. Choosing the earpiece here makes the HUD report a private
+        // call route and can pin Unity's fallback capture to the wrong profile.
+        AudioDeviceInfo speaker = firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
+        if (speaker != null) return speaker;
+        return firstDevice(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
     }
 
     private void sendSnapshot(String reason) {
@@ -340,10 +356,16 @@ public final class AndroidAudioRouteManager {
         if (communicationDevice != null) {
             communicationDeviceType = typeName(communicationDevice.getType());
             communicationDeviceName = safeProductName(communicationDevice);
-            if (communicationDevice.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+            if (isBluetoothVoiceType(communicationDevice.getType())) {
                 inputRoute = "bluetooth_sco";
                 outputRoute = "bluetooth_sco";
-                sampleRate = 16000;
+                // Classic HFP/SCO commonly needs 16 kHz. BLE headsets are a
+                // modern communication-device route and normally tolerate the
+                // app's 48 kHz LiveKit source; the Unity retry ladder remains
+                // responsible if a specific phone/headset pair disagrees.
+                sampleRate = communicationDevice.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                    ? 16000
+                    : 48000;
             } else if (isWiredType(communicationDevice.getType())) {
                 inputRoute = "wired_headset";
                 outputRoute = "wired_headset";
@@ -362,20 +384,22 @@ public final class AndroidAudioRouteManager {
         availableOutputs = routeArray(outputs, false);
 
         if ("system_default_microphone".equals(inputRoute)) {
-            if (hasDeviceType(inputs, AudioDeviceInfo.TYPE_BLUETOOTH_SCO)) {
-                inputRoute = "bluetooth_sco";
-                sampleRate = 16000;
+            // getDevices() is only an availability list. Do not report SCO as
+            // the active capture route unless getCommunicationDevice() above
+            // confirms Android actually selected it; otherwise Unity can pick
+            // a dead bt-sco@16k MicrophoneSource while the phone mic would work.
+            if (hasAnyDeviceType(inputs, AudioDeviceInfo.TYPE_BUILTIN_MIC)) {
+                inputRoute = "phone_mic";
             } else if (hasAnyDeviceType(inputs, AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_USB_HEADSET)) {
                 inputRoute = "wired_headset";
-            } else if (hasAnyDeviceType(inputs, AudioDeviceInfo.TYPE_BUILTIN_MIC)) {
-                inputRoute = "phone_mic";
             }
         }
 
         if ("unknown".equals(outputRoute)) {
-            if (hasDeviceType(outputs, AudioDeviceInfo.TYPE_BLUETOOTH_SCO)) {
-                outputRoute = "bluetooth_sco";
-            } else if (hasDeviceType(outputs, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)) {
+            // Same split for output: available SCO is not necessarily the
+            // communication output. A2DP can remain the media output while the
+            // phone mic is used for capture fallback.
+            if (hasBluetoothOutputType(outputs)) {
                 outputRoute = "bluetooth_a2dp";
             } else if (hasAnyDeviceType(outputs, AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_USB_HEADSET)) {
                 outputRoute = "wired_headset";
@@ -499,6 +523,20 @@ public final class AndroidAudioRouteManager {
             || type == AudioDeviceInfo.TYPE_USB_HEADSET;
     }
 
+    private static boolean isBluetoothVoiceType(int type) {
+        return type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+            || type == AudioDeviceInfo.TYPE_BLE_HEADSET;
+    }
+
+    private static boolean hasBluetoothOutputType(AudioDeviceInfo[] devices) {
+        return hasAnyDeviceType(
+            devices,
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLE_SPEAKER,
+            AudioDeviceInfo.TYPE_HEARING_AID);
+    }
+
     private static String routeArray(AudioDeviceInfo[] devices, boolean input) {
         if (devices == null || devices.length == 0) return "[]";
         StringBuilder sb = new StringBuilder("[");
@@ -516,8 +554,10 @@ public final class AndroidAudioRouteManager {
     }
 
     private static String routeName(int type, boolean input) {
-        if (type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) return "bluetooth_sco";
+        if (isBluetoothVoiceType(type)) return "bluetooth_sco";
         if (type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) return input ? "" : "bluetooth_a2dp";
+        if (!input && (type == AudioDeviceInfo.TYPE_BLE_SPEAKER || type == AudioDeviceInfo.TYPE_HEARING_AID))
+            return "bluetooth_a2dp";
         if (type == AudioDeviceInfo.TYPE_WIRED_HEADSET || type == AudioDeviceInfo.TYPE_USB_HEADSET) return "wired_headset";
         if (!input && type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES) return "wired_headset";
         if (input && type == AudioDeviceInfo.TYPE_BUILTIN_MIC) return "phone_mic";
@@ -534,6 +574,10 @@ public final class AndroidAudioRouteManager {
             case AudioDeviceInfo.TYPE_WIRED_HEADPHONES: return "TYPE_WIRED_HEADPHONES";
             case AudioDeviceInfo.TYPE_BLUETOOTH_SCO: return "TYPE_BLUETOOTH_SCO";
             case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP: return "TYPE_BLUETOOTH_A2DP";
+            case AudioDeviceInfo.TYPE_BLE_HEADSET: return "TYPE_BLE_HEADSET";
+            case AudioDeviceInfo.TYPE_BLE_SPEAKER: return "TYPE_BLE_SPEAKER";
+            case AudioDeviceInfo.TYPE_BLE_BROADCAST: return "TYPE_BLE_BROADCAST";
+            case AudioDeviceInfo.TYPE_HEARING_AID: return "TYPE_HEARING_AID";
             case AudioDeviceInfo.TYPE_BUILTIN_MIC: return "TYPE_BUILTIN_MIC";
             case AudioDeviceInfo.TYPE_USB_HEADSET: return "TYPE_USB_HEADSET";
             default: return "TYPE_" + type;

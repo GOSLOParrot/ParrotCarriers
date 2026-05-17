@@ -31,6 +31,7 @@ namespace ParrotApp.LiveKit
         private AndroidAudioRouteManager _native;
         private int _lastNativeRouteVersion;
         private bool _subscribedFallback;
+        private bool _temporaryNativePreferenceActive;
 
         private void OnEnable()
         {
@@ -82,9 +83,27 @@ namespace ParrotApp.LiveKit
         public void SetPreference(AudioRoutePreference nextPreference)
         {
             preference = nextPreference;
+            _temporaryNativePreferenceActive = false;
             if (NativeAvailable)
                 _native.SetRoutePreference(AudioRouteSnapshotDto.PreferenceWireValue(preference));
             RefreshCurrentPolicy("route_preference_changed");
+        }
+
+        public void ApplyTemporaryNativePreference(AudioRoutePreference nextPreference, string trigger)
+        {
+            // Capture recovery can briefly force the Android communication
+            // device away from a dead SCO mic without changing the user's
+            // durable App preference. The next headset topology change restores
+            // the public preference so Auto can prefer Bluetooth again.
+            if (!NativeAvailable)
+            {
+                RefreshCurrentPolicy(trigger ?? "temporary_route_preference_unavailable");
+                return;
+            }
+
+            _temporaryNativePreferenceActive = true;
+            _native.SetRoutePreference(AudioRouteSnapshotDto.PreferenceWireValue(nextPreference));
+            RefreshCurrentPolicy(trigger ?? "temporary_route_preference_changed");
         }
 
         public void RequestCommunicationMode(bool enabled)
@@ -118,6 +137,13 @@ namespace ParrotApp.LiveKit
                     return;
                 }
                 _lastNativeRouteVersion = Mathf.Max(_lastNativeRouteVersion, snapshot.route_version);
+                if (_temporaryNativePreferenceActive && ShouldRestoreTemporaryPreference(snapshot.reason))
+                {
+                    _temporaryNativePreferenceActive = false;
+                    if (NativeAvailable)
+                        _native.SetRoutePreference(AudioRouteSnapshotDto.PreferenceWireValue(preference));
+                    return;
+                }
                 ApplyPolicy(snapshot.ToPolicy(), "native:" + snapshot.reason, snapshot);
             }
             catch (Exception e)
@@ -152,6 +178,16 @@ namespace ParrotApp.LiveKit
                 return;
             }
             ApplyPolicy(newPolicy, "fallback_route_changed", BuildFallbackSnapshot("fallback_route_changed"));
+        }
+
+        private static bool ShouldRestoreTemporaryPreference(string reason)
+        {
+            // Do not restore on communication_device_changed: our own temporary
+            // phone-mic fallback can trigger that callback while the capture
+            // retry is still settling. Actual headset topology changes arrive
+            // through device_added/device_removed.
+            return string.Equals(reason, "device_added", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(reason, "device_removed", StringComparison.OrdinalIgnoreCase);
         }
 
         private void ApplyFallbackPolicy(string trigger)

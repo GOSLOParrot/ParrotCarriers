@@ -15,6 +15,7 @@ _MODES = {
     "butler": BehaviorMode.BASE | BehaviorMode.COMPANION | BehaviorMode.BUTLER,
     "researcher": BehaviorMode.BASE | BehaviorMode.COMPANION | BehaviorMode.RESEARCHER,
     "playful": BehaviorMode.BASE | BehaviorMode.COMPANION | BehaviorMode.PLAYFUL,
+    "on_hand": BehaviorMode.BASE | BehaviorMode.COMPANION | BehaviorMode.ON_HAND,
     "full": (
         BehaviorMode.BASE | BehaviorMode.COMPANION | BehaviorMode.BUTLER
         | BehaviorMode.RESEARCHER | BehaviorMode.PLAYFUL
@@ -38,6 +39,8 @@ async def set_mode(
             'butler' — proactive assistant (track time, todos, environment).
             'researcher' — proactively research and provide detailed info.
             'playful' — extra fun and silly.
+            'on_hand' — perched on the user's hand; keep talking while the
+                phone is just a camera view into AR.
             'full' — all modes active.
     """
     from parrot.brain.mode_watcher import set_behavior_mode

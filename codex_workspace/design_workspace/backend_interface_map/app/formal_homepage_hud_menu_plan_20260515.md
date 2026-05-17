@@ -79,7 +79,7 @@ Not complete:
 | `Runtime/Scripts/Backend/AppHomeMenuClient.cs` | App HTTP client for `/api/app/canvas`, `/api/app/personas`, `/api/app/line-profiles`, `/api/app/workspace/apply`, `/api/app/camera/mode`, `/api/app/awareness`, and `/api/app/xrhand/mode`. Do not add full-snapshot RPC paths. | Formal source. |
 | `Runtime/Scripts/Lifecycle/FormalMainReadyGate.cs` | Keep as the only `ReportRunning()` owner. Homepage components satisfy START, LiveKit/Brain/DataChannel, HUD, menu, model, and AR/session gates; they do not bypass this gate. Mic/video publish readiness is health/HUD-degraded state, not a blocker that keeps the startup hold surface over the AR home. | Formal source. |
 | `Runtime/Scripts/Lifecycle/FormalModelReadyReporter.cs` | Reuse for manifest resolution before placing model UI. It reports only `model_resolved`. | Formal source. |
-| `Runtime/Scripts/Lifecycle/FormalModelPlacementController.cs` | First formal placement owner: after `MainUiReadyOnce` and `FormalMainReadyGate.IsReady`, tries AR Foundation plane raycast placement, loads the selected manifest visual from `Resources/Models/**` when available, immediately bootstraps its manifest controller, uses EnhancedTouch for demo2-like tap placement/selection, one-finger drag on AR planes, pinch scale with 0.25-2.0 bounds, refuses to fake-place when AR misses a plane, uses a whitebox only after a valid placement when the runtime asset cannot load, and then triggers `onGosloPlaced` through `AppStartupFlowController.ReportGosloPlaced()`. Selection affordance is a non-blocking transparent white `LineRenderer` ring, not an orange cylinder/slab mesh. | Formal source; phone proof still pending. |
+| `Runtime/Scripts/Lifecycle/FormalModelPlacementController.cs` | First formal placement owner: after `MainUiReadyOnce` and `FormalMainReadyGate.IsReady`, tries AR Foundation plane raycast placement, loads the selected manifest visual from `Resources/Models/**` when available, immediately bootstraps its manifest controller, uses EnhancedTouch for demo2-like tap placement/selection, one-finger drag on AR planes, pinch scale as a multiplier over manifest-normalized pet height, refuses to fake-place when AR misses a plane, uses a whitebox only after a valid placement when the runtime asset cannot load, and then triggers `onGosloPlaced` through `AppStartupFlowController.ReportGosloPlaced()`. Selection affordance is a non-blocking transparent white `LineRenderer` ring, not an orange cylinder/slab mesh. | Formal source; phone proof still pending. |
 | `Runtime/Scripts/UI/FormalModelRemoteController.cs` | First local model remote owner: a small bottom-left joystick appears after main-ready and placement. It routes Ner to `spine_walk`, GOSLO to `ParrotController`/`AnimationDriver.WalkOnPlane`, and degrades visibly to local translation when no owner exists. | Formal source; local-only, no Brain RPC or menu persistence. |
 | `Runtime/Scripts/Lifecycle/FormalXrHandPerchController.cs` | First formal hand-perch owner: mounts `HandGestureSource`, gates `PerchOnHand` behind main-ready + placed model + manifest/controller `perch` support + `AnimationDriver`, and reports debug-only/package-missing degraded status when `UNITY_XR_HANDS` is unavailable. | Formal source; no Brain RPC/menu persistence, and not phone proof until XR Hands package/define and iQOO Neo9 logs exist. |
 | `Runtime/Scripts/Lifecycle/FormalArRuntimeBootstrap.cs` and `FormalArSessionBaselineReporter.cs` | Keep AR runtime bootstrap behind the AR/session gate, not during the startup page. The bootstrap mounts XROrigin, ARRaycastManager, ARPlaneManager, camera managers, ARInputManager, Input System TrackedPoseDriver, demo2 `XRUIInputModule`, and the imported Unity AR Mobile template `ARFeatheredPlane` visual chain plus XRI screen-ray/object-spawner bridge for formal AR placement/video. The previous hand-written plane mesh and point-dot visuals are removed. Android builds keep the copied ShaderGraph by default; the runtime-safe white-dot plane material is only an emergency/null/error fallback. | Formal source. |
@@ -93,7 +93,7 @@ Not complete:
 
 | File / group | Reference value | Production rule |
 |:--|:--|:--|
-| `Runtime/Scripts/UI/AppV1SmokeReferenceUiController.cs` | HUD zones, tool drawer open/close, paper note stack, camera overlay, Focus/BBox overlay ideas, workspace panel, joystick interaction sketch. | Reference only. Do not mount it, subclass it, or use it as formal completion evidence. Extract only small, reviewed patterns into new formal controllers. |
+| `Assets/Tests/Smoke/Scripts/AppV1SmokeReferenceUiController.cs` | HUD zones, tool drawer open/close, paper note stack, camera overlay, Focus/BBox overlay ideas, workspace panel, joystick interaction sketch. | Reference only. Do not mount it, subclass it, or use it as formal completion evidence. Extract only small, reviewed patterns into new formal controllers. |
 | `Assets/Tests/Smoke/**` | Smoke builder shows how old AppV1 sprites were assigned and how Focus/BBox/Photo were demoed. | Test evidence only. |
 | `Assets/Tests/NerTuning/**` | Ner cheek/pickup/walk tuning and acceptance probes. | Test/tuning only; do not copy mouse harness or scene builder into mobile homepage. |
 | `unity/ParrotDev/**` and Sprint4 migration archive | Script lineage and freeze rules. | Historical reference only. |
@@ -230,6 +230,19 @@ The first formal homepage HUD/menu slice can be considered implemented when:
   scale application/XRI bridge from restoring the raw GLB's oversized scale.
   Delayed normalization now runs for more passes to catch late renderer/model
   driver bounds, but stops once the user intentionally pinches/scales the model.
+- 2026-05-17 scale ownership fix: XRI `ARTransformer.minScale/maxScale` are
+  absolute root `localScale` values, while the formal App exposes 0.25-2.0 as a
+  user multiplier. `FormalModelPlacementController` now maps the transformer
+  range to `_placedBaseScale * multiplier` and calls
+  `AnimationDriver.RebaseBaseTransformFromCurrent()` after placement, drag,
+  scale, and XRI release so GOSLO's idle/breath animation cannot restore the
+  GLB import-time scale or local origin.
+- 2026-05-17 standing-pose fix: `GOSLO.glb` imports with a neutral body node.
+  The full Minecraft Java body pitch (`McBodyXRot`) looked like the body cube
+  was jutting forward in phone AR, especially during the placement greeting.
+  `AnimationDriver` now keeps standing/on-hand body pitch neutral by default
+  with `minecraftStandingBodyPitchWeight=0f`, while flying keeps the forward
+  lean with `minecraftFlyingBodyPitchWeight=1f`.
 - XRHand fly/perch is not production-ready yet: `com.unity.xr.hands` /
   `UNITY_XR_HANDS` is not enabled in the current project, so
   `FormalXrHandPerchController` can only expose a debug-only/package-missing
@@ -364,8 +377,9 @@ directly.
   `FormalModelPlacementController.PlaceAt(...)` so the spawned object remains
   the RoomSetting-selected Parrot/Ner manifest and still owns
   `onGosloPlaced`. Placed models now receive `XRGrabInteractable` +
-  `ARTransformer` with demo bounds (`0.25` to `2.0`) and demo-like grab
-  defaults (`ColliderPosition`, single focus, default grab transformers) so
+  `ARTransformer` with demo-like multiplier bounds mapped onto the
+  manifest-normalized root scale and demo-like grab defaults (`ColliderPosition`,
+  single focus, default grab transformers) so
   selection, drag, and
   pinch-scale use the Unity AR Mobile template interaction stack instead of
   more hand-written gesture expansion. The bridge status is now surfaced in the

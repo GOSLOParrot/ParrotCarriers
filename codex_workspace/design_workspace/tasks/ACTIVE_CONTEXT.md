@@ -64,10 +64,84 @@ The formal App frontend is **not complete**.
   base scale and by extending delayed normalization passes for late renderer
   bounds; this targets the repeated head-sized GLB symptom. Microphone uplink
   now has an anti-fake-success guard: after LiveKit `PublishTrack`, Unity waits
-  for `Microphone.GetPosition(...)` to advance before reporting audio published;
-  failure is surfaced as `microphone_start_timeout`/`microphone_start_exception`.
-  The HUD now shows separate `UsingMic` and `Uplink` diagnostics so iQOO tests
-  can distinguish route/device selection from actual upstream capture.
+  for both `Microphone.GetPosition(...)` and LiveKit Unity
+  `MicrophoneSource.AudioRead` frames before reporting audio published. Failure
+  is surfaced as `microphone_start_timeout`, `microphone_start_exception`, or
+  `audio_read_timeout`. The HUD now shows separate `UsingMic` and `Uplink`
+  diagnostics plus audio frame count / channels / sample rate / peak so iQOO
+  tests can distinguish route/device selection, SDK capture, and Brain/STT
+  hearing.
+- 2026-05-17 audio / LiveKit deep audit is recorded at
+  `codex_workspace/design_workspace/backend_interface_map/app/unity_audio_livekit_deep_audit_20260517.md`.
+  Reread conclusion: the formal route architecture is sound and must not be
+  replaced by old ParrotDev/Smoke LineA connectivity scripts. The P1 remaining
+  gap was steady-state uplink health after initial publish success; the formal
+  `MicrophonePublisher` now has a watchdog for `Microphone.IsRecording`, stale
+  `AudioReadFrameCount`, last frame age, degraded HUD state, and serial local
+  mic republish without LiveKit room reconnect. Treat iQOO phone proof as the
+  stability gate for Bluetooth/SCO/A2DP, pause/resume, LineA, and LineB.
+- Latest iQOO blocker fix: screenshot evidence now covers both Bluetooth-on and
+  Bluetooth-off routes. In both cases local capture still produced no frames
+  (`Mic wait`, `frames=0`, `readSr=0`) even though the route/permission/focus
+  looked valid. `MicrophonePublisher` still retries SCO at 48 kHz and can
+  temporarily ask the Android route bridge for `AudioRoutePreference.PhoneMic`.
+  If Unity exposes no microphone devices, or if Unity exposes a device but
+  `MicrophoneSource` still times out with `AudioRead frames=0`, the final
+  attempt now uses the formal `AndroidPcmMicrophoneSource` backed by Android
+  `AudioRecord`. This fallback feeds PCM into the existing LiveKit local audio
+  track and must remain local-only: no room reconnect, no Mint token refresh,
+  and no Brain dispatch. If the native route snapshot is stale/unknown after
+  permission is granted, the final AudioRecord attempt is still allowed because
+  the previous phone evidence showed route labels can look valid while Unity
+  capture remains silent. The AR plane now treats both the imported
+  `ShadowReceiver` graph and the App-owned placeholder shader as replaceable on
+  Android; runtime fallback prefers Unity built-in transparent shaders with the
+  copied dot texture plus a transparent occlusion slot. Demo2 ShaderGraph parity
+  remains a follow-up, but phone usability must not stay pink.
+- Latest audio-route audit follow-up: Android `getDevices()` is now treated as
+  an availability list, not proof of the active capture route. Native snapshots
+  may report `bluetooth_sco` only when `getCommunicationDevice()` confirms SCO
+  is actually selected; otherwise connected A2DP output plus phone mic is the
+  safer formal voice path. The PhoneMic capture fallback is now a temporary
+  native route override and does not change the user's durable App preference;
+  Auto/Bluetooth can be restored on real device add/remove events. This targets
+  the iQOO symptom where HUD showed a Bluetooth/SCO or phone route but local
+  audio frames stayed at zero. Phone proof still has to show `AudioRead`
+  frames increasing before LineA/LineB voice is considered usable.
+- Latest audio uplink blocker fix: iQOO showed `Mic wait` /
+  `Uplink not_published` with `microphone_start_exception` during the final
+  `android_audio_record` fallback, while Android route/permission/focus looked
+  valid. The formal route bridge now prefers phone speaker over earpiece for
+  AR companion voice fallback when no real Bluetooth SCO or wired route is
+  selected. Follow-up wider audit found a LiveKit FFI sample-rate trap:
+  `RtcAudioSource` rejects PCM frames whose sample rate differs from the source
+  created at construction time. Therefore `MicrophonePublisher` now creates
+  separate Android AudioRecord attempts for 48 kHz, 44.1 kHz, and 16 kHz, while
+  native `AndroidPcmMicCapture` stays strict to the requested rate and only
+  switches between `VOICE_COMMUNICATION` and raw `MIC` sources inside that
+  rate. `AndroidPcmMicrophoneSource.Start()` also rolls back `base.Start()` if
+  native start fails, preventing a half-subscribed LiveKit audio source from
+  sticking across retries. Unity preserves the last native AudioRecord
+  state/error after failed startup so the HUD can show the real Android failure
+  instead of only `InvalidOperationException`. Rebuilt iQOO proof remains
+  required; success means HUD `frames/ch/readSr/peak` become non-zero, not
+  merely `LK on` or audible Parrot output.
+- Follow-up audio sweep: Android route ownership now recognizes BLE headset
+  voice routes (`TYPE_BLE_HEADSET`) in addition to classic SCO, and fallback
+  diagnostics recognize BLE speaker/hearing-aid output classes. Java
+  `AndroidPcmMicCapture` now reports `pcm_callback_failed:*` instead of
+  swallowing `AndroidJavaProxy` PCM callback failures. `MicrophonePublisher`
+  also owns local source detach/stop/dispose after every retry because the
+  pinned LiveKit Unity SDK does not stop the C# source for us on unpublish.
+- Latest Parrot pose fix: `GOSLO.glb` was confirmed to import with a neutral
+  `body` node; the body block appeared to jut forward because the formal
+  `AnimationDriver` was applying the full Minecraft Java body pitch to standing
+  and placement-greeting poses. Standing/on-hand body pitch now defaults to
+  neutral through `minecraftStandingBodyPitchWeight=0f`, while flying still keeps
+  its intentional forward lean. Follow-up placement fix keeps the companion
+  world-upright on accepted horizontal AR planes instead of tilting the whole
+  model to noisy blanket/desk normals. Phone proof is still required, but this
+  should stop the placed model from looking hunched forward.
 - Unity App RoomSetting ECS persistence is verified as of 2026-05-15:
   `New` returns an unsaved draft, `Save` persists a user Room through App HTTP,
   reload lists it from ECS, and save does not apply or change active Room.
@@ -494,9 +568,11 @@ These are useful test evidence only. They must not be used as App completion evi
   now provides a local-only bottom-left joystick after placement, routing Ner to
   `spine_walk` and GOSLO to local walk handlers without Brain RPC.
   `FormalXrHandPerchController` now mounts the formal local hand-perch owner
-  after main-ready and placement, but it degrades to package-missing/debug-only
-  until `com.unity.xr.hands` / `UNITY_XR_HANDS` and phone proof exist. Model
-  animation expansion remains pending.
+  after main-ready and placement. `com.unity.xr.hands` / `UNITY_XR_HANDS` is
+  present, but phone proof for hand tracking/perch behavior is still pending.
+  `Assets/csc.rsp` must keep both `UNITY_AR_FOUNDATION` and `UNITY_XR_HANDS` so
+  enabling hands never disables the AR Foundation runtime path. Model animation
+  expansion remains pending.
 - 2026-05-15 input-device continuation: formal Settings now exposes local
   `MIC NEXT` / `MIC AUTO` controls that update `MicrophonePublisher`'s Unity
   `Microphone.devices` preference and republish the LiveKit mic track when
@@ -611,24 +687,44 @@ These are useful test evidence only. They must not be used as App completion evi
   orange surface is the selected GOSLO affordance. Formal selection feedback no
   longer uses a cylinder/slab mesh; `FormalModelPlacementController` now draws
   a transparent white `LineRenderer` ring around the selected model so it does
-  not occlude the camera view. `ARFeatheredPlaneMeshVisualizerCompanion` keeps
-  Android error-shader protection enabled, but it no longer treats every
-  Android ShaderGraph as fallback-worthy. A healthy
-  `Shader Graphs/ShadowReceiver` is allowed to run; only true error/fallback
-  shaders become a simple translucent white surface. Any demo2 visual mismatch
-  must be fixed in the copied ShaderGraph/material chain rather than by
-  elaborating the fallback.
+  not occlude the camera view. A later phone run proved the copied
+  `Shader Graphs/ShadowReceiver` material can still render as Unity magenta in
+  the current ArSpike Android build. `ARFeatheredPlaneMeshVisualizerCompanion`
+  now uses the bundled `ParrotARPlaneFallback.shader` translucent-white shader
+  for that Android graph/error path so phone AR remains usable. Demo2 visual
+  parity is still the target, but it must be fixed by cleaning the copied
+  ShaderGraph/material chain rather than by reintroducing custom AR visuals.
   `FormalArRuntimeBootstrap.LastPlaneMaterialStatus` is now surfaced in the
   HUD so the next phone screenshot shows whether the plane is using
   `Shader Graphs/ShadowReceiver`, `AR/Occlusion`, an error shader, or fallback.
+- 2026-05-17 follow-up after iQOO no-uplink screenshots: the failure is still
+  local Unity/Android capture startup, not Brain/STT. Web research confirms
+  two relevant mobile risks: Unity Android Bluetooth microphone capture can
+  fail even when permission and route look correct, and
+  `AudioSettings.OnAudioConfigurationChanged` is not a reliable headset-change
+  signal. `MicrophonePublisher` now does a native `phone_mic` route override
+  before the final phone fallback, and the fallback can now create
+  `AndroidPcmMicrophoneSource` backed by Android `AudioRecord` even when Unity
+  lists a microphone device but never emits frames. This fallback must remain
+  local-only: no LiveKit reconnect, no Mint token refresh, and no Brain
+  dispatch. The next phone run must prove HUD audio frames/channels/sample-rate
+  become non-zero before voice can be treated as connected.
 - 2026-05-13 homepage/LiveKit continuation audit: Brain RPC testing does not
   require phone or voice, but it does require a Brain / LiveKit Agents
   participant in the same room. Phone/device testing is still required for AR
   camera, microphone permission, Bluetooth route switching, app switching, and
-  full voice media. `UI/AppV1SmokeReferenceUiController.cs` is now classified as a
-  legacy Smoke/reference controller, not formal homepage evidence; useful HUD,
-  tool drawer, camera, workdesk, note, Focus, and BBox ideas must be re-bound to
-  the formal startup/lifecycle contracts before use.
+  full voice media. `Assets/Tests/Smoke/Scripts/AppV1SmokeReferenceUiController.cs` is now classified as a
+  legacy Smoke/reference controller, not formal homepage evidence. It and
+  `LifecycleSmokeForcer.cs` are wrapped in `#if UNITY_EDITOR`, so they remain
+  Editor/Smoke evidence and do not compile into Android player builds. Useful
+  HUD, tool drawer, camera, workdesk, note, Focus, and BBox ideas must be
+  re-bound to the formal startup/lifecycle contracts before use.
+- 2026-05-17 mic diagnostic follow-up: `MicrophonePublisher` now preserves
+  native fallback evidence after success and exposes `ActiveAudioSourceKind`,
+  `NativeAudioRecordState`, and `NativeAudioRecordError` to the formal HUD. The
+  next iQOO run should use these fields plus `frames/ch/readSr/peak` to tell
+  whether the App is on Unity mic, Android AudioRecord fallback, or a started
+  capture path that still emits no frames.
 
 ## App Frontend Longline
 

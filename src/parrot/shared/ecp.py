@@ -32,6 +32,7 @@ class EcpCommandKind(str, Enum):
     ANIMATE = "animate"
     SET_VIDEO_TIER = "set_video_tier"
     PERCH_TO_FINGER = "perch_to_finger"
+    RETURN_TO_VIEW = "return_to_view"
     FOCUS_REGION = "focus_region"
     CAMERA_CAPTURE = "camera_capture"
     CAPTURE_SNAPSHOT = "capture_snapshot"

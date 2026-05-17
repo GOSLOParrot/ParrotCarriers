@@ -28,7 +28,7 @@ top-level `Assets/UI`, top-level `Assets/Models`, or
 `LiveKitSdkVersionInfo.txt`.
 After Unity directory, scene, resource, model, art, or Build Settings changes,
 update the inventory SSOT and App TODO status in the same turn.
-`Assets/ParrotApp/Runtime/Scripts/UI/AppV1SmokeReferenceUiController.cs` is a legacy
+`Assets/Tests/Smoke/Scripts/AppV1SmokeReferenceUiController.cs` is a legacy
 Smoke/reference UI controller, not formal homepage completion evidence; use it
 only after reading the inventory SSOT classification.
 Current LiveKit status rule: do not mark START / Brain RPC complete just

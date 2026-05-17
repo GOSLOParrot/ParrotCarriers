@@ -105,7 +105,13 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets
 
         public void EnsureRuntimeSafeMaterialFallback()
         {
-            if (!m_UseRuntimeSafeMaterialFallback || m_PlaneRenderer == null)
+            // Older copied AR Mobile template prefabs may not serialize the
+            // new guard booleans, which can leave them false on Android even
+            // though the formal App needs a hard stop against pink/error
+            // shader planes. Keep desktop demo parity configurable, but always
+            // allow mobile to replace unsupported/error materials.
+            bool allowFallback = m_UseRuntimeSafeMaterialFallback || Application.isMobilePlatform;
+            if (!allowFallback || m_PlaneRenderer == null)
                 return;
 
             var materials = m_PlaneRenderer.sharedMaterials;
@@ -159,11 +165,15 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets
 
         bool ShouldReplaceOcclusionSlot(Material material)
         {
-            if (!m_ReplaceMobileOcclusionSlot || material == null || material.shader == null)
+            bool allowOcclusionReplace = m_ReplaceMobileOcclusionSlot || Application.isMobilePlatform;
+            if (!allowOcclusionReplace || material == null || material.shader == null)
                 return false;
 
             string shaderName = material.shader.name ?? string.Empty;
-            if (!shaderName.Equals("AR/Occlusion", System.StringComparison.Ordinal))
+            string materialName = material.name ?? string.Empty;
+            bool looksLikeOcclusion = shaderName.Equals("AR/Occlusion", System.StringComparison.Ordinal)
+                                      || materialName.IndexOf("Occlusion", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!looksLikeOcclusion)
                 return false;
 
             // The AR Mobile template occlusion slot should be visually invisible.
@@ -189,7 +199,7 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets
 
         bool NeedsAndroidPlaneShaderFallback(Material material)
         {
-            if (!m_UseAndroidShaderGraphPlaneFallback)
+            if (!m_UseAndroidShaderGraphPlaneFallback && !Application.isMobilePlatform)
                 return false;
 
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -197,6 +207,24 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets
                 return true;
 
             string shaderName = material.shader.name ?? string.Empty;
+            if (shaderName.Equals("Shader Graphs/ShadowReceiver", System.StringComparison.Ordinal))
+            {
+                // Demo2's plane graph is the visual target, but the formal
+                // ArSpike Android build currently runs the Built-in pipeline.
+                // On-device screenshots show this graph can survive import yet
+                // render as Unity's magenta error material. Until the demo2
+                // graph chain is made pipeline-clean, replace it with the
+                // runtime translucent-white material so phone AR remains usable.
+                return true;
+            }
+            if (shaderName.Equals("Parrot/ARPlaneFallbackTransparent", System.StringComparison.Ordinal))
+            {
+                // The bundled shader is useful as an asset-level placeholder,
+                // but phone screenshots still showed magenta planes after the
+                // material swap. Treat it as replaceable on Android and use an
+                // engine built-in transparent shader for the runtime fallback.
+                return true;
+            }
             return shaderName.Contains("Hidden/Shader Graph/FallbackError")
                    || shaderName.Contains("FallbackError");
 #else
@@ -231,15 +259,14 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets
             if (s_RuntimeSafePlaneMaterial != null)
                 return s_RuntimeSafePlaneMaterial;
 
-            var shader = Shader.Find("Universal Render Pipeline/Unlit")
-                         ?? Shader.Find("Unlit/Transparent")
-                         ?? Shader.Find("Sprites/Default")
-                         ?? Shader.Find("Standard");
+            var shader = FindRuntimeSafeTransparentShader();
             s_RuntimeSafePlaneMaterial = new Material(shader)
             {
                 name = "ParrotRuntimeSafeARPlaneTranslucentWhite",
                 renderQueue = (int)RenderQueue.Transparent,
             };
+            s_RuntimeSafePlaneMaterial.SetOverrideTag("RenderType", "Transparent");
+            s_RuntimeSafePlaneMaterial.SetOverrideTag("Queue", "Transparent");
 
             var texture = Resources.Load<Texture2D>("ARMobileTemplate/Textures/PlanePatternDot");
             if (texture != null)
@@ -269,6 +296,8 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets
 
             if (s_RuntimeSafePlaneMaterial.HasProperty("_Surface"))
                 s_RuntimeSafePlaneMaterial.SetFloat("_Surface", 1f);
+            if (s_RuntimeSafePlaneMaterial.HasProperty("_Mode"))
+                s_RuntimeSafePlaneMaterial.SetFloat("_Mode", 3f);
             if (s_RuntimeSafePlaneMaterial.HasProperty("_Blend"))
                 s_RuntimeSafePlaneMaterial.SetFloat("_Blend", 0f);
             if (s_RuntimeSafePlaneMaterial.HasProperty("_SrcBlend"))
@@ -277,6 +306,8 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets
                 s_RuntimeSafePlaneMaterial.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
             if (s_RuntimeSafePlaneMaterial.HasProperty("_ZWrite"))
                 s_RuntimeSafePlaneMaterial.SetFloat("_ZWrite", 0f);
+            if (s_RuntimeSafePlaneMaterial.HasProperty("_Cull"))
+                s_RuntimeSafePlaneMaterial.SetFloat("_Cull", (float)CullMode.Off);
             s_RuntimeSafePlaneMaterial.EnableKeyword("_ALPHABLEND_ON");
             s_RuntimeSafePlaneMaterial.DisableKeyword("_ALPHATEST_ON");
             s_RuntimeSafePlaneMaterial.SetShaderPassEnabled("ShadowCaster", false);
@@ -288,10 +319,7 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets
             if (s_RuntimeNoopOcclusionMaterial != null)
                 return s_RuntimeNoopOcclusionMaterial;
 
-            var shader = Shader.Find("Universal Render Pipeline/Unlit")
-                         ?? Shader.Find("Unlit/Transparent")
-                         ?? Shader.Find("Sprites/Default")
-                         ?? Shader.Find("Standard");
+            var shader = FindRuntimeSafeTransparentShader();
             s_RuntimeNoopOcclusionMaterial = new Material(shader)
             {
                 name = "ParrotRuntimeNoopARPlaneOcclusion",
@@ -310,6 +338,8 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets
                 s_RuntimeNoopOcclusionMaterial.SetFloat("_Alpha", 0f);
             if (s_RuntimeNoopOcclusionMaterial.HasProperty("_Surface"))
                 s_RuntimeNoopOcclusionMaterial.SetFloat("_Surface", 1f);
+            if (s_RuntimeNoopOcclusionMaterial.HasProperty("_Mode"))
+                s_RuntimeNoopOcclusionMaterial.SetFloat("_Mode", 3f);
             if (s_RuntimeNoopOcclusionMaterial.HasProperty("_Blend"))
                 s_RuntimeNoopOcclusionMaterial.SetFloat("_Blend", 0f);
             if (s_RuntimeNoopOcclusionMaterial.HasProperty("_SrcBlend"))
@@ -322,6 +352,32 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.ARStarterAssets
             s_RuntimeNoopOcclusionMaterial.DisableKeyword("_ALPHATEST_ON");
             s_RuntimeNoopOcclusionMaterial.SetShaderPassEnabled("ShadowCaster", false);
             return s_RuntimeNoopOcclusionMaterial;
+        }
+
+        static Shader FindRuntimeSafeTransparentShader()
+        {
+            // ArSpike currently builds through Unity's Built-in Android path even
+            // though the copied demo2 assets include URP/ShaderGraph content.
+            // Shader.Find can still return a URP shader that is unsupported at
+            // runtime, which makes the fallback plane magenta again. Use the
+            // first transparent shader Unity reports as supported on this player.
+            string[] names =
+            {
+                "Unlit/Transparent",
+                "Sprites/Default",
+                "Universal Render Pipeline/Unlit",
+                "Standard",
+            };
+            for (int i = 0; i < names.Length; i++)
+            {
+                var shader = Shader.Find(names[i]);
+                if (shader != null && shader.isSupported)
+                    return shader;
+            }
+            var bundled = Resources.Load<Shader>("ARMobileTemplate/Shaders/ParrotARPlaneFallback");
+            if (bundled != null && bundled.isSupported)
+                return bundled;
+            return Shader.Find("Unlit/Color") ?? Shader.Find("Standard");
         }
 
         /// <summary>

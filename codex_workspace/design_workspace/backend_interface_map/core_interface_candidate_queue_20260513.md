@@ -45,6 +45,7 @@ for the same module-level decision.
 | CORE-012 | draft | unity-app + web-console | `TimeAlignedEvidenceRef`: shared evidence/ref shape for GOSLO Intent `identify_object`, SVA frame sampling, camera/photo mode, Focus/BBox/magnifier attention, ASR/CV samples, and L2-B/Graphiti node creation | Unity App, Web Console, Brain Intent tools, SVA/video processor, DSG/L1.5/L2-B | `identify_object` should obtain a time-aligned frame from LiveKit background video, SVA frame cache, or HTTP/storage image asset, not from camera-mode inline RPC. Focus/BBox/magnifier, ASR, and CV workers should contribute evidence with coordinates/region, pose or producer id, sample timestamp, optional storage image ref, and trigger context so GOSLO can receive compact notifications and L2-B/IntentWorkspace can create/update evidence-linked nodes or refs. | Future SVA/ECP/RefBinding interface addendum, likely linked to CORE-006 and protocol snapshot only after dual-lane review | First Web/backend slices implemented as `parrot.brain.vision.evidence` with `TimebaseStamp` / `TimeAlignedSampleRef`, `parrot.brain.vision.frame_cache` with `record_livekit_frame_bytes()`, and `parrot.brain.vision.livekit_sampler` as the Brain room-scoped low-FPS LiveKit track consumer. ECP/RPC top-level schemas stay unchanged for V1; optional stamps live in `EcpEvent.payload["timebase"]`, `EcpCommand.meta["timebase"]`, or HTTP/upload/frame metadata. Candidate fields now include `evidence_id`, `kind`, `status`, `clock_domain`, `wall_time_ms`, `monotonic_ms`, `media_time_us`, `sequence`, `estimated`, `source_id`, `asset_uri`, `asset_path`, `region`, `bbox_refs`, `focus_refs`, `related_refs`, `room_id`, `track_sid`, `participant_id`, `description`, and redacted `meta`. The Web frame-cache upload route is debug/operator-only; live Unity/LiveKit smoke, crop/VLM comparison, and App lane shared-subset review still block SSOT promotion. |
 | CORE-013 | draft | unity-app + web-console | `L2BWorkspaceGraphOverlay` / `GraphRewritePolicy`: policy layer for staged refs, workspace files, L1.5 buckets, foldable subgraphs, isolated compartments, graph transforms, incremental updates, and automatic edge/link rules | Unity App, Web Console, Brain IntentWorkspace, DSG/L1.5, DSG/L2-B, RefBinding | App/Web need a way to decide whether an IntentWorkspace ref or source-pack item stays workspace-only, becomes a lightweight L2-B pointer Node, is isolated as a compartment/subgraph, is promoted into the L2-B main graph, or connects by bounded rules. Operators also need to wrap selections/clusters as foldable subgraphs, aggregate/compare subgraphs, draft cross-subgraph links, and choose LLM analysis instead of graph mutation when appropriate. This should not overload `NodeKind` with workspace/buff states and should not make IntentWorkspace itself an L1.5 bucket. | Future DSG/L1.5/L2-B + RefBinding addendum after App/Web review | Candidate fields include `workspace_id`, `subgraph_id`, `subgraph_label`, `staged_ref_id`, `related_node_uuid`, `pool_bucket_id`, `graph_view_mode`, `linkage_policy`, `promotion_policy`, `rewrite_rule_id`, `transform_kind`, `delta_sequence`, `edge_kind`, `confidence`, `attention_delta`, `source_event_id`, `evidence_id`, `asset_ref`, and audit receipt ids. Needs a mandatory research/architecture gate using RustWorkX/L2-B/L1.5/attention/Graphiti skills plus UI receipts before DTO/SSOT promotion. |
 | CORE-014 | ratified | unity-app + web-console | `VisualToolEvidenceLifecycle`: formal BBox/MAG/Focus tool packet and asset-ref bridge for user visual-tool evidence | Unity App, Web Console, Brain ECP ingest, Evidence Ledger, GOSLO Intent, future SVA/CV workers | Current `bbox.placed` / `focus.anchored` events remain a conservative compatibility bridge and cannot safely represent drag, resize, hover, dwell, explicit confirm, cancel, or tool-rendered crop assets. App now has a production-capable backend route so BBox can mean strong user-confirmed visual evidence and MAG can mean weak/local inspection with optional explicit send. Backend owns salience thresholds, evidence alignment, IntentWorkspace staging, C3/C4 policy, and future L2-B/Ref promotion without App writing those systems directly. This is not the DSG L3 attention module; it is a small lifecycle contract for visual tool evidence and notification policy. | `.cursor/memory/architecture/Interface/time_aligned_evidence_interface_20260515.md` | Backend/App V1 implemented 2026-05-16: `VisualToolLifecyclePacket` fields are `tool_event_id`, `tool_id`, `tool_kind`, `interaction_phase`, `region`, `pose`, `source_surface`, `timebase`, `asset_ref`, `asset_path`, `asset_uri`, `mime_type`, `evidence_id`, `attention_hint`, `delivery_preference`, `subject_hint`, `label`, and `meta`. Routes/events: `POST /api/app/visual-tool/event`, `POST /api/app/visual-tool/asset/{asset_id}`, ECP `visual_tool.lifecycle`, Web debug `POST /api/vision/evidence/tool-lifecycle`, BB receipt `transient/visual_tool_lifecycle_receipt`. Do not add image bytes to ECP/RPC. Tool-rendered images use HTTP/storage and become `TimeAlignedSampleRef` assets. Production App toolbar enablement still requires APP-024 phone/screen-share smoke and UI/body-feel review, but App controller work is no longer blocked by missing backend surface. |
+| CORE-015 | draft | web-console + memory | `MemoryIdentityRefIndex`: durable canonical UUID map and RefIndex for L2-B nodes, Graphiti entities/facts/episodes, Obsidian UUIDs, provider ids, session RefBindings, files, photos, URLs, and ECS/local paths | Unity App, Web Console, DSG/L1.5, DSG/L2-B, Graphiti, Brain refs, nanobot/MCP, ECS file/ref manager | Graphiti Episode provenance is not enough to bind moving external refs and cross-system UUIDs. The system needs one durable identity/ref layer that can answer which L2-B node, Graphiti UUID, Obsidian note, Google event, photo/file path, URL, and nanobot-managed artifact refer to the same real object; track locator health/version/hash; and provide stable seeds for A10/App/Web/Graphiti search and L2-B multi-hop retrieval. | Future DSG/RefBinding/Graphiti identity addendum after Web proof and App review | Candidate fields: `canonical_uuid`, `l2b_uuid`, `graphiti_entity_uuids`, `graphiti_edge_uuids`, `graphiti_episode_uuids`, `obsidian_uuids`, `ref_ids`, `provider_keys`, `aliases`, `confidence`, `resolution_state`, `conflicts`, `locators`, `canonical_uri`, `content_hash`, `health`, `managed_by`, `git_commit`, timestamps, and raw Graphiti preservation envelope. 2026-05-17 research says Episode remains provenance; RefIndex owns current locators; IdentityMap owns UUID equivalence; Graphiti raw fact/predicate data stays in metadata; direct DB surgery is migration/emergency only. M2 adds signal-overlap merge plus `conflicted` preservation without auto-rebinding existing UUID/ref owners. M3 adds Graphiti export/import `graphiti_raw_envelopes` and preview `identity_ref_drafts` for fact/entity/episode candidates. M4/M5 add Graphiti endpoint resolution and operator materialization preconditions. M7-M11 add the read-only ref-scan contract, dispatch/result ledger, fallback local stat/hash worker, live ECS Redis smoke, optional URL HEAD and Graphiti search-probe checkers, plus ECS-local stat/hash guard rails. True Graphiti UUID CRUD lookup, ECS-side MCP filesystem checking, and reviewed write-back remain future work before any shared DTO promotion. |
 
 ## 2026-05-15 Candidate Implementation Notes
 
@@ -101,6 +102,71 @@ for the same module-level decision.
   promote a shared overlay apply contract; Graphiti fact `edge_drafts` still
   require resolved L2-B UUIDs plus a separate operator Edge route before they
   become persistent graph edges.
+- CORE-015: 2026-05-17 Graphiti/L2-B/Ref identity research created
+  `web_console/graphiti_l2b_ref_identity_design_20260517.md`. The key
+  candidate split is now explicit: Graphiti Episodes are provenance and
+  temporal history; `MemoryIdentityRefIndex` owns durable canonical UUID
+  equivalence and mutable external locators; L2-B uses the resolved UUIDs as a
+  runtime rustworkx projection. Edge kinds should be coarse view/algorithm
+  classes, while Graphiti relation/fact text and raw endpoint UUIDs are
+  preserved in metadata. First Web prototype routes are
+  `GET /api/memory/identity-ref-index`,
+  `POST /api/memory/identity-ref-index/draft`, and
+  `POST /api/memory/identity-ref-index/apply`; apply persists only the local
+  IdentityRefIndex JSON under explicit operator mode and reports no direct
+  L2-B, Graphiti/FalkorDB, file, or App DTO mutation. M1 continuation added
+  `POST /api/memory/identity-ref-index/verify`, a deterministic verifier for
+  local paths, unknown URL/remote locators, and supplied Graphiti/Obsidian UUID
+  status maps. Remote URL/ECS checks remain future nanobot/MCP work. M2
+  continuation added merge reports and `conflicts[]`: a single matching
+  external signal merges into the existing canonical record, while explicit
+  cross-canonical or multi-canonical overlap preserves the colliding
+  Graphiti/L2-B/ref evidence and marks affected identities `conflicted`
+  without auto-rebinding existing owners.
+  M3 continuation added raw Graphiti envelope propagation to
+  `/api/graphiti/subgraph/export-draft` and `import-plan`, plus preview
+  `identity_ref_drafts` for Graphiti fact, entity, and episode refs; real L1.5
+  operator export now carries `graphiti_raw` in Observation/source metadata.
+  M4 continuation added
+  `POST /api/memory/identity-ref-index/resolve-graphiti`: it resolves
+  Graphiti source/target/fact UUIDs to canonical/L2-B identities, returns
+  pointer candidates for missing endpoints, blocks conflicted endpoints, and
+  reports that no L2-B edge write is allowed unless both endpoints are
+  `resolved_l2b`.
+  M5 continuation added
+  `POST /api/memory/identity-ref-index/apply-graphiti-edge`: it re-runs the
+  resolver, blocks unresolved endpoints, and materializes a resolved Graphiti
+  fact as an L2-B `SemanticEdge` only through the existing
+  `apply_l2b_edge -> L2BGraph.connect` operator path while preserving raw
+  Graphiti metadata.
+  M7 continuation added
+  `POST /api/memory/identity-ref-index/ref-scan-plan`: it drafts a plan-only
+  Nanobot/MCP/git `ref_scan` contract for local, URL, ECS, Graphiti, and
+  Obsidian refs with a proposed manifest diff policy and explicit disallowed
+  mutations. It does not change App DTOs or promote a shared repair/write
+  interface; operator-gated dispatch/result intake is the next Web proof.
+  M8 continuation added
+  `POST /api/memory/identity-ref-index/ref-scan-dispatch` and
+  `GET /api/memory/identity-ref-index/ref-scan-results`: Web can now enqueue
+  read-only `ref_scan` work through Scheduler/Nanobot and inspect
+  `memory_ref_scan_result` ledger rows. This still does not promote a shared
+  repair/write interface and does not write RefIndex health automatically.
+  M9 continuation added structured fallback `NanobotConsumer` execution for
+  `ref_scan`: local refs can produce read-only stat/hash results, while URL,
+  ECS, and Graphiti locators remain explicit unknowns until MCP/remote checkers
+  are implemented. Manifest deltas remain proposals and mutation requests are
+  refused.
+  M10 continuation added `src/scripts/smoke_ref_scan.py` and live-smoked the
+  Scheduler/Nanobot/result-ledger path through Castle/ECS Redis DB15 over an
+  SSH tunnel. The returned `memory_ref_scan_result` row proved local path
+  ok/hash, remote URL/ECS/Graphiti explicit unknowns, and manifest-delta
+  proposals without any automatic write-back.
+  M11 continuation added optional read-only remote probes: URL HEAD can classify
+  reachable/missing/auth/unknown states; Graphiti can be probed through the
+  existing search API but search misses remain `unknown` until a UUID CRUD
+  lookup exists; ECS path stat/hash is guarded behind ECS-side worker
+  confirmation to avoid local-dev false positives. This remains Web/Scheduler/
+  Nanobot receipt plumbing, not a shared repair/write DTO.
 - CORE-009: 2026-05-15 Web implemented the first concrete Memory
   changed-since polling envelope at
   `GET /api/memory/live-state/changes?since=...&limit=...`. Shape is

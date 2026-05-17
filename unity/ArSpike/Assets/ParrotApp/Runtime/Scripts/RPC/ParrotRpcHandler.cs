@@ -17,6 +17,7 @@ namespace ParrotApp.RPC
     ///   <c>flyTo</c> -> <see cref="ParrotController.FlyTo"/>
     ///   <c>animate</c> -> <see cref="ParrotController.PlayAnimation"/>
     ///   <c>perchToFinger</c> -> <see cref="PerchOnHand.TryRequestRpcPerch"/>
+    ///   <c>returnToView</c> -> <see cref="PerchOnHand.TryRequestReturnToView"/>
     ///
     /// 从 ParrotDev 搬迁（Sprint4 Phase 3 / L3 Group 4），保留 ECP-minimal 已落地的所有行为：
     /// <list type="bullet">
@@ -80,7 +81,8 @@ namespace ParrotApp.RPC
                 room.LocalParticipant.RegisterRpcMethod("flyTo", HandleFlyTo);
                 room.LocalParticipant.RegisterRpcMethod("animate", HandleAnimate);
                 room.LocalParticipant.RegisterRpcMethod("perchToFinger", HandlePerchToFinger);
-                Debug.Log("[ParrotRPC] Registered: flyTo, animate, perchToFinger");
+                room.LocalParticipant.RegisterRpcMethod("returnToView", HandleReturnToView);
+                Debug.Log("[ParrotRPC] Registered: flyTo, animate, perchToFinger, returnToView");
 
                 if (!_rpcReadyReported)
                 {
@@ -298,6 +300,86 @@ namespace ParrotApp.RPC
             }
         }
 
+        private async Task<string> HandleReturnToView(RpcInvocationData data)
+        {
+            Debug.Log($"[ParrotRPC] returnToView <- {data.CallerIdentity}: {data.Payload}");
+            ReturnToViewPayload p = default;
+            try
+            {
+                p = JsonUtility.FromJson<ReturnToViewPayload>(data.Payload);
+
+                if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
+                {
+                    Debug.LogWarning($"[ParrotRPC] returnToView expired (command_id={p._ecp.command_id})");
+                    return EcpAckJson.Expired(p._ecp, $"expires_at={p._ecp.expires_at}");
+                }
+
+                string commandId = p._ecp?.command_id ?? "";
+                string modelId = p._ecp?.ModelId ?? "";
+                float timeoutSeconds = p.timeout_seconds > 0f ? p.timeout_seconds : 5f;
+                var started = new TaskCompletionSource<string>();
+                var returned = new TaskCompletionSource<PerchOnHand.PerchRpcResult>();
+
+                UnityMainThread.Enqueue(() =>
+                {
+                    try
+                    {
+                        var perch = ResolvePerchOwner(modelId);
+                        if (perch == null)
+                        {
+                            started.TrySetResult("perch_owner_missing");
+                            returned.TrySetResult(PerchOnHand.PerchRpcResult.Rejected("perch_owner_missing"));
+                            return;
+                        }
+
+                        if (!perch.TryRequestReturnToView(commandId, returned, out string reason))
+                        {
+                            started.TrySetResult(reason);
+                            returned.TrySetResult(PerchOnHand.PerchRpcResult.Rejected(reason));
+                            return;
+                        }
+
+                        started.TrySetResult("");
+                    }
+                    catch (Exception ex)
+                    {
+                        started.TrySetResult("failed");
+                        returned.TrySetResult(PerchOnHand.PerchRpcResult.Rejected(ex.Message));
+                    }
+                });
+
+                string startReason = await started.Task;
+                if (!string.IsNullOrEmpty(startReason))
+                    return EcpAckJson.Rejected(p._ecp, startReason, startReason);
+
+                Task finished = await Task.WhenAny(
+                    returned.Task,
+                    Task.Delay(TimeSpan.FromSeconds(Math.Max(1.0, timeoutSeconds))));
+                if (finished != returned.Task)
+                {
+                    UnityMainThread.Enqueue(() =>
+                    {
+                        var perch = ResolvePerchOwner(modelId);
+                        perch?.CancelRpcPerch(commandId, "timeout");
+                    });
+                    return EcpAckJson.Failed(p._ecp, "timeout", "timeout");
+                }
+
+                PerchOnHand.PerchRpcResult result = await returned.Task;
+                if (!result.Ok)
+                    return EcpAckJson.Rejected(p._ecp, result.Reason, result.Reason);
+
+                return EcpAckJson.Completed(
+                    p._ecp,
+                    EcpFrontendStateDto.ForBody("idle", commandId, new[] { "body" }));
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ParrotRPC] returnToView error: {e.Message}");
+                return EcpAckJson.Failed(p._ecp, e.Message);
+            }
+        }
+
         private static string AnimationToBodyState(string animation)
         {
             switch (animation)
@@ -317,7 +399,7 @@ namespace ParrotApp.RPC
             var own = GetComponent<PerchOnHand>();
             if (own != null && MatchesModel(own, modelId)) return own;
 
-            var all = FindObjectsOfType<PerchOnHand>(includeInactive: true);
+            var all = FindObjectsOfType<PerchOnHand>(true);
             PerchOnHand fallback = null;
             for (int i = 0; i < all.Length; i++)
             {
@@ -360,5 +442,6 @@ namespace ParrotApp.RPC
         [Serializable] private struct FlyToPayload { public float x, y, z; public EcpCommandDto _ecp; }
         [Serializable] private struct AnimatePayload { public string animation; public string parameters_json; public bool strict_capability; public EcpCommandDto _ecp; }
         [Serializable] private struct PerchToFingerPayload { public bool require_branch_gesture; public float timeout_seconds; public EcpCommandDto _ecp; }
+        [Serializable] private struct ReturnToViewPayload { public float timeout_seconds; public EcpCommandDto _ecp; }
     }
 }

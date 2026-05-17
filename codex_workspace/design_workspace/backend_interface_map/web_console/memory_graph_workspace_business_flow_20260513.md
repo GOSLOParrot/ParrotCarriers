@@ -1842,6 +1842,114 @@ IntentWorkspace boundary:
   owns the decision about whether the result returns to the user, GOSLO,
   App, L2-B memory, or a pending HITL gate.
 
+## 2026-05-17 Graphiti / L2-B / Ref Identity Boundary
+
+Durable note:
+`graphiti_l2b_ref_identity_design_20260517.md`.
+
+Memory-side decision:
+
+- L2-B remains the rustworkx runtime projection. Its `uuid` is the durable
+  runtime graph identity, while rustworkx integer indices are process-local
+  handles.
+- Graphiti is the temporal memory/provenance graph. Its entity, edge, and
+  episode UUIDs must be preserved, but they are not the only canonical id for
+  App/Web/A10 operations.
+- L1.5 `RefTable` and Brain `RefBinding` are useful seeds but are not yet a
+  durable cross-process identity/ref store.
+- The missing shared layer is CORE-015 `MemoryIdentityRefIndex`: canonical UUID
+  equivalence plus mutable Ref records for Obsidian docs, photos, local/ECS
+  paths, URLs, Google provider ids, and Graphiti objects.
+- L2-B Edge categories should support filters, spatial views, and algorithms.
+  They should not pre-enumerate every Graphiti fact predicate. Graphiti fact
+  text, relation label, raw endpoint UUIDs, and provenance stay in edge/node
+  metadata.
+
+2026-05-17 first skeleton:
+
+- Added `src/parrot/dsg/identity_ref_index.py` as a file-backed CORE-015
+  prototype.
+- Added `GET /api/memory/identity-ref-index`,
+  `POST /api/memory/identity-ref-index/draft`, and
+  `POST /api/memory/identity-ref-index/apply`.
+- Draft and dry-run apply do not persist. Operator apply persists only the
+  IdentityRefIndex JSON and does not mutate L2-B, Graphiti/FalkorDB, Obsidian,
+  ECS files, or App DTOs.
+- Added `POST /api/memory/identity-ref-index/verify` for deterministic ref
+  health checks: local paths are ok/missing, URL/ECS/remote locators are
+  unknown until a nanobot/MCP checker exists, and Graphiti/Obsidian UUIDs can
+  be checked through supplied status maps.
+- Added M2 merge/conflict policy: a single matching identity signal merges into
+  the existing canonical record; explicit cross-canonical or multi-canonical
+  overlap records `conflicts[]`, marks affected identities `conflicted`, and
+  preserves Graphiti/L2-B/ref collisions without auto-rebinding existing owners.
+- Added M3 raw Graphiti envelope propagation: Graphiti export-draft/import-plan
+  receipts now include `graphiti_raw_envelopes` and CORE-015
+  `identity_ref_drafts` for fact/entity/episode candidates. Operator L1.5
+  export also carries `graphiti_raw` in Observation/source metadata so L2-B
+  nodes retain more than a lossy fact-text subset.
+- Added M4 read-only GraphitiResolver preview:
+  `POST /api/memory/identity-ref-index/resolve-graphiti`. It resolves
+  Graphiti source/target/fact UUIDs through IdentityRefIndex, returns
+  `resolved_l2b` endpoints plus L2-B edge drafts when safe, returns pointer
+  candidates for missing endpoints, blocks conflicted endpoints, and performs no
+  L2-B/Graphiti/File/App mutation.
+- Added M5 materialized Graphiti fact edge apply:
+  `POST /api/memory/identity-ref-index/apply-graphiti-edge`. It re-resolves
+  endpoints through CORE-015, blocks unresolved/conflicted/tombstoned endpoints,
+  preserves raw Graphiti edge metadata, and delegates successful operator writes
+  to `apply_l2b_edge -> L2BGraph.connect(SemanticEdge)` instead of adding a
+  second RustWorkX writer.
+- M6 surfaced that path in the existing Graphiti Source Board: IdentityIndex
+  count/load, deterministic ref verification, Graphiti edge endpoint resolver,
+  preview edge apply, and operator materialize-to-L2-B controls now call the
+  CORE-015 routes and refresh the existing 7893 static build.
+- M7 added the plan-only nanobot/git/MCP ref scan contract:
+  `POST /api/memory/identity-ref-index/ref-scan-plan`. It classifies
+  RefRecords into local path, URL, ECS path, Graphiti pointer, Obsidian doc,
+  and opaque locator checks; drafts a `ref_scan` Nanobot task payload with a
+  proposed git manifest diff policy; and explicitly forbids file moves,
+  manifest writes, RefIndex writes, Graphiti mutation, L2-B mutation, and ECS
+  writes. The existing Graphiti Source Board exposes this as `Ref Scan Plan`
+  and records the dry-run receipt in the operation rail.
+- M8 added operator-gated dispatch and result intake:
+  `POST /api/memory/identity-ref-index/ref-scan-dispatch` enqueues the same
+  `ref_scan` plan through Scheduler/Nanobot only when the global operator gate
+  is open, with `scan_mode=read_only` and `allow_mutation=false`;
+  `GET /api/memory/identity-ref-index/ref-scan-results` reads
+  `memory_ref_scan_result` rows from the Scheduler trigger-result ledger. The
+  result reader parses scan samples, manifest deltas, warnings, and scan ids,
+  but still performs no RefIndex health write-back and no repair action.
+- M9 added structured fallback worker behavior in `NanobotConsumer`. The
+  fallback now performs read-only local path stat/hash checks, returns explicit
+  `unknown` rows for URL/ECS/Graphiti/opaque locators that require MCP/remote
+  checkers, proposes manifest delta rows, and refuses any task carrying
+  `allow_mutation=true`.
+- M10 added and ran `src/scripts/smoke_ref_scan.py` against the real
+  Scheduler/Nanobot/Web ledger path. Local Redis was unavailable, so the
+  successful run used an SSH tunnel to Castle/ECS Redis on isolated
+  `REDIS_DB=15`. The ledger returned `memory_ref_scan_result` for 4 refs:
+  local Obsidian path `ok` with SHA-256, URL/ECS/Graphiti pointer refs
+  `unknown` with MCP-required reasons, and 2 proposed manifest deltas only.
+  The smoke made no manifest, RefIndex, L2-B, Graphiti/FalkorDB, ECS file, or
+  App DTO mutation.
+- M11 added opt-in remote probes to the same path. URL refs can run HEAD-only
+  checks; Graphiti refs can run a read-only 8790 search-probe; ECS refs stay
+  guarded unless the worker is explicitly confirmed to be running on ECS before
+  mapping `ecs://` locators to local paths. The existing 7893 Graphiti Source
+  Board now has a `Remote probes` checkbox for `ref-scan-plan` and
+  `ref-scan-dispatch`.
+- M11 live smoke used `src/scripts/smoke_ref_scan.py --remote-checks` over ECS
+  Redis DB15. It returned local path `ok`/hash, URL `missing` with HTTP 404,
+  Graphiti `unknown` via real search-probe, ECS guarded `unknown`, and 3
+  proposed manifest deltas only. It still made no manifest, RefIndex, L2-B,
+  Graphiti/FalkorDB, ECS file, or App DTO mutation.
+
+Next Memory Graph work should add a true Graphiti UUID CRUD lookup route and
+run ECS stat/hash inside an ECS-confirmed nanobot/MCP worker before any
+repair/write workflow, broad Graphiti custom ontology migration, or direct
+database surgery.
+
 ## Implementation Round: WEB-011.19 Memory Changed-Since V1
 
 Owner chat: Web Console

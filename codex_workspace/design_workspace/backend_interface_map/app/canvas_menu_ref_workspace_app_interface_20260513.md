@@ -148,7 +148,7 @@ shared answer for `CanvasMenuCoreV1`.
   must not implement full canvas menu state.
 - Any later canvas menu work should start from CORE-007 confirmation, then bind
   to existing facade/menu APIs instead of adding another local selector model.
-- `UI/AppV1SmokeReferenceUiController.cs` contains useful canvas/HUD interaction ideas,
+- `Assets/Tests/Smoke/Scripts/AppV1SmokeReferenceUiController.cs` contains useful canvas/HUD interaction ideas,
   but it is a Smoke/reference controller. It must not become the shared canvas
   menu contract, and it must not be mounted wholesale into the formal startup
   scene as proof that the menu is complete.

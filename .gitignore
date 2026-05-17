@@ -41,9 +41,13 @@ unity/*/Temp/
 unity/*/Obj/
 unity/*/Build/
 unity/*/Builds/
+unity/*/Exported*/
+unity/*/gradleOut/
 unity/*/Logs/
 unity/*/UserSettings/
 unity/*/MemoryCaptures/
+# Large Unity local package archives; use artifact/LFS/download source for remote repro.
+unity/*/Packages/com.github.homuler.mediapipe-*.tgz
 *.csproj
 *.sln
 
@@ -85,6 +89,12 @@ FilePort2/
 FilePort3/
 *.tar.gz
 *.tar.bz2
+*.tgz
+*.apk
+*.aab
+*.apks
+*.ipa
+*.symbols.zip
 *.zip
 # Root-only: legacy local harness (was `Test/` — on Windows that also ignored `docs/test/`)
 /Test/

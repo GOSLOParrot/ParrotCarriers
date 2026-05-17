@@ -8,6 +8,15 @@ This workspace is the local map for Parrot and Nanobot persona tuning. It record
 
 - `persona_injection_matrix.md` - the main table of injection sources, channels, levels, runtime effect, and risks.
 - `setting_files_index.md` - grouped index of discovered setting files and task-guidance files.
+- `startup_injection_map.md` - what GOSLO injects after LiveKit startup, before and after model placement.
+- `runtime_polling_map.md` - which loops poll Blackboard / Task / IntentWorkspace and which paths are event-driven.
+- `open_issues.md` - recorded persona, greeting, task-report, and Nanobot voice-contamination issues to resolve.
+- `external_best_practices.md` - web-researched guidance from Gemini Live, LiveKit Agents, and Vision Agents docs.
+- `import_files_reanalysis.md` - current reanalysis of RoomProfile `setting_file_refs` import behavior and problems.
+- `import_package_refactor_proposal.md` - proposed future import-package directory scheme and classification contract.
+- `information_access_model.md` - proposed model for classifying information before it can rise into prompt, IntentWorkspace, C3, C4, Reflex, Intent, or Task.
+- `file_by_file_rewrite_tracker.md` - working ledger for rewriting stale persona/setting files one by one before any migration.
+- `parrot_default_persona_rewrite_plan.md` - captured requirements and best-practice notes for rewriting the default GOSLO Parrot persona.
 
 ## Injection Taxonomy
 
@@ -29,7 +38,7 @@ Important distinction: runtime C3 above is not the same thing as the historical 
 
 1. Parrot's main active prompt is `src/parrot/brain/personas/<persona_id>.md` plus the active RoomProfile session-context block assembled by `src/parrot/brain/session_context_pack.py`.
 2. Persona, mode, room, scene, and selected memory context are hot-swapped through C2 instruction rebuilds. Lightweight body/world notices use C3. Speech-triggering notices and background task results use C4.
-3. `data/presets/ner_lineb_room.json` currently points Ner to `ner_companion.md`, LineB audio profile `lineb_ner_ja_test`, one roleplay setting document, one scene document, and one `.cursor` report that is reference-only by default.
+3. `data/presets/ner_lineb_room.json` currently points Ner to `ner_companion.md`, LineB audio profile `lineb_ner_ja_test`, and four `setting_file_refs`: persona path (`persona_loader_only`), one roleplay setting (`llm+l1_5`), one scene draft (`llm`), and one `.cursor` report (`reference_only`).
 4. Nanobot's current upstream runtime appears to assemble its prompt from workspace bootstrap files such as `SOUL.md`, `USER.md`, `AGENTS.md`, and `TOOLS.md`. The `systemPrompt` fields found in Nanobot JSON config mirrors are not referenced by the inspected upstream schema/context builder.
 5. `~/.nanobot-parrot/config.json` differs from the deploy mirror/template. It currently points at an OpenRouter/Gemini model and a different Nanobot maid prompt string, but that prompt may be ignored by current Nanobot runtime code.
 6. Several deploy mirror and env-style files contain live-looking credentials. They are indexed only by path/category here; do not paste values into tuning docs.
@@ -47,4 +56,3 @@ When changing "feel", prefer editing the highest-level declarative source that o
 | Status-notice behavior | `src/parrot/brain/context_injector.py` |
 | Background task result speech | `src/parrot/scheduler/service.py` and `src/parrot/brain/agent.py` |
 | Nanobot worker personality | active Nanobot workspace `SOUL.md`, `USER.md`, `AGENTS.md`, `TOOLS.md` |
-

@@ -159,6 +159,12 @@ namespace ParrotApp.Parrot
         [SerializeField] private bool invertMinecraftYOffsets = true;
         [Tooltip("GOSLO.glb bakes the wing mirror yaw into left_wing_rotation/right_wing_rotation, so the shoulder groups normally should not receive Minecraft's -PI wing yaw again.")]
         [SerializeField] private bool applyMinecraftWingYaw = false;
+        [Tooltip("AR phone standing pose correction. GOSLO.glb imports with a neutral body; Minecraft's full +0.4937rad body pitch makes the body cube look like it is jutting forward in AR.")]
+        [Range(-1f, 1f)]
+        [SerializeField] private float minecraftStandingBodyPitchWeight = 0f;
+        [Tooltip("Manual AR hover should flap without folding the body cube forward; keep this at 0 unless a specific model needs Minecraft's full flying body pitch.")]
+        [Range(-1f, 1f)]
+        [SerializeField] private float minecraftFlyingBodyPitchWeight = 0f;
         [SerializeField] private float minecraftWalkLimbSwingSpeed = 6f;
         [Range(0f, 1f)]
         [SerializeField] private float minecraftWalkLimbSwingAmount = 0.65f;
@@ -236,6 +242,7 @@ namespace ParrotApp.Parrot
         private Vector3    _baseScale;
         private float      _stateTimer;
         private float      _headTiltCycleTimer;
+        private bool       _headTiltOneShot;
 
         private Transform _headTransform;
         private Transform _bodyTransform;
@@ -306,6 +313,20 @@ namespace ParrotApp.Parrot
             if (_leftLegTransform   != null) _leftLegBasePos   = _leftLegTransform.localPosition;
             if (_rightLegTransform  != null) _rightLegBasePos  = _rightLegTransform.localPosition;
             if (_tailTransform      != null) _tailBasePos      = _tailTransform.localPosition;
+        }
+
+        /// <summary>
+        /// Runtime AR placement can move and scale the model after this driver
+        /// has already captured its import-time transform in Awake. Rebase the
+        /// procedural idle/breath/fly states onto the formal placed transform
+        /// so animation does not pull the GLB back to its original size or
+        /// local origin.
+        /// </summary>
+        public void RebaseBaseTransformFromCurrent()
+        {
+            _basePosition = transform.localPosition;
+            _baseRotation = transform.localRotation;
+            _baseScale = transform.localScale;
         }
 
         // ─── Update ──────────────────────────────────────────────────────
@@ -414,6 +435,7 @@ namespace ParrotApp.Parrot
             string oldWire = HeadStateToWire(CurrentHeadState);
             CurrentHeadState = state;
             _headTiltCycleTimer = 0f;
+            if (state != HeadState.Tilt) _headTiltOneShot = false;
 
             string newWire = HeadStateToWire(state);
             Debug.Log($"[AnimationDriver] HeadState → {state} (wire={newWire})");
@@ -421,6 +443,17 @@ namespace ParrotApp.Parrot
             if (oldWire != newWire)
                 try { OnHeadStateWireChanged?.Invoke(newWire); }
                 catch (Exception ex) { Debug.LogError($"[AnimationDriver] OnHeadStateWireChanged: {ex}"); }
+        }
+
+        public void PlayHeadTiltOnce()
+        {
+            _headTiltOneShot = true;
+            if (CurrentHeadState == HeadState.Tilt)
+            {
+                _headTiltCycleTimer = 0f;
+                return;
+            }
+            SetHeadState(HeadState.Tilt);
         }
 
         public void ApplyBodyStateString(string bodyState)
@@ -911,9 +944,19 @@ namespace ParrotApp.Parrot
                     float tiltOut  = headTiltOutDuration;
                     float wait     = headTiltWaitDuration;
                     float cycleLen = tiltIn + hold + tiltOut + wait;
+                    float oneShotLen = tiltIn + hold + tiltOut;
+
+                    if (_headTiltOneShot && _headTiltCycleTimer >= oneShotLen)
+                    {
+                        _headTiltOneShot = false;
+                        SetHeadState(HeadState.Forward);
+                        return;
+                    }
 
                     // 在循环范围内取当前阶段时间
-                    float ct = headTiltWaitDuration > 0f
+                    float ct = _headTiltOneShot
+                        ? Mathf.Min(_headTiltCycleTimer, oneShotLen)
+                        : headTiltWaitDuration > 0f
                         ? _headTiltCycleTimer % cycleLen
                         : Mathf.Min(_headTiltCycleTimer, tiltIn + hold + tiltOut);
 
@@ -1082,7 +1125,7 @@ namespace ParrotApp.Parrot
         private void PrepareMinecraftPose(MinecraftParrotPose pose)
         {
             SetMinecraftRotation(_featherTransform, _featherBaseRot, McFeatherXRot, 0f, 0f);
-            SetMinecraftRotation(_bodyTransform, _bodyBaseRot, McBodyXRot, 0f, 0f);
+            SetMinecraftRotation(_bodyTransform, _bodyBaseRot, ResolveMinecraftBodyXRot(pose), 0f, 0f);
             if (_tailTransform != null) _tailTransform.localRotation = _tailBaseRot;
             SetWingMinecraftRotation(_leftWingTransform, _leftWingBaseRot, McWingXRot, McWingYRot, 0f);
             SetWingMinecraftRotation(_rightWingTransform, _rightWingBaseRot, McWingXRot, McWingYRot, 0f);
@@ -1117,6 +1160,22 @@ namespace ParrotApp.Parrot
                     SetMinecraftRotation(_leftLegTransform, _leftLegBaseRot, McLegXRot, 0f, McLegPartyLeftZ);
                     SetMinecraftRotation(_rightLegTransform, _rightLegBaseRot, McLegXRot, 0f, McLegPartyRightZ);
                     break;
+            }
+        }
+
+        private float ResolveMinecraftBodyXRot(MinecraftParrotPose pose)
+        {
+            switch (pose)
+            {
+                case MinecraftParrotPose.Standing:
+                case MinecraftParrotPose.OnShoulder:
+                    return McBodyXRot * Mathf.Clamp(minecraftStandingBodyPitchWeight, -1f, 1f);
+                case MinecraftParrotPose.Flying:
+                    return McBodyXRot * Mathf.Clamp(minecraftFlyingBodyPitchWeight, -1f, 1f);
+                case MinecraftParrotPose.Sitting:
+                case MinecraftParrotPose.Party:
+                default:
+                    return McBodyXRot;
             }
         }
 

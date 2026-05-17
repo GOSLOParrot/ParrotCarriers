@@ -272,6 +272,7 @@ def _copy_user_explicit_source_meta(obs: Observation) -> dict[str, Any]:
         "source_url",
         "source_description",
         "fact_text",
+        "graphiti_raw",
         "evidence_id",
         "evidence_kind",
         "evidence_status",

@@ -27,6 +27,11 @@ from parrot.shared.tiers import (
 logger = logging.getLogger(__name__)
 
 _WRITER = "brain.session_policy"
+_GOSLO_PLACED_KEY = "session/goslo_placed"
+_FIRST_GREETING_SENT_KEY = "session/first_greeting_sent"
+_PRE_PLACEMENT_REPLY_REASONS = {
+    "onGosloPlaced",
+}
 
 
 @dataclass(frozen=True)
@@ -146,16 +151,99 @@ def is_silent_session() -> bool:
     return current_capability_mode() == AppCapabilityMode.SESSION_ONLY_SILENT
 
 
+def _write_session_policy_key(key: str, value: Any, source: str) -> None:
+    try:
+        bb = open_bb_client(name=f"session_policy.{source or 'write'}", writer=_WRITER)
+        bb.set(key, value)
+        try:
+            from parrot.brain.bb_watchers import fire_watcher
+
+            fire_watcher(key, value)
+        except Exception:
+            logger.debug(
+                "session_policy: watcher fan-out skipped for %s",
+                key,
+                exc_info=True,
+            )
+    except Exception:
+        logger.exception("session_policy: failed to write %s", key)
+
+
+def set_goslo_placed(placed: bool, source: str = "") -> None:
+    """Record whether AR placement is complete for proactive speech gates."""
+    _write_session_policy_key(_GOSLO_PLACED_KEY, bool(placed), source or "placement")
+
+
+def is_goslo_placed(default: bool = False) -> bool:
+    """Read the AR placement gate for this LiveKit session."""
+    try:
+        bb = open_bb_client(name="session_policy.placement.read", writer=None)
+        return bool(bb.get(_GOSLO_PLACED_KEY))
+    except Exception:
+        return default
+
+
+def set_first_greeting_sent(sent: bool, source: str = "") -> None:
+    """Record whether the placement-gated first greeting has already fired."""
+    _write_session_policy_key(
+        _FIRST_GREETING_SENT_KEY,
+        bool(sent),
+        source or "first_greeting",
+    )
+
+
+def first_greeting_sent(default: bool = False) -> bool:
+    """Read the first-greeting dedupe flag for this LiveKit session."""
+    try:
+        bb = open_bb_client(name="session_policy.first_greeting.read", writer=None)
+        return bool(bb.get(_FIRST_GREETING_SENT_KEY))
+    except Exception:
+        return default
+
+
+def _allows_pre_placement_reply(reason: str) -> bool:
+    text = str(reason or "").strip()
+    if text in _PRE_PLACEMENT_REPLY_REASONS:
+        return True
+    return text.startswith("safety.")
+
+
 def should_generate_reply(reason: str = "") -> bool:
     """Central gate for server-initiated speech.
 
     reason: SessionOnlySilent keeps the LiveKit room alive for 2DWorkspace,
     heartbeats, and menu traffic, but it must suppress greetings, scheduler
     reports, trigger notifications, and other proactive ``generate_reply``
-    calls. User audio is blocked on Unity as a separate media gate.
+    calls. Before Unity confirms AR placement, the same central gate keeps C4
+    injections and background task notices quiet so the LiveKit connection
+    itself cannot steal the first turn. User audio is blocked on Unity as a
+    separate media gate.
     """
     if is_silent_session():
         logger.info("session_policy: suppress generate_reply (%s)", reason or "silent")
+        return False
+    if not _allows_pre_placement_reply(reason) and not is_goslo_placed():
+        logger.info(
+            "session_policy: suppress generate_reply before placement (%s)",
+            reason or "pre_placement",
+        )
+        return False
+    return True
+
+
+def should_stage_context_notice(reason: str = "") -> bool:
+    """Gate non-speaking C3 / IntentWorkspace notices.
+
+    Placement is a speech boundary, not a memory boundary: pre-placement visual
+    evidence and state hints may still be staged quietly so GOSLO can use them
+    on a later user turn. SessionOnlySilent remains stricter and suppresses
+    model-facing notices as well as speech.
+    """
+    if is_silent_session():
+        logger.info(
+            "session_policy: suppress context notice (%s)",
+            reason or "silent",
+        )
         return False
     return True
 
@@ -164,8 +252,13 @@ __all__ = [
     "SessionCapabilityProfile",
     "apply_capability_mode",
     "current_capability_mode",
+    "first_greeting_sent",
+    "is_goslo_placed",
     "is_silent_session",
     "parse_capability_mode",
     "profile_for_mode",
+    "set_first_greeting_sent",
+    "set_goslo_placed",
     "should_generate_reply",
+    "should_stage_context_notice",
 ]

@@ -572,6 +572,74 @@ def build_app(
 
         return apply_ref_binding(payload or {})
 
+    @app.get("/api/memory/identity-ref-index")
+    async def memory_identity_ref_index(limit: int = 80) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import memory_identity_ref_index_snapshot
+
+        return memory_identity_ref_index_snapshot(limit=limit)
+
+    @app.post("/api/memory/identity-ref-index/draft")
+    async def memory_identity_ref_index_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_memory_identity_ref_index
+
+        return draft_memory_identity_ref_index(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/apply")
+    async def memory_identity_ref_index_apply(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_memory_identity_ref_index
+
+        return apply_memory_identity_ref_index(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/verify")
+    async def memory_identity_ref_index_verify(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import verify_memory_identity_ref_index
+
+        return verify_memory_identity_ref_index(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/resolve-graphiti")
+    async def memory_identity_ref_index_resolve_graphiti(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import resolve_graphiti_identity_ref_index
+
+        return resolve_graphiti_identity_ref_index(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/apply-graphiti-edge")
+    async def memory_identity_ref_index_apply_graphiti_edge(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_graphiti_identity_ref_edge
+
+        return await apply_graphiti_identity_ref_edge(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/ref-scan-plan")
+    async def memory_identity_ref_index_ref_scan_plan(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_memory_ref_scan_plan
+
+        return draft_memory_ref_scan_plan(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/ref-scan-dispatch")
+    async def memory_identity_ref_index_ref_scan_dispatch(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import dispatch_memory_ref_scan_plan
+
+        return await dispatch_memory_ref_scan_plan(payload or {})
+
+    @app.get("/api/memory/identity-ref-index/ref-scan-results")
+    async def memory_identity_ref_index_ref_scan_results(limit: int = 20) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import memory_ref_scan_result_history
+
+        return await memory_ref_scan_result_history(limit=limit)
+
     @app.post("/api/l15/obsidian-node/draft")
     async def l15_obsidian_node_draft(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -712,6 +780,22 @@ def build_app(
 
         return await google_calendar_result_history(limit=limit)
 
+    @app.post("/api/google/calendar/api-fetch")
+    async def google_calendar_api_fetch(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import fetch_google_calendar_api
+
+        return await fetch_google_calendar_api(payload or {})
+
+    @app.post("/api/google/calendar/nanobot-fetch")
+    async def google_calendar_nanobot_fetch(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import fetch_google_calendar_nanobot
+
+        return await fetch_google_calendar_nanobot(payload or {})
+
     @app.post("/api/google/calendar/import-draft")
     async def google_calendar_import_draft(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -754,6 +838,7 @@ def build_app(
                 query=str(body.get("query") or ""),
                 partition=str(body.get("partition") or "goslo"),
                 limit=body.get("limit") or 5,
+                focal_node_uuid=str(body.get("focal_node_uuid") or ""),
             )
         ).as_json()
 
@@ -768,6 +853,10 @@ def build_app(
             query=str(body.get("query") or ""),
             partition=str(body.get("partition") or "goslo"),
             limit=body.get("limit") or 8,
+            strategy=str(body.get("strategy") or "hybrid"),
+            depth=body.get("depth") or 1,
+            expansion_limit=body.get("expansion_limit") or 3,
+            focal_node_uuid=str(body.get("focal_node_uuid") or ""),
         )
 
     @app.post("/api/graphiti/subgraph/export-draft")

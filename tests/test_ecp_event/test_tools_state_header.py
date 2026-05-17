@@ -41,6 +41,24 @@ def test_animate_imports_and_calls_attach_state_header():
     assert "attach_state_header(result)" in src
 
 
+def test_perch_to_finger_uses_ecp_rpc_and_state_header():
+    src = _read("perch_to_finger.py")
+    assert "from parrot.brain.tools._state_context import attach_state_header" in src
+    assert "EcpCommandKind.PERCH_TO_FINGER" in src
+    assert 'method="perchToFinger"' in src
+    assert '"anchor": "index_finger_middle_segment"' in src
+    assert "attach_state_header(result)" in src
+
+
+def test_return_to_view_uses_ecp_rpc_and_state_header():
+    src = _read("return_to_view.py")
+    assert "from parrot.brain.tools._state_context import attach_state_header" in src
+    assert "EcpCommandKind.RETURN_TO_VIEW" in src
+    assert 'method="returnToView"' in src
+    assert '"anchor": "camera_view_center"' in src
+    assert "attach_state_header(result)" in src
+
+
 def test_set_video_tier_imports_and_calls_attach_state_header():
     src = _read("set_video_tier.py")
     assert "from parrot.brain.tools._state_context import attach_state_header" in src

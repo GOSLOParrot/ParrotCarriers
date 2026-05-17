@@ -12,9 +12,11 @@ import os
 import time
 import uuid
 from dataclasses import fields, is_dataclass
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 _TRIGGER_EVENT_HINTS: dict[str, list[dict[str, Any]]] = {
@@ -477,6 +479,608 @@ def apply_ref_binding(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     )
 
 
+def memory_identity_ref_index_snapshot(limit: int = 80) -> dict[str, Any]:
+    """Read the Web-first CORE-015 IdentityMap/RefIndex candidate store."""
+
+    from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
+
+    bounded = max(1, min(int(limit or 80), 300))
+    index = MemoryIdentityRefIndex()
+    return _receipt(
+        action="memory.identity_ref_index.snapshot",
+        success=True,
+        dry_run=True,
+        operator_mode=False,
+        data={
+            **index.snapshot(limit=bounded),
+            "core_candidate": "CORE-015",
+            "shared_status": "candidate_only",
+            "policy": (
+                "Read-only Web review surface. IdentityMap owns UUID equivalence; "
+                "RefIndex owns mutable locators; Graphiti Episodes remain provenance."
+            ),
+        },
+    )
+
+
+def draft_memory_identity_ref_index(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft a durable IdentityMap/RefIndex upsert without writing the store."""
+
+    from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    if not _identity_ref_payload_has_signal(body):
+        return _receipt(
+            action="memory.identity_ref_index.draft",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "error": "missing_identity_or_ref_signal",
+                "required_any_of": [
+                    "canonical_uuid",
+                    "l2b_uuid",
+                    "graphiti_uuid",
+                    "graphiti_entity_uuid",
+                    "graphiti_edge_uuid",
+                    "graphiti_episode_uuid",
+                    "obsidian_uuid",
+                    "provider_key",
+                    "ref_id",
+                    "locator",
+                    "path",
+                    "url",
+                ],
+                "core_candidate": "CORE-015",
+            },
+        )
+
+    index = MemoryIdentityRefIndex()
+    identity, ref = index.upsert(body)
+    return _receipt(
+        action="memory.identity_ref_index.draft",
+        success=True,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            "identity_draft": identity.to_dict(),
+            "ref_draft": ref.to_dict() if ref is not None else None,
+            "merge_report": index.last_upsert_report,
+            "merge_policy": index.last_upsert_report.get("merge_policy", ""),
+            "conflicts": index.last_upsert_report.get("conflicts", []),
+            "conflict_count": index.last_upsert_report.get("conflict_count", 0),
+            "would_save_path": str(index.path),
+            "would_persist": False,
+            "apply_route": "/api/memory/identity-ref-index/apply",
+            "core_candidate": "CORE-015",
+            "shared_status": "candidate_only",
+            "write_path": "MemoryIdentityRefIndex.upsert(payload).save()",
+            "policy": (
+                "Draft only. This does not mutate L2-B, Graphiti/FalkorDB, "
+                "Obsidian, ECS files, or App DTOs."
+            ),
+        },
+    )
+
+
+def apply_memory_identity_ref_index(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Apply a CORE-015 IdentityMap/RefIndex upsert under Web operator mode."""
+
+    from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    draft = draft_memory_identity_ref_index(
+        {**body, "dry_run": dry_run, "operator_mode": operator_mode}
+    )
+    draft["action"] = "memory.identity_ref_index.apply"
+    if not draft.get("success"):
+        return draft
+    if dry_run or not operator_mode:
+        draft["data"]["would_persist"] = True
+        draft["data"]["apply_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        return draft
+
+    index = MemoryIdentityRefIndex()
+    identity, ref = index.upsert(body)
+    index.save()
+    return _receipt(
+        action="memory.identity_ref_index.apply",
+        success=True,
+        dry_run=False,
+        operator_mode=True,
+        data={
+            "identity": identity.to_dict(),
+            "ref": ref.to_dict() if ref is not None else None,
+            "merge_report": index.last_upsert_report,
+            "merge_policy": index.last_upsert_report.get("merge_policy", ""),
+            "conflicts": index.last_upsert_report.get("conflicts", []),
+            "conflict_count": index.last_upsert_report.get("conflict_count", 0),
+            "snapshot": index.snapshot(limit=80),
+            "mutated": True,
+            "mutation_scope": "memory_identity_ref_index_json_only",
+            "direct_l2b_write": False,
+            "direct_graphiti_write": False,
+            "direct_file_move": False,
+            "app_dto": False,
+            "core_candidate": "CORE-015",
+            "shared_status": "candidate_only",
+        },
+    )
+
+
+def verify_memory_identity_ref_index(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Verify IdentityRefIndex ref health without touching external systems."""
+
+    from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    update_index = _body_bool(body.get("update_index"), False)
+    should_update = bool(update_index and not dry_run and operator_mode)
+    index = MemoryIdentityRefIndex()
+    result = index.verify(
+        graphiti_uuid_statuses=_bool_status_map(body.get("graphiti_uuid_statuses")),
+        obsidian_uuid_statuses=_bool_status_map(body.get("obsidian_uuid_statuses")),
+        update=should_update,
+    )
+    if should_update:
+        index.save()
+    return _receipt(
+        action="memory.identity_ref_index.verify",
+        success=True,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            **result,
+            "path": str(index.path),
+            "would_update_index": update_index,
+            "updated_index": should_update,
+            "apply_skipped_reason": (
+                "" if should_update or not update_index else "dry_run_or_operator_mode_missing"
+            ),
+            "core_candidate": "CORE-015",
+            "shared_status": "candidate_only",
+            "policy": (
+                "Deterministic verifier: local paths are checked directly; URLs, ECS, "
+                "and remote UUIDs are unknown unless an explicit status map is supplied."
+            ),
+        },
+    )
+
+
+def resolve_graphiti_identity_ref_index(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Resolve Graphiti fact endpoints through CORE-015 without graph mutation."""
+
+    from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
+
+    body = payload or {}
+    index = MemoryIdentityRefIndex()
+    result = index.resolve_graphiti_subgraph(body)
+    has_edges = bool(result.get("edge_count"))
+    return _receipt(
+        action="memory.identity_ref_index.resolve_graphiti",
+        success=has_edges,
+        dry_run=True,
+        operator_mode=False,
+        data={
+            **result,
+            "path": str(index.path),
+            "core_candidate": "CORE-015",
+            "shared_status": "candidate_only",
+            "mutated": False,
+            "direct_l2b_write": False,
+            "direct_graphiti_write": False,
+            "direct_file_move": False,
+            "app_dto": False,
+            "apply_route": "/api/memory/identity-ref-index/apply-graphiti-edge",
+            "low_level_apply_route": "/api/l2b/edge",
+            "apply_preconditions": {
+                "dry_run": False,
+                "operator_mode": True,
+                "source": "resolved_l2b",
+                "target": "resolved_l2b",
+            },
+            "error": "" if has_edges else "missing_graphiti_edge_signal",
+            "policy": (
+                "Read-only GraphitiResolver preview. It resolves endpoints "
+                "through IdentityRefIndex and never materializes L2-B edges."
+            ),
+        },
+    )
+
+
+async def apply_graphiti_identity_ref_edge(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Materialize one resolved Graphiti fact edge into the L2-B graph.
+
+    This is the operator path for the CORE-015 GraphitiResolver preview. It
+    deliberately re-resolves the Graphiti endpoints before writing, then uses
+    the existing ``apply_l2b_edge`` / ``L2BGraph.connect`` path so RustWorkX
+    topology ownership stays in one place.
+    """
+
+    from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    index = MemoryIdentityRefIndex()
+    resolver_result = index.resolve_graphiti_subgraph(body)
+    selected_edge = _select_resolved_graphiti_edge(resolver_result, body)
+    if selected_edge is None:
+        error = (
+            "selected_graphiti_edge_not_found"
+            if resolver_result.get("edge_count") and _graphiti_edge_index_requested(body)
+            else "missing_graphiti_edge_signal"
+        )
+        return _receipt(
+            action="memory.identity_ref_index.apply_graphiti_edge",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                **resolver_result,
+                "path": str(index.path),
+                "error": error,
+                "core_candidate": "CORE-015",
+                "shared_status": "candidate_only",
+                "mutated": False,
+                "direct_l2b_write": False,
+                "direct_graphiti_write": False,
+                "direct_file_move": False,
+                "app_dto": False,
+            },
+        )
+
+    if selected_edge.get("can_materialize_l2b_edge") is not True:
+        return _receipt(
+            action="memory.identity_ref_index.apply_graphiti_edge",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "path": str(index.path),
+                "resolver": resolver_result,
+                "selected_edge": selected_edge,
+                "selected_edge_index": selected_edge.get("index", 0),
+                "error": "unresolved_graphiti_edge_endpoints",
+                "blocked_reasons": selected_edge.get("blocked_reasons") or [],
+                "would_apply": False,
+                "mutated": False,
+                "direct_l2b_write": False,
+                "direct_graphiti_write": False,
+                "direct_file_move": False,
+                "app_dto": False,
+                "core_candidate": "CORE-015",
+                "shared_status": "candidate_only",
+                "policy": "L2-B edge materialization requires resolved_l2b source and target.",
+            },
+        )
+
+    l2b_payload = _graphiti_l2b_edge_apply_payload(body, resolver_result, selected_edge)
+    l2b_apply = await apply_l2b_edge(
+        {**l2b_payload, "dry_run": dry_run, "operator_mode": operator_mode}
+    )
+    l2b_data = l2b_apply.get("data") if isinstance(l2b_apply.get("data"), dict) else {}
+    connected = bool(l2b_apply.get("success") and l2b_data.get("connected") is True)
+    skipped_reason = str(l2b_data.get("apply_skipped_reason") or "")
+    write_failed = bool(
+        operator_mode
+        and not dry_run
+        and not connected
+        and not l2b_data.get("would_apply")
+    )
+    return _receipt(
+        action="memory.identity_ref_index.apply_graphiti_edge",
+        success=bool(l2b_apply.get("success")),
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            "path": str(index.path),
+            "resolver": resolver_result,
+            "selected_edge": selected_edge,
+            "selected_edge_index": selected_edge.get("index", 0),
+            "l2b_edge_payload": l2b_payload,
+            "l2b_apply_receipt": l2b_apply,
+            "would_apply": bool(l2b_data.get("would_apply")),
+            "apply_skipped_reason": skipped_reason,
+            "connected": connected,
+            "mutated": connected,
+            "mutation_scope": "l2b_rustworkx_graph_only" if connected else "none",
+            "direct_l2b_write": connected,
+            "direct_graphiti_write": False,
+            "direct_file_move": False,
+            "app_dto": False,
+            "error": "l2b_edge_connect_failed" if write_failed else "",
+            "core_candidate": "CORE-015",
+            "shared_status": "candidate_only",
+            "operator_required_for_execute": True,
+            "write_path": (
+                "MemoryIdentityRefIndex.resolve_graphiti_subgraph -> "
+                "apply_l2b_edge -> L2BGraph.connect(SemanticEdge)"
+            ),
+        },
+    )
+
+
+def draft_memory_ref_scan_plan(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft a Nanobot/MCP ref scan job for CORE-015 managed refs.
+
+    The route is intentionally plan-only. It does not stat files, call remote
+    ECS, query Graphiti, or write the proposed manifest. Nanobot can later run
+    this contract through MCP tools and report results back for operator review.
+    """
+
+    from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
+
+    body = payload or {}
+    limit, limit_error = _body_int_limit(body.get("limit"), default=80, maximum=300)
+    if limit_error:
+        return _receipt(
+            action="memory.identity_ref_index.ref_scan_plan",
+            success=False,
+            dry_run=True,
+            operator_mode=False,
+            data={
+                "error": "invalid_limit",
+                "limit_error": limit_error,
+                "core_candidate": "CORE-015",
+                "shared_status": "candidate_only",
+                "mutated": False,
+            },
+        )
+
+    index = MemoryIdentityRefIndex()
+    manifest_path = _ref_scan_manifest_path(body.get("manifest_path"))
+    git_root = _ref_scan_git_root(body.get("git_root"))
+    result_channel = str(body.get("result_channel") or "memory_ref_scan_result")
+    remote_checks = _ref_scan_remote_checks(body)
+    ecs_local_check_confirmed = _body_bool(body.get("ecs_local_check_confirmed"), False)
+    refs = sorted(
+        index.refs.values(),
+        key=lambda item: (str(getattr(item, "kind", "")), str(getattr(item, "ref_id", ""))),
+    )[:limit]
+    rows = [
+        _ref_scan_plan_row(ref, index=index, manifest_path=manifest_path)
+        for ref in refs
+    ]
+    counts = _ref_scan_counts(rows)
+    scan_id = f"refscan_{uuid.uuid4().hex[:12]}"
+    params = {
+        "scan_id": scan_id,
+        "schema_version": 1,
+        "source": "web_console",
+        "dry_run": True,
+        "source_index_path": str(index.path),
+        "manifest_path": str(manifest_path),
+        "git_root": str(git_root),
+        "limit": limit,
+        "result_channel": result_channel,
+        "scan_mode": "read_only",
+        "allow_mutation": False,
+        "remote_checks": remote_checks,
+        "enable_url_check": "url" in remote_checks,
+        "enable_ecs_local_check": "ecs" in remote_checks and ecs_local_check_confirmed,
+        "ecs_local_check_confirmed": ecs_local_check_confirmed,
+        "enable_graphiti_probe": "graphiti" in remote_checks,
+        "network_timeout_s": _body_float(body.get("network_timeout_s"), 3.0),
+        "operator_review_required_for_repair": True,
+        "refs": [_ref_scan_task_ref(row) for row in rows],
+        "allowed_ops": [
+            "identity_ref_index_read",
+            "filesystem_stat",
+            "filesystem_hash",
+            "http_head",
+            "ecs_path_stat",
+            "git_manifest_diff",
+            "graphiti_uuid_probe",
+            "obsidian_frontmatter_uuid_probe",
+        ],
+        "disallowed_ops": [
+            "file_move",
+            "file_delete",
+            "manifest_write",
+            "identity_ref_index_write",
+            "graphiti_mutation",
+            "l2b_mutation",
+            "ecs_write",
+        ],
+    }
+    return _receipt(
+        action="memory.identity_ref_index.ref_scan_plan",
+        success=True,
+        dry_run=True,
+        operator_mode=False,
+        data={
+            "task_type": "ref_scan",
+            "priority": str(body.get("priority") or "normal"),
+            "params": params,
+            "ref_scan_plan": rows,
+            "counts": counts,
+            "source_index_path": str(index.path),
+            "git_manifest": {
+                "manifest_path": str(manifest_path),
+                "git_root": str(git_root),
+                "diff_policy": "compare_previous_manifest_and_git_status",
+                "write_policy": "propose_manifest_delta_only",
+                "apply_policy": "operator_review_then_git_commit",
+                "nanobot_may_write": False,
+            },
+            "result_flow": (
+                "Web draft -> Scheduler/Nanobot ref_scan -> MCP checks -> "
+                f"{result_channel} -> IdentityRefIndex verify/apply review"
+            ),
+            "operator_required_for_dispatch": True,
+            "dispatch_route": "/api/memory/identity-ref-index/ref-scan-dispatch",
+            "result_history_route": "/api/memory/identity-ref-index/ref-scan-results",
+            "preserved_ref_fields": [
+                "ref_id",
+                "kind",
+                "canonical_uuid",
+                "canonical_uri",
+                "locators",
+                "content_hash",
+                "size",
+                "mime_type",
+                "version",
+                "valid_from",
+                "valid_to",
+                "health",
+                "managed_by",
+                "git_commit",
+                "meta",
+            ],
+            "mutated": False,
+            "direct_l2b_write": False,
+            "direct_graphiti_write": False,
+            "direct_file_move": False,
+            "direct_ecs_write": False,
+            "app_dto": False,
+            "remote_checks": remote_checks,
+            "remote_check_policy": {
+                "default": "disabled",
+                "enabled_by_operator": remote_checks,
+                "mutation_allowed": False,
+                "graphiti_lookup_mode": "search_probe_until_uuid_crud_route_exists",
+                "ecs_mode": "local_read_only_stat_when_worker_runs_on_ecs",
+                "url_mode": "HEAD_only_no_body_read",
+            },
+            "core_candidate": "CORE-015",
+            "shared_status": "candidate_only",
+            "policy": (
+                "Plan-only contract. It classifies refs and proposes Nanobot/MCP "
+                "checks but performs no IO beyond reading the IdentityRefIndex."
+            ),
+        },
+    )
+
+
+async def dispatch_memory_ref_scan_plan(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Dispatch a read-only CORE-015 ref scan task under operator mode."""
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    draft = draft_memory_ref_scan_plan(body)
+    draft["action"] = "memory.identity_ref_index.ref_scan_dispatch"
+    draft["dry_run"] = dry_run
+    draft["operator_mode"] = operator_mode
+    if not draft.get("success"):
+        return draft
+    if dry_run or not operator_mode:
+        draft["data"]["would_dispatch"] = True
+        draft["data"]["dispatch_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        return draft
+
+    try:
+        from parrot.brain.tools.dispatch_task import do_dispatch_task
+
+        params = dict(draft["data"]["params"])
+        params["scan_mode"] = "read_only"
+        params["allow_mutation"] = False
+        task_id = await do_dispatch_task(
+            "ref_scan",
+            params=params,
+            priority=draft["data"]["priority"],
+        )
+        return _receipt(
+            action="memory.identity_ref_index.ref_scan_dispatch",
+            success=True,
+            dry_run=False,
+            operator_mode=True,
+            data={
+                **draft["data"],
+                "params": params,
+                "task_id": task_id,
+                "dispatched": True,
+                "mutation_scope": "scheduler_nanobot_queue_only",
+                "mutated": False,
+                "direct_l2b_write": False,
+                "direct_graphiti_write": False,
+                "direct_file_move": False,
+                "direct_ecs_write": False,
+                "app_dto": False,
+                "result_history_route": "/api/memory/identity-ref-index/ref-scan-results",
+            },
+        )
+    except Exception as exc:
+        return _receipt(
+            action="memory.identity_ref_index.ref_scan_dispatch",
+            success=False,
+            dry_run=False,
+            operator_mode=True,
+            data={**draft["data"], "error": f"{type(exc).__name__}: {exc}"},
+        )
+
+
+async def memory_ref_scan_result_history(limit: int = 20) -> dict[str, Any]:
+    """Read recent Scheduler-ledger results for CORE-015 ref scan tasks."""
+
+    limit, limit_error = _body_int_limit(limit, default=20, maximum=50)
+    if limit_error:
+        return _receipt(
+            action="memory.identity_ref_index.ref_scan_results",
+            success=False,
+            dry_run=True,
+            operator_mode=False,
+            data={"rows": [], "error": limit_error},
+        )
+
+    from parrot.shared.constants import CH_TRIGGER_RESULTS, STREAM_TRIGGER_RESULTS
+
+    try:
+        from parrot.shared.redis_client import get_redis
+
+        redis = await get_redis()
+        raw_rows = await redis.xrevrange(STREAM_TRIGGER_RESULTS, count=limit * 3)
+    except Exception as exc:
+        return _receipt(
+            action="memory.identity_ref_index.ref_scan_results",
+            success=True,
+            dry_run=True,
+            operator_mode=False,
+            data={
+                "available": False,
+                "stream": STREAM_TRIGGER_RESULTS,
+                "channel": CH_TRIGGER_RESULTS,
+                "rows": [],
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        )
+
+    rows: list[dict[str, Any]] = []
+    for stream_id, fields in raw_rows:
+        if not isinstance(fields, dict):
+            continue
+        row = _ref_scan_result_history_row(str(stream_id), fields)
+        if row:
+            rows.append(row)
+        if len(rows) >= limit:
+            break
+
+    return _receipt(
+        action="memory.identity_ref_index.ref_scan_results",
+        success=True,
+        dry_run=True,
+        operator_mode=False,
+        data={
+            "available": True,
+            "stream": STREAM_TRIGGER_RESULTS,
+            "channel": CH_TRIGGER_RESULTS,
+            "rows": rows,
+            "count": len(rows),
+            "read_model": "Scheduler trigger-result ledger",
+            "result_channel": "memory_ref_scan_result",
+            "web_only": True,
+            "apply_policy": "operator_review_then_identity_ref_verify_or_apply",
+        },
+    )
+
+
 def scan_obsidian_vault(payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Scan an Obsidian vault and preview L1.5-ready note payloads.
 
@@ -603,6 +1207,12 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
     edge_drafts = [
         row for row in export_data.get("edge_drafts", []) if isinstance(row, dict)
     ]
+    raw_envelopes = [
+        row for row in export_data.get("graphiti_raw_envelopes", []) if isinstance(row, dict)
+    ]
+    identity_ref_drafts = [
+        row for row in export_data.get("identity_ref_drafts", []) if isinstance(row, dict)
+    ]
     item_ids = [
         str(
             row.get("graphiti_uuid")
@@ -662,6 +1272,9 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
             "selected_count": len(observations),
             "observations": observations,
             "edge_drafts": edge_drafts,
+            "graphiti_raw_envelopes": raw_envelopes,
+            "identity_ref_drafts": identity_ref_drafts,
+            "identity_ref_write_policy": export_data.get("identity_ref_write_policy", ""),
             "subgraph": export_data.get("subgraph", {}),
             "export_write_path": export_data.get(
                 "write_path",
@@ -686,7 +1299,7 @@ def draft_graphiti_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
                 "edge_apply": "separate L2-B edge route after node UUID resolution",
             },
             "warnings": list(export_data.get("warnings") or []),
-            "core_candidates": ["CORE-008", "CORE-013"],
+            "core_candidates": ["CORE-008", "CORE-013", "CORE-015"],
             "requested_execution": requested_execution,
             "policy_receipt_id": ((policy_receipt or {}).get("receipt") or {}).get(
                 "receipt_id",
@@ -1077,6 +1690,194 @@ async def google_calendar_result_history(limit: int = 20) -> dict[str, Any]:
             "count": len(rows),
             "read_model": "Scheduler trigger-result ledger",
             "web_only": True,
+        },
+    )
+
+
+async def fetch_google_calendar_api(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Fetch Google Calendar events directly through OAuth2 + official API.
+
+    This read path exists for the Web Console test bench. It does not replace
+    the Scheduler -> Nanobot -> Google Workspace MCP task path, but it lets an
+    operator verify real Calendar bytes without requiring a local Redis result
+    ledger to be running.
+    """
+
+    body = payload or {}
+    limit, limit_error = _body_int_limit(body.get("limit"), default=20, maximum=50)
+    if limit_error:
+        return _receipt(
+            action="google.calendar.api_fetch",
+            success=False,
+            dry_run=False,
+            operator_mode=False,
+            data={"available": False, "events": [], "error": limit_error},
+        )
+
+    calendar_id = str(body.get("calendar_id") or body.get("calendarId") or "primary")
+    timezone_name = str(body.get("timezone") or "Asia/Shanghai")
+    time_min, time_max = _calendar_time_window(body, timezone_name=timezone_name)
+    show_deleted = _body_bool(body.get("show_deleted"), False)
+
+    try:
+        api_result = await _fetch_google_calendar_events_from_api(
+            calendar_id=calendar_id,
+            time_min=time_min,
+            time_max=time_max,
+            limit=limit,
+            show_deleted=show_deleted,
+        )
+    except Exception as exc:
+        return _receipt(
+            action="google.calendar.api_fetch",
+            success=False,
+            dry_run=False,
+            operator_mode=False,
+            data={
+                "available": False,
+                "calendar_id": calendar_id,
+                "time_min": time_min,
+                "time_max": time_max,
+                "events": [],
+                "error": f"{type(exc).__name__}: {exc}",
+                "read_model": "Google Calendar API events.list via OAuth2",
+            },
+        )
+
+    raw_events = [
+        {**dict(item), "calendar_id": str(item.get("calendar_id") or calendar_id)}
+        for item in api_result.get("items", [])
+        if isinstance(item, dict)
+    ]
+    preview = preview_google_calendar_events({"events": raw_events})
+    preview_data = dict(preview.get("data") or {})
+    return _receipt(
+        action="google.calendar.api_fetch",
+        success=True,
+        dry_run=False,
+        operator_mode=False,
+        data={
+            "available": True,
+            "calendar_id": calendar_id,
+            "time_min": time_min,
+            "time_max": time_max,
+            "timezone": timezone_name,
+            "count": len(raw_events),
+            "events": raw_events,
+            "normalized_events": preview_data.get("normalized_events", []),
+            "observations": preview_data.get("observations", []),
+            "mapping_rows": preview_data.get("mapping_rows", []),
+            "next_sync_token_present": bool(api_result.get("nextSyncToken")),
+            "next_page_token_present": bool(api_result.get("nextPageToken")),
+            "credential_source": api_result.get("credential_source", "google_workspace_mcp"),
+            "read_model": "Google Calendar API events.list via OAuth2",
+            "write_path": preview_data.get(
+                "write_path",
+                "CalendarTrigger -> TriggerOutcome.commit_observations -> L15Pool.admit",
+            ),
+            "operator_required_for_import": True,
+            "apply_route": "/api/google/calendar/import",
+            "source_kind": "google_calendar_api",
+        },
+    )
+
+
+async def fetch_google_calendar_nanobot(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Fetch Google Calendar events through the ECS Nanobot MCP path.
+
+    This is the Web Console's true remote smoke test: Web -> Nanobot API ->
+    Google Workspace MCP -> Google Calendar. It is intentionally read-only and
+    does not replace the Scheduler dispatch path used by periodic triggers.
+    """
+
+    body = payload or {}
+    limit, limit_error = _body_int_limit(body.get("limit"), default=20, maximum=50)
+    if limit_error:
+        return _receipt(
+            action="google.calendar.nanobot_fetch",
+            success=False,
+            dry_run=False,
+            operator_mode=False,
+            data={"available": False, "events": [], "error": limit_error},
+        )
+
+    calendar_id = str(body.get("calendar_id") or body.get("calendarId") or "primary")
+    timezone_name = str(body.get("timezone") or "Asia/Shanghai")
+    time_min, time_max = _calendar_time_window(body, timezone_name=timezone_name)
+    account = str(
+        body.get("account")
+        or os.getenv("PARROT_WEB_CONSOLE_GOOGLE_ACCOUNT")
+        or "gosloparrot@gmail.com"
+    )
+    show_deleted = _body_bool(body.get("show_deleted"), False)
+
+    try:
+        nanobot_result = await _fetch_google_calendar_events_from_nanobot(
+            account=account,
+            calendar_id=calendar_id,
+            time_min=time_min,
+            time_max=time_max,
+            timezone_name=timezone_name,
+            limit=limit,
+            show_deleted=show_deleted,
+        )
+    except Exception as exc:
+        return _receipt(
+            action="google.calendar.nanobot_fetch",
+            success=False,
+            dry_run=False,
+            operator_mode=False,
+            data={
+                "available": False,
+                "calendar_id": calendar_id,
+                "time_min": time_min,
+                "time_max": time_max,
+                "events": [],
+                "error": f"{type(exc).__name__}: {exc}",
+                "read_model": "ECS Nanobot -> Google Workspace MCP manage_calendar",
+            },
+        )
+
+    parsed = _parse_nanobot_calendar_response(nanobot_result)
+    raw_events = [
+        {**dict(item), "calendar_id": str(item.get("calendar_id") or calendar_id)}
+        for item in parsed["events"]
+        if isinstance(item, dict)
+    ]
+    preview = preview_google_calendar_events({"events": raw_events})
+    preview_data = dict(preview.get("data") or {})
+    status = str(parsed.get("status") or "").strip().lower()
+    nanobot_success = status not in {"error", "failed", "failure"}
+    return _receipt(
+        action="google.calendar.nanobot_fetch",
+        success=nanobot_success,
+        dry_run=False,
+        operator_mode=False,
+        data={
+            "available": True,
+            "nanobot_success": nanobot_success,
+            "status": status or "unknown",
+            "account": account,
+            "calendar_id": calendar_id,
+            "time_min": time_min,
+            "time_max": time_max,
+            "timezone": timezone_name,
+            "count": len(raw_events),
+            "nanobot_event_count": parsed.get("event_count"),
+            "events": raw_events,
+            "normalized_events": preview_data.get("normalized_events", []),
+            "observations": preview_data.get("observations", []),
+            "mapping_rows": preview_data.get("mapping_rows", []),
+            "nanobot_reply": parsed.get("reply_sample", ""),
+            "parse_error": parsed.get("parse_error", ""),
+            "read_model": "ECS Nanobot -> Google Workspace MCP manage_calendar",
+            "write_path": preview_data.get(
+                "write_path",
+                "CalendarTrigger -> TriggerOutcome.commit_observations -> L15Pool.admit",
+            ),
+            "operator_required_for_import": True,
+            "apply_route": "/api/google/calendar/import",
+            "source_kind": "google_calendar_nanobot",
         },
     )
 
@@ -1630,6 +2431,11 @@ async def apply_l2b_edge(payload: dict[str, Any] | None = None) -> dict[str, Any
             kind=EdgeKind(edge_data["kind"]),
             strength=float(edge_data["strength"]),
             source=str(edge_data["source"]),
+            graphiti_uuid=str(edge_data.get("graphiti_uuid") or ""),
+            source_graphiti_uuid=str(edge_data.get("source_graphiti_uuid") or ""),
+            target_graphiti_uuid=str(edge_data.get("target_graphiti_uuid") or ""),
+            ref_ids=tuple(str(item) for item in edge_data.get("ref_ids") or ()),
+            view_classes=tuple(str(item) for item in edge_data.get("view_classes") or ()),
             meta=dict(edge_data.get("meta") or {}),
         ),
     )
@@ -1680,6 +2486,11 @@ async def apply_l2b_edge_update(payload: dict[str, Any] | None = None) -> dict[s
             kind=EdgeKind(edge_data["kind"]),
             strength=float(edge_data["strength"]),
             source=str(edge_data["source"]),
+            graphiti_uuid=str(edge_data.get("graphiti_uuid") or ""),
+            source_graphiti_uuid=str(edge_data.get("source_graphiti_uuid") or ""),
+            target_graphiti_uuid=str(edge_data.get("target_graphiti_uuid") or ""),
+            ref_ids=tuple(str(item) for item in edge_data.get("ref_ids") or ()),
+            view_classes=tuple(str(item) for item in edge_data.get("view_classes") or ()),
             meta=dict(edge_data.get("meta") or {}),
         ),
         match_kind=str(draft["data"].get("match_kind") or ""),
@@ -2138,6 +2949,321 @@ def _calendar_fetch_params(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _calendar_time_window(
+    body: dict[str, Any],
+    *,
+    timezone_name: str,
+) -> tuple[str, str]:
+    time_min = str(body.get("time_min") or body.get("timeMin") or "").strip()
+    time_max = str(body.get("time_max") or body.get("timeMax") or "").strip()
+    if time_min and time_max:
+        return time_min, time_max
+
+    date_text = str(body.get("date") or "").strip()
+    try:
+        tz = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        tz = timezone.utc
+    if date_text:
+        day = datetime.fromisoformat(date_text).date()
+        start = datetime.combine(day, datetime.min.time(), tzinfo=tz)
+    else:
+        start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+    return time_min or start.isoformat(), time_max or end.isoformat()
+
+
+async def _fetch_google_calendar_events_from_api(
+    *,
+    calendar_id: str,
+    time_min: str,
+    time_max: str,
+    limit: int,
+    show_deleted: bool,
+) -> dict[str, Any]:
+    creds, source = _load_google_calendar_credentials()
+
+    def _request() -> dict[str, Any]:
+        import requests
+        from google.auth.transport.requests import Request
+
+        if not creds.valid:
+            creds.refresh(Request())
+
+        url = (
+            "https://www.googleapis.com/calendar/v3/calendars/"
+            f"{requests.utils.quote(calendar_id, safe='')}/events"
+        )
+        response = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {creds.token}"},
+            params={
+                "timeMin": time_min,
+                "timeMax": time_max,
+                "singleEvents": "true",
+                "orderBy": "startTime",
+                "maxResults": str(limit),
+                "showDeleted": "true" if show_deleted else "false",
+            },
+            timeout=20,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Google Calendar API {response.status_code}: {response.text[:240]}"
+            )
+        data = response.json()
+        if not isinstance(data, dict):
+            raise RuntimeError("Google Calendar API returned a non-object payload")
+        data["credential_source"] = source
+        return data
+
+    import asyncio
+
+    return await asyncio.to_thread(_request)
+
+
+def _load_google_calendar_credentials():
+    from google.oauth2.credentials import Credentials
+
+    path = _google_calendar_credentials_path()
+    if not path.exists():
+        raise FileNotFoundError(
+            "Google Workspace OAuth credentials not found. "
+            "Run scripts/google_oauth.py or mount ECS google-workspace credentials."
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    scopes = data.get("scopes") or str(data.get("scope") or "").split()
+    client_id = str(data.get("client_id") or os.getenv("GOOGLE_CLIENT_ID") or "")
+    client_secret = str(data.get("client_secret") or os.getenv("GOOGLE_CLIENT_SECRET") or "")
+    token_uri = str(data.get("token_uri") or "https://oauth2.googleapis.com/token")
+    token = str(data.get("token") or data.get("access_token") or "")
+    refresh_token = str(data.get("refresh_token") or "")
+    if not token or not refresh_token or not client_id or not client_secret:
+        raise RuntimeError("Google OAuth credentials are incomplete")
+
+    creds = Credentials(
+        token=token,
+        refresh_token=refresh_token,
+        token_uri=token_uri,
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=scopes or None,
+    )
+    expiry = data.get("expiry")
+    if expiry:
+        try:
+            creds.expiry = datetime.fromisoformat(str(expiry).replace("Z", "+00:00"))
+        except ValueError:
+            pass
+    elif data.get("expiry_date"):
+        try:
+            creds.expiry = datetime.fromtimestamp(float(data["expiry_date"]) / 1000.0)
+        except (TypeError, ValueError):
+            pass
+    return creds, _google_calendar_credential_source(path)
+
+
+def _google_calendar_credentials_path() -> Path:
+    configured = str(
+        os.getenv("PARROT_WEB_CONSOLE_GOOGLE_CREDENTIALS_PATH")
+        or os.getenv("GOOGLE_WORKSPACE_CREDENTIALS_PATH")
+        or ""
+    ).strip()
+    if configured:
+        return Path(configured).expanduser()
+
+    appdata = os.getenv("APPDATA")
+    candidates: list[Path] = []
+    if appdata:
+        base = Path(appdata) / "google-workspace-mcp" / "credentials"
+        candidates.extend([base / "credentials_python.json", base / "credentials.json"])
+    base = Path.home() / ".local" / "share" / "google-workspace-mcp" / "credentials"
+    candidates.extend([base / "credentials_python.json", base / "credentials.json"])
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0] if candidates else Path("credentials_python.json")
+
+
+def _google_calendar_credential_source(path: Path) -> str:
+    if os.getenv("PARROT_WEB_CONSOLE_GOOGLE_CREDENTIALS_PATH") or os.getenv(
+        "GOOGLE_WORKSPACE_CREDENTIALS_PATH"
+    ):
+        return "configured_oauth_file"
+    if "google-workspace-mcp" in {part.lower() for part in path.parts}:
+        return "local_google_workspace_mcp"
+    return "local_oauth_file"
+
+
+async def _fetch_google_calendar_events_from_nanobot(
+    *,
+    account: str,
+    calendar_id: str,
+    time_min: str,
+    time_max: str,
+    timezone_name: str,
+    limit: int,
+    show_deleted: bool,
+) -> dict[str, Any]:
+    url = _nanobot_chat_completions_url()
+    timeout_s = _env_float("PARROT_WEB_CONSOLE_NANOBOT_TIMEOUT_S", 90.0)
+    model = str(os.getenv("PARROT_WEB_CONSOLE_NANOBOT_MODEL") or "gemini-2.5-flash")
+    session_id = f"web-calendar-{uuid.uuid4().hex[:12]}"
+    prompt = _calendar_nanobot_prompt(
+        account=account,
+        calendar_id=calendar_id,
+        time_min=time_min,
+        time_max=time_max,
+        timezone_name=timezone_name,
+        limit=limit,
+        show_deleted=show_deleted,
+    )
+
+    def _request() -> dict[str, Any]:
+        import requests
+
+        response = requests.post(
+            url,
+            json={
+                "model": model,
+                "session_id": session_id,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=timeout_s,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"Nanobot API {response.status_code}: {response.text[:240]}")
+        data = response.json()
+        if not isinstance(data, dict):
+            raise RuntimeError("Nanobot API returned a non-object payload")
+        return data
+
+    import asyncio
+
+    return await asyncio.to_thread(_request)
+
+
+def _calendar_nanobot_prompt(
+    *,
+    account: str,
+    calendar_id: str,
+    time_min: str,
+    time_max: str,
+    timezone_name: str,
+    limit: int,
+    show_deleted: bool,
+) -> str:
+    return (
+        "Task: calendar_fetch. Use the google-workspace skill and the "
+        "manage_calendar MCP tool with account "
+        f"{account}. List events from calendar {calendar_id!r} between "
+        f"{time_min} and {time_max} ({timezone_name}), max {limit}. "
+        f"show_deleted={str(show_deleted).lower()}. Return only valid JSON, "
+        "no markdown, with this schema: "
+        '{"status":"success","event_count":number,"events":[{"id":str,'
+        '"calendar_id":str,"summary":str,"title":str,"start_time":str,'
+        '"end_time":str,"location":str,"description":str,"html_link":str,'
+        '"etag":str,"updated":str,"status":str,"iCalUID":str,'
+        '"objects":[str],"is_urgent":bool}],"error":str}. '
+        "Do not include OAuth tokens, authorization headers, emails other than "
+        "the configured account, or credential file paths."
+    )
+
+
+def _nanobot_chat_completions_url() -> str:
+    configured = str(
+        os.getenv("PARROT_WEB_CONSOLE_NANOBOT_API_URL")
+        or os.getenv("NANOBOT_API_URL")
+        or "http://127.0.0.1:8900/v1/chat/completions"
+    ).strip()
+    if not configured:
+        configured = "http://127.0.0.1:8900/v1/chat/completions"
+    cleaned = configured[:-1] if configured.endswith("/") else configured
+    if cleaned.endswith("/chat/completions"):
+        return cleaned
+    if cleaned.endswith("/v1"):
+        return f"{cleaned}/chat/completions"
+    return f"{cleaned}/v1/chat/completions"
+
+
+def _parse_nanobot_calendar_response(response: dict[str, Any]) -> dict[str, Any]:
+    from parrot.dsg.triggers.calendar_trigger import _extract_event_list, _loads_jsonish
+
+    content = _nanobot_message_content(response)
+    parsed = _loads_jsonish(content) if content else response
+    parse_error = ""
+    if content and parsed == [] and content.strip() not in {"[]", "```json\n[]\n```", "```[]```"}:
+        parse_error = "nanobot_reply_not_json"
+    events = [
+        dict(item)
+        for item in _extract_event_list(parsed)
+        if isinstance(item, dict)
+    ]
+    status = ""
+    event_count: int | None = None
+    if isinstance(parsed, dict):
+        status = str(parsed.get("status") or parsed.get("state") or "")
+        try:
+            event_count = int(parsed["event_count"]) if "event_count" in parsed else None
+        except (TypeError, ValueError):
+            event_count = None
+    elif isinstance(parsed, list):
+        status = "success"
+        event_count = len(events)
+    if event_count is None:
+        event_count = len(events)
+    return {
+        "status": status or ("success" if events or not parse_error else "error"),
+        "event_count": event_count,
+        "events": events,
+        "reply_sample": _redact_secret_text(content)[:2000] if parse_error else "",
+        "parse_error": parse_error,
+    }
+
+
+def _nanobot_message_content(response: dict[str, Any]) -> str:
+    choices = response.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, dict):
+            message = first.get("message")
+            if isinstance(message, dict):
+                content = message.get("content")
+                if isinstance(content, str):
+                    return content
+            text = first.get("text")
+            if isinstance(text, str):
+                return text
+    for key in ("content", "result", "reply", "message"):
+        value = response.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _redact_secret_text(value: str) -> str:
+    text = str(value or "")
+    secret_patterns = (
+        r'(?i)("?(?:access_token|refresh_token|id_token|client_secret|authorization|api_key)"?\s*[:=]\s*)("[^"]+"|[^\s,}]+)',
+        r"(?i)(bearer\s+)[a-z0-9._~+/=-]+",
+        r"(?i)(ya29\.)[a-z0-9._~+/=-]+",
+        r"(?i)(sk-)[a-z0-9._-]+",
+    )
+    import re
+
+    redacted = text
+    for pattern in secret_patterns:
+        redacted = re.sub(pattern, r"\1<redacted>", redacted)
+    return redacted
+
+
 def _calendar_mapping_rows(
     events: list[dict[str, Any]],
     observations: list[Any],
@@ -2282,6 +3408,116 @@ def _calendar_event_start(event: dict[str, Any]) -> str:
     return str(event.get("start_time") or start or "")
 
 
+def _ref_scan_result_history_row(
+    stream_id: str,
+    fields: dict[str, Any],
+) -> dict[str, Any] | None:
+    payload = _load_result_payload(fields.get("payload"))
+    result_channel = str(
+        payload.get("type")
+        or fields.get("result_channel")
+        or ""
+    )
+    if result_channel != "memory_ref_scan_result":
+        return None
+
+    result_body = _ref_scan_result_body(payload.get("result"))
+    ref_results = _ref_scan_result_rows(result_body)
+    manifest_delta = _ref_scan_manifest_delta(result_body)
+    warnings = _ref_scan_warnings(result_body)
+    return {
+        "stream_id": stream_id,
+        "created_at": _body_float(fields.get("created_at"), 0.0),
+        "task_id": str(payload.get("task_id") or fields.get("task_id") or ""),
+        "result_channel": result_channel,
+        "original_type": str(payload.get("original_type") or ""),
+        "status": str(payload.get("status") or ""),
+        "scan_id": str(result_body.get("scan_id") or payload.get("scan_id") or ""),
+        "ref_result_count": len(ref_results),
+        "ref_result_sample": [
+            {
+                "ref_id": str(row.get("ref_id") or ""),
+                "canonical_uuid": str(row.get("canonical_uuid") or ""),
+                "health": str(row.get("health") or row.get("status") or ""),
+                "resolved_locator": str(row.get("resolved_locator") or ""),
+                "manifest_action": str(row.get("manifest_action") or ""),
+            }
+            for row in ref_results[:4]
+            if isinstance(row, dict)
+        ],
+        "manifest_delta_count": len(manifest_delta),
+        "warnings": warnings[:6],
+        "result_summary": _ref_scan_result_summary(payload, result_body, ref_results),
+        "payload": _redact_secrets(payload),
+        "result_body": _redact_secrets(result_body),
+    }
+
+
+def _ref_scan_result_body(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, list):
+        return {"ref_results": [dict(item) for item in raw if isinstance(item, dict)]}
+    loaded = _load_result_payload(raw)
+    result = loaded.get("result")
+    if isinstance(result, list):
+        return {"ref_results": [dict(item) for item in result if isinstance(item, dict)]}
+    if isinstance(result, dict):
+        return dict(result)
+    return loaded
+
+
+def _ref_scan_result_rows(body: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_rows = (
+        body.get("ref_results")
+        or body.get("refs")
+        or body.get("rows")
+        or body.get("locator_results")
+    )
+    if not isinstance(raw_rows, list):
+        return []
+    return [dict(item) for item in raw_rows if isinstance(item, dict)]
+
+
+def _ref_scan_manifest_delta(body: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_delta = body.get("manifest_delta") or body.get("manifest_deltas")
+    if isinstance(raw_delta, dict):
+        return [dict(raw_delta)]
+    if not isinstance(raw_delta, list):
+        return []
+    return [dict(item) for item in raw_delta if isinstance(item, dict)]
+
+
+def _ref_scan_warnings(body: dict[str, Any]) -> list[str]:
+    raw_warnings = body.get("warnings") or body.get("warning") or []
+    if isinstance(raw_warnings, str):
+        return [raw_warnings]
+    if isinstance(raw_warnings, (list, tuple, set)):
+        return [str(item) for item in raw_warnings if str(item)]
+    return []
+
+
+def _ref_scan_result_summary(
+    payload: dict[str, Any],
+    result_body: dict[str, Any],
+    ref_results: list[dict[str, Any]],
+) -> str:
+    summary = str(result_body.get("summary") or payload.get("summary") or "").strip()
+    if summary:
+        return summary[:180]
+    if ref_results:
+        parts = [
+            f"{str(row.get('ref_id') or '-')}: {str(row.get('health') or row.get('status') or 'unknown')}"
+            for row in ref_results[:3]
+            if isinstance(row, dict)
+        ]
+        return ", ".join(parts)[:180]
+    raw_result = payload.get("result")
+    if isinstance(raw_result, str) and raw_result.strip():
+        return raw_result.strip().replace("\n", " ")[:180]
+    return str(payload.get("status") or "")[:180]
+
+
 def _obsidian_selected_paths(raw: Any) -> set[str]:
     if isinstance(raw, str):
         values: Any = [raw]
@@ -2342,18 +3578,482 @@ def _l2b_observation_draft(body: dict[str, Any]) -> dict[str, Any]:
 def _edge_payload_from_body(body: dict[str, Any], kind: str) -> dict[str, Any]:
     """Normalize a Web edge form into the current SemanticEdge payload.
 
-    The backend intentionally preserves the free-form ``meta`` dict. RustWorkX
-    only needs the topology and edge payload object; source-specific tags,
-    relation evidence, visual styles, or future attention hints can live inside
-    ``meta`` until a field proves stable enough for promotion.
+    The backend preserves both stable L2-B edge fields and the free-form
+    ``meta`` dict. Stable fields exist for filters and graph algorithms; meta
+    keeps source-specific details without losing Graphiti/Ref provenance.
     """
+    from parrot.dsg.l2b_types import edge_view_classes
+
     meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
+    graphiti_uuid = str(
+        body.get("graphiti_uuid")
+        or body.get("hit_graphiti_uuid")
+        or meta.get("graphiti_uuid")
+        or meta.get("hit_graphiti_uuid")
+        or meta.get("graphiti_hit_uuid")
+        or ""
+    )
+    source_graphiti_uuid = str(
+        body.get("source_graphiti_uuid")
+        or meta.get("source_graphiti_uuid")
+        or ""
+    )
+    target_graphiti_uuid = str(
+        body.get("target_graphiti_uuid")
+        or meta.get("target_graphiti_uuid")
+        or ""
+    )
+    raw_ref_ids = body.get("ref_ids") or meta.get("ref_ids") or ()
+    if isinstance(raw_ref_ids, str):
+        ref_ids = tuple(item.strip() for item in raw_ref_ids.split(",") if item.strip())
+    elif isinstance(raw_ref_ids, (list, tuple, set)):
+        ref_ids = tuple(str(item) for item in raw_ref_ids if str(item))
+    else:
+        ref_ids = ()
+    view_classes = edge_view_classes(kind)
+    meta = {
+        **meta,
+        "view_classes": view_classes,
+    }
+    if graphiti_uuid:
+        meta.setdefault("graphiti_uuid", graphiti_uuid)
+    if source_graphiti_uuid:
+        meta.setdefault("source_graphiti_uuid", source_graphiti_uuid)
+    if target_graphiti_uuid:
+        meta.setdefault("target_graphiti_uuid", target_graphiti_uuid)
+    if ref_ids:
+        meta.setdefault("ref_ids", ref_ids)
     return {
         "kind": kind,
         "strength": max(0.0, min(_body_float(body.get("strength"), 0.5), 1.0)),
         "source": str(body.get("source") or "web_console"),
+        "graphiti_uuid": graphiti_uuid,
+        "source_graphiti_uuid": source_graphiti_uuid,
+        "target_graphiti_uuid": target_graphiti_uuid,
+        "ref_ids": ref_ids,
+        "view_classes": view_classes,
         "meta": meta,
     }
+
+
+def _select_resolved_graphiti_edge(
+    resolver_result: dict[str, Any],
+    body: dict[str, Any],
+) -> dict[str, Any] | None:
+    edges = resolver_result.get("edges")
+    if not isinstance(edges, list) or not edges:
+        return None
+    requested = body.get("edge_index", body.get("selected_edge_index", body.get("index", 0)))
+    try:
+        requested_index = int(requested)
+    except (TypeError, ValueError):
+        requested_index = 0
+    for edge in edges:
+        if isinstance(edge, dict) and int(edge.get("index") or 0) == requested_index:
+            return edge
+    if _graphiti_edge_index_requested(body):
+        return None
+    first = edges[0]
+    return first if isinstance(first, dict) else None
+
+
+def _graphiti_edge_index_requested(body: dict[str, Any]) -> bool:
+    return any(key in body for key in ("edge_index", "selected_edge_index", "index"))
+
+
+def _graphiti_l2b_edge_apply_payload(
+    body: dict[str, Any],
+    resolver_result: dict[str, Any],
+    selected_edge: dict[str, Any],
+) -> dict[str, Any]:
+    from parrot.dsg.l2b_types import EdgeKind
+
+    draft = (
+        dict(selected_edge.get("l2b_edge_draft"))
+        if isinstance(selected_edge.get("l2b_edge_draft"), dict)
+        else {}
+    )
+    meta = dict(draft.get("meta")) if isinstance(draft.get("meta"), dict) else {}
+    requested_kind = str(draft.get("kind") or EdgeKind.GRAPHITI_FACT.value)
+    kind = _parse_enum(EdgeKind, requested_kind)
+    if kind is None:
+        meta.setdefault("requested_kind", requested_kind)
+        meta.setdefault("kind_normalized_reason", "invalid_graphiti_edge_kind")
+        requested_kind = EdgeKind.GRAPHITI_FACT.value
+    else:
+        requested_kind = kind.value
+
+    raw_edge = _selected_graphiti_raw_edge_body(body, int(selected_edge.get("index") or 0))
+    if raw_edge:
+        meta.setdefault("graphiti_raw_edge", raw_edge)
+    graphiti_raw = body.get("graphiti_raw")
+    if isinstance(graphiti_raw, dict):
+        meta.setdefault("graphiti_raw", graphiti_raw)
+    if draft.get("label"):
+        meta.setdefault("fact_label", str(draft.get("label") or ""))
+    meta.setdefault("materialized_by", "memory.identity_ref_index.apply_graphiti_edge")
+    meta.setdefault(
+        "graphiti_resolver",
+        {
+            "edge_index": selected_edge.get("index", 0),
+            "partition": resolver_result.get("partition", ""),
+            "ready_count": resolver_result.get("ready_count", 0),
+            "blocked_count": resolver_result.get("blocked_count", 0),
+            "source_status": (selected_edge.get("source") or {}).get("status", ""),
+            "target_status": (selected_edge.get("target") or {}).get("status", ""),
+            "fact_status": (selected_edge.get("fact") or {}).get("status", ""),
+            "resolver": "MemoryIdentityRefIndex.resolve_graphiti_subgraph",
+        },
+    )
+    return {
+        "from_uuid": str(draft.get("source_uuid") or ""),
+        "to_uuid": str(draft.get("target_uuid") or ""),
+        "kind": requested_kind,
+        "strength": _body_float(draft.get("strength"), 0.5),
+        "source": "graphiti",
+        "graphiti_uuid": str(draft.get("graphiti_uuid") or ""),
+        "source_graphiti_uuid": str(draft.get("source_graphiti_uuid") or ""),
+        "target_graphiti_uuid": str(draft.get("target_graphiti_uuid") or ""),
+        "ref_ids": draft.get("ref_ids") or meta.get("ref_ids") or (),
+        "meta": meta,
+    }
+
+
+def _selected_graphiti_raw_edge_body(body: dict[str, Any], selected_index: int) -> dict[str, Any]:
+    raw_edges = body.get("edge_drafts")
+    if raw_edges is None:
+        raw_edges = body.get("edges")
+    if raw_edges is None:
+        raw_edges = body.get("graphiti_edges")
+    if isinstance(raw_edges, list):
+        if 0 <= selected_index < len(raw_edges) and isinstance(raw_edges[selected_index], dict):
+            return dict(raw_edges[selected_index])
+        return {}
+    keys = (
+        "source_graphiti_uuid",
+        "source_node_uuid",
+        "source",
+        "target_graphiti_uuid",
+        "target_node_uuid",
+        "target",
+        "hit_graphiti_uuid",
+        "graphiti_edge_uuid",
+        "graphiti_uuid",
+        "uuid",
+        "label",
+        "kind",
+        "strength",
+        "score",
+        "meta",
+    )
+    return {key: body[key] for key in keys if key in body}
+
+
+def _ref_scan_manifest_path(value: Any) -> Path:
+    raw = str(value or os.getenv("PARROT_MEMORY_REF_MANIFEST_PATH") or "").strip()
+    path = Path(raw) if raw else Path.cwd() / "codex_workspace" / "runtime_manifests" / "memory_refs_manifest.json"
+    return path.expanduser().resolve()
+
+
+def _ref_scan_git_root(value: Any) -> Path:
+    raw = str(value or os.getenv("PARROT_GIT_ROOT") or "").strip()
+    path = Path(raw) if raw else Path.cwd()
+    return path.expanduser().resolve()
+
+
+def _ref_scan_plan_row(ref: Any, *, index: Any, manifest_path: Path) -> dict[str, Any]:
+    record = ref.to_dict() if hasattr(ref, "to_dict") else dict(ref)
+    ref_id = str(record.get("ref_id") or "")
+    canonical_uuid = str(record.get("canonical_uuid") or "")
+    kind = str(record.get("kind") or "external")
+    managed_by = str(record.get("managed_by") or "unknown")
+    locators = _unique_texts(record.get("locators") or [])
+    identity = index.identities.get(canonical_uuid) if canonical_uuid else None
+    identity_links = _ref_scan_identity_links(identity)
+    scan_targets = [_ref_scan_locator_target(locator, kind=kind) for locator in locators]
+    checks = _ref_scan_checks(
+        kind=kind,
+        managed_by=managed_by,
+        record=record,
+        identity_links=identity_links,
+        scan_targets=scan_targets,
+    )
+    mcp_tools = _unique_texts(
+        [
+            tool
+            for target in scan_targets
+            for tool in target.get("mcp_tools", [])
+        ]
+        + _ref_scan_tools_for_checks(checks)
+    )
+    row = {
+        "ref_id": ref_id,
+        "canonical_uuid": canonical_uuid,
+        "kind": kind,
+        "canonical_uri": str(record.get("canonical_uri") or f"parrot://refs/{ref_id}"),
+        "locators": locators,
+        "managed_by": managed_by,
+        "current_health": str(record.get("health") or "unknown"),
+        "content_hash": str(record.get("content_hash") or ""),
+        "git_commit": str(record.get("git_commit") or ""),
+        "identity_links": identity_links,
+        "scan_targets": scan_targets,
+        "nanobot_checks": checks,
+        "mcp_tools": mcp_tools,
+        "manifest_action": _ref_scan_manifest_action(
+            record=record,
+            scan_targets=scan_targets,
+            checks=checks,
+        ),
+        "risk_level": _ref_scan_risk_level(record=record, scan_targets=scan_targets),
+        "expected_result_fields": [
+            "ref_id",
+            "canonical_uuid",
+            "health",
+            "locator_results",
+            "content_hash",
+            "size",
+            "mime_type",
+            "mtime",
+            "resolved_locator",
+            "manifest_delta",
+            "graphiti_uuid_statuses",
+            "obsidian_uuid_statuses",
+            "warnings",
+        ],
+        "manifest_path": str(manifest_path),
+        "apply_policy": "operator_review_required",
+        "write_back_route": "/api/memory/identity-ref-index/verify",
+        "raw_ref": record,
+    }
+    return row
+
+
+def _ref_scan_identity_links(identity: Any) -> dict[str, Any]:
+    if identity is None:
+        return {
+            "l2b_uuid": "",
+            "graphiti_entity_uuids": [],
+            "graphiti_edge_uuids": [],
+            "graphiti_episode_uuids": [],
+            "obsidian_uuids": [],
+            "provider_keys": [],
+            "resolution_state": "missing_identity",
+        }
+    return {
+        "l2b_uuid": str(getattr(identity, "l2b_uuid", "") or ""),
+        "graphiti_entity_uuids": _unique_texts(getattr(identity, "graphiti_entity_uuids", [])),
+        "graphiti_edge_uuids": _unique_texts(getattr(identity, "graphiti_edge_uuids", [])),
+        "graphiti_episode_uuids": _unique_texts(getattr(identity, "graphiti_episode_uuids", [])),
+        "obsidian_uuids": _unique_texts(getattr(identity, "obsidian_uuids", [])),
+        "provider_keys": _unique_texts(getattr(identity, "provider_keys", [])),
+        "resolution_state": str(getattr(identity, "resolution_state", "") or "unknown"),
+    }
+
+
+def _ref_scan_locator_target(locator: str, *, kind: str) -> dict[str, Any]:
+    text = str(locator or "").strip()
+    lowered = text.lower()
+    target_type = "opaque_locator"
+    checks = ["locator_reachable"]
+    tools = ["mcp.locator_probe"]
+    if lowered.startswith(("http://", "https://")):
+        target_type = "url"
+        checks = ["url_head", "url_metadata"]
+        tools = ["mcp.http.head"]
+    elif lowered.startswith(("ecs://", "ssh://", "sftp://")) or lowered.startswith("/root/") or lowered.startswith("root@"):
+        target_type = "ecs_path"
+        checks = ["ecs_path_stat", "remote_content_hash"]
+        tools = ["mcp.ecs.filesystem.stat", "mcp.ecs.filesystem.hash"]
+    elif lowered.startswith("graphiti://"):
+        target_type = "graphiti_pointer"
+        checks = ["graphiti_uuid_probe"]
+        tools = ["mcp.graphiti.lookup"]
+    elif _looks_like_path(text):
+        target_type = "local_path"
+        checks = ["local_path_stat", "local_content_hash"]
+        tools = ["mcp.filesystem.stat", "mcp.filesystem.hash"]
+
+    if "obsidian" in kind.lower() and "obsidian_frontmatter_uuid_probe" not in checks:
+        checks.append("obsidian_frontmatter_uuid_probe")
+        tools.append("mcp.filesystem.read_markdown_frontmatter")
+
+    return {
+        "locator": text,
+        "target_type": target_type,
+        "checks": checks,
+        "mcp_tools": _unique_texts(tools),
+    }
+
+
+def _ref_scan_checks(
+    *,
+    kind: str,
+    managed_by: str,
+    record: dict[str, Any],
+    identity_links: dict[str, Any],
+    scan_targets: list[dict[str, Any]],
+) -> list[str]:
+    checks: list[str] = [
+        check
+        for target in scan_targets
+        for check in target.get("checks", [])
+    ]
+    kind_lower = kind.lower()
+    managed_lower = managed_by.lower()
+    if not scan_targets:
+        checks.append("missing_locator")
+    if "graphiti" in kind_lower or any(
+        identity_links.get(key)
+        for key in ("graphiti_entity_uuids", "graphiti_edge_uuids", "graphiti_episode_uuids")
+    ):
+        checks.append("graphiti_uuid_probe")
+    if "obsidian" in kind_lower or identity_links.get("obsidian_uuids"):
+        checks.append("obsidian_uuid_probe")
+    if "git" in managed_lower or record.get("git_commit"):
+        checks.append("git_manifest_diff")
+        checks.append("git_commit_reachability")
+    if record.get("content_hash"):
+        checks.append("content_hash_compare")
+    if record.get("canonical_uuid"):
+        checks.append("canonical_uuid_binding_check")
+    return _unique_texts(checks)
+
+
+def _ref_scan_tools_for_checks(checks: list[str]) -> list[str]:
+    tools: list[str] = []
+    mapping = {
+        "graphiti_uuid_probe": "mcp.graphiti.lookup",
+        "obsidian_uuid_probe": "mcp.filesystem.read_markdown_frontmatter",
+        "obsidian_frontmatter_uuid_probe": "mcp.filesystem.read_markdown_frontmatter",
+        "git_manifest_diff": "mcp.git.diff",
+        "git_commit_reachability": "mcp.git.rev_parse",
+        "canonical_uuid_binding_check": "identity_ref_index.lookup",
+        "content_hash_compare": "mcp.filesystem.hash",
+        "missing_locator": "identity_ref_index.report",
+    }
+    for check in checks:
+        if check in mapping:
+            tools.append(mapping[check])
+    return tools
+
+
+def _ref_scan_manifest_action(
+    *,
+    record: dict[str, Any],
+    scan_targets: list[dict[str, Any]],
+    checks: list[str],
+) -> str:
+    if not scan_targets:
+        return "record_missing_locator"
+    if "git_manifest_diff" in checks:
+        return "compare_git_manifest_and_ref_record"
+    if record.get("content_hash"):
+        return "compare_manifest_fingerprint"
+    return "propose_manifest_fingerprint"
+
+
+def _ref_scan_risk_level(
+    *,
+    record: dict[str, Any],
+    scan_targets: list[dict[str, Any]],
+) -> str:
+    health = str(record.get("health") or "").lower()
+    target_types = {str(target.get("target_type") or "") for target in scan_targets}
+    if health in {"missing", "broken", "tombstoned"} or not scan_targets:
+        return "high"
+    if "ecs_path" in target_types or "opaque_locator" in target_types:
+        return "medium"
+    return "low"
+
+
+def _ref_scan_task_ref(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ref_id": row.get("ref_id", ""),
+        "canonical_uuid": row.get("canonical_uuid", ""),
+        "kind": row.get("kind", ""),
+        "locators": row.get("locators", []),
+        "current_health": row.get("current_health", ""),
+        "content_hash": row.get("content_hash", ""),
+        "nanobot_checks": row.get("nanobot_checks", []),
+        "mcp_tools": row.get("mcp_tools", []),
+        "manifest_action": row.get("manifest_action", ""),
+        "risk_level": row.get("risk_level", ""),
+    }
+
+
+def _ref_scan_counts(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_kind: dict[str, int] = {}
+    by_target_type: dict[str, int] = {}
+    by_check: dict[str, int] = {}
+    by_risk: dict[str, int] = {}
+    for row in rows:
+        kind = str(row.get("kind") or "external")
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+        risk = str(row.get("risk_level") or "unknown")
+        by_risk[risk] = by_risk.get(risk, 0) + 1
+        for target in row.get("scan_targets", []):
+            target_type = str(target.get("target_type") or "unknown")
+            by_target_type[target_type] = by_target_type.get(target_type, 0) + 1
+        for check in row.get("nanobot_checks", []):
+            check_name = str(check)
+            by_check[check_name] = by_check.get(check_name, 0) + 1
+    return {
+        "ref_count": len(rows),
+        "by_kind": dict(sorted(by_kind.items())),
+        "by_target_type": dict(sorted(by_target_type.items())),
+        "by_check": dict(sorted(by_check.items())),
+        "by_risk": dict(sorted(by_risk.items())),
+    }
+
+
+def _ref_scan_remote_checks(body: dict[str, Any]) -> list[str]:
+    requested = {item.lower() for item in _unique_texts(body.get("remote_checks"))}
+    aliases = {
+        "http": "url",
+        "http_head": "url",
+        "url_head": "url",
+        "ecs_path": "ecs",
+        "ecs_path_stat": "ecs",
+        "graphiti_uuid_probe": "graphiti",
+        "graphiti_search_probe": "graphiti",
+    }
+    normalized = {aliases.get(item, item) for item in requested}
+    if _body_bool(body.get("enable_url_check"), False):
+        normalized.add("url")
+    if _body_bool(body.get("enable_ecs_local_check"), False):
+        normalized.add("ecs")
+    if _body_bool(body.get("enable_graphiti_probe"), False):
+        normalized.add("graphiti")
+    return [item for item in ("url", "ecs", "graphiti") if item in normalized]
+
+
+def _looks_like_path(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if text.startswith(("~", "/", "\\")):
+        return True
+    if len(text) >= 3 and text[1:3] in {":\\", ":/"}:
+        return True
+    return "\\" in text or "/" in text
+
+
+def _unique_texts(values: Any) -> list[str]:
+    if isinstance(values, str):
+        iterable: list[Any] = [values]
+    elif isinstance(values, (list, tuple, set)):
+        iterable = list(values)
+    else:
+        iterable = []
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in iterable:
+        text = str(item or "").strip()
+        if text and text not in seen:
+            seen.add(text)
+            result.append(text)
+    return result
 
 
 def _bucket_handle_as_dict(handle: Any) -> dict[str, Any]:
@@ -2407,6 +4107,46 @@ def _body_bool(value: Any, default: bool) -> bool:
     if value is None:
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _identity_ref_payload_has_signal(body: dict[str, Any]) -> bool:
+    for key in (
+        "canonical_uuid",
+        "l2b_uuid",
+        "graphiti_uuid",
+        "graphiti_entity_uuid",
+        "graphiti_entity_uuids",
+        "graphiti_edge_uuid",
+        "graphiti_edge_uuids",
+        "graphiti_episode_uuid",
+        "graphiti_episode_uuids",
+        "obsidian_uuid",
+        "obsidian_uuids",
+        "provider_key",
+        "provider_keys",
+        "ref_id",
+        "locator",
+        "locators",
+        "path",
+        "url",
+    ):
+        value = body.get(key)
+        if isinstance(value, (list, tuple, set)) and any(str(item).strip() for item in value):
+            return True
+        if value is not None and str(value).strip():
+            return True
+    return False
+
+
+def _bool_status_map(value: Any) -> dict[str, bool]:
+    if not isinstance(value, dict):
+        return {}
+    out: dict[str, bool] = {}
+    for key, item in value.items():
+        text = str(key).strip()
+        if text:
+            out[text] = _body_bool(item, False)
+    return out
 
 
 def _body_float(value: Any, default: float) -> float:

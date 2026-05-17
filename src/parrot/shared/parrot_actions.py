@@ -25,14 +25,14 @@ class ParrotAnimation(str, _Enum):
 class ParrotBodyState(str, _Enum):
     """High-level body states (Unity Animator top layer).
 
-    NEED-P3-A (cross_chat_pending_registry_20260507 §4.A): these 5
+    NEED-P3-A (cross_chat_pending_registry_20260507 §4.A): these wire
     values are wire-locked (Phase 4 §8 + cs_parity guard). They suit
     bird-like avatars; non-bird models registered via ModelManifest
     must squash their own state ("walking" / "waving" / "sitting") to
-    the closest of these 5 → wire粒度 loss.
+    the closest standard posture → wire粒度 loss.
 
     Two upgrade options (need P3 ADR + cs_parity bump):
-        Option A (conservative): keep these 5 + add
+        Option A (conservative): keep this set + add
             ``EcpFrontendState.controller_body_state: str`` free field
             (model-defined), Brain LLM reads via attach_state_header.
         Option B (aggressive): upgrade body_state to free string;
@@ -45,6 +45,7 @@ class ParrotBodyState(str, _Enum):
     IDLE = "idle"
     FLYING = "flying"
     PERCHING = "perching"
+    PERCHED_ON_HAND = "perched_on_hand"
     DANCING = "dancing"
     FROZEN = "frozen"
 
@@ -80,6 +81,7 @@ class BehaviorMode(Flag):
     P1.5: only BASE + COMPANION are active.
     P2+: BUTLER, RESEARCHER, PLAYFUL added.
     P2.5+: ROLEPLAY added (NEED-P3-MODE-ROLEPLAY).
+    XRHand: ON_HAND is a situational mode for perched-on-hand conversation.
 
     ROLEPLAY semantics (menu_design_complete §3.3 + dsg_decisions_master §3.2):
         When set, persona_loader applies the persona's ``mode.roleplay``
@@ -89,7 +91,7 @@ class BehaviorMode(Flag):
         ROLEPLAY to swap themed sprites, but skin swap is independent of
         this flag — see menu_design_complete §6.
 
-    Adding ROLEPLAY does **not** touch wire / cs_parity: BehaviorMode is
+    Adding ROLEPLAY / ON_HAND does **not** touch wire / cs_parity: BehaviorMode is
     Python-only (Brain ↔ Redis Pub-Sub serialised by name), never crosses
     the LiveKit DataChannel as a typed value.
     """
@@ -100,3 +102,4 @@ class BehaviorMode(Flag):
     RESEARCHER = auto()
     PLAYFUL = auto()
     ROLEPLAY = auto()
+    ON_HAND = auto()

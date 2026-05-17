@@ -13,6 +13,7 @@ GENERAL_NANOBOT_TASK_TYPES = frozenset({
     "summarize",
     "remind",
     "memory_consolidation",
+    "ref_scan",
     "vocabulary_learn",
 })
 

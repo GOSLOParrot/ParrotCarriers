@@ -154,9 +154,11 @@ Write-Host ""
 Write-Host "Scanning $($soFiles.Count) .so file(s) ..." -ForegroundColor Cyan
 Write-Host ("-" * 100)
 
-$results = foreach ($so in $soFiles) {
+$results = @(
+foreach ($so in $soFiles) {
     Test-So16KB -objdump $objdump -so $so
 }
+)
 
 foreach ($r in $results) {
     $rel = $r.File
@@ -170,8 +172,9 @@ Write-Host ("-" * 100)
 $bad = @($results | Where-Object { -not $_.Ok })
 $ok  = @($results | Where-Object { $_.Ok })
 
+$summaryColor = if ($bad.Count -gt 0) { "Red" } else { "Green" }
 Write-Host ("Summary: {0} OK / {1} BAD (out of {2} total)" -f $ok.Count, $bad.Count, $results.Count) `
-    -ForegroundColor (if ($bad.Count -gt 0) { "Red" } else { "Green" })
+    -ForegroundColor $summaryColor
 
 if ($tempExtracted) {
     Remove-Item -Recurse -Force $scanRoot -ErrorAction SilentlyContinue
