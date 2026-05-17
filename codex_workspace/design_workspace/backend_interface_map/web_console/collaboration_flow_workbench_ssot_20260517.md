@@ -812,6 +812,12 @@ Verification:
 - Local CLI smoke returned one `dsg.trigger.draft_event` receipt plus one
   `runtime.workflow.plan_draft` receipt through `runtime.workflow.run`.
 - The smoke secret `cli-run-smoke-secret` was absent from CLI output.
+- ECS release to commit `3f61b11b` completed through
+  `infra/ecs-release.ps1`; all six services returned active.
+- ECS CLI smoke on `/opt/parrot/ParrotCarriers` returned the same Plan/run
+  preview shape: one `ref_scan` Plan step, one `dsg.trigger.draft_event`
+  trigger receipt, one Plan draft receipt, `dry_run=true`,
+  `operator_mode=false`, and `ecs-cli-run-secret` absent from output.
 
 Remaining gaps after this slice:
 
