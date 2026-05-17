@@ -61,6 +61,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-20 | done-first-slice | Thin CLI first slice: `workflow validate` and `catalog list`. | Added `python -m parrot.web_console.flow_cli` with JSON-first `catalog list` and `workflow validate`; it reuses backend catalog/schema helpers, performs no writes, returns nonzero for invalid workflows, redacts secrets, and accepts UTF-8 BOM JSON from Windows tools. |
 | CFW-21 | done-first-slice | True-connection smoke pack for local/ECS workflow artifact path. | Local 7894 and ECS 8790 both proved save/validate/export/import-preview/delete with redaction; ECS also proved Plan draft still maps the imported workflow to `ref_scan`. |
 | CFW-22 | done-ecs | Thin CLI workflow export/import dry-run. | Added `workflow export <workflow_id>` and `workflow import <workflow.json> --target-workflow ...` to `python -m parrot.web_console.flow_cli`; both reuse backend schema helpers, emit JSON/table receipts, redact secrets, and perform no writes. Local and ECS CLI smoke passed after release. |
+| CFW-23 | done-local | Thin CLI workflow Plan/run preview. | Added `workflow plan-draft <workflow.json>` and `workflow run <workflow.json>` to the same CLI; both force `dry_run=true`/`operator_mode=false`, reuse existing Web runtime helpers, redact secret payload keys, and do not publish triggers or create Plans. ECS proof follows commit/push/release. |
 
 ## First Slice Design
 
@@ -402,3 +403,17 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `ecs-cli-import` against `ecs-cli-target` with `wf-trigger` added,
   `wf-ref-scan` kept, `ecs-cli-import-secret` redacted, and
   `would_save=false`.
+- 2026-05-17 CFW-23 implementation: extended
+  `python -m parrot.web_console.flow_cli` with
+  `workflow plan-draft <workflow.json>` and `workflow run <workflow.json>`.
+  The commands call `draft_workflow_plan()` and `run_workflow_draft()` with
+  `dry_run=true` and `operator_mode=false`; they accept a workflow JSON path,
+  stdin, or `--workflow-id`, but they do not expose operator execution flags.
+  A CLI-level redaction pass now strips secret/token/password/API-key fields
+  from all emitted receipts.
+- 2026-05-17 CFW-23 local validation: `py_compile` passed for `flow_cli.py`;
+  focused CLI tests reported `11 passed`; full Web Console route tests remained
+  `91 passed`; local CLI smoke returned `runtime.workflow.plan_draft` with one
+  `ref_scan` step and `runtime.workflow.run` with one
+  `dsg.trigger.draft_event` receipt plus one Plan draft receipt, while
+  `cli-run-smoke-secret` stayed out of output.

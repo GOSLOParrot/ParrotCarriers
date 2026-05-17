@@ -8,17 +8,22 @@ parallel workflow language.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, TextIO
 
 from parrot.web_console.capability_catalog import build_runtime_capability_catalog
+from parrot.web_console.runtime_flow import draft_workflow_plan, run_workflow_draft
 from parrot.web_console.workflow_drafts import (
     export_workflow_artifact,
     preview_workflow_import,
     validate_workflow_artifact,
 )
+
+_SECRET_KEY_RE = re.compile(r"(secret|token|password|api[_-]?key|authorization|credential)", re.I)
 
 
 def main(argv: list[str] | None = None, *, stdout: TextIO | None = None, stderr: TextIO | None = None) -> int:
@@ -41,6 +46,14 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None, stderr:
         return 0 if receipt.get("success") else 2
     if args.command == "workflow" and args.workflow_command == "import":
         receipt = _workflow_import_preview(args)
+        _emit(receipt, out, table=args.output == "table")
+        return 0 if receipt.get("success") else 2
+    if args.command == "workflow" and args.workflow_command == "plan-draft":
+        receipt = _workflow_plan_draft(args)
+        _emit(receipt, out, table=args.output == "table")
+        return 0 if receipt.get("success") else 2
+    if args.command == "workflow" and args.workflow_command == "run":
+        receipt = _workflow_run_preview(args)
         _emit(receipt, out, table=args.output == "table")
         return 0 if receipt.get("success") else 2
     parser.print_help(err)
@@ -78,6 +91,20 @@ def _build_parser() -> argparse.ArgumentParser:
     import_preview.add_argument("--target-workflow-id", default="", help="Optional saved workflow draft id for diff preview.")
     import_preview.add_argument("--dry-run", action="store_true", default=True, help="Import preview only. No draft is saved.")
     _add_output_flags(import_preview)
+    plan_draft = workflow_sub.add_parser("plan-draft", help="Preview Plan steps for a workflow JSON file or saved draft.")
+    plan_draft.add_argument("path", nargs="?", default="", help="Workflow JSON path, or '-' for stdin.")
+    plan_draft.add_argument("--workflow-id", default="", help="Optional saved workflow draft id.")
+    plan_draft.add_argument("--title", default="", help="Optional title override for the Plan draft preview.")
+    plan_draft.add_argument("--rationale", default="", help="Optional rationale carried in the preview receipt.")
+    plan_draft.add_argument("--dry-run", action="store_true", default=True, help="Preview only. No Plan is created.")
+    _add_output_flags(plan_draft)
+    run = workflow_sub.add_parser("run", help="Preview a workflow run without firing triggers or creating Plans.")
+    run.add_argument("path", nargs="?", default="", help="Workflow JSON path, or '-' for stdin.")
+    run.add_argument("--workflow-id", default="", help="Optional saved workflow draft id.")
+    run.add_argument("--title", default="", help="Optional title override for the run preview.")
+    run.add_argument("--rationale", default="", help="Optional rationale carried in the preview receipt.")
+    run.add_argument("--dry-run", action="store_true", default=True, help="Preview only. No trigger publish or Plan creation.")
+    _add_output_flags(run)
     return parser
 
 
@@ -149,6 +176,48 @@ def _workflow_import_preview(args: argparse.Namespace) -> dict[str, Any]:
     return preview_workflow_import(body)
 
 
+def _workflow_plan_draft(args: argparse.Namespace) -> dict[str, Any]:
+    body_or_error = _workflow_preview_body(args, action="runtime.workflow.plan_draft")
+    if _is_error_receipt(body_or_error):
+        return body_or_error
+    return asyncio.run(draft_workflow_plan(body_or_error))
+
+
+def _workflow_run_preview(args: argparse.Namespace) -> dict[str, Any]:
+    body_or_error = _workflow_preview_body(args, action="runtime.workflow.run")
+    if _is_error_receipt(body_or_error):
+        return body_or_error
+    return asyncio.run(run_workflow_draft(body_or_error))
+
+
+def _workflow_preview_body(args: argparse.Namespace, *, action: str) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "dry_run": True,
+        "operator_mode": False,
+    }
+    if getattr(args, "workflow_id", ""):
+        body["workflow_id"] = args.workflow_id
+    if getattr(args, "title", ""):
+        body["title"] = args.title
+    if getattr(args, "rationale", ""):
+        body["rationale"] = args.rationale
+    if getattr(args, "path", ""):
+        try:
+            payload = _read_json(args.path)
+        except Exception as exc:
+            return _error_receipt(action, "invalid_json", str(exc))
+        if not isinstance(payload, dict):
+            return _error_receipt(action, "workflow_json_not_object", "Workflow JSON must be an object.")
+        body["workflow"] = payload
+    if not body.get("workflow") and not body.get("workflow_id"):
+        return _error_receipt(action, "workflow_input_required", "Provide a workflow JSON path or --workflow-id.")
+    return body
+
+
+def _is_error_receipt(value: dict[str, Any]) -> bool:
+    return value.get("success") is False and isinstance(value.get("data"), dict) and bool(value["data"].get("errors"))
+
+
 def _read_json(path: str) -> Any:
     if path == "-":
         return json.loads(sys.stdin.read())
@@ -173,6 +242,7 @@ def _error_receipt(action: str, code: str, message: str) -> dict[str, Any]:
 
 
 def _emit(receipt: dict[str, Any], out: TextIO, *, table: bool = False) -> None:
+    receipt = _redact_secrets(receipt)
     if table:
         rendered = _table(receipt)
         out.write(rendered)
@@ -181,6 +251,16 @@ def _emit(receipt: dict[str, Any], out: TextIO, *, table: bool = False) -> None:
         return
     out.write(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True))
     out.write("\n")
+
+
+def _redact_secrets(value: Any, *, key: str = "") -> Any:
+    if _SECRET_KEY_RE.search(key):
+        return "[REDACTED]"
+    if isinstance(value, dict):
+        return {str(k): _redact_secrets(v, key=str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_secrets(item) for item in value]
+    return value
 
 
 def _table(receipt: dict[str, Any]) -> str:
@@ -211,6 +291,9 @@ def _table(receipt: dict[str, Any]) -> str:
         f"valid\t{bool(valid)}",
         f"workflow_id\t{receipt.get('workflow_id') or summary.get('workflow_id') or ''}",
         f"nodes\t{summary.get('node_count') or 0}",
+        f"workflow_node_count\t{data.get('workflow_node_count') or 0}",
+        f"plan_compatible_count\t{data.get('plan_compatible_count') or data.get('compatible_step_count') or 0}",
+        f"trigger_node_count\t{data.get('trigger_node_count') or 0}",
         f"errors\t{len(errors)}",
         f"warnings\t{len(warnings)}",
     ]

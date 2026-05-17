@@ -774,3 +774,48 @@ Remaining gaps after this slice:
   `smoke local/ecs` remain future CLI slices.
 - Workflow import still does not merge or save anything. This is intentional
   until overwrite/merge policy is reviewed in the Web workbench.
+
+## 2026-05-17 Thin CLI Plan/Run Preview Slice
+
+Implemented:
+
+- Extended `python -m parrot.web_console.flow_cli` with:
+  - `workflow plan-draft <workflow.json>`
+  - `workflow run <workflow.json>`
+- Both commands also accept stdin through `-` and can target a saved local
+  draft via `--workflow-id`.
+- `workflow plan-draft` reuses `draft_workflow_plan()` and returns the same
+  `runtime.workflow.plan_draft` receipt shape as the Web route.
+- `workflow run` reuses `run_workflow_draft()` and returns the same
+  `runtime.workflow.run` receipt shape as the Web route, including trigger
+  preview receipts, Plan preview receipts, and `workflow_result_contract_v1`.
+- Both commands force `dry_run=true` and `operator_mode=false`. The CLI does
+  not expose trigger publishing, Plan creation, Graphiti writes, L2-B
+  materialization, or result-intake apply.
+- CLI output now has a final generic redaction pass for secret/token/password
+  style keys, because Plan/run preview receipts can legitimately carry
+  capability `sample_payload` metadata.
+
+Design decision:
+
+- This is still a thin control-plane CLI, not a runtime executor. It is meant
+  for scripted proof that a workflow artifact can be converted into existing
+  Web receipts. Operator execution remains in Web/HITL routes.
+
+Verification:
+
+- `py_compile` passed for `flow_cli.py`.
+- `pytest tests/test_web_console/test_flow_cli.py -q` -> `11 passed`.
+- `pytest tests/test_web_console/test_web_console_server.py -q` -> `91 passed`.
+- Local CLI smoke returned one `ref_scan` Plan step through
+  `runtime.workflow.plan_draft`.
+- Local CLI smoke returned one `dsg.trigger.draft_event` receipt plus one
+  `runtime.workflow.plan_draft` receipt through `runtime.workflow.run`.
+- The smoke secret `cli-run-smoke-secret` was absent from CLI output.
+
+Remaining gaps after this slice:
+
+- The CLI still has no remote HTTP `--base-url` mode.
+- `workflow run` has no operator execution path by design; real trigger fire
+  and Plan creation remain Web/HITL operations.
+- `result-intake preview` and `smoke local/ecs` remain future CLI slices.
