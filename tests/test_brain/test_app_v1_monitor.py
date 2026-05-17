@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -133,6 +134,109 @@ def test_monitor_exposes_graphiti_materialize_and_l2b_context_routes() -> None:
     assert context["action"] == "l2b.subgraph.context"
     assert context["success"] is False
     assert context["data"]["error"] == "missing_node_selection"
+
+
+def test_monitor_exposes_google_calendar_true_fetch_routes(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastapi.testclient import TestClient
+    from parrot.web_console import memory_ops
+
+    api_calls: list[dict[str, Any]] = []
+    nanobot_calls: list[dict[str, Any]] = []
+
+    async def fake_api_fetch(**kwargs: Any) -> dict[str, Any]:
+        api_calls.append(kwargs)
+        return {
+            "credential_source": "configured_oauth_file",
+            "items": [
+                {
+                    "id": "evt_monitor_api",
+                    "summary": "Monitor API event",
+                    "start": {"dateTime": "2026-05-18T09:00:00+08:00"},
+                    "end": {"dateTime": "2026-05-18T09:30:00+08:00"},
+                }
+            ],
+        }
+
+    async def fake_nanobot_fetch(**kwargs: Any) -> dict[str, Any]:
+        nanobot_calls.append(kwargs)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "status": "success",
+                                "event_count": 1,
+                                "events": [
+                                    {
+                                        "id": "evt_monitor_nanobot",
+                                        "summary": "Monitor Nanobot event",
+                                        "start_time": "2026-05-18T10:00:00+08:00",
+                                        "end_time": "2026-05-18T10:30:00+08:00",
+                                    }
+                                ],
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(memory_ops, "_fetch_google_calendar_events_from_api", fake_api_fetch)
+    monkeypatch.setattr(
+        memory_ops,
+        "_fetch_google_calendar_events_from_nanobot",
+        fake_nanobot_fetch,
+    )
+    client = TestClient(build_app())
+
+    api = client.post(
+        "/api/google/calendar/api-fetch",
+        json={
+            "calendar_id": "primary",
+            "timeMin": "2026-05-18T00:00:00+08:00",
+            "timeMax": "2026-05-19T00:00:00+08:00",
+            "limit": 2,
+        },
+    ).json()
+    nanobot = client.post(
+        "/api/google/calendar/nanobot-fetch",
+        json={
+            "account": "gosloparrot@gmail.com",
+            "calendar_id": "primary",
+            "timeMin": "2026-05-18T00:00:00+08:00",
+            "timeMax": "2026-05-19T00:00:00+08:00",
+            "limit": 2,
+        },
+    ).json()
+    preview = client.post(
+        "/api/google/calendar/preview",
+        json={"events": [{"id": "evt_monitor_preview", "summary": "Preview"}]},
+    ).json()
+
+    assert api["action"] == "google.calendar.api_fetch"
+    assert api["success"] is True
+    assert api["data"]["read_model"] == "Google Calendar API events.list via OAuth2"
+    assert api["data"]["count"] == 1
+    assert api["data"]["credential_source"] == "configured_oauth_file"
+    assert nanobot["action"] == "google.calendar.nanobot_fetch"
+    assert nanobot["success"] is True
+    assert nanobot["data"]["read_model"] == "ECS Nanobot -> Google Workspace MCP manage_calendar"
+    assert nanobot["data"]["nanobot_success"] is True
+    assert nanobot["data"]["count"] == 1
+    assert preview["action"] == "google.calendar.preview"
+    assert preview["success"] is True
+    assert api_calls == [
+        {
+            "calendar_id": "primary",
+            "time_min": "2026-05-18T00:00:00+08:00",
+            "time_max": "2026-05-19T00:00:00+08:00",
+            "limit": 2,
+            "show_deleted": False,
+        }
+    ]
+    assert nanobot_calls[0]["account"] == "gosloparrot@gmail.com"
+    assert nanobot_calls[0]["limit"] == 2
 
 
 def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

@@ -482,3 +482,16 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   payload containing its own `workflow_id`, routed it through
   `workflow_id=ecs-payload-fix`, returned `route_count=1`, `recorded=false`,
   `dry_run=true`, and kept secret fields redacted.
+- 2026-05-18 true-connection audit follow-up: review found two practical
+  smoke gaps. ECS `8790` app-monitor had Graphiti/L2-B/runtime workflow routes
+  but no Google Calendar test routes, while local `7893` could only proxy
+  Graphiti if `PARROT_WEB_CONSOLE_GRAPHITI_URL` was configured by hand. Added
+  read-only app-monitor routes for `POST /api/google/calendar/preview`,
+  `POST /api/google/calendar/api-fetch`, and
+  `POST /api/google/calendar/nanobot-fetch`; added
+  `start_web_console.py` flags for Graphiti URL/timeout, Nanobot API URL, and
+  Google credentials path. Local validation: backend `py_compile` passed;
+  app-monitor tests reported `12 passed`; Web Console plus flow CLI tests
+  reported `106 passed`. ECS proof remains the required post-release step:
+  confirm Google API/Nanobot fetch through `8790`, and re-run a lightweight
+  `noble_etiquette` Graphiti subgraph search.

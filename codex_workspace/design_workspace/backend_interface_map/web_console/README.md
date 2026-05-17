@@ -578,8 +578,21 @@ Keep active Web Console implementation in these locations:
 | BFF / read adapters | `src/parrot/web_console/` | Server-side only; may hold secrets such as `PARROT_ORCH_SECRET` in process env. |
 | React frontend source | `web/console_app/` | Formal next Web Console frontend: React + Vite, Memory Graph Workspace, Runtime Flow Workspace. |
 | Built/static frontend | `web/console_dist/` | Served by the Web Console BFF when present; `web/console/` remains the legacy vanilla transition/reference shell. |
-| Launcher | `src/scripts/start_web_console.py` | Local entrypoint; default port `7893`. |
+| Launcher | `src/scripts/start_web_console.py` | Local entrypoint; default port `7893`; supports local overrides for orchestration, Graphiti proxy URL/timeout, Nanobot API URL, and Google credentials path. |
 | Tests | `tests/test_web_console/` | Focused BFF/static route tests. |
+
+### 2026-05-18 True-Connection Follow-up
+
+- ECS `8790` app-monitor now has the read-only Google Calendar smoke subset:
+  `POST /api/google/calendar/preview`,
+  `POST /api/google/calendar/api-fetch`, and
+  `POST /api/google/calendar/nanobot-fetch`.
+- The full `7893` Web BFF remains the richer source/import surface; the ECS
+  subset exists so the browser can prove Google Calendar connectivity from the
+  same service family as Graphiti/L2-B/runtime workflow smokes.
+- `src/scripts/start_web_console.py` now accepts explicit Graphiti, Nanobot,
+  and Google credential overrides so local `7893` true-proxy runs are
+  repeatable instead of depending on hidden shell state.
 
 ## Write Rules
 

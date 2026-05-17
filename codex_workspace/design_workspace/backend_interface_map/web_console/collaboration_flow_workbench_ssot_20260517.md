@@ -907,3 +907,40 @@ Bugfix after workflow-id table fix:
   workflow route context (`workflow_id=ecs-payload-fix`), returned
   `route_count=1`, `recorded=false`, `dry_run=true`, and kept secret fields
   redacted.
+
+## 2026-05-18 True-Connection Audit Follow-up
+
+Findings:
+
+- ECS `8790` proved Graphiti, L2-B, and runtime workflow subset routes, but it
+  did not expose the Google Calendar smoke routes that the browser needs for a
+  same-origin true-connection test.
+- Local `7893` had working Google Calendar OAuth/API and Nanobot fetch paths,
+  but Graphiti proxying depended on manually setting
+  `PARROT_WEB_CONSOLE_GRAPHITI_URL`.
+- This means the system was partly true-connected, but not yet repeatably
+  launchable or smoke-testable from both Web surfaces.
+
+Decision:
+
+- Keep the full Web BFF as the richer source/import surface.
+- Add only read-only Google Calendar preview/API/Nanobot routes to the ECS
+  app-monitor subset so `8790` can prove Calendar connectivity without
+  mutating Calendar, Graphiti, L2-B, or workflow ledgers.
+- Add local launcher flags for Graphiti URL/timeout, Nanobot API URL, and
+  Google credentials path so `7893` can be restarted into the same true-proxy
+  shape without ad hoc environment setup.
+
+Validation:
+
+- `py_compile` passed for `app_monitor_server.py` and `start_web_console.py`.
+- `pytest tests/test_brain/test_app_v1_monitor.py -q` -> `12 passed`.
+- `pytest tests/test_web_console/test_web_console_server.py
+  tests/test_web_console/test_flow_cli.py -q` -> `106 passed`.
+
+Post-release proof required:
+
+- `POST /api/google/calendar/nanobot-fetch` through ECS `8790`.
+- `POST /api/google/calendar/api-fetch` through ECS `8790`.
+- One lightweight `POST /api/graphiti/subgraph/search` through ECS `8790` for
+  `noble_etiquette`.

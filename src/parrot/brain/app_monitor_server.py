@@ -521,6 +521,24 @@ def build_app():  # type: ignore[no-untyped-def]
 
         return delete_workflow_draft(workflow_id)
 
+    @app.post("/api/google/calendar/preview")
+    async def google_calendar_preview(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import preview_google_calendar_events
+
+        return preview_google_calendar_events(payload or {})
+
+    @app.post("/api/google/calendar/api-fetch")
+    async def google_calendar_api_fetch(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import fetch_google_calendar_api
+
+        return await fetch_google_calendar_api(payload or {})
+
+    @app.post("/api/google/calendar/nanobot-fetch")
+    async def google_calendar_nanobot_fetch(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import fetch_google_calendar_nanobot
+
+        return await fetch_google_calendar_nanobot(payload or {})
+
     @app.get("/api/graphiti/status")
     async def graphiti_status_endpoint():  # type: ignore[no-untyped-def]
         return graphiti_status().as_json()
