@@ -106,6 +106,23 @@ class _DeepSeekCompatibleClient:
     pass
 
 
+def _normalize_deepseek_json_keys(obj: Any) -> Any:
+    """Recursively align DeepSeek JSON keys with Graphiti pydantic models."""
+    if isinstance(obj, list):
+        return [_normalize_deepseek_json_keys(item) for item in obj]
+    if isinstance(obj, dict):
+        out: dict[str, Any] = {}
+        for key, value in obj.items():
+            out[key] = _normalize_deepseek_json_keys(value)
+        if "name" not in out:
+            if "entity_name" in out:
+                out["name"] = out["entity_name"]
+            elif isinstance(out.get("label"), str):
+                out["name"] = out["label"]
+        return out
+    return obj
+
+
 def _make_deepseek_llm_client(cfg: Any) -> Any:
     """Return an OpenAIGenericClient subclass that downgrades json_schema → json_object."""
     import json as _json
@@ -147,6 +164,7 @@ def _make_deepseek_llm_client(cfg: Any) -> Any:
                 )
                 raw = resp.choices[0].message.content or ""
                 result = _json.loads(raw)
+                result = _normalize_deepseek_json_keys(result)
 
                 # Normalize field names: DeepSeek often drops the "extracted_" prefix
                 # (returns {"entities": ...} instead of {"extracted_entities": ...}).
