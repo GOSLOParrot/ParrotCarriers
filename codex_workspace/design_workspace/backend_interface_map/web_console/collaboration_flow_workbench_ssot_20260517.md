@@ -862,6 +862,11 @@ Verification:
   routes (`stage_to_intent_workspace` and `return_to_goslo`),
   `recorded=false`, `preview_route_count=2`, and
   `cli-intake-smoke-secret` absent from output.
+- ECS release to commit `86e12139` completed through
+  `infra/ecs-release.ps1`; all six services returned active.
+- ECS CLI smoke on `/opt/parrot/ParrotCarriers` returned the same preview
+  shape: two preview routes, `recorded=false`, `dry_run=true`,
+  `operator_mode=false`, and `ecs-cli-intake-secret` absent from output.
 
 Remaining gaps after this slice:
 

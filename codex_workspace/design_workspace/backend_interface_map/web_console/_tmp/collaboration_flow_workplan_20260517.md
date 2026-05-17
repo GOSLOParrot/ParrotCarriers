@@ -62,7 +62,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-21 | done-first-slice | True-connection smoke pack for local/ECS workflow artifact path. | Local 7894 and ECS 8790 both proved save/validate/export/import-preview/delete with redaction; ECS also proved Plan draft still maps the imported workflow to `ref_scan`. |
 | CFW-22 | done-ecs | Thin CLI workflow export/import dry-run. | Added `workflow export <workflow_id>` and `workflow import <workflow.json> --target-workflow ...` to `python -m parrot.web_console.flow_cli`; both reuse backend schema helpers, emit JSON/table receipts, redact secrets, and perform no writes. Local and ECS CLI smoke passed after release. |
 | CFW-23 | done-ecs | Thin CLI workflow Plan/run preview. | Added `workflow plan-draft <workflow.json>` and `workflow run <workflow.json>` to the same CLI; both force `dry_run=true`/`operator_mode=false`, reuse existing Web runtime helpers, redact secret payload keys, and do not publish triggers or create Plans. Local and ECS CLI smoke passed after release. |
-| CFW-24 | done-local | Thin CLI result-intake preview. | Added `result-intake preview <result.json>` to the CLI; it reuses `intake_workflow_result()` with `dry_run=true`/`operator_mode=false`, can derive routes from a workflow/contract/routes file, redacts secret payload keys, and does not record ledger rows or stage IntentWorkspace refs. ECS proof follows commit/push/release. |
+| CFW-24 | done-ecs | Thin CLI result-intake preview. | Added `result-intake preview <result.json>` to the CLI; it reuses `intake_workflow_result()` with `dry_run=true`/`operator_mode=false`, can derive routes from a workflow/contract/routes file, redacts secret payload keys, and does not record ledger rows or stage IntentWorkspace refs. Local and ECS CLI smoke passed after release. |
 
 ## First Slice Design
 
@@ -441,3 +441,11 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `91 passed`; local CLI smoke returned `runtime.workflow.result_intake` with
   two preview routes (`stage_to_intent_workspace`, `return_to_goslo`),
   `recorded=false`, and `cli-intake-smoke-secret` stayed out of output.
+- 2026-05-18 CFW-24 ECS validation: committed/pushed `86e12139`
+  (`Add flow CLI result intake preview`) and released with
+  `infra/ecs-release.ps1 -Branch master -AllowLocalDirty`; all six ECS services
+  returned active. Remote CLI smoke on `/opt/parrot/ParrotCarriers` ran
+  `result-intake preview` against a temporary workflow/result JSON, returned
+  two preview routes (`stage_to_intent_workspace`, `return_to_goslo`),
+  `recorded=false`, `dry_run=true`, `operator_mode=false`, and
+  `ecs-cli-intake-secret` stayed out of output.
