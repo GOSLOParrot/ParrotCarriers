@@ -240,6 +240,10 @@ const dict = {
     uuidFree: "daily / roleplay are UUID-free",
     refRequiresUuid: "ref requires an Obsidian UUID",
     registeredTriggers: "Registered triggers",
+    triggerChannels: "Ascending channels",
+    triggerModules: "Modules",
+    triggerInformationTags: "Information tags",
+    triggerFireKinds: "Fire kinds",
     receipt: "Records",
     receiptTimeline: "Records",
     selected: "Selection",
@@ -2575,7 +2579,7 @@ function RuntimeFlowWorkspace({
   const pokeEvidenceRefresh = useCallback(() => {
     setEvidenceRefreshSeq((value) => value + 1);
   }, []);
-  const catalogGroups = useMemo(() => groupTriggerCatalog(triggerCatalog.triggers ?? []), [triggerCatalog]);
+  const catalogGroups = useMemo(() => groupTriggerCatalog(triggerCatalog), [triggerCatalog]);
 
   const nodes = useMemo<Node[]>(() => {
     const lanes = flow.lanes ?? [];
@@ -2744,12 +2748,27 @@ function RuntimeFlowWorkspace({
           ))}
         </div>
         <div className="trigger-catalog">
-          <strong>{t.registeredTriggers}</strong>
-          <div>
+          <div className="trigger-catalog-title">
+            <strong>{t.registeredTriggers}</strong>
+            <small>{t.triggerChannels}</small>
+          </div>
+          <div className="trigger-channel-grid">
             {catalogGroups.map((group) => (
-              <span className="trigger-chip" key={group.kind}>
-                {group.kind}: {group.names.join(", ")}
-              </span>
+              <details className="trigger-channel-card" key={group.id} open={catalogGroups.length <= 4}>
+                <summary>
+                  <span>
+                    <strong>{group.label}</strong>
+                    <small>{group.description || group.id}</small>
+                  </span>
+                  <b>{group.names.length}</b>
+                </summary>
+                <div className="trigger-card-section">
+                  <span>{group.names.join(", ")}</span>
+                </div>
+                <TriggerTagRow label={t.triggerModules} values={group.modules} />
+                <TriggerTagRow label={t.triggerInformationTags} values={group.tags} />
+                <TriggerTagRow label={t.triggerFireKinds} values={group.kinds} />
+              </details>
             ))}
           </div>
         </div>
@@ -2805,6 +2824,20 @@ function RuntimeFlowWorkspace({
         ))}
       </div>
     </section>
+  );
+}
+
+function TriggerTagRow({ label, values }: { label: string; values: string[] }) {
+  if (!values.length) return null;
+  return (
+    <div className="trigger-tag-row">
+      <small>{label}</small>
+      <div>
+        {values.map((value) => (
+          <span className="trigger-chip" key={value}>{value}</span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -3635,23 +3668,62 @@ function runtimeActionGroups(t: ConsoleCopy): Array<{
   ];
 }
 
-function groupTriggerCatalog(triggers: Array<Record<string, unknown>>): Array<{ kind: string; names: string[] }> {
-  const groups = new Map<string, string[]>();
+type TriggerCatalogGroup = {
+  id: string;
+  label: string;
+  description: string;
+  names: string[];
+  modules: string[];
+  tags: string[];
+  kinds: string[];
+};
+
+function groupTriggerCatalog(catalog: TriggerCatalog): TriggerCatalogGroup[] {
+  const triggers = catalog.triggers ?? [];
+  const byName = new Map(triggers.map((trigger) => [String(trigger.name || trigger.class || "trigger"), trigger]));
+  const grouped = recordArrayFrom(recordFromUnknown(catalog.groups), "ascending_channel");
+  if (grouped.length) {
+    return grouped.map((group) => {
+      const names = stringsFromUnknown(group.trigger_names);
+      const members = names.map((name) => byName.get(name)).filter(Boolean) as Array<Record<string, unknown>>;
+      return {
+        id: String(group.id || group.label || "channel"),
+        label: String(group.label || group.id || "channel"),
+        description: String(group.description || ""),
+        names,
+        modules: uniqueStrings(members.flatMap((trigger) => stringsFromUnknown(trigger.interaction_modules))),
+        tags: uniqueStrings(members.flatMap((trigger) => stringsFromUnknown(trigger.information_tags))),
+        kinds: uniqueStrings(members.flatMap((trigger) => stringsFromUnknown(trigger.kinds)))
+      };
+    });
+  }
+
+  const groups = new Map<string, Array<Record<string, unknown>>>();
   triggers.forEach((trigger) => {
     const names = groupsForTrigger(trigger);
     names.forEach((kind) => {
       const rows = groups.get(kind) ?? [];
-      rows.push(String(trigger.name || trigger.class || "trigger"));
+      rows.push(trigger);
       groups.set(kind, rows);
     });
   });
-  return Array.from(groups.entries()).map(([kind, names]) => ({ kind, names }));
+  return Array.from(groups.entries()).map(([kind, rows]) => ({
+    id: kind,
+    label: kind,
+    description: "",
+    names: rows.map((trigger) => String(trigger.name || trigger.class || "trigger")),
+    modules: uniqueStrings(rows.flatMap((trigger) => stringsFromUnknown(trigger.interaction_modules))),
+    tags: uniqueStrings(rows.flatMap((trigger) => stringsFromUnknown(trigger.information_tags))),
+    kinds: uniqueStrings(rows.flatMap((trigger) => stringsFromUnknown(trigger.kinds)))
+  }));
 }
 
 function groupsForTrigger(trigger: Record<string, unknown>): string[] {
-  const raw = trigger.kinds;
-  if (!Array.isArray(raw) || raw.length === 0) return ["unknown"];
-  return raw.map((kind) => String(kind));
+  const channels = stringsFromUnknown(trigger.ascending_channels);
+  if (channels.length) return channels;
+  const raw = stringsFromUnknown(trigger.kinds);
+  if (!raw.length) return ["unknown"];
+  return raw;
 }
 
 function isSelectedEdge(selected: Record<string, unknown> | null): selected is Record<string, unknown> {
@@ -6149,6 +6221,11 @@ function recordArrayFrom(source: Record<string, unknown>, key: string): Array<Re
   const raw = source[key];
   if (!Array.isArray(raw)) return [];
   return raw.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+}
+
+function stringsFromUnknown(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item) => String(item || "").trim()).filter(Boolean);
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {

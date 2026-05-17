@@ -93,6 +93,120 @@ _TRIGGER_EVENT_HINTS: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
+_TRIGGER_CHANNEL_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "external_inbox": {
+        "label": "External inbox",
+        "description": "Calendar, message, Obsidian, or provider payloads rise into memory.",
+    },
+    "scheduled_poll": {
+        "label": "Scheduled poll",
+        "description": "Periodic checks lift background state into the trigger runner.",
+    },
+    "perception_scene": {
+        "label": "Perception / scene",
+        "description": "Scene, object, and curiosity signals rise from perception into context.",
+    },
+    "operator_mode": {
+        "label": "Operator / mode",
+        "description": "Web, Gemini, or operator actions change runtime mode or bucket state.",
+    },
+    "intent_boundary": {
+        "label": "Intent boundary",
+        "description": "Tool, plan, idle, and nanobot boundaries shape IntentEvent state.",
+    },
+    "memory_maintenance": {
+        "label": "Memory maintenance",
+        "description": "Archive, enrichment, and ref/context repair jobs maintain long memory.",
+    },
+}
+
+_TRIGGER_MODULE_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "google_calendar": {"label": "Google Calendar"},
+    "google_message": {"label": "Google Message"},
+    "obsidian": {"label": "Obsidian"},
+    "graphiti": {"label": "Graphiti"},
+    "l1_5_pool": {"label": "L1.5 Pool"},
+    "l2_b_graph": {"label": "L2-B Graph"},
+    "intent_workspace": {"label": "IntentWorkspace"},
+    "plan_registry": {"label": "Plan Registry"},
+    "archive_pipeline": {"label": "Archive Pipeline"},
+    "scheduler_nanobot": {"label": "Scheduler / Nanobot"},
+    "runtime_operator": {"label": "Runtime Operator"},
+}
+
+_TRIGGER_INFORMATION_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "calendar_event": {"label": "calendar_event"},
+    "google_message": {"label": "google_message"},
+    "obsidian_note": {"label": "obsidian_note"},
+    "graphiti_context": {"label": "graphiti_context"},
+    "scene_context": {"label": "scene_context"},
+    "scene_state": {"label": "scene_state"},
+    "curiosity_signal": {"label": "curiosity_signal"},
+    "intent_boundary": {"label": "intent_boundary"},
+    "mode_profile": {"label": "mode_profile"},
+    "bucket_operation": {"label": "bucket_operation"},
+    "l15_observation": {"label": "l15_observation"},
+    "staged_ref": {"label": "staged_ref"},
+    "plan_request": {"label": "plan_request"},
+    "archive_request": {"label": "archive_request"},
+    "nanobot_task": {"label": "nanobot_task"},
+    "status_notice": {"label": "status_notice"},
+    "provider_identity": {"label": "provider_identity"},
+}
+
+_TRIGGER_TAXONOMY_BY_KEY: dict[str, dict[str, list[str]]] = {
+    "calendar": {
+        "ascending_channels": ["external_inbox", "scheduled_poll"],
+        "interaction_modules": ["google_calendar", "scheduler_nanobot", "l1_5_pool", "l2_b_graph"],
+        "information_tags": ["calendar_event", "provider_identity", "l15_observation", "status_notice"],
+    },
+    "message": {
+        "ascending_channels": ["external_inbox", "scheduled_poll"],
+        "interaction_modules": ["google_message", "scheduler_nanobot", "l1_5_pool", "l2_b_graph"],
+        "information_tags": ["google_message", "provider_identity", "l15_observation", "status_notice"],
+    },
+    "obsidian": {
+        "ascending_channels": ["external_inbox", "memory_maintenance"],
+        "interaction_modules": ["obsidian", "l1_5_pool", "l2_b_graph"],
+        "information_tags": ["obsidian_note", "provider_identity", "l15_observation"],
+    },
+    "ssot": {
+        "ascending_channels": ["memory_maintenance", "perception_scene"],
+        "interaction_modules": ["graphiti", "l2_b_graph"],
+        "information_tags": ["graphiti_context", "provider_identity", "scene_context"],
+    },
+    "scene_context": {
+        "ascending_channels": ["perception_scene", "memory_maintenance"],
+        "interaction_modules": ["graphiti", "l2_b_graph"],
+        "information_tags": ["scene_context", "graphiti_context"],
+    },
+    "scene_switch": {
+        "ascending_channels": ["operator_mode", "perception_scene"],
+        "interaction_modules": ["runtime_operator", "l1_5_pool", "l2_b_graph"],
+        "information_tags": ["scene_state", "bucket_operation"],
+    },
+    "roleplay": {
+        "ascending_channels": ["operator_mode"],
+        "interaction_modules": ["runtime_operator", "l1_5_pool"],
+        "information_tags": ["mode_profile", "bucket_operation"],
+    },
+    "intent_event_boundary": {
+        "ascending_channels": ["intent_boundary"],
+        "interaction_modules": ["intent_workspace", "plan_registry"],
+        "information_tags": ["intent_boundary", "scene_state"],
+    },
+    "goslo_curiosity": {
+        "ascending_channels": ["perception_scene", "intent_boundary"],
+        "interaction_modules": ["l1_5_pool", "intent_workspace", "plan_registry"],
+        "information_tags": ["curiosity_signal", "l15_observation", "staged_ref", "plan_request"],
+    },
+    "idle_archive": {
+        "ascending_channels": ["memory_maintenance", "scheduled_poll"],
+        "interaction_modules": ["archive_pipeline", "scheduler_nanobot", "graphiti"],
+        "information_tags": ["archive_request", "nanobot_task", "graphiti_context"],
+    },
+}
+
 
 def trigger_catalog() -> dict[str, Any]:
     """Return trigger metadata for the Runtime Monitor lab."""
@@ -101,6 +215,7 @@ def trigger_catalog() -> dict[str, Any]:
     triggers: list[dict[str, Any]] = []
     for trigger_cls in ALL_TRIGGERS:
         name = str(getattr(trigger_cls, "name", trigger_cls.__name__))
+        taxonomy = _trigger_taxonomy_for(name)
         triggers.append(
             {
                 "name": name,
@@ -108,11 +223,30 @@ def trigger_catalog() -> dict[str, Any]:
                 "kinds": [_enum_value(kind) for kind in getattr(trigger_cls, "kinds", [])],
                 "interval_seconds": float(getattr(trigger_cls, "interval_seconds", 0) or 0),
                 "event_hints": _event_hints_for(name),
+                **taxonomy,
             }
         )
     return {
         "success": True,
         "action": "trigger_catalog",
+        "taxonomy": _trigger_taxonomy_catalog(),
+        "groups": {
+            "ascending_channel": _trigger_catalog_groups(
+                triggers,
+                field="ascending_channels",
+                definitions=_TRIGGER_CHANNEL_DEFINITIONS,
+            ),
+            "interaction_module": _trigger_catalog_groups(
+                triggers,
+                field="interaction_modules",
+                definitions=_TRIGGER_MODULE_DEFINITIONS,
+            ),
+            "information_tag": _trigger_catalog_groups(
+                triggers,
+                field="information_tags",
+                definitions=_TRIGGER_INFORMATION_DEFINITIONS,
+            ),
+        },
         "triggers": triggers,
         "audit": {
             "web_only": True,
@@ -3464,6 +3598,98 @@ def _event_hints_for(trigger_name: str) -> list[dict[str, Any]]:
         if key in trigger_name:
             return value
     return []
+
+
+def _trigger_taxonomy_for(trigger_name: str) -> dict[str, Any]:
+    """Classify a trigger along stable operator-facing review dimensions."""
+
+    name = str(trigger_name or "").strip()
+    lowered = name.lower()
+    taxonomy: dict[str, list[str]] | None = None
+    for key, candidate in _TRIGGER_TAXONOMY_BY_KEY.items():
+        if key in lowered:
+            taxonomy = candidate
+            break
+    if taxonomy is None:
+        taxonomy = {
+            "ascending_channels": ["memory_maintenance"],
+            "interaction_modules": ["l2_b_graph"],
+            "information_tags": ["status_notice"],
+        }
+
+    ascending_channels = _unique_texts(taxonomy.get("ascending_channels", []))
+    interaction_modules = _unique_texts(taxonomy.get("interaction_modules", []))
+    information_tags = _unique_texts(taxonomy.get("information_tags", []))
+    return {
+        "ascending_channels": ascending_channels,
+        "interaction_modules": interaction_modules,
+        "information_tags": information_tags,
+        "taxonomy": {
+            "schema": "dsg.trigger.taxonomy.v1",
+            "primary_ascending_channel": ascending_channels[0] if ascending_channels else "",
+            "ascending_channels": ascending_channels,
+            "interaction_modules": interaction_modules,
+            "information_tags": information_tags,
+            "operator_note": (
+                "Ascending channels are review/filter lanes. They do not change "
+                "the trigger firing semantics or publish channel."
+            ),
+        },
+    }
+
+
+def _trigger_taxonomy_catalog() -> dict[str, Any]:
+    return {
+        "schema": "dsg.trigger.taxonomy.v1",
+        "default_group_dimension": "ascending_channel",
+        "dimensions": {
+            "ascending_channel": _taxonomy_definition_rows(_TRIGGER_CHANNEL_DEFINITIONS),
+            "interaction_module": _taxonomy_definition_rows(_TRIGGER_MODULE_DEFINITIONS),
+            "information_tag": _taxonomy_definition_rows(_TRIGGER_INFORMATION_DEFINITIONS),
+        },
+        "policy": (
+            "Classifications are operator-visible filter/view tags. Trigger execution "
+            "still follows TriggerKind and the CH_DSG_EVENTS publish path."
+        ),
+    }
+
+
+def _taxonomy_definition_rows(definitions: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": key,
+            "label": str(value.get("label") or key),
+            "description": str(value.get("description") or ""),
+        }
+        for key, value in definitions.items()
+    ]
+
+
+def _trigger_catalog_groups(
+    triggers: list[dict[str, Any]],
+    *,
+    field: str,
+    definitions: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key, definition in definitions.items():
+        matched = [
+            str(trigger.get("name") or "")
+            for trigger in triggers
+            if key in set(_unique_texts(trigger.get(field, [])))
+        ]
+        if not matched:
+            continue
+        rows.append(
+            {
+                "id": key,
+                "label": str(definition.get("label") or key),
+                "description": str(definition.get("description") or ""),
+                "trigger_names": matched,
+                "count": len(matched),
+            }
+        )
+    return rows
 
 
 def _matched_trigger_names(event: dict[str, Any], trigger_name: str = "") -> list[str]:

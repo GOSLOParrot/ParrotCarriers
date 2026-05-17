@@ -82,6 +82,8 @@ export type TriggerCatalog = {
   success?: boolean;
   action?: string;
   triggers?: Array<Record<string, unknown>>;
+  taxonomy?: Record<string, unknown>;
+  groups?: Record<string, unknown>;
   audit?: Record<string, unknown>;
 };
 

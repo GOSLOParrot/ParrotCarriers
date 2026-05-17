@@ -2629,6 +2629,23 @@ def test_dsg_trigger_management_routes_are_dry_run_and_secret_safe(monkeypatch) 
 
     assert catalog["success"] is True
     assert "message_notification" in {item["name"] for item in catalog["triggers"]}
+    assert len(catalog["taxonomy"]["dimensions"]["ascending_channel"]) >= 4
+    assert {
+        "external_inbox",
+        "scheduled_poll",
+        "perception_scene",
+        "operator_mode",
+    } <= {row["id"] for row in catalog["taxonomy"]["dimensions"]["ascending_channel"]}
+    message_meta = next(
+        item for item in catalog["triggers"] if item["name"] == "message_notification"
+    )
+    assert "external_inbox" in message_meta["ascending_channels"]
+    assert "google_message" in message_meta["interaction_modules"]
+    assert "google_message" in message_meta["information_tags"]
+    assert any(
+        row["id"] == "external_inbox" and "message_notification" in row["trigger_names"]
+        for row in catalog["groups"]["ascending_channel"]
+    )
     assert draft["dry_run"] is True
     assert draft["data"]["matched_triggers"] == ["message_notification"]
     assert dry_fire["data"]["would_publish"] is True
