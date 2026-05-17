@@ -210,3 +210,12 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `dsg.trigger.draft_event` receipt matched to `intent_event_boundary`, one
   `runtime.workflow.plan_draft` receipt with one `ref_scan` step, then deleted
   the draft.
+- 2026-05-17: Released CFW-11 to ECS as commit `206f315`. Both
+  `/opt/parrot/ParrotCarriers` and `/opt/parrotcarriers` fast-forwarded to the
+  same commit, then `parrot-app-monitor`, `parrot-scheduler`,
+  `parrot-goslo-chat`, `parrot-maid`, `parrot-orchestrator`, and
+  `parrot-brain` were restarted and verified active. Remote `8790` smoke saved
+  `ecs-run-smoke-20260517213107`, ran `POST /api/runtime/workflow/run` in
+  preview, returned one `dsg.trigger.draft_event` receipt matched to
+  `intent_event_boundary`, one `runtime.workflow.plan_draft` receipt with one
+  `ref_scan` step, then deleted the draft.

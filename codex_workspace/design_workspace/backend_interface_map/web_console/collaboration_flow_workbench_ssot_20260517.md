@@ -418,6 +418,9 @@ Verification:
   `dsg.trigger.draft_event` receipt matched to `intent_event_boundary`, one
   `runtime.workflow.plan_draft` receipt with one `ref_scan` step, and deleted
   the draft.
+- ECS commit `206f315` remote smoke on `8790` saved
+  `ecs-run-smoke-20260517213107`, ran `POST /api/runtime/workflow/run`, returned
+  one trigger draft receipt and one Plan draft receipt, and deleted the draft.
 
 Remaining gaps after third slice:
 
