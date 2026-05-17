@@ -57,6 +57,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  runtimeWorkflowActionGates: (state = "pending") =>
+    json<{ gates?: Array<Record<string, unknown>>; count?: number }>("/api/runtime/workflow/action-gates?state=" + encodeURIComponent(state)),
+  runtimeWorkflowActionGateDraft: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/runtime/workflow/action-gates", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  runtimeWorkflowActionGateDecision: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/runtime/workflow/action-gates/decision", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   runtimeWorkflowDrafts: () => json<RuntimeWorkflowDrafts>("/api/runtime/workflows/drafts"),
   runtimeWorkflowDraftGet: (workflowId: string) =>
     json<Receipt>(`/api/runtime/workflows/drafts/${encodeURIComponent(workflowId)}`),

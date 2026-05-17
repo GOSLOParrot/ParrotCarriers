@@ -331,6 +331,9 @@ const dict = {
     deleteWorkflow: "Delete",
     runWorkflow: "Run",
     resultRoutes: "Routes",
+    actionGates: "Action gates",
+    createGate: "Gate",
+    applyGate: "Apply",
     savedWorkflows: "Saved workflows",
     noWorkflowNodes: "No workflow nodes inserted yet.",
     noSavedWorkflows: "No saved workflows.",
@@ -533,6 +536,9 @@ const dict = {
     deleteWorkflow: "删除",
     runWorkflow: "运行",
     resultRoutes: "结果路由",
+    actionGates: "动作 Gate",
+    createGate: "建 Gate",
+    applyGate: "执行",
     savedWorkflows: "已保存工作流",
     noWorkflowNodes: "还没有插入工作流节点。",
     noSavedWorkflows: "暂无已保存工作流。",
@@ -2636,6 +2642,7 @@ function RuntimeFlowWorkspace({
   const [savedWorkflowId, setSavedWorkflowId] = useState("");
   const [workflowDraft, setWorkflowDraft] = useState<WorkflowDraftNode[]>([]);
   const [workflowDrafts, setWorkflowDrafts] = useState<RuntimeWorkflowDrafts>({});
+  const [workflowActionGates, setWorkflowActionGates] = useState<Array<Record<string, unknown>>>([]);
   const [evidenceRefreshSeq, setEvidenceRefreshSeq] = useState(0);
   const pokeEvidenceRefresh = useCallback(() => {
     setEvidenceRefreshSeq((value) => value + 1);
@@ -2657,6 +2664,10 @@ function RuntimeFlowWorkspace({
     () => (workflowDrafts.drafts ?? []).filter((row) => row && typeof row === "object"),
     [workflowDrafts]
   );
+  const pendingActionGates = useMemo(
+    () => workflowActionGates.filter((row) => String(row.state || "") === "pending"),
+    [workflowActionGates]
+  );
 
   const refreshWorkflowDrafts = useCallback(async () => {
     try {
@@ -2666,9 +2677,19 @@ function RuntimeFlowWorkspace({
     }
   }, [pushReceipt]);
 
+  const refreshWorkflowActionGates = useCallback(async () => {
+    try {
+      const body = await api.runtimeWorkflowActionGates("pending");
+      setWorkflowActionGates((body.gates ?? []).filter((row) => row && typeof row === "object"));
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.action_gates.list", exc));
+    }
+  }, [pushReceipt]);
+
   useEffect(() => {
     void refreshWorkflowDrafts();
-  }, [refreshWorkflowDrafts]);
+    void refreshWorkflowActionGates();
+  }, [refreshWorkflowDrafts, refreshWorkflowActionGates]);
 
   const nodes = useMemo<Node[]>(() => {
     const lanes = flow.lanes ?? [];
@@ -2899,6 +2920,42 @@ function RuntimeFlowWorkspace({
     }
   };
 
+  const createWorkflowActionGate = async (node: WorkflowDraftNode) => {
+    try {
+      const receipt = await api.runtimeWorkflowActionGateDraft({
+        workflow_id: savedWorkflowId,
+        workflow_node_id: node.workflow_node_id,
+        workflow_node: node,
+        title: `${String(node.capability.title || node.capability.capability_id || "Workflow action")} gate`
+      });
+      pushReceipt(receipt);
+      await refreshWorkflowActionGates();
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.action_gate.draft", exc, {
+        workflow_node_id: node.workflow_node_id,
+        capability_id: String(node.capability.capability_id || "")
+      }));
+    }
+  };
+
+  const decideWorkflowActionGate = async (gate: Record<string, unknown>, decision: string) => {
+    try {
+      const receipt = await api.runtimeWorkflowActionGateDecision({
+        gate_id: gate.gate_id,
+        decision,
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      });
+      pushReceipt(receipt);
+      await refreshWorkflowActionGates();
+    } catch (exc) {
+      pushReceipt(errorReceipt("runtime.workflow.action_gate.apply", exc, {
+        gate_id: String(gate.gate_id || ""),
+        decision
+      }));
+    }
+  };
+
   const importWorkflowPlan = async () => {
     if (!workflowDraft.length) {
       pushReceipt(localReceipt("runtime.workflow.plan_draft", false, { error: "empty_workflow_draft" }));
@@ -3097,6 +3154,11 @@ function RuntimeFlowWorkspace({
                         <Play size={13} /> {t.executeNode}
                       </button>
                     ) : null}
+                    {workflowNodeCanGate(node) ? (
+                      <button className="button tiny" onClick={() => void createWorkflowActionGate(node)}>
+                        <ShieldCheck size={13} /> {t.createGate}
+                      </button>
+                    ) : null}
                     <button className="button tiny danger" onClick={() => removeWorkflowNode(node.workflow_node_id)} aria-label={t.clear}>
                       <X size={14} />
                     </button>
@@ -3127,6 +3189,27 @@ function RuntimeFlowWorkspace({
                   })}
                 </div>
               ) : <p className="muted">{t.noSavedWorkflows}</p>}
+            </div>
+            <div className="saved-workflow-panel">
+              <strong>{t.actionGates}</strong>
+              {pendingActionGates.length ? (
+                <div className="saved-workflow-list">
+                  {pendingActionGates.slice(0, 8).map((gate) => (
+                    <div className="saved-workflow-row" key={String(gate.gate_id || gate.title)}>
+                      <span>
+                        <b>{String(gate.title || gate.gate_id || "action gate")}</b>
+                        <small>{`${String(gate.action_kind || "-")} / ${String(gate.capability_id || "-")}`}</small>
+                      </span>
+                      <button className="button tiny" onClick={() => void decideWorkflowActionGate(gate, "apply")}>
+                        <Play size={13} /> {t.applyGate}
+                      </button>
+                      <button className="button tiny ghost" onClick={() => void decideWorkflowActionGate(gate, "reject")}>
+                        <X size={13} /> {t.reject}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="muted">{t.noPendingGate}</p>}
             </div>
           </div>
         </div>
@@ -4053,6 +4136,13 @@ function runtimeActionGroups(t: ConsoleCopy): Array<{
 
 function capabilityKindOptions(rows: Array<Record<string, unknown>>): string[] {
   return uniqueStrings(rows.map((row) => String(row.kind || "")).filter(Boolean));
+}
+
+function workflowNodeCanGate(node: WorkflowDraftNode): boolean {
+  return (
+    String(node.capability.kind || "") === "trigger"
+    || String(node.capability.nanobot_task_type || "") === "message_check"
+  );
 }
 
 function capabilityMatchesQuery(row: Record<string, unknown>, query: string): boolean {
@@ -6987,6 +7077,10 @@ function receiptSummary(data: Record<string, unknown>): string {
       .map(([key, value]) => `${key}:${String(value)}`)
       .join(", ");
     return `Result routes ${nodeCount} node(s)${destinations ? ` / ${destinations}` : ""}`;
+  }
+  const gate = recordFromUnknown(data.gate);
+  if (gate.gate_id) {
+    return `Action gate ${String(gate.state || "-")} / ${String(gate.action_kind || "-")}`;
   }
   const skipped = data.publish_skipped_reason || data.apply_skipped_reason || data.dispatch_skipped_reason;
   if (skipped) return String(skipped);

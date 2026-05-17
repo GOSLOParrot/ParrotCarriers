@@ -431,6 +431,30 @@ def build_app():  # type: ignore[no-untyped-def]
 
         return await run_workflow_draft(payload or {})
 
+    @app.get("/api/runtime/workflow/action-gates")
+    async def runtime_workflow_action_gates(state: str = "pending", q: str = "", limit: int = 50):  # type: ignore[no-untyped-def]
+        from parrot.web_console.workflow_action_gates import list_workflow_action_gates
+
+        return list_workflow_action_gates(state=state, q=q, limit=limit)
+
+    @app.post("/api/runtime/workflow/action-gates")
+    async def runtime_workflow_action_gate_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.workflow_action_gates import draft_workflow_action_gate
+
+        return draft_workflow_action_gate(payload or {})
+
+    @app.post("/api/runtime/workflow/action-gates/decision")
+    async def runtime_workflow_action_gate_decision(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.workflow_action_gates import apply_workflow_action_gate
+
+        return await apply_workflow_action_gate(payload or {})
+
+    @app.delete("/api/runtime/workflow/action-gates/{gate_id}")
+    async def runtime_workflow_action_gate_delete(gate_id: str):  # type: ignore[no-untyped-def]
+        from parrot.web_console.workflow_action_gates import delete_workflow_action_gate
+
+        return delete_workflow_action_gate(gate_id)
+
     @app.get("/api/runtime/workflows/drafts")
     async def runtime_workflow_drafts(q: str = "", limit: int = 50):  # type: ignore[no-untyped-def]
         from parrot.web_console.workflow_drafts import list_workflow_drafts

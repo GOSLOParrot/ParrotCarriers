@@ -135,6 +135,8 @@ def test_runtime_capability_catalog_indexes_real_workbench_routes() -> None:
     assert by_id["runtime.flow.snapshot"]["route"] == "/api/runtime/flow"
     assert by_id["runtime.workflow.result_contract"]["route"] == "/api/runtime/workflow/result-contract"
     assert by_id["runtime.workflow.result_contract"]["execution_policy"] == "draft_only"
+    assert by_id["runtime.workflow.action_gates"]["route"] == "/api/runtime/workflow/action-gates"
+    assert by_id["runtime.workflow.action_gates"]["kind"] == "hitl_gate"
     assert by_id["graphiti.subgraph.search"]["true_connection"]["state"] == "ecs_proxy"
     assert by_id["graphiti.materialize_l2b"]["execution_policy"] == "operator_gated"
     assert by_id["l2b.subgraph.context"]["execution_policy"] == "read_only"
@@ -244,6 +246,7 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
     from parrot.brain.plan import PlanRegistry, set_plan_registry_for_test
 
     monkeypatch.setenv("PARROT_WEB_CONSOLE_WORKFLOW_DRAFTS_PATH", str(tmp_path / "workflow_drafts.json"))
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_ACTION_GATES_PATH", str(tmp_path / "workflow_action_gates.json"))
     set_intent_workspace_for_test(IntentWorkspace())
     registry = PlanRegistry(dispatch_task=_fake_plan_dispatch)
     set_plan_registry_for_test(registry)
@@ -284,6 +287,24 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         ).json()
         listed = client.get("/api/runtime/workflows/drafts?q=demo").json()
         loaded = client.get("/api/runtime/workflows/drafts/wf-demo").json()
+        action_gate = client.post(
+            "/api/runtime/workflow/action-gates",
+            json={"workflow_id": "wf-demo", "workflow_node_id": "wf-trigger"},
+        ).json()
+        action_gates = client.get("/api/runtime/workflow/action-gates").json()
+        action_gate_preview = client.post(
+            "/api/runtime/workflow/action-gates/decision",
+            json={"gate_id": action_gate["data"]["gate"]["gate_id"], "decision": "apply", "dry_run": True},
+        ).json()
+        action_gate_cancel = client.post(
+            "/api/runtime/workflow/action-gates/decision",
+            json={
+                "gate_id": action_gate["data"]["gate"]["gate_id"],
+                "decision": "cancel",
+                "dry_run": False,
+                "operator_mode": True,
+            },
+        ).json()
         route_contract = client.post(
             "/api/runtime/workflow/result-contract",
             json={"workflow_id": "wf-demo"},
@@ -310,6 +331,14 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         assert saved["summary"]["plan_compatible_count"] == 1
         assert listed["count"] == 1
         assert loaded["draft"]["nodes"][0]["capability"]["sample_payload"]["api_token"] == "[REDACTED]"
+        assert action_gate["action"] == "runtime.workflow.action_gate.draft"
+        assert action_gate["success"] is True
+        assert action_gate["data"]["gate"]["action_kind"] == "trigger_event"
+        assert action_gates["count"] == 1
+        assert action_gate_preview["success"] is True
+        assert action_gate_preview["data"]["preview_receipt"]["action"] == "dsg.trigger.draft_event"
+        assert action_gate_cancel["success"] is True
+        assert action_gate_cancel["data"]["gate"]["state"] == "cancelled"
         assert route_contract["success"] is True
         assert route_contract["data"]["result_contract"]["workflow_id"] == "wf-demo"
         assert route_contract["data"]["result_contract"]["destination_counts"]["return_to_goslo"] == 1

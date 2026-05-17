@@ -46,7 +46,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-9 | done | Post-implementation review/bugfix/ECS release if needed. | First slice committed/pushed as `1137475` and ECS services were updated/restarted. |
 | CFW-10 | done | Durable Web workflow draft registry. | Added save/list/get/delete routes, secret redaction, local UI save/load/delete controls, and `workflow_id` Plan import. |
 | CFW-11 | done-first-slice | Whole workflow run/preview. | `POST /api/runtime/workflow/run` splits trigger nodes to DSG trigger routes and Nanobot-compatible nodes to Plan/HITL without changing Scheduler schema. |
-| CFW-12 | pending | Trigger/message HITL state machine. | Current trigger fire remains operator-gated receipt-based execution. |
+| CFW-12 | done-first-slice | Trigger/message HITL state machine. | Added Web-only workflow action gates for trigger nodes and `message_check`; still separate from Plan HITL and not a shared App DTO. |
 | CFW-13 | done-first-slice | Durable result-destination contract for Plan/Scheduler results. | Added `workflow_result_contract_v1` preview and carries result routes in Plan step inputs; Scheduler enforcement remains a reviewed follow-up before autonomous chained workflows. |
 
 ## First Slice Design
@@ -232,3 +232,17 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `stage_to_intent_workspace:1`, `return_to_goslo:2`, `view_only:1`, confirmed
   `scheduler_enforced=false`, confirmed Plan preview carried two result routes
   on the `ref_scan` step, then deleted the draft.
+- 2026-05-17: Implemented CFW-12 first slice:
+  `GET/POST/DELETE /api/runtime/workflow/action-gates` and
+  `POST /api/runtime/workflow/action-gates/decision`. The state machine stores
+  Web-only pending gates for trigger workflow nodes and `message_check`, lets
+  operators preview/apply/reject/cancel, and applies by calling the existing
+  trigger or message routes only under operator execution.
+- 2026-05-17 CFW-12 validation: Python compile passed for the touched runtime
+  files; Web Console route tests reported `91 passed`; app-monitor route tests
+  reported `11 passed`; frontend `npm run typecheck` and `npm run build`
+  passed with the existing chunk-size warning. Local `7893` smoke saved
+  `local-action-gate-smoke-*`, created trigger and message gates, previewed
+  trigger apply through `dsg.trigger.draft_event`, applied a real operator
+  `reject` decision on the message gate (`state=rejected`), listed two gates,
+  and cleaned up both gates plus the workflow draft.

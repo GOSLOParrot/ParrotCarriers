@@ -476,3 +476,55 @@ Remaining gaps after fourth slice:
   can automatically fan out result payloads to IntentWorkspace, Graphiti, L2-B,
   or App events.
 - Trigger/message HITL state remains receipt-based rather than durable gates.
+
+## 2026-05-17 Fifth Slice Completion
+
+Implemented:
+
+- Added Web-only workflow action gates:
+  - `GET /api/runtime/workflow/action-gates`
+  - `POST /api/runtime/workflow/action-gates`
+  - `POST /api/runtime/workflow/action-gates/decision`
+  - `DELETE /api/runtime/workflow/action-gates/{gate_id}`
+- The state machine stores pending trigger/message workflow actions, supports
+  `apply`, `approve`, `reject`, and `cancel`, and records bounded decision
+  history plus safe/redacted receipts.
+- Supported first targets are trigger workflow nodes and
+  `nanobot_task_type=message_check`.
+- Apply still calls existing routes only:
+  - trigger gates -> `draft_trigger_event` / `fire_trigger_event`
+  - message gates -> `draft_message_check` / `dispatch_message_check`
+- React Runtime can create a Gate from supported workflow nodes and operate
+  pending gates from the Collaboration Flow panel.
+- ECS `8790` app-monitor exposes the same route subset for remote parity.
+
+Design decision:
+
+- This is separate from Plan HITL. It is a Web operator state machine for
+  trigger/message actions, not a shared App DTO and not a Scheduler workflow
+  protocol. It can be promoted later as CORE-011 after the trigger/message
+  lifecycle is reviewed.
+
+Verification:
+
+- Python compile passed for `workflow_action_gates.py`, `server.py`,
+  `app_monitor_server.py`, and `capability_catalog.py`.
+- `pytest tests/test_web_console/test_web_console_server.py -q` -> `91 passed`.
+- `pytest tests/test_brain/test_app_v1_monitor.py -q` -> `11 passed`.
+- `npm run typecheck` -> passed.
+- `npm run build` -> passed with the existing chunk-size warning.
+- Local `7893` smoke saved a workflow draft, created trigger and
+  `message_check` gates, previewed trigger apply through
+  `dsg.trigger.draft_event`, applied a real operator reject decision on the
+  message gate, listed two gates before cleanup, then deleted both gates and
+  the draft.
+
+Remaining gaps after fifth slice:
+
+- Trigger gates can execute real trigger publishes, but this is still an
+  operator route rather than a durable Scheduler step.
+- Message gates can dispatch `message_check` through the existing
+  Scheduler/Nanobot path, but result routing still depends on the existing
+  task ledger and the non-enforced `workflow_result_contract_v1` metadata.
+- Autonomous chained workflow behavior remains blocked until Scheduler consumes
+  result routes and trigger/message gates are reviewed for shared promotion.
