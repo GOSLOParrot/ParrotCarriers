@@ -17,6 +17,10 @@ relevant backend code. After each slice, add verification and review notes here.
 | Q6 | What is true trigger fire today? | `POST /api/dsg/triggers/fire-event` publishes only with `operator_mode=true` and `dry_run=false`; otherwise it returns a safe preview receipt. |
 | Q7 | What can be real in first implementation? | Backend capability catalog, frontend search, local workflow draft insertion, and true trigger draft/fire from inserted nodes. |
 | Q8 | What remains future? | Durable workflow storage, trigger/message HITL state machines, Plan result-destination schema, full Graphiti/L2-B transform recipes, and autonomous ref repair. |
+| Q9 | Should Parrot copy a single external workflow product? | No. Borrow portable artifacts, HITL gates, typed ports, receipt logs, API/CLI parity, and secrets separation from multiple tools; keep Parrot's Graphiti/L2-B/GOSLO semantics. |
+| Q10 | Should CLI be supported? | Yes, but as a thin Parrot control plane after `workflow_schema_v1`, not as CLI-first UX and not as a nanobot gateway replacement. |
+| Q11 | What is the next safest implementation slice? | `workflow_schema_v1` plus Web import/export/diff preview; then a minimal CLI `workflow validate`. |
+| Q12 | What counts as drift? | Static UI nodes, generic code/HTTP nodes, global Intent toggle, Graphiti flattening, Nanobot generic prompt pretending to be a typed task, or memory writes without route-specific operator gates. |
 
 ## TODO Before
 
@@ -51,6 +55,11 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-14 | done-first-slice | Workflow result intake and reviewed result-route consumption. | Added Web-only result intake for `workflow_result_contract_v1`; operator mode can stage reviewed results to IntentWorkspace and records a bounded Web ledger. |
 | CFW-15 | done-first-slice | Interaction-mode catalog and filter. | Capability rows now carry `interaction_modes` on the L0/L1/L2/C3/C4/I0 ladder; React Runtime can filter capabilities by mode. C4/I0 stay future-policy definitions with no automatic execution. |
 | CFW-16 | done-research | Comparative architecture and CLI decision research. | Recorded `../collaboration_flow_architecture_cli_research_20260517.md`: Web remains the primary workbench; a thin Parrot CLI is recommended later for catalog/workflow validation, import/export, Plan draft, result-intake preview, and ECS smoke. |
+| CFW-17 | done-research | Deep objective scheme analysis and next-slice gates. | Expanded `../collaboration_flow_architecture_cli_research_20260517.md` with Dify/Langflow/Flowise/AutoGen patterns, core/non-core requirements, task distribution, TODO pre/during/after, drift audit, true-connection test matrix, and recommendation to start with `workflow_schema_v1` + Web import/export/diff. |
+| CFW-18 | pending | `workflow_schema_v1` validator and redacted export/import helper. | Must validate known-good/bad workflow JSON, preserve safe unknown fields, redact secrets, and power both Web and later CLI. |
+| CFW-19 | pending | Web import/export/diff preview for workflow drafts. | Operator can export saved draft, import it back, preview diff, and run existing plan/run/result-contract routes unchanged. |
+| CFW-20 | pending | Thin CLI first slice: `workflow validate` and `catalog list`. | CLI must reuse backend/schema functions, default JSON output, and not execute writes. |
+| CFW-21 | pending | True-connection smoke pack for local/ECS workflow artifact path. | Local 7893 and ECS 8790 prove catalog, schema, import/export, Plan draft, gate, result-intake, and Graphiti bundle preservation where applicable. |
 
 ## First Slice Design
 
@@ -317,3 +326,11 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   import/export, Plan draft, result-intake preview, and true-connection smokes,
   and keep nanobot as an embedded worker rather than a CLI/gateway control
   plane.
+- 2026-05-17 CFW-17 deepening: added Dify, Langflow, Flowise, and AutoGen
+  Studio to the comparison, then hardened the Parrot-specific gates. The next
+  recommended slice is not a broad workflow engine or broad CLI; it is
+  `workflow_schema_v1` plus Web import/export/diff preview, followed by a
+  minimal `workflow validate` CLI. The documented non-core/drift list blocks
+  generic Code Nodes, arbitrary HTTP nodes, direct C4/I0 execution, direct
+  Graphiti/L2-B writes without route-specific gates, and nanobot gateway/CLI as
+  the main control plane.

@@ -172,6 +172,180 @@ Near-term UI additions:
 | C | CLI/TUI-first | Fast for operators who live in terminal. | Bad for Graphiti/L2-B visual inspection and user-facing design. | Not recommended as primary. |
 | D | External workflow engine | Durable distributed workflow execution. | Heavy migration and semantic mismatch today. | Future-only if Scheduler routing outgrows current model. |
 
+## Broader Builder Patterns
+
+The comparison should not overfit one tool. The useful patterns are repeated
+across multiple workflow/agent builders:
+
+| Pattern | Seen in | What to learn | Parrot decision |
+|:--|:--|:--|:--|
+| Portable workflow artifact | ComfyUI JSON, Node-RED JSON, n8n JSON, Dify DSL/YAML, AutoGen Studio JSON | A workflow must be easy to export, diff, review, and re-import. | Define `workflow_schema_v1` before adding richer canvas features. |
+| Web UI plus API/CLI | LangGraph CLI, Codex CLI, n8n CLI, Langflow run API, Flowise API/CLI/SDK, AutoGen Studio CLI serve | Human design and scripted validation should share artifacts. | Web is primary; thin CLI reuses the same schema and receipts. |
+| Human input node/gate | LangGraph interrupt, Dify Human Input, Claude hooks/permissions, Parrot HITL/action gates | Human review should be explicit, durable, and route-aware. | Keep Plan HITL and action gates first-class; no silent writes. |
+| Variables and secrets separation | Dify variables/env vars, n8n credentials, Langflow API key/header model | Workflow configs should not carry secrets. | Continue redaction; store OAuth/API credentials outside workflow JSON. |
+| Typed ports / node categories | Langflow typed ports, ComfyUI nodes, Node-RED palette, Dify nodes | Search/filter needs stable kinds and inputs/outputs. | Capability rows remain typed by kind, policy, mode, module, tag, and destination. |
+| Run logs and receipts | Flowise tracing/logs, AutoGen profiling, ComfyUI messages, Dify run ids | Operators need proof of what ran and what changed. | Every workflow run/gate/intake path must return receipts and ledger ids. |
+| Reusable subflows | Langflow Run Flow, Node-RED subflows, ComfyUI subgraphs, Dify node reuse | Subflows are powerful but can hide side effects. | Allow workflow templates only after validation and result-contract previews. |
+| Iteration/loop nodes | Dify Iteration/Loop, general workflow engines | Useful for batch/refinement, risky for runaway agents. | Future only; require max-count, timeout, and operator-visible progress. |
+
+## Core Requirements
+
+These are the non-negotiable Parrot needs before the page can be called a real
+Collaboration Flow Workbench:
+
+1. Real capability discovery.
+   `GET /api/runtime/capabilities/catalog` must stay the source for route,
+   policy, interaction mode, module, tags, result destinations, and
+   true-connection state. Static front-end-only nodes do not count.
+
+2. Portable workflow artifact.
+   Saved drafts need a documented `workflow_schema_v1` with nodes, edges,
+   capability refs, payload, result destinations, gates, audit, and redaction
+   policy. Web import/export and CLI validation must use the same schema.
+
+3. Operator-gated execution.
+   Trigger fire, Plan creation, result staging, Graphiti writes, and L2-B
+   materialization must remain explicit `operator_mode=true` paths. Dry-run
+   receipts are previews, not success proof.
+
+4. True Nanobot/Scheduler compatibility.
+   A workflow node is Nanobot-compatible only when it maps to a real
+   `NANOBOT_TASK_TYPES` value and can become a `PlanStepProposal.expected_tool`.
+   Generic prompt nodes do not count as pure nanobot compatibility.
+
+5. Result contract and intake.
+   Workflow runs must produce or carry `workflow_result_contract_v1`. Result
+   intake must say which routes are preview, applied, blocked, or unsupported.
+   IntentWorkspace staging is implemented; Graphiti/L2-B writes need dedicated
+   reviewed routes.
+
+6. Graphiti/L2-B raw preservation.
+   Graphiti search/bundle/subgraph payloads must remain available as raw
+   envelopes. L2-B can add fast projections and RustWorkX transform previews,
+   but must not flatten away Graphiti facts/entities/episodes.
+
+7. Evidence for true connections.
+   Local 7893 and ECS 8790 smoke should prove actual endpoints, not just UI
+   state. A route can be marked true only after a receipt/ledger/remote status
+   proves it.
+
+## Non-Core For Now
+
+These ideas are useful, but implementing them now would likely cause drift:
+
+- Generic JavaScript/Python Code Node.
+- Arbitrary HTTP request node with stored credentials.
+- C4 safe-turn speech or I0 interruption as runnable workflow nodes.
+- Autonomous Graphiti/FalkorDB surgery from a workflow without a route-specific
+  operator gate.
+- Scheduler-enforced chained workflows before result routing is promoted out of
+  Web-only prototypes.
+- Full Temporal/Prefect engine migration.
+- Nanobot gateway/CLI as the primary control plane.
+
+## Implementation Requirements
+
+Every new collaboration-flow feature should satisfy:
+
+- Shared artifact: either extends `workflow_schema_v1` or explicitly avoids
+  workflow storage.
+- Shared route proof: route exists in Web BFF and, when needed for ECS testing,
+  in app-monitor parity.
+- Receipt proof: preview and apply paths return structured receipts with
+  `dry_run`, `operator_mode`, `route_state`, and `ledger_id` or skip reason.
+- Redaction: likely secret fields are redacted at save/export/receipt time.
+- Drift guard: document whether the change is Web-only, shared core candidate,
+  or Scheduler/Plan promotion.
+- True-connection smoke: local and remote tests define what success means.
+
+## Task Distribution
+
+| Track | Owner surface | Near task | Output |
+|:--|:--|:--|:--|
+| Research/SSOT | Web docs | Keep this decision doc and workplan current. | Reread gate before implementation. |
+| Backend schema | `parrot.web_console` | Add `workflow_schema_v1` validator/export helper. | Shared Python validation used by Web and CLI. |
+| Web UI | React Runtime | Import/export/diff workflow artifacts and command palette. | Operator can inspect before run/apply. |
+| CLI | New thin Parrot CLI | `catalog list`, `workflow validate`, `workflow run --dry-run`. | Scriptable receipts, no new brain/gateway. |
+| Scheduler/Nanobot | Existing Plan path | Keep compatibility through `PlanStepProposal.expected_tool`. | Real Plan/HITL drafts, no hidden generic task type. |
+| Graphiti/L2-B | Existing subgraph/source board routes | Preserve raw bundle references in workflow nodes/results. | Graphiti facts remain inspectable after import. |
+| ECS/release | `infra/ecs-release.ps1` | Keep release as canonical; CLI may wrap later. | No duplicate deployment logic. |
+
+## TODO Pre / During / After
+
+TODO Pre for the next implementation slice:
+
+- [ ] Reread `collaboration_flow_workbench_ssot_20260517.md`.
+- [ ] Reread this architecture/CLI research note.
+- [ ] Reread `_tmp/collaboration_flow_workplan_20260517.md`.
+- [ ] Inspect `capability_catalog.py`, `runtime_flow.py`, `workflow_drafts.py`,
+  `workflow_result_intake.py`, `server.py`, and `app_monitor_server.py`.
+- [ ] Pick exactly one slice: schema/export/import, command palette, or CLI
+  validate. Do not bundle all three.
+- [ ] Define the true-connection smoke before editing code.
+
+TODO During:
+
+- [ ] Keep writes behind `operator_mode=true` and default preview/dry-run where
+  possible.
+- [ ] Use structured parsing/validation for workflow JSON, not ad hoc string
+  checks.
+- [ ] Preserve unknown future fields under an `extensions`/`raw` area rather
+  than dropping data.
+- [ ] Return precise `route_state` and `policy_skipped_reason` for unsupported
+  nodes.
+- [ ] Keep ECS app-monitor route parity if local Web BFF route is needed for
+  true remote testing.
+
+TODO After:
+
+- [ ] Run focused pytest for Web/app-monitor routes.
+- [ ] Run frontend typecheck/build if React changed.
+- [ ] Smoke local 7893 with one saved/exported/imported workflow.
+- [ ] Smoke remote 8790 after commit/push/ECS release when runtime code changed.
+- [ ] Audit requirement drift against the table below.
+- [ ] Record ledger results in the workplan.
+
+## Requirement Drift Audit
+
+| Requirement | Allowed direction | Drift signal | Review action |
+|:--|:--|:--|:--|
+| Real backend capabilities | More true routes and better proofs. | Static UI nodes without BFF route. | Block or mark prototype-only. |
+| GOSLO behavior modes | More precise policy labels. | Global Intent on/off switch. | Reject; keep per-capability policy. |
+| Graphiti/L2-B preservation | More raw bundle refs and overlays. | Flattening Graphiti into L2-B-only node categories. | Require raw envelope preservation. |
+| Nanobot compatibility | More real task types via Scheduler catalog. | Generic natural-language task pretending to be typed. | Keep as draft/research, not compatible. |
+| CLI support | Thin shared control plane. | CLI writes memory or manages nanobot gateway directly. | Reject or require operator gate. |
+| Workflow engine | Better validation and run receipts. | Replacing Scheduler with generic DAG engine too early. | Keep Web orchestration until core promotion is approved. |
+| HITL | More durable gates and timeout handling. | Silent auto-approval or hidden side effects. | Block until gate receipt exists. |
+
+## True-Connection Test Matrix
+
+Minimum test matrix for next slices:
+
+| Capability | Local proof | ECS proof | Success means |
+|:--|:--|:--|:--|
+| Catalog | `GET :7893/api/runtime/capabilities/catalog` | `GET :8790/api/runtime/capabilities/catalog` | Same required ids, modes, and true-state fields exist. |
+| Workflow schema | Validate known-good and known-bad JSON. | Same validation through app-monitor or CLI pointed at ECS. | Bad JSON returns structured errors; good JSON preserves unknown safe fields. |
+| Import/export | Save draft, export JSON, delete, import, reload. | Repeat on 8790 if route parity exists. | Secret fields redacted; node count and capability ids stable. |
+| Plan draft | Run workflow with one `ref_scan` node. | Same on 8790. | Receipt has `workflow_result_contract_v1` and one Plan-compatible step. |
+| Trigger gate | Create trigger gate, preview/apply/reject/delete. | Same on 8790 with operator mode only. | Real apply either publishes or returns explicit Redis failure; dry-run alone not success. |
+| Result intake | Preview and operator-stage IntentWorkspace row. | Same on 8790. | Applied row has `recorded=true` and can be deleted through public route. |
+| Graphiti context | Query partition, import-plan selected hits. | ECS 8790 direct Graphiti path. | Raw `graphiti_bundle` counts are present and L2-B projection is preview-only unless operator route is used. |
+
+## Recommended Next Slice
+
+The safest high-value next slice is `workflow_schema_v1` plus Web
+import/export/diff preview. It makes later CLI work honest because the CLI can
+validate the same artifact the Web creates. It also supports the user's desire
+to design real workflows for nanobot or the whole architecture without forcing
+Scheduler workflow promotion yet.
+
+Do not start with a broad CLI. Start with:
+
+1. `workflow_schema_v1` validator and redacted export helper.
+2. Web export/import/diff preview.
+3. Focused CLI wrapper for `workflow validate` only.
+4. Then add `catalog list` and `workflow run --dry-run`.
+
 ## Recommended Staging
 
 Stage 1: stabilize artifacts.
@@ -237,3 +411,11 @@ External official docs:
 - Temporal Python workflow message passing: https://docs.temporal.io/develop/python/workflows/message-passing
 - Prefect deployments: https://docs.prefect.io/v3/concepts/deployments
 - Prefect deployment creation: https://docs.prefect.io/v3/how-to-guides/deployments/create-deployments
+- Dify key concepts/workflow/DSL/variables: https://docs.dify.ai/en/use-dify/getting-started/key-concepts#workflow
+- Dify Human Input node: https://docs.dify.ai/en/use-dify/nodes/human-input
+- Dify orchestration logic: https://docs.dify.ai/en/use-dify/build/orchestrate-node
+- Dify Iteration/Loop nodes: https://docs.dify.ai/en/use-dify/nodes/iteration and https://docs.dify.ai/en/use-dify/nodes/loop
+- Langflow flows and typed DAG execution: https://docs.langflow.org/concepts-flows
+- Langflow flow trigger endpoints: https://docs.langflow.org/api-flows-run
+- Flowise introduction/capabilities: https://docs.flowiseai.com/
+- AutoGen Studio usage/export/CLI serve: https://autogenhub.github.io/autogen/docs/autogen-studio/usage/
