@@ -577,3 +577,59 @@ Verification:
 - Remote dry-run now shows `with_glossary=false` and
   `total_sub_episodes=76`.
 - Remote dry-run with `--with-glossary` shows `total_sub_episodes=102`.
+
+### S1.7 - Preview UUID / Materialized UUID Boundary Bugfix
+
+Status: fixed, tested, committed, pushed, deployed, and live-smoked
+
+Bug found:
+
+- 8790/7893 true Graphiti search and import-plan were working, but the L2-B
+  context probe could be misread as broken after import-plan. The reason was a
+  boundary leak: import-plan returns preview projection UUIDs such as
+  `graphiti:noble_etiquette:entity:*`, while
+  `/api/l2b/subgraphs/context` reads only the live `get_l2b_graph()` state by
+  durable L2-B UUID. If the preview UUID has not been operator-materialized into
+  L2-B, context must report a missing live node, not silently imply Graphiti
+  search failed.
+
+Fix:
+
+- `graphiti.subgraph.import_plan` now returns explicit
+  `direct_graphiti_write=false`, `direct_l2b_write=false`,
+  `materialization_state=preview_only_not_materialized`, and a
+  `context_route_policy` explaining that `/api/l2b/subgraphs/context` requires
+  materialized L2-B UUIDs.
+- `l2b.subgraph.context` now identifies missing `graphiti:` preview UUIDs with
+  `missing_graphiti_preview_node_uuids`,
+  `context_lookup_hint=graphiti_preview_uuid_requires_l2b_materialization`, and
+  `policies.materialized_l2b_uuid_required=true`.
+
+Verification:
+
+- Focused local regression tests passed using a repo-local temp dir on `D:`
+  because `C:` was full: `2 passed`.
+- Commit `b593f9e` was pushed to `origin/master`.
+- ECS release updated `/opt/parrot/ParrotCarriers` to `b593f9e`, reinstalled the
+  editable package, and restarted `parrot-orchestrator`,
+  `parrot-app-monitor`, `parrot-scheduler`, `parrot-maid`,
+  `parrot-goslo-chat`, and `parrot-brain`; all six returned `active`.
+- Existing local `7893` was restarted with
+  `PARROT_WEB_CONSOLE_GRAPHITI_URL=http://127.0.0.1:8790` and timeout `240s`.
+- Live 7893 status now reports `remote: graphiti-core importable`,
+  `remote_enabled=true`, `remote_base=http://127.0.0.1:8790`, and
+  `noble_etiquette` present.
+- Live 7893 search for `Florence Hartley etiquette politeness` returned
+  `2 hit(s), 6 node(s)` with bundle counts `facts=2`, `entities=4`,
+  `episodes=2`.
+- Live 7893 import-plan over those real hits returned `success=true`,
+  `selected=2`, `direct_l2b_write=false`,
+  `materialization_state=preview_only_not_materialized`, `l2b_nodes=6`,
+  `l2b_edges=2`, and `rustworkx_preview.available=true`.
+
+Next design implication:
+
+- The next real apply slice must be an operator-gated materialization route that
+  resolves Graphiti source UUIDs through IdentityRefIndex/CORE-015 into durable
+  L2-B UUIDs. Until that exists, import-plan is a faithful Graphiti/L2-B
+  projection preview, not a live L2-B topology write.
