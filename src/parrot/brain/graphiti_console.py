@@ -241,9 +241,10 @@ async def search_graphiti(
                 limit=selected_limit,
             )
             if rows:
+                strategy = _fallback_strategy_from_rows(rows)
                 fallback_search = {
                     "enabled": True,
-                    "strategy": "falkordb_partition_fact_scan",
+                    "strategy": strategy,
                     "reason": "graphiti_search_returned_no_results",
                     "partition_graph": selected_partition,
                 }
@@ -1096,6 +1097,7 @@ async def _fallback_graphiti_partition_search(
             {
                 "uuid": uuid,
                 "graphiti_uuid": uuid,
+                "graphiti_kind": "graphiti_fact",
                 "text": fact,
                 "fact": fact,
                 "name": str(row.get("name") or "").strip(),
@@ -1108,6 +1110,129 @@ async def _fallback_graphiti_partition_search(
                 "invalid_at": row.get("invalid_at"),
                 "expired_at": row.get("expired_at"),
                 "score": score,
+                "search_context": {
+                    "fallback_search": {
+                        "strategy": "falkordb_partition_fact_scan",
+                        "partition_graph": partition,
+                    },
+                },
+                "graphiti_raw": raw,
+            }
+        )
+    if not rows:
+        rows = await _fallback_graphiti_partition_node_search(
+            graphiti,
+            query=query,
+            partition=partition,
+            limit=limit,
+            terms=terms,
+        )
+    rows.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+    return rows[:limit]
+
+
+async def _fallback_graphiti_partition_node_search(
+    graphiti: Any,
+    *,
+    query: str,
+    partition: str,
+    limit: int,
+    terms: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Fallback over Graphiti nodes/Episodes when fact search is too narrow."""
+
+    search_terms = terms or _fallback_search_terms(query)
+    if not search_terms:
+        return []
+    driver = getattr(graphiti, "driver", None) or getattr(graphiti, "graph_driver", None)
+    if driver is None or not hasattr(driver, "execute_query"):
+        return []
+    scoped_driver = driver.with_database(partition) if hasattr(driver, "with_database") else driver
+    predicates: list[str] = []
+    params: dict[str, Any] = {"partition": partition, "limit": max(limit * 4, limit)}
+    for index, term in enumerate(search_terms[:8]):
+        key = f"term{index}"
+        params[key] = term
+        predicates.append(
+            " OR ".join(
+                [
+                    f"(node.name IS NOT NULL AND toLower(node.name) CONTAINS ${key})",
+                    f"(node.summary IS NOT NULL AND toLower(node.summary) CONTAINS ${key})",
+                    f"(node.content IS NOT NULL AND toLower(node.content) CONTAINS ${key})",
+                ]
+            )
+        )
+    cypher = f"""
+    MATCH (node)
+    WHERE node.group_id = $partition
+      AND ({' OR '.join(f'({item})' for item in predicates)})
+    RETURN
+      node.uuid AS uuid,
+      node.group_id AS group_id,
+      node.name AS name,
+      node.summary AS summary,
+      node.content AS content,
+      node.created_at AS created_at,
+      node.valid_at AS valid_at,
+      node.invalid_at AS invalid_at,
+      labels(node) AS labels
+    LIMIT $limit
+    """
+    try:
+        records, _, _ = await scoped_driver.execute_query(cypher, **params)
+    except Exception:
+        logger.debug("Graphiti FalkorDB fallback node search failed", exc_info=True)
+        return []
+
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records or []:
+        row = _jsonable(record)
+        if not isinstance(row, dict):
+            continue
+        uuid = str(row.get("uuid") or "").strip()
+        if not uuid or uuid in seen:
+            continue
+        seen.add(uuid)
+        labels = [str(label) for label in row.get("labels") or []]
+        text = str(row.get("summary") or row.get("content") or row.get("name") or "").strip()
+        if not text:
+            continue
+        graphiti_kind = "graphiti_episode" if any("Episodic" in label for label in labels) else "graphiti_entity"
+        raw = {
+            **row,
+            "labels": labels,
+            "group_id": str(row.get("group_id") or partition),
+            "fallback_search": {
+                "strategy": "falkordb_partition_node_scan",
+                "partition_graph": partition,
+            },
+        }
+        score = _fallback_search_score(
+            search_terms,
+            " ".join([text, str(row.get("name") or ""), " ".join(labels)]),
+        )
+        rows.append(
+            {
+                "uuid": uuid,
+                "graphiti_uuid": uuid,
+                "graphiti_kind": graphiti_kind,
+                "text": text,
+                "name": str(row.get("name") or "").strip(),
+                "summary": str(row.get("summary") or "").strip(),
+                "content": str(row.get("content") or "").strip(),
+                "group_id": str(row.get("group_id") or partition),
+                "created_at": row.get("created_at"),
+                "valid_at": row.get("valid_at"),
+                "invalid_at": row.get("invalid_at"),
+                "score": score,
+                "labels": labels,
+                "search_context": {
+                    "fallback_search": {
+                        "strategy": "falkordb_partition_node_scan",
+                        "partition_graph": partition,
+                    },
+                },
                 "graphiti_raw": raw,
             }
         )
@@ -1154,6 +1279,24 @@ def _fallback_search_score(terms: list[str], text: str) -> float:
         if term and term in haystack:
             score += max(0.25, 2.0 - index * 0.15)
     return score
+
+
+def _fallback_strategy_from_rows(rows: list[dict[str, Any]]) -> str:
+    for row in rows:
+        context = row.get("search_context")
+        if not isinstance(context, dict):
+            continue
+        fallback = context.get("fallback_search")
+        if not isinstance(fallback, dict):
+            continue
+        strategy = str(fallback.get("strategy") or "").strip()
+        if strategy:
+            return strategy
+    for row in rows:
+        kind = str(row.get("graphiti_kind") or "").strip().lower()
+        if kind in {"graphiti_episode", "graphiti_entity", "episode", "entity"}:
+            return "falkordb_partition_node_scan"
+    return "falkordb_partition_fact_scan"
 
 
 async def _collect_graphiti_subgraph_hits(
@@ -1744,6 +1887,8 @@ def _graphiti_kind_from_search_hit(hit: Any, raw: dict[str, Any]) -> str:
         labels = raw.get("labels")
         if isinstance(labels, list) and any("Community" in str(item) for item in labels):
             value = "community"
+        elif isinstance(labels, list) and any("Episodic" in str(item) for item in labels):
+            value = "episode"
     if not value and (
         _hit_value(hit, "fact")
         or _hit_value(hit, "source_node_uuid")
@@ -1967,13 +2112,24 @@ def _hit_raw_envelope(
     source_node_uuid = str(hit.get("source_node_uuid") or "").strip()
     target_node_uuid = str(hit.get("target_node_uuid") or "").strip()
     raw = _graphiti_raw_payload(hit)
+    kind = str(hit.get("graphiti_kind") or hit.get("kind") or "graphiti_fact")
+    graphiti_edge_uuid = (
+        graphiti_uuid
+        if _graphiti_bundle_is_fact(
+            kind.strip().lower(),
+            {"source_node_uuid": source_node_uuid, "target_node_uuid": target_node_uuid},
+            raw,
+        )
+        else ""
+    )
     return {
         "schema_version": 1,
-        "kind": str(hit.get("graphiti_kind") or hit.get("kind") or "graphiti_fact"),
+        "kind": kind,
         "partition": partition,
         "index": index,
         "uuid": graphiti_uuid,
-        "graphiti_edge_uuid": graphiti_uuid,
+        "graphiti_edge_uuid": graphiti_edge_uuid,
+        "graphiti_node_uuid": "" if graphiti_edge_uuid else graphiti_uuid,
         "source_node_uuid": source_node_uuid,
         "target_node_uuid": target_node_uuid,
         "episode_uuids": _episode_uuids_from_hit(hit),
@@ -2009,6 +2165,9 @@ def _hits_to_identity_ref_drafts(
     seen: set[tuple[str, str]] = set()
     for envelope in raw_envelopes:
         graphiti_edge_uuid = str(envelope.get("graphiti_edge_uuid") or "").strip()
+        graphiti_record_uuid = str(
+            envelope.get("graphiti_node_uuid") or envelope.get("uuid") or ""
+        ).strip()
         source_node_uuid = str(envelope.get("source_node_uuid") or "").strip()
         target_node_uuid = str(envelope.get("target_node_uuid") or "").strip()
         source_url = str(envelope.get("source_url") or "").strip()
@@ -2031,6 +2190,40 @@ def _hits_to_identity_ref_drafts(
                             "source_tool": "web_console.graphiti_subgraph_export",
                             "graphiti_partition": partition,
                             "graphiti_raw_kind": "fact",
+                        },
+                    },
+                )
+            )
+        elif graphiti_record_uuid:
+            raw = _jsonable(envelope.get("raw") or {})
+            labels = raw.get("labels") if isinstance(raw.get("labels"), list) else []
+            kind = str(envelope.get("kind") or "").strip().lower()
+            if _graphiti_bundle_is_episode(kind, labels):
+                ref_kind = "graphiti_episode"
+                suffix = "episode"
+            elif _graphiti_bundle_is_community(kind, labels):
+                ref_kind = "graphiti_community"
+                suffix = "community"
+            else:
+                ref_kind = "graphiti_entity"
+                suffix = "entity"
+            drafts.append(
+                _identity_ref_draft(
+                    key=(f"{ref_kind}_uuid", graphiti_record_uuid),
+                    seen=seen,
+                    payload={
+                        "graphiti_record_uuid": graphiti_record_uuid,
+                        "alias": label or graphiti_record_uuid[:12],
+                        "confidence": _safe_float(envelope.get("score"), 0.5),
+                        "resolution_state": "weak",
+                        "ref_id": f"graphiti:{partition}:{suffix}:{graphiti_record_uuid}",
+                        "ref_kind": ref_kind,
+                        "url": source_url,
+                        "graphiti_raw": envelope,
+                        "meta": {
+                            "source_tool": "web_console.graphiti_subgraph_export",
+                            "graphiti_partition": partition,
+                            "graphiti_raw_kind": suffix,
                         },
                     },
                 )

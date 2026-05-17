@@ -1533,6 +1533,7 @@ Implemented Web-only CORE-013 draft/read routes:
 |:--|:--|:--|
 | `POST /api/l2b/graph-policy/import-draft` | Preview where a source item lands: workspace-only, index pointer, isolated compartment, main graph promotion, or bounded connect-by-rule. Returns `ImportDestinationPolicy`, optional `GraphOverlay`, proposed Edge drafts, write path, and reason. | Dry-run receipt only; no L1.5/L2-B mutation and no apply route yet. |
 | `POST /api/l2b/subgraphs/draft` | Preview a foldable/isolated subgraph overlay with id, label, membership, refs, source, collapse state, and meta. | Draft/read-model only; overlay persistence is still pending. |
+| `POST /api/l2b/subgraphs/context` | Read a selected live L2-B bounded ego subgraph by stable UUIDs, including selected/missing UUIDs, live node rows, live edge rows, WCC clusters touching the selection, and a draft overlay. | True live `get_l2b_graph()` read; forced read-only receipt; no RustWorkX index exposure, no Graphiti/FalkorDB/L2-B write, and no apply route yet. |
 | `POST /api/l2b/transforms/draft` | Preview graph operations: wrap selection, aggregate/compare subgraphs, draft cross-links, promote, split, tombstone stale cluster, or send selected context to LLM. | Draft receipt only; no whole-graph rewrite and no operator apply route yet. |
 | `GET /api/l2b/analysis/health` | Read graph health: node/edge counts, orphan count, WCC count/largest WCC, and kind/bucket/source distributions. | Read-only online-safe preset; centrality/PPR/VF2 remain future operator/offline work. |
 
@@ -1560,6 +1561,63 @@ Implemented Web-only CORE-013 draft/read routes:
   `receipt`. Graphiti policy previews also preserve selected Graphiti Edge
   provenance (`source_graphiti_uuid`, `target_graphiti_uuid`, fact/label, and
   write policy) in draft Edge `meta`.
+
+2026-05-17 WEB-016 live subgraph context slice:
+
+- Added `_tmp/l2b_subgraph_tools_workplan_20260517.md` as the temporary gate
+  for this work. It records skill readback, official React Flow/rustworkx/
+  Graphiti sources, TODO-before/during/after gates, and a true-connection
+  standard before implementation.
+- Added `POST /api/l2b/subgraphs/context` to close the "decorative overlay"
+  gap. The route reads the live in-process L2-B graph through
+  `get_l2b_graph()`, expands selected UUIDs by a bounded `depth` (`0..4`), and
+  returns node/edge/cluster context plus a draft overlay.
+- The route is intentionally not a Graphiti search endpoint. Natural-language
+  and SearchConfig/BFS/recipe retrieval still belong to
+  `/api/graphiti/subgraph/*`; this route is the post-materialization L2-B
+  inspection path.
+- Node rows preserve existing Graphiti/Obsidian/ref-ish L2-B fields such as
+  `graphiti_uuid`, `obsidian_uuid`, facts, source metadata, provenance stream,
+  reference image path, and last sighting path. Edge rows preserve Graphiti fact
+  UUIDs, source/target Graphiti UUIDs, `ref_ids`, view classes, and raw edge
+  `meta`.
+- React Memory Canvas subgraph tool now has `Depth` and `Inspect context`.
+  The panel displays live node/edge/cluster counts and a true-connection line.
+- Safety posture: response forces `dry_run=true/operator_mode=false` and echoes
+  any requested apply flags under `requested_execution.ignored_for_context`.
+  It exposes no RustWorkX integer indices and writes no topology.
+- Validation: `py_compile` passed, full Web route tests are now `84 passed`,
+  React `npm run typecheck` and `npm run build` passed, and `git diff --check`
+  produced only existing LF/CRLF warnings.
+
+2026-05-17 Graphiti etiquette import wait-state note:
+
+- While the user is still importing large `noble_etiquette` sources, Web should
+  avoid repeated live search probes that could confuse import/search-index
+  state.
+- The Graphiti adapter now has a second read-only fallback for cold or
+  source-heavy partitions: if Graphiti search and fact-edge fallback return no
+  rows, Web scans Graphiti nodes/Episodes by `name`, `summary`, and `content`
+  and returns preserved `graphiti_episode` / `graphiti_entity` rows.
+- Import-plan now preserves direct Episode/Entity hits as Episode/Entity refs
+  instead of assigning a fake Graphiti fact edge UUID.
+- This is still a Graphiti read rescue path, not an L2-B ontology conversion.
+  The L2-B context route remains the post-materialization UUID/Ref/topology
+  inspection path.
+- Regression validation for the adapter is now `86 passed` in
+  `tests/test_web_console/test_web_console_server.py`. Live retry should wait
+  until the import finishes, then prove 7893 -> 8790 search/import-plan returns
+  real preserved Graphiti rows for `noble_etiquette`.
+- Live retry completed after deploying the same adapter to ECS app-monitor:
+  7893 -> 8790 now returns `noble_etiquette` Graphiti bundle data for
+  `etiquette` and phrase probes, and import-plan over two selected hits
+  returns `facts=2/entities=4/episodes=2` with an L2-B/RustWorkX preview
+  `l2b_nodes=6/l2b_edges=2`, preserving raw Graphiti and keeping
+  `direct_l2b_write=false`.
+- Caveat: the current ECS graph has `38` nodes and `70` edges, which still
+  looks like the small etiquette fixture rather than several full books.
+  If the large import finished elsewhere, check target partition/group_id and
+  which FalkorDB/app-monitor environment the import wrote to.
 
 New Web-only typed model layer: `src/parrot/web_console/graph_policy.py`
 defines `ImportDestinationPolicy`, `GraphOverlay`, `GraphRewriteDraft`,

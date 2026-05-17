@@ -150,6 +150,12 @@ class GraphitiLLMConfig:
             os.getenv("GRAPHITI_DEEPSEEK_SMALL_MODEL", "deepseek-v4-flash"),
         )
     )
+    deepseek_json_schema_enabled: bool = field(
+        default_factory=lambda: (
+            os.getenv("GRAPHITI_DEEPSEEK_JSON_SCHEMA_ENABLED", "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -159,5 +165,7 @@ class ParrotConfig:
     falkordb: FalkorDBConfig = field(default_factory=FalkorDBConfig)
     gemini: GeminiConfig = field(default_factory=GeminiConfig)
     graphiti_llm: GraphitiLLMConfig = field(default_factory=GraphitiLLMConfig)
-    google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
-    debug: bool = os.getenv("PARROT_DEBUG", "false").lower() == "true"
+    google_api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
+    debug: bool = field(
+        default_factory=lambda: os.getenv("PARROT_DEBUG", "false").lower() == "true"
+    )

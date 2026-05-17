@@ -128,6 +128,8 @@ def test_graphiti_status_search_and_dry_run_routes_are_exposed(monkeypatch) -> N
 
     monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-status-secret")
     monkeypatch.setenv("GRAPHITI_LLM_PROVIDER", "deepseek")
+    monkeypatch.delenv("GRAPHITI_DEEPSEEK_JSON_SCHEMA_ENABLED", raising=False)
+    monkeypatch.setenv("GOOGLE_API_KEY", "google-status-secret")
     monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
     client = TestClient(build_app(status_fetcher=_fake_fetcher))
 
@@ -154,11 +156,18 @@ def test_graphiti_status_search_and_dry_run_routes_are_exposed(monkeypatch) -> N
         "scene",
         "user",
         "arknights_test",
+        "noble_etiquette",
     ]
-    assert status["data"]["graphiti_llm"]["provider"] == "deepseek"
-    assert status["data"]["graphiti_llm"]["model"] == "deepseek-v4-pro"
+    assert status["data"]["graphiti_llm"]["requested_provider"] == "deepseek"
+    assert status["data"]["graphiti_llm"]["provider"] == "gemini"
+    assert status["data"]["graphiti_llm"]["model"] == "gemini-2.5-flash"
+    assert (
+        status["data"]["graphiti_llm"]["fallback_reason"]
+        == "deepseek_json_schema_response_format_disabled"
+    )
     assert status["data"]["graphiti_llm"]["secret_configured"] is True
     assert "deepseek-status-secret" not in str(status)
+    assert "google-status-secret" not in str(status)
     assert blank_search["success"] is False
     assert blank_search["message"] == "query is required"
     assert missing_search["success"] is False
@@ -170,6 +179,37 @@ def test_graphiti_status_search_and_dry_run_routes_are_exposed(monkeypatch) -> N
     assert dry_run["action"] == "add_episode"
     assert dry_run["success"] is True
     assert "dry_run=true" in dry_run["message"]
+
+
+def test_graphiti_deepseek_provider_requires_json_schema_opt_in(monkeypatch) -> None:
+    from parrot.memory.graphiti_client import __all__, get_llm_clients, graphiti_provider_status
+    from parrot.shared.config import ParrotConfig
+
+    assert "get_llm_clients" in __all__
+
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "deepseek-status-secret")
+    monkeypatch.setenv("GOOGLE_API_KEY", "google-status-secret")
+    monkeypatch.setenv("GRAPHITI_LLM_PROVIDER", "deepseek")
+    monkeypatch.delenv("GRAPHITI_DEEPSEEK_JSON_SCHEMA_ENABLED", raising=False)
+
+    safe_default = graphiti_provider_status(ParrotConfig())
+
+    assert safe_default["requested_provider"] == "deepseek"
+    assert safe_default["provider"] == "gemini"
+    assert safe_default["fallback_reason"] == "deepseek_json_schema_response_format_disabled"
+    assert "deepseek-status-secret" not in str(safe_default)
+    assert "google-status-secret" not in str(safe_default)
+
+    monkeypatch.setenv("GRAPHITI_DEEPSEEK_JSON_SCHEMA_ENABLED", "1")
+
+    opt_in = graphiti_provider_status(ParrotConfig())
+
+    assert opt_in["requested_provider"] == "deepseek"
+    assert opt_in["provider"] == "deepseek"
+    assert opt_in["model"] == "deepseek-v4-pro"
+    assert "fallback_reason" not in opt_in
+    assert "deepseek-status-secret" not in str(opt_in)
+    assert callable(get_llm_clients)
 
 
 def test_graphiti_subgraph_export_routes_are_l15_dry_run_and_secret_safe(monkeypatch) -> None:
@@ -705,6 +745,66 @@ def test_graphiti_search_falls_back_to_partition_fact_scan(monkeypatch) -> None:
     assert result.data["results"][0]["graphiti_raw"]["source_node"]["name"] == "Rhodes Island"
 
 
+def test_graphiti_search_falls_back_to_episode_node_scan(monkeypatch) -> None:
+    import asyncio
+
+    from parrot.brain import graphiti_console
+    from parrot.memory import graphiti_client
+
+    class FakeDriver:
+        def with_database(self, database: str) -> "FakeDriver":
+            assert database == "noble_etiquette"
+            return self
+
+        async def execute_query(self, cypher: str, **params: Any) -> tuple[list[dict[str, Any]], list[str], None]:
+            assert params["partition"] == "noble_etiquette"
+            if "MATCH (source)-[edge]->(target)" in cypher:
+                return ([], [], None)
+            assert "MATCH (node)" in cypher
+            assert "node.summary IS NOT NULL" in cypher
+            return (
+                [
+                    {
+                        "uuid": "episode-noble-1",
+                        "group_id": "noble_etiquette",
+                        "name": "noble_etiquette_01_greeting_rank",
+                        "summary": None,
+                        "content": "Original etiquette note. Formal greetings acknowledge relative rank.",
+                        "created_at": "2026-05-17T00:00:00Z",
+                        "valid_at": None,
+                        "invalid_at": None,
+                        "labels": ["Episodic"],
+                    }
+                ],
+                [],
+                None,
+            )
+
+    class FakeGraphiti:
+        driver = FakeDriver()
+
+        async def search(self, **kwargs: Any) -> list[Any]:
+            return []
+
+    async def fake_get_graphiti() -> FakeGraphiti:
+        return FakeGraphiti()
+
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: True)
+    monkeypatch.setattr(graphiti_client, "get_graphiti", fake_get_graphiti)
+
+    result = asyncio.run(graphiti_console.search_graphiti(
+        query="etiquette",
+        partition="noble_etiquette",
+        limit=2,
+    ))
+
+    assert result.success is True
+    assert result.data["fallback_search"]["strategy"] == "falkordb_partition_node_scan"
+    assert result.data["results"][0]["uuid"] == "episode-noble-1"
+    assert result.data["results"][0]["graphiti_kind"] == "graphiti_episode"
+    assert result.data["results"][0]["graphiti_raw"]["content"].startswith("Original etiquette note")
+
+
 def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch) -> None:
     from parrot.brain import graphiti_console
 
@@ -780,6 +880,46 @@ def test_graphiti_subgraph_import_plan_combines_l15_and_graph_policy(monkeypatch
     assert plan["data"]["core_candidates"] == ["CORE-008", "CORE-013", "CORE-015"]
     assert plan["data"]["export_receipt_id"].startswith("web_")
     assert "sk-" not in str(plan).lower()
+
+
+def test_graphiti_subgraph_import_plan_preserves_episode_hit_without_fact_edge(monkeypatch) -> None:
+    from parrot.brain import graphiti_console
+
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    plan = client.post(
+        "/api/graphiti/subgraph/import-plan",
+        json={
+            "partition": "noble_etiquette",
+            "query": "etiquette",
+            "hits": [
+                {
+                    "uuid": "episode-noble-1",
+                    "graphiti_uuid": "episode-noble-1",
+                    "graphiti_kind": "graphiti_episode",
+                    "text": "Original etiquette note. Formal greetings acknowledge relative rank.",
+                    "graphiti_raw": {
+                        "uuid": "episode-noble-1",
+                        "group_id": "noble_etiquette",
+                        "labels": ["Episodic"],
+                        "content": "Original etiquette note. Formal greetings acknowledge relative rank.",
+                    },
+                }
+            ],
+        },
+    ).json()
+
+    assert plan["success"] is True
+    bundle = plan["data"]["graphiti_bundle"]
+    assert len(bundle["sections"]["facts"]) == 0
+    assert bundle["sections"]["episodes"][0]["uuid"] == "episode-noble-1"
+    assert plan["data"]["edge_drafts"] == []
+    assert plan["data"]["identity_ref_drafts"][0]["ref_kind"] == "graphiti_episode"
+    assert "graphiti_edge_uuid" not in plan["data"]["identity_ref_drafts"][0]
+    transform_preview = plan["data"]["l2b_transform_preview"]
+    assert transform_preview["section_counts"]["facts"] == 0
+    assert transform_preview["section_counts"]["episodes"] == 1
 
 
 def test_graphiti_subgraph_import_plan_uses_normalized_partition(monkeypatch) -> None:

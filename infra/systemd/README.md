@@ -48,3 +48,38 @@ When Brain becomes a Docker container (Phase 3.2), `parrot-brain.service`
 will be replaced by `docker compose up -d brain` driven through the
 orchestrator. Keep these unit files for the Python-process variant in
 the meantime; they are the operator's manual fallback path.
+
+## Codex true-connection release workflow
+
+Use `infra/ecs-release.ps1` after the local change has been audited, committed,
+and pushed. This is the current Codex-managed path for making ECS run the same
+code that was just tested locally:
+
+```powershell
+git status --short
+git diff --stat
+# stage only the audited files, then commit and push
+git push origin master
+
+.\infra\ecs-release.ps1 -Branch master
+```
+
+The script verifies that local `HEAD` is already pushed to `origin/<branch>`,
+SSHes to `root@8.216.45.45`, updates `/opt/parrot/ParrotCarriers`, installs the
+editable package into the ECS venv, restarts these systemd units, and runs smoke
+checks against `:7890`, `:8790`, and Redis/Falkor `:6380`:
+
+```text
+parrot-orchestrator
+parrot-app-monitor
+parrot-scheduler
+parrot-maid
+parrot-goslo-chat
+parrot-brain
+```
+
+If the ECS repo has local drift, the script refuses to update by default. After
+auditing the drift, run with `-ForceResetWorktree` to back up tracked status and
+diffs under `/opt/parrot/ParrotCarriers/codex_backups/ecs_release_*` before
+resetting tracked files to `origin/<branch>`. It does not delete untracked ECS
+files.

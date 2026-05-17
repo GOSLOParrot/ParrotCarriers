@@ -668,6 +668,154 @@ rollback story.
   counts `l2b_nodes=3`, `l2b_edges=1`, `episode_links=2`, RustWorkX
   `nodes=3/edges=3`, with `direct_l2b_write=false`.
 
+2026-05-17 M20 etiquette import fallback preparation:
+
+- The `noble_etiquette` partition is now a first-class Web/GOSLO partition
+  instead of being normalized back to `goslo`.
+- During the user's large import window, live retry is intentionally paused.
+  The next proof should wait for import completion, then test 7893 -> 8790
+  status, Graphiti subgraph search, and import-plan against
+  `partition=noble_etiquette`.
+- Adapter bugfix: when Graphiti search and fact-edge fallback both return no
+  rows, the Web adapter now performs a read-only node/Episode scan over
+  `name`, `summary`, and `content`. Returned rows are marked as
+  `graphiti_episode` or `graphiti_entity` and keep the raw Graphiti payload.
+- Import-plan preserves direct Episode/Entity fallback hits as their own
+  Graphiti refs and bundle sections. They no longer inherit
+  `graphiti_edge_uuid`, so one-click import review cannot mistake a source
+  Episode for a fact edge.
+- This closes the "Episode imported but fact search empty" gap without changing
+  the ownership model: Graphiti remains source/provenance/search, L2-B remains
+  a UUID/ref-friendly working projection, and direct FalkorDB writes are still
+  outside Web's default path.
+- Regression validation: full Web route tests now report `86 passed`.
+
+2026-05-17 M21 `noble_etiquette` live ECS proof:
+
+- Deployed the Episode/Entity fallback and direct Episode/Entity import-plan
+  envelope fix to ECS app-monitor by updating
+  `/opt/parrot/ParrotCarriers/src/parrot/brain/graphiti_console.py`.
+  Remote backup:
+  `/opt/parrot/ParrotCarriers/codex_backups/m20_noble_episode_fallback_20260517174445`.
+  Remote compile passed and `parrot-app-monitor` restarted active with PID
+  `148490`.
+- Direct FalkorDB proof over port `6380`: `GRAPH.LIST` includes
+  `noble_etiquette`; that graph currently has `38` nodes and `70` edges, with
+  four sampled `Episodic` rows (`greeting_rank`, `table_seating`,
+  `correspondence_tone`, `host_guest_boundary`) and Entity rows such as
+  `greeting_rank`, `noble_etiquette_v1`, and `etiquette note`.
+- Before deployment, 7893/8790 subgraph search returned 0 for etiquette terms.
+  After deployment, both 8790 and 7893 passthrough return preserved Graphiti
+  bundle data for `partition=noble_etiquette`.
+- Live query `etiquette`, `limit=3`, through 7893:
+  `3 hit(s), 8 node(s)`, first UUID
+  `ed386742-4e4e-4065-8151-6511960902b9`, first text
+  `Greeting rank etiquette requires deferring substantive topics.`
+  Phrase probes such as `inventorying private rooms`, `restrained warmth`,
+  `single clear ask`, and `without reordering` also returned fact hits with
+  Episode support.
+- Live import-plan proof: two selected `noble_etiquette` hits returned bundle
+  counts `facts=2/entities=4/episodes=2/communities=0` and
+  `graphiti_bundle_to_l2b_rustworkx_preview` with
+  `l2b_nodes=6`, `l2b_edges=2`, RustWorkX `nodes=6/edges=6`,
+  `preserve_raw_graphiti=true`, and `direct_l2b_write=false`.
+- Caveat: Chinese probes `礼仪` / `贵族礼仪` returned 0, and the live graph size
+  still looks like the earlier small etiquette fixture rather than several
+  full books. If a larger import was expected, verify the import target
+  partition/group_id, graph name, and whether the job wrote to this ECS
+  FalkorDB/app-monitor environment.
+
+2026-05-17 M22 Graphiti true-write provider fix and PG35123 canary:
+
+- Found the real write blocker behind the full-book import path. Graphiti's
+  installed OpenAI-compatible client sends `response_format.type=json_schema`
+  for structured extraction. DeepSeek's official chat completion docs currently
+  list `response_format.type` as `text` or `json_object`, so ECS writes failed
+  with `BadRequestError: response_format type is unavailable`.
+- Added `GRAPHITI_DEEPSEEK_JSON_SCHEMA_ENABLED` as an explicit opt-in. Without
+  it, `GRAPHITI_LLM_PROVIDER=deepseek` is treated as the requested provider but
+  Graphiti extraction/rerank uses effective provider `gemini`. Status now
+  exposes `fallback_reason=deepseek_json_schema_response_format_disabled`
+  without leaking secrets.
+- Deployed the provider fallback to ECS app-monitor by updating
+  `config.py` and `graphiti_client.py`, then also re-deployed
+  `app_monitor_server.py`, `memory_ops.py`, and `graph_policy.py` after finding
+  the live 8790 import-plan route was stale/missing the L2-B transform preview.
+  Backups were placed under
+  `/opt/parrot/ParrotCarriers/codex_backups/m22_graphiti_provider_fallback_*`,
+  `m22_app_monitor_import_plan_route_*`, and
+  `m22_graphiti_import_plan_preview_*`; compile passed and
+  `parrot-app-monitor` restarted active.
+- Added `src/scripts/import_noble_etiquette_to_graphiti.py` for deterministic
+  dry-run/apply imports from `Noble Etiquette/pg35123.txt`. It chunks the
+  Gutenberg text into named Episodes, checks existing Episode names in FalkorDB,
+  and writes through the real 8790 Graphiti API.
+- True write canary succeeded through ECS 8790:
+  `noble_etiquette_pg35123_intro_introduction_001` and `_002` wrote as real
+  Episodes, about `9k` chars each. Direct FalkorDB counts rose to `158` nodes
+  and `282` edges, with `2` `noble_etiquette_pg35123*` Episodic nodes.
+- Real search after write works from both 8790 and 7893. Query
+  `Florence Hartley etiquette politeness`, `iterative_hybrid`, `depth=2`
+  returned `11 hit(s), 24 node(s)`; first extracted fact says Florence Hartley
+  authored *The Ladies' Book of Etiquette, and Manual of Politeness*.
+- 8790 and 7893 import-plan over selected new hits keep the correct ownership:
+  preview-only, `graphiti_bundle_to_l2b_rustworkx_preview`, raw Graphiti
+  preserved, pointer-style entity nodes, `graphiti_fact` edges, and
+  `direct_l2b_write=false`. Live 8790 proof over two hits returned
+  `l2b_nodes=6`, `l2b_edges=2`, RustWorkX `nodes=6/edges=6`.
+- Throughput caveat: two 9k-character Episode writes took about five minutes
+  total. Full-book ingestion should be promoted to an explicit operator job
+  with progress/resume/skip-existing, not hidden as a Web button side effect.
+
+2026-05-17 M23 noble etiquette importer bugfix:
+
+- Found a chunking bug in `src/scripts/import_noble_etiquette_to_graphiti.py`.
+  The script cropped to `INTRODUCTION.` and then still skipped chapter headings
+  by hard-coded line number. In the real PG35123 file this skipped the first
+  body `CHAPTER I.`, causing the first canary Episodes to be named as `intro`
+  even though they included early chapter content.
+- Fixed chapter detection by removing the `CONTENTS.` block before chunking and
+  using an explicit contents-state guard instead of a magic line threshold.
+- Changed the default Episode prefix/source description to v2
+  (`noble_etiquette_pg35123_v2_*`) so corrected imports do not collide with the
+  earlier two buggy canary Episode names.
+- Fixed Ref hygiene: Episode bodies now default to the repo-relative locator
+  `source_file: Noble Etiquette/pg35123.txt`; `--source-file-ref` can override
+  this with a future MCP/git-managed stable locator.
+- Fixed CLI correctness: an HTTP 200 Graphiti response with `success=false`
+  now exits non-zero instead of looking successful to automation.
+- Added script tests for TOC/body chapter handling, repo-relative source refs,
+  and API-level failure exit code. Focused tests pass (`3 passed`), combined
+  Web/script tests pass (`89 passed`).
+- Deployed the updated importer to ECS under
+  `/opt/parrot/ParrotCarriers/src/scripts/import_noble_etiquette_to_graphiti.py`;
+  remote compile and dry-run passed, showing
+  `episode_prefix=noble_etiquette_pg35123_v2` and
+  `source_file_ref=Noble Etiquette/pg35123.txt`.
+
+2026-05-17 M24 ladies etiquette importer handoff check:
+
+- Checked the user-provided
+  `src/scripts/import_ladies_etiquette_book_to_graphiti.py` on ECS. It was
+  present remotely but not yet in the local workspace, so the script was copied
+  down for review and future push.
+- Verified against installed `graphiti_core` that `Graphiti.add_episode`
+  supports the intended native parameters: `entity_types`, `edge_types`,
+  `edge_type_map`, `custom_extraction_instructions`, `saga`, and
+  `saga_previous_episode_uuid`.
+- Dry-run parser confirms the intended book structure: 26 chapters, no missing
+  chapter numbers, 76 text chunks/sub-episodes, Chapter XXI split into 11
+  chunks, and subtractive Roman numerals XIV/XIX/XXIV present.
+- Found and fixed one default-mode mismatch: a plain `--apply` would have
+  generated 26 additional glossary episodes, writing 102 episodes instead of
+  the stated 76. Glossary generation is now opt-in via `--with-glossary`;
+  `--no-glossary` remains a compatibility no-op for the default path.
+- `graphiti_client.py` now exposes public `get_llm_clients` and keeps
+  `_build_llm_clients` as a compatibility alias. The importer now uses the
+  public function.
+- Remote dry-run now reports `with_glossary=false` and
+  `total_sub_episodes=76`; `--with-glossary` reports `102`.
+
 ### D. Observable Completion Signal
 
 - Web shows Graphiti dependency/config status and available partitions.

@@ -44,6 +44,7 @@ async def query_memory(
             "scene": PARTITIONS.SCENE,
             "user": PARTITIONS.USER,
             "arknights_test": PARTITIONS.ARKNIGHTS_TEST,
+            "noble_etiquette": PARTITIONS.NOBLE_ETIQUETTE,
         }
         group_id = valid_partitions.get(partition, PARTITIONS.GOSLO)
         receipt = await search_graphiti_subgraph(

@@ -29,13 +29,30 @@ class Partitions:
     SCENE = "scene"
     USER = "user"
     ARKNIGHTS_TEST = "arknights_test"
+    NOBLE_ETIQUETTE = "noble_etiquette"
 
     def values(self) -> list[str]:
         """Return the allowlisted Graphiti group ids."""
-        return [self.GOSLO, self.MAID, self.SCENE, self.USER, self.ARKNIGHTS_TEST]
+        return [
+            self.GOSLO,
+            self.MAID,
+            self.SCENE,
+            self.USER,
+            self.ARKNIGHTS_TEST,
+            self.NOBLE_ETIQUETTE,
+        ]
 
 
 PARTITIONS = Partitions()
+
+__all__ = [
+    "PARTITIONS",
+    "Partitions",
+    "close_graphiti",
+    "get_graphiti",
+    "get_llm_clients",
+    "graphiti_provider_status",
+]
 
 
 async def get_graphiti(config: ParrotConfig | None = None):
@@ -67,7 +84,7 @@ async def get_graphiti(config: ParrotConfig | None = None):
         database=fdb.database,
     )
 
-    llm_client, cross_encoder, provider = _build_llm_clients(cfg)
+    llm_client, cross_encoder, provider = get_llm_clients(cfg)
 
     embedder = GeminiEmbedder(
         config=GeminiEmbedderConfig(
@@ -122,25 +139,39 @@ def graphiti_provider_status(config: ParrotConfig | None = None) -> dict[str, ob
         status["base_url"] = cfg.graphiti_llm.deepseek_base_url.rstrip("/")
         status["small_model"] = cfg.graphiti_llm.deepseek_small_model
     if requested == "deepseek" and effective != "deepseek":
-        status["fallback_reason"] = "deepseek_api_key_missing"
+        status["fallback_reason"] = (
+            "deepseek_json_schema_response_format_disabled"
+            if cfg.graphiti_llm.deepseek_api_key
+            else "deepseek_api_key_missing"
+        )
+        status["deepseek_json_schema_enabled"] = (
+            cfg.graphiti_llm.deepseek_json_schema_enabled
+        )
     return status
 
 
 def _effective_llm_provider(cfg: ParrotConfig) -> str:
     requested = (cfg.graphiti_llm.provider or "deepseek").strip().lower()
-    if requested == "deepseek" and cfg.graphiti_llm.deepseek_api_key:
+    if (
+        requested == "deepseek"
+        and cfg.graphiti_llm.deepseek_api_key
+        and cfg.graphiti_llm.deepseek_json_schema_enabled
+    ):
         return "deepseek"
     return "gemini"
 
 
-def _build_llm_clients(cfg: ParrotConfig):
+def get_llm_clients(cfg: ParrotConfig):
     """Build Graphiti LLM and cross-encoder clients.
 
-    DeepSeek is exposed through Graphiti's OpenAI-compatible generic client.
+    DeepSeek is exposed through Graphiti's OpenAI-compatible generic client
+    only when explicitly enabled.
     Embeddings intentionally remain Gemini-based in ``get_graphiti`` above
     because DeepSeek has not been promoted as an embedding provider for this
-    repo. If the DeepSeek key is not configured, we preserve the previous
-    Gemini path as a fallback.
+    repo. Graphiti's current OpenAI-compatible client sends ``json_schema`` for
+    structured extraction, while DeepSeek's public API documents
+    ``json_object`` JSON output. The default therefore stays on Gemini for
+    extraction unless ``GRAPHITI_DEEPSEEK_JSON_SCHEMA_ENABLED`` is set.
     """
     provider = _effective_llm_provider(cfg)
     if provider == "deepseek":
@@ -181,6 +212,9 @@ def _build_llm_clients(cfg: ParrotConfig):
         GeminiRerankerClient(config=gemini_config),
         provider,
     )
+
+
+_build_llm_clients = get_llm_clients
 
 
 async def close_graphiti() -> None:

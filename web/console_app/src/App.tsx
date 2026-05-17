@@ -4660,6 +4660,7 @@ function GraphitiSourceCard({
         <span>{t.partition}</span>
         <select value={partition} onChange={(event) => updatePartition(event.target.value)}>
           <option value="arknights_test">arknights_test</option>
+          <option value="noble_etiquette">noble_etiquette</option>
           <option value="goslo">goslo</option>
           <option value="maid">maid</option>
           <option value="scene">scene</option>

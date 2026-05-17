@@ -332,3 +332,49 @@ git count-objects -vH
 ---
 
 *生成时间：2026-04-16 | 适用仓库：ParrotCarriers + nanobot*
+
+---
+
+## Section 8 - Codex ECS true-connection release workflow (2026-05-17)
+
+This section supersedes the stale `infra/sync-castle.ps1` references for
+ParrotCarriers code releases. The current canonical ECS release entrypoint is:
+
+```powershell
+.\infra\ecs-release.ps1 -Branch master
+```
+
+Required workflow before running it:
+
+1. Audit the local worktree with `git status --short`, `git diff --stat`, and
+   focused file diffs. Do not stage unrelated user changes.
+2. Run the relevant tests and smoke checks for the slice.
+3. Stage only the reviewed files, commit, and push to `origin/<branch>`.
+4. Run `.\infra\ecs-release.ps1 -Branch <branch>`.
+5. Confirm the script reports all services active and smoke checks passing.
+
+What the script does:
+
+- Verifies local `HEAD` matches `origin/<branch>` so ECS never deploys an
+  unpushed local state.
+- Connects to `root@8.216.45.45`.
+- Updates `/opt/parrot/ParrotCarriers` from git.
+- Installs the editable package into the ECS `.venv` unless `-SkipInstall` is
+  passed.
+- Restarts all Parrot systemd services:
+  `parrot-orchestrator`, `parrot-app-monitor`, `parrot-scheduler`,
+  `parrot-maid`, `parrot-goslo-chat`, and `parrot-brain`.
+- Smokes `127.0.0.1:7890`, `127.0.0.1:8790/api/graphiti/status`, and
+  Redis/Falkor on `6380`.
+
+Dirty-tree policy:
+
+- Local dirty files make the script fail unless `-AllowLocalDirty` is passed
+  after explicitly auditing that the remaining dirty files are unrelated to the
+  release.
+- ECS dirty files make the script fail unless `-ForceResetWorktree` is passed.
+  With that flag, the script first writes status and tracked diffs under
+  `/opt/parrot/ParrotCarriers/codex_backups/ecs_release_*`, then runs
+  `git reset --hard origin/<branch>`. It does not delete untracked ECS files.
+
+Use `-WhatIf` to print the exact remote Bash body before touching ECS.
