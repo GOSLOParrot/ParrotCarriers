@@ -323,6 +323,26 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
             },
         ).json()
         result_intakes = client.get("/api/runtime/workflow/result-intake").json()
+        view_preview = client.post(
+            "/api/runtime/workflow/result-intake",
+            json={
+                "result_contract": {"schema": "workflow_result_contract_v1", "workflow_id": "direct-preview"},
+                "result_routes": [{"destination": "view_only", "sink": "web_console.receipt_rail"}],
+                "result_payload": {"summary": "Preview-only receipt"},
+                "dry_run": True,
+            },
+        ).json()
+        blocked_apply = client.post(
+            "/api/runtime/workflow/result-intake",
+            json={
+                "entry_id": "blocked-graphiti-route",
+                "result_contract": {"schema": "workflow_result_contract_v1", "workflow_id": "blocked-demo"},
+                "result_routes": [{"destination": "write_graphiti_episode", "sink": "graphiti.episode"}],
+                "result_payload": {"summary": "Blocked Graphiti write"},
+                "dry_run": False,
+                "operator_mode": True,
+            },
+        ).json()
         preview_plan = client.post(
             "/api/runtime/workflow/plan-draft",
             json={"workflow_id": "wf-demo", "dry_run": True},
@@ -363,6 +383,14 @@ def test_runtime_workflow_draft_registry_persists_and_imports_saved_plan(monkeyp
         assert "hide-me" not in str(result_intake)
         assert result_intakes["count"] == 1
         assert get_intent_workspace().list_by_role("workflow_result")
+        assert view_preview["success"] is True
+        assert view_preview["data"]["route_results"][0]["intake_state"] == "preview"
+        assert view_preview["data"]["route_results"][0]["applied"] is False
+        assert view_preview["data"]["recorded"] is False
+        assert blocked_apply["success"] is True
+        assert blocked_apply["data"]["entry"]["state"] == "blocked"
+        assert blocked_apply["data"]["blocked_route_count"] == 1
+        assert blocked_apply["data"]["route_results"][0]["intake_state"] == "blocked"
         assert preview_plan["success"] is True
         assert preview_plan["data"]["source_workflow_id"] == "wf-demo"
         assert preview_plan["data"]["steps"][0]["expected_tool"] == "ref_scan"

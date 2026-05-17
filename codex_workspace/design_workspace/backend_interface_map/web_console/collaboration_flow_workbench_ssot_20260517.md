@@ -586,3 +586,12 @@ Remaining gaps after sixth slice:
   ledger.
 - Graphiti/L2-B/materialization result routes are intentionally blocked until
   each destination has its own audited apply path.
+
+Bugfix after sixth slice:
+
+- Result-intake route results now expose `intake_state` values:
+  `preview`, `applied`, or `blocked`.
+- Dry-run `view_only` and `return_to_goslo` routes no longer claim
+  `applied=true`.
+- Operator attempts whose destinations are blocked now record ledger
+  `state=blocked` instead of `state=applied`.

@@ -280,3 +280,9 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `recorded=false` and `would_stage=true`; operator intake returned
   `recorded=true`, `staged_ref_count=1`, entry `wri_f7936482c893`, and list
   count `1`; the temporary workflow draft was deleted.
+- 2026-05-17 CFW-14 bugfix: result-intake route states now distinguish
+  `preview`, `applied`, and `blocked`. Dry-run `view_only`/`return_to_goslo`
+  no longer report `applied=true`, and operator attempts whose destinations
+  are all blocked no longer create an `applied` ledger entry. Regression smoke
+  on local `7893` returned `view_state=preview`, `view_applied=false`,
+  `blocked_entry_state=blocked`, and `blocked_count=1`.

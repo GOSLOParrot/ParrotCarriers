@@ -101,12 +101,23 @@ async def intake_workflow_result(payload: dict[str, Any] | None = None) -> dict[
         if route_result.get("staged_ref"):
             staged_refs.append(route_result["staged_ref"])
 
+    applied_count = sum(1 for row in route_results if row.get("intake_state") == "applied")
+    blocked_count = sum(1 for row in route_results if row.get("intake_state") == "blocked")
+    preview_count = sum(1 for row in route_results if row.get("intake_state") == "preview")
+    entry_state = _entry_state(
+        applied_count=applied_count,
+        blocked_count=blocked_count,
+        preview_count=preview_count,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+    )
+
     entry: dict[str, Any] | None = None
     if operator_mode and not dry_run:
         entry = {
             "schema_version": _SCHEMA_VERSION,
             "entry_id": _safe_id(body.get("entry_id")) or f"wri_{uuid.uuid4().hex[:12]}",
-            "state": "applied",
+            "state": entry_state,
             "workflow_id": str(contract.get("workflow_id") or body.get("workflow_id") or ""),
             "workflow_node_id": str(body.get("workflow_node_id") or body.get("step_id") or ""),
             "plan_id": str(body.get("plan_id") or ""),
@@ -114,6 +125,8 @@ async def intake_workflow_result(payload: dict[str, Any] | None = None) -> dict[
             "task_id": str(body.get("task_id") or ""),
             "result_channel": str(body.get("result_channel") or ""),
             "route_count": len(routes),
+            "applied_route_count": applied_count,
+            "blocked_route_count": blocked_count,
             "staged_ref_count": len(staged_refs),
             "routes": _safe_json(routes),
             "route_results": _safe_json(route_results),
@@ -133,6 +146,9 @@ async def intake_workflow_result(payload: dict[str, Any] | None = None) -> dict[
             "workflow_id": str(contract.get("workflow_id") or body.get("workflow_id") or ""),
             "contract_schema": str(contract.get("schema") or ""),
             "route_count": len(routes),
+            "applied_route_count": applied_count,
+            "blocked_route_count": blocked_count,
+            "preview_route_count": preview_count,
             "route_results": route_results,
             "staged_refs": staged_refs,
             "entry": _summary(entry) if entry else {},
@@ -203,25 +219,32 @@ async def _apply_route(
         "mutates_memory": bool(route.get("mutates_memory")),
     }
     if destination == "view_only":
+        state = "applied" if operator_mode and not dry_run else "preview"
         return {
             **base,
-            "applied": True,
+            "intake_state": state,
+            "applied": state == "applied",
             "mutated": False,
             "receipt_visible": True,
+            "would_record_receipt": True,
             "policy": "view_only results remain in Web receipt/log surfaces.",
         }
     if destination == "return_to_goslo":
+        state = "applied" if operator_mode and not dry_run else "preview"
         return {
             **base,
-            "applied": True,
+            "intake_state": state,
+            "applied": state == "applied",
             "mutated": False,
             "context_return_draft": True,
+            "would_return_context": True,
             "policy": "return_to_goslo is exposed as an operator-readable context draft; C3/C4 injection is not automatic.",
         }
     if destination == "stage_to_intent_workspace":
         if dry_run or not operator_mode:
             return {
                 **base,
+                "intake_state": "preview",
                 "applied": False,
                 "would_stage": True,
                 "mutated": False,
@@ -235,6 +258,7 @@ async def _apply_route(
         )
         return {
             **base,
+            "intake_state": "applied",
             "applied": True,
             "would_stage": True,
             "mutated": True,
@@ -243,6 +267,7 @@ async def _apply_route(
         }
     return {
         **base,
+        "intake_state": "blocked",
         "applied": False,
         "mutated": False,
         "blocked_reason": (
@@ -333,6 +358,27 @@ def _result_payload(body: dict[str, Any]) -> Any:
     return None
 
 
+def _entry_state(
+    *,
+    applied_count: int,
+    blocked_count: int,
+    preview_count: int,
+    dry_run: bool,
+    operator_mode: bool,
+) -> str:
+    if dry_run or not operator_mode:
+        return "preview"
+    if applied_count and blocked_count:
+        return "partial"
+    if applied_count:
+        return "applied"
+    if blocked_count:
+        return "blocked"
+    if preview_count:
+        return "preview"
+    return "empty"
+
+
 def _save_entry(entry: dict[str, Any]) -> None:
     store = _load_store()
     store["entries"] = [row for row in store["entries"] if row.get("entry_id") != entry.get("entry_id")]
@@ -354,6 +400,8 @@ def _summary(row: dict[str, Any] | None) -> dict[str, Any]:
         "task_id": row.get("task_id", ""),
         "result_channel": row.get("result_channel", ""),
         "route_count": row.get("route_count", 0),
+        "applied_route_count": row.get("applied_route_count", 0),
+        "blocked_route_count": row.get("blocked_route_count", 0),
         "staged_ref_count": row.get("staged_ref_count", 0),
         "created_at": row.get("created_at", ""),
         "updated_at": row.get("updated_at", ""),

@@ -210,6 +210,7 @@ def test_monitor_exposes_runtime_workflow_draft_routes(monkeypatch: pytest.Monke
     assert gate_list["count"] == 1
     assert gate_preview["data"]["preview_receipt"]["action"] == "google.message_check.draft"
     assert intake["success"] is True
+    assert intake["data"]["route_results"][0]["intake_state"] == "preview"
     assert intake["data"]["route_results"][0]["would_stage"] is True
     assert intake["data"]["recorded"] is False
     assert intake_list["count"] == 0
