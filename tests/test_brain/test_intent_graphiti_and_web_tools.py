@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+import asyncio
+
+import parrot.brain.tools as tools_mod
+from parrot.brain.tools.query_etiquette_memory import do_query_etiquette_memory
+from parrot.brain.tools.web_lookup_intent import do_web_lookup_intent
+from parrot.memory.graphiti_client import PARTITIONS
+
+
+def _tool_ids(tools):
+    return {getattr(tool, "id", "") for tool in tools}
+
+
+def test_goslo_intent_tools_are_registered(monkeypatch) -> None:
+    monkeypatch.setattr(tools_mod, "_active_pipeline_hint", lambda: "line_a")
+
+    ids = _tool_ids(tools_mod.tools_for_active_model())
+
+    assert "gemini_google_search" in ids
+    assert "web_lookup_intent" in ids
+    assert "query_etiquette_memory" in ids
+    assert "identify_object" in ids
+
+
+def test_gemini_provider_search_is_skipped_for_line_b(monkeypatch) -> None:
+    monkeypatch.setattr(tools_mod, "_active_pipeline_hint", lambda: "line_b")
+
+    ids = _tool_ids(tools_mod.tools_for_active_model())
+
+    assert "gemini_google_search" not in ids
+    assert "web_lookup_intent" in ids
+
+
+def test_query_etiquette_memory_uses_noble_partition_and_multihop_strategy() -> None:
+    captured = {}
+
+    async def fake_searcher(**kwargs):
+        captured.update(kwargs)
+        return {
+            "success": True,
+            "message": "1 hit",
+            "data": {
+                "hits": [
+                    {
+                        "text": "A calling card should be left after a formal visit.",
+                        "uuid": "fact-uuid-123456",
+                        "source_node_uuid": "src-abc",
+                        "target_node_uuid": "dst-def",
+                    }
+                ],
+                "subgraph": {"nodes": [{"id": "src"}], "edges": [{"id": "edge"}]},
+                "graphiti_bundle": {"raw_envelopes": [{"uuid": "fact-uuid-123456"}]},
+                "search_plan": [{"query": "calling cards"}],
+            },
+        }
+
+    text = asyncio.run(
+        do_query_etiquette_memory(
+            query="calling card visit",
+            depth=9,
+            limit=20,
+            searcher=fake_searcher,
+        )
+    )
+
+    assert captured["partition"] == PARTITIONS.NOBLE_ETIQUETTE
+    assert captured["strategy"] == "iterative_hybrid"
+    assert captured["depth"] == 3
+    assert captured["limit"] == 10
+    assert "noble_etiquette Graphiti result" in text
+    assert "calling card should be left" in text
+    assert "No Graphiti write" in text
+    assert "L2-B materialization" in text
+
+
+def test_web_lookup_intent_formats_grounded_result() -> None:
+    async def fake_lookup(**kwargs):
+        return {
+            "model": "fake-grounded",
+            "text": "The visible logo most likely belongs to Example Tea.",
+            "queries": ["Example Tea logo milk tea"],
+            "sources": [
+                {"title": "Example Tea", "uri": "https://example.test/tea"},
+            ],
+        }
+
+    text = asyncio.run(
+        do_web_lookup_intent(
+            query="what milk tea brand has this green crown logo",
+            purpose="visual_brand_check",
+            context_hint="green crown logo on cup",
+            grounded_lookup=fake_lookup,
+        )
+    )
+
+    assert "T1 web_lookup_intent grounded result" in text
+    assert "Example Tea" in text
+    assert "https://example.test/tea" in text
+    assert "No external mutation occurred" in text
+
+
+def test_web_lookup_intent_falls_back_to_t3_research_on_timeout() -> None:
+    dispatched = []
+
+    async def slow_lookup(**kwargs):
+        await asyncio.sleep(0.6)
+        return {"text": "too late"}
+
+    async def fake_dispatch(task_type, params, priority):
+        dispatched.append((task_type, params, priority))
+        return "task-web-1"
+
+    text = asyncio.run(
+        do_web_lookup_intent(
+            query="identify a milk tea brand from visual hints",
+            purpose="visual_brand_check",
+            context_hint="brown cup, cursive logo",
+            grounded_lookup=slow_lookup,
+            task_dispatcher=fake_dispatch,
+            thinking_budget_s=0.001,
+        )
+    )
+
+    assert "T3 research task dispatched: task-web-1" in text
+    assert dispatched
+    task_type, params, priority = dispatched[0]
+    assert task_type == "research"
+    assert priority == "high"
+    assert params["source"] == "web_lookup_intent_t1_fallback"
+    assert params["context_hint"] == "brown cup, cursive logo"
