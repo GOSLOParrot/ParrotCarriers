@@ -572,6 +572,11 @@ Verification:
   `runtime.workflow.result_intake`, previewed intake with `would_stage=true`
   and `recorded=false`, then applied operator intake with `recorded=true`,
   one IntentWorkspace staged ref, and one ledger row.
+- ECS `8790` smoke after commit `f942e2a` saved
+  `ecs-result-intake-smoke-*`, confirmed the catalog row, previewed intake with
+  `recorded=false` and `would_stage=true`, applied operator intake with
+  `recorded=true`, one IntentWorkspace staged ref, ledger entry
+  `wri_f7936482c893`, and deleted the temporary workflow draft.
 
 Remaining gaps after sixth slice:
 

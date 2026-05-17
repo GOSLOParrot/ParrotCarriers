@@ -272,3 +272,11 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   `runtime.workflow.result_intake`, previewed result intake with
   `would_stage=true` and `recorded=false`, then applied operator intake with
   `recorded=true`, `staged_ref_count=1`, and result-intake list count `1`.
+- 2026-05-17 remote CFW-14 proof after commit `f942e2a`: ECS
+  `/opt/parrot/ParrotCarriers` and `/opt/parrotcarriers` fast-forwarded to
+  `f942e2a`, six services restarted active, and `8790` saved
+  `ecs-result-intake-smoke-*`. The catalog exposed
+  `runtime.workflow.result_intake`; preview intake returned
+  `recorded=false` and `would_stage=true`; operator intake returned
+  `recorded=true`, `staged_ref_count=1`, entry `wri_f7936482c893`, and list
+  count `1`; the temporary workflow draft was deleted.
