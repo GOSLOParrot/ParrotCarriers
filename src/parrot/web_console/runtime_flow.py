@@ -320,8 +320,8 @@ async def draft_workflow_plan(payload: dict[str, Any] | None = None) -> dict[str
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
     workflow_nodes, saved_workflow = _workflow_nodes_and_saved(body)
-    workflow_id = str(body.get("workflow_id") or saved_workflow.get("workflow_id") or "")
     workflow = body.get("workflow") if isinstance(body.get("workflow"), dict) else {}
+    workflow_id = str(body.get("workflow_id") or workflow.get("workflow_id") or workflow.get("id") or saved_workflow.get("workflow_id") or "")
     title = str(
         body.get("title")
         or workflow.get("title")
@@ -417,8 +417,8 @@ async def draft_workflow_result_contract(payload: dict[str, Any] | None = None) 
     """
     body = payload or {}
     workflow_nodes, saved_workflow = _workflow_nodes_and_saved(body)
-    workflow_id = str(body.get("workflow_id") or saved_workflow.get("workflow_id") or "")
     workflow = body.get("workflow") if isinstance(body.get("workflow"), dict) else {}
+    workflow_id = str(body.get("workflow_id") or workflow.get("workflow_id") or workflow.get("id") or saved_workflow.get("workflow_id") or "")
     title = str(
         body.get("title")
         or workflow.get("title")
@@ -456,8 +456,8 @@ async def run_workflow_draft(payload: dict[str, Any] | None = None) -> dict[str,
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
     workflow_nodes, saved_workflow = _workflow_nodes_and_saved(body)
-    workflow_id = str(body.get("workflow_id") or saved_workflow.get("workflow_id") or "")
     workflow = body.get("workflow") if isinstance(body.get("workflow"), dict) else {}
+    workflow_id = str(body.get("workflow_id") or workflow.get("workflow_id") or workflow.get("id") or saved_workflow.get("workflow_id") or "")
     title = str(
         body.get("title")
         or workflow.get("title")

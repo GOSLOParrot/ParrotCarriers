@@ -211,6 +211,7 @@ def test_runtime_workflow_plan_draft_imports_nanobot_capabilities_to_hitl() -> N
             "/api/runtime/workflow/plan-draft",
             json={
                 "workflow": {
+                    "workflow_id": "nested-workbench-plan",
                     "title": "Nested workbench plan",
                     "nodes": workflow_nodes,
                 },
@@ -242,6 +243,8 @@ def test_runtime_workflow_plan_draft_imports_nanobot_capabilities_to_hitl() -> N
         assert result_contract["data"]["result_contract"]["execution_model"]["scheduler_enforced"] is False
         assert nested_preview["success"] is True
         assert nested_preview["data"]["title"] == "Nested workbench plan"
+        assert nested_preview["data"]["source_workflow_id"] == "nested-workbench-plan"
+        assert nested_preview["data"]["result_contract"]["workflow_id"] == "nested-workbench-plan"
         assert nested_preview["data"]["workflow_node_count"] == 2
         assert applied["success"] is True
         assert applied["dry_run"] is False

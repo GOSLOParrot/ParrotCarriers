@@ -387,3 +387,71 @@ def test_flow_cli_result_intake_preview_requires_contract_source(tmp_path) -> No
     assert code == 2
     assert body["success"] is False
     assert body["data"]["errors"][0]["code"] == "result_contract_required"
+
+
+def test_flow_cli_table_output_includes_runtime_workflow_ids_and_errors(tmp_path) -> None:
+    workflow_path = tmp_path / "table-workflow.json"
+    result_path = tmp_path / "table-result.json"
+    bad_workflow_path = tmp_path / "bad-table-workflow.json"
+    workflow_path.write_text(
+        json.dumps(
+            {
+                "workflow_id": "cli-table",
+                "nodes": [
+                    {
+                        "workflow_node_id": "wf-ref-scan",
+                        "capability": {
+                            "capability_id": "nanobot.ref_scan",
+                            "kind": "nanobot_task",
+                            "nanobot_task_type": "ref_scan",
+                            "plan_step_compatible": True,
+                            "result_destinations": ["stage_to_intent_workspace"],
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    bad_workflow_path.write_text(
+        json.dumps(
+            {
+                "workflow_id": "cli-table-bad",
+                "nodes": [{"workflow_node_id": "wf-view", "capability": {"capability_id": "view.only"}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result_path.write_text(json.dumps({"summary": "done"}), encoding="utf-8")
+
+    plan_out = io.StringIO()
+    run_out = io.StringIO()
+    intake_out = io.StringIO()
+    bad_out = io.StringIO()
+
+    plan_code = main(["workflow", "plan-draft", str(workflow_path), "--output", "table"], stdout=plan_out)
+    run_code = main(["workflow", "run", str(workflow_path), "--output", "table"], stdout=run_out)
+    intake_code = main(
+        [
+            "result-intake",
+            "preview",
+            str(result_path),
+            "--workflow",
+            str(workflow_path),
+            "--workflow-node-id",
+            "wf-ref-scan",
+            "--output",
+            "table",
+        ],
+        stdout=intake_out,
+    )
+    bad_code = main(["workflow", "plan-draft", str(bad_workflow_path), "--output", "table"], stdout=bad_out)
+
+    assert plan_code == 0
+    assert run_code == 0
+    assert intake_code == 0
+    assert bad_code == 2
+    assert "workflow_id\tcli-table" in plan_out.getvalue()
+    assert "workflow_id\tcli-table" in run_out.getvalue()
+    assert "workflow_id\tcli-table" in intake_out.getvalue()
+    assert "error\tno_plan_compatible_workflow_nodes\tno_plan_compatible_workflow_nodes" in bad_out.getvalue()

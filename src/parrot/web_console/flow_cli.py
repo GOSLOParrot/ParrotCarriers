@@ -377,11 +377,13 @@ def _table(receipt: dict[str, Any]) -> str:
     summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
     diff = data.get("diff") if isinstance(data.get("diff"), dict) else {}
     errors = data.get("errors") if isinstance(data.get("errors"), list) else []
+    if not errors and data.get("error"):
+        errors = [{"code": str(data.get("error") or ""), "message": str(data.get("error") or "")}]
     warnings = data.get("warnings") if isinstance(data.get("warnings"), list) else []
     valid = data.get("valid") if "valid" in data else receipt.get("success")
     lines = [
         f"valid\t{bool(valid)}",
-        f"workflow_id\t{receipt.get('workflow_id') or summary.get('workflow_id') or ''}",
+        f"workflow_id\t{_receipt_workflow_id(receipt, data, summary)}",
         f"nodes\t{summary.get('node_count') or 0}",
         f"workflow_node_count\t{data.get('workflow_node_count') or 0}",
         f"plan_compatible_count\t{data.get('plan_compatible_count') or data.get('compatible_step_count') or 0}",
@@ -404,6 +406,18 @@ def _table(receipt: dict[str, Any]) -> str:
         if isinstance(row, dict):
             lines.append(f"error\t{row.get('code') or ''}\t{row.get('message') or ''}")
     return "\n".join(lines)
+
+
+def _receipt_workflow_id(receipt: dict[str, Any], data: dict[str, Any], summary: dict[str, Any]) -> str:
+    result_contract = data.get("result_contract") if isinstance(data.get("result_contract"), dict) else {}
+    return str(
+        receipt.get("workflow_id")
+        or summary.get("workflow_id")
+        or data.get("workflow_id")
+        or data.get("source_workflow_id")
+        or result_contract.get("workflow_id")
+        or ""
+    )
 
 
 if __name__ == "__main__":

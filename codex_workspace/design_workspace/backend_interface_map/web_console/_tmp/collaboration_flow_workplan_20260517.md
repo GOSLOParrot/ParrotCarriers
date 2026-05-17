@@ -449,3 +449,15 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   two preview routes (`stage_to_intent_workspace`, `return_to_goslo`),
   `recorded=false`, `dry_run=true`, `operator_mode=false`, and
   `ecs-cli-intake-secret` stayed out of output.
+- 2026-05-18 CFW-24 bugfix: bug hunt found CLI table output for
+  `workflow plan-draft`, `workflow run`, and `result-intake preview` could show
+  an empty `workflow_id` when the id lived inside a nested
+  `workflow_schema_v1` artifact. Root cause was `draft_workflow_plan()`,
+  `draft_workflow_result_contract()`, and `run_workflow_draft()` only reading
+  top-level `body.workflow_id` or saved draft ids. Fixed the runtime helpers to
+  preserve nested `workflow.workflow_id` / `workflow.id`, and fixed CLI table
+  rendering to read workflow ids from runtime receipt data/result contracts and
+  show `data.error` rows. Validation: `py_compile` passed; CLI tests reported
+  `14 passed`; Web Console route tests reported `91 passed`; app-monitor tests
+  reported `11 passed`; manual table smoke confirmed all three CLI commands now
+  print `workflow_id=cli-table-smoke`.

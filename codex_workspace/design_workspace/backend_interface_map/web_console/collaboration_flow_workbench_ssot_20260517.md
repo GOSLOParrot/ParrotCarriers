@@ -874,3 +874,17 @@ Remaining gaps after this slice:
 - Operator result-intake apply remains Web/HITL only.
 - `smoke local/ecs` remains the next CLI slice; it should wrap existing safe
   checks without duplicating `infra/ecs-release.ps1`.
+
+Bugfix after CFW-24:
+
+- CLI table output for `workflow plan-draft`, `workflow run`, and
+  `result-intake preview` could show an empty `workflow_id` for workflow JSON
+  files even though the JSON receipt carried the workflow artifact.
+- Root cause: runtime helpers only read top-level `workflow_id` and saved draft
+  ids; nested `workflow.workflow_id` / `workflow.id` from `workflow_schema_v1`
+  was not promoted into the runtime receipt.
+- Fixed `draft_workflow_plan()`, `draft_workflow_result_contract()`, and
+  `run_workflow_draft()` to preserve nested workflow ids.
+- Fixed CLI table rendering to also read workflow ids from `data.workflow_id`,
+  `data.source_workflow_id`, and `data.result_contract.workflow_id`, and to
+  render `data.error` as an error row.
