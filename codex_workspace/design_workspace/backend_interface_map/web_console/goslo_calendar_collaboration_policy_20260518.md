@@ -231,3 +231,242 @@ Define the first GOSLO-facing Calendar tool contract. Recommended minimal set:
 The first implementation should be read/preview/draft first, then one
 operator/HITL-gated write path, then automatic state sync to IntentWorkspace,
 L1.5, and L2-B.
+
+## GOSLO Tool Manual Taxonomy
+
+Every GOSLO-facing tool needs a manual-level docstring. The docstring is not
+only developer documentation; it is part of the behavior contract exposed to the
+agent. It must say whether the tool is an in-turn thinking tool, a non-blocking
+task dispatch, a Plan creator, or a memory/sync utility.
+
+### T0 - Reflex / Body Tools
+
+Purpose:
+
+- Small body or scene actions that preserve conversational continuity.
+- Examples: movement, animation, mode/scene controls.
+
+Conversation feel:
+
+- Should feel immediate.
+- Should not require long reasoning.
+- Should not create a Plan unless the user explicitly asks for a coordinated
+  multi-step action.
+
+Manual requirements:
+
+- State expected latency.
+- State whether the action is reversible or purely local.
+- State whether it can be called during speech without creating a "thinking"
+  state.
+
+### T1 - Intent / Thinking Tools
+
+Purpose:
+
+- Quick context reads or small drafts that GOSLO uses while actively thinking in
+  the user's turn.
+- These can block the conversation briefly in a felt, natural "let me check"
+  state.
+- Calendar read is a good candidate here because it is expected to be fast
+  enough for an Intent turn.
+
+Examples:
+
+- Future `calendar_context`: get today's/relevant schedule context for the
+  current Intent.
+- `query_memory` when the user asks if GOSLO remembers something.
+- Scene/status lookups used to make an immediate recommendation.
+
+Conversation feel:
+
+- GOSLO is still the one thinking and reporting.
+- The result should return compact context, not a paper note.
+- If the tool becomes slow, it should fall back to T3 task dispatch instead of
+  freezing the conversation.
+
+Manual requirements:
+
+- Say "use when GOSLO needs this context before answering."
+- Say whether the tool may briefly block the turn.
+- Say the maximum expected latency and fallback.
+- Say what state may be synced to IntentWorkspace/L1.5/L2-B.
+- Say that the tool is not allowed to perform destructive writes unless it
+  explicitly creates a HITL/Plan gate.
+
+### T2 - Intent Plan Tools
+
+Purpose:
+
+- GOSLO thinks through the plan itself and creates a structured Plan with
+  nanobot task steps, triggers, and HITL gates.
+- This is still an Intent-layer action: the voice agent owns the recommendation
+  and reports it to the user.
+
+Use when:
+
+- The user is present and wants GOSLO to decide with them.
+- The plan is small enough for GOSLO to reason about in the current interaction.
+- The outcome should feel like GOSLO saying: "I think we should do A, then B,
+  and I need your confirmation before C."
+
+Result route:
+
+- Plan draft/staged ref in IntentWorkspace.
+- Pending HITL gate when user confirmation is needed.
+- Nanobot tasks are steps inside the Plan, not the whole decision maker.
+- L2-B sync is a working-memory projection of the Plan/blackboard/workspace
+  state, not the Plan SSOT.
+
+Manual requirements:
+
+- State that GOSLO is the planner and speaker.
+- State which steps become nanobot tasks.
+- State which steps require HITL.
+- State how results return to GOSLO/User.
+
+### T3 - Task Dispatch Tools
+
+Purpose:
+
+- Non-blocking background work delegated to nanobot through Scheduler.
+- This is the existing `dispatch_task` category.
+
+Use when:
+
+- Work may take time, use external MCP/API tools, search the web, summarize,
+  fetch Calendar data asynchronously, or perform a multi-step operation better
+  handled by a worker.
+- GOSLO can naturally continue the conversation after dispatch.
+
+Conversation feel:
+
+- GOSLO says the task was sent and can continue talking.
+- Completion should return as a result receipt, paper note, Plan step result,
+  or later voice summary.
+
+Manual requirements:
+
+- Say "do not use this when GOSLO needs the answer before replying."
+- Say "use this when the work can complete later."
+- Require structured `params` and a `result_channel`.
+- For destructive tasks, require prior user confirmation or a Plan/HITL gate.
+- Explain that task state is monitored through Scheduler/nanobot/result ledgers,
+  not L2-B.
+
+### T4 - Nanobot Plan Tools
+
+Purpose:
+
+- Ask nanobot to think and produce a Plan or recommendation.
+- This is different from T2 because nanobot is the planner/reporter, while
+  GOSLO mainly routes the request and later presents or mediates the result.
+
+Use when:
+
+- Planning requires long research, external data, comparison, or slow MCP calls.
+- The user can wait for a paper note/report instead of immediate GOSLO
+  reasoning.
+
+Result route:
+
+- Nanobot report paper note / workflow result intake.
+- User "stamp" or HITL approval can promote the plan to execution.
+- GOSLO can summarize the note and ask for confirmation, but the first plan
+  artifact came from nanobot.
+
+Manual requirements:
+
+- State that nanobot owns the plan draft.
+- State that GOSLO should not pretend it has already completed the reasoning.
+- State where the report appears and how the user approves it.
+
+### T5 - Sync / Memory Buffer Tools
+
+Purpose:
+
+- Keep IntentWorkspace, Blackboard, L1.5, L2-B, and Graphiti aligned enough for
+  retrieval and association.
+
+Use when:
+
+- A source result needs to become visible to working memory.
+- A Plan or task result should be available as contextual memory.
+- The system needs graph attention, salience, or bounded subgraph context.
+
+Non-goal:
+
+- These tools do not decide the task truth.
+- They do not replace Plan/HITL/nanobot receipts.
+- They should not hard-sync every transient field into L2-B.
+
+Manual requirements:
+
+- State source of truth.
+- State what is projected and what remains a pointer.
+- State whether Graphiti audit Episodes are written or only drafted.
+
+## Plan Tool Split
+
+There are two Plan paths and they must not be confused.
+
+### GOSLO Intent Plan
+
+- GOSLO thinks in the current interaction.
+- GOSLO creates or requests a Plan draft.
+- GOSLO speaks the recommendation to the user.
+- Plan can contain many nanobot tasks and HITL gates.
+- This is appropriate for "help me decide how to arrange today" when the user
+  expects a conversational decision partner.
+
+### Nanobot Task Plan
+
+- GOSLO dispatches a planning task to nanobot.
+- Nanobot performs the slow reasoning/research and returns a paper note/report.
+- The user approves/stamps the nanobot report before execution.
+- This is appropriate for "research all constraints and propose a schedule"
+  when the work can happen in the background.
+
+## Calendar Tool Placement
+
+Calendar read:
+
+- Usually T1 Intent/Thinking.
+- It is fast enough to be part of GOSLO's thought turn.
+- It should be able to refresh from ECS/Nanobot/API when needed and then expose
+  compact state to GOSLO.
+
+Calendar planning:
+
+- T2 if GOSLO should reason with the user now.
+- T4 if nanobot should research/optimize and return a paper note.
+
+Calendar write:
+
+- Never a casual direct write.
+- Should enter IntentWorkspace as a draft, then Plan/HITL, then nanobot
+  execution.
+- After execution, sync the result back to IntentWorkspace, L1.5, and L2-B.
+
+## Tool Documentation Template
+
+Each new or upgraded GOSLO tool should document:
+
+- Category: T0/T1/T2/T3/T4/T5.
+- Owner: GOSLO, PlanRegistry, Scheduler, Nanobot, Web operator, or sync layer.
+- Conversation blocking: immediate, brief thinking, or non-blocking.
+- When to use.
+- When not to use.
+- Write authority and confirmation rules.
+- Result destination: voice reply, IntentWorkspace ref, Plan step, paper note,
+  L1.5 observation, L2-B projection, Graphiti Episode, or Web receipt.
+- Failure behavior and fallback.
+- Example call shape.
+
+## Current Dispatch Task Verdict
+
+`dispatch_task` is a usable T3 foundation. It can already send Calendar-related
+task types to Scheduler/nanobot, and it can return a task id quickly so GOSLO
+can continue the conversation. It still needs future upgrades around typed task
+schemas, result-contract selection, and safer Calendar write preconditions, but
+it is not blocked for non-destructive background work.

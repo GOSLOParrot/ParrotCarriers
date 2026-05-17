@@ -56,10 +56,24 @@ async def dispatch_task(
     params: str = "{}",
     priority: str = "normal",
 ) -> str:
-    """Dispatch a background task to Nanobot via the Scheduler.
+    """Dispatch non-blocking background work to Nanobot via Scheduler.
 
-    Use this for anything that takes time: web searches, reminders,
-    summarization, vocabulary learning, or other background work.
+    This is the Task-layer tool, not an Intent-thinking tool. Use it when GOSLO
+    has decided that work can happen outside the current conversational turn:
+    research, slow summaries, long MCP/API calls, Calendar operations that need
+    worker execution, or Plan steps that nanobot should complete. After calling
+    this tool, GOSLO should be able to continue the conversation naturally while
+    the task reports back through Scheduler/nanobot result channels, Plan step
+    receipts, IntentWorkspace paper notes, or Runtime Flow ledgers.
+
+    Do not use this when GOSLO needs the answer before replying. For quick
+    context reads that belong inside a felt "thinking" moment, use a dedicated
+    Intent/Thinking tool instead, such as a future calendar-context tool.
+
+    Destructive external actions, including Calendar create/patch/delete, must
+    only be dispatched after explicit user confirmation or a Plan/HITL gate has
+    approved the action. Put the confirmation context, plan_id/step_id, and
+    result_channel in params when available.
 
     Args:
         task_type: Type of task. Nanobot-routed types:
