@@ -1776,7 +1776,7 @@ def _graphiti_l2b_materialization_projection(body: dict[str, Any]) -> dict[str, 
             "success": bool(projection_receipt.get("success")),
             "partition": data.get("partition") or partition,
             "query": data.get("query") or query,
-            "selected_count": int(data.get("section_counts", {}).get("facts", 0) or 0),
+            "selected_count": _graphiti_bundle_selected_count(bundle, data),
             "graphiti_bundle": bundle,
             "transform_preview": data,
             "transform_receipt_id": str((projection_receipt.get("receipt") or {}).get("receipt_id", "")),
@@ -1803,6 +1803,35 @@ def _graphiti_l2b_materialization_projection(body: dict[str, Any]) -> dict[str, 
         "transform_receipt_id": str(data.get("transform_receipt_id") or ""),
         "projection_source": "import_plan_preview",
     }
+
+
+def _graphiti_bundle_selected_count(
+    bundle: dict[str, Any],
+    transform_data: dict[str, Any],
+) -> int:
+    """Return selected hits for a bundle without treating episode-only bundles as empty."""
+
+    selection = bundle.get("selection") if isinstance(bundle.get("selection"), dict) else {}
+    raw_selected = selection.get("selected_count") if isinstance(selection, dict) else None
+    try:
+        selected = int(raw_selected)
+    except (TypeError, ValueError):
+        selected = -1
+    if selected >= 0:
+        return selected
+
+    section_counts = (
+        transform_data.get("section_counts")
+        if isinstance(transform_data.get("section_counts"), dict)
+        else {}
+    )
+    total = 0
+    for key in ("facts", "entities", "episodes", "communities"):
+        try:
+            total += max(0, int(section_counts.get(key, 0)))
+        except (TypeError, ValueError):
+            continue
+    return total
 
 
 def _graphiti_l2b_identity_payloads(

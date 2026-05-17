@@ -1051,6 +1051,22 @@ def test_graphiti_subgraph_import_plan_preserves_episode_hit_without_fact_edge(m
     assert transform_preview["section_counts"]["facts"] == 0
     assert transform_preview["section_counts"]["episodes"] == 1
 
+    materialize = client.post(
+        "/api/graphiti/subgraph/materialize-l2b",
+        json={
+            "partition": "noble_etiquette",
+            "query": "etiquette",
+            "graphiti_bundle": bundle,
+            "dry_run": True,
+            "operator_mode": False,
+        },
+    ).json()
+    assert materialize["success"] is True
+    assert materialize["data"]["projection_source"] == "graphiti_bundle_payload"
+    assert materialize["data"]["selected_count"] == 1
+    assert materialize["data"]["node_count"] == 1
+    assert materialize["data"]["edge_count"] == 0
+
 
 def test_graphiti_subgraph_import_plan_uses_normalized_partition(monkeypatch) -> None:
     from parrot.brain import graphiti_console
