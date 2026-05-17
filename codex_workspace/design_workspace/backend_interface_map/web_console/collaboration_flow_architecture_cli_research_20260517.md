@@ -344,8 +344,10 @@ Do not start with a broad CLI. Start with:
 1. `workflow_schema_v1` validator and redacted export helper. Done.
 2. Web export/import/diff preview. Done.
 3. Focused CLI wrapper for `workflow validate` and `catalog list`. Done.
-4. Then add `workflow run --dry-run`, `workflow export/import --dry-run`,
-   result-intake preview, and local/ECS smoke commands.
+4. Focused CLI wrapper for `workflow export` and `workflow import --dry-run`.
+   Done as a local-helper command slice.
+5. Then add `workflow run --dry-run`, Plan draft, result-intake preview, and
+   local/ECS smoke commands.
 
 ## Recommended Staging
 
@@ -360,6 +362,8 @@ Stage 2: add thin CLI.
 
 - Implement `python -m parrot.web_console.flow_cli`.
 - First slice is complete: `catalog list` and `workflow validate`.
+- Second slice is complete: `workflow export` and preview-only
+  `workflow import`.
 - Support catalog list, workflow validate, workflow run preview, Plan draft,
   result-intake preview, local/ECS smoke.
 - Reuse the BFF/service functions and return the same receipt schemas as Web.
@@ -377,7 +381,11 @@ Stage 3: promote durable shared workflow storage if needed.
 - Add `workflow_schema_v1` document and validation helper.
 - Add Web workflow import/export/diff UI.
 - Add command palette for capability/workflow/gate search.
-- Add `parrot-flow catalog list` and `workflow validate` first.
+- Add `parrot-flow catalog list` and `workflow validate` first. Done through
+  `python -m parrot.web_console.flow_cli`.
+- Add `workflow export` and preview-only `workflow import`. Done through the
+  same CLI module.
+- Add `workflow run --dry-run`, Plan draft, and result-intake preview next.
 - Add `parrot-flow smoke ecs` only after it can call existing release/smoke
   contracts without duplicating ECS deployment logic.
 - Keep C4/I0 as future policy-only until safe-turn/interrupt gates are designed.

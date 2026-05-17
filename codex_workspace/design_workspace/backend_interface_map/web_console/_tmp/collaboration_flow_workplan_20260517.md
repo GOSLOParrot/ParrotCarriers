@@ -60,6 +60,7 @@ relevant backend code. After each slice, add verification and review notes here.
 | CFW-19 | done-first-slice | Web import/export/diff preview for workflow drafts. | Runtime Flow now has Validate, Export, Import preview, Load import, JSON artifact textarea, and diff summary. Imported artifacts still persist only through the existing Save route after operator review. |
 | CFW-20 | done-first-slice | Thin CLI first slice: `workflow validate` and `catalog list`. | Added `python -m parrot.web_console.flow_cli` with JSON-first `catalog list` and `workflow validate`; it reuses backend catalog/schema helpers, performs no writes, returns nonzero for invalid workflows, redacts secrets, and accepts UTF-8 BOM JSON from Windows tools. |
 | CFW-21 | done-first-slice | True-connection smoke pack for local/ECS workflow artifact path. | Local 7894 and ECS 8790 both proved save/validate/export/import-preview/delete with redaction; ECS also proved Plan draft still maps the imported workflow to `ref_scan`. |
+| CFW-22 | done-local | Thin CLI workflow export/import dry-run. | Added `workflow export <workflow_id>` and `workflow import <workflow.json> --target-workflow ...` to `python -m parrot.web_console.flow_cli`; both reuse backend schema helpers, emit JSON/table receipts, redact secrets, and perform no writes. ECS proof follows commit/push/release. |
 
 ## First Slice Design
 
@@ -380,3 +381,15 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   workflow_schema --limit 2` returned workflow schema rows; command smoke for
   `workflow validate` returned `workflow_schema_v1`, workflow id `cli-smoke`,
   and did not print `cli-smoke-secret`.
+- 2026-05-17 CFW-22 implementation: extended
+  `python -m parrot.web_console.flow_cli` with `workflow export <workflow_id>`
+  and `workflow import <workflow.json> --target-workflow <workflow.json>`.
+  Export calls `export_workflow_artifact()` against the configured local draft
+  store. Import calls `preview_workflow_import()` and is dry-run only:
+  `would_save=false`, no draft persistence, no Plan dispatch, no trigger fire,
+  no Graphiti/L2-B write.
+- 2026-05-17 CFW-22 local validation: `py_compile` passed for `flow_cli.py`;
+  focused CLI tests reported `8 passed`; full Web Console route tests remained
+  `91 passed`; CLI smoke exported `cli-export-smoke` with
+  `cli-export-secret` redacted and import-previewed `cli-import-smoke` with
+  `wf-trigger` added, `wf-ref-scan` kept, and `cli-import-secret` redacted.

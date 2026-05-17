@@ -722,3 +722,48 @@ Remaining gaps after this slice:
 - The CLI still uses local helper functions, not remote HTTP targeting. Remote
   ECS proof remains covered by the Web/app-monitor HTTP routes until a CLI
   `--base-url` mode is deliberately designed.
+
+## 2026-05-17 Thin CLI Export/Import Dry-Run Slice
+
+Implemented:
+
+- Extended `python -m parrot.web_console.flow_cli` with:
+  - `workflow export <workflow_id>`
+  - `workflow import <workflow.json> --target-workflow <workflow.json>`
+- `workflow export` reuses `export_workflow_artifact()` and reads the same
+  Web-only workflow draft store used by the BFF routes.
+- `workflow import` reuses `preview_workflow_import()` and always operates as a
+  non-mutating preview. It validates the imported artifact and returns the same
+  diff fields as Web import preview.
+- Both commands default to JSON receipts, support compact table output, and
+  redact secret-like payload keys.
+- Import preview does not save drafts, run workflows, fire triggers, dispatch
+  Plan/Nanobot steps, write Graphiti Episodes, materialize L2-B, or mutate
+  Refs.
+
+Design decision:
+
+- This slice deliberately stays local-helper based. It proves artifact
+  export/import can be scripted by Codex/operators without introducing a new
+  remote CLI protocol or bypassing the Web/HITL review model.
+- `workflow import` is preview-only even when a target workflow is supplied.
+  The reviewed write remains the existing Web draft save route.
+
+Verification:
+
+- `py_compile` passed for `flow_cli.py`.
+- `pytest tests/test_web_console/test_flow_cli.py -q` -> `8 passed`.
+- `pytest tests/test_web_console/test_web_console_server.py -q` -> `91 passed`.
+- Local CLI smoke exported `cli-export-smoke` with `cli-export-secret`
+  redacted.
+- Local CLI import preview reported `wf-trigger` as added,
+  `wf-ref-scan` as kept, and kept `cli-import-secret` out of the receipt.
+
+Remaining gaps after this slice:
+
+- The CLI still has no `--base-url` remote HTTP mode; ECS proof for the command
+  currently means running the same installed code on ECS after release.
+- `workflow run --dry-run`, `plan draft`, `result-intake preview`, and
+  `smoke local/ecs` remain future CLI slices.
+- Workflow import still does not merge or save anything. This is intentional
+  until overwrite/merge policy is reviewed in the Web workbench.

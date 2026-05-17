@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from parrot.web_console.capability_catalog import build_runtime_capability_catalog
-from parrot.web_console.workflow_drafts import validate_workflow_artifact
+from parrot.web_console.workflow_drafts import (
+    export_workflow_artifact,
+    preview_workflow_import,
+    validate_workflow_artifact,
+)
 
 
 def main(argv: list[str] | None = None, *, stdout: TextIO | None = None, stderr: TextIO | None = None) -> int:
@@ -29,6 +33,14 @@ def main(argv: list[str] | None = None, *, stdout: TextIO | None = None, stderr:
         return 0
     if args.command == "workflow" and args.workflow_command == "validate":
         receipt = _workflow_validate(args)
+        _emit(receipt, out, table=args.output == "table")
+        return 0 if receipt.get("success") else 2
+    if args.command == "workflow" and args.workflow_command == "export":
+        receipt = export_workflow_artifact(args.workflow_id)
+        _emit(receipt, out, table=args.output == "table")
+        return 0 if receipt.get("success") else 2
+    if args.command == "workflow" and args.workflow_command == "import":
+        receipt = _workflow_import_preview(args)
         _emit(receipt, out, table=args.output == "table")
         return 0 if receipt.get("success") else 2
     parser.print_help(err)
@@ -57,6 +69,15 @@ def _build_parser() -> argparse.ArgumentParser:
     validate = workflow_sub.add_parser("validate", help="Validate a workflow JSON file or stdin.")
     validate.add_argument("path", help="Workflow JSON path, or '-' for stdin.")
     _add_output_flags(validate)
+    export = workflow_sub.add_parser("export", help="Export a saved workflow draft as redacted workflow_schema_v1 JSON.")
+    export.add_argument("workflow_id", help="Saved workflow draft id.")
+    _add_output_flags(export)
+    import_preview = workflow_sub.add_parser("import", help="Dry-run import a workflow JSON file and preview the diff.")
+    import_preview.add_argument("path", help="Workflow JSON path, or '-' for stdin.")
+    import_preview.add_argument("--target-workflow", default="", help="Optional existing workflow JSON path for diff preview.")
+    import_preview.add_argument("--target-workflow-id", default="", help="Optional saved workflow draft id for diff preview.")
+    import_preview.add_argument("--dry-run", action="store_true", default=True, help="Import preview only. No draft is saved.")
+    _add_output_flags(import_preview)
     return parser
 
 
@@ -97,6 +118,35 @@ def _workflow_validate(args: argparse.Namespace) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return _error_receipt("runtime.workflow.validate", "workflow_json_not_object", "Workflow JSON must be an object.")
     return validate_workflow_artifact({"workflow": payload})
+
+
+def _workflow_import_preview(args: argparse.Namespace) -> dict[str, Any]:
+    try:
+        payload = _read_json(args.path)
+    except Exception as exc:
+        return _error_receipt("runtime.workflow.import_preview", "invalid_json", str(exc))
+    if not isinstance(payload, dict):
+        return _error_receipt("runtime.workflow.import_preview", "workflow_json_not_object", "Workflow JSON must be an object.")
+    body: dict[str, Any] = {
+        "workflow": payload,
+        "dry_run": True,
+        "operator_mode": False,
+    }
+    if args.target_workflow:
+        try:
+            target = _read_json(args.target_workflow)
+        except Exception as exc:
+            return _error_receipt("runtime.workflow.import_preview", "invalid_target_json", str(exc))
+        if not isinstance(target, dict):
+            return _error_receipt(
+                "runtime.workflow.import_preview",
+                "target_workflow_json_not_object",
+                "Target workflow JSON must be an object.",
+            )
+        body["target_workflow"] = target
+    if args.target_workflow_id:
+        body["target_workflow_id"] = args.target_workflow_id
+    return preview_workflow_import(body)
 
 
 def _read_json(path: str) -> Any:
@@ -153,15 +203,25 @@ def _table(receipt: dict[str, Any]) -> str:
         return "\n".join(lines)
     data = receipt.get("data") if isinstance(receipt.get("data"), dict) else {}
     summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    diff = data.get("diff") if isinstance(data.get("diff"), dict) else {}
     errors = data.get("errors") if isinstance(data.get("errors"), list) else []
     warnings = data.get("warnings") if isinstance(data.get("warnings"), list) else []
+    valid = data.get("valid") if "valid" in data else receipt.get("success")
     lines = [
-        f"valid\t{bool(data.get('valid'))}",
-        f"workflow_id\t{summary.get('workflow_id') or ''}",
+        f"valid\t{bool(valid)}",
+        f"workflow_id\t{receipt.get('workflow_id') or summary.get('workflow_id') or ''}",
         f"nodes\t{summary.get('node_count') or 0}",
         f"errors\t{len(errors)}",
         f"warnings\t{len(warnings)}",
     ]
+    if diff:
+        lines.extend(
+            [
+                f"added_nodes\t{len(diff.get('added_nodes') if isinstance(diff.get('added_nodes'), list) else [])}",
+                f"removed_nodes\t{len(diff.get('removed_nodes') if isinstance(diff.get('removed_nodes'), list) else [])}",
+                f"kept_nodes\t{len(diff.get('kept_nodes') if isinstance(diff.get('kept_nodes'), list) else [])}",
+            ]
+        )
     for row in errors:
         if isinstance(row, dict):
             lines.append(f"error\t{row.get('code') or ''}\t{row.get('message') or ''}")
