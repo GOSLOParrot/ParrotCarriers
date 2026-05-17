@@ -15,9 +15,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from livekit.agents import RunContext, function_tool
 
+from parrot.brain.tools._budget import with_budget
+
 logger = logging.getLogger(__name__)
 
 CalendarFetcher = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+TaskDispatcher = Callable[[str, dict[str, Any] | None, str], Awaitable[str]]
 
 
 @function_tool()
@@ -30,21 +33,25 @@ async def calendar_context(
     limit: int = 8,
     fetch_source: str = "api",
     sync_policy: str = "preview",
+    thinking_budget_s: float = 2.5,
+    fallback_to_task: bool = True,
 ) -> str:
     """Read Google Calendar context for GOSLO's current Intent turn.
 
     Category: T1 Intent / Thinking tool. Use this when GOSLO needs schedule
     context before replying, such as "what do I have today?", "can we fit this
     plan before dinner?", or "check my calendar before recommending a time."
-    The tool may briefly block the turn in a natural thinking state.
+    The tool may briefly block the turn in a natural thinking state, but it
+    must not freeze the conversation on slow external services.
 
     This tool is read-only. It never creates, patches, or deletes Google
     Calendar events; it never performs a direct L1.5 import; and it never writes
     L2-B or Graphiti. It returns a compact answer plus a source-to-DSG sync
     preview so GOSLO can reason about what would become L1.5 observations and
-    L2-B event pointers later. For slow background fetches, use dispatch_task
-    with task_type='calendar_fetch'. For Calendar write actions, create a
-    Calendar change draft and require Plan/HITL approval before nanobot runs.
+    L2-B event pointers later. If the read does not finish inside the thinking
+    budget, it dispatches a T3 `calendar_fetch` task and returns the task id so
+    GOSLO can continue speaking. For Calendar write actions, create a Calendar
+    change draft and require Plan/HITL approval before nanobot runs.
 
     Args:
         intent: Why GOSLO is checking the calendar in this conversational turn.
@@ -57,6 +64,9 @@ async def calendar_context(
             MCP read, or 'auto' to try API first then Nanobot.
         sync_policy: Currently only 'preview' is allowed. Other values are
             acknowledged but downgraded to preview.
+        thinking_budget_s: Max seconds to wait inside the live conversation
+            before falling back to a T3 task. Capped to 0.05-5.0 seconds.
+        fallback_to_task: If true, slow/failed reads dispatch calendar_fetch.
     """
 
     return await do_calendar_context(
@@ -67,6 +77,8 @@ async def calendar_context(
         limit=limit,
         fetch_source=fetch_source,
         sync_policy=sync_policy,
+        thinking_budget_s=thinking_budget_s,
+        fallback_to_task=fallback_to_task,
     )
 
 
@@ -81,10 +93,14 @@ async def do_calendar_context(
     sync_policy: str = "preview",
     api_fetcher: CalendarFetcher | None = None,
     nanobot_fetcher: CalendarFetcher | None = None,
+    task_dispatcher: TaskDispatcher | None = None,
+    thinking_budget_s: float = 2.5,
+    fallback_to_task: bool = True,
 ) -> str:
     """Implementation helper kept separate for tests and future adapters."""
 
     bounded_limit = max(1, min(int(limit or 8), 12))
+    budget_s = _bounded_budget(thinking_budget_s)
     source = str(fetch_source or "api").strip().lower()
     if source not in {"api", "nanobot", "auto"}:
         source = "api"
@@ -96,24 +112,99 @@ async def do_calendar_context(
     }
 
     tried: list[str] = []
+    attempts: list[dict[str, Any]] = []
     receipt: dict[str, Any] | None = None
     source_used = source
     if source in {"api", "auto"}:
         tried.append("api")
-        receipt = await _call_api_fetcher(payload, api_fetcher=api_fetcher)
+        api_attempt = await _fetch_with_budget(
+            "api",
+            payload,
+            timeout_s=budget_s,
+            api_fetcher=api_fetcher,
+            nanobot_fetcher=nanobot_fetcher,
+        )
+        attempts.append(api_attempt)
+        receipt = api_attempt.get("receipt")
         source_used = "api"
+        if _receipt_success(receipt):
+            return format_calendar_context(
+                receipt,
+                intent=intent,
+                requested_date=str(date or "today"),
+                resolved_date=payload["date"],
+                fetch_source=source_used,
+                tried_sources=tried,
+                sync_policy=sync_policy,
+            )
+        if source == "api" and fallback_to_task:
+            return await _format_calendar_context_fallback(
+                payload,
+                intent=intent,
+                requested_date=str(date or "today"),
+                tried_sources=tried,
+                attempts=attempts,
+                task_dispatcher=task_dispatcher,
+            )
+        if source == "auto" and api_attempt.get("error") == "timeout" and fallback_to_task:
+            return await _format_calendar_context_fallback(
+                payload,
+                intent=intent,
+                requested_date=str(date or "today"),
+                tried_sources=tried,
+                attempts=attempts,
+                task_dispatcher=task_dispatcher,
+            )
     if (source == "nanobot") or (
         source == "auto" and not _receipt_success(receipt)
     ):
         tried.append("nanobot")
-        receipt = await _call_nanobot_fetcher(payload, nanobot_fetcher=nanobot_fetcher)
+        nanobot_attempt = await _fetch_with_budget(
+            "nanobot",
+            payload,
+            timeout_s=budget_s,
+            api_fetcher=api_fetcher,
+            nanobot_fetcher=nanobot_fetcher,
+        )
+        attempts.append(nanobot_attempt)
+        receipt = nanobot_attempt.get("receipt")
         source_used = "nanobot"
+        if _receipt_success(receipt):
+            return format_calendar_context(
+                receipt,
+                intent=intent,
+                requested_date=str(date or "today"),
+                resolved_date=payload["date"],
+                fetch_source=source_used,
+                tried_sources=tried,
+                sync_policy=sync_policy,
+            )
 
     if receipt is None:
         receipt = {
             "success": False,
-            "data": {"error": "calendar_context_fetch_not_attempted", "events": []},
+            "data": {
+                "error": _attempt_summary(attempts) or "calendar_context_fetch_not_attempted",
+                "events": [],
+            },
         }
+    elif attempts and not _receipt_success(receipt):
+        receipt = dict(receipt)
+        data = receipt.get("data") if isinstance(receipt.get("data"), dict) else {}
+        receipt["data"] = {
+            **data,
+            "error": data.get("error") or _attempt_summary(attempts),
+            "events": data.get("events") or [],
+        }
+    if fallback_to_task:
+        return await _format_calendar_context_fallback(
+            payload,
+            intent=intent,
+            requested_date=str(date or "today"),
+            tried_sources=tried,
+            attempts=attempts,
+            task_dispatcher=task_dispatcher,
+        )
     return format_calendar_context(
         receipt,
         intent=intent,
@@ -123,6 +214,126 @@ async def do_calendar_context(
         tried_sources=tried,
         sync_policy=sync_policy,
     )
+
+
+async def _fetch_with_budget(
+    source: str,
+    payload: dict[str, Any],
+    *,
+    timeout_s: float,
+    api_fetcher: CalendarFetcher | None,
+    nanobot_fetcher: CalendarFetcher | None,
+) -> dict[str, Any]:
+    if source == "api":
+        coro = _call_api_fetcher(payload, api_fetcher=api_fetcher)
+    else:
+        coro = _call_nanobot_fetcher(payload, nanobot_fetcher=nanobot_fetcher)
+
+    result = await with_budget(
+        coro,
+        timeout_s=timeout_s,
+        segment=f"calendar_context:{source}",
+    )
+    if not result.ok:
+        return {
+            "source": source,
+            "ok": False,
+            "error": result.error or "timeout",
+            "elapsed_ms": result.elapsed_ms,
+            "receipt": None,
+        }
+
+    receipt = result.value or {
+        "success": False,
+        "data": {"error": "empty_calendar_receipt", "events": []},
+    }
+    return {
+        "source": source,
+        "ok": _receipt_success(receipt),
+        "error": "" if _receipt_success(receipt) else _receipt_error(receipt),
+        "elapsed_ms": result.elapsed_ms,
+        "receipt": receipt,
+    }
+
+
+async def _format_calendar_context_fallback(
+    payload: dict[str, Any],
+    *,
+    intent: str,
+    requested_date: str,
+    tried_sources: list[str],
+    attempts: list[dict[str, Any]],
+    task_dispatcher: TaskDispatcher | None,
+) -> str:
+    reason = _attempt_summary(attempts) or "quick_read_unavailable"
+    task_id = ""
+    dispatch_error = ""
+    try:
+        task_id = await _dispatch_calendar_fetch_task(
+            payload,
+            intent=intent,
+            requested_date=requested_date,
+            reason=reason,
+            task_dispatcher=task_dispatcher,
+        )
+    except Exception as exc:
+        logger.exception("calendar_context: fallback calendar_fetch dispatch failed")
+        dispatch_error = f"{type(exc).__name__}: {exc}"
+
+    lines = [
+        "Calendar context pending (T1 Intent/Thinking -> T3 calendar_fetch).",
+        f"Reason: {reason}.",
+        f"Window: {requested_date or 'today'} -> {payload.get('date', '')}",
+        f"Tried sources: {','.join(tried_sources) or 'none'}.",
+    ]
+    if task_id:
+        lines.append(f"Background task: calendar_fetch dispatched id={task_id}.")
+        lines.append(
+            "GOSLO should tell the user it is checking Calendar in the background "
+            "and can continue the conversation."
+        )
+    else:
+        lines.append(f"Background task dispatch failed: {dispatch_error or 'unknown_error'}.")
+        lines.append("GOSLO should report that Calendar is unavailable instead of waiting.")
+    lines.append(
+        "No Google Calendar write, no L1.5 import, no L2-B mutation, and no "
+        "Graphiti write occurred in this T1 fallback."
+    )
+    return "\n".join(lines)
+
+
+async def _dispatch_calendar_fetch_task(
+    payload: dict[str, Any],
+    *,
+    intent: str,
+    requested_date: str,
+    reason: str,
+    task_dispatcher: TaskDispatcher | None,
+) -> str:
+    dispatcher = task_dispatcher
+    if dispatcher is None:
+        from parrot.brain.tools.dispatch_task import do_dispatch_task
+
+        dispatcher = do_dispatch_task
+
+    params = {
+        "intent": str(intent or "calendar context check")[:500],
+        "requested_date": requested_date or "today",
+        "date": payload.get("date"),
+        "calendar_id": payload.get("calendar_id", "primary"),
+        "timezone": payload.get("timezone", "Asia/Shanghai"),
+        "limit": payload.get("limit", 8),
+        "result_channel": "calendar_result",
+        "source": "calendar_context_t1_fallback",
+        "reason": reason,
+        "sync_policy": "preview",
+        "instructions": (
+            "Fetch read-only Google Calendar context for GOSLO. Return a compact "
+            "receipt; do not create, patch, delete, import to L1.5, write L2-B, "
+            "or write Graphiti unless a later Plan/HITL gate explicitly asks."
+        ),
+    }
+    return await dispatcher("calendar_fetch", params, "high")
 
 
 def format_calendar_context(
@@ -251,6 +462,38 @@ def _resolve_date(date_text: str, *, timezone_name: str) -> str:
 
 def _receipt_success(receipt: dict[str, Any] | None) -> bool:
     return bool(isinstance(receipt, dict) and receipt.get("success"))
+
+
+def _receipt_error(receipt: dict[str, Any] | None) -> str:
+    if not isinstance(receipt, dict):
+        return "invalid_calendar_receipt"
+    data = receipt.get("data")
+    if isinstance(data, dict):
+        error = str(data.get("error") or "").strip()
+        if error:
+            return error[:180]
+    return "calendar_receipt_failed"
+
+
+def _attempt_summary(attempts: list[dict[str, Any]]) -> str:
+    pieces: list[str] = []
+    for attempt in attempts:
+        source = str(attempt.get("source") or "unknown")
+        elapsed = int(attempt.get("elapsed_ms") or 0)
+        if attempt.get("ok"):
+            pieces.append(f"{source}:ok:{elapsed}ms")
+            continue
+        error = str(attempt.get("error") or "failed").strip()
+        pieces.append(f"{source}:{error}:{elapsed}ms")
+    return "; ".join(pieces)
+
+
+def _bounded_budget(value: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = 2.5
+    return max(0.05, min(parsed, 5.0))
 
 
 def _event_rows(data: dict[str, Any]) -> list[dict[str, Any]]:

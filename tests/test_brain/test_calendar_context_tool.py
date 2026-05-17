@@ -87,3 +87,41 @@ def test_do_calendar_context_uses_api_fetcher_and_returns_compact_context() -> N
     assert "No events found" in text
     assert "fake api" in text
     assert "No Google Calendar write" in text
+
+
+def test_do_calendar_context_falls_back_to_task_when_t1_fetch_times_out() -> None:
+    dispatched: list[tuple[str, dict | None, str]] = []
+
+    async def slow_api(payload: dict) -> dict:
+        await asyncio.sleep(0.2)
+        return {"success": True, "data": {"count": 0, "normalized_events": []}}
+
+    async def fake_dispatch(task_type: str, params: dict | None, priority: str) -> str:
+        dispatched.append((task_type, params, priority))
+        return "task1234"
+
+    text = asyncio.run(
+        do_calendar_context(
+            intent="check if we can schedule writing",
+            date="2026-05-18",
+            calendar_id="primary",
+            timezone="Asia/Shanghai",
+            fetch_source="api",
+            api_fetcher=slow_api,
+            task_dispatcher=fake_dispatch,
+            thinking_budget_s=0.05,
+        )
+    )
+
+    assert "T1 Intent/Thinking -> T3 calendar_fetch" in text
+    assert "timeout" in text
+    assert "task1234" in text
+    assert dispatched
+    task_type, params, priority = dispatched[0]
+    assert task_type == "calendar_fetch"
+    assert priority == "high"
+    assert params is not None
+    assert params["source"] == "calendar_context_t1_fallback"
+    assert params["date"] == "2026-05-18"
+    assert params["sync_policy"] == "preview"
+    assert "No Google Calendar write" in text

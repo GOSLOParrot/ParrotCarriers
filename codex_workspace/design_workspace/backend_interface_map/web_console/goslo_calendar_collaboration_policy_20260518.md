@@ -492,3 +492,54 @@ Implemented the first GOSLO-facing Calendar Intent/Thinking tool:
 - Safety/fallback: slow or failed reads return a compact failure message telling
   GOSLO to dispatch a background `calendar_fetch` task if the answer is not
   needed before replying.
+
+### 2026-05-18 - Live Tool Blocking Research And T1/T3 Correction
+
+Primary research sources:
+
+- LiveKit Agents async tools:
+  https://docs.livekit.io/agents/logic/tools/async/
+- LiveKit Agents function tools:
+  https://docs.livekit.io/agents/logic/tools/definition/
+- LiveKit Agents turn/interruption handling:
+  https://docs.livekit.io/agents/logic/turns/
+- Gemini Live API tool use:
+  https://ai.google.dev/gemini-api/docs/live-api/tools
+
+Finding:
+
+- LiveKit regular function tools block the agent's next turn until all pending
+  tool calls return. LiveKit's intended non-blocking primitive is
+  `AsyncToolset`, where the tool gives an early update and then runs in the
+  background.
+- Gemini Live function calling is sequential by default. The model waits for a
+  `FunctionResponse` before continuing. Gemini Live has non-blocking function
+  declarations for models that support them, but the client/framework must wire
+  that behavior explicitly.
+- Therefore a plain LiveKit `@function_tool` on top of Gemini Live should be
+  treated as blocking unless we either use LiveKit `AsyncToolset`, Gemini
+  non-blocking functions, or implement an app-level quick-return fallback.
+
+Design verdict for current GOSLO Calendar tool:
+
+- Keep `calendar_context` as T1 Intent/Thinking, but only within a short
+  thinking budget.
+- If the Google Calendar API/Nanobot read returns inside budget, GOSLO uses the
+  result in the same turn.
+- If it times out or fails, `calendar_context` immediately dispatches a T3
+  `calendar_fetch` task and returns a task id, so GOSLO can tell the user that
+  Calendar is being checked in the background and continue speaking.
+- This is an app-level compatibility bridge until we decide whether to adopt
+  LiveKit `AsyncToolset` or Gemini Live `NON_BLOCKING` tool declarations for a
+  broader async tool layer.
+
+Implementation correction:
+
+- `src/parrot/brain/tools/calendar_context.py` now wraps API/Nanobot reads with
+  the shared `with_budget()` staged-tool helper.
+- Default T1 budget is 2.5 seconds, capped between 0.05 and 5.0 seconds.
+- Slow or failed reads dispatch `calendar_fetch` with `priority=high`,
+  `result_channel=calendar_result`, `source=calendar_context_t1_fallback`, and
+  `sync_policy=preview`.
+- The fallback is still read-only: no Google Calendar write, no L1.5 import, no
+  L2-B mutation, and no Graphiti write happen inside the T1 tool.
