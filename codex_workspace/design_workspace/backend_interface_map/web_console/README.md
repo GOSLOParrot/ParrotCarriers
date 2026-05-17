@@ -603,6 +603,11 @@ Keep active Web Console implementation in these locations:
   credentials must be installed under
   `/home/parrot/.nanobot/google-workspace-credentials` with `parrot:parrot`
   ownership; `/root/.nanobot/...` is not enough for the HTTP service.
+- L2-B Graphiti materialization now has a narrow durable pointer store at
+  `data/web_console/l2b_materialized_graphiti_pointers.json`. It persists
+  stable Graphiti/L2-B pointer UUIDs and raw Graphiti metadata, never RustWorkX
+  integer indices, so `l2b.subgraphs.context` can recover reviewed Graphiti
+  imports after app-monitor restart.
 
 ## Write Rules
 

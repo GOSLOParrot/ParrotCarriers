@@ -978,3 +978,18 @@ ECS proof after `e9289bd`:
   `edges_added=3`.
 - `POST /api/l2b/subgraphs/context` then read the materialized UUID back with
   three nodes and three edges.
+
+Durability correction after the proof:
+
+- Runtime materialization alone was not enough: `L2BGraph` is intentionally a
+  RustWorkX-backed singleton and app-monitor restarts can clear it.
+- Added a narrow durable pointer store for Graphiti materializations:
+  `data/web_console/l2b_materialized_graphiti_pointers.json`, overridable with
+  `PARROT_L2B_GRAPH_POINTER_STORE_PATH`.
+- The store persists only operator-reviewed Graphiti pointer nodes/edges,
+  stable L2-B/Graphiti UUIDs, and raw Graphiti metadata. It does not persist
+  RustWorkX integer indices, temporary preview indices, or arbitrary session
+  graph state.
+- New `L2BGraph` singleton instances hydrate this store once, so
+  `l2b.subgraphs.context` can read materialized Graphiti UUIDs after a service
+  restart without repeating the Graphiti search/import-plan flow.

@@ -1752,7 +1752,10 @@ def materialize_graphiti_l2b_subgraph(payload: dict[str, Any] | None = None) -> 
 
     try:
         from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
-        from parrot.dsg.l2b_graph import get_l2b_graph
+        from parrot.dsg.l2b_graph import (
+            get_l2b_graph,
+            persist_materialized_graphiti_pointers,
+        )
 
         graph = get_l2b_graph()
         before_nodes = graph.node_count()
@@ -1781,6 +1784,22 @@ def materialize_graphiti_l2b_subgraph(payload: dict[str, Any] | None = None) -> 
         nodes_upserted = sum(1 for row in node_reports if row.get("upserted"))
         edges_added = sum(1 for row in edge_reports if row.get("connected"))
         edges_skipped = sum(1 for row in edge_reports if row.get("skipped_duplicate"))
+        persistence_report: dict[str, Any]
+        try:
+            store_path = persist_materialized_graphiti_pointers(graph)
+            persistence_report = {
+                "persisted": True,
+                "path": str(store_path),
+                "store_kind": "l2b_materialized_graphiti_pointers",
+                "rwx_indices_persisted": False,
+            }
+        except Exception as persist_exc:
+            persistence_report = {
+                "persisted": False,
+                "error": f"{type(persist_exc).__name__}: {persist_exc}",
+                "store_kind": "l2b_materialized_graphiti_pointers",
+                "rwx_indices_persisted": False,
+            }
         return _receipt(
             action="graphiti.subgraph.materialize_l2b",
             success=bool(l2b_nodes) and all(row.get("ok") for row in node_reports),
@@ -1794,6 +1813,7 @@ def materialize_graphiti_l2b_subgraph(payload: dict[str, Any] | None = None) -> 
                 "direct_graphiti_write": False,
                 "direct_falkordb_write": False,
                 "identity_ref_index_write": bool(identity_write and identity_payloads),
+                "persistent_l2b_pointer_store": persistence_report,
                 "nodes_upserted": nodes_upserted,
                 "edges_added": edges_added,
                 "edges_skipped_duplicate": edges_skipped,

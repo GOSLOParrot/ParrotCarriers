@@ -1265,6 +1265,8 @@ def test_graphiti_subgraph_materialize_l2b_is_operator_gated_and_context_queryab
         "PARROT_MEMORY_IDENTITY_REF_INDEX_PATH",
         str(tmp_path / "identity_ref_index.json"),
     )
+    pointer_store_path = tmp_path / "l2b_pointer_store.json"
+    monkeypatch.setenv("PARROT_L2B_GRAPH_POINTER_STORE_PATH", str(pointer_store_path))
     monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
     graph = L2BGraph()
     monkeypatch.setattr(l2b_graph_module, "_instance", graph)
@@ -1318,6 +1320,9 @@ def test_graphiti_subgraph_materialize_l2b_is_operator_gated_and_context_queryab
         assert applied["data"]["nodes_upserted"] >= 3
         assert applied["data"]["edges_added"] >= 1
         assert applied["data"]["identity_ref_index_write"] is True
+        assert applied["data"]["persistent_l2b_pointer_store"]["persisted"] is True
+        assert applied["data"]["persistent_l2b_pointer_store"]["rwx_indices_persisted"] is False
+        assert pointer_store_path.exists()
         assert applied["data"]["context_node_uuids"][0] == "graphiti:arknights_test:entity:source-amiya"
 
         node = graph.get_node("graphiti:arknights_test:entity:source-amiya")
@@ -1365,6 +1370,24 @@ def test_graphiti_subgraph_materialize_l2b_is_operator_gated_and_context_queryab
         assert reapplied["success"] is True
         assert reapplied["data"]["edges_added"] == 0
         assert reapplied["data"]["edges_skipped_duplicate"] >= applied["data"]["edges_added"]
+
+        l2b_graph_module._instance = None
+        restored_context = client.post(
+            "/api/l2b/subgraphs/context",
+            json={
+                "node_uuids": ["graphiti:arknights_test:entity:source-amiya"],
+                "depth": 1,
+                "dry_run": False,
+                "operator_mode": True,
+            },
+        ).json()
+        assert restored_context["success"] is True
+        assert restored_context["data"]["missing_graphiti_preview_node_uuids"] == []
+        assert {row["uuid"] for row in restored_context["data"]["nodes"]} >= {
+            "graphiti:arknights_test:entity:source-amiya",
+            "graphiti:arknights_test:entity:target-rhodes",
+        }
+        assert restored_context["data"]["edges"][0]["graphiti_uuid"] == "graphiti-hit-materialize-1"
     finally:
         l2b_graph_module._instance = None
 

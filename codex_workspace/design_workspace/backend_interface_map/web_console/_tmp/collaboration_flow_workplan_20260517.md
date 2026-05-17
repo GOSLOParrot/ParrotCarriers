@@ -518,3 +518,15 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
   operator materialize wrote the pointer graph with `direct_l2b_write=true`,
   `nodes_upserted=3`, `edges_added=3`; context read returned three nodes and
   three edges.
+- 2026-05-18 L2-B durability follow-up: review found the Graphiti ->
+  materialize-l2b path was a true runtime write, but the L2-B graph singleton
+  was session-scoped and would be empty after app-monitor restart unless the
+  operator repeated materialization. Added a narrow durable pointer store at
+  `data/web_console/l2b_materialized_graphiti_pointers.json`, configurable via
+  `PARROT_L2B_GRAPH_POINTER_STORE_PATH`. It persists only operator-reviewed
+  Graphiti pointer nodes/edges, stable business UUIDs, and raw Graphiti
+  metadata; RustWorkX integer indices remain ephemeral and are not persisted.
+  New graph instances hydrate this store once on startup. Local validation:
+  backend `py_compile` passed; focused materialize/context restart test passed;
+  Web Console plus flow CLI tests reported `107 passed`; L2-B DSG tests
+  reported `37 passed`; app-monitor tests reported `12 passed`.
