@@ -254,6 +254,9 @@ function Write-UnityConfig {
         appApiSecret = $envMap["PARROT_APP_MONITOR_SECRET"]
         orchestratorUrl = "http://$hostIp`:17890"
         orchestratorSecret = $envMap["PARROT_ORCH_SECRET"]
+        photoUploadUrl = "http://$hostIp`:17889"
+        visualToolDevEnabled = $true
+        visualToolHttpEnabled = $true
     }
     $json = $config | ConvertTo-Json -Depth 5
     Write-Utf8NoBom -Path $UnityConfigGenerated -Text $json
@@ -270,6 +273,7 @@ function Show-Status {
     $checks = @(
         "http://$hostIp`:17888/health",
         "http://$hostIp`:17890/health",
+        "http://$hostIp`:17889/health",
         "http://$hostIp`:18790/api/app/room-setting",
         "http://$hostIp`:18790/api/console/config",
         "http://$hostIp`:18790/api/graphiti/status"
@@ -279,7 +283,11 @@ function Show-Status {
             $result = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 3
             Write-Host "$url -> $($result.StatusCode)"
         } catch {
-            Write-Host "$url -> unavailable ($($_.Exception.Message))"
+            $hint = ""
+            if ($url -match ":17889/") {
+                $hint = " (expected until a Unity/LiveKit room job is active)"
+            }
+            Write-Host "$url -> unavailable$hint ($($_.Exception.Message))"
         }
     }
 }

@@ -1186,6 +1186,74 @@ Verification:
 - Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` completed ready with
   0 Console errors after an automatic MCP reconnect.
 
+## Laptop Backend Config Pass - Photo Upload / Dev Tool Smoke (2026-05-18)
+
+Question:
+
+- The App is switching from public ECS to the laptop as backend. Confirm whether
+  CAM, BBox, and MAG can still be used, and whether a real photo capture can
+  create a PhotoNode in L2-B.
+
+Findings:
+
+- Active Unity config was already pointed at laptop mint/LiveKit/App
+  API/orchestrator on `192.168.2.4`, but it did not include a phone-safe
+  `photoUploadUrl`.
+- The laptop compose profile did not publish Brain's in-job
+  `photo_upload_server` to the phone. The host port existed only after adding
+  an explicit `17889 -> 7889` mapping.
+- Brain starts `photo_upload_server` inside a LiveKit room job, not while the
+  idle worker is merely registered. So `/health` is expected to be unavailable
+  until Unity/sim client joins and the Brain job starts.
+
+Fix:
+
+- `infra/docker-compose.laptop.yml` now exposes Brain photo upload at
+  `0.0.0.0:17889 -> 7889` and sets `PARROT_PHOTO_UPLOAD_HOST=0.0.0.0`,
+  `PARROT_PHOTO_UPLOAD_PORT=7889`, and `PARROT_PHOTO_CACHE_ROOT=/app/data/photos`.
+- `infra/laptop-castle.ps1` now generates `photoUploadUrl` plus
+  `visualToolDevEnabled=true` and `visualToolHttpEnabled=true` for the laptop
+  Unity profile.
+- `infra/switch-unity-app-config.ps1` now shows `photoUploadUrl` and the visual
+  tool flags in its secret-safe summary.
+- Active Unity `Resources/parrot_config.json` was switched to the regenerated
+  laptop profile for the next Android build.
+
+Verification:
+
+- `infra/laptop-castle.ps1 -Action up-brain` recreated the app-monitor and
+  Brain containers with the new port mapping.
+- `sim_unity_client.py --startup-rpc-check --startup-room-profile-id default`
+  connected to `parrot-laptop-main`, saw an `agent-*` Brain participant, and
+  got business-ok from `applyRoomProfile` and `setAppCapabilityMode`.
+- After the Brain room job started, `http://192.168.2.4:17889/health` returned
+  `{"status":"ok","service":"photo-upload"}`.
+- `.venv\Scripts\python.exe -m pytest tests/test_castle/test_livekit_config.py
+  tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 37 passed.
+
+Boundary note fixed in follow-up pass:
+
+- `app-monitor` now proxies read-only `/api/app/live-state` and
+  `/api/l2b/snapshot` to the active Brain room job through
+  `PARROT_APP_MONITOR_BRAIN_LIVE_STATE_URL=http://brain:7889`. This keeps
+  Web/App read visibility separate from the process that writes L2-B.
+- The Brain room job's `photo_upload_server` exposes the same read-only routes
+  for that proxy, annotated with `source_process=brain.photo_upload_server`
+  and `read_only_proxy_surface=true`.
+- True-connection probe after container rebuild:
+  `unity-photo-node-probe-*` joined `parrot-laptop-main`, Brain `agent-*`
+  joined, the probe published `photo.taken_preview` on reliable
+  `parrot.ecp.event`, then POSTed image bytes to `/upload/photo/{photo_id}`.
+  `app-monitor` refresh returned a `photo` node with
+  `reference_image_path=/app/data/photos/2026-05-18/ph_probe_*.jpg` and proxy
+  metadata `source=brain_room_job` for both live-state and L2-B routes.
+- Bug found and fixed during the probe: LiveKit `publish_data` is not a
+  self-delivery guarantee. The upload server published `photo.asset_uploaded`
+  to peers, but Brain did not always process its own published event, leaving
+  `PhotoNode.reference_image_path` empty. The HTTP upload path now mirrors the
+  same Brain-source `EcpEvent` into the existing local `EcpEventIngest`; dedup
+  protects against future self-loop duplication.
+
 ## Continue Pass 9 - Requirements Compliance Fixes (2026-05-17)
 
 Pre-edit audit:

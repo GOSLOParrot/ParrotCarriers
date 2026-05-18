@@ -1,0 +1,1 @@
+{"active_tracks": [], "available": true, "enabled": true, "error_count": 0, "event": "stopped", "fps": 1.0, "fresh_window_ms": 15000, "last_error": "", "latest_frame": {}, "latest_frame_age_ms": null, "latest_frame_fresh": false, "recorded_frames": 0, "room_id": "parrot-laptop-main", "schema": "LiveKitFrameSampler.web_backend_v1", "tracks": {}, "updated_at_ms": 1779076112681}

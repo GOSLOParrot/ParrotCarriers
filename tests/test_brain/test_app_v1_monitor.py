@@ -8,6 +8,7 @@ import py_trees
 import pytest
 
 from parrot.brain import refs as refs_registry
+from parrot.brain import app_monitor_server
 from parrot.brain.app_monitor_server import build_app
 from parrot.brain.app_v1_self_check import run_app_v1_self_check
 from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
@@ -62,6 +63,63 @@ def test_l2b_snapshot_exports_nodes_and_edges_read_only() -> None:
     assert snapshot["nodes"][0]["uuid"] == "a"
     assert snapshot["edges"][0]["source"] == "a"
     assert snapshot["edges"][0]["target"] == "b"
+
+
+def test_app_monitor_proxies_live_state_to_brain_room_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv(
+        "PARROT_APP_MONITOR_BRAIN_LIVE_STATE_URL",
+        "http://brain:7889",
+    )
+    calls: list[tuple[str, str]] = []
+
+    def fake_fetch(base_url: str, path: str) -> dict[str, Any]:
+        calls.append((base_url, path))
+        if path.startswith("/api/app/live-state"):
+            return {
+                "generated_at": 1.0,
+                "sequence": 7,
+                "blackboard": {},
+                "intent_workspace": {},
+                "refs": {},
+                "l2b": {
+                    "node_count": 1,
+                    "edge_count": 0,
+                    "nodes": [{"uuid": "ph_real_phone", "kind": "photo"}],
+                    "edges": [],
+                },
+                "tool_artifacts": [],
+                "audit": {"source_process": "brain.photo_upload_server"},
+            }
+        return {
+            "node_count": 1,
+            "edge_count": 0,
+            "nodes": [{"uuid": "ph_real_phone", "kind": "photo"}],
+            "edges": [],
+        }
+
+    monkeypatch.setattr(
+        app_monitor_server,
+        "_fetch_brain_live_state_json_sync",
+        fake_fetch,
+    )
+
+    client = TestClient(app_monitor_server.build_app())
+    live = client.get("/api/app/live-state?limit=12").json()
+    l2b = client.get("/api/l2b/snapshot?limit=12").json()
+
+    assert live["l2b"]["nodes"][0]["uuid"] == "ph_real_phone"
+    assert live["audit"]["app_monitor_proxy"]["source"] == "brain_room_job"
+    assert live["audit"]["app_monitor_proxy"]["read_only"] is True
+    assert l2b["nodes"][0]["uuid"] == "ph_real_phone"
+    assert l2b["app_monitor_proxy"]["route"] == "/api/l2b/snapshot"
+    assert calls == [
+        ("http://brain:7889", "/api/app/live-state?limit=12"),
+        ("http://brain:7889", "/api/l2b/snapshot?limit=12"),
+    ]
 
 
 def test_monitor_health_and_canvas_endpoints() -> None:
@@ -150,6 +208,28 @@ def test_monitor_exposes_graphiti_materialize_and_l2b_context_routes() -> None:
     assert context["action"] == "l2b.subgraph.context"
     assert context["success"] is False
     assert context["data"]["error"] == "missing_node_selection"
+
+
+def test_monitor_exposes_l2b_node_operator_route_for_web_console() -> None:
+    from fastapi.testclient import TestClient
+
+    client = TestClient(build_app())
+
+    node = client.post(
+        "/api/l2b/node",
+        json={
+            "label": "Monitor Web Node",
+            "kind": "object",
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+    live = client.get("/api/app/live-state?limit=20").json()
+
+    assert node["success"] is True
+    assert node["action"] == "l2b.node.apply"
+    assert node["data"]["admit_outcome"]["rejected"] == []
+    assert any(row["label"] == "Monitor Web Node" for row in live["l2b"]["nodes"])
 
 
 def test_monitor_exposes_google_calendar_true_fetch_routes(monkeypatch: pytest.MonkeyPatch) -> None:

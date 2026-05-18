@@ -12,11 +12,15 @@ Authoritative spec:
 Why a separate FastAPI app inside the brain process (vs. a token-mint-style
 standalone service):
     The asset upload completion MUST publish a ``photo.asset_uploaded``
-    EcpEvent on the same LiveKit Room the agent is connected to. Putting
-    the upload server in a separate process would force a Redis Pub/Sub
-    bridge to get bytes from the upload process to the agent process for
-    the publish — extra moving parts for what is, at Phase 4 scope, a
-    single-process spike. Future Phase 5+ scaling can split if needed.
+    EcpEvent on the same LiveKit Room the agent is connected to, and must
+    also dispatch that same event into the local observer pipeline. LiveKit
+    data publish is not a reliable self-loop, so relying on the room to echo
+    Brain-origin upload events back into Brain leaves PhotoNodes without their
+    asset path. Putting the upload server in a separate process would force a
+    Redis Pub/Sub bridge to get bytes from the upload process to the agent
+    process for the publish + local observer update — extra moving parts for
+    what is, at Phase 4 scope, a single-process spike. Future Phase 5+ scaling
+    can split if needed.
 
 Lifecycle:
     :func:`start_photo_upload_server` is called by ``brain.agent`` at boot
@@ -140,13 +144,43 @@ def build_app():  # type: ignore[no-untyped-def]
     async def health() -> dict:  # noqa: D401  - one-liner FastAPI handler
         return {"status": "ok", "service": "photo-upload"}
 
+    @app.get("/api/app/live-state")
+    async def app_live_state(limit: int = 80) -> dict:
+        """Read the Brain room job's in-process App live-state.
+
+        Laptop app-monitor/Web Console runs in a different process from the
+        LiveKit Brain job.  This read-only debug route lets that monitor refresh
+        against the actual process that receives ``photo.taken_preview`` and
+        creates PhotoNodes, without moving image bytes or memory writes through
+        Web/App code.
+        """
+        from parrot.brain.app_live_state import build_app_live_state
+
+        body = build_app_live_state(l2b_limit=max(1, min(int(limit or 80), 200))).as_json()
+        audit = body.setdefault("audit", {})
+        if isinstance(audit, dict):
+            audit["source_process"] = "brain.photo_upload_server"
+            audit["read_only_proxy_surface"] = True
+        return body
+
+    @app.get("/api/l2b/snapshot")
+    async def l2b_snapshot(limit: int = 80) -> dict:
+        """Read the Brain room job's in-process L2-B snapshot."""
+        from parrot.brain.l2b_monitor import build_l2b_snapshot
+
+        body = build_l2b_snapshot(limit=max(1, min(int(limit or 80), 200))).as_json()
+        body["remote_source"] = "brain.photo_upload_server"
+        body["read_only_proxy_surface"] = True
+        return body
+
     @app.post("/upload/photo/{photo_id}")
     async def upload_photo(photo_id: str, request: Request) -> dict:
         """Accept full-resolution photo bytes for a previously-previewed photo.
 
         Body: raw image bytes (Content-Type ignored; client-decided format).
         Side effect: bytes saved to cache + ``photo.asset_uploaded`` EcpEvent
-        published (best-effort) so observer.photo can update the PhotoNode.
+        dispatched locally and published (best-effort) so observer.photo can
+        update the PhotoNode and peers can observe the upload.
         """
         if not is_safe_photo_id(photo_id):
             raise HTTPException(status_code=400, detail="invalid photo_id")
@@ -211,7 +245,7 @@ async def _publish_asset_uploaded_event(
     correlation_id: str = "",
     timebase: dict[str, Any] | None = None,
 ) -> bool:
-    """Publish ``photo.asset_uploaded`` via the brain's EcpEventPublisher.
+    """Record and publish ``photo.asset_uploaded`` from the Brain process.
 
     Returns True on success, False when no publisher is attached (server
     spun up before agent connect) or transport fails. Best-effort — the
@@ -221,30 +255,68 @@ async def _publish_asset_uploaded_event(
     """
     try:
         from parrot.brain.event_publisher import get_ecp_event_publisher
-        from parrot.shared.ecp_event import EcpEventType
+        from parrot.shared.ecp_event import EcpEvent, EcpEventSource, EcpEventType
     except Exception:
         return False
 
     publisher = get_ecp_event_publisher()
-    if publisher is None:
-        return False
     try:
-        event = publisher.make_brain_event(
-            event_type=EcpEventType.PHOTO_ASSET_UPLOADED,
-            payload={
-                "photo_id": photo_id,
-                "asset_ref": asset_ref,
-                # ``asset_ref`` is the HTTP-style pointer. ``asset_path`` is the
-                # real disk path used by L2-B RefTable / IntentWorkspace.
-                "asset_path": asset_path,
-                "asset_bytes": asset_bytes,
-                **({"timebase": timebase} if timebase else {}),
-            },
-            correlation_id=correlation_id or photo_id,
-        )
+        payload = {
+            "photo_id": photo_id,
+            "asset_ref": asset_ref,
+            # ``asset_ref`` is the HTTP-style pointer. ``asset_path`` is the
+            # real disk path used by L2-B RefTable / IntentWorkspace.
+            "asset_path": asset_path,
+            "asset_bytes": asset_bytes,
+            **({"timebase": timebase} if timebase else {}),
+        }
+        if publisher is not None:
+            event = publisher.make_brain_event(
+                event_type=EcpEventType.PHOTO_ASSET_UPLOADED,
+                payload=payload,
+                correlation_id=correlation_id or photo_id,
+            )
+        else:
+            event = EcpEvent.build(
+                event_type=EcpEventType.PHOTO_ASSET_UPLOADED,
+                source=EcpEventSource.BRAIN,
+                payload=payload,
+                correlation_id=correlation_id or photo_id,
+            )
+
+        _dispatch_asset_uploaded_locally(event)
+        if publisher is None:
+            return False
         return await publisher.publish(event)
     except Exception:
         logger.exception("[photo_upload] publish_asset_uploaded failed")
+        return False
+
+
+def _dispatch_asset_uploaded_locally(event: "EcpEvent") -> bool:
+    """Mirror a Brain-origin upload event into local EcpEvent observers.
+
+    The upload server runs in the Brain job process, but ``publish_data`` sends
+    to remote participants and should not be treated as a self-delivery
+    guarantee. Local dispatch keeps L2-B PhotoNode, BB, evidence ledger and
+    IntentWorkspace updates on the same observer path as room-delivered ECP.
+    If a future SDK/runtime echoes the event back, ingest dedup drops it by
+    ``event_id``.
+    """
+    try:
+        from parrot.brain.event_ingest import get_existing_ecp_event_ingest
+        from parrot.shared.ecp_event import TOPIC_ECP_EVENT
+
+        ingest = get_existing_ecp_event_ingest()
+        if ingest is None:
+            return False
+        handled = ingest.handle_raw(
+            TOPIC_ECP_EVENT,
+            event.to_wire_json().encode("utf-8"),
+        )
+        return handled is not None
+    except Exception:
+        logger.exception("[photo_upload] local asset_uploaded dispatch failed")
         return False
 
 

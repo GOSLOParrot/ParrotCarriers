@@ -17,9 +17,13 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from parrot.web_console.environment_config import build_console_environment
+from parrot.web_console.environment_config import (
+    apply_console_environment_profile,
+    build_console_environment,
+)
 
 try:
     from fastapi import Body, FastAPI, HTTPException
@@ -101,6 +105,30 @@ def build_app(
                 orchestrator_auth_mode=config.auth_mode,
             ),
             "now": time.time(),
+        }
+
+    @app.post("/api/console/profile/apply")
+    async def console_profile_apply(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        profile = str(body.get("profile") or body.get("profile_id") or "").strip().lower()
+        try:
+            environment = apply_console_environment_profile(profile)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        config = _orchestrator_config_from_env()
+        return {
+            "action": "console.profile.apply",
+            "success": True,
+            "profile": environment.get("profile"),
+            "config": {
+                "orchestrator_base_url": config.base_url,
+                "orchestrator_auth_mode": config.auth_mode,
+                "refresh_interval_s": _env_float("PARROT_WEB_CONSOLE_REFRESH_S", 15.0),
+                "environment": environment,
+                "now": time.time(),
+            },
         }
 
     @app.get("/api/orchestrator/status")
@@ -199,20 +227,36 @@ def build_app(
 
     @app.get("/api/app/live-state")
     async def app_live_state(limit: int = 80) -> dict[str, Any]:
+        safe_limit = max(1, min(limit, 200))
+        remote = await _fetch_remote_app_json(
+            "/api/app/live-state?" + urlencode({"limit": str(safe_limit)})
+        )
+        if remote is not None:
+            return remote
+
         from parrot.brain.app_live_state import build_app_live_state
 
-        return build_app_live_state(l2b_limit=max(1, min(limit, 200))).as_json()
+        return build_app_live_state(l2b_limit=safe_limit).as_json()
 
     @app.get("/api/memory/live-state/changes")
     async def memory_live_state_changes(
         since: int = 0,
         limit: int = 120,
     ) -> dict[str, Any]:
+        safe_since = max(0, int(since or 0))
+        safe_limit = max(1, min(int(limit or 120), 200))
+        remote = await _fetch_remote_app_json(
+            "/api/memory/live-state/changes?"
+            + urlencode({"since": str(safe_since), "limit": str(safe_limit)})
+        )
+        if remote is not None:
+            return remote
+
         from parrot.web_console.memory_live_state import build_memory_live_state_changes
 
         return build_memory_live_state_changes(
-            since=since,
-            limit=max(1, min(limit, 200)),
+            since=safe_since,
+            limit=safe_limit,
         )
 
     @app.get("/api/memory/live-state/stream")
@@ -230,8 +274,6 @@ def build_app(
         schema; it streams the same ``memory_runtime_delta_v1`` rows and keeps
         operator receipts on a separate future stream.
         """
-
-        from parrot.web_console.memory_live_state import build_memory_live_state_changes
 
         safe_limit = max(1, min(int(limit or 120), 200))
         safe_interval = max(0.25, min(float(interval_s or 1.0), 30.0))
@@ -254,7 +296,7 @@ def build_app(
                 event_id=f"memory-stream-{int(time.time() * 1000)}",
             )
             while True:
-                changes = build_memory_live_state_changes(
+                changes = await _memory_live_state_changes_snapshot(
                     since=current_since,
                     limit=safe_limit,
                 )
@@ -1200,6 +1242,78 @@ async def fetch_orchestrator_status(config: OrchestratorProxyConfig) -> dict[str
 async def fetch_orchestrator_health(config: OrchestratorProxyConfig) -> dict[str, Any]:
     """Fetch Castle ``GET /health``. This route is intentionally unauthenticated."""
     return await asyncio.to_thread(_fetch_orchestrator_health_sync, config)
+
+
+async def _memory_live_state_changes_snapshot(*, since: int, limit: int) -> dict[str, Any]:
+    remote = await _fetch_remote_app_json(
+        "/api/memory/live-state/changes?"
+        + urlencode({"since": str(max(0, since)), "limit": str(max(1, min(limit, 200)))})
+    )
+    if remote is not None:
+        return remote
+
+    from parrot.web_console.memory_live_state import build_memory_live_state_changes
+
+    return build_memory_live_state_changes(
+        since=max(0, since),
+        limit=max(1, min(limit, 200)),
+    )
+
+
+async def _fetch_remote_app_json(path: str) -> dict[str, Any] | None:
+    base_url = _remote_app_api_base_url()
+    if not base_url:
+        return None
+    return await asyncio.to_thread(_fetch_remote_app_json_sync, base_url, path)
+
+
+def _fetch_remote_app_json_sync(base_url: str, path: str) -> dict[str, Any] | None:
+    url = f"{base_url}/{path.lstrip('/')}"
+    headers = {"Accept": "application/json"}
+    headers.update(_remote_app_auth_headers())
+    status_code, body, _detail = _fetch_json(url, headers, _remote_app_timeout_s())
+    if status_code != 200 or not isinstance(body, dict):
+        return None
+    return body
+
+
+def _remote_app_api_base_url() -> str:
+    raw = (
+        os.getenv("PARROT_WEB_CONSOLE_APP_API_URL")
+        or os.getenv("PARROT_WEB_CONSOLE_L2B_URL")
+        or os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_URL")
+        or os.getenv("PARROT_GRAPHITI_REMOTE_URL")
+        or ""
+    )
+    return str(raw).strip().rstrip("/")
+
+
+def _remote_app_timeout_s() -> float:
+    raw = (
+        os.getenv("PARROT_WEB_CONSOLE_APP_API_TIMEOUT_S")
+        or os.getenv("PARROT_WEB_CONSOLE_L2B_TIMEOUT_S")
+        or os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_TIMEOUT_S")
+        or "10"
+    )
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        parsed = 10.0
+    return max(0.5, min(parsed, 60.0))
+
+
+def _remote_app_auth_headers() -> dict[str, str]:
+    secret = (
+        os.getenv("PARROT_WEB_CONSOLE_APP_API_SECRET")
+        or os.getenv("PARROT_WEB_CONSOLE_L2B_SECRET")
+        or os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_SECRET")
+        or os.getenv("PARROT_GRAPHITI_REMOTE_SECRET")
+        or os.getenv("PARROT_APP_MONITOR_SECRET")
+        or ""
+    ).strip()
+    if not secret:
+        return {}
+    return {"Authorization": f"Bearer {secret}"}
 
 
 def _fetch_orchestrator_status_sync(config: OrchestratorProxyConfig) -> dict[str, Any]:

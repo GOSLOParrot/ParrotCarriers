@@ -45,6 +45,8 @@ def test_animate_exposes_model_id_kwarg():
 
 def test_animate_threads_model_id_into_meta():
     src = _read("animate.py")
+    assert "ParrotAnimationName = Literal[" in src
+    assert "animation_name: ParrotAnimationName" in src
     # Either pattern is acceptable: dict literal with conditional value, or
     # branched kwarg construction. We assert the simplest invariant — meta
     # is forwarded into wrap_legacy_rpc_payload AND model_id appears next
@@ -60,6 +62,24 @@ def test_animate_checks_selected_model_capability_before_rpc():
 
     assert "supports_capability(animation_name" in src
     assert "unsupported_message(animation_name" in src
+
+
+def test_goslo_registered_animation_tools_are_no_arg_wrappers():
+    src = _read("animate.py")
+
+    for tool_name in (
+        "play_idle",
+        "play_fly_pose",
+        "play_dance",
+        "play_wing_flap",
+        "play_perch_pose",
+        "play_sit",
+        "play_head_bob",
+        "play_sleep",
+    ):
+        assert f"async def {tool_name}(context: RunContext) -> str" in src
+    assert "PARROT_ANIMATION_TOOLS = (" in src
+    assert "_play_registered_animation(\"dance\")" in src
 
 
 def test_fly_to_exposes_model_id_kwarg():

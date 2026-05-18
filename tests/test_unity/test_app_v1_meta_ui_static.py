@@ -961,9 +961,13 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "hasBluetoothOutputType(getDevices(AudioManager.GET_DEVICES_OUTPUTS))" in android_route_java
     assert "shouldKeepMediaModeForOutputBluetooth" in android_route_java
     assert "shouldKeepMediaModeForDefaultCapture" in android_route_java
+    assert "hasSelectableCommunicationCaptureDevice" in android_route_java
+    assert "Auto means \"follow the phone\"" in android_route_java
+    assert "return !hasSelectableCommunicationCaptureDevice();" in android_route_java
     assert '"auto".equals(preference)' in android_route_java
     assert '"system_default".equals(preference)' in android_route_java
     assert '"phone_mic".equals(preference)' in android_route_java
+    assert 'return "auto".equals(preference)' not in android_route_java
     assert "communication_mode_kept_media_bluetooth_output" in android_route_java
     assert "communication_mode_kept_media_phone_output" in android_route_java
     assert "mediaBluetoothReason(reason)" in android_route_java

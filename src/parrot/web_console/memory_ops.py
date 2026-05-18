@@ -1752,10 +1752,7 @@ def materialize_graphiti_l2b_subgraph(payload: dict[str, Any] | None = None) -> 
 
     try:
         from parrot.dsg.identity_ref_index import MemoryIdentityRefIndex
-        from parrot.dsg.l2b_graph import (
-            get_l2b_graph,
-            persist_materialized_graphiti_pointers,
-        )
+        from parrot.dsg.l2b_graph import get_l2b_graph
 
         graph = get_l2b_graph()
         before_nodes = graph.node_count()
@@ -1784,22 +1781,6 @@ def materialize_graphiti_l2b_subgraph(payload: dict[str, Any] | None = None) -> 
         nodes_upserted = sum(1 for row in node_reports if row.get("upserted"))
         edges_added = sum(1 for row in edge_reports if row.get("connected"))
         edges_skipped = sum(1 for row in edge_reports if row.get("skipped_duplicate"))
-        persistence_report: dict[str, Any]
-        try:
-            store_path = persist_materialized_graphiti_pointers(graph)
-            persistence_report = {
-                "persisted": True,
-                "path": str(store_path),
-                "store_kind": "l2b_materialized_graphiti_pointers",
-                "rwx_indices_persisted": False,
-            }
-        except Exception as persist_exc:
-            persistence_report = {
-                "persisted": False,
-                "error": f"{type(persist_exc).__name__}: {persist_exc}",
-                "store_kind": "l2b_materialized_graphiti_pointers",
-                "rwx_indices_persisted": False,
-            }
         return _receipt(
             action="graphiti.subgraph.materialize_l2b",
             success=bool(l2b_nodes) and all(row.get("ok") for row in node_reports),
@@ -1813,7 +1794,6 @@ def materialize_graphiti_l2b_subgraph(payload: dict[str, Any] | None = None) -> 
                 "direct_graphiti_write": False,
                 "direct_falkordb_write": False,
                 "identity_ref_index_write": bool(identity_write and identity_payloads),
-                "persistent_l2b_pointer_store": persistence_report,
                 "nodes_upserted": nodes_upserted,
                 "edges_added": edges_added,
                 "edges_skipped_duplicate": edges_skipped,
@@ -1903,6 +1883,59 @@ def _remote_operator_request(
             "error": f"{type(exc).__name__}: {exc}",
             "url": url,
         }
+
+
+def _should_proxy_l2b_operator(
+    body: dict[str, Any],
+    *,
+    dry_run: bool,
+    operator_mode: bool,
+) -> bool:
+    return (
+        bool(_remote_operator_base_url())
+        and not _body_bool(body.get("_remote_proxy_disable"), False)
+        and (operator_mode or not dry_run)
+    )
+
+
+def _proxy_l2b_operator_route(
+    *,
+    action: str,
+    path: str,
+    body: dict[str, Any],
+    dry_run: bool,
+    operator_mode: bool,
+) -> dict[str, Any]:
+    remote_payload = {
+        **body,
+        "dry_run": dry_run,
+        "operator_mode": operator_mode,
+        "_remote_proxy_disable": True,
+    }
+    remote = _remote_operator_request(path, payload=remote_payload)
+    if not isinstance(remote, dict):
+        return _receipt(
+            action=action,
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={"error": "remote_l2b_proxy_non_object", "raw": remote},
+        )
+    remote_data = dict(remote.get("data") or {})
+    remote_data["remote_proxy"] = {
+        "enabled": bool(remote.get("success")),
+        "base_url": _remote_operator_base_url(),
+        "route": path,
+        "reason": "web_console_l2b_remote_url_configured",
+        "error": remote.get("error") or "",
+    }
+    remote["data"] = remote_data
+    if remote.get("action") == "remote.operator.proxy":
+        remote["action"] = action
+        remote["success"] = False
+        remote["dry_run"] = dry_run
+        remote["operator_mode"] = operator_mode
+    return remote
 
 
 def _remote_operator_auth_headers() -> dict[str, str]:
@@ -3224,6 +3257,14 @@ async def apply_l2b_node(payload: dict[str, Any] | None = None) -> dict[str, Any
     body = payload or {}
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
+    if _should_proxy_l2b_operator(body, dry_run=dry_run, operator_mode=operator_mode):
+        return _proxy_l2b_operator_route(
+            action="l2b.node.apply",
+            path="/api/l2b/node",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
     draft = draft_l2b_node({**body, "dry_run": dry_run, "operator_mode": operator_mode})
     draft["action"] = "l2b.node.apply"
     if not draft.get("success"):
@@ -3263,6 +3304,14 @@ async def delete_l2b_node(payload: dict[str, Any] | None = None) -> dict[str, An
     body = payload or {}
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
+    if _should_proxy_l2b_operator(body, dry_run=dry_run, operator_mode=operator_mode):
+        return _proxy_l2b_operator_route(
+            action="l2b.node.delete",
+            path="/api/l2b/node/delete",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
     node_uuid = str(body.get("node_uuid") or body.get("uuid") or "").strip()
     if not node_uuid:
         return _receipt(
@@ -3396,6 +3445,14 @@ async def apply_l2b_edge(payload: dict[str, Any] | None = None) -> dict[str, Any
     body = payload or {}
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
+    if _should_proxy_l2b_operator(body, dry_run=dry_run, operator_mode=operator_mode):
+        return _proxy_l2b_operator_route(
+            action="l2b.edge.apply",
+            path="/api/l2b/edge",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
     draft = draft_l2b_edge({**body, "dry_run": dry_run, "operator_mode": operator_mode})
     draft["action"] = "l2b.edge.apply"
     if not draft.get("success"):
@@ -3451,6 +3508,14 @@ async def apply_l2b_edge_update(payload: dict[str, Any] | None = None) -> dict[s
     body = payload or {}
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
+    if _should_proxy_l2b_operator(body, dry_run=dry_run, operator_mode=operator_mode):
+        return _proxy_l2b_operator_route(
+            action="l2b.edge.update",
+            path="/api/l2b/edge/update",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
     draft = draft_l2b_edge_update({**body, "dry_run": dry_run, "operator_mode": operator_mode})
     draft["action"] = "l2b.edge.update"
     if not draft.get("success"):
@@ -3498,6 +3563,14 @@ async def delete_l2b_edge(payload: dict[str, Any] | None = None) -> dict[str, An
     body = payload or {}
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
+    if _should_proxy_l2b_operator(body, dry_run=dry_run, operator_mode=operator_mode):
+        return _proxy_l2b_operator_route(
+            action="l2b.edge.delete",
+            path="/api/l2b/edge/delete",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
     from_uuid = str(body.get("from_uuid") or body.get("source_uuid") or "").strip()
     to_uuid = str(body.get("to_uuid") or body.get("target_uuid") or "").strip()
     if not from_uuid or not to_uuid:

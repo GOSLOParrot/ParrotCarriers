@@ -8,11 +8,16 @@ same EcpEvent observer path Unity uses; live-state views are read-only.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
+from urllib.request import Request as UrlRequest
+from urllib.request import urlopen
 
 from parrot.brain.app_first_version import (
     AppFirstVersionFacade,
@@ -38,6 +43,8 @@ from parrot.brain.graphiti_console import (
 from parrot.brain.app_live_state import build_app_live_state
 from parrot.brain.l2b_monitor import build_l2b_snapshot
 from parrot.web_console.environment_config import build_console_environment
+
+logger = logging.getLogger(__name__)
 
 try:
     from fastapi import Body, FastAPI, Header, HTTPException, Request
@@ -282,7 +289,13 @@ def build_app():  # type: ignore[no-untyped-def]
 
     @app.get("/api/app/live-state")
     async def app_live_state(limit: int = 80):  # type: ignore[no-untyped-def]
-        return build_app_live_state(l2b_limit=max(1, min(limit, 200))).as_json()
+        safe_limit = max(1, min(int(limit or 80), 200))
+        remote = await _fetch_brain_live_state_json(
+            "/api/app/live-state?" + urlencode({"limit": str(safe_limit)})
+        )
+        if remote is not None:
+            return _mark_brain_live_state_proxy(remote, route="/api/app/live-state")
+        return build_app_live_state(l2b_limit=safe_limit).as_json()
 
     @app.get("/api/memory/live-state/changes")
     async def memory_live_state_changes(  # type: ignore[no-untyped-def]
@@ -447,7 +460,55 @@ def build_app():  # type: ignore[no-untyped-def]
 
     @app.get("/api/l2b/snapshot")
     async def l2b_snapshot(limit: int = 80):  # type: ignore[no-untyped-def]
-        return build_l2b_snapshot(limit=max(1, min(limit, 200))).as_json()
+        safe_limit = max(1, min(int(limit or 80), 200))
+        remote = await _fetch_brain_live_state_json(
+            "/api/l2b/snapshot?" + urlencode({"limit": str(safe_limit)})
+        )
+        if remote is not None:
+            return _mark_brain_live_state_proxy(remote, route="/api/l2b/snapshot")
+        return build_l2b_snapshot(limit=safe_limit).as_json()
+
+    @app.post("/api/l2b/node/draft")
+    async def l2b_node_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import draft_l2b_node
+
+        return draft_l2b_node(payload or {})
+
+    @app.post("/api/l2b/node")
+    async def l2b_node(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import apply_l2b_node
+
+        return await apply_l2b_node({**(payload or {}), "_remote_proxy_disable": True})
+
+    @app.post("/api/l2b/node/delete")
+    async def l2b_node_delete(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import delete_l2b_node
+
+        return await delete_l2b_node({**(payload or {}), "_remote_proxy_disable": True})
+
+    @app.post("/api/l2b/edge/draft")
+    async def l2b_edge_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import draft_l2b_edge
+
+        return draft_l2b_edge(payload or {})
+
+    @app.post("/api/l2b/edge")
+    async def l2b_edge(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import apply_l2b_edge
+
+        return await apply_l2b_edge({**(payload or {}), "_remote_proxy_disable": True})
+
+    @app.post("/api/l2b/edge/update")
+    async def l2b_edge_update(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import apply_l2b_edge_update
+
+        return await apply_l2b_edge_update({**(payload or {}), "_remote_proxy_disable": True})
+
+    @app.post("/api/l2b/edge/delete")
+    async def l2b_edge_delete(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import delete_l2b_edge
+
+        return await delete_l2b_edge({**(payload or {}), "_remote_proxy_disable": True})
 
     @app.post("/api/l2b/subgraphs/context")
     async def l2b_subgraphs_context(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
@@ -1353,6 +1414,75 @@ def _json_header(request: Request, name: str) -> Any:  # type: ignore[valid-type
         return json.loads(raw)
     except json.JSONDecodeError:
         return None
+
+
+async def _fetch_brain_live_state_json(path: str) -> dict[str, Any] | None:
+    base_url = _brain_live_state_base_url()
+    if not base_url:
+        return None
+    return await asyncio.to_thread(_fetch_brain_live_state_json_sync, base_url, path)
+
+
+def _fetch_brain_live_state_json_sync(
+    base_url: str,
+    path: str,
+) -> dict[str, Any] | None:
+    url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+    headers = {"Accept": "application/json"}
+    secret = os.getenv("PARROT_APP_MONITOR_BRAIN_LIVE_STATE_SECRET", "").strip()
+    if secret:
+        headers["Authorization"] = f"Bearer {secret}"
+    try:
+        request = UrlRequest(url, headers=headers, method="GET")
+        with urlopen(request, timeout=_brain_live_state_timeout_s()) as response:
+            if int(getattr(response, "status", 0) or 0) != 200:
+                return None
+            parsed = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.debug(
+            "brain live-state proxy unavailable path=%s reason=%s",
+            path,
+            exc,
+        )
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _brain_live_state_base_url() -> str:
+    return (
+        os.getenv("PARROT_APP_MONITOR_BRAIN_LIVE_STATE_URL")
+        or os.getenv("PARROT_APP_MONITOR_BRAIN_L2B_URL")
+        or ""
+    ).strip().rstrip("/")
+
+
+def _brain_live_state_timeout_s() -> float:
+    raw = os.getenv("PARROT_APP_MONITOR_BRAIN_LIVE_STATE_TIMEOUT_S", "1.5")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = 1.5
+    return max(0.2, min(value, 10.0))
+
+
+def _mark_brain_live_state_proxy(
+    body: dict[str, Any],
+    *,
+    route: str,
+) -> dict[str, Any]:
+    proxy = {
+        "enabled": True,
+        "source": "brain_room_job",
+        "base_url": _brain_live_state_base_url(),
+        "route": route,
+        "read_only": True,
+    }
+    audit = body.get("audit")
+    if isinstance(audit, dict):
+        audit["app_monitor_proxy"] = proxy
+    else:
+        body["app_monitor_proxy"] = proxy
+    return body
 
 
 def _body_bool(value: Any, default: bool) -> bool:

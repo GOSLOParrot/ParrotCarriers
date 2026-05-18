@@ -44,6 +44,25 @@ Promote durable decisions back into the active business files above.
 |:--|:--|:--|
 | `codex_workspace/codex_skills/react-force-graph-l2b/SKILL.md` | draft | WEB-013 full-screen L2-B realtime graph renderer, React-Force-Graph adapter, Obsidian-like graph filters/groups/local graph behavior, and trigger/attention animation references. |
 
+## 2026-05-18 Connection/Canvas Audit
+
+- The React Web Console profile switch is explicit and process-local:
+  `POST /api/console/profile/apply` changes the running BFF upstreams for
+  `laptop` or `ecs` without writing browser storage or config files.
+- The UI switch lives in Settings under the connection profile list. The
+  active endpoint chip should show `laptop / web-console` with active
+  Graphiti/L2-B `http://127.0.0.1:18790` for local laptop testing.
+- Dragging L2-B nodes must not change upstream profile. Drag handlers only keep
+  transient React `manualPositions`; no localStorage L2-B layout persistence is
+  allowed in this phase.
+- The 2026-05-18 drag fix buffers the currently displayed L2-B snapshot while a
+  node is being dragged and rejects non-finite/huge positions, so SSE/poll
+  refreshes cannot wipe the canvas mid-drag.
+- L2-B runtime projection is still Brain/app-monitor memory, not a browser
+  source of truth. If the app-monitor process restarts, materialized Graphiti
+  projections must be re-imported or re-fetched from Graphiti; the browser must
+  not resurrect them from stale persistence.
+
 ## Completed Interface Ledger
 
 Audit checkpoint: 2026-05-13. This ledger records implemented Web Console
@@ -604,15 +623,10 @@ Keep active Web Console implementation in these locations:
   credentials must be installed under
   `/home/parrot/.nanobot/google-workspace-credentials` with `parrot:parrot`
   ownership; `/root/.nanobot/...` is not enough for the HTTP service.
-- L2-B Graphiti materialization now has a narrow durable pointer store at
-  `data/web_console/l2b_materialized_graphiti_pointers.json`. It persists
-  stable Graphiti/L2-B pointer UUIDs and raw Graphiti metadata, never RustWorkX
-  integer indices, so `l2b.subgraphs.context` can recover reviewed Graphiti
-  imports after app-monitor restart.
-- ECS proof after `80ee1017`: materialized `noble_etiquette` into the pointer
-  store, restarted `parrot-app-monitor`, and `l2b.subgraphs.context` read back
-  the materialized UUID with three nodes, three edges, and preserved raw
-  Graphiti metadata.
+- L2-B Graphiti materialization is currently runtime-only. The earlier narrow
+  durable pointer store was removed on 2026-05-18 pending a proper conflict
+  timeline, hard/soft merge policy, and Ref write-back design. Re-run Graphiti
+  search/import/materialize after app-monitor or Brain restart.
 
 ## Write Rules
 

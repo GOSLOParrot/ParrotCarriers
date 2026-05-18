@@ -36,6 +36,14 @@ after changing ECS/laptop config. Web Console / Obsidian / setting-file scan
 targets are separate environment choices and must not be inferred from the
 Unity phone config.
 
+2026-05-18 config-switch smoke: `infra/switch-unity-app-config.ps1` was tested
+with `show -> ecs -> laptop -> show`. It restored the gitignored ECS backup,
+switched back to the generated laptop profile, printed only secret-presence
+booleans, and intentionally left the active Unity config on
+`parrot-laptop-main` for the next local iQOO Build And Run. The Web Console
+environment-switch prompt now lives under
+`backend_interface_map/web_console/web_console_environment_switch_prompt_20260518.md`.
+
 2026-05-13 parallel work route:
 
 - App and Web can now proceed in separate chats using the workflow in

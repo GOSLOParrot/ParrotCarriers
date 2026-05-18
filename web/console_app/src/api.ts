@@ -31,6 +31,11 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   config: () => json<ConsoleConfig>("/api/console/config"),
+  consoleProfileApply: (body: Record<string, unknown>) =>
+    json<{ success?: boolean; profile?: string; config?: ConsoleConfig; action?: string }>("/api/console/profile/apply", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   liveState: () => json<LiveState>("/api/app/live-state?limit=120"),
   memoryLiveChanges: (since: number, limit = 120) =>
     json<MemoryLiveStateChanges>(

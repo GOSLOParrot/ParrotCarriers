@@ -41,6 +41,7 @@ runtime config, or formal Unity `parrot_config.json`.
 | Token mint | `http://<laptop-ip>:17888` | `0.0.0.0:17888 -> 7888` | Uses local bearer secret. |
 | Orchestrator | `http://<laptop-ip>:17890` | `0.0.0.0:17890 -> 7890` | Local Tier 1 prewrite only. |
 | App API | `http://<laptop-ip>:18790` | `0.0.0.0:18790 -> 8790` | RoomSetting/menu HTTP facade. |
+| Photo upload | `http://<laptop-ip>:17889` | `0.0.0.0:17889 -> 7889` | Brain job-owned `photo_upload_server`; becomes healthy after a Unity/LiveKit room job starts. |
 | Redis | laptop only | `127.0.0.1:16379 -> 6379` | Docker-internal clients use `redis:6379`. |
 | FalkorDB | laptop only | `127.0.0.1:16380 -> 6379` | Docker-internal clients use `falkordb:6379`. |
 
@@ -68,6 +69,16 @@ powershell -ExecutionPolicy Bypass -File infra/laptop-castle.ps1 -Action unity-c
 The generated Unity config is written to:
 
 `codex_workspace/local_runtime/castle_laptop/parrot_config.laptop.generated.json`
+
+As of 2026-05-18, the laptop-generated Unity config also includes:
+
+- `photoUploadUrl=http://<laptop-ip>:17889`
+- `visualToolDevEnabled=true`
+- `visualToolHttpEnabled=true`
+
+This makes the local lab build usable for CAM upload smoke and BBox/MAG
+developer-tool smoke. It is still not a production enablement decision; formal
+phone/body-feel validation remains APP-024.
 
 The active formal App config consumed by Unity is:
 
@@ -101,6 +112,28 @@ values into docs/chat. Two parallel installed Android apps would require
 separate package IDs, for example a future `com.parrotcarriers.app.local`;
 currently the formal package ID is shared, so each Build And Run replaces the
 previous install on the phone.
+
+### 2026-05-18 Switch Script Smoke
+
+The switch helper was exercised with the real local profiles:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infra/switch-unity-app-config.ps1 -Target show
+powershell -ExecutionPolicy Bypass -File infra/switch-unity-app-config.ps1 -Target ecs
+powershell -ExecutionPolicy Bypass -File infra/switch-unity-app-config.ps1 -Target laptop
+powershell -ExecutionPolicy Bypass -File infra/switch-unity-app-config.ps1 -Target show
+```
+
+Result:
+
+- `show` printed only URLs, room, and `has*Secret` booleans.
+- `ecs` restored the gitignored ECS backup at
+  `codex_workspace/local_runtime/unity_app_configs/parrot_config.ecs.local.json`
+  and showed public ECS URLs / `parrot-main`.
+- `laptop` restored the laptop generated profile and showed
+  `192.168.2.4` URLs / `parrot-laptop-main`.
+- Final active Unity config was intentionally left on laptop Castle for the
+  next iQOO local latency/audio-route build.
 
 ## Environment Matrix
 
@@ -154,6 +187,16 @@ Local Docker Desktop stack:
 - The Brain worker uses the named agent path (`parrot-brain`) for explicit
   active dispatch; one Brain participant joined and no duplicate `7889`
   photo-upload crash occurred during the START proof.
+- The laptop Brain compose profile now exposes the job-owned photo upload
+  server as `0.0.0.0:17889 -> 7889`, with cache root `/app/data/photos`.
+  A `sim_unity_client.py --startup-rpc-check` run triggered a Brain room job,
+  after which `http://192.168.2.4:17889/health` returned
+  `{"status":"ok","service":"photo-upload"}`.
+- `app-monitor` now reads live-state and L2-B from the active Brain room job by
+  proxying to the job-owned photo upload server (`http://brain:7889`). A real
+  LiveKit ECP probe published `photo.taken_preview`, uploaded bytes through
+  HTTP, and Web/app-monitor refresh saw the resulting `PhotoNode` with a filled
+  `/app/data/photos/2026-05-18/ph_probe_*.jpg` `reference_image_path`.
 - App API and Brain read `/app/data/presets` and `/app/data/line_profiles`
   through `PARROT_PRESETS_DIR` / `PARROT_LINE_PROFILES_DIR`, not image-baked
   repo data.
@@ -201,7 +244,10 @@ Not proof of:
 - LineB Google STT / Cartesia quality unless that specific room/profile is
   selected and measured locally;
 - phone stability until the formal App is rebuilt with the laptop config and
-  iQOO logs show non-zero uplink frames/peak plus Brain response telemetry.
+  iQOO logs show non-zero uplink frames/peak plus Brain response telemetry;
+- final APP-024 phone/body-feel acceptance for BBox/MAG/photo HUD timing. The
+  laptop proof closes the HTTP/ECP/L2-B read path, not the production touch
+  tuning pass.
 
 ## Follow-Up TODO
 

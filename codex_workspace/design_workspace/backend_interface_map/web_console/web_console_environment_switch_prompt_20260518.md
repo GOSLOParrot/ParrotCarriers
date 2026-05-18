@@ -1,5 +1,7 @@
 # Web Console Environment Switch Prompt (2026-05-18)
 
+Canonical owner: Web Console lane.
+
 Use this prompt in the Web Console chat when adding settings / connection
 support for public ECS vs laptop Castle.
 
@@ -11,7 +13,8 @@ support for public ECS vs laptop Castle.
 3. codex_workspace/design_workspace/tasks/APP_WEB_PARALLEL_TODOLIST_20260513.md
 4. codex_workspace/design_workspace/backend_interface_map/app/local_laptop_castle_app_env_20260518.md
 5. codex_workspace/design_workspace/backend_interface_map/app/unity_livekit_ecp_sva_data_flow_map_20260515.md
-6. codex_workspace/design_workspace/backend_interface_map/web_console/
+6. codex_workspace/design_workspace/backend_interface_map/web_console/web_console_environment_switch_prompt_20260518.md
+7. codex_workspace/design_workspace/backend_interface_map/web_console/
 
 目标：给 Web Console 增加“环境/连接配置”能力，明确区分 public ECS 和 laptop Castle，不要把 Unity App 的 parrot_config 切换误当成 Web Console 环境切换。
 
@@ -20,6 +23,7 @@ support for public ECS vs laptop Castle.
   - public ECS: LiveKit `ws://8.216.45.45:7880`, token-mint `:7888`, orchestrator `:7890`, App API `:8790`, room 通常是 `parrot-main`。
   - laptop Castle: LiveKit `ws://192.168.2.4:17880`, token-mint `:17888`, orchestrator `:17890`, App API `:18790`, room `parrot-laptop-main`。
 - Unity active config 是 `unity/ArSpike/Assets/ParrotApp/Resources/parrot_config.json`，是 Android build-time 输入，不是运行时热切换。
+- Unity App 切换环境只通过 App 线脚本：`infra/switch-unity-app-config.ps1 -Target laptop|ecs|show`。
 - Web Console / Obsidian scan / setting-file 管理 / Graphiti-FalkorDB 目标必须由 Web 侧自己的环境配置决定，不能从 Unity phone config 推断。
 - local laptop runtime data 在 `codex_workspace/local_runtime/castle_laptop/**`，是 gitignored local lab；public ECS runtime data 在 ECS 上。不要混写。
 - secrets 只允许在 server/BFF env 中存在，浏览器 UI 只能显示脱敏 URL、状态和 profile 名称，不能暴露 bearer secret。

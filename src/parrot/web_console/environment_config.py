@@ -30,7 +30,11 @@ def build_console_environment(
             _env("PARROT_WEB_CONSOLE_API_TARGET")
             or _env("VITE_PARROT_WEB_CONSOLE_API_TARGET")
         ),
-        "app_api_base_url": _clean_url(_env("PARROT_WEB_CONSOLE_APP_API_URL")),
+        "app_api_base_url": _clean_url(
+            _env("PARROT_WEB_CONSOLE_APP_API_URL")
+            or _env("PARROT_WEB_CONSOLE_L2B_URL")
+            or _env("PARROT_WEB_CONSOLE_GRAPHITI_URL")
+        ),
         "graphiti_proxy_url": _clean_url(
             _env("PARROT_WEB_CONSOLE_GRAPHITI_URL")
             or _env("PARROT_WEB_CONSOLE_L2B_URL")
@@ -101,6 +105,65 @@ def build_console_environment(
         },
         "warnings": _profile_warnings(profile, active),
     }
+
+
+def apply_console_environment_profile(profile_id: str) -> dict[str, Any]:
+    """Switch this Web Console process to a known upstream profile.
+
+    This is intentionally process-local: it changes where the running BFF
+    proxies Graphiti/L2-B/app-monitor/orchestrator requests, without writing a
+    config file or persisting the selection into the browser.
+    """
+
+    profile = str(profile_id or "").strip().lower()
+    if profile not in {"laptop", "ecs"}:
+        raise ValueError("profile must be 'laptop' or 'ecs'")
+
+    if profile == "laptop":
+        app_url = _clean_url(
+            _env("PARROT_WEB_CONSOLE_LAPTOP_BFF_APP_API_URL")
+            or _env("PARROT_WEB_CONSOLE_LAPTOP_APP_API_URL")
+            or "http://127.0.0.1:18790"
+        )
+        orch_url = _clean_url(
+            _env("PARROT_WEB_CONSOLE_LAPTOP_BFF_ORCH_URL")
+            or _env("PARROT_WEB_CONSOLE_LAPTOP_ORCH_URL")
+            or "http://127.0.0.1:17890"
+        )
+        livekit_url = (
+            _env("PARROT_WEB_CONSOLE_LAPTOP_LIVEKIT_URL")
+            or "ws://127.0.0.1:17880"
+        )
+        room = _env("PARROT_WEB_CONSOLE_LAPTOP_ROOM") or "parrot-laptop-main"
+    else:
+        ecs_host = _env("PARROT_ECS_HOST") or "8.216.45.45"
+        app_url = _clean_url(
+            _env("PARROT_WEB_CONSOLE_ECS_APP_API_URL")
+            or f"http://{ecs_host}:8790"
+        )
+        orch_url = _clean_url(
+            _env("PARROT_WEB_CONSOLE_ECS_ORCH_URL")
+            or f"http://{ecs_host}:7890"
+        )
+        livekit_url = (
+            _env("PARROT_WEB_CONSOLE_ECS_LIVEKIT_URL")
+            or f"ws://{ecs_host}:7880"
+        )
+        room = _env("PARROT_WEB_CONSOLE_ECS_ROOM") or "parrot-main"
+
+    os.environ["PARROT_WEB_CONSOLE_PROFILE"] = profile
+    os.environ["PARROT_WEB_CONSOLE_APP_API_URL"] = app_url
+    os.environ["PARROT_WEB_CONSOLE_GRAPHITI_URL"] = app_url
+    os.environ["PARROT_WEB_CONSOLE_L2B_URL"] = app_url
+    os.environ["PARROT_WEB_CONSOLE_NANOBOT_API_URL"] = app_url
+    os.environ["PARROT_WEB_CONSOLE_ORCH_URL"] = orch_url
+    os.environ["LIVEKIT_URL"] = livekit_url
+    os.environ["LIVEKIT_ROOM"] = room
+    return build_console_environment(
+        service_name="web-console",
+        orchestrator_base_url=orch_url,
+        orchestrator_auth_mode="bearer" if _has_env("PARROT_ORCH_SECRET") else "none",
+    )
 
 
 def _profile_name() -> str:

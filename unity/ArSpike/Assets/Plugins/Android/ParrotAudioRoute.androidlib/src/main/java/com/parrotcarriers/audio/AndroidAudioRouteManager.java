@@ -533,15 +533,21 @@ public final class AndroidAudioRouteManager {
     }
 
     private boolean shouldKeepMediaModeForDefaultCapture() {
-        // Formal App default is stable phone/default capture. Do not enter
-        // Android's communication mode for auto/system-default/phone-mic
-        // capture: on iQOO/OEM Android this can route downlink to speaker or
-        // earpiece and can gate the near-end microphone before Unity/LiveKit
-        // receives any PCM frames. A future explicit Bluetooth-mic setting may
-        // opt into SCO/communication mode; auto should stay media-safe.
-        return "auto".equals(preference)
-            || "system_default".equals(preference)
-            || "phone_mic".equals(preference);
+        // System-default and phone-mic fallbacks should stay in media mode:
+        // forcing MODE_IN_COMMUNICATION can steal A2DP output back to the
+        // speaker or gate the near-end mic on some OEM Android builds.
+        if ("system_default".equals(preference) || "phone_mic".equals(preference))
+            return true;
+
+        if (!"auto".equals(preference))
+            return false;
+
+        // Auto means "follow the phone". If Android exposes a real
+        // communication headset/wired mic, let the route owner enter
+        // MODE_IN_COMMUNICATION and select it. If only A2DP/output devices are
+        // present, stay in media mode and let Unity capture from phone/default
+        // mic while Android preserves headset output.
+        return !hasSelectableCommunicationCaptureDevice();
     }
 
     private boolean shouldKeepMediaModeForPhoneOutput() {
@@ -563,6 +569,22 @@ public final class AndroidAudioRouteManager {
         int type = target.getType();
         return (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER || type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)
             && shouldKeepMediaModeForPhoneOutput();
+    }
+
+    private boolean hasSelectableCommunicationCaptureDevice() {
+        if (audioManager == null || Build.VERSION.SDK_INT < 31) return false;
+        List<AudioDeviceInfo> communicationDevices = audioManager.getAvailableCommunicationDevices();
+        if (communicationDevices == null || communicationDevices.isEmpty()) return false;
+        AudioDeviceInfo headset = firstAnyDevice(
+            communicationDevices,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_USB_HEADSET);
+        if (headset == null) return false;
+        if (isBluetoothVoiceType(headset.getType()))
+            return hasBluetoothConnectPermission();
+        return true;
     }
 
     private static String mediaBluetoothReason(String reasonPrefix) {

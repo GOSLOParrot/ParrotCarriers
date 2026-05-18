@@ -764,7 +764,7 @@ Current simulated state matrix:
 
 | Condition | Expected formal behavior | Current status / remaining risk |
 |:--|:--|:--|
-| No Bluetooth, phone mic | `MODE_IN_COMMUNICATION`, speaker/phone route, Unity mic first, AudioRecord fallback if Unity frames fail. | Code path exists; iQOO still needs non-zero `frames/ch/readSr/peak/nz` proof. |
+| No Bluetooth, phone mic | Keep media/default route, speaker/phone output, Unity mic first, AudioRecord fallback if Unity frames fail. | Code path exists; iQOO still needs non-zero `frames/ch/readSr/peak/nz` proof. |
 | Bluetooth output only / A2DP | Keep output on headset if Android owns it; do not force SCO; capture via phone/default mic fallback. | Code now clears stale speaker/earpiece communication device for output-only Bluetooth; phone proof pending. |
 | Bluetooth SCO / BLE headset mic | Try active communication route only when `getCommunicationDevice()` confirms it; short SCO probe, then 48 kHz/system/default/AudioRecord fallback. | Code path exists; Unity official docs say BT mic can still fail, so phone mic fallback is product policy, not a temporary hack. |
 | Bluetooth enabled but no connected device | Must never block START or mic publish; fall through to phone/default route. | Code no longer treats Bluetooth preference as a hard gate; phone proof pending. |
@@ -830,3 +830,40 @@ Open proof / next instrumentation:
   end-to-end voice timing: client capture -> LiveKit publish -> Brain
   STT/VAD -> LLM -> TTS -> LiveKit downlink. Add latency telemetry before
   blaming LiveKit server size or ECS CPU.
+
+## 2026-05-18 Auto Route Correction
+
+User review clarified the intended phone behavior: network locality is useful
+for latency comparison, but Bluetooth/mic selection is a local Android route
+problem. The formal App should follow the phone's route policy: when a real
+Bluetooth SCO / BLE headset / wired communication capture device is available,
+`auto` may enter Android communication mode and select it; when only output
+Bluetooth/A2DP exists, keep media mode so Parrot output stays on the headset and
+capture falls back to phone/default mic.
+
+Bug found:
+
+- `AndroidAudioRouteManager.shouldKeepMediaModeForDefaultCapture()` had become
+  too broad and returned true for `auto` unconditionally.
+- That could prevent the App from selecting a valid Bluetooth headset
+  communication device, making "Bluetooth connected" behave like phone/default
+  capture forever.
+
+Fix:
+
+- `system_default` and `phone_mic` still stay media-safe.
+- `auto` now checks `hasSelectableCommunicationCaptureDevice()`.
+- If Android exposes SCO / BLE headset / wired / USB headset capture, `auto`
+  proceeds to `MODE_IN_COMMUNICATION` and `setCommunicationDevice`.
+- If no such capture device exists, `auto` stays media-safe and preserves
+  A2DP/output-only Bluetooth while using phone/default mic.
+
+This is still a local route repair only: it does not reconnect the room, mint a
+new token, or dispatch a new Brain job. The next iQOO build should compare:
+
+- Bluetooth connected before START: HUD `input_route` should become
+  `bluetooth_sco` only if Android exposes a selectable communication headset.
+- A2DP/output-only Bluetooth: HUD output should show Bluetooth/A2DP while input
+  remains phone/default mic.
+- Bluetooth off/no device: START and uplink must not block; phone/default mic
+  remains the fallback.

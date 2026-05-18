@@ -10,6 +10,7 @@ import ReactFlow, {
   MiniMap,
   type Node,
   type NodeChange,
+  type NodeDragHandler,
   type NodeMouseHandler,
   type NodeProps,
   type NodeTypes,
@@ -189,6 +190,7 @@ const FLOATING_PANEL_MIN_HEIGHT = 180;
 const FLOATING_PANEL_DEFAULT_HEIGHT = 360;
 const FLOATING_PANEL_SELECTION_HEIGHT = 350;
 const FLOATING_PANEL_GRID: [number, number] = [8, 8];
+const MAX_SAVED_FLOW_POSITION_ABS = 50000;
 const FLOATING_PANEL_RESIZE_ENABLE = {
   top: false,
   topLeft: false,
@@ -782,6 +784,8 @@ export function App() {
   const [receipts, pushReceipt] = useReducer(receiptReducer, []);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [recordsOpen, setRecordsOpen] = useState(false);
+  const [applyingProfile, setApplyingProfile] = useState("");
+  const [connectionEpoch, setConnectionEpoch] = useState(0);
   const memorySequenceRef = useRef(0);
   const runtimeSequenceRef = useRef(0);
   const memorySseOpenRef = useRef(false);
@@ -863,6 +867,39 @@ export function App() {
     }
   }, []);
 
+  const applyConnectionProfile = useCallback(async (profile: string) => {
+    const target = profile.trim();
+    if (!target) return;
+    setApplyingProfile(target);
+    setLoading(true);
+    setError("");
+    try {
+      const receipt = await api.consoleProfileApply({ profile: target });
+      if (receipt.config) {
+        setConfig(receipt.config);
+      }
+      memorySequenceRef.current = 0;
+      runtimeSequenceRef.current = 0;
+      setLiveState({});
+      setRuntimeFlow({});
+      setConnectionEpoch((value) => value + 1);
+      pushReceipt(localReceipt("console.profile.apply", receipt.success !== false, {
+        profile: receipt.profile || target,
+        service: receipt.config?.environment?.service || "web-console",
+        graphiti_proxy_url: String(receipt.config?.environment?.active?.graphiti_proxy_url || ""),
+        app_api_base_url: String(receipt.config?.environment?.active?.app_api_base_url || ""),
+        note: "SSE sequence reset; next refresh reads the selected profile."
+      }, { dryRun: false }));
+      await refreshMemoryNow();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("console.profile.apply", exc, { profile: target }));
+    } finally {
+      setApplyingProfile("");
+      setLoading(false);
+    }
+  }, [refreshMemoryNow]);
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -909,7 +946,7 @@ export function App() {
       memorySseOpenRef.current = false;
       source.close();
     };
-  }, []);
+  }, [connectionEpoch]);
 
   useEffect(() => {
     if (view !== "runtime") {
@@ -953,7 +990,7 @@ export function App() {
       runtimeSseOpenRef.current = false;
       source.close();
     };
-  }, [view]);
+  }, [connectionEpoch, view]);
 
   const setLang = (next: Language) => {
     localStorage.setItem("parrot.console.lang", next);
@@ -1040,7 +1077,11 @@ export function App() {
                       <small>dry_run=true / operator_mode=false</small>
                     </span>
                   </button>
-                  <ConsoleConnectionSummary config={config} />
+                  <ConsoleConnectionSummary
+                    config={config}
+                    applyingProfile={applyingProfile}
+                    onApplyProfile={(profile) => void applyConnectionProfile(profile)}
+                  />
                 </div>
               ) : null}
             </div>
@@ -1059,7 +1100,15 @@ export function App() {
   );
 }
 
-function ConsoleConnectionSummary({ config }: { config: ConsoleConfig }) {
+function ConsoleConnectionSummary({
+  config,
+  applyingProfile,
+  onApplyProfile
+}: {
+  config: ConsoleConfig;
+  applyingProfile: string;
+  onApplyProfile: (profile: string) => void;
+}) {
   const environment = config.environment ?? {};
   const active = recordFromUnknown(environment.active);
   const secrets = recordFromUnknown(environment.secrets);
@@ -1093,10 +1142,15 @@ function ConsoleConnectionSummary({ config }: { config: ConsoleConfig }) {
       {profiles.length ? (
         <div className="connection-profiles">
           {profiles.map((row) => (
-            <span key={String(row.id || row.label)}>
-              <strong>{String(row.id || row.label)}</strong>
+            <button
+              key={String(row.id || row.label)}
+              className={String(row.id || "") === profile ? "profile-switch active" : "profile-switch"}
+              disabled={!row.id || applyingProfile === String(row.id)}
+              onClick={() => onApplyProfile(String(row.id || ""))}
+            >
+              <strong>{applyingProfile === String(row.id) ? "switching..." : String(row.id || row.label)}</strong>
               <small>{String(row.app_api_base_url || "")}</small>
-            </span>
+            </button>
           ))}
         </div>
       ) : null}
@@ -1144,7 +1198,15 @@ function MemoryGraphWorkspace({
   const [graphHealth, setGraphHealth] = useState<Record<string, unknown> | null>(null);
   const [stateColors, setStateColors] = useState(true);
   const [manualPositions, setManualPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [dragBufferedGraph, setDragBufferedGraph] = useState<{
+    nodes: Array<Record<string, unknown>>;
+    edges: Array<Record<string, unknown>>;
+  } | null>(null);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<MemoryNodeData> | null>(null);
+  const lastAutoFitSignatureRef = useRef("");
+  const lastBlankViewportRecoveryKeyRef = useRef("");
+  const nodeDragActiveRef = useRef(false);
+  const dragBufferReleaseTimerRef = useRef<number | null>(null);
   const [activeTool, setActiveTool] = useState<MemoryToolId | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -1188,6 +1250,12 @@ function MemoryGraphWorkspace({
     const observer = new ResizeObserver(updateCanvasSize);
     observer.observe(canvas);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => () => {
+    if (dragBufferReleaseTimerRef.current != null) {
+      window.clearTimeout(dragBufferReleaseTimerRef.current);
+    }
   }, []);
 
   // react-rnd owns pointer drag/resize; this only keeps controlled panel state inside the canvas after release.
@@ -1408,8 +1476,10 @@ function MemoryGraphWorkspace({
   const floatingPanelMaxWidth = Math.max(FLOATING_PANEL_MIN_WIDTH, canvasSize.width - FLOATING_PANEL_EDGE_GAP * 2);
   const floatingPanelMaxHeight = Math.max(FLOATING_PANEL_MIN_HEIGHT, canvasSize.height - FLOATING_PANEL_EDGE_GAP * 2);
 
-  const l2bNodes = liveState.l2b?.nodes ?? [];
-  const l2bEdges = liveState.l2b?.edges ?? [];
+  const rawL2bNodes = liveState.l2b?.nodes ?? [];
+  const rawL2bEdges = liveState.l2b?.edges ?? [];
+  const l2bNodes = dragBufferedGraph?.nodes ?? rawL2bNodes;
+  const l2bEdges = dragBufferedGraph?.edges ?? rawL2bEdges;
   const selectedNodeId = selected?.selection_type === "node" ? String(selected.uuid || selected.id || "") : "";
   const selectedEdgeId = selected?.selection_type === "edge" ? String(selected.id || "") : "";
   const selectedNodeRefs = useMemo(
@@ -1435,10 +1505,14 @@ function MemoryGraphWorkspace({
     }).map((node) => ({
       ...node,
       draggable: true,
-      position: manualPositions[node.id] ?? node.position,
+      position: isFiniteFlowPosition(manualPositions[node.id]) ? manualPositions[node.id] : node.position,
       selected: node.id === selectedNodeId
     }));
   }, [filterKind, l2bNodes, manualPositions, previewNodes, selectedNodeId, stateColors]);
+  const graphNodeSignature = useMemo(
+    () => graphNodes.map((node) => node.id).sort().join("|"),
+    [graphNodes]
+  );
   const draftableNodeIds = useMemo(
     () => new Set(graphNodes
       .filter((node) => {
@@ -1524,7 +1598,7 @@ function MemoryGraphWorkspace({
   const stagePreviewNode = (uuid: string, label: string, position?: { x: number; y: number }) => {
     const nodeSource = { uuid, label, kind: nodeKind, preview: true, confirmation: "confirmed", salience: "active", tags: [] };
     setPreviewNodes((rows) => [...rows, nodeSource]);
-    if (position) {
+    if (isFiniteFlowPosition(position)) {
       setManualPositions((current) => ({ ...current, [uuid]: position }));
     }
     openSelectionInspector({ selection_type: "node", ...nodeSource });
@@ -1745,12 +1819,98 @@ function MemoryGraphWorkspace({
       let next = current;
       changes.forEach((change) => {
         if (change.type !== "position" || !change.position) return;
+        if (!isFiniteFlowPosition(change.position)) return;
         if (next === current) next = { ...current };
         next[change.id] = change.position;
       });
       return next;
     });
   }, []);
+
+  const recoverBlankViewport = useCallback((allowRepeat = false) => {
+    if (!flowInstance || !layoutReady || !graphNodeSignature || !graphNodes.length) return;
+    if (nodeDragActiveRef.current) return;
+    const recoveryKey = [
+      graphNodeSignature,
+      canvasSize.width,
+      canvasSize.height,
+      activeTool || "none",
+      selectedNodeId || selectedEdgeId || "none"
+    ].join(":");
+    window.setTimeout(() => {
+      if (nodeDragActiveRef.current) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const canvasRect = canvas.getBoundingClientRect();
+      const renderedNodes = Array.from(canvas.querySelectorAll(".react-flow__node"));
+      if (!renderedNodes.length) return;
+      const anyNodeVisible = renderedNodes.some((node) => {
+        const rect = node.getBoundingClientRect();
+        return (
+          rect.width > 1
+          && rect.height > 1
+          && rect.right > canvasRect.left + 12
+          && rect.left < canvasRect.right - 12
+          && rect.bottom > canvasRect.top + 12
+          && rect.top < canvasRect.bottom - 12
+        );
+      });
+      if (anyNodeVisible || (!allowRepeat && lastBlankViewportRecoveryKeyRef.current === recoveryKey)) return;
+      lastBlankViewportRecoveryKeyRef.current = recoveryKey;
+      flowInstance.fitView({ padding: 0.34, duration: 180, maxZoom: 0.78 });
+    }, 80);
+  }, [
+    activeTool,
+    canvasSize.height,
+    canvasSize.width,
+    flowInstance,
+    graphNodeSignature,
+    graphNodes.length,
+    layoutReady,
+    selectedEdgeId,
+    selectedNodeId
+  ]);
+
+  const onNodeDragStart: NodeDragHandler = useCallback(() => {
+    if (dragBufferReleaseTimerRef.current != null) {
+      window.clearTimeout(dragBufferReleaseTimerRef.current);
+      dragBufferReleaseTimerRef.current = null;
+    }
+    nodeDragActiveRef.current = true;
+    setDragBufferedGraph({ nodes: l2bNodes, edges: l2bEdges });
+  }, [l2bEdges, l2bNodes]);
+
+  const onNodeDragStop: NodeDragHandler = useCallback((_, node) => {
+    nodeDragActiveRef.current = false;
+    if (isFiniteFlowPosition(node.position)) {
+      setManualPositions((current) => ({ ...current, [node.id]: node.position }));
+    }
+    if (dragBufferReleaseTimerRef.current != null) {
+      window.clearTimeout(dragBufferReleaseTimerRef.current);
+    }
+    dragBufferReleaseTimerRef.current = window.setTimeout(() => {
+      dragBufferReleaseTimerRef.current = null;
+      setDragBufferedGraph(null);
+    }, 650);
+    window.setTimeout(() => recoverBlankViewport(false), 120);
+  }, [recoverBlankViewport]);
+
+  useEffect(() => {
+    if (!flowInstance || !layoutReady || !graphNodeSignature || !graphNodes.length) return;
+    if (lastAutoFitSignatureRef.current === graphNodeSignature) return;
+    lastAutoFitSignatureRef.current = graphNodeSignature;
+    const timer = window.setTimeout(() => {
+      flowInstance.fitView({ padding: 0.32, duration: 180, maxZoom: 0.78 });
+    }, 40);
+    return () => window.clearTimeout(timer);
+  }, [flowInstance, graphNodeSignature, graphNodes.length, layoutReady]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      recoverBlankViewport(false);
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [recoverBlankViewport]);
 
   const onReconnect = (oldEdge: Edge, connection: Connection) => {
     const source = connection.source || oldEdge.source;
@@ -2250,6 +2410,9 @@ function MemoryGraphWorkspace({
           onEdgeClick={onEdgeClick}
           onReconnect={onReconnect}
           onNodesChange={onNodesChange}
+          onMoveEnd={() => recoverBlankViewport(true)}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDragStop={onNodeDragStop}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
           onInit={(instance) => setFlowInstance(instance)}
@@ -5229,6 +5392,7 @@ function GraphitiSourceCard({
       showExportReceipt(receipt);
       if (receipt.success !== false && operatorMode) {
         await onSourceApplied();
+        onPreview({ ...selectedPreview(), silent: true });
       }
     } catch (exc) {
       showGraphitiError("graphiti.subgraph.materialize_l2b.execute", exc, { partition, query, destination });
@@ -7274,6 +7438,16 @@ function memoryStateClass(row: Record<string, unknown>): string {
   if (confirmation === "confirmed") return "state-confirmed";
   if (confirmation === "uncertain" || confirmation === "ghost") return "state-uncertain";
   return "state-tentative";
+}
+
+function isFiniteFlowPosition(position: { x: number; y: number } | null | undefined): position is { x: number; y: number } {
+  return (
+    position != null
+    && Number.isFinite(position.x)
+    && Number.isFinite(position.y)
+    && Math.abs(position.x) <= MAX_SAVED_FLOW_POSITION_ABS
+    && Math.abs(position.y) <= MAX_SAVED_FLOW_POSITION_ABS
+  );
 }
 
 function isDraftableMemoryNodeId(id: string): boolean {

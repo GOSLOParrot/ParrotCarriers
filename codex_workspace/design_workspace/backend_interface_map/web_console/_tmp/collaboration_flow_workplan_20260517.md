@@ -521,38 +521,25 @@ receipt if Redis is unreachable. Dry-run result alone is not final success.
 - 2026-05-18 L2-B durability follow-up: review found the Graphiti ->
   materialize-l2b path was a true runtime write, but the L2-B graph singleton
   was session-scoped and would be empty after app-monitor restart unless the
-  operator repeated materialization. Added a narrow durable pointer store at
-  `data/web_console/l2b_materialized_graphiti_pointers.json`, configurable via
-  `PARROT_L2B_GRAPH_POINTER_STORE_PATH`. It persists only operator-reviewed
-  Graphiti pointer nodes/edges, stable business UUIDs, and raw Graphiti
-  metadata; RustWorkX integer indices remain ephemeral and are not persisted.
-  New graph instances hydrate this store once on startup. Local validation:
-  backend `py_compile` passed; focused materialize/context restart test passed;
-  Web Console plus flow CLI tests reported `107 passed`; L2-B DSG tests
-  reported `37 passed`; app-monitor tests reported `12 passed`.
-- 2026-05-18 ECS durability proof after `80ee1017`: Graphiti
-  `noble_etiquette / etiquette calling card visit` search returned fact UUID
-  `ed386742-4e4e-4065-8151-6511960902b9`; import-plan stayed preview-only with
-  `direct_l2b_write=false`; operator materialize returned
-  `direct_l2b_write=true`, `nodes_upserted=3`, `edges_added=3`, and
-  `persistent_l2b_pointer_store.persisted=true` at
-  `data/web_console/l2b_materialized_graphiti_pointers.json`. Remote store
-  inspection showed `node_count=3`, `edge_count=3`,
-  `rwx_indices_persisted=False`. After `systemctl restart parrot-app-monitor`,
-  a context-only request for
-  `graphiti:noble_etiquette:entity:0a05fb8a-c23a-4e9d-93ad-c6759723ce41`
-  succeeded with zero missing UUIDs, three nodes, three edges, preserved raw
-  metadata, and first edge Graphiti UUID
-  `ed386742-4e4e-4065-8151-6511960902b9`.
+  operator repeated materialization. A narrow durable pointer store was tried,
+  but it is superseded and removed as of 2026-05-18 because the conflict
+  timeline, hard/soft merge policy, and Ref write-back design were not approved
+  yet. Current rule: materialize-l2b writes only into the active runtime
+  `L2BGraph`; after app-monitor/Brain restart, re-run Graphiti
+  search/import/materialize.
+- 2026-05-18 superseded ECS durability proof after `80ee1017`: the pointer
+  store proof did demonstrate restart recovery, but that path is now removed
+  by design. Keep the proof only as historical evidence that restart durability
+  needs an explicit future protocol; do not rely on it in current code.
 - 2026-05-18 discussion handoff checkpoint: recorded that ECS Calendar OAuth is
   currently live for read-only API and Nanobot fetch through `8790`, with
   credentials under `/home/parrot/.nanobot/google-workspace-credentials` for the
   `parrot` service user. Direct Google Calendar write-back is not a confirmed
   Web operator route yet. Calendar import is an L1.5 source/observation path,
-  not a Graphiti subgraph materialization. The durable L2-B store is the narrow
-  Graphiti pointer store
-  `data/web_console/l2b_materialized_graphiti_pointers.json`, not an operation
-  page draft store and not a hard source-of-truth DB. User decisions recorded:
+  not a Graphiti subgraph materialization. The earlier durable L2-B Graphiti
+  pointer store is removed; current L2-B materialization is runtime-only and is
+  not an operation page draft store or a hard source-of-truth DB. User decisions
+  recorded:
   wait before full hard-persistence/conflict timelines; prefer option C
   (`nanobot + git + MCP`) if no better Ref/file management scheme appears; DSG
   is the Graphiti realtime buffer/adaptation layer; build capability first; do

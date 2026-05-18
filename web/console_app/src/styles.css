@@ -333,11 +333,29 @@ select {
   gap: 5px;
 }
 
-.connection-profiles span {
+.profile-switch {
+  border: 1px solid #3a3f4a;
+  border-radius: 7px;
+  background: rgba(23, 25, 31, 0.58);
+  color: #e7e9ee;
   display: grid;
   grid-template-columns: 60px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
+  padding: 7px 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-switch:hover,
+.profile-switch.active {
+  border-color: rgba(123, 217, 159, 0.62);
+  background: rgba(38, 53, 45, 0.78);
+}
+
+.profile-switch:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
 }
 
 .connection-profiles strong {

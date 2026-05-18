@@ -18,7 +18,7 @@ namespace ParrotApp.Hands
         [SerializeField] private float referenceRetryIntervalSeconds = 0.5f;
 
         [Header("Flight route")]
-        [SerializeField] private float flyToSpeed = 1.55f;
+        [SerializeField] private float flyToSpeed = 0.9f;
         [SerializeField] private float arrivalDistance = 0.045f;
         [SerializeField] private float routeReplanDistance = 0.08f;
         [SerializeField] private float flightArcMinHeight = 0.12f;
@@ -34,8 +34,8 @@ namespace ParrotApp.Hands
         [SerializeField] private string rightFootNodeName = "right_leg";
         [SerializeField] private Vector3 footAnchorLocalOffset = Vector3.zero;
         [SerializeField] private Vector3 rootClearanceLocalOffset = new Vector3(0f, 0.004f, 0f);
-        [SerializeField] private float fingerSurfaceLiftMeters = 0.01f;
-        [SerializeField] private float footGripSinkMeters = 0.004f;
+        [SerializeField] private float fingerSurfaceLiftMeters = 0.014f;
+        [SerializeField] private float footGripSinkMeters = 0.002f;
         [SerializeField] private float fingerAlongOffsetMeters = 0f;
         [SerializeField] private float perchedFollowLerp = 18f;
         [SerializeField] private float perchedRotateLerp = 14f;
@@ -673,7 +673,7 @@ namespace ParrotApp.Hands
                 P2 = targetPosition - approach * landingApproachDistance + Vector3.up * (height * 0.45f),
                 P3 = targetPosition,
                 StartedAt = Time.unscaledTime,
-                Duration = Mathf.Max(0.35f, distance / Mathf.Max(0.1f, flyToSpeed)),
+                Duration = Mathf.Max(0.55f, distance / Mathf.Max(0.1f, flyToSpeed)),
             };
             _routeTargetPosition = targetPosition;
             _routeTargetRotation = targetRotation;
@@ -843,25 +843,41 @@ namespace ParrotApp.Hands
 
             Transform left = FindDeep(transform, leftFootNodeName);
             Transform right = FindDeep(transform, rightFootNodeName);
+            bool hasBounds = TryGetRendererBounds(out Bounds bounds);
             if (left != null && right != null)
             {
                 Vector3 mid = (left.position + right.position) * 0.5f;
+                if (hasBounds)
+                    mid = new Vector3(mid.x, bounds.min.y, mid.z);
                 _resolvedFootAnchorLocalOffset = transform.InverseTransformPoint(mid);
                 return;
             }
             if (left != null || right != null)
             {
                 Transform foot = left != null ? left : right;
-                _resolvedFootAnchorLocalOffset = transform.InverseTransformPoint(foot.position);
+                Vector3 contact = foot.position;
+                if (hasBounds)
+                    contact = new Vector3(contact.x, bounds.min.y, contact.z);
+                _resolvedFootAnchorLocalOffset = transform.InverseTransformPoint(contact);
                 return;
             }
 
-            Renderer[] renderers = GetComponentsInChildren<Renderer>(false);
-            if (renderers == null || renderers.Length == 0) return;
-            Bounds bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+            if (!hasBounds) return;
             Vector3 bottomCenter = new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);
             _resolvedFootAnchorLocalOffset = transform.InverseTransformPoint(bottomCenter);
+        }
+
+        private bool TryGetRendererBounds(out Bounds bounds)
+        {
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(false);
+            if (renderers != null && renderers.Length > 0)
+            {
+                bounds = renderers[0].bounds;
+                for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+                return true;
+            }
+            bounds = default;
+            return false;
         }
 
         private void EnsureTrail()

@@ -22,6 +22,8 @@ from parrot.brain.event_publisher import (
     attach_ecp_event_publisher,
     reset_ecp_event_publisher_for_tests,
 )
+from parrot.brain.event_ingest import reset_ecp_event_ingest_for_tests
+from parrot.brain.observer import photo as photo_observer
 from parrot.brain.photo_upload_server import (
     asset_path_for,
     asset_ref_for,
@@ -33,9 +35,20 @@ from parrot.brain.photo_upload_server import (
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
     """Cache root → tmp_path so tests don't pollute the workspace."""
+    from parrot.brain.intent_workspace import set_intent_workspace_for_test
+    from parrot.dsg.l1_5 import set_pool_for_test
+
     monkeypatch.setenv("PARROT_PHOTO_CACHE_ROOT", str(tmp_path))
+    reset_ecp_event_ingest_for_tests()
+    photo_observer.reset_metrics_for_tests()
+    set_intent_workspace_for_test(None)
+    set_pool_for_test(None)
     reset_ecp_event_publisher_for_tests()
     yield tmp_path
+    reset_ecp_event_ingest_for_tests()
+    photo_observer.reset_metrics_for_tests()
+    set_intent_workspace_for_test(None)
+    set_pool_for_test(None)
     reset_ecp_event_publisher_for_tests()
 
 
@@ -154,6 +167,27 @@ def test_health_endpoint(_isolated):
     assert resp.json()["service"] == "photo-upload"
 
 
+def test_brain_read_only_live_state_routes(_isolated):
+    """The job-local upload server also exposes read-only debug snapshots.
+
+    Laptop app-monitor/Web Console can use these routes to read the same Brain
+    process that receives photo.taken_preview and upserts PhotoNodes.
+    """
+    from fastapi.testclient import TestClient
+
+    client = TestClient(build_app())
+
+    live = client.get("/api/app/live-state?limit=5")
+    l2b = client.get("/api/l2b/snapshot?limit=5")
+
+    assert live.status_code == 200
+    assert live.json()["audit"]["source_process"] == "brain.photo_upload_server"
+    assert live.json()["audit"]["read_only_proxy_surface"] is True
+    assert l2b.status_code == 200
+    assert l2b.json()["remote_source"] == "brain.photo_upload_server"
+    assert l2b.json()["read_only_proxy_surface"] is True
+
+
 # ─── publish bridge ─────────────────────────────────────────────
 
 
@@ -189,6 +223,68 @@ def test_upload_publishes_photo_asset_uploaded_event(_isolated):
     assert '"correlation_id":"evt_preview_corr"' in wire
     # asset_bytes matches uploaded bytes
     assert f'"asset_bytes":{len(payload)}' in wire
+
+
+def test_upload_locally_dispatches_asset_uploaded_to_existing_photo_node(_isolated, monkeypatch):
+    """HTTP upload must update the Brain-local PhotoNode, not only publish to peers."""
+    import py_trees
+    from fastapi.testclient import TestClient
+
+    from parrot.brain.event_ingest import get_ecp_event_ingest
+    from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
+    from parrot.dsg.l1_5 import L15Pool, set_pool_for_test
+    from parrot.dsg.l2b_graph import L2BGraph
+    from parrot.shared.ecp_event import (
+        TOPIC_ECP_EVENT,
+        EcpEvent,
+        EcpEventSource,
+        EcpEventType,
+    )
+
+    py_trees.blackboard.Blackboard.storage = {}
+    py_trees.blackboard.Blackboard.metadata = {}
+    set_intent_workspace_for_test(IntentWorkspace())
+    set_pool_for_test(L15Pool())
+    graph = L2BGraph()
+    monkeypatch.setattr("parrot.dsg.l2b_graph.get_l2b_graph", lambda: graph)
+
+    ingest = get_ecp_event_ingest()
+    photo_observer.register(ingest)
+    preview = EcpEvent.build(
+        event_type=EcpEventType.PHOTO_TAKEN_PREVIEW,
+        source=EcpEventSource.UNITY,
+        payload={
+            "photo_id": "ph_http_local",
+            "episode_ref": "ep_http",
+            "candidate_subject_uuid": "",
+            "focus_refs": [],
+            "bbox_refs": [],
+            "pose": {},
+            "preview_jpeg_b64": "",
+        },
+    )
+    ingest.handle_raw(TOPIC_ECP_EVENT, preview.to_wire_json().encode("utf-8"))
+    assert graph.get_node("ph_http_local").reference_image_path == ""
+
+    room = _fake_room()
+    attach_ecp_event_publisher(room)
+    resp = TestClient(build_app()).post(
+        "/upload/photo/ph_http_local",
+        content=b"asset-bytes-here",
+        headers={"X-Photo-Preview-Event-Id": preview.event_id},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["publish_ok"] is True
+    node = graph.get_node("ph_http_local")
+    assert node is not None
+    assert node.reference_image_path.endswith("ph_http_local.jpg")
+    metrics = photo_observer.get_metrics_snapshot()
+    assert metrics["asset_uploaded_received"] == 1
+    assert metrics["photo_nodes_updated_with_asset"] == 1
+
+    set_intent_workspace_for_test(None)
+    set_pool_for_test(None)
 
 
 def test_upload_publishes_photo_timebase_metadata(_isolated):

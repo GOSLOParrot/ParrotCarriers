@@ -34,12 +34,17 @@ def test_laptop_compose_does_not_use_ecs_env_or_shared_data() -> None:
     assert "../data:/app/data" not in text
     assert "../codex_workspace/local_runtime/castle_laptop/data:/app/data" in text
     assert "17880:7880" in text
+    assert "17889:7889" in text
     assert "18790:8790" in text
     assert "python -m parrot.brain.agent dev --no-reload" in text
     assert "PARROT_MINT_AGENT_NAME=parrot-brain" in text
     assert "PARROT_BRAIN_AGENT_NAME=parrot-brain" in text
     assert "PARROT_PRESETS_DIR=/app/data/presets" in text
     assert "PARROT_LINE_PROFILES_DIR=/app/data/line_profiles" in text
+    assert "PARROT_APP_MONITOR_BRAIN_LIVE_STATE_URL=http://brain:7889" in text
+    assert "PARROT_PHOTO_UPLOAD_HOST=0.0.0.0" in text
+    assert "PARROT_PHOTO_UPLOAD_PORT=7889" in text
+    assert "PARROT_PHOTO_CACHE_ROOT=/app/data/photos" in text
 
 
 def test_laptop_init_rewrites_seed_room_profiles_to_local_room() -> None:
@@ -49,6 +54,16 @@ def test_laptop_init_rewrites_seed_room_profiles_to_local_room() -> None:
     assert "function Update-LocalRoomProfiles" in text
     assert "metadata.livekit_room_id" in text
     assert "Update-LocalRoomProfiles -RoomId $envMap[\"LIVEKIT_ROOM\"]" in text
+
+
+def test_laptop_unity_config_generation_includes_photo_and_visual_tool_flags() -> None:
+    root = Path(__file__).resolve().parents[2]
+    text = (root / "infra" / "laptop-castle.ps1").read_text(encoding="utf-8")
+
+    assert 'photoUploadUrl = "http://$hostIp`:17889"' in text
+    assert "visualToolDevEnabled = $true" in text
+    assert "visualToolHttpEnabled = $true" in text
+    assert '"http://$hostIp`:17889/health"' in text
 
 
 def test_unity_config_switcher_is_gitignored_and_secret_safe() -> None:
@@ -64,6 +79,9 @@ def test_unity_config_switcher_is_gitignored_and_secret_safe() -> None:
     assert "hasMintSecret" in text
     assert "hasOrchestratorSecret" in text
     assert "Copy-Item -LiteralPath $LaptopConfig -Destination $ActiveConfig" in text
+    assert "photoUploadUrl = $config.photoUploadUrl" in text
+    assert "visualToolDevEnabled = $config.visualToolDevEnabled" in text
+    assert "visualToolHttpEnabled = $config.visualToolHttpEnabled" in text
     assert "/codex_workspace/local_runtime/" in gitignore
     assert "mintSecret =" not in text
     assert "orchestratorSecret =" not in text

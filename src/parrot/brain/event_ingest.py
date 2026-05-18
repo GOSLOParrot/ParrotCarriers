@@ -328,6 +328,16 @@ def get_ecp_event_ingest() -> EcpEventIngest:
     return _ingest_singleton
 
 
+def get_existing_ecp_event_ingest() -> EcpEventIngest | None:
+    """Return the process singleton only if boot already created it.
+
+    This is used by same-process side channels, such as the photo HTTP upload
+    server, that need to mirror a Brain-origin EcpEvent into the observer
+    pipeline without silently constructing an unregistered ingest instance.
+    """
+    return _ingest_singleton
+
+
 def reset_ecp_event_ingest_for_tests() -> None:
     """Drop the singleton — tests that need a clean slate call this in setup.
 
@@ -393,6 +403,7 @@ __all__ = [
     "EcpEventIngest",
     "SubscriberFn",
     "attach_ecp_event_ingest",
+    "get_existing_ecp_event_ingest",
     "get_ecp_event_ingest",
     "reset_ecp_event_ingest_for_tests",
 ]

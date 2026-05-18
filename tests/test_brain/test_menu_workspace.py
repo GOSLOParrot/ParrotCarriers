@@ -38,9 +38,11 @@ from parrot.brain.session_policy import (
     should_generate_reply,
 )
 from parrot.brain.tools import (
+    PARROT_ANIMATION_TOOLS,
     animate,
     fly_to,
     play_capability,
+    play_dance,
     return_to_view,
     tools_for_active_model,
 )
@@ -500,14 +502,17 @@ def test_tools_for_active_model_hides_parrot_verbs_for_ner() -> None:
     assert fly_to not in tools
     assert return_to_view not in tools
     assert animate not in tools
+    assert not any(tool in tools for tool in PARROT_ANIMATION_TOOLS)
 
     bb.set("global/active_model_id", "GOSLO_default")
     goslo_tools = tools_for_active_model()
 
     assert fly_to in goslo_tools
     assert return_to_view in goslo_tools
-    assert animate in goslo_tools
-    assert play_capability in goslo_tools
+    assert animate not in goslo_tools
+    assert play_dance in goslo_tools
+    assert all(tool in goslo_tools for tool in PARROT_ANIMATION_TOOLS)
+    assert play_capability not in goslo_tools
 
 
 def test_workspace_registry_unknown_falls_back_without_tearing_session(tmp_path: Path) -> None:

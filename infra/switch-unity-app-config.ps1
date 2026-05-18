@@ -48,6 +48,9 @@ function Write-SafeSummary([string]$Path, [string]$Label) {
         room = $config.room
         appApiUrl = $config.appApiUrl
         orchestratorUrl = $config.orchestratorUrl
+        photoUploadUrl = $config.photoUploadUrl
+        visualToolDevEnabled = $config.visualToolDevEnabled
+        visualToolHttpEnabled = $config.visualToolHttpEnabled
         hasMintSecret = -not [string]::IsNullOrWhiteSpace([string]$config.mintSecret)
         hasAppApiSecret = -not [string]::IsNullOrWhiteSpace([string]$config.appApiSecret)
         hasOrchestratorSecret = -not [string]::IsNullOrWhiteSpace([string]$config.orchestratorSecret)

@@ -979,30 +979,18 @@ ECS proof after `e9289bd`:
 - `POST /api/l2b/subgraphs/context` then read the materialized UUID back with
   three nodes and three edges.
 
-Durability correction after the proof:
+Durability correction after later review:
 
-- Runtime materialization alone was not enough: `L2BGraph` is intentionally a
-  RustWorkX-backed singleton and app-monitor restarts can clear it.
-- Added a narrow durable pointer store for Graphiti materializations:
-  `data/web_console/l2b_materialized_graphiti_pointers.json`, overridable with
-  `PARROT_L2B_GRAPH_POINTER_STORE_PATH`.
-- The store persists only operator-reviewed Graphiti pointer nodes/edges,
-  stable L2-B/Graphiti UUIDs, and raw Graphiti metadata. It does not persist
-  RustWorkX integer indices, temporary preview indices, or arbitrary session
-  graph state.
-- New `L2BGraph` singleton instances hydrate this store once, so
-  `l2b.subgraphs.context` can read materialized Graphiti UUIDs after a service
-  restart without repeating the Graphiti search/import-plan flow.
-
-ECS proof after `80ee1017`:
-
-- Materialized one `noble_etiquette` Graphiti fact into L2-B and persisted the
-  pointer store with three nodes and three edges.
-- The persisted store reported `rwx_indices_persisted=False`, preserving the
-  rule that RustWorkX indices are runtime handles only.
-- After restarting `parrot-app-monitor`, a context-only read for the
-  materialized UUID returned three nodes, three edges, zero missing UUIDs, and
-  preserved raw Graphiti metadata.
+- The narrow durable pointer store for Graphiti materializations was removed on
+  2026-05-18 before the conflict timeline, hard/soft merge policy, and Ref
+  write-back rules were designed.
+- Current Graphiti -> L2-B materialization is runtime-only inside the active
+  `L2BGraph` RustWorkX singleton. Restarting app-monitor/Brain clears that
+  projection; operators should re-run Graphiti search/import/materialize when
+  they need the subgraph again.
+- This does not delete Graphiti/FalkorDB source data. Graphiti remains the
+  authoritative persistent source; L2-B stays a live DSG buffer until a proper
+  persistence protocol is approved.
 
 ## 2026-05-18 Discussion Handoff: Calendar, L1.5, L2-B Persistence
 
@@ -1076,20 +1064,18 @@ Known true interfaces:
 
 L2-B persistence boundary:
 
-- The current durable L2-B persistence is not "operation page draft save".
-- The confirmed durable store is the backend pointer store
-  `data/web_console/l2b_materialized_graphiti_pointers.json`, configurable via
-  `PARROT_L2B_GRAPH_POINTER_STORE_PATH`.
-- It persists only operator-reviewed Graphiti pointer nodes/edges, stable
-  business UUIDs, and raw Graphiti metadata after
-  `/api/graphiti/subgraph/materialize-l2b`.
+- There is currently no browser-side L2-B canvas/Node persistence and no
+  backend pointer-store replay for Graphiti materializations.
+- `/api/graphiti/subgraph/materialize-l2b` writes only into the active runtime
+  `L2BGraph` singleton. It preserves stable UUIDs and raw Graphiti envelopes in
+  memory, but it does not create a JSON store for restart recovery.
 - It does not persist RustWorkX integer indices, all Web operation drafts,
   Graphiti/FalkorDB rows, arbitrary external files, or direct Ref file
   locations.
 - Current materialization is soft/upsert-style pointer merging with stable
   UUIDs and preserved raw envelopes. Hard overwrite, conflict timelines,
-  external Ref write-back, Google Calendar write-back, and source-file sync are
-  not implemented yet.
+  external Ref write-back, Google Calendar write-back, source-file sync, and
+  L2-B restart durability are not implemented yet.
 
 User decisions to preserve for the next design discussion:
 

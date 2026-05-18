@@ -8,9 +8,46 @@ from importlib import import_module
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from parrot.web_console.server import OrchestratorProxyConfig, _status_summary, build_app
+
+
+_WEB_CONSOLE_PROCESS_ENV_KEYS = [
+    "PARROT_WEB_CONSOLE_PROFILE",
+    "PARROT_WEB_CONSOLE_APP_API_URL",
+    "PARROT_WEB_CONSOLE_APP_API_SECRET",
+    "PARROT_WEB_CONSOLE_APP_API_TIMEOUT_S",
+    "PARROT_WEB_CONSOLE_GRAPHITI_URL",
+    "PARROT_WEB_CONSOLE_GRAPHITI_SECRET",
+    "PARROT_WEB_CONSOLE_GRAPHITI_TIMEOUT_S",
+    "PARROT_WEB_CONSOLE_L2B_URL",
+    "PARROT_WEB_CONSOLE_L2B_SECRET",
+    "PARROT_WEB_CONSOLE_L2B_TIMEOUT_S",
+    "PARROT_WEB_CONSOLE_NANOBOT_API_URL",
+    "PARROT_WEB_CONSOLE_ORCH_URL",
+    "PARROT_WEB_CONSOLE_REFRESH_S",
+    "PARROT_WEB_CONSOLE_ECS_APP_API_URL",
+    "PARROT_WEB_CONSOLE_ECS_ORCH_URL",
+    "PARROT_WEB_CONSOLE_ECS_LIVEKIT_URL",
+    "PARROT_WEB_CONSOLE_ECS_ROOM",
+    "PARROT_WEB_CONSOLE_LAPTOP_APP_API_URL",
+    "PARROT_WEB_CONSOLE_LAPTOP_ORCH_URL",
+    "PARROT_WEB_CONSOLE_LAPTOP_LIVEKIT_URL",
+    "PARROT_WEB_CONSOLE_LAPTOP_ROOM",
+    "PARROT_WEB_CONSOLE_LAPTOP_BFF_APP_API_URL",
+    "PARROT_WEB_CONSOLE_LAPTOP_BFF_ORCH_URL",
+    "PARROT_GRAPHITI_REMOTE_URL",
+    "LIVEKIT_URL",
+    "LIVEKIT_ROOM",
+]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_web_console_process_env(monkeypatch) -> None:
+    for key in _WEB_CONSOLE_PROCESS_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
 
 
 def test_console_config_uses_env_without_leaking_secret(monkeypatch) -> None:
@@ -28,6 +65,41 @@ def test_console_config_uses_env_without_leaking_secret(monkeypatch) -> None:
     assert body["environment"]["profile"] in {"local-bff", "ecs", "laptop"}
     assert body["environment"]["secrets"]["orchestrator_secret_configured"] is True
     assert "secret-value" not in str(body)
+
+
+def test_console_profile_apply_switches_bff_upstream_without_leaking_secret(monkeypatch) -> None:
+    monkeypatch.setenv("PARROT_ORCH_SECRET", "switch-secret")
+    monkeypatch.setenv("PARROT_APP_MONITOR_SECRET", "app-secret")
+    monkeypatch.setenv("PARROT_ECS_HOST", "203.0.113.10")
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_APP_API_URL", raising=False)
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_GRAPHITI_URL", raising=False)
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_L2B_URL", raising=False)
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_NANOBOT_API_URL", raising=False)
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_ORCH_URL", raising=False)
+    monkeypatch.delenv("LIVEKIT_URL", raising=False)
+    monkeypatch.delenv("LIVEKIT_ROOM", raising=False)
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_LAPTOP_APP_API_URL", raising=False)
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_LAPTOP_ORCH_URL", raising=False)
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_LAPTOP_BFF_APP_API_URL", raising=False)
+    monkeypatch.delenv("PARROT_WEB_CONSOLE_LAPTOP_BFF_ORCH_URL", raising=False)
+
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    ecs = client.post("/api/console/profile/apply", json={"profile": "ecs"}).json()
+
+    assert ecs["success"] is True
+    assert ecs["config"]["environment"]["profile"] == "ecs"
+    assert ecs["config"]["environment"]["active"]["app_api_base_url"] == "http://203.0.113.10:8790"
+    assert ecs["config"]["environment"]["active"]["graphiti_proxy_url"] == "http://203.0.113.10:8790"
+    assert "switch-secret" not in str(ecs)
+    assert "app-secret" not in str(ecs)
+
+    laptop = client.post("/api/console/profile/apply", json={"profile": "laptop"}).json()
+
+    assert laptop["success"] is True
+    assert laptop["config"]["environment"]["profile"] == "laptop"
+    assert laptop["config"]["environment"]["active"]["app_api_base_url"] == "http://127.0.0.1:18790"
+    assert laptop["config"]["environment"]["active"]["orchestrator_base_url"] == "http://127.0.0.1:17890"
+    assert laptop["config"]["environment"]["active"]["livekit_url"] == "ws://127.0.0.1:17880"
 
 
 def test_orchestrator_status_proxy_calls_fetcher(monkeypatch) -> None:
@@ -101,6 +173,50 @@ def test_app_canvas_and_lineb_facade_routes_are_exposed() -> None:
     assert profiles[0]["line_profile_id"] == "lineb_google_default"
     assert route["source"] == "web_console.lineb_voice"
     assert mic["turn_decision"] == "user_turn"
+
+
+def test_memory_live_state_uses_remote_app_monitor_when_configured(monkeypatch) -> None:
+    from parrot.web_console import server as server_mod
+
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_GRAPHITI_URL", "http://app-monitor:8790/")
+    monkeypatch.setenv("PARROT_APP_MONITOR_SECRET", "app-monitor-secret")
+    calls: list[dict[str, Any]] = []
+
+    def fake_fetch_json(url: str, headers: dict[str, str], timeout_s: float) -> tuple[int, Any, dict[str, Any]]:
+        calls.append({"url": url, "headers": headers, "timeout_s": timeout_s})
+        if url.endswith("/api/app/live-state?limit=120"):
+            return 200, {
+                "l2b": {
+                    "node_count": 9,
+                    "edge_count": 15,
+                    "nodes": [{"uuid": "graphiti:arknights_test:entity:amiya"}],
+                    "edges": [],
+                }
+            }, {}
+        if url.endswith("/api/memory/live-state/changes?since=0&limit=120"):
+            return 200, {
+                "changed": True,
+                "sequence": 2,
+                "snapshot": {
+                    "l2b": {
+                        "node_count": 9,
+                        "nodes": [{"uuid": "graphiti:arknights_test:entity:amiya"}],
+                    }
+                },
+            }, {}
+        raise AssertionError(f"unexpected remote URL: {url}")
+
+    monkeypatch.setattr(server_mod, "_fetch_json", fake_fetch_json)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    live = client.get("/api/app/live-state?limit=120").json()
+    changes = client.get("/api/memory/live-state/changes?since=0&limit=120").json()
+
+    assert live["l2b"]["node_count"] == 9
+    assert live["l2b"]["nodes"][0]["uuid"].startswith("graphiti:")
+    assert changes["snapshot"]["l2b"]["node_count"] == 9
+    assert len(calls) == 2
+    assert all(call["headers"]["Authorization"] == "Bearer app-monitor-secret" for call in calls)
 
 
 def test_livekit_web_token_mints_without_exposing_api_secret(monkeypatch) -> None:
@@ -1088,6 +1204,60 @@ def test_remote_graphiti_and_l2b_proxies_forward_app_monitor_bearer(monkeypatch)
     assert all(row["method"] == "POST" for row in captured)
 
 
+def test_l2b_operator_routes_proxy_to_remote_l2b_when_configured(monkeypatch) -> None:
+    import urllib.request
+
+    captured: list[dict[str, str]] = []
+
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return (
+                b'{"success": true, "action": "l2b.node.apply", '
+                b'"dry_run": false, "operator_mode": true, '
+                b'"data": {"admit_outcome": {"admitted_node_uuids": ["remote-node"]}}}'
+            )
+
+    def fake_urlopen(request: urllib.request.Request, timeout: float) -> FakeResponse:
+        captured.append(
+            {
+                "url": request.full_url,
+                "auth": request.get_header("Authorization") or "",
+                "method": request.get_method(),
+                "body": (request.data or b"").decode("utf-8"),
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_GRAPHITI_URL", "http://127.0.0.1:18790")
+    monkeypatch.setenv("PARROT_APP_MONITOR_SECRET", "unit-secret")
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    receipt = client.post(
+        "/api/l2b/node",
+        json={
+            "label": "Remote Node",
+            "kind": "object",
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+
+    assert receipt["success"] is True
+    assert receipt["action"] == "l2b.node.apply"
+    assert receipt["data"]["admit_outcome"]["admitted_node_uuids"] == ["remote-node"]
+    assert receipt["data"]["remote_proxy"]["route"] == "/api/l2b/node"
+    assert captured[0]["url"] == "http://127.0.0.1:18790/api/l2b/node"
+    assert captured[0]["auth"] == "Bearer unit-secret"
+    assert json.loads(captured[0]["body"])["_remote_proxy_disable"] is True
+
+
 def test_graphiti_search_falls_back_to_partition_fact_scan(monkeypatch) -> None:
     import asyncio
 
@@ -1322,8 +1492,6 @@ def test_graphiti_subgraph_materialize_l2b_is_operator_gated_and_context_queryab
         "PARROT_MEMORY_IDENTITY_REF_INDEX_PATH",
         str(tmp_path / "identity_ref_index.json"),
     )
-    pointer_store_path = tmp_path / "l2b_pointer_store.json"
-    monkeypatch.setenv("PARROT_L2B_GRAPH_POINTER_STORE_PATH", str(pointer_store_path))
     monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
     graph = L2BGraph()
     monkeypatch.setattr(l2b_graph_module, "_instance", graph)
@@ -1377,9 +1545,7 @@ def test_graphiti_subgraph_materialize_l2b_is_operator_gated_and_context_queryab
         assert applied["data"]["nodes_upserted"] >= 3
         assert applied["data"]["edges_added"] >= 1
         assert applied["data"]["identity_ref_index_write"] is True
-        assert applied["data"]["persistent_l2b_pointer_store"]["persisted"] is True
-        assert applied["data"]["persistent_l2b_pointer_store"]["rwx_indices_persisted"] is False
-        assert pointer_store_path.exists()
+        assert "persistent_l2b_pointer_store" not in applied["data"]
         assert applied["data"]["context_node_uuids"][0] == "graphiti:arknights_test:entity:source-amiya"
 
         node = graph.get_node("graphiti:arknights_test:entity:source-amiya")
@@ -1429,7 +1595,7 @@ def test_graphiti_subgraph_materialize_l2b_is_operator_gated_and_context_queryab
         assert reapplied["data"]["edges_skipped_duplicate"] >= applied["data"]["edges_added"]
 
         l2b_graph_module._instance = None
-        restored_context = client.post(
+        reset_context = client.post(
             "/api/l2b/subgraphs/context",
             json={
                 "node_uuids": ["graphiti:arknights_test:entity:source-amiya"],
@@ -1438,13 +1604,12 @@ def test_graphiti_subgraph_materialize_l2b_is_operator_gated_and_context_queryab
                 "operator_mode": True,
             },
         ).json()
-        assert restored_context["success"] is True
-        assert restored_context["data"]["missing_graphiti_preview_node_uuids"] == []
-        assert {row["uuid"] for row in restored_context["data"]["nodes"]} >= {
-            "graphiti:arknights_test:entity:source-amiya",
-            "graphiti:arknights_test:entity:target-rhodes",
-        }
-        assert restored_context["data"]["edges"][0]["graphiti_uuid"] == "graphiti-hit-materialize-1"
+        assert reset_context["success"] is False
+        assert reset_context["data"]["missing_graphiti_preview_node_uuids"] == [
+            "graphiti:arknights_test:entity:source-amiya"
+        ]
+        assert reset_context["data"]["nodes"] == []
+        assert reset_context["data"]["edges"] == []
     finally:
         l2b_graph_module._instance = None
 

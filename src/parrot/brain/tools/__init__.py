@@ -6,7 +6,18 @@ import os
 
 from parrot.brain.model_manifest_registry import get_model_manifest_registry
 from parrot.brain.tools._capability_gate import active_model_id
-from parrot.brain.tools.animate import animate
+from parrot.brain.tools.animate import (
+    PARROT_ANIMATION_TOOLS,
+    animate,
+    play_dance,
+    play_fly_pose,
+    play_head_bob,
+    play_idle,
+    play_perch_pose,
+    play_sit,
+    play_sleep,
+    play_wing_flap,
+)
 from parrot.brain.tools.calendar_change_request import calendar_change_request
 from parrot.brain.tools.calendar_context import calendar_context
 from parrot.brain.tools.calendar_task_status import calendar_task_status
@@ -23,12 +34,14 @@ from parrot.brain.tools.return_to_view import return_to_view
 from parrot.brain.tools.set_mode import set_mode
 from parrot.brain.tools.set_video_tier import set_video_tier
 from parrot.brain.tools.web_lookup_intent import web_lookup_intent
+from parrot.shared.model_manifest import RESERVED_PARROT_CAPABILITY_IDS
 
 _BASE_TOOLS = [
     fly_to,
     perch_to_finger,
     return_to_view,
     animate,
+    *PARROT_ANIMATION_TOOLS,
     play_capability,
     dispatch_task,
     calendar_context,
@@ -94,8 +107,11 @@ def tools_for_active_model():
         set_mode,
         manage_episode,
         set_video_tier,
-        play_capability,
     ]
+    declared_capabilities = registry.capability_ids(model_id)
+    has_custom_capabilities = bool(declared_capabilities - RESERVED_PARROT_CAPABILITY_IDS)
+    if has_custom_capabilities:
+        tools.append(play_capability)
     if registry.supports(model_id, "fly"):
         tools.insert(0, fly_to)
     if registry.supports(model_id, "fly") and registry.supports(model_id, "perch"):
@@ -111,7 +127,8 @@ def tools_for_active_model():
         for tool in (perch_to_finger, return_to_view):
             if tool in tools:
                 insert_at = max(insert_at, tools.index(tool) + 1)
-        tools.insert(insert_at, animate)
+        for tool in reversed(PARROT_ANIMATION_TOOLS):
+            tools.insert(insert_at, tool)
     if "identify_object" in globals():
         tools.append(identify_object)
     return tools
@@ -136,6 +153,15 @@ __all__ = [
     "perch_to_finger",
     "return_to_view",
     "animate",
+    "play_idle",
+    "play_fly_pose",
+    "play_dance",
+    "play_wing_flap",
+    "play_perch_pose",
+    "play_sit",
+    "play_head_bob",
+    "play_sleep",
+    "PARROT_ANIMATION_TOOLS",
     "play_capability",
     "dispatch_task",
     "calendar_context",
