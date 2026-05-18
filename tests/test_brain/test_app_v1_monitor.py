@@ -213,6 +213,10 @@ def test_monitor_exposes_google_calendar_true_fetch_routes(monkeypatch: pytest.M
         "/api/google/calendar/preview",
         json={"events": [{"id": "evt_monitor_preview", "summary": "Preview"}]},
     ).json()
+    message_check = client.post(
+        "/api/google/messages/check",
+        json={"query": "newer_than:7d"},
+    ).json()
 
     assert api["action"] == "google.calendar.api_fetch"
     assert api["success"] is True
@@ -226,6 +230,10 @@ def test_monitor_exposes_google_calendar_true_fetch_routes(monkeypatch: pytest.M
     assert nanobot["data"]["count"] == 1
     assert preview["action"] == "google.calendar.preview"
     assert preview["success"] is True
+    assert message_check["action"] == "google.message_check.dispatch"
+    assert message_check["success"] is True
+    assert message_check["data"]["task_type"] == "message_check"
+    assert message_check["data"]["would_dispatch"] is True
     assert api_calls == [
         {
             "calendar_id": "primary",
