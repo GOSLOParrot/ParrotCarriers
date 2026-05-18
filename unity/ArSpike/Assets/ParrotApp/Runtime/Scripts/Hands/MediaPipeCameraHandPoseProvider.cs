@@ -10,6 +10,7 @@ using Unity.Collections;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 using TaskCategory = Mediapipe.Tasks.Components.Containers.Category;
+using TaskLandmark = Mediapipe.Tasks.Components.Containers.Landmark;
 using TaskNormalizedLandmark = Mediapipe.Tasks.Components.Containers.NormalizedLandmark;
 #endif
 
@@ -74,10 +75,17 @@ namespace ParrotApp.Hands
 
         [Header("Depth estimate")]
         [SerializeField] private float assumedIndexFingerLengthMeters = 0.095f;
+        [SerializeField] private float assumedIndexProximalMeters = 0.04f;
+        [SerializeField] private float assumedIndexMiddleMeters = 0.025f;
+        [SerializeField] private float assumedIndexDistalMeters = 0.022f;
+        [SerializeField] private float assumedPalmWidthMeters = 0.085f;
+        [SerializeField] private float assumedWristToMiddleMcpMeters = 0.095f;
+        [Range(0f, 1f)]
+        [SerializeField] private float worldLandmarkDepthBlend = 0.55f;
         [SerializeField] private float fallbackDepthMeters = 0.62f;
-        [SerializeField] private float minDepthMeters = 0.25f;
-        [SerializeField] private float maxDepthMeters = 1.45f;
-        [SerializeField] private float depthSmooth = 0.35f;
+        [SerializeField] private float minDepthMeters = 0.18f;
+        [SerializeField] private float maxDepthMeters = 1.75f;
+        [SerializeField] private float depthSmooth = 0.58f;
         [SerializeField] private float landmarkZScale = 0.08f;
         [SerializeField] private float middleSegmentBlend = 0.5f;
         [SerializeField] private bool faceMainCameraWhenPossible = true;
@@ -103,6 +111,8 @@ namespace ParrotApp.Hands
         private bool _nativeUnavailableLogged;
         private string _lastLoggedStatus = "";
         private float _nextPoseDiagnosticAt;
+        private float _lastRawDepth;
+        private int _lastDepthSampleCount;
 #if UNITY_ANDROID && !UNITY_EDITOR
         private static bool _androidNativeLibrariesPreloaded;
 #endif
@@ -372,7 +382,8 @@ namespace ParrotApp.Hands
             }
 
             float handednessScore = ResolveHandednessScore(result, handIndex, out bool isRightHand);
-            float depth = EstimateDepth(normalized, cam);
+            var worldLandmarks = ResolveWorldLandmarks(result, handIndex);
+            float depth = EstimateDepth(normalized, worldLandmarks, cam);
             Vector3 wrist = ToWorld(normalized[Wrist], depth, cam);
             Vector3 indexMcp = ToWorld(normalized[IndexMcp], depth, cam);
             Vector3 indexPip = ToWorld(normalized[IndexPip], depth, cam);
@@ -489,23 +500,106 @@ namespace ParrotApp.Hands
             return Mathf.Clamp01(category.score);
         }
 
-        private float EstimateDepth(System.Collections.Generic.List<TaskNormalizedLandmark> landmarks, Camera cam)
+        private static System.Collections.Generic.List<TaskLandmark> ResolveWorldLandmarks(
+            HandLandmarkerResult result,
+            int handIndex)
         {
-            float pixelLength = Vector2.Distance(
-                ToPixel(landmarks[IndexMcp]),
-                ToPixel(landmarks[IndexTip]));
-            if (pixelLength < 1f || cam == null)
+            if (result.handWorldLandmarks == null
+                || handIndex < 0
+                || handIndex >= result.handWorldLandmarks.Count)
+            {
+                return null;
+            }
+            return result.handWorldLandmarks[handIndex].landmarks;
+        }
+
+        private float EstimateDepth(
+            System.Collections.Generic.List<TaskNormalizedLandmark> landmarks,
+            System.Collections.Generic.List<TaskLandmark> worldLandmarks,
+            Camera cam)
+        {
+            if (landmarks == null || landmarks.Count < LandmarkCount || cam == null)
                 return _smoothedDepth > 0f ? _smoothedDepth : fallbackDepthMeters;
 
             float focalPixels = 0.5f * Mathf.Max(_inputDimensions.x, _inputDimensions.y)
                                 / Mathf.Tan(Mathf.Max(1f, cam.fieldOfView) * 0.5f * Mathf.Deg2Rad);
-            float estimated = assumedIndexFingerLengthMeters * focalPixels / pixelLength;
+
+            float[] samples = new float[8];
+            int count = 0;
+            AddDepthSample(samples, ref count, landmarks, worldLandmarks, IndexMcp, IndexTip, assumedIndexFingerLengthMeters, focalPixels);
+            AddDepthSample(samples, ref count, landmarks, worldLandmarks, IndexMcp, IndexPip, assumedIndexProximalMeters, focalPixels);
+            AddDepthSample(samples, ref count, landmarks, worldLandmarks, IndexPip, IndexDip, assumedIndexMiddleMeters, focalPixels);
+            AddDepthSample(samples, ref count, landmarks, worldLandmarks, IndexDip, IndexTip, assumedIndexDistalMeters, focalPixels);
+            AddDepthSample(samples, ref count, landmarks, worldLandmarks, IndexMcp, LittleMcp, assumedPalmWidthMeters, focalPixels);
+            AddDepthSample(samples, ref count, landmarks, worldLandmarks, Wrist, MiddleMcp, assumedWristToMiddleMcpMeters, focalPixels);
+
+            if (count <= 0)
+                return _smoothedDepth > 0f ? _smoothedDepth : fallbackDepthMeters;
+
+            Array.Sort(samples, 0, count);
+            int start = count >= 4 ? 1 : 0;
+            int end = count >= 4 ? count - 1 : count;
+            float sum = 0f;
+            int used = 0;
+            for (int i = start; i < end; i++)
+            {
+                sum += samples[i];
+                used++;
+            }
+            float estimated = used > 0 ? sum / used : samples[count / 2];
             estimated = Mathf.Clamp(estimated, minDepthMeters, maxDepthMeters);
+            _lastRawDepth = estimated;
+            _lastDepthSampleCount = count;
             _smoothedDepth = Mathf.Lerp(
                 _smoothedDepth <= 0f ? estimated : _smoothedDepth,
                 estimated,
                 Mathf.Clamp01(depthSmooth));
             return _smoothedDepth;
+        }
+
+        private void AddDepthSample(
+            float[] samples,
+            ref int count,
+            System.Collections.Generic.List<TaskNormalizedLandmark> landmarks,
+            System.Collections.Generic.List<TaskLandmark> worldLandmarks,
+            int a,
+            int b,
+            float assumedMeters,
+            float focalPixels)
+        {
+            if (count >= samples.Length || a < 0 || b < 0 || a >= landmarks.Count || b >= landmarks.Count)
+                return;
+
+            float pixelLength = Vector2.Distance(ToPixel(landmarks[a]), ToPixel(landmarks[b]));
+            if (pixelLength < 3f)
+                return;
+
+            float physicalMeters = ResolvePhysicalLengthMeters(worldLandmarks, a, b, assumedMeters);
+            if (physicalMeters <= 0.005f)
+                return;
+
+            float estimated = physicalMeters * focalPixels / pixelLength;
+            if (estimated < minDepthMeters * 0.5f || estimated > maxDepthMeters * 1.8f)
+                return;
+            samples[count++] = estimated;
+        }
+
+        private float ResolvePhysicalLengthMeters(
+            System.Collections.Generic.List<TaskLandmark> worldLandmarks,
+            int a,
+            int b,
+            float assumedMeters)
+        {
+            float fallback = Mathf.Max(0.005f, assumedMeters);
+            if (worldLandmarks == null || a < 0 || b < 0 || a >= worldLandmarks.Count || b >= worldLandmarks.Count)
+                return fallback;
+
+            Vector3 wa = new Vector3(worldLandmarks[a].x, worldLandmarks[a].y, worldLandmarks[a].z);
+            Vector3 wb = new Vector3(worldLandmarks[b].x, worldLandmarks[b].y, worldLandmarks[b].z);
+            float worldMeters = Vector3.Distance(wa, wb);
+            if (worldMeters < 0.006f || worldMeters > 0.18f)
+                return fallback;
+            return Mathf.Lerp(fallback, worldMeters, Mathf.Clamp01(worldLandmarkDepthBlend));
         }
 
         private Vector2 ToPixel(TaskNormalizedLandmark landmark)
@@ -568,6 +662,8 @@ namespace ParrotApp.Hands
             Vector3 camLocal = cam != null ? cam.transform.InverseTransformPoint(perchPose.Position) : Vector3.zero;
             DebugLog(
                 "pose depth=" + depth.ToString("0.00")
+                + " raw=" + _lastRawDepth.ToString("0.00")
+                + " samples=" + _lastDepthSampleCount
                 + " viewport=" + viewport.x.ToString("0.00") + "," + viewport.y.ToString("0.00")
                 + " world=" + FormatVec3(perchPose.Position)
                 + " cam_local=" + FormatVec3(camLocal)

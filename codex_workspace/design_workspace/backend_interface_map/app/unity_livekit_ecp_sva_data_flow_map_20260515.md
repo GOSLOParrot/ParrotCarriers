@@ -385,9 +385,26 @@ Editor and phone use the same `Resources/parrot_config.json` shape:
 - `orchestratorUrl`
 - `orchestratorSecret`
 
-Only values differ by environment. Phone must use public ECS/domain URLs, not
-localhost. Do not commit or paste real secrets into repo docs. Personal/dev
-Bearer values are acceptable only in ignored local config.
+Only values differ by environment. Phone must never use `localhost`; it must use
+either public ECS/domain URLs or an approved LAN lab host such as the 2026-05-18
+laptop Castle sandbox. Because `parrot_config.json` is a Unity `Resources`
+asset, Android builds bundle it into the APK. Switching ECS/laptop targets
+therefore means writing the ignored active config before Build And Run and
+reinstalling the phone build. Use `infra/switch-unity-app-config.ps1` so the
+active profile and gitignored ECS backup stay explicit. Do not commit or paste
+real secrets into repo docs. Personal/dev Bearer values are acceptable only in
+ignored local config.
+
+Environment split:
+
+- Public ECS is still the shared remote dev Castle and Web/App validation
+  target.
+- Laptop Castle is a local iQOO latency/audio-route lab under
+  `codex_workspace/local_runtime/castle_laptop/**`; it rewrites copied
+  RoomProfiles to `parrot-laptop-main`.
+- Web Console / Obsidian / setting-file scan work must choose an environment
+  explicitly through Web-side config/proxy code. Unity App config switching must
+  not imply that Web Console or Graphiti/FalkorDB targets changed too.
 
 ## G. Open Gaps Before Homepage Implementation
 

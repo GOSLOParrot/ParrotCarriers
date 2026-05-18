@@ -2350,7 +2350,12 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "mediapipe_native_unavailable" in mediapipe_provider
     assert "_landmarkerInitBlocked" in mediapipe_provider
     assert "assumedIndexFingerLengthMeters" in mediapipe_provider
+    assert "worldLandmarkDepthBlend" in mediapipe_provider
     assert "EstimateDepth" in mediapipe_provider
+    assert "ResolveWorldLandmarks" in mediapipe_provider
+    assert "AddDepthSample" in mediapipe_provider
+    assert "ResolvePhysicalLengthMeters" in mediapipe_provider
+    assert "samples=" in mediapipe_provider
     assert "compensateCameraImageAspectToScreen" in mediapipe_provider
     assert "ToScreenViewport" in mediapipe_provider
     assert "LogPoseDiagnosticIfNeeded" in mediapipe_provider
@@ -2377,7 +2382,12 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "ResolveMotionForward(targetRotation)" in perch_on_hand
     assert "animDriver.ResolveMotionFacingRotation(visualForwardRotation)" in perch_on_hand
     assert "ScaleLocalOffsetForCurrentRoot(_resolvedFootAnchorLocalOffset)" in perch_on_hand
+    assert "ResolveFingerGripPosition(pose)" in perch_on_hand
+    assert "ResolveFingerSurfaceNormal" in perch_on_hand
     assert "StabilizeCameraCvRootPosition(pose, rootPosition)" in perch_on_hand
+    assert "ClampCameraCvRootPosition" in perch_on_hand
+    assert "PredictCameraCvRootPosition" in perch_on_hand
+    assert "cameraCvLeadSeconds" in perch_on_hand
     assert "cameraCvAllowedBelowStartMeters" in perch_on_hand
     assert "camera_cv_target" in perch_on_hand
     assert "tracking_lost_hold_on_hand" in perch_on_hand

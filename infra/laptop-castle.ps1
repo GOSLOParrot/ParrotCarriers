@@ -17,6 +17,16 @@ $LiveKitTemplate = Join-Path $ScriptDir "livekit\livekit-laptop.template.yaml"
 $LiveKitGenerated = Join-Path $RuntimeRoot "livekit-laptop.yaml"
 $UnityConfigGenerated = Join-Path $RuntimeRoot "parrot_config.laptop.generated.json"
 
+function Write-Utf8NoBom {
+    param(
+        [string]$Path,
+        [string]$Text
+    )
+
+    $encoding = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($Path, $Text, $encoding)
+}
+
 function Get-LaptopLanIp {
     $configs = Get-NetIPConfiguration |
         Where-Object {
@@ -138,6 +148,40 @@ function Copy-SeedDir {
     }
 }
 
+function Update-LocalRoomProfiles {
+    param([string]$RoomId)
+
+    if ([string]::IsNullOrWhiteSpace($RoomId)) {
+        $RoomId = "parrot-laptop-main"
+    }
+
+    $presetDir = Join-Path $RuntimeData "presets"
+    if (-not (Test-Path -LiteralPath $presetDir)) {
+        return
+    }
+
+    foreach ($file in Get-ChildItem -LiteralPath $presetDir -Filter "*.json" -File) {
+        try {
+            $json = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+            if ($null -ne $json.PSObject.Properties["livekit_room_id"]) {
+                $json.livekit_room_id = $RoomId
+            } else {
+                if ($null -eq $json.PSObject.Properties["metadata"] -or $null -eq $json.metadata) {
+                    $json | Add-Member -NotePropertyName "metadata" -NotePropertyValue ([pscustomobject]@{})
+                }
+                if ($null -ne $json.metadata.PSObject.Properties["livekit_room_id"]) {
+                    $json.metadata.livekit_room_id = $RoomId
+                } else {
+                    $json.metadata | Add-Member -NotePropertyName "livekit_room_id" -NotePropertyValue $RoomId
+                }
+            }
+            Write-Utf8NoBom -Path $file.FullName -Text ($json | ConvertTo-Json -Depth 20)
+        } catch {
+            Write-Warning "Could not update local RoomProfile LiveKit room in $($file.Name): $($_.Exception.Message)"
+        }
+    }
+}
+
 function Initialize-LaptopCastle {
     New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
     New-Item -ItemType Directory -Force -Path $RuntimeData | Out-Null
@@ -157,6 +201,7 @@ function Initialize-LaptopCastle {
     Copy-SeedDir -Source (Join-Path $RepoRoot "data\presets") -Destination (Join-Path $RuntimeData "presets")
     Copy-SeedDir -Source (Join-Path $RepoRoot "data\line_profiles") -Destination (Join-Path $RuntimeData "line_profiles")
     Copy-SeedDir -Source (Join-Path $RepoRoot "data\registries") -Destination (Join-Path $RuntimeData "registries")
+    Update-LocalRoomProfiles -RoomId $envMap["LIVEKIT_ROOM"]
 
     if (-not (Test-Path -LiteralPath (Join-Path $RuntimeData "runtime_config.json"))) {
         $runtimeConfig = [ordered]@{
@@ -167,13 +212,11 @@ function Initialize-LaptopCastle {
             room_profile_id = "default"
             notes = "Local laptop Castle sandbox; safe to delete."
         }
-        ($runtimeConfig | ConvertTo-Json -Depth 5) |
-            Set-Content -LiteralPath (Join-Path $RuntimeData "runtime_config.json") -Encoding UTF8
+        Write-Utf8NoBom -Path (Join-Path $RuntimeData "runtime_config.json") -Text ($runtimeConfig | ConvertTo-Json -Depth 5)
     }
 
     $template = Get-Content -LiteralPath $LiveKitTemplate -Raw
-    $template.Replace("__PARROT_LAPTOP_HOST__", $hostIp) |
-        Set-Content -LiteralPath $LiveKitGenerated -Encoding UTF8
+    Write-Utf8NoBom -Path $LiveKitGenerated -Text ($template.Replace("__PARROT_LAPTOP_HOST__", $hostIp))
 
     Write-UnityConfig | Out-Null
     Write-Host "Laptop Castle initialized at $RuntimeRoot"
@@ -213,7 +256,7 @@ function Write-UnityConfig {
         orchestratorSecret = $envMap["PARROT_ORCH_SECRET"]
     }
     $json = $config | ConvertTo-Json -Depth 5
-    $json | Set-Content -LiteralPath $UnityConfigGenerated -Encoding UTF8
+    Write-Utf8NoBom -Path $UnityConfigGenerated -Text $json
     Write-Output $json
 }
 

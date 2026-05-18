@@ -18,7 +18,7 @@ namespace ParrotApp.Hands
         [SerializeField] private float referenceRetryIntervalSeconds = 0.5f;
 
         [Header("Flight route")]
-        [SerializeField] private float flyToSpeed = 1.8f;
+        [SerializeField] private float flyToSpeed = 1.55f;
         [SerializeField] private float arrivalDistance = 0.045f;
         [SerializeField] private float routeReplanDistance = 0.08f;
         [SerializeField] private float flightArcMinHeight = 0.12f;
@@ -33,18 +33,23 @@ namespace ParrotApp.Hands
         [SerializeField] private string leftFootNodeName = "left_leg";
         [SerializeField] private string rightFootNodeName = "right_leg";
         [SerializeField] private Vector3 footAnchorLocalOffset = Vector3.zero;
-        [SerializeField] private Vector3 rootClearanceLocalOffset = new Vector3(0f, 0.012f, 0f);
+        [SerializeField] private Vector3 rootClearanceLocalOffset = new Vector3(0f, 0.004f, 0f);
+        [SerializeField] private float fingerSurfaceLiftMeters = 0.01f;
+        [SerializeField] private float footGripSinkMeters = 0.004f;
+        [SerializeField] private float fingerAlongOffsetMeters = 0f;
         [SerializeField] private float perchedFollowLerp = 18f;
         [SerializeField] private float perchedRotateLerp = 14f;
 
         [Header("Camera CV safety")]
         [SerializeField] private bool stabilizeCameraCvRootPose = true;
-        [SerializeField] private float cameraCvMinForwardMeters = 0.18f;
-        [SerializeField] private float cameraCvMaxForwardMeters = 1.25f;
-        [SerializeField] private float cameraCvMaxLateralMeters = 0.75f;
-        [SerializeField] private float cameraCvMaxVerticalMeters = 0.55f;
+        [SerializeField] private float cameraCvMinForwardMeters = 0.14f;
+        [SerializeField] private float cameraCvMaxForwardMeters = 1.75f;
+        [SerializeField] private float cameraCvMaxLateralMeters = 0.9f;
+        [SerializeField] private float cameraCvMaxVerticalMeters = 0.75f;
         [SerializeField] private float cameraCvAllowedBelowStartMeters = 0.06f;
-        [SerializeField] private float cameraCvMaxDistanceFromStartMeters = 1.45f;
+        [SerializeField] private float cameraCvMaxDistanceFromStartMeters = 1.9f;
+        [SerializeField] private float cameraCvLeadSeconds = 0.08f;
+        [SerializeField] private float cameraCvMaxPredictionStepMeters = 0.06f;
         [SerializeField] private bool logCameraCvTargets = true;
 
         [Header("Return")]
@@ -80,6 +85,9 @@ namespace ParrotApp.Hands
         private float _perchStartedAt;
         private float _nextReferenceRetryAt;
         private float _nextCameraCvTargetLogAt;
+        private bool _hasLastCameraCvRootPosition;
+        private Vector3 _lastCameraCvRootPosition;
+        private float _lastCameraCvRootAt;
 
         public enum PerchState
         {
@@ -353,6 +361,7 @@ namespace ParrotApp.Hands
             ActivePerchCommandId = commandId ?? "";
             ActiveTrigger = trigger ?? "";
             _perchStartedAt = Time.unscaledTime;
+            _hasLastCameraCvRootPosition = false;
             ResolveFootAnchor(force: true);
 
             LifecycleHeartbeatPublisher.Instance?.ReportActiveCommand(ActivePerchCommandId, new[] { BodyLock });
@@ -501,11 +510,38 @@ namespace ParrotApp.Hands
             Quaternion rootRotation = ResolveMotionFacingRotation(pose.Rotation);
             Vector3 footOffset = ScaleLocalOffsetForCurrentRoot(_resolvedFootAnchorLocalOffset);
             Vector3 clearanceOffset = ScaleLocalOffsetForCurrentRoot(rootClearanceLocalOffset);
-            Vector3 rootPosition = pose.Position
+            Vector3 gripPosition = ResolveFingerGripPosition(pose);
+            Vector3 rootPosition = gripPosition
                                    - (rootRotation * footOffset)
                                    + (rootRotation * clearanceOffset);
+            rootPosition -= (rootRotation * Vector3.up) * Mathf.Max(0f, footGripSinkMeters);
             rootPosition = StabilizeCameraCvRootPosition(pose, rootPosition);
             return new Pose(rootPosition, rootRotation);
+        }
+
+        private Vector3 ResolveFingerGripPosition(HandPerchPose pose)
+        {
+            Vector3 fingerDir = pose.FingerDirection.sqrMagnitude > 0.0001f
+                ? pose.FingerDirection.normalized
+                : Vector3.right;
+            Vector3 surfaceNormal = ResolveFingerSurfaceNormal(pose);
+            return pose.Position
+                   + surfaceNormal * Mathf.Max(0f, fingerSurfaceLiftMeters)
+                   + fingerDir * fingerAlongOffsetMeters;
+        }
+
+        private Vector3 ResolveFingerSurfaceNormal(HandPerchPose pose)
+        {
+            Vector3 normal = pose.PalmNormal.sqrMagnitude > 0.0001f
+                ? pose.PalmNormal.normalized
+                : pose.Rotation * Vector3.up;
+            Vector3 poseUp = pose.Rotation * Vector3.up;
+            if (Vector3.Dot(normal, poseUp) < 0f)
+                normal = -normal;
+            Camera cam = Camera.main;
+            if (cam != null && Vector3.Dot(normal, cam.transform.position - pose.Position) < 0f)
+                normal = -normal;
+            return normal.sqrMagnitude > 0.0001f ? normal.normalized : Vector3.up;
         }
 
         private Vector3 ScaleLocalOffsetForCurrentRoot(Vector3 localOffset)
@@ -523,6 +559,15 @@ namespace ParrotApp.Hands
             }
 
             Vector3 original = rootPosition;
+            Vector3 stabilized = ClampCameraCvRootPosition(rootPosition);
+            Vector3 predicted = PredictCameraCvRootPosition(stabilized);
+            predicted = ClampCameraCvRootPosition(predicted);
+            LogCameraCvTargetIfNeeded(pose.Position, original, predicted);
+            return predicted;
+        }
+
+        private Vector3 ClampCameraCvRootPosition(Vector3 rootPosition)
+        {
             Vector3 stabilized = rootPosition;
             Camera cam = Camera.main;
             if (cam != null)
@@ -551,9 +596,29 @@ namespace ParrotApp.Hands
             Vector3 fromStart = stabilized - _returnPosition;
             if (fromStart.sqrMagnitude > maxDistance * maxDistance)
                 stabilized = _returnPosition + fromStart.normalized * maxDistance;
-
-            LogCameraCvTargetIfNeeded(pose.Position, original, stabilized);
             return stabilized;
+        }
+
+        private Vector3 PredictCameraCvRootPosition(Vector3 stabilized)
+        {
+            float now = Time.unscaledTime;
+            Vector3 predicted = stabilized;
+            if (_hasLastCameraCvRootPosition)
+            {
+                float dt = Mathf.Max(0.001f, now - _lastCameraCvRootAt);
+                if (dt < 0.35f)
+                {
+                    Vector3 velocity = (stabilized - _lastCameraCvRootPosition) / dt;
+                    Vector3 step = Vector3.ClampMagnitude(
+                        velocity * Mathf.Max(0f, cameraCvLeadSeconds),
+                        Mathf.Max(0f, cameraCvMaxPredictionStepMeters));
+                    predicted += step;
+                }
+            }
+            _lastCameraCvRootPosition = stabilized;
+            _lastCameraCvRootAt = now;
+            _hasLastCameraCvRootPosition = true;
+            return predicted;
         }
 
         private Vector3 ResolveReturnToViewPosition()

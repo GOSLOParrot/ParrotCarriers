@@ -539,6 +539,18 @@ def build_app():  # type: ignore[no-untyped-def]
 
         return await fetch_google_calendar_nanobot(payload or {})
 
+    @app.post("/api/google/messages/check")
+    async def google_messages_check(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import dispatch_message_check
+
+        return await dispatch_message_check(payload or {})
+
+    @app.post("/api/google/messages/push-test")
+    async def google_messages_push_test(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import push_test_message
+
+        return await push_test_message(payload or {})
+
     @app.get("/api/graphiti/status")
     async def graphiti_status_endpoint():  # type: ignore[no-untyped-def]
         return graphiti_status().as_json()

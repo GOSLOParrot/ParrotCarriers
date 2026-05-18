@@ -86,6 +86,8 @@ services:
       - FALKORDB_HOST=falkordb
       - FALKORDB_PORT=6379
       - PARROT_RUNTIME_CONFIG_PATH=/app/data/runtime_config.json
+      - PARROT_PRESETS_DIR=/app/data/presets
+      - PARROT_LINE_PROFILES_DIR=/app/data/line_profiles
       - PARROT_BRAIN_AGENT_NAME=parrot-brain
       - PARROT_MINT_AGENT_NAME=parrot-brain
     ports:
@@ -140,6 +142,8 @@ services:
       - FALKORDB_HOST=falkordb
       - FALKORDB_PORT=6379
       - PARROT_RUNTIME_CONFIG_PATH=/app/data/runtime_config.json
+      - PARROT_PRESETS_DIR=/app/data/presets
+      - PARROT_LINE_PROFILES_DIR=/app/data/line_profiles
     volumes:
       - ../codex_workspace/local_runtime/castle_laptop/data:/app/data
     depends_on:

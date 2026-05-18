@@ -15,9 +15,26 @@ public ECS state. Use `infra/laptop-castle.ps1` and
 `infra/docker-compose.laptop.yml`; generated data/config live under
 `codex_workspace/local_runtime/castle_laptop/`. Base services are verified on
 `192.168.2.4` with `17888` token-mint health, `17890` orchestrator health, and
-`18790` RoomSetting returning 200. Brain is intentionally not started until a
-local `GOOGLE_API_KEY` is added. This is a local lab route, not
-production/TLS/TURN proof.
+`18790` RoomSetting returning 200. The user-approved local key copy is in the
+gitignored `infra/laptop.env.local`; Brain is running in the isolated
+`parrot-laptop-castle` Docker project. Local START proof passed in
+`parrot-laptop-main`: token-mint returns the laptop LAN URL, active Brain
+dispatch is server-side without token `roomConfig`, a single `agent-*` Brain
+participant joined, and `applyRoomProfile` / `setAppCapabilityMode` returned
+business-ok. Follow-up fix: the local App API/Brain now read mounted
+`/app/data/presets` and `/app/data/line_profiles`, and copied RoomProfiles are
+rewritten to `livekit_room_id=parrot-laptop-main` so Unity RoomSetting
+cold-load cannot silently send the phone back to public `parrot-main`. This is
+a local lab route for latency/audio comparison, not production/TLS/TURN proof
+and not phone stability proof. Unity active config switching is now explicit:
+`infra/switch-unity-app-config.ps1 -Target laptop|ecs|show` writes the
+gitignored `unity/ArSpike/Assets/ParrotApp/Resources/parrot_config.json` before
+Build And Run and stores the ECS backup under gitignored
+`codex_workspace/local_runtime/unity_app_configs/`. Because this is a
+`Resources` asset, installed Android builds do not hot-switch targets; rebuild
+after changing ECS/laptop config. Web Console / Obsidian / setting-file scan
+targets are separate environment choices and must not be inferred from the
+Unity phone config.
 
 2026-05-13 parallel work route:
 

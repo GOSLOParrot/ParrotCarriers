@@ -1,10 +1,11 @@
 # Local Laptop Castle Sandbox (Unity App)
 
-Status: implemented as an isolated local environment scaffold on 2026-05-18.
-Base services were started and probed on laptop IP `192.168.2.4`:
-token-mint `/health` 200, orchestrator `/health` 200, and App API
-`/api/app/room-setting` 200. Brain remains opt-in until local API keys are
-added.
+Status: implemented and verified as an isolated local environment on
+2026-05-18. Services were started on laptop IP `192.168.2.4`: token-mint
+`/health` 200, orchestrator `/health` 200, and App API
+`/api/app/room-setting` 200. After the user-approved local key copy into the
+gitignored `infra/laptop.env.local`, Brain was also started and the local START
+RPC proof passed in room `parrot-laptop-main`.
 
 Purpose: compare iQOO / Unity App audio, LiveKit, and Brain latency against a
 laptop-hosted Castle-like stack without touching the public ECS `.env`, ECS
@@ -16,10 +17,17 @@ runtime config, or formal Unity `parrot_config.json`.
   `infra/laptop-castle.ps1`.
 - Do not copy the repo root `.env` or ECS `.env.castle` into this environment.
   `infra/laptop.env.local` is generated from placeholders and is gitignored.
+- Do not print copied secrets in chat, logs, docs, or committed files. The local
+  key copy is only for this laptop lab and is not a new shared deployment
+  source of truth.
 - Runtime data lives under
   `codex_workspace/local_runtime/castle_laptop/` and is gitignored.
 - Seed data is copied once from `data/presets`, `data/line_profiles`, and
   `data/registries`; later RoomSetting saves stay inside the local runtime.
+- Local preset/RoomProfile copies are rewritten to the local LiveKit room. This
+  matters because Unity maps `RoomProfile.livekit_room_id` back into START
+  `room_id` after RoomSetting cold-load; without the rewrite, a laptop test can
+  accidentally re-enter the public `parrot-main` room.
 - Compose project name is fixed to `parrot-laptop-castle`, so Docker volumes
   and containers do not collide with ECS or old dev compose stacks.
 
@@ -48,7 +56,7 @@ powershell -ExecutionPolicy Bypass -File infra/laptop-castle.ps1 -Action config
 # Start local RoomSetting/App API + LiveKit + token mint + orchestrator.
 powershell -ExecutionPolicy Bypass -File infra/laptop-castle.ps1 -Action up
 
-# Start Brain too, after adding a local GOOGLE_API_KEY to infra/laptop.env.local.
+# Start Brain too, after adding local secrets to infra/laptop.env.local.
 powershell -ExecutionPolicy Bypass -File infra/laptop-castle.ps1 -Action up-brain
 
 # Print the Unity config JSON for this laptop sandbox.
@@ -61,13 +69,58 @@ The generated Unity config is written to:
 
 `codex_workspace/local_runtime/castle_laptop/parrot_config.laptop.generated.json`
 
-Copying this into the gitignored formal App resource file is a manual test
-step only:
+The active formal App config consumed by Unity is:
 
 `unity/ArSpike/Assets/ParrotApp/Resources/parrot_config.json`
 
-Do not commit that runtime config. Do not overwrite the ECS config unless the
-current phone test is explicitly switching to the laptop sandbox.
+This file is under `Assets/**/Resources`, so Android builds bundle it into the
+APK. On a phone, switching between public ECS and laptop Castle requires writing
+the desired ignored config before `Build And Run`, then rebuilding/reinstalling.
+It is not a runtime hot switch yet. In Editor, changes can be picked up after
+Unity refresh / Play restart, but phone proof must be considered build-specific.
+
+Use the switch helper instead of manual copy:
+
+```powershell
+# Show the current active Unity config without printing secrets.
+powershell -ExecutionPolicy Bypass -File infra/switch-unity-app-config.ps1 -Target show
+
+# Switch active config to this laptop sandbox for the next phone build.
+powershell -ExecutionPolicy Bypass -File infra/switch-unity-app-config.ps1 -Target laptop
+
+# Switch active config back to the backed-up public ECS profile.
+powershell -ExecutionPolicy Bypass -File infra/switch-unity-app-config.ps1 -Target ecs
+```
+
+The helper stores the public ECS backup at:
+
+`codex_workspace/local_runtime/unity_app_configs/parrot_config.ecs.local.json`
+
+That path is gitignored. Do not commit runtime configs or paste real bearer
+values into docs/chat. Two parallel installed Android apps would require
+separate package IDs, for example a future `com.parrotcarriers.app.local`;
+currently the formal package ID is shared, so each Build And Run replaces the
+previous install on the phone.
+
+## Environment Matrix
+
+| Surface | Public ECS | Laptop Castle |
+|:--|:--|:--|
+| Purpose | Main remote dev Castle and Web/App shared validation. | Local latency/audio-route comparison for iQOO. |
+| Unity active config | Ignored `parrot_config.json` with `8.216.45.45` endpoints. | Ignored `parrot_config.json` generated from `parrot_config.laptop.generated.json`. |
+| LiveKit room | `parrot-main` unless RoomProfile overrides. | `parrot-laptop-main`; copied RoomProfiles are rewritten to this room. |
+| App API data | ECS `/opt/parrotcarriers/data/**`. | `codex_workspace/local_runtime/castle_laptop/data/**` mounted into Docker. |
+| Runtime config | ECS runtime config / orchestrator state. | Local runtime config under `codex_workspace/local_runtime/castle_laptop/**`. |
+| Secrets | ECS `.env` / `.env.castle`; never copied into git. | `infra/laptop.env.local`; gitignored local lab only. |
+| Web Console | Should target ECS unless explicitly switched by Web BFF env/profile. | Requires Web Console environment selector/proxy work before it is a first-class Web target. |
+
+Setting file refs and persona refs can still be repo-relative paths such as
+`src/parrot/brain/personas/**` or `codex_workspace/design_workspace/**`. In the
+laptop Docker lab, those refs are only valid if the image/container can see the
+same repo content. Treat Obsidian scan, setting-file upload, Graphiti/FalkorDB,
+and Web Console edits as environment-scoped operations: the Web side must make
+the chosen target visible and must not silently write local-lab changes into
+public ECS or vice versa.
 
 ## LiveKit URL Split
 
@@ -87,6 +140,49 @@ The generated LiveKit config pins `rtc.node_ip` to the laptop LAN IP and keeps
 shape where `node_ip` is used when external auto-discovery is not the desired
 candidate source.
 
+## 2026-05-18 Verification
+
+Local Docker Desktop stack:
+
+- `parrot-laptop-castle` containers are isolated from the ECS compose project.
+- Token-mint returns the phone-facing URL `ws://192.168.2.4:17880` while using
+  `PARROT_MINT_LIVEKIT_INTERNAL_URL=ws://livekit:7880` for server-side active
+  dispatch.
+- Minted Unity tokens bind to `parrot-laptop-main` and do not include a token
+  `roomConfig`; Brain dispatch is requested server-side through LiveKit
+  AgentDispatch.
+- The Brain worker uses the named agent path (`parrot-brain`) for explicit
+  active dispatch; one Brain participant joined and no duplicate `7889`
+  photo-upload crash occurred during the START proof.
+- App API and Brain read `/app/data/presets` and `/app/data/line_profiles`
+  through `PARROT_PRESETS_DIR` / `PARROT_LINE_PROFILES_DIR`, not image-baked
+  repo data.
+- The local runtime writer uses UTF-8 without BOM for generated JSON/YAML so the
+  Python loaders do not fall back to hardcoded defaults.
+
+Observed local proof:
+
+- `sim_unity_client.py --startup-rpc-check --startup-room-profile-id default
+  --identity laptop-start-local-room --agent-name parrot-brain` connected to
+  `ws://127.0.0.1:17880` room `parrot-laptop-main`.
+- `GET /api/app/room-setting` now returns both `default` and `ner_lineb_room`
+  with `livekit_room_id=parrot-laptop-main`.
+- Brain participant `agent-*` joined, agent audio track appeared, and
+  `applyRoomProfile` plus `setAppCapabilityMode` returned business-ok payloads.
+- The earlier accidental rerun against default `parrot-main` is not the
+  canonical laptop proof; use `LIVEKIT_ROOM=parrot-laptop-main` for this lab.
+
+Residual diagnostics, not current blockers for local START:
+
+- LiveKit logs still display the registered worker with an empty `agentName`
+  while `CreateDispatch` carries `agentName: parrot-brain`; assignment works,
+  but this log mismatch should be rechecked before changing dispatch semantics.
+- `AgentDispatchService.ListDispatch` may return a transient 503 before a room
+  exists; token-mint handles that and proceeds to create the active dispatch.
+- Brain boot preflight can log a Blackboard write-access warning for
+  `/global/brain_boot_preflight`; it did not block START but should be cleaned
+  separately.
+
 ## What This Proves
 
 Good for:
@@ -94,15 +190,16 @@ Good for:
 - comparing ECS vs laptop LiveKit/Brain latency;
 - checking whether the 3-5s delay is cloud CPU/network related or phone/client
   capture related;
-- testing Unity RoomSetting HTTP, token mint, LiveKit join, Brain dispatch,
-  heartbeat, and audio uplink against a nearby SFU;
+- testing Unity RoomSetting HTTP, token mint, LiveKit join, Brain dispatch, and
+  startup Brain RPC business-ok against a nearby SFU;
 - testing iQOO Bluetooth/A2DP/SCO behavior without public ECS round trips.
 
 Not proof of:
 
 - public ECS security group / WAN reachability;
 - production TLS/TURN;
-- LineB Google STT / Cartesia unless local secrets and dependencies are added;
+- LineB Google STT / Cartesia quality unless that specific room/profile is
+  selected and measured locally;
 - phone stability until the formal App is rebuilt with the laptop config and
   iQOO logs show non-zero uplink frames/peak plus Brain response telemetry.
 
@@ -110,6 +207,9 @@ Not proof of:
 
 - If laptop LineA is fast but ECS LineA remains slow, add explicit timing probes
   for client capture -> Brain STT/VAD/Realtime ingress -> LLM -> TTS/downlink.
+- Before judging ECS capacity, copy the generated laptop config into the
+  gitignored formal Unity runtime config for one phone build and compare the
+  same LineA route on iQOO.
 - If both laptop and ECS stall after background/focus hops, continue the formal
   App lifecycle/audio-policy recovery work under APP-024.
 - If local Docker LiveKit media still fails on phone, verify Windows firewall
