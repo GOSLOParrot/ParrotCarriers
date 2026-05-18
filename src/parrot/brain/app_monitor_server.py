@@ -284,6 +284,42 @@ def build_app():  # type: ignore[no-untyped-def]
     async def app_live_state(limit: int = 80):  # type: ignore[no-untyped-def]
         return build_app_live_state(l2b_limit=max(1, min(limit, 200))).as_json()
 
+    @app.get("/api/memory/live-state/changes")
+    async def memory_live_state_changes(  # type: ignore[no-untyped-def]
+        since: int = 0,
+        limit: int = 120,
+    ):
+        from parrot.web_console.memory_live_state import build_memory_live_state_changes
+
+        return build_memory_live_state_changes(
+            since=since,
+            limit=max(1, min(limit, 200)),
+        )
+
+    @app.get("/api/runtime/flow")
+    async def runtime_flow():  # type: ignore[no-untyped-def]
+        from parrot.web_console.runtime_flow import build_runtime_flow_snapshot
+
+        return build_runtime_flow_snapshot()
+
+    @app.get("/api/runtime/flow/changes")
+    async def runtime_flow_changes(since: int = 0):  # type: ignore[no-untyped-def]
+        from parrot.web_console.runtime_flow import build_runtime_flow_changes
+
+        return build_runtime_flow_changes(since=since)
+
+    @app.get("/api/dsg/triggers/catalog")
+    async def dsg_triggers_catalog():  # type: ignore[no-untyped-def]
+        from parrot.web_console.memory_ops import trigger_catalog
+
+        return trigger_catalog()
+
+    @app.get("/api/l15/pool")
+    async def l15_pool():  # type: ignore[no-untyped-def]
+        from parrot.web_console.memory_ops import build_l15_pool_snapshot
+
+        return await build_l15_pool_snapshot()
+
     @app.post("/api/app/workspace/apply")
     async def apply_workspace(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         body = payload or {}

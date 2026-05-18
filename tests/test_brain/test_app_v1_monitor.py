@@ -73,6 +73,10 @@ def test_monitor_health_and_canvas_endpoints() -> None:
     health = client.get("/health")
     console_config = client.get("/api/console/config")
     canvas = client.get("/api/app/canvas")
+    memory_changes = client.get("/api/memory/live-state/changes?since=0&limit=4")
+    l15_pool = client.get("/api/l15/pool")
+    runtime_changes = client.get("/api/runtime/flow/changes?since=0")
+    trigger_catalog = client.get("/api/dsg/triggers/catalog")
 
     assert page.status_code == 200
     assert "Module Rail" in page.text
@@ -93,6 +97,14 @@ def test_monitor_health_and_canvas_endpoints() -> None:
     assert console_config.status_code == 200
     assert console_config.json()["environment"]["service"] == "app-monitor"
     assert "local_laptop_app_api_secret_change_me" not in json.dumps(console_config.json())
+    assert memory_changes.status_code == 200
+    assert memory_changes.json()["event_schema"] == "memory_runtime_delta_v1"
+    assert l15_pool.status_code == 200
+    assert l15_pool.json()["success"] is True
+    assert runtime_changes.status_code == 200
+    assert runtime_changes.json()["event_schema"] == "runtime_flow_delta_v1"
+    assert trigger_catalog.status_code == 200
+    assert trigger_catalog.json()["action"] == "trigger_catalog"
     assert canvas.status_code == 200
     body = canvas.json()
     assert len(body["module_statuses"]) == 8
