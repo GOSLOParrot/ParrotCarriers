@@ -1034,6 +1034,60 @@ def test_graphiti_execute_export_proxies_when_remote_url_configured(monkeypatch)
     assert receipt["data"]["remote_proxy"]["enabled"] is True
 
 
+def test_remote_graphiti_and_l2b_proxies_forward_app_monitor_bearer(monkeypatch) -> None:
+    import urllib.request
+
+    from parrot.brain import graphiti_console
+    from parrot.web_console import graph_policy, memory_ops
+
+    captured: list[dict[str, str]] = []
+
+    class FakeResponse:
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"success": true, "available": true}'
+
+    def fake_urlopen(request: urllib.request.Request, timeout: float) -> FakeResponse:
+        captured.append(
+            {
+                "url": request.full_url,
+                "auth": request.get_header("Authorization") or "",
+                "method": request.get_method(),
+                "timeout": str(timeout),
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_GRAPHITI_URL", "http://127.0.0.1:18790")
+    monkeypatch.setenv("PARROT_APP_MONITOR_SECRET", "unit-secret")
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    graphiti_console._remote_graphiti_request(
+        "/api/graphiti/subgraph/search",
+        payload={"query": "Amiya"},
+    )
+    memory_ops._remote_operator_request(
+        "/api/graphiti/subgraph/materialize-l2b",
+        payload={"dry_run": True},
+    )
+    graph_policy._remote_l2b_request(
+        "/api/l2b/subgraphs/context",
+        payload={"node_uuids": []},
+    )
+
+    assert [row["auth"] for row in captured] == [
+        "Bearer unit-secret",
+        "Bearer unit-secret",
+        "Bearer unit-secret",
+    ]
+    assert all(row["method"] == "POST" for row in captured)
+
+
 def test_graphiti_search_falls_back_to_partition_fact_scan(monkeypatch) -> None:
     import asyncio
 

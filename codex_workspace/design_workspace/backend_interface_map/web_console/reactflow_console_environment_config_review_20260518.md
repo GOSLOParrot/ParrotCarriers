@@ -14,7 +14,8 @@ Scope: `web/console_app` ReactFlow Console, L2-B operation page, collaboration f
 - `web/console_app/vite.config.ts` now reads `PARROT_WEB_CONSOLE_API_TARGET` or `VITE_PARROT_WEB_CONSOLE_API_TARGET`.
 - `npm run dev:laptop` loads Vite mode `laptop`.
 - `npm run dev:ecs` loads Vite mode `ecs`.
-- `web/console_app/env.laptop.example` points the Vite proxy at laptop app-monitor `http://127.0.0.1:18790`.
+- `web/console_app/env.laptop.example` points the Vite proxy at the local Web Console BFF `http://127.0.0.1:7893`.
+- The laptop `app-monitor` at `http://127.0.0.1:18790` is still the App API / monitor service. It is not the complete ReactFlow Console backend; direct browser proxying to it is a partial mode and will miss routes such as Obsidian scan and L2-B drafts.
 - `web/console_app/env.ecs.example` points the Vite proxy at ECS app-monitor `http://8.216.45.45:8790`.
 - `GET /api/console/config` now returns a browser-safe `environment` snapshot on both 7893 Web BFF and 8790 app-monitor.
 - The ReactFlow Console settings popover now shows active profile, service, API target, Graphiti target, runtime data root, and redacted auth/OAuth availability.
@@ -25,6 +26,14 @@ Laptop Castle:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File infra\laptop-castle.ps1 -Action up
+
+# Start or restart the local Web Console BFF against the laptop services.
+$env:PARROT_WEB_CONSOLE_PROFILE = "laptop"
+$env:PARROT_WEB_CONSOLE_ORCH_URL = "http://127.0.0.1:17890"
+$env:PARROT_WEB_CONSOLE_GRAPHITI_URL = "http://127.0.0.1:18790"
+$env:PARROT_WEB_CONSOLE_NANOBOT_API_URL = "http://127.0.0.1:18790"
+.\.venv\Scripts\python.exe src\scripts\start_web_console.py --host 127.0.0.1 --port 7893
+
 cd web\console_app
 Copy-Item env.laptop.example .env.laptop
 npm run dev:laptop
@@ -49,7 +58,7 @@ npm run dev:ecs
 One-off override without writing an env file:
 
 ```powershell
-$env:PARROT_WEB_CONSOLE_API_TARGET = "http://127.0.0.1:18790"
+$env:PARROT_WEB_CONSOLE_API_TARGET = "http://127.0.0.1:7893"
 npm run dev
 ```
 
@@ -74,10 +83,14 @@ npm run dev
 - `GET /api/console/config` returns `environment.service` on 7893 and 8790.
 - ReactFlow settings popover shows `profile / service`.
 - `npm run typecheck` passes.
-- Target smoke after laptop stack is up:
+- Target smoke after laptop stack and Web Console BFF are up:
+  - `GET http://127.0.0.1:7893/api/console/config`
+  - `GET http://127.0.0.1:7893/api/graphiti/status`
+  - `GET http://127.0.0.1:7893/api/l15/obsidian-vault/scan`
   - `GET http://127.0.0.1:18790/health`
   - `GET http://127.0.0.1:18790/api/console/config`
   - `GET http://127.0.0.1:18790/api/graphiti/status`
+- If ReactFlow shows `laptop / app-monitor`, the dev proxy is still pointed at `18790` and only the app-monitor route subset is available. The normal laptop Web Console should show `laptop / web-console`.
 - Target smoke for ECS:
   - `GET http://8.216.45.45:8790/health`
   - `GET http://8.216.45.45:8790/api/console/config`

@@ -1829,6 +1829,7 @@ def _remote_graphiti_request(
     url = f"{base_url}/{path.lstrip('/')}"
     data = None
     headers = {"Accept": "application/json"}
+    headers.update(_remote_graphiti_auth_headers())
     method = "GET"
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
@@ -1848,6 +1849,20 @@ def _remote_graphiti_request(
             "available": False,
             "error": f"{type(exc).__name__}: {exc}",
         }
+
+
+def _remote_graphiti_auth_headers() -> dict[str, str]:
+    """Return server-side auth headers for the Graphiti/app-monitor proxy."""
+
+    secret = (
+        os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_SECRET")
+        or os.getenv("PARROT_GRAPHITI_REMOTE_SECRET")
+        or os.getenv("PARROT_APP_MONITOR_SECRET")
+        or ""
+    ).strip()
+    if not secret:
+        return {}
+    return {"Authorization": f"Bearer {secret}"}
 
 
 def _serialize_search_hit(hit: Any) -> dict[str, Any]:

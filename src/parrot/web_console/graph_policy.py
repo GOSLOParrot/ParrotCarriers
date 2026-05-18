@@ -835,6 +835,7 @@ def _remote_l2b_request(
     url = f"{base_url}/{path.lstrip('/')}"
     data: bytes | None = None
     headers = {"Accept": "application/json"}
+    headers.update(_remote_l2b_auth_headers())
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -858,6 +859,21 @@ def _remote_l2b_request(
             "error": f"{type(exc).__name__}: {exc}",
             "url": url,
         }
+
+
+def _remote_l2b_auth_headers() -> dict[str, str]:
+    """Return server-side auth headers for app-monitor L2-B proxy calls."""
+
+    secret = (
+        os.getenv("PARROT_WEB_CONSOLE_L2B_SECRET")
+        or os.getenv("PARROT_WEB_CONSOLE_GRAPHITI_SECRET")
+        or os.getenv("PARROT_GRAPHITI_REMOTE_SECRET")
+        or os.getenv("PARROT_APP_MONITOR_SECRET")
+        or ""
+    ).strip()
+    if not secret:
+        return {}
+    return {"Authorization": f"Bearer {secret}"}
 
 
 def _graphiti_bundle_l2b_nodes(
