@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("init", "config", "up", "up-brain", "down", "restart", "status", "logs", "unity-config")]
+    [ValidateSet("init", "config", "up", "rebuild", "up-brain", "down", "restart", "status", "logs", "unity-config")]
     [string]$Action = "status",
     [string]$Service = ""
 )
@@ -270,7 +270,9 @@ function Show-Status {
     $checks = @(
         "http://$hostIp`:17888/health",
         "http://$hostIp`:17890/health",
-        "http://$hostIp`:18790/api/app/room-setting"
+        "http://$hostIp`:18790/api/app/room-setting",
+        "http://$hostIp`:18790/api/console/config",
+        "http://$hostIp`:18790/api/graphiti/status"
     )
     foreach ($url in $checks) {
         try {
@@ -293,6 +295,10 @@ switch ($Action) {
     "up" {
         Initialize-LaptopCastle
         Invoke-LaptopCompose -ComposeCommandArgs @("up", "-d", "redis", "falkordb", "livekit", "token-mint", "app-monitor", "orchestrator")
+    }
+    "rebuild" {
+        Initialize-LaptopCastle
+        Invoke-LaptopCompose -ComposeCommandArgs @("up", "-d", "--build", "redis", "falkordb", "livekit", "token-mint", "app-monitor", "orchestrator")
     }
     "up-brain" {
         Initialize-LaptopCastle

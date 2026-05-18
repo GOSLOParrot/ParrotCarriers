@@ -30,6 +30,14 @@ Copy-Item env.laptop.example .env.laptop
 npm run dev:laptop
 ```
 
+After code changes that affect Python services, use `-Action rebuild` instead
+of `restart`. The laptop compose stack builds code into Docker images; it does
+not live-mount the repo source into `/app`.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infra\laptop-castle.ps1 -Action rebuild
+```
+
 Public ECS from local Vite:
 
 ```powershell
