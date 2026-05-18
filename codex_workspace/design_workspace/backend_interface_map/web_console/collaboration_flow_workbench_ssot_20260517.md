@@ -1044,6 +1044,11 @@ Nanobot Google Workspace OAuth split-brain fix:
   the Node MCP process logged `startup: no accounts configured` because it
   searches `~/.config/google-workspace-mcp/accounts.json` and
   `~/.local/share/google-workspace-mcp/credentials/{email_slug}.json`.
+- The next execution blocker was the `gws` CLI required by
+  `@aaronsb/google-workspace-mcp`: the newest `@googleworkspace/cli` binary
+  required `glibc 2.39`, while Castle currently has `glibc 2.35`. ECS was fixed
+  by installing `@googleworkspace/cli@0.21.1`; `start_nanobot_worker.py` now
+  passes `GWS_BINARY_PATH` into the MCP server when `gws` is discoverable.
 
 Current L1.5/Calendar source state:
 

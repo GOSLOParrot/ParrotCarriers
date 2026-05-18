@@ -225,6 +225,9 @@ def _sync_google_workspace_config(
             "client_secret",
             merged_env.get("GOOGLE_CLIENT_SECRET", ""),
         )
+    gws_binary = os.getenv("GWS_BINARY_PATH", "").strip() or shutil.which("gws")
+    if gws_binary:
+        merged_env["GWS_BINARY_PATH"] = gws_binary
 
     merged["env"] = merged_env
     changed = servers.get(GOOGLE_WORKSPACE_SERVER_KEY) != merged or legacy is not None
