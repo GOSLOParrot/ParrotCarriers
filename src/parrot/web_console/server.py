@@ -232,11 +232,24 @@ def build_app(
             "/api/app/live-state?" + urlencode({"limit": str(safe_limit)})
         )
         if remote is not None:
-            return remote
+            return await _hydrate_l2b_live_state_if_needed(remote, limit=safe_limit)
 
         from parrot.brain.app_live_state import build_app_live_state
 
         return build_app_live_state(l2b_limit=safe_limit).as_json()
+
+    @app.get("/api/l2b/snapshot")
+    async def l2b_snapshot(limit: int = 80) -> dict[str, Any]:
+        safe_limit = max(1, min(limit, 200))
+        remote = await _fetch_remote_app_json(
+            "/api/l2b/snapshot?" + urlencode({"limit": str(safe_limit)})
+        )
+        if remote is not None:
+            return remote
+
+        from parrot.brain.l2b_monitor import build_l2b_snapshot
+
+        return build_l2b_snapshot(limit=safe_limit).as_json()
 
     @app.get("/api/memory/live-state/changes")
     async def memory_live_state_changes(
@@ -947,6 +960,14 @@ def build_app(
 
         return live_subgraph_context(payload or {})
 
+    @app.post("/api/l2b/subgraphs/apply")
+    async def l2b_subgraphs_apply(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_l2b_work_subgraph
+
+        return apply_l2b_work_subgraph(payload or {})
+
     @app.post("/api/l2b/transforms/draft")
     async def l2b_transforms_draft(  # type: ignore[misc]
         payload: dict[str, Any] | None = Body(default=None),
@@ -1250,6 +1271,15 @@ async def _memory_live_state_changes_snapshot(*, since: int, limit: int) -> dict
         + urlencode({"since": str(max(0, since)), "limit": str(max(1, min(limit, 200)))})
     )
     if remote is not None:
+        snapshot = remote.get("snapshot")
+        if isinstance(snapshot, dict):
+            remote = {
+                **remote,
+                "snapshot": await _hydrate_l2b_live_state_if_needed(
+                    snapshot,
+                    limit=max(1, min(limit, 200)),
+                ),
+            }
         return remote
 
     from parrot.web_console.memory_live_state import build_memory_live_state_changes
@@ -1258,6 +1288,50 @@ async def _memory_live_state_changes_snapshot(*, since: int, limit: int) -> dict
         since=max(0, since),
         limit=max(1, min(limit, 200)),
     )
+
+
+async def _hydrate_l2b_live_state_if_needed(payload: dict[str, Any], *, limit: int) -> dict[str, Any]:
+    """Fill count-only remote L2-B snapshots before the ReactFlow canvas sees them.
+
+    During local laptop runs the Web BFF polls app-monitor, while app-monitor may
+    briefly fall back from the room-local Brain endpoint to its own snapshot. If
+    the transport reports non-zero L2-B counts but no node rows, a controlled
+    ReactFlow canvas interprets that as an empty graph. Hydrating from the
+    explicit snapshot route keeps the read model count and row payloads aligned.
+    """
+
+    l2b = payload.get("l2b")
+    if not isinstance(l2b, dict):
+        return payload
+    node_count = _safe_int(l2b.get("node_count"))
+    nodes = l2b.get("nodes")
+    if node_count <= 0 or (isinstance(nodes, list) and len(nodes) > 0):
+        return payload
+    remote_snapshot = await _fetch_remote_app_json(
+        "/api/l2b/snapshot?" + urlencode({"limit": str(max(1, min(limit, 200)))})
+    )
+    if not isinstance(remote_snapshot, dict):
+        return payload
+    snapshot_nodes = remote_snapshot.get("nodes")
+    if not isinstance(snapshot_nodes, list) or not snapshot_nodes:
+        return payload
+    snapshot_edges = remote_snapshot.get("edges")
+    hydrated_l2b = {
+        **l2b,
+        "node_count": _safe_int(remote_snapshot.get("node_count")) or node_count,
+        "edge_count": _safe_int(remote_snapshot.get("edge_count")) or _safe_int(l2b.get("edge_count")),
+        "nodes": snapshot_nodes,
+        "edges": snapshot_edges if isinstance(snapshot_edges, list) else l2b.get("edges", []),
+        "hydrated_from_snapshot": True,
+    }
+    return {**payload, "l2b": hydrated_l2b}
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 async def _fetch_remote_app_json(path: str) -> dict[str, Any] | None:

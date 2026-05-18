@@ -34,6 +34,7 @@ workspace entry.
 | `unity_audio_route_research_20260516.md` | APP-015.23, APP-023, APP-024 | active research guard | Formal Android phone audio-route research and implementation guard: LiveKit Unity lifecycle limits, Android communication-device routing, Bluetooth/SCO/A2DP distinction, audio focus, smoke-script pollution boundary, and preferred native route manager layering. |
 | `app_evidence_tools_bbox_mag_photo_intent_workspace_20260515.md` | APP-005, APP-015.21, APP-015.27, APP-015.29, APP-022, APP-024, APP-026, WEB-015 | active handoff | App-facing readiness matrix and usage guide for CAM/Photo, BBox, MAG/Focus, time-aligned evidence, IntentWorkspace staging, GOSLO awareness boundaries, and the 2026-05-16 BBox/MAG production unblock implementation (`/api/app/visual-tool/event`, ECP `visual_tool.lifecycle`). |
 | `formal_homepage_hud_menu_plan_20260515.md` | APP-015.20, APP-015.21, APP-015.25, APP-021, APP-022 | active plan | Formal homepage HUD/menu/model V1 implementation prep: reusable formal scripts/assets, reference-only Smoke/Ner boundaries, App HTTP/RPC/ECP responsibilities, first-slice TODO order, placement-owner status, and acceptance gates. |
+| `laptop_ecs_service_parity_audit_20260518.md` | APP-018, WEB-012, CORE-009, CORE-010 | active audit | Laptop Castle service parity against ECS: LiveKit, app-monitor, Graphiti/FalkorDB, Scheduler, nanobot-worker, optional GOSLO chat, Google Workspace OAuth, restart boundaries, true-connection smoke, and risk notes. |
 
 ## Suggested Slice Header
 

@@ -108,35 +108,35 @@ namespace ParrotApp.Parrot
                     if (TryGetVector3(parametersJson, out var target))
                         _animDriver.FlyTo(target);
                     else
-                        _animDriver.SetState(AnimationDriver.BodyState.Fly);
+                        _animDriver.RestartState(AnimationDriver.BodyState.Fly);
                     return true;
 
                 case "idle":
-                    _animDriver.SetState(AnimationDriver.BodyState.Idle);
+                    _animDriver.RestartState(AnimationDriver.BodyState.Idle);
                     return true;
 
                 case "sleep":
-                    _animDriver.SetState(AnimationDriver.BodyState.Sleep);
+                    _animDriver.RestartState(AnimationDriver.BodyState.Sleep);
                     return true;
 
                 case "head_bob":
-                    _animDriver.SetState(AnimationDriver.BodyState.HeadBob);
+                    _animDriver.RestartState(AnimationDriver.BodyState.HeadBob);
                     return true;
 
                 case "perch":
-                    _animDriver.SetState(AnimationDriver.BodyState.Perch);
+                    _animDriver.RestartState(AnimationDriver.BodyState.Perch);
                     return true;
 
                 case "sit":
-                    _animDriver.SetState(AnimationDriver.BodyState.Sit);
+                    _animDriver.RestartState(AnimationDriver.BodyState.Sit);
                     return true;
 
                 case "dance":
-                    _animDriver.SetState(AnimationDriver.BodyState.Dance);
+                    _animDriver.RestartState(AnimationDriver.BodyState.Dance);
                     return true;
 
                 case "wing_flap":
-                    _animDriver.SetState(AnimationDriver.BodyState.WingFlap);
+                    _animDriver.RestartState(AnimationDriver.BodyState.WingFlap);
                     return true;
 
                 default:

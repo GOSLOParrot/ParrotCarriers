@@ -665,6 +665,13 @@ Current completed facts:
   On mobile AR/video modes the baseline waits for `ARSessionState.SessionTracking`
   instead of accepting `Ready` / `SessionInitializing`, and clears terminal
   coroutine refs after clean or unsupported states.
+- 2026-05-19 bugfix: the startup UI is now a pre-home gate, not a runtime
+  error surface. After `AppStartupFlowController.MainUiReadyOnce` or
+  `FormalMainReadyGate.IsReady`, `ParrotAppStartupUiController` releases all
+  startup/transition/main-ready surfaces, disables its `GraphicRaycaster`, and
+  ignores late `OnStartupFailed` callbacks. Runtime reconnect/media failures
+  must stay in HUD/health; they must not resurrect the startup page or cover the
+  formal AR home.
   `XRGeneralSettings` now leaves Android, iPhone, and Standalone automatic
   loading/running disabled. `FormalArRuntimeBootstrap` initializes XR/AR
   manually on mobile video START before LiveKit video publish, which avoids the

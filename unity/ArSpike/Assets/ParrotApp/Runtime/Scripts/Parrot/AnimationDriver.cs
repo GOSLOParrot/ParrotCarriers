@@ -457,11 +457,7 @@ namespace ParrotApp.Parrot
             CurrentState = state;
             _stateTimer  = 0f;
 
-            if (state == BodyState.Fly)
-            {
-                _flyCurrentSpeed = 0f;
-                if (CurrentHeadState != HeadState.Forward) SetHeadState(HeadState.Forward);
-            }
+            ApplyBodyStateEntrySideEffects(state);
 
             string newWire = BodyStateToWire(state);
             Debug.Log($"[AnimationDriver] BodyState → {state} (wire={newWire})");
@@ -469,6 +465,27 @@ namespace ParrotApp.Parrot
             if (oldWire != newWire)
                 try { OnBodyStateWireChanged?.Invoke(newWire); }
                 catch (Exception ex) { Debug.LogError($"[AnimationDriver] OnBodyStateWireChanged: {ex}"); }
+        }
+
+        public void RestartState(BodyState state)
+        {
+            if (CurrentState == state)
+            {
+                _stateTimer = 0f;
+                ApplyBodyStateEntrySideEffects(state);
+                Debug.Log($"[AnimationDriver] BodyState restart -> {state} (wire={BodyStateToWire(state)})");
+                return;
+            }
+            SetState(state);
+        }
+
+        private void ApplyBodyStateEntrySideEffects(BodyState state)
+        {
+            if (state == BodyState.Fly)
+            {
+                _flyCurrentSpeed = 0f;
+                if (CurrentHeadState != HeadState.Forward) SetHeadState(HeadState.Forward);
+            }
         }
 
         public void SetHeadState(HeadState state)
@@ -502,24 +519,24 @@ namespace ParrotApp.Parrot
         {
             switch ((bodyState ?? "").ToLowerInvariant().Replace("-", "_"))
             {
-                case "idle":            SetState(BodyState.Idle);          break;
+                case "idle":            RestartState(BodyState.Idle);          break;
                 case "head_bob":
-                case "listening":       SetState(BodyState.HeadBob);       break;
+                case "listening":       RestartState(BodyState.HeadBob);       break;
                 case "fly":
-                case "flying":          SetState(BodyState.Fly);           break;
+                case "flying":          RestartState(BodyState.Fly);           break;
                 case "perch":
-                case "perching":        SetState(BodyState.Perch);         break;
-                case "perched_on_hand": SetState(BodyState.PerchedOnHand); break;
+                case "perching":        RestartState(BodyState.Perch);         break;
+                case "perched_on_hand": RestartState(BodyState.PerchedOnHand); break;
                 case "dance":
-                case "dancing":         SetState(BodyState.Dance);         break;
+                case "dancing":         RestartState(BodyState.Dance);         break;
                 case "sit":
-                case "sitting":         SetState(BodyState.Sit);           break;
+                case "sitting":         RestartState(BodyState.Sit);           break;
                 case "wing_flap":
-                case "wingflap":        SetState(BodyState.WingFlap);      break;
+                case "wingflap":        RestartState(BodyState.WingFlap);      break;
                 case "sleep":
-                case "sleeping":        SetState(BodyState.Sleep);         break;
+                case "sleeping":        RestartState(BodyState.Sleep);         break;
                 case "walk":
-                case "walking":         SetState(BodyState.Walk);          break;
+                case "walking":         RestartState(BodyState.Walk);          break;
                 default:
                     Debug.LogWarning($"[AnimationDriver] Unknown body_state: '{bodyState}' — staying {CurrentState}");
                     break;

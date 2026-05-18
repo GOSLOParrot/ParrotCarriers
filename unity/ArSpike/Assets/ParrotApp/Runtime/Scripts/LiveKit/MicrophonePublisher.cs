@@ -95,7 +95,13 @@ namespace ParrotApp.LiveKit
         [Tooltip("Simple phone-mic mode ignores Settings/manual microphone cycling and always uses Unity's default microphone device.")]
         [SerializeField] private bool simplePhoneMicIgnoresPreferredDevice = true;
 
-        [Tooltip("Small debounce to coalesce Bluetooth/SCO route-change bursts before rebuilding the LiveKit audio source.")]
+        [Tooltip("Default ON: when subscribed Brain/Parrot audio is audible locally, mute only the already-published uplink track so speaker echo cannot interrupt the agent. This does not unpublish or reconnect.")]
+        [SerializeField] private bool agentSpeechUplinkGateEnabled = true;
+
+        [Tooltip("How often the local half-duplex gate polls downlink audio. Keep this small; it only calls ILocalTrack.SetMute on state changes.")]
+        [SerializeField] private float agentSpeechGatePollSeconds = 0.05f;
+
+        [Tooltip("Small debounce to coalesce Bluetooth/SCO route-change bursts before rebuilding the LiveKit audio source.")] 
         [SerializeField] private float routeRepublishDebounceSeconds = 0.5f;
 
         [Header("Session Policy")]
@@ -183,6 +189,11 @@ namespace ParrotApp.LiveKit
         private bool _forceAndroidAudioRecordVoiceCommunicationNextPublish;
         private float _suppressRouteRepublishUntil;
         private bool _micForegroundServiceRequested;
+        private Coroutine _agentSpeechGateCoroutine;
+        private bool _uplinkMutedByAgentSpeech;
+        private string _uplinkGateReason = "clear";
+        private float _uplinkGateRemotePeak;
+        private int _uplinkGateTransitionCount;
 
         private sealed class CaptureAttemptSpec
         {
@@ -257,6 +268,11 @@ namespace ParrotApp.LiveKit
         public int UplinkWatchdogRecoveryCount => _uplinkWatchdogRecoveryCount;
         public string LastCaptureFallbackStatus => _lastCaptureFallbackStatus;
         public string ActiveAudioSourceKind => _activeAudioSourceKind;
+        public bool AgentSpeechUplinkGateEnabled => agentSpeechUplinkGateEnabled;
+        public bool UplinkMutedByAgentSpeech => _uplinkMutedByAgentSpeech;
+        public string UplinkGateReason => _uplinkGateReason;
+        public float UplinkGateRemotePeak => _uplinkGateRemotePeak;
+        public int UplinkGateTransitionCount => _uplinkGateTransitionCount;
         public string NativeAudioRecordState
         {
             get
@@ -1139,6 +1155,7 @@ namespace ParrotApp.LiveKit
             _lastCaptureFallbackStatus = BuildSuccessFallbackStatus(attempt, sourceKind);
             HealthAggregator?.ReportAudioPublished(true, UnixSeconds(), "");
             StartUplinkWatchdog("published");
+            StartAgentSpeechUplinkGate();
             Debug.Log(
                 $"[MicrophonePublisher] publishing started: device='{_selectedDevice}' route={attempt.Policy.RouteName} " +
                 $"configuredSampleRate={_configuredSampleRate} unityOutputSampleRate={_unityOutputSampleRate} " +
@@ -1353,6 +1370,101 @@ namespace ParrotApp.LiveKit
             Volatile.Write(ref _lastAudioReadPeak, peak);
             if (peak > Mathf.Max(0.000001f, uplinkWatchdogZeroPeakThreshold))
                 Interlocked.Exchange(ref _lastNonSilentAudioUtcTicks, DateTime.UtcNow.Ticks);
+        }
+
+        private void StartAgentSpeechUplinkGate()
+        {
+            if (!agentSpeechUplinkGateEnabled)
+            {
+                _uplinkGateReason = "disabled";
+                return;
+            }
+
+            if (_agentSpeechGateCoroutine == null)
+                _agentSpeechGateCoroutine = StartCoroutine(AgentSpeechUplinkGateLoop());
+        }
+
+        private void StopAgentSpeechUplinkGate(string reason)
+        {
+            if (_agentSpeechGateCoroutine != null)
+            {
+                StopCoroutine(_agentSpeechGateCoroutine);
+                _agentSpeechGateCoroutine = null;
+            }
+
+            ApplyAgentSpeechUplinkGate(false, string.IsNullOrWhiteSpace(reason) ? "stopped" : reason, 0f);
+        }
+
+        private IEnumerator AgentSpeechUplinkGateLoop()
+        {
+            var wait = new WaitForSeconds(Mathf.Max(0.02f, agentSpeechGatePollSeconds));
+            while (true)
+            {
+                yield return wait;
+
+                if (!_isPublishing || !publishIntentEnabled || _shutdownInitiated
+                    || RoomManager.Instance?.IsConnected != true)
+                    break;
+
+                bool shouldMute = ShouldMuteUplinkForAgentSpeech(out string reason, out float remotePeak);
+                ApplyAgentSpeechUplinkGate(shouldMute, reason, remotePeak);
+            }
+
+            _agentSpeechGateCoroutine = null;
+            ApplyAgentSpeechUplinkGate(false, "gate_loop_stopped", 0f);
+        }
+
+        private static bool ShouldMuteUplinkForAgentSpeech(out string reason, out float remotePeak)
+        {
+            var roomManager = RoomManager.Instance;
+            remotePeak = roomManager != null ? roomManager.RemoteAudioPlaybackPeak : 0f;
+            if (roomManager != null && roomManager.RemoteAudioPlaybackActive)
+            {
+                reason = "agent_downlink_audio";
+                return true;
+            }
+
+            reason = "clear";
+            return false;
+        }
+
+        private void ApplyAgentSpeechUplinkGate(bool muted, string reason, float remotePeak)
+        {
+            _uplinkGateRemotePeak = remotePeak;
+            if (_audioTrack == null)
+            {
+                _uplinkMutedByAgentSpeech = false;
+                _uplinkGateReason = "track_missing";
+                return;
+            }
+
+            if (_uplinkMutedByAgentSpeech == muted)
+            {
+                _uplinkGateReason = string.IsNullOrWhiteSpace(reason)
+                    ? (muted ? "agent_downlink_audio" : "clear")
+                    : reason;
+                return;
+            }
+
+            try
+            {
+                // Stable phone-demo policy: gate the already-published local
+                // LiveKit audio track in place. This prevents speaker echo
+                // from reaching Brain/Gemini while preserving the room,
+                // token, Brain job, and Android audio route.
+                ((ILocalTrack)_audioTrack).SetMute(muted);
+                _uplinkMutedByAgentSpeech = muted;
+                _uplinkGateReason = string.IsNullOrWhiteSpace(reason)
+                    ? (muted ? "agent_downlink_audio" : "clear")
+                    : reason;
+                _uplinkGateTransitionCount++;
+            }
+            catch (Exception ex)
+            {
+                _lastError = "agent_speech_gate_mute_failed:" + ex.GetType().Name;
+                _uplinkGateReason = _lastError;
+                Debug.LogWarning($"[MicrophonePublisher] {_lastError}: {ex.Message}");
+            }
         }
 
         private void StartUplinkWatchdog(string reason)
@@ -2232,6 +2344,7 @@ namespace ParrotApp.LiveKit
         {
             if (!_isPublishing && _micSource == null && _audioTrack == null)
             {
+                StopAgentSpeechUplinkGate(reason);
                 StopUplinkWatchdog(reason);
                 if (!simplePhoneMicMode)
                     routeManager?.RequestCommunicationMode(false);
@@ -2251,6 +2364,7 @@ namespace ParrotApp.LiveKit
         /// </summary>
         private void StopPublishingInner()
         {
+            StopAgentSpeechUplinkGate(string.IsNullOrWhiteSpace(_lastError) ? "stopped" : _lastError);
             StopUplinkWatchdog(string.IsNullOrWhiteSpace(_lastError) ? "stopped" : _lastError);
             _isPublishing = false;
             _publishInProgress = false;

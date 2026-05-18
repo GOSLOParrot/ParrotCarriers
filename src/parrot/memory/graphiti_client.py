@@ -30,6 +30,7 @@ class Partitions:
     USER = "user"
     ARKNIGHTS_TEST = "arknights_test"
     NOBLE_ETIQUETTE = "noble_etiquette"
+    LAPTOP_PROFILE_TEST = "laptop_profile_test"
 
     def values(self) -> list[str]:
         """Return the allowlisted Graphiti group ids."""
@@ -40,6 +41,7 @@ class Partitions:
             self.USER,
             self.ARKNIGHTS_TEST,
             self.NOBLE_ETIQUETTE,
+            self.LAPTOP_PROFILE_TEST,
         ]
 
 

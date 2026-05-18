@@ -552,9 +552,37 @@ namespace ParrotApp.Lifecycle
             var driver = go.GetComponent<ModelDriver>();
             if (driver == null) driver = go.AddComponent<ModelDriver>();
             driver.ConfigureModelId(ActiveModelId);
+            EnsureLegacyGosloAnimationEndpoint(go, driver.Manifest);
             driver.BootstrapNow();
+            EnsureRuntimeControlEndpoint(go);
             ConfigureArMobileTemplateXriInteractable(go);
             return go;
+        }
+
+        private static void EnsureLegacyGosloAnimationEndpoint(GameObject model, ModelManifestDto manifest)
+        {
+            if (model == null || !UsesGosloLegacyController(manifest)) return;
+
+            if (model.GetComponent<AnimationDriver>() == null)
+                model.AddComponent<AnimationDriver>();
+            if (model.GetComponent<GosloLegacyController>() == null)
+                model.AddComponent<GosloLegacyController>();
+        }
+
+        private static bool UsesGosloLegacyController(ModelManifestDto manifest)
+        {
+            return manifest != null
+                   && string.Equals(
+                       manifest.controller_type,
+                       typeof(GosloLegacyController).FullName,
+                       StringComparison.Ordinal);
+        }
+
+        private static void EnsureRuntimeControlEndpoint(GameObject model)
+        {
+            if (model == null) return;
+            if (model.GetComponent<ParrotController>() == null)
+                model.AddComponent<ParrotController>();
         }
 
         private void HandleTouchPlacementAndSelection()

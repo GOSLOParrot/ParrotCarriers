@@ -219,6 +219,75 @@ def test_memory_live_state_uses_remote_app_monitor_when_configured(monkeypatch) 
     assert all(call["headers"]["Authorization"] == "Bearer app-monitor-secret" for call in calls)
 
 
+def test_memory_live_state_hydrates_count_only_l2b_snapshot(monkeypatch) -> None:
+    from parrot.web_console import server as server_mod
+
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_GRAPHITI_URL", "http://app-monitor:8790/")
+    monkeypatch.setenv("PARROT_APP_MONITOR_SECRET", "app-monitor-secret")
+    calls: list[str] = []
+
+    def fake_fetch_json(url: str, headers: dict[str, str], timeout_s: float) -> tuple[int, Any, dict[str, Any]]:
+        calls.append(url)
+        assert headers["Authorization"] == "Bearer app-monitor-secret"
+        if url.endswith("/api/app/live-state?limit=120"):
+            return 200, {
+                "l2b": {
+                    "node_count": 2,
+                    "edge_count": 1,
+                    "nodes": [],
+                    "edges": [],
+                }
+            }, {}
+        if url.endswith("/api/l2b/snapshot?limit=120"):
+            return 200, {
+                "node_count": 2,
+                "edge_count": 1,
+                "nodes": [{"uuid": "node-a"}, {"uuid": "node-b"}],
+                "edges": [{"source": "node-a", "target": "node-b"}],
+            }, {}
+        raise AssertionError(f"unexpected remote URL: {url}")
+
+    monkeypatch.setattr(server_mod, "_fetch_json", fake_fetch_json)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    live = client.get("/api/app/live-state?limit=120").json()
+
+    assert live["l2b"]["hydrated_from_snapshot"] is True
+    assert [row["uuid"] for row in live["l2b"]["nodes"]] == ["node-a", "node-b"]
+    assert live["l2b"]["edges"][0]["source"] == "node-a"
+    assert calls == [
+        "http://app-monitor:8790/api/app/live-state?limit=120",
+        "http://app-monitor:8790/api/l2b/snapshot?limit=120",
+    ]
+
+
+def test_l2b_snapshot_route_uses_remote_app_monitor_when_configured(monkeypatch) -> None:
+    from parrot.web_console import server as server_mod
+
+    monkeypatch.setenv("PARROT_WEB_CONSOLE_GRAPHITI_URL", "http://app-monitor:8790/")
+    monkeypatch.setenv("PARROT_APP_MONITOR_SECRET", "app-monitor-secret")
+    calls: list[dict[str, Any]] = []
+
+    def fake_fetch_json(url: str, headers: dict[str, str], timeout_s: float) -> tuple[int, Any, dict[str, Any]]:
+        calls.append({"url": url, "headers": headers, "timeout_s": timeout_s})
+        assert url == "http://app-monitor:8790/api/l2b/snapshot?limit=50"
+        return 200, {
+            "node_count": 1,
+            "edge_count": 0,
+            "nodes": [{"uuid": "remote-l2b-node"}],
+            "edges": [],
+        }, {}
+
+    monkeypatch.setattr(server_mod, "_fetch_json", fake_fetch_json)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    snapshot = client.get("/api/l2b/snapshot?limit=50").json()
+
+    assert snapshot["node_count"] == 1
+    assert snapshot["nodes"][0]["uuid"] == "remote-l2b-node"
+    assert calls[0]["headers"]["Authorization"] == "Bearer app-monitor-secret"
+
+
 def test_livekit_web_token_mints_without_exposing_api_secret(monkeypatch) -> None:
     monkeypatch.setenv("LIVEKIT_URL", "ws://127.0.0.1:7880")
     monkeypatch.setenv("LIVEKIT_API_KEY", "devkey")
@@ -620,6 +689,7 @@ def test_graphiti_status_search_and_dry_run_routes_are_exposed(monkeypatch) -> N
         "user",
         "arknights_test",
         "noble_etiquette",
+        "laptop_profile_test",
     ]
     assert status["data"]["graphiti_llm"]["requested_provider"] == "deepseek"
     assert status["data"]["graphiti_llm"]["provider"] == "gemini"
@@ -642,6 +712,35 @@ def test_graphiti_status_search_and_dry_run_routes_are_exposed(monkeypatch) -> N
     assert dry_run["action"] == "add_episode"
     assert dry_run["success"] is True
     assert "dry_run=true" in dry_run["message"]
+
+
+def test_graphiti_episode_write_blocks_suspected_mojibake(monkeypatch) -> None:
+    from parrot.brain import graphiti_console
+
+    monkeypatch.setattr(graphiti_console, "_graphiti_core_installed", lambda: False)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    bad_body = "GOSLO æ\u009c¬æ\u009cºæµ\u008bè¯\u0095ç\u009f¥è¯\u0086åº\u0093"
+
+    draft = client.post(
+        "/api/graphiti/episode/draft",
+        json={"name": "bad_utf8", "body": bad_body, "partition": "laptop_profile_test"},
+    ).json()
+    blocked = client.post(
+        "/api/graphiti/episode",
+        json={
+            "name": "bad_utf8",
+            "body": bad_body,
+            "partition": "laptop_profile_test",
+            "dry_run": False,
+        },
+    ).json()
+
+    assert draft["success"] is True
+    assert draft["data"]["encoding_guard"]["suspicious"] is True
+    assert "mojibake" in " ".join(draft["data"]["warnings"])
+    assert blocked["success"] is False
+    assert blocked["message"] == "episode_body failed encoding guard"
+    assert blocked["data"]["write_blocked_reason"] == "suspected_mojibake"
 
 
 def test_graphiti_deepseek_provider_requires_json_schema_opt_in(monkeypatch) -> None:
@@ -1860,6 +1959,9 @@ def test_obsidian_vault_import_draft_uses_l15_observation_path(tmp_path) -> None
     assert item["observation"]["source"] == "user_tag_obsidian"
     assert item["observation"]["meta"]["profile"] == "roleplay"
     assert draft["data"]["write_path"] == "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)"
+    assert draft["data"]["source_pack"]["source_kind"] == "obsidian"
+    assert draft["data"]["source_pack"]["item_count"] == 1
+    assert draft["data"]["source_pack"]["items"][0]["provider_ref"].endswith("roleplay.md")
     assert dry_apply["action"] == "l15.obsidian_vault.import"
     assert dry_apply["data"]["would_apply"] is True
     assert dry_apply["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
@@ -1901,6 +2003,69 @@ def test_obsidian_vault_operator_import_admits_through_l15(tmp_path, monkeypatch
     assert captured[0].label == "Daily desk rule"
     assert captured[0].meta["profile"] == "daily"
     assert body["data"]["write_path"] == "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)"
+    assert body["data"]["source_pack"]["source_kind"] == "obsidian"
+    assert body["data"]["work_subgraph"]["skipped"] is True
+    assert body["data"]["work_subgraph"]["reason"] == "no_l2b_nodes_returned_from_l15_admit"
+
+
+def test_obsidian_vault_operator_import_materializes_l2b_work_subgraph(tmp_path, monkeypatch) -> None:
+    import parrot.dsg.ingest.runner as runner_module
+    import parrot.dsg.l1_5.pool as pool_module
+    import parrot.dsg.l2b_graph as l2b_graph_module
+    from parrot.dsg.l1_5.pool import L15Pool
+    from parrot.dsg.l2b_graph import L2BGraph
+    from parrot.dsg.l2b_types import EdgeKind
+
+    graph = L2BGraph()
+    monkeypatch.setattr(l2b_graph_module, "_instance", graph)
+    monkeypatch.setattr(runner_module, "_runner", None)
+    monkeypatch.setattr(pool_module, "_pool", L15Pool())
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "daily.md").write_text(
+        "---\nprofile: daily\nlabel: Daily desk rule\nkind: object\n---\nKeep the desk clear.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    body = client.post(
+        "/api/l15/obsidian-vault/import",
+        json={
+            "vault_path": str(vault),
+            "paths": ["daily.md"],
+            "subgraph_label": "Obsidian source pack",
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+
+    assert body["action"] == "l15.obsidian_vault.import"
+    assert body["success"] is True
+    assert body["data"]["source_pack"]["source_kind"] == "obsidian"
+    assert body["data"]["work_subgraph"]["success"] is True
+    work_data = body["data"]["work_subgraph"]["data"]
+    assert work_data["direct_l2b_write"] is True
+    assert work_data["materialization_state"] == "materialized_l2b_work_subgraph"
+    obsidian_nodes = [
+        node for node in graph.all_nodes()
+        if node.source == "user_tag_obsidian" and node.label == "Daily desk rule"
+    ]
+    assert len(obsidian_nodes) == 1
+    work_nodes = [
+        node for node in graph.all_nodes()
+        if node.category == "l2b_work_subgraph"
+    ]
+    assert len(work_nodes) == 1
+    assert work_nodes[0].label == "Obsidian source pack"
+    assert work_nodes[0].meta["source_pack"]["source_kind"] == "obsidian"
+    contains_edges = [
+        (src.uuid, dst.uuid, edge)
+        for src, dst, edge in graph.all_edges()
+        if src.uuid == work_nodes[0].uuid and edge.kind == EdgeKind.CONTAINS
+    ]
+    assert [(src, dst) for src, dst, _ in contains_edges] == [
+        (work_nodes[0].uuid, obsidian_nodes[0].uuid)
+    ]
 
 
 def test_obsidian_vault_import_plan_combines_l15_and_graph_policy(tmp_path) -> None:
@@ -1938,6 +2103,8 @@ def test_obsidian_vault_import_plan_combines_l15_and_graph_policy(tmp_path) -> N
     assert plan["data"]["items"][0]["target_bucket"] == "obsidian_setting_daily"
     assert plan["data"]["import_policy"]["destination"] == "isolated_compartment"
     assert plan["data"]["import_policy"]["source_kind"] == "obsidian"
+    assert plan["data"]["source_pack"]["source_kind"] == "obsidian"
+    assert plan["data"]["source_pack"]["work_subgraph"]["label"] == "Daily settings"
     assert plan["data"]["apply_route"] == "/api/l15/obsidian-vault/import"
     assert "UserTagFilter" in plan["data"]["write_path"]
     assert "CORE-013" in plan["data"]["core_candidates"]
@@ -2387,6 +2554,37 @@ def test_google_calendar_api_fetch_uses_official_api_preview(monkeypatch) -> Non
     assert "access_token" not in str(body).lower()
 
 
+def test_google_calendar_api_fetch_accepts_relative_date_today(monkeypatch) -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    calls: list[dict[str, Any]] = []
+
+    async def fake_api_fetch(**kwargs):
+        calls.append(kwargs)
+        return {
+            "credential_source": "local_google_workspace_mcp",
+            "items": [],
+        }
+
+    memory_ops = import_module("parrot.web_console.memory_ops")
+    monkeypatch.setattr(memory_ops, "_fetch_google_calendar_events_from_api", fake_api_fetch)
+
+    body = client.post(
+        "/api/google/calendar/api-fetch",
+        json={
+            "calendar_id": "primary",
+            "date": "today",
+            "timezone": "Asia/Shanghai",
+            "limit": 5,
+        },
+    ).json()
+
+    assert body["action"] == "google.calendar.api_fetch"
+    assert body["success"] is True
+    assert calls[0]["time_min"] != "today"
+    assert "T00:00:00" in calls[0]["time_min"]
+    assert "T00:00:00" in calls[0]["time_max"]
+
+
 def test_google_calendar_credentials_path_accepts_ecs_nanobot_mount(
     monkeypatch, tmp_path
 ) -> None:
@@ -2514,6 +2712,8 @@ def test_google_calendar_import_routes_are_l15_operator_gated() -> None:
     assert draft["data"]["observations"][0]["source"] == "google_calendar"
     assert draft["data"]["observations"][0]["meta"]["calendar_event_id"] == "evt_import"
     assert draft["data"]["mapping_rows"][0]["merge_key"] == "primary:evt_import"
+    assert draft["data"]["source_pack"]["source_kind"] == "google_calendar"
+    assert draft["data"]["source_pack"]["items"][0]["provider_ref"] == "google_calendar:primary:evt_import"
     assert "L15Pool.admit" in draft["data"]["write_path"]
     assert apply_preview["action"] == "google.calendar.import"
     assert apply_preview["success"] is True
@@ -2563,6 +2763,8 @@ def test_google_calendar_import_plan_combines_l15_and_graph_policy() -> None:
     assert plan["data"]["mapping_rows"][0]["merge_key"] == "primary:evt_plan"
     assert plan["data"]["import_policy"]["destination"] == "isolated_compartment"
     assert plan["data"]["import_policy"]["source_kind"] == "google_calendar"
+    assert plan["data"]["source_pack"]["source_kind"] == "google_calendar"
+    assert plan["data"]["source_pack"]["work_subgraph"]["membership_policy"] == "members_are_nodes_admitted_from_this_source_pack"
     assert plan["data"]["sync_policy"].startswith("manual_fetch_import_v1")
     assert plan["data"]["apply_route"] == "/api/google/calendar/import"
     assert "CORE-013" in plan["data"]["core_candidates"]
@@ -2733,6 +2935,77 @@ def test_google_calendar_operator_import_preserves_event_time(monkeypatch) -> No
     assert observation.time_span[0] == observation.observed_at
     assert observation.time_span[1] is not None
     assert observation.time_span[1] > observation.time_span[0]
+
+
+def test_google_calendar_operator_import_materializes_l2b_work_subgraph(monkeypatch) -> None:
+    import parrot.dsg.ingest.runner as runner_module
+    import parrot.dsg.l1_5.pool as pool_module
+    import parrot.dsg.l2b_graph as l2b_graph_module
+    from parrot.dsg.l1_5.pool import L15Pool
+    from parrot.dsg.l2b_graph import L2BGraph
+    from parrot.dsg.l2b_types import EdgeKind, NodeKind
+
+    graph = L2BGraph()
+    monkeypatch.setattr(l2b_graph_module, "_instance", graph)
+    monkeypatch.setattr(runner_module, "_runner", None)
+    monkeypatch.setattr(pool_module, "_pool", L15Pool())
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    body = client.post(
+        "/api/google/calendar/import",
+        json={
+            "dry_run": False,
+            "operator_mode": True,
+            "subgraph_label": "Calendar source pack",
+            "events": [
+                {
+                    "id": "evt_work_subgraph",
+                    "calendar_id": "primary",
+                    "summary": "Calendar work subgraph import",
+                    "start": {
+                        "dateTime": "2026-05-15T11:00:00+08:00",
+                        "timeZone": "Asia/Shanghai",
+                    },
+                    "end": {
+                        "dateTime": "2026-05-15T11:30:00+08:00",
+                        "timeZone": "Asia/Shanghai",
+                    },
+                    "htmlLink": "https://calendar.google.com/event?eid=work-subgraph",
+                    "status": "confirmed",
+                }
+            ],
+        },
+    ).json()
+
+    assert body["action"] == "google.calendar.import"
+    assert body["success"] is True
+    assert body["data"]["source_pack"]["source_kind"] == "google_calendar"
+    assert body["data"]["work_subgraph"]["success"] is True
+    assert body["data"]["work_subgraph"]["data"]["direct_l2b_write"] is True
+    assert body["data"]["work_subgraph"]["data"]["materialization_state"] == "materialized_l2b_work_subgraph"
+    calendar_nodes = [
+        node for node in graph.all_nodes()
+        if node.source == "google_calendar"
+        and node.source_meta.get("calendar_event_id") == "evt_work_subgraph"
+    ]
+    assert len(calendar_nodes) == 1
+    assert calendar_nodes[0].kind == NodeKind.EVENT
+    assert calendar_nodes[0].time_span[1] is not None
+    work_nodes = [
+        node for node in graph.all_nodes()
+        if node.category == "l2b_work_subgraph"
+    ]
+    assert len(work_nodes) == 1
+    assert work_nodes[0].label == "Calendar source pack"
+    assert work_nodes[0].meta["source_pack"]["source_kind"] == "google_calendar"
+    contains_edges = [
+        (src.uuid, dst.uuid, edge)
+        for src, dst, edge in graph.all_edges()
+        if src.uuid == work_nodes[0].uuid and edge.kind == EdgeKind.CONTAINS
+    ]
+    assert [(src, dst) for src, dst, _ in contains_edges] == [
+        (work_nodes[0].uuid, calendar_nodes[0].uuid)
+    ]
 
 
 def test_runtime_monitor_route_is_web_only_read_surface() -> None:
@@ -3389,6 +3662,74 @@ def test_l2b_node_and_edge_routes_stay_dry_run_by_default() -> None:
     assert edge_delete["data"]["match_kind"] == "associated_with"
     assert self_edge["success"] is False
     assert self_edge["data"]["error"] == "self_edge_not_allowed"
+
+
+def test_l2b_work_subgraph_apply_materializes_grouping_node(monkeypatch) -> None:
+    import parrot.dsg.l2b_graph as l2b_graph_module
+    from parrot.dsg.l2b_graph import L2BGraph
+    from parrot.dsg.l2b_types import EdgeKind, NodeKind, SemanticNode
+
+    graph = L2BGraph()
+    graph.upsert_node(SemanticNode(uuid="member-a", kind=NodeKind.OBJECT, label="Desk"))
+    graph.upsert_node(SemanticNode(uuid="member-b", kind=NodeKind.EVENT, label="Review"))
+    monkeypatch.setattr(l2b_graph_module, "_instance", graph)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    payload = {
+        "label": "Operator work slice",
+        "node_uuids": ["member-a", "member-b"],
+        "source_kind": "memory_canvas",
+        "source_id": "manual-selection",
+        "source_pack": {
+            "schema_version": 1,
+            "pack_id": "source-pack:test:manual",
+            "source_kind": "memory_canvas",
+            "source_id": "manual-selection",
+            "source_ref": "web-console://memory-canvas/selection",
+            "label": "Operator work slice",
+            "destination": "isolated_compartment",
+            "items": [
+                {"item_id": "member-a", "label": "Desk"},
+                {"item_id": "member-b", "label": "Review"},
+            ],
+            "ref_ids": ["ref-a"],
+        },
+    }
+
+    preview = client.post("/api/l2b/subgraphs/apply", json=payload).json()
+    applied = client.post(
+        "/api/l2b/subgraphs/apply",
+        json={**payload, "dry_run": False, "operator_mode": True},
+    ).json()
+    repeated = client.post(
+        "/api/l2b/subgraphs/apply",
+        json={**payload, "dry_run": False, "operator_mode": True},
+    ).json()
+
+    assert preview["action"] == "l2b.subgraph.apply"
+    assert preview["success"] is True
+    assert preview["dry_run"] is True
+    assert preview["data"]["direct_l2b_write"] is False
+    assert preview["data"]["would_apply"] is True
+    assert applied["success"] is True
+    assert applied["data"]["direct_l2b_write"] is True
+    assert applied["data"]["materialization_state"] == "materialized_l2b_work_subgraph"
+    assert applied["data"]["member_node_uuids"] == ["member-a", "member-b"]
+    assert applied["data"]["source_pack"]["pack_id"] == "source-pack:test:manual"
+    subgraph_uuid = applied["data"]["subgraph_uuid"]
+    subgraph_node = graph.get_node(subgraph_uuid)
+    assert subgraph_node is not None
+    assert subgraph_node.kind == NodeKind.EVENT
+    assert subgraph_node.category == "l2b_work_subgraph"
+    assert subgraph_node.source_meta["node_role"] == "l2b_work_subgraph"
+    assert subgraph_node.meta["source_pack"]["provider_refs"] == []
+    contains_edges = [
+        (src.uuid, dst.uuid, edge)
+        for src, dst, edge in graph.all_edges()
+        if src.uuid == subgraph_uuid and edge.kind == EdgeKind.CONTAINS
+    ]
+    assert sorted(dst for _, dst, _ in contains_edges) == ["member-a", "member-b"]
+    assert repeated["data"]["edges_added"] == 0
+    assert all(row["skipped_duplicate"] for row in repeated["data"]["edge_reports"])
 
 
 def test_l2b_graph_policy_draft_routes_are_core013_and_dry_run() -> None:

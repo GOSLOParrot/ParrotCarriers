@@ -948,3 +948,38 @@ Future route-lab rule:
   disconnect fallback, other-media coexistence, app pause/resume, LineA,
   LineB, and no room reconnect/token mint/Brain redispatch on local device
   changes.
+
+## 2026-05-18 LineA One-Question-One-Answer Policy
+
+User decision: for the current phone demo, disable LineA voice barge-in so the
+conversation behaves as simple question -> answer -> next question. This is not
+a Unity mic mute hack. It is a Brain/Gemini Live session policy.
+
+Implementation:
+
+- `src/parrot/brain/linea_turn_policy.py` owns the LineA policy.
+- Default `PARROT_LINEA_BARGE_IN_ENABLED` is unset/`0`, so LineA builds Google
+  Realtime with `RealtimeInputConfig(activity_handling=NO_INTERRUPTION)`.
+- This keeps Gemini Live's native automatic activity/end-of-turn detection, but
+  prevents start-of-activity from cutting off the active model response.
+- `PARROT_LINEA_BARGE_IN_ENABLED=1` restores provider defaults for a deliberate
+  low-latency overlap lab only.
+- `src/parrot/brain/line_status.py` exposes `turn_policy`,
+  `barge_in_enabled`, and `activity_handling` in the LineA readiness payload.
+
+Important nuance:
+
+- LiveKit Agents 1.5.5 rejects `AgentSession(allow_interruptions=False)` while
+  a RealtimeModel still exposes server-side turn detection. Do not "fix" this
+  by forcing the deprecated session flag. The valid LineA lever is Google
+  Realtime `activity_handling=NO_INTERRUPTION`.
+- This reduces self-interruption and echo-driven barge-in, but it is not the
+  final echo-cancellation solution. Phone speaker echo can still be heard by the
+  model as later input if the acoustic route is bad. For demo stability, combine
+  this with the simple phone-mic baseline and, when possible, isolated output.
+
+Validation:
+
+- `uv run pytest tests/test_brain/test_linea_turn_policy.py -q`
+- `uv run pytest tests/test_brain/test_app_first_version_facade.py -q`
+- `uv run python -m py_compile src/parrot/brain/agent.py src/parrot/brain/line_status.py src/parrot/brain/linea_turn_policy.py`

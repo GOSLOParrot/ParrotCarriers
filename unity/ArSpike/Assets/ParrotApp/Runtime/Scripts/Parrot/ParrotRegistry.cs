@@ -83,7 +83,7 @@ namespace ParrotApp.Parrot
         /// </summary>
         public void Register(IParrotController controller)
         {
-            if (controller == null)
+            if (IsDestroyed(controller))
             {
                 Debug.LogWarning("[ParrotRegistry] Register: null controller");
                 return;
@@ -110,6 +110,19 @@ namespace ParrotApp.Parrot
             }
         }
 
+        public void Unregister(IParrotController controller)
+        {
+            if (IsDestroyed(controller)) return;
+            var modelId = controller.ModelId ?? "";
+            if (string.IsNullOrEmpty(modelId)) return;
+
+            if (_byModelId.TryGetValue(modelId, out var registered)
+                && ReferenceEquals(registered, controller))
+            {
+                Unregister(modelId);
+            }
+        }
+
         /// <summary>
         /// P1 stub: empty / unknown <paramref name="modelId"/> returns the
         /// active controller (last-registered). Non-empty matches return the
@@ -119,6 +132,8 @@ namespace ParrotApp.Parrot
         /// </summary>
         public IParrotController Resolve(string modelId)
         {
+            PruneDestroyedControllers();
+
             if (!string.IsNullOrEmpty(modelId)
                 && _byModelId.TryGetValue(modelId, out var found))
             {
@@ -131,6 +146,32 @@ namespace ParrotApp.Parrot
                 return active;
             }
             return null;
+        }
+
+        private void PruneDestroyedControllers()
+        {
+            if (_byModelId.Count == 0) return;
+
+            var dead = new List<string>();
+            foreach (var kv in _byModelId)
+            {
+                if (IsDestroyed(kv.Value))
+                    dead.Add(kv.Key);
+            }
+
+            for (int i = 0; i < dead.Count; i++)
+            {
+                _byModelId.Remove(dead[i]);
+                if (_activeModelId == dead[i]) _activeModelId = "";
+                Debug.Log($"[ParrotRegistry] Pruned destroyed model_id='{dead[i]}'");
+            }
+        }
+
+        private static bool IsDestroyed(IParrotController controller)
+        {
+            if (ReferenceEquals(controller, null)) return true;
+            var unityObject = controller as Object;
+            return !ReferenceEquals(unityObject, null) && unityObject == null;
         }
 
         public string ActiveModelId => _activeModelId;

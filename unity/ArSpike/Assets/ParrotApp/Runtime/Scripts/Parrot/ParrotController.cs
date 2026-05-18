@@ -73,6 +73,14 @@ namespace ParrotApp.Parrot
             return registry.Resolve(modelId);
         }
 
+        private void RefreshAnimationEndpoints()
+        {
+            if (_animator == null)
+                _animator = GetComponentInChildren<Animator>(true);
+            if (_animDriver == null)
+                _animDriver = GetComponentInChildren<AnimationDriver>(true);
+        }
+
         void Update()
         {
             if (_animDriver == null && _isMoving)
@@ -120,6 +128,7 @@ namespace ParrotApp.Parrot
         /// </summary>
         public void FlyTo(Vector3 target, string modelId)
         {
+            RefreshAnimationEndpoints();
             Debug.Log($"[Parrot] FlyTo -> {target} (model_id='{modelId ?? ""}')");
 
             // Manifest-driven path: route through IParrotController.fly capability.
@@ -162,6 +171,7 @@ namespace ParrotApp.Parrot
         /// </summary>
         public void WalkOnPlane(Vector2 input, float deltaTime)
         {
+            RefreshAnimationEndpoints();
             Vector2 clamped = Vector2.ClampMagnitude(input, 1f);
             if (clamped.sqrMagnitude < 0.01f)
             {
@@ -202,6 +212,7 @@ namespace ParrotApp.Parrot
 
         public void EndPlaneWalk()
         {
+            RefreshAnimationEndpoints();
             if (!_isPlaneWalking && (_animDriver == null || _animDriver.CurrentState != AnimationDriver.BodyState.Walk)) return;
             _isPlaneWalking = false;
             if (_animDriver != null)
@@ -235,6 +246,7 @@ namespace ParrotApp.Parrot
         /// </summary>
         public void PlayAnimation(string animationName, string modelId, string parametersJson)
         {
+            RefreshAnimationEndpoints();
             _currentAnimation = animationName;
             Debug.Log($"[Parrot] PlayAnimation -> {animationName} (model_id='{modelId ?? ""}')");
 
@@ -277,6 +289,7 @@ namespace ParrotApp.Parrot
         /// </summary>
         public bool TryPlayAnimation(string animationName, string modelId, string parametersJson, bool strictCapability)
         {
+            RefreshAnimationEndpoints();
             if (!strictCapability)
             {
                 PlayAnimation(animationName, modelId, parametersJson);

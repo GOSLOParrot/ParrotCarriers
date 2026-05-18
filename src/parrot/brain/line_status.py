@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from parrot.brain.linea_turn_policy import linea_turn_policy_status
 from parrot.brain.line_profile import LineProfile, get_line_profile_loader
 from parrot.brain.preset_loader import DEFAULT_LINE_ID
 
@@ -100,6 +101,7 @@ def list_lines() -> tuple[LineSummary, ...]:
         voiceprint=line_b_voiceprint,
     )
     line_b_runtime = _line_b_runtime(audio_route)
+    line_a_turn_policy = linea_turn_policy_status()
 
     line_a = LineSummary(
         line_id=LINE_A_ID,
@@ -109,7 +111,11 @@ def list_lines() -> tuple[LineSummary, ...]:
         summary="Default Gemini Realtime voice pipeline.",
         readiness={
             "pipeline": "gemini_realtime",
-            "turn_detection": "native_model",
+            "turn_detection": line_a_turn_policy["turn_detection"],
+            "turn_policy": line_a_turn_policy["policy"],
+            "barge_in_enabled": line_a_turn_policy["barge_in_enabled"],
+            "activity_handling": line_a_turn_policy["activity_handling"],
+            "barge_in_env_key": line_a_turn_policy["env_key"],
             "recommended_audio_route": "headphones_or_isolated_output",
             "line_profile_id": line_a_profile.line_profile_id,
         },

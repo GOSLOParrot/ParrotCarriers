@@ -12,10 +12,12 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
 from urllib.request import Request as UrlRequest
 from urllib.request import urlopen
 
@@ -48,11 +50,12 @@ logger = logging.getLogger(__name__)
 
 try:
     from fastapi import Body, FastAPI, Header, HTTPException, Request
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
 except ImportError:  # pragma: no cover - only matters on deployments without [http]
     Body = None  # type: ignore[assignment]
     FastAPI = None  # type: ignore[assignment]
+    FileResponse = None  # type: ignore[assignment]
     Header = None  # type: ignore[assignment]
     HTTPException = None  # type: ignore[assignment]
     Request = None  # type: ignore[assignment]
@@ -333,6 +336,71 @@ def build_app():  # type: ignore[no-untyped-def]
 
         return await build_l15_pool_snapshot()
 
+    @app.get("/api/l15/obsidian-vault/scan")
+    async def l15_obsidian_vault_scan(  # type: ignore[misc]
+        vault_path: str = "",
+        limit: str = "24",
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import scan_obsidian_vault
+
+        return scan_obsidian_vault({"vault_path": vault_path, "limit": limit})
+
+    @app.post("/api/l15/obsidian-vault/import-draft")
+    async def l15_obsidian_vault_import_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_obsidian_vault_import
+
+        return draft_obsidian_vault_import(payload or {})
+
+    @app.post("/api/l15/obsidian-vault/import-plan")
+    async def l15_obsidian_vault_import_plan(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_obsidian_l2b_import_plan
+
+        return draft_obsidian_l2b_import_plan(payload or {})
+
+    @app.post("/api/l15/obsidian-vault/import")
+    async def l15_obsidian_vault_import(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_obsidian_vault_import
+
+        body = payload or {}
+        dry_run = _body_bool(body.get("dry_run"), True)
+        operator_mode = _body_bool(body.get("operator_mode"), False)
+        proxied = await _maybe_proxy_brain_operator_write(
+            action="l15.obsidian_vault.import",
+            path="/api/l15/obsidian-vault/import",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
+        if proxied is not None:
+            return proxied
+        return await apply_obsidian_vault_import({
+            **body,
+            "_remote_proxy_disable": True,
+            "_brain_proxy_disable": True,
+        })
+
+    @app.post("/api/l15/obsidian-node/draft")
+    async def l15_obsidian_node_draft(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import draft_obsidian_setting_node
+
+        return draft_obsidian_setting_node(payload or {})
+
+    @app.post("/api/l15/obsidian-node")
+    async def l15_obsidian_node(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import apply_obsidian_setting_node
+
+        return await apply_obsidian_setting_node({**(payload or {}), "_remote_proxy_disable": True})
+
     @app.post("/api/app/workspace/apply")
     async def apply_workspace(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         body = payload or {}
@@ -478,13 +546,45 @@ def build_app():  # type: ignore[no-untyped-def]
     async def l2b_node(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         from parrot.web_console.memory_ops import apply_l2b_node
 
-        return await apply_l2b_node({**(payload or {}), "_remote_proxy_disable": True})
+        body = payload or {}
+        dry_run = _body_bool(body.get("dry_run"), True)
+        operator_mode = _body_bool(body.get("operator_mode"), False)
+        proxied = await _maybe_proxy_brain_operator_write(
+            action="l2b.node.apply",
+            path="/api/l2b/node",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
+        if proxied is not None:
+            return proxied
+        return await apply_l2b_node({
+            **body,
+            "_remote_proxy_disable": True,
+            "_brain_proxy_disable": True,
+        })
 
     @app.post("/api/l2b/node/delete")
     async def l2b_node_delete(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         from parrot.web_console.memory_ops import delete_l2b_node
 
-        return await delete_l2b_node({**(payload or {}), "_remote_proxy_disable": True})
+        body = payload or {}
+        dry_run = _body_bool(body.get("dry_run"), True)
+        operator_mode = _body_bool(body.get("operator_mode"), False)
+        proxied = await _maybe_proxy_brain_operator_write(
+            action="l2b.node.delete",
+            path="/api/l2b/node/delete",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
+        if proxied is not None:
+            return proxied
+        return await delete_l2b_node({
+            **body,
+            "_remote_proxy_disable": True,
+            "_brain_proxy_disable": True,
+        })
 
     @app.post("/api/l2b/edge/draft")
     async def l2b_edge_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
@@ -496,25 +596,173 @@ def build_app():  # type: ignore[no-untyped-def]
     async def l2b_edge(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         from parrot.web_console.memory_ops import apply_l2b_edge
 
-        return await apply_l2b_edge({**(payload or {}), "_remote_proxy_disable": True})
+        body = payload or {}
+        dry_run = _body_bool(body.get("dry_run"), True)
+        operator_mode = _body_bool(body.get("operator_mode"), False)
+        proxied = await _maybe_proxy_brain_operator_write(
+            action="l2b.edge.apply",
+            path="/api/l2b/edge",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
+        if proxied is not None:
+            return proxied
+        return await apply_l2b_edge({
+            **body,
+            "_remote_proxy_disable": True,
+            "_brain_proxy_disable": True,
+        })
 
     @app.post("/api/l2b/edge/update")
     async def l2b_edge_update(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         from parrot.web_console.memory_ops import apply_l2b_edge_update
 
-        return await apply_l2b_edge_update({**(payload or {}), "_remote_proxy_disable": True})
+        body = payload or {}
+        dry_run = _body_bool(body.get("dry_run"), True)
+        operator_mode = _body_bool(body.get("operator_mode"), False)
+        proxied = await _maybe_proxy_brain_operator_write(
+            action="l2b.edge.update",
+            path="/api/l2b/edge/update",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
+        if proxied is not None:
+            return proxied
+        return await apply_l2b_edge_update({
+            **body,
+            "_remote_proxy_disable": True,
+            "_brain_proxy_disable": True,
+        })
 
     @app.post("/api/l2b/edge/delete")
     async def l2b_edge_delete(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         from parrot.web_console.memory_ops import delete_l2b_edge
 
-        return await delete_l2b_edge({**(payload or {}), "_remote_proxy_disable": True})
+        body = payload or {}
+        dry_run = _body_bool(body.get("dry_run"), True)
+        operator_mode = _body_bool(body.get("operator_mode"), False)
+        proxied = await _maybe_proxy_brain_operator_write(
+            action="l2b.edge.delete",
+            path="/api/l2b/edge/delete",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
+        if proxied is not None:
+            return proxied
+        return await delete_l2b_edge({
+            **body,
+            "_remote_proxy_disable": True,
+            "_brain_proxy_disable": True,
+        })
+
+    @app.post("/api/refs/binding/draft")
+    async def refs_binding_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import draft_ref_binding
+
+        return draft_ref_binding(payload or {})
+
+    @app.post("/api/refs/binding/apply")
+    async def refs_binding_apply(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import apply_ref_binding
+
+        return apply_ref_binding(payload or {})
+
+    @app.get("/api/memory/identity-ref-index")
+    async def memory_identity_ref_index(limit: int = 80) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import memory_identity_ref_index_snapshot
+
+        return memory_identity_ref_index_snapshot(limit=limit)
+
+    @app.post("/api/memory/identity-ref-index/draft")
+    async def memory_identity_ref_index_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import draft_memory_identity_ref_index
+
+        return draft_memory_identity_ref_index(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/apply")
+    async def memory_identity_ref_index_apply(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import apply_memory_identity_ref_index
+
+        return apply_memory_identity_ref_index(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/graphiti-ref/draft")
+    async def memory_identity_ref_index_graphiti_ref_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import draft_graphiti_ref_writeback
+
+        return draft_graphiti_ref_writeback(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/graphiti-ref/apply")
+    async def memory_identity_ref_index_graphiti_ref_apply(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import apply_graphiti_ref_writeback
+
+        return await apply_graphiti_ref_writeback(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/verify")
+    async def memory_identity_ref_index_verify(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import verify_memory_identity_ref_index
+
+        return verify_memory_identity_ref_index(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/resolve-graphiti")
+    async def memory_identity_ref_index_resolve_graphiti(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import resolve_graphiti_identity_ref_index
+
+        return resolve_graphiti_identity_ref_index(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/apply-graphiti-edge")
+    async def memory_identity_ref_index_apply_graphiti_edge(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import apply_graphiti_identity_ref_edge
+
+        return await apply_graphiti_identity_ref_edge(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/ref-scan-plan")
+    async def memory_identity_ref_index_ref_scan_plan(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import draft_memory_ref_scan_plan
+
+        return draft_memory_ref_scan_plan(payload or {})
+
+    @app.post("/api/memory/identity-ref-index/ref-scan-dispatch")
+    async def memory_identity_ref_index_ref_scan_dispatch(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import dispatch_memory_ref_scan_plan
+
+        return await dispatch_memory_ref_scan_plan(payload or {})
+
+    @app.get("/api/memory/identity-ref-index/ref-scan-results")
+    async def memory_identity_ref_index_ref_scan_results(limit: int = 20) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import memory_ref_scan_result_history
+
+        return await memory_ref_scan_result_history(limit=limit)
 
     @app.post("/api/l2b/subgraphs/context")
     async def l2b_subgraphs_context(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         from parrot.web_console.graph_policy import live_subgraph_context
 
         return live_subgraph_context({**(payload or {}), "_remote_proxy_disable": True})
+
+    @app.post("/api/l2b/subgraphs/apply")
+    async def l2b_subgraphs_apply(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import apply_l2b_work_subgraph
+
+        body = payload or {}
+        dry_run = _body_bool(body.get("dry_run"), True)
+        operator_mode = _body_bool(body.get("operator_mode"), False)
+        proxied = await _maybe_proxy_brain_operator_write(
+            action="l2b.subgraph.apply",
+            path="/api/l2b/subgraphs/apply",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
+        if proxied is not None:
+            return proxied
+        return apply_l2b_work_subgraph({
+            **body,
+            "_remote_proxy_disable": True,
+            "_brain_proxy_disable": True,
+        })
 
     @app.get("/api/l2b/analysis/health")
     async def l2b_analysis_health():  # type: ignore[no-untyped-def]
@@ -646,6 +894,18 @@ def build_app():  # type: ignore[no-untyped-def]
 
         return preview_google_calendar_events(payload or {})
 
+    @app.post("/api/google/calendar/fetch")
+    async def google_calendar_fetch(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import dispatch_google_calendar_fetch
+
+        return await dispatch_google_calendar_fetch(payload or {})
+
+    @app.get("/api/google/calendar/results")
+    async def google_calendar_results(limit: int = 20):  # type: ignore[no-untyped-def]
+        from parrot.web_console.memory_ops import google_calendar_result_history
+
+        return await google_calendar_result_history(limit=limit)
+
     @app.post("/api/google/calendar/api-fetch")
     async def google_calendar_api_fetch(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         from parrot.web_console.memory_ops import fetch_google_calendar_api
@@ -657,6 +917,40 @@ def build_app():  # type: ignore[no-untyped-def]
         from parrot.web_console.memory_ops import fetch_google_calendar_nanobot
 
         return await fetch_google_calendar_nanobot(payload or {})
+
+    @app.post("/api/google/calendar/import-draft")
+    async def google_calendar_import_draft(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import draft_google_calendar_import
+
+        return draft_google_calendar_import(payload or {})
+
+    @app.post("/api/google/calendar/import-plan")
+    async def google_calendar_import_plan(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import draft_google_calendar_l2b_import_plan
+
+        return draft_google_calendar_l2b_import_plan(payload or {})
+
+    @app.post("/api/google/calendar/import")
+    async def google_calendar_import(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
+        from parrot.web_console.memory_ops import apply_google_calendar_import
+
+        body = payload or {}
+        dry_run = _body_bool(body.get("dry_run"), True)
+        operator_mode = _body_bool(body.get("operator_mode"), False)
+        proxied = await _maybe_proxy_brain_operator_write(
+            action="google.calendar.import",
+            path="/api/google/calendar/import",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
+        if proxied is not None:
+            return proxied
+        return await apply_google_calendar_import({
+            **body,
+            "_remote_proxy_disable": True,
+            "_brain_proxy_disable": True,
+        })
 
     @app.post("/api/google/messages/check")
     async def google_messages_check(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
@@ -730,7 +1024,23 @@ def build_app():  # type: ignore[no-untyped-def]
     async def graphiti_subgraph_materialize_l2b(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
         from parrot.web_console.memory_ops import materialize_graphiti_l2b_subgraph
 
-        return materialize_graphiti_l2b_subgraph({**(payload or {}), "_remote_proxy_disable": True})
+        body = payload or {}
+        dry_run = _body_bool(body.get("dry_run"), True)
+        operator_mode = _body_bool(body.get("operator_mode"), False)
+        proxied = await _maybe_proxy_brain_operator_write(
+            action="graphiti.subgraph.materialize_l2b",
+            path="/api/graphiti/subgraph/materialize-l2b",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
+        if proxied is not None:
+            return proxied
+        return materialize_graphiti_l2b_subgraph({
+            **body,
+            "_remote_proxy_disable": True,
+            "_brain_proxy_disable": True,
+        })
 
     @app.post("/api/graphiti/subgraph/export")
     async def graphiti_subgraph_export_endpoint(payload: dict[str, Any] | None = Body(default=None)):  # type: ignore[misc]
@@ -757,6 +1067,13 @@ def build_app():  # type: ignore[no-untyped-def]
             dry_run=bool(body.get("dry_run", True)),
         )).as_json()
 
+    @app.get("/api/photos/asset/{day}/{photo_id}")
+    async def photo_asset(day: str, photo_id: str):  # type: ignore[no-untyped-def]
+        path = _safe_photo_asset_path(day=day, photo_id=photo_id)
+        response = FileResponse(str(path), media_type="image/jpeg", filename=path.name)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.get("/health")
     async def health():  # type: ignore[no-untyped-def]
         return {"ok": True, "service": "app-v1-monitor", "mode": "developer-console"}
@@ -766,6 +1083,31 @@ def build_app():  # type: ignore[no-untyped-def]
 
 def _pixel_asset_root() -> Path:
     return Path("codex_workspace/design_workspace/asset_pipeline/pixel_asset_workspace").resolve()
+
+
+def _safe_photo_asset_path(*, day: str, photo_id: str) -> Path:
+    """Resolve a photo preview without exposing arbitrary files."""
+    from parrot.brain.photo_upload_server import get_cache_root, is_safe_photo_id
+
+    if HTTPException is None:
+        raise RuntimeError("fastapi not installed; install parrotcarriers[http]")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(day or "")):
+        raise HTTPException(status_code=400, detail="invalid photo day")
+    clean_id = str(photo_id or "").strip()
+    if clean_id.lower().endswith(".jpg"):
+        clean_id = clean_id[:-4]
+    if not is_safe_photo_id(clean_id):
+        raise HTTPException(status_code=400, detail="invalid photo id")
+
+    root = get_cache_root().resolve()
+    path = (root / day / f"{clean_id}.jpg").resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="photo path escapes cache root") from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="photo asset not found")
+    return path
 
 
 def _clean_base_url(value: str) -> str:
@@ -1429,9 +1771,7 @@ def _fetch_brain_live_state_json_sync(
 ) -> dict[str, Any] | None:
     url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
     headers = {"Accept": "application/json"}
-    secret = os.getenv("PARROT_APP_MONITOR_BRAIN_LIVE_STATE_SECRET", "").strip()
-    if secret:
-        headers["Authorization"] = f"Bearer {secret}"
+    headers.update(_brain_live_state_auth_headers())
     try:
         request = UrlRequest(url, headers=headers, method="GET")
         with urlopen(request, timeout=_brain_live_state_timeout_s()) as response:
@@ -1446,6 +1786,121 @@ def _fetch_brain_live_state_json_sync(
         )
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+async def _maybe_proxy_brain_operator_write(
+    *,
+    action: str,
+    path: str,
+    body: dict[str, Any],
+    dry_run: bool,
+    operator_mode: bool,
+) -> dict[str, Any] | None:
+    """Forward real Web Console L2-B writes to the Brain room job.
+
+    App-monitor is a console process.  When it is configured to read live
+    state from the Brain photo-upload server, operator writes must land in
+    that same Brain process or the next refresh will look like data vanished.
+    """
+
+    if not _should_proxy_brain_operator_write(
+        body,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+    ):
+        return None
+    proxy_payload = {
+        **body,
+        "dry_run": dry_run,
+        "operator_mode": operator_mode,
+        "_remote_proxy_disable": True,
+        "_brain_proxy_disable": True,
+    }
+    remote = await _post_brain_live_state_json(path, proxy_payload)
+    if remote is None:
+        return {
+            "success": False,
+            "action": action,
+            "dry_run": dry_run,
+            "operator_mode": operator_mode,
+            "data": {
+                "error": "brain_write_proxy_unavailable",
+                "mutated": False,
+                "direct_l2b_write": False,
+                "brain_write_proxy": _brain_write_proxy_marker(
+                    path,
+                    enabled=False,
+                    error="request_failed",
+                ),
+            },
+        }
+    return _mark_brain_write_proxy(remote, route=path)
+
+
+def _should_proxy_brain_operator_write(
+    body: dict[str, Any],
+    *,
+    dry_run: bool,
+    operator_mode: bool,
+) -> bool:
+    return (
+        bool(_brain_live_state_base_url())
+        and not _body_bool(body.get("_brain_proxy_disable"), False)
+        and (operator_mode or not dry_run)
+    )
+
+
+async def _post_brain_live_state_json(
+    path: str,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    base_url = _brain_live_state_base_url()
+    if not base_url:
+        return None
+    return await asyncio.to_thread(_post_brain_live_state_json_sync, base_url, path, payload)
+
+
+def _post_brain_live_state_json_sync(
+    base_url: str,
+    path: str,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    headers.update(_brain_live_state_auth_headers())
+    request = UrlRequest(
+        url,
+        data=json.dumps(payload, default=str).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=_brain_live_state_timeout_s()) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            if int(getattr(response, "status", 0) or 0) >= 400:
+                return None
+        parsed = json.loads(raw) if raw else {}
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        logger.debug(
+            "brain write proxy unavailable path=%s reason=%s",
+            path,
+            exc,
+        )
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _brain_live_state_auth_headers() -> dict[str, str]:
+    secret = (
+        os.getenv("PARROT_APP_MONITOR_BRAIN_LIVE_STATE_SECRET", "").strip()
+        or os.getenv("PARROT_APP_MONITOR_SECRET", "").strip()
+    )
+    if not secret:
+        return {}
+    return {"Authorization": f"Bearer {secret}"}
 
 
 def _brain_live_state_base_url() -> str:
@@ -1483,6 +1938,36 @@ def _mark_brain_live_state_proxy(
     else:
         body["app_monitor_proxy"] = proxy
     return body
+
+
+def _mark_brain_write_proxy(
+    body: dict[str, Any],
+    *,
+    route: str,
+) -> dict[str, Any]:
+    marker = _brain_write_proxy_marker(route, enabled=bool(body.get("success")))
+    data = body.get("data")
+    if isinstance(data, dict):
+        data["brain_write_proxy"] = marker
+    else:
+        body["brain_write_proxy"] = marker
+    return body
+
+
+def _brain_write_proxy_marker(
+    route: str,
+    *,
+    enabled: bool,
+    error: str = "",
+) -> dict[str, Any]:
+    return {
+        "enabled": enabled,
+        "source": "brain_room_job",
+        "base_url": _brain_live_state_base_url(),
+        "route": route,
+        "read_write": True,
+        "error": error,
+    }
 
 
 def _body_bool(value: Any, default: bool) -> bool:

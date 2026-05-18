@@ -24,6 +24,7 @@ entries when a file stops being active.
 | `collaboration_flow_workbench_ssot_20260517.md` | active_design | WEB-012, CORE-010, CORE-011, CORE-015 | Runtime/Collaboration Flow workbench SSOT for searchable capability catalog, triggers/modules insertion, workflow draft, Plan/Nanobot compatibility, GOSLO behavior modes, and true-connection standards. |
 | `collaboration_flow_architecture_cli_research_20260517.md` | active_research | WEB-012, CORE-010, CORE-011, CORE-015 | Comparative architecture research for LangGraph/Claude Code/Codex/ComfyUI/Node-RED/n8n/Temporal/Prefect patterns, Web layout direction, and the Web-plus-thin-CLI decision. |
 | `goslo_calendar_collaboration_policy_20260518.md` | active_design | CORE-008, CORE-009, CORE-010, CORE-011, CORE-013 | Baseline for GOSLO-facing Calendar tools, source-to-DSG buffer policy, Plan/HITL/nanobot role split, IntentWorkspace/L1.5/L2-B sync semantics, and preserved user requirements before implementation. |
+| `goslo_laptop_tooling_status_20260518.md` | active_status | CORE-009, CORE-010, WEB-012 | Laptop GOSLO tool set, fixed `laptop_profile_test` Graphiti partition, true Graphiti/Google/Nanobot smoke status, and safe laptop connection targets. |
 
 ## Temporary Working Archives
 
@@ -108,6 +109,10 @@ Promote durable decisions back into the active business files above.
   arrays. React must treat that as an incomplete snapshot, keep the current
   `l2bViewGraph`, and silently pull a full `/api/app/live-state` snapshot
   instead of clearing the canvas.
+- The same incomplete-snapshot rule is per section, not all-or-nothing: a
+  snapshot with `nodes[]` but no `edges[]` while `edge_count > 0` must update
+  node rows without dropping the cached Edge rows. Otherwise repeated node
+  drags can leave counters showing edges while ReactFlow renders no edges.
 
 ## Completed Interface Ledger
 

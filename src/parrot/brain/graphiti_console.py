@@ -19,6 +19,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
+from parrot.memory.encoding_guard import detect_text_mojibake
 from parrot.memory.graphiti_client import PARTITIONS, graphiti_provider_status
 
 _GRAPHITI_MISSING_MESSAGE = "graphiti-core optional extra not installed"
@@ -125,12 +126,15 @@ def draft_episode(
     warnings: list[str] = []
     if not draft["episode_body"]:
         warnings.append("episode_body is empty; write endpoint will reject it")
+    encoding_guard = detect_text_mojibake(draft["episode_body"])
+    if encoding_guard.get("suspicious"):
+        warnings.append("episode_body looks like mojibake; real Graphiti write will be blocked")
     return GraphitiConsoleResult(
         action="draft_episode",
         success=True,
         available=_graphiti_core_installed(),
         message="draft only; no Graphiti write performed",
-        data={"draft": draft, "warnings": warnings},
+        data={"draft": draft, "warnings": warnings, "encoding_guard": encoding_guard},
     )
 
 
@@ -685,7 +689,25 @@ async def add_episode(
             success=False,
             available=installed,
             message="episode_body is required",
-            data={"draft": episode},
+            data={
+                "draft": episode,
+                "warnings": draft.data.get("warnings", []),
+                "encoding_guard": draft.data.get("encoding_guard", {}),
+            },
+        )
+    encoding_guard = dict(draft.data.get("encoding_guard") or {})
+    if encoding_guard.get("suspicious") and not dry_run:
+        return GraphitiConsoleResult(
+            action="add_episode",
+            success=False,
+            available=installed,
+            message="episode_body failed encoding guard",
+            data={
+                "draft": episode,
+                "warnings": draft.data.get("warnings", []),
+                "encoding_guard": encoding_guard,
+                "write_blocked_reason": "suspected_mojibake",
+            },
         )
     if dry_run:
         return GraphitiConsoleResult(
@@ -693,7 +715,11 @@ async def add_episode(
             success=True,
             available=installed,
             message="dry_run=true; no Graphiti write performed",
-            data={"draft": episode},
+            data={
+                "draft": episode,
+                "warnings": draft.data.get("warnings", []),
+                "encoding_guard": encoding_guard,
+            },
         )
     if not installed:
         remote = _remote_graphiti_request(

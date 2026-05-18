@@ -86,6 +86,36 @@ namespace ParrotApp.LiveKit
 
         public static RoomManager Instance { get; private set; }
         private readonly Dictionary<string, AudioStream> _remoteAudioStreams = new();
+        private readonly Dictionary<string, AudioSource> _remoteAudioSources = new();
+        private readonly float[] _remoteAudioProbeBuffer = new float[256];
+
+        [Header("Remote Audio Probe")]
+        [Tooltip("Local-only downlink peak threshold used to gate the phone mic while the agent is speaking. This never talks to Brain or reconnects LiveKit.")]
+        [SerializeField] private float remoteAudioSpeechPeakThreshold = 0.006f;
+
+        [Tooltip("Keep uplink muted briefly after remote speech drops below the threshold so speaker tail/echo is not captured.")]
+        [SerializeField] private float remoteAudioSpeechHoldSeconds = 0.85f;
+
+        private float _remoteAudioLastPeak;
+        private float _remoteAudioActiveUntil;
+        private float _remoteAudioLastProbeTime = -1f;
+
+        public bool RemoteAudioPlaybackActive =>
+            Time.unscaledTime <= _remoteAudioActiveUntil;
+
+        public float RemoteAudioPlaybackPeak => _remoteAudioLastPeak;
+
+        public float RemoteAudioPlaybackAgeSeconds =>
+            _remoteAudioLastProbeTime < 0f ? -1f : Time.unscaledTime - _remoteAudioLastProbeTime;
+
+        public string RemoteAudioPlaybackLabel
+        {
+            get
+            {
+                string active = RemoteAudioPlaybackActive ? "agent_speaking" : "clear";
+                return $"{active} peak={_remoteAudioLastPeak:0.000} age={RemoteAudioPlaybackAgeSeconds:0.0}";
+            }
+        }
 
         /// <summary>Seconds for the last successful <see cref="ConnectToRoom"/>。</summary>
         public float? LastConnectDurationSeconds { get; private set; }
@@ -156,8 +186,69 @@ namespace ParrotApp.LiveKit
         }
 
         /// <summary>
-        /// Editor 单场景联调：与 <c>generate_token.py</c> 默认输出路径对齐。
-        /// 仅当 <see cref="allowEditorTokenFile"/> 为 true 时使用；正式 build 应注入。
+        /// Local-only downlink probe for the half-duplex phone-mic gate.
+        /// This does not publish telemetry, call Brain RPC, or change OS routes.
+        /// </summary>
+        void Update()
+        {
+            ProbeRemoteAudioPlayback();
+        }
+
+        private void ProbeRemoteAudioPlayback()
+        {
+            if (_remoteAudioSources.Count == 0)
+            {
+                _remoteAudioLastPeak = 0f;
+                _remoteAudioLastProbeTime = -1f;
+                _remoteAudioActiveUntil = 0f;
+                return;
+            }
+
+            float peak = 0f;
+            bool sawSource = false;
+            foreach (var kv in _remoteAudioSources)
+            {
+                var source = kv.Value;
+                if (source == null)
+                    continue;
+
+                sawSource = true;
+                if (!source.isPlaying)
+                    continue;
+
+                try
+                {
+                    source.GetOutputData(_remoteAudioProbeBuffer, 0);
+                    for (int i = 0; i < _remoteAudioProbeBuffer.Length; i++)
+                    {
+                        float abs = _remoteAudioProbeBuffer[i] < 0f ? -_remoteAudioProbeBuffer[i] : _remoteAudioProbeBuffer[i];
+                        if (abs > peak) peak = abs;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[RoomManager] remote audio probe failed for {kv.Key}: {ex.Message}");
+                }
+            }
+
+            if (!sawSource)
+            {
+                _remoteAudioSources.Clear();
+                _remoteAudioLastPeak = 0f;
+                _remoteAudioLastProbeTime = -1f;
+                _remoteAudioActiveUntil = 0f;
+                return;
+            }
+
+            _remoteAudioLastPeak = peak;
+            _remoteAudioLastProbeTime = Time.unscaledTime;
+            if (peak >= Mathf.Max(0.0001f, remoteAudioSpeechPeakThreshold))
+                _remoteAudioActiveUntil = Time.unscaledTime + Mathf.Max(0.05f, remoteAudioSpeechHoldSeconds);
+        }
+
+        /// <summary>
+        /// Editor single-scene helper: read the token file that local tools generate.
+        /// Formal builds should inject fresh tokens through the startup flow.
         /// </summary>
         private void TryLoadTokenFromArSpikeFile()
         {
@@ -400,6 +491,7 @@ namespace ParrotApp.LiveKit
                 // 强引用：避免 Mono GC 在远端 track 仍订阅时回收 AudioStream，
                 // 否则真机会随机断流 (Sprint3 已踩)。
                 _remoteAudioStreams[key] = new AudioStream(audioTrack, source);
+                _remoteAudioSources[key] = source;
             }
         }
 
@@ -414,6 +506,10 @@ namespace ParrotApp.LiveKit
                 }
             }
             _remoteAudioStreams.Clear();
+            _remoteAudioSources.Clear();
+            _remoteAudioLastPeak = 0f;
+            _remoteAudioLastProbeTime = -1f;
+            _remoteAudioActiveUntil = 0f;
 
             for (int i = transform.childCount - 1; i >= 0; i--)
             {

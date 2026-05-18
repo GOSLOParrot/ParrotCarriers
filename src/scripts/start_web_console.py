@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 
 import uvicorn
 from dotenv import load_dotenv
@@ -13,6 +14,9 @@ from parrot.web_console import build_app
 
 def main() -> None:
     load_dotenv()
+    laptop_env = Path("infra/laptop.env.local")
+    if laptop_env.exists():
+        load_dotenv(laptop_env, override=False)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7893)

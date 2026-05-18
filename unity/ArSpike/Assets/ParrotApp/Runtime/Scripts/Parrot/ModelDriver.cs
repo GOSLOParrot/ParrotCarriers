@@ -102,6 +102,15 @@ namespace ParrotApp.Parrot
             BootstrapNow();
         }
 
+        void OnDestroy()
+        {
+            if (_registered && Controller != null)
+            {
+                ParrotRegistry.Instance?.Unregister(Controller);
+                _registered = false;
+            }
+        }
+
         /// <summary>
         /// Runtime placement can instantiate a model and greet it in the same
         /// frame. Unity's normal Start order is too late for that path, so the
@@ -191,10 +200,10 @@ namespace ParrotApp.Parrot
             //    Works inside a single Assembly-CSharp setup (current ArSpike
             //    layout); if the project ever adopts asmdef partitions, the
             //    type-resolution path will need an assembly hint.
-            Type t = Type.GetType(controllerType);
+            Type t = ResolveControllerType(controllerType);
             if (t == null)
             {
-                Debug.LogError($"[ModelDriver] Type.GetType('{controllerType}') returned null. " +
+                Debug.LogError($"[ModelDriver] ResolveControllerType('{controllerType}') returned null. " +
                                $"Check controller_type spelling + assembly setup.");
                 return null;
             }
@@ -214,6 +223,20 @@ namespace ParrotApp.Parrot
             if (verbose && added != null)
                 Debug.Log($"[ModelDriver] Attached new controller '{controllerType}'");
             return added;
+        }
+
+        private static Type ResolveControllerType(string controllerType)
+        {
+            Type direct = Type.GetType(controllerType);
+            if (direct != null) return direct;
+
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            for (int i = 0; i < assemblies.Length; i++)
+            {
+                Type candidate = assemblies[i].GetType(controllerType);
+                if (candidate != null) return candidate;
+            }
+            return null;
         }
 
         private void ApplyAutoScale()

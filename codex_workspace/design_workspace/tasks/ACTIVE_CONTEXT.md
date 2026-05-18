@@ -289,6 +289,14 @@ environment-switch prompt now lives under
   Brain dispatch, RoomSetting, or Android audio route is touched. Next proof is
   HUD non-zero uplink plus Castle logs showing `RoomIO input participant
   rebound` and transcript events from the current Unity identity.
+- Latest LineA turn-taking policy: LineA now defaults to one-question-one-answer
+  rather than barge-in. `src/parrot/brain/linea_turn_policy.py` makes the Brain
+  pass Google Realtime `activity_handling=NO_INTERRUPTION` unless
+  `PARROT_LINEA_BARGE_IN_ENABLED=1` is explicitly set for a low-latency overlap
+  lab. This is the valid Gemini Live lever; do not force LiveKit Agents
+  `allow_interruptions=False` while server-side realtime turn detection is
+  enabled. This reduces self-interruption/echo barge-in but does not replace
+  phone audio-route proof under APP-024.
 - Latest imported frames=0 TODO implementation: the desktop audit has been
   moved to
   `backend_interface_map/app/imported_frames0_root_cause_audit_todo_20260517.md`.

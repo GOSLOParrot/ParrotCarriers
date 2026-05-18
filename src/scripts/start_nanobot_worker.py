@@ -33,6 +33,8 @@ PARROT_NANOBOT_DIR = Path.home() / ".nanobot-parrot"
 FORK_CONFIG = Path(__file__).resolve().parents[3] / "nanobot" / "config" / "parrot_config.json"
 GOOGLE_WORKSPACE_SERVER_KEY = "google_workspace"
 LEGACY_GOOGLE_WORKSPACE_SERVER_KEY = "google-workspace"
+GITHUB_SERVER_KEY = "github"
+REDIS_SERVER_KEY = "redis"
 GOOGLE_WORKSPACE_ACCOUNT_ENVS = (
     "GOOGLE_WORKSPACE_ACCOUNT_EMAIL",
     "GOOGLE_ACCOUNT_EMAIL",
@@ -229,10 +231,53 @@ def _sync_google_workspace_config(
     if gws_binary:
         merged_env["GWS_BINARY_PATH"] = gws_binary
 
+    if _is_placeholder(merged_env.get("GOOGLE_CLIENT_ID")) or _is_placeholder(
+        merged_env.get("GOOGLE_CLIENT_SECRET")
+    ):
+        removed = servers.pop(GOOGLE_WORKSPACE_SERVER_KEY, None) is not None or legacy is not None
+        if removed:
+            print("Google Workspace MCP disabled: no OAuth client credentials found.")
+        return removed
+
     merged["env"] = merged_env
     changed = servers.get(GOOGLE_WORKSPACE_SERVER_KEY) != merged or legacy is not None
     servers[GOOGLE_WORKSPACE_SERVER_KEY] = merged
     return changed
+
+
+def _sync_github_mcp_config(config: dict[str, Any]) -> bool:
+    servers = config.setdefault("tools", {}).setdefault("mcpServers", {})
+    github_token = os.getenv("GITHUB_TOKEN", "").strip()
+    if github_token:
+        github_env = servers.setdefault(GITHUB_SERVER_KEY, {}).setdefault("env", {})
+        if github_env.get("GITHUB_PERSONAL_ACCESS_TOKEN") != github_token:
+            github_env["GITHUB_PERSONAL_ACCESS_TOKEN"] = github_token
+            return True
+        return False
+
+    if GITHUB_SERVER_KEY in servers:
+        servers.pop(GITHUB_SERVER_KEY, None)
+        print("GitHub MCP disabled: GITHUB_TOKEN is not set.")
+        return True
+    return False
+
+
+def _sync_redis_mcp_config(config: dict[str, Any]) -> bool:
+    redis_url = os.getenv("REDIS_URL", "").strip()
+    if not redis_url:
+        return False
+    servers = config.setdefault("tools", {}).setdefault("mcpServers", {})
+    redis_server = servers.get(REDIS_SERVER_KEY)
+    if not isinstance(redis_server, dict):
+        return False
+    args = list(redis_server.get("args") or [])
+    if not args:
+        return False
+    if args[-1] == redis_url:
+        return False
+    args[-1] = redis_url
+    redis_server["args"] = args
+    return True
 
 
 def setup_config(force: bool = False, enable_weixin: bool = True) -> Path:
@@ -252,11 +297,6 @@ def setup_config(force: bool = False, enable_weixin: bool = True) -> Path:
         redis_url = os.getenv("REDIS_URL", "")
         if redis_url:
             config.setdefault("channels", {}).setdefault("parrot_bus", {})["redisUrl"] = redis_url
-
-        github_token = os.getenv("GITHUB_TOKEN", "")
-        if github_token:
-            servers = config.setdefault("tools", {}).setdefault("mcpServers", {})
-            servers.setdefault("github", {}).setdefault("env", {})["GITHUB_PERSONAL_ACCESS_TOKEN"] = github_token
 
         # Google Workspace MCP is enabled by default in parrot_config.json.
         # Bridge Parrot's OAuth export into MCP's account registry on startup.
@@ -280,6 +320,8 @@ def setup_config(force: bool = False, enable_weixin: bool = True) -> Path:
             sys.exit(1)
 
     changed = _sync_google_workspace_config(config, template_config)
+    changed = _sync_github_mcp_config(config) or changed
+    changed = _sync_redis_mcp_config(config) or changed
 
     gemini_key = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
     if gemini_key:
@@ -293,14 +335,6 @@ def setup_config(force: bool = False, enable_weixin: bool = True) -> Path:
         parrot_bus = config.setdefault("channels", {}).setdefault("parrot_bus", {})
         if parrot_bus.get("redisUrl") != redis_url:
             parrot_bus["redisUrl"] = redis_url
-            changed = True
-
-    github_token = os.getenv("GITHUB_TOKEN", "")
-    if github_token:
-        servers = config.setdefault("tools", {}).setdefault("mcpServers", {})
-        github_env = servers.setdefault("github", {}).setdefault("env", {})
-        if github_env.get("GITHUB_PERSONAL_ACCESS_TOKEN") != github_token:
-            github_env["GITHUB_PERSONAL_ACCESS_TOKEN"] = github_token
             changed = True
 
     channels = config.setdefault("channels", {})
@@ -319,7 +353,7 @@ def setup_config(force: bool = False, enable_weixin: bool = True) -> Path:
     return config_file
 
 
-def run_gateway(config_file: Path, enable_weixin: bool = True) -> None:
+def run_gateway(config_file: Path, enable_weixin: bool = True, *, verbose: bool = False) -> None:
     """Start the nanobot gateway subprocess."""
     nanobot_exe = shutil.which("nanobot")
     if nanobot_exe is None:
@@ -333,12 +367,16 @@ def run_gateway(config_file: Path, enable_weixin: bool = True) -> None:
 
     print(f"\nStarting nanobot gateway with channels: {', '.join(channels)}")
     print(f"  Config: {config_file}")
+    print(f"  Verbose logs: {'enabled' if verbose else 'disabled'}")
     if enable_weixin:
         print("  WeChat: enabled (ensure QR login completed)")
     print()
 
+    command = [nanobot_exe, "gateway", "--config", str(config_file)]
+    if verbose:
+        command.append("--verbose")
     subprocess.run(
-        [nanobot_exe, "gateway", "--config", str(config_file), "--verbose"],
+        command,
         check=False,
     )
 
@@ -355,6 +393,7 @@ def main():
     parser = argparse.ArgumentParser(description="Start the Nanobot worker")
     parser.add_argument("--stub", action="store_true", help="Use stub consumer (no LLM)")
     parser.add_argument("--force-config", action="store_true", help="Regenerate config from template")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose nanobot gateway logs")
     # --no-weixin flag: 
     # Use this during P1/dev to run a pure backend Worker (parrot_bus only).
     # Omit this flag and run `nanobot channels login weixin` first if you want Maid to also chat on WeChat.
@@ -366,7 +405,7 @@ def main():
     else:
         enable_weixin = not args.no_weixin
         config_file = setup_config(force=args.force_config, enable_weixin=enable_weixin)
-        run_gateway(config_file, enable_weixin=enable_weixin)
+        run_gateway(config_file, enable_weixin=enable_weixin, verbose=args.verbose)
 
 
 if __name__ == "__main__":

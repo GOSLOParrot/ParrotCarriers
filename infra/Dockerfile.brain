@@ -72,6 +72,15 @@ CMD ["python", "-m", "parrot.castle.token_mint"]
 FROM base AS full
 
 USER root
+# Nanobot MCP servers use stdio commands launched through npx. Keep Node in
+# the full runtime image only; token-mint/orchestrator base stays small.
+# Avoid Debian's npm package here: it pulls a very large dependency graph and
+# has triggered Docker Desktop cache I/O failures on the laptop stack.
+ARG NODE_VERSION=20.19.2
+RUN python -c "exec(\"\"\"import os\nimport pathlib\nimport shutil\nimport tarfile\nimport urllib.request\n\nversion = os.environ.get('NODE_VERSION', '20.19.2')\nplatform = 'linux-x64'\nroot = f'node-v{version}-{platform}'\narchive = pathlib.Path('/tmp/node.tar.xz')\ntarget = pathlib.Path('/opt/node')\nurl = f'https://nodejs.org/dist/v{version}/{root}.tar.xz'\n\nshutil.rmtree(target, ignore_errors=True)\ntarget.mkdir(parents=True, exist_ok=True)\nurllib.request.urlretrieve(url, archive)\nwith tarfile.open(archive, 'r:xz') as bundle:\n    for member in bundle.getmembers():\n        if not member.name.startswith(root + '/'):\n            continue\n        relative = member.name[len(root) + 1:]\n        if not relative:\n            continue\n        member.name = relative\n        bundle.extract(member, target)\narchive.unlink()\n\"\"\")"
+RUN ln -sf /opt/node/bin/node /usr/local/bin/node \
+    && ln -sf /opt/node/bin/npm /usr/local/bin/npm \
+    && ln -sf /opt/node/bin/npx /usr/local/bin/npx
 # Keep the Brain image on the same LiveKit Agents major line as pyproject.toml.
 # Older 0.x agents packages do not expose the Agent/AgentSession APIs used by
 # parrot.brain.agent and will make the worker fail at import time.

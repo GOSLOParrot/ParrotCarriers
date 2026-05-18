@@ -44,6 +44,7 @@ def build_console_environment(
         "livekit_url": _env("LIVEKIT_URL"),
         "room": _env("LIVEKIT_ROOM"),
         "runtime_data_root": _env("PARROT_RUNTIME_DATA_ROOT") or _env("PARROT_DATA_ROOT"),
+        "restart_control": _restart_control(profile),
     }
 
     return {
@@ -198,7 +199,28 @@ def _profile_warnings(profile: str, active: dict[str, Any]) -> list[str]:
         warnings.append("ecs profile app API still points at localhost")
     if active.get("runtime_data_root") and profile == "ecs":
         warnings.append("runtime data root is local; verify this is not a laptop path")
+    restart_control = active.get("restart_control")
+    if isinstance(restart_control, dict) and restart_control.get("mode") == "external_operator":
+        warnings.append("process restarts are managed by the local operator shell")
     return warnings
+
+
+def _restart_control(profile: str) -> dict[str, Any]:
+    mode = (
+        _env("PARROT_ORCH_RESTART_MODE")
+        or ("external_operator" if profile == "laptop" else "systemd")
+    )
+    command = (
+        _env("PARROT_ORCH_RESTART_OPERATOR_COMMAND")
+        or "powershell -ExecutionPolicy Bypass -File infra\\laptop-castle.ps1 "
+        "-Action restart -Service {component}"
+    )
+    return {
+        "mode": mode,
+        "operator_command": command if mode == "external_operator" else "",
+        "restart_route": "/restart_component",
+        "components": ["brain", "scheduler", "nanobot-worker", "orchestrator"],
+    }
 
 
 def _env(name: str) -> str:

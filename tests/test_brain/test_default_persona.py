@@ -26,8 +26,17 @@ def test_default_goslo_persona_demo_ar_reminder_contract(monkeypatch):
     assert "Reflex 层" in instructions
     assert "Intent 层" in instructions
     assert "Work 层" in instructions
+    assert "演示固定事实" in instructions
+    assert "曾宪滨" in instructions
+    assert "福建农林大学 2022 级大四软件工程学生" in instructions
+    assert "联想拯救者" in instructions
+    assert "Logitech G504" in instructions
+    assert "不要追问“这是不是你的电脑/鼠标”" in instructions
     assert "calendar_context" in instructions
     assert "calendar_change_request" in instructions
+    assert "message_check_request" in instructions
+    assert "reminder_request" in instructions
+    assert "laptop_profile_test" in instructions
     assert "它不是执行工具" in instructions
     assert "T1_DIRECT_GOOGLE_CALENDAR_API" in instructions
     assert "T3_NANOBOT_SCHEDULER_TASK" in instructions

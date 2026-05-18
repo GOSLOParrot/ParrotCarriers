@@ -178,6 +178,15 @@ const GRAPH_IMPORT_DESTINATIONS = [
   "promote_to_main_graph",
   "connect_by_rule"
 ];
+const DEFAULT_GRAPHITI_PARTITIONS = [
+  "arknights_test",
+  "noble_etiquette",
+  "laptop_profile_test",
+  "goslo",
+  "maid",
+  "scene",
+  "user"
+];
 const GRAPH_TRANSFORM_OPTIONS = [
   "wrap_selection",
   "aggregate_subgraphs",
@@ -202,7 +211,9 @@ const FLOATING_PANEL_MIN_HEIGHT = 180;
 const FLOATING_PANEL_DEFAULT_HEIGHT = 360;
 const FLOATING_PANEL_SELECTION_HEIGHT = 350;
 const FLOATING_PANEL_GRID: [number, number] = [8, 8];
-const MAX_SAVED_FLOW_POSITION_ABS = 50000;
+const MAX_SAVED_FLOW_POSITION_ABS = 12000;
+const MAX_SINGLE_NODE_POSITION_JUMP = 2600;
+const MAX_MANUAL_NODE_LAYOUT_OFFSET = 6200;
 const EMPTY_L2B_SNAPSHOT_CONFIRM_POLLS = 3;
 const NODE_DRAG_EMPTY_SNAPSHOT_GRACE_MS = 1800;
 const BLANK_VIEWPORT_HARD_RESET_ATTEMPTS = 2;
@@ -284,7 +295,7 @@ const dict = {
     closeTools: "Close Tools",
     filters: "Filters",
     tags: "Tags",
-    subgraph: "Subgraph",
+    subgraph: "Work Subgraph",
     stateView: "State colors",
     pool: "Pool",
     nodeKind: "Node kind",
@@ -295,7 +306,7 @@ const dict = {
     selectedEdge: "Edge details",
     useAsEndpoints: "Use endpoints",
     addTagDraft: "Tag preview",
-    createSubgraph: "New subgraph",
+    createSubgraph: "New work-subgraph draft",
     importDestination: "Import destination",
     graphPolicy: "Graph policy",
     previewPolicy: "Preview policy",
@@ -304,6 +315,7 @@ const dict = {
     graphHealth: "Graph health",
     refreshHealth: "Refresh health",
     overlayDraft: "Overlay preview",
+    applyWorkSubgraph: "Apply work subgraph",
     inspectContext: "Inspect context",
     contextDepth: "Depth",
     contextNodes: "Live nodes",
@@ -419,7 +431,7 @@ const dict = {
     exportSubgraphDraft: "Export Draft",
     applyExportDryRun: "Preview Apply",
     previewGraphitiMaterialize: "Preview L2-B Import",
-    materializeGraphitiSubgraph: "Import Subgraph to L2-B",
+    materializeGraphitiSubgraph: "Import Search Results to L2-B",
     identityIndex: "Identity Index",
     verifyRefs: "Verify Refs",
     refScanPlan: "Ref Scan Plan",
@@ -436,11 +448,17 @@ const dict = {
     selectedHits: "Selected hits",
     selectAll: "Select all",
     selectedOf: "selected",
-    resultGraph: "Result graph",
+    resultGraph: "Search bundle",
     noHits: "No hits yet.",
     writeThroughL15: "writes through L1.5",
-    graphitiWriteThroughL2B: "materializes Graphiti pointers into L2-B",
-    sourceBoardHint: "Graphiti can materialize pointer subgraphs directly into L2-B; other sources still preview or admit through L1.5 first.",
+    graphitiWriteThroughL2B: "materializes Graphiti search bundles into L2-B pointers",
+    sourceBoardHint: "Graphiti search bundles can be materialized into L2-B pointer graphs; other sources still preview or admit through L1.5 first.",
+    searchStrategyLabel: "Search strategy",
+    searchRecipeLabel: "Search recipe",
+    searchDepthLabel: "Search depth",
+    focalUuid: "Focal UUID",
+    nodeLabels: "Node labels",
+    edgeTypes: "Edge types",
     liveKitBridge: "LiveKit / Brain Bridge",
     liveKitRoom: "Room",
     liveKitIdentity: "Identity",
@@ -636,15 +654,21 @@ const dict = {
     exportSubgraphDraft: "导出草稿",
     applyExportDryRun: "预演执行",
     previewGraphitiMaterialize: "预演 L2-B 导入",
-    materializeGraphitiSubgraph: "导入子图到 L2-B",
+    materializeGraphitiSubgraph: "一键导入检索结果到 L2-B",
     selectedHits: "选中结果",
     selectAll: "全选",
     selectedOf: "已选",
-    resultGraph: "结果子图",
+    resultGraph: "检索结果包",
     noHits: "暂无结果。",
     writeThroughL15: "通过 L1.5 写入",
-    graphitiWriteThroughL2B: "Graphiti 指针子图物化到 L2-B",
-    sourceBoardHint: "Graphiti 可直接物化指针子图到 L2-B；其他来源仍先预览或进入 L1.5。",
+    graphitiWriteThroughL2B: "Graphiti 检索结果包物化为 L2-B 指针图",
+    sourceBoardHint: "Graphiti 检索结果包可以物化为 L2-B 指针图；其他来源仍先预览或进入 L1.5。",
+    searchStrategyLabel: "搜索策略",
+    searchRecipeLabel: "搜索配方",
+    searchDepthLabel: "搜索深度",
+    focalUuid: "焦点 UUID",
+    nodeLabels: "Node 标签",
+    edgeTypes: "Edge 类型",
     liveKitBridge: "LiveKit / Brain 连接",
     liveKitRoom: "房间",
     liveKitIdentity: "身份",
@@ -708,7 +732,7 @@ const zhRuntimeCopy: Partial<ConsoleCopy> = {
   deleteEdge: "删除 Edge",
   filters: "过滤",
   tags: "Tag",
-  subgraph: "子图",
+  subgraph: "工作子图",
   stateView: "状态颜色",
   pool: "Pool",
   nodeKind: "Node 类型",
@@ -719,7 +743,7 @@ const zhRuntimeCopy: Partial<ConsoleCopy> = {
   selectedEdge: "Edge 详情",
   useAsEndpoints: "使用端点",
   addTagDraft: "Tag 预演",
-  createSubgraph: "新建子图",
+  createSubgraph: "新建工作子图草稿",
   statusColors: "状态颜色开关"
 };
 
@@ -1259,6 +1283,7 @@ function MemoryGraphWorkspace({
   const blankViewportRecoveryAttemptsRef = useRef(0);
   const nodeDragActiveRef = useRef(false);
   const lastNodeDragEndedAtRef = useRef(0);
+  const latestGraphNodePositionsRef = useRef<Record<string, { x: number; y: number }>>({});
   const lastCountedEmptyL2bSnapshotKeyRef = useRef("");
   const lastIncompleteL2bSnapshotRefreshKeyRef = useRef("");
   const incompleteL2bSnapshotRefreshInFlightRef = useRef(false);
@@ -1575,9 +1600,13 @@ function MemoryGraphWorkspace({
   );
   const liveSnapshotVersion = String(liveState.sequence ?? liveState.generated_at ?? rawL2bSignature);
   const rawL2bSnapshotKey = `${liveSnapshotVersion}:${rawL2bSignature}`;
-  const hasIncomingLiveGraph = rawL2bNodes.length > 0 || rawL2bEdges.length > 0;
-  const hasReportedL2bGraph = reportedL2bNodeCount > 0 || reportedL2bEdgeCount > 0;
-  const hasIncompleteL2bSnapshot = hasReportedL2bGraph && !hasIncomingLiveGraph;
+  const hasIncomingNodeRows = rawL2bNodes.length > 0;
+  const hasIncomingEdgeRows = rawL2bEdges.length > 0;
+  const hasIncomingLiveGraph = hasIncomingNodeRows || hasIncomingEdgeRows;
+  const hasIncompleteL2bSnapshot = (
+    (reportedL2bNodeCount > 0 && !hasIncomingNodeRows)
+    || (reportedL2bEdgeCount > 0 && !hasIncomingEdgeRows)
+  );
 
   useEffect(() => {
     const shouldCountEmptySnapshot = (
@@ -1596,13 +1625,15 @@ function MemoryGraphWorkspace({
       const hasCurrentGraph = current.nodes.length > 0 || current.edges.length > 0;
 
       if (hasLiveGraph) {
-        const nodes = mergeGraphRowsByStableId(current.nodes, rawL2bNodes);
-        const edges = rawL2bEdges;
+        const nodes = hasIncomingNodeRows
+          ? mergeGraphRowsByStableId(current.nodes, rawL2bNodes)
+          : current.nodes;
+        const edges = hasIncomingEdgeRows ? rawL2bEdges : current.edges;
         const signature = l2bGraphSignature(nodes, edges);
         if (
           current.signature === signature
           && current.emptyPolls === 0
-          && !current.heldEmptySnapshot
+          && current.heldEmptySnapshot === hasIncompleteL2bSnapshot
         ) {
           return current;
         }
@@ -1611,7 +1642,7 @@ function MemoryGraphWorkspace({
           edges,
           signature,
           emptyPolls: 0,
-          heldEmptySnapshot: false
+          heldEmptySnapshot: hasIncompleteL2bSnapshot
         };
       }
 
@@ -1664,7 +1695,9 @@ function MemoryGraphWorkspace({
     });
   }, [
     hasIncompleteL2bSnapshot,
+    hasIncomingEdgeRows,
     hasIncomingLiveGraph,
+    hasIncomingNodeRows,
     rawL2bEdges,
     rawL2bNodes,
     rawL2bSignature,
@@ -1716,13 +1749,25 @@ function MemoryGraphWorkspace({
       if (filterKind === "all") return true;
       const source = (node.data as MemoryNodeData | undefined)?.source;
       return String(source?.kind || "node") === filterKind;
-    }).map((node) => ({
-      ...node,
-      draggable: true,
-      position: isFiniteFlowPosition(manualPositions[node.id]) ? manualPositions[node.id] : node.position,
-      selected: node.id === selectedNodeId
-    }));
+    }).map((node) => {
+      const manualPosition = manualPositions[node.id];
+      return {
+        ...node,
+        draggable: true,
+        position: isUsableManualNodePosition(manualPosition, node.position)
+          ? manualPosition
+          : node.position,
+        selected: node.id === selectedNodeId
+      };
+    });
   }, [filterKind, l2bNodes, manualPositions, previewNodes, selectedNodeId, stateColors]);
+
+  useEffect(() => {
+    latestGraphNodePositionsRef.current = Object.fromEntries(
+      graphNodes.map((node) => [node.id, node.position])
+    );
+  }, [graphNodes]);
+
   const graphNodeSignature = useMemo(
     () => graphNodes.map((node) => node.id).sort().join("|"),
     [graphNodes]
@@ -2034,6 +2079,14 @@ function MemoryGraphWorkspace({
       changes.forEach((change) => {
         if (change.type !== "position" || !change.position) return;
         if (!isFiniteFlowPosition(change.position)) return;
+        if (!isReasonableNodePositionChange(
+          change.id,
+          change.position,
+          next === current ? current : next,
+          latestGraphNodePositionsRef.current
+        )) {
+          return;
+        }
         if (next === current) next = { ...current };
         next[change.id] = change.position;
       });
@@ -2119,7 +2172,17 @@ function MemoryGraphWorkspace({
     nodeDragActiveRef.current = false;
     lastNodeDragEndedAtRef.current = Date.now();
     if (isFiniteFlowPosition(node.position)) {
-      setManualPositions((current) => ({ ...current, [node.id]: node.position }));
+      setManualPositions((current) => {
+        if (!isReasonableNodePositionChange(
+          node.id,
+          node.position,
+          current,
+          latestGraphNodePositionsRef.current
+        )) {
+          return current;
+        }
+        return { ...current, [node.id]: node.position };
+      });
     }
     if (dragBufferReleaseTimerRef.current != null) {
       window.clearTimeout(dragBufferReleaseTimerRef.current);
@@ -2398,6 +2461,61 @@ function MemoryGraphWorkspace({
     }
   };
 
+  const applyWorkSubgraph = async () => {
+    const label = subgraphLabel.trim() || "Work subgraph";
+    const nodeSelection = policyNodeSelection();
+    if (!nodeSelection.length) {
+      pushReceipt(localReceipt("l2b.subgraph.apply", false, { error: "missing_node_selection" }));
+      return;
+    }
+    const selectedSet = new Set(nodeSelection);
+    const packItems = l2bNodes
+      .filter((row) => selectedSet.has(String(row.uuid || row.id || "")))
+      .map((row) => {
+        const sourceMeta = recordFromUnknown(row.source_meta);
+        return {
+          item_id: String(row.uuid || row.id || ""),
+          label: String(row.label || row.uuid || row.id || ""),
+          source_kind: String(row.source || sourceMeta.source_kind || "memory_canvas"),
+          source_ref: String(sourceMeta.source_ref || row.provenance_stream_id || row.uuid || ""),
+          provider_ref: String(row.graphiti_uuid || row.obsidian_uuid || sourceMeta.ref_id || row.uuid || ""),
+          l2b_uuid: String(row.uuid || row.id || ""),
+          l2b_kind: String(row.kind || "")
+        };
+      });
+    try {
+      const receipt = await api.l2bSubgraphApply({
+        label,
+        subgraph_label: label,
+        node_uuids: nodeSelection,
+        ref_ids: selectedRefIds(),
+        source_kind: "memory_canvas",
+        source_id: selectedNodeId || selectedEdgeId || "current_selection",
+        source_ref: "web-console://memory-canvas/selection",
+        destination: graphDestination,
+        source_pack: {
+          schema_version: 1,
+          pack_id: `source-pack:memory_canvas:${nodeSelection.join("-").replace(/[^A-Za-z0-9:_-]/g, "").slice(0, 72) || "selection"}`,
+          source_kind: "memory_canvas",
+          source_id: selectedNodeId || selectedEdgeId || "current_selection",
+          source_ref: "web-console://memory-canvas/selection",
+          label,
+          destination: graphDestination,
+          items: packItems,
+          ref_ids: selectedRefIds()
+        },
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      });
+      pushReceipt(receipt);
+      if (receipt.success !== false && operatorMode) {
+        await onRefreshMemory();
+      }
+    } catch (exc) {
+      pushReceipt(errorReceipt("l2b.subgraph.apply", exc, { label, node_uuids: nodeSelection }));
+    }
+  };
+
   const inspectLiveSubgraphContext = async () => {
     const label = subgraphLabel.trim() || "Live L2-B context";
     const nodeSelection = policyNodeSelection();
@@ -2620,6 +2738,7 @@ function MemoryGraphWorkspace({
               onDeleteEdge={() => void deleteSelectedEdgeDraft()}
               onDraftImportPolicy={() => void draftImportPolicy()}
               onCreateSubgraph={() => void createSubgraphPreview()}
+              onApplySubgraph={() => void applyWorkSubgraph()}
               onInspectSubgraphContext={() => void inspectLiveSubgraphContext()}
               onDraftTransform={() => void draftGraphTransform()}
               onRefreshHealth={() => void refreshGraphHealth()}
@@ -2795,6 +2914,7 @@ function MemoryToolPanel({
   onDeleteEdge,
   onDraftImportPolicy,
   onCreateSubgraph,
+  onApplySubgraph,
   onInspectSubgraphContext,
   onDraftTransform,
   onRefreshHealth,
@@ -2847,6 +2967,7 @@ function MemoryToolPanel({
   onDeleteEdge: () => void;
   onDraftImportPolicy: () => void;
   onCreateSubgraph: () => void;
+  onApplySubgraph: () => void;
   onInspectSubgraphContext: () => void;
   onDraftTransform: () => void;
   onRefreshHealth: () => void;
@@ -2917,6 +3038,7 @@ function MemoryToolPanel({
         <div className="button-row">
           <button className="button" onClick={onDraftImportPolicy}><Workflow size={16} /> {t.previewPolicy}</button>
           <button className="button primary" onClick={onCreateSubgraph}><Layers size={16} /> {t.overlayDraft}</button>
+          <button className="button" onClick={onApplySubgraph}><UploadCloud size={16} /> {operatorMode ? t.applyWorkSubgraph : t.dryApply}</button>
           <button className="button" onClick={onInspectSubgraphContext}><Search size={16} /> {t.inspectContext}</button>
           <button className="button" onClick={onDraftTransform}><Activity size={16} /> {t.previewTransform}</button>
         </div>
@@ -5365,6 +5487,10 @@ function GraphitiSourceCard({
     () => hits.filter((hit, index) => selectedHitKeys.includes(graphitiHitKey(hit, index))),
     [hits, selectedHitKeys]
   );
+  const partitionOptions = useMemo(
+    () => uniqueStrings([partition, ...(status?.partitions ?? []), ...DEFAULT_GRAPHITI_PARTITIONS]),
+    [partition, status?.partitions]
+  );
   const selectedIdentityRefDraft = useMemo(
     () => identityRefDrafts[Math.min(selectedIdentityRefDraftIndex, Math.max(0, identityRefDrafts.length - 1))] ?? null,
     [identityRefDrafts, selectedIdentityRefDraftIndex]
@@ -6087,12 +6213,7 @@ function GraphitiSourceCard({
       <label>
         <span>{t.partition}</span>
         <select value={partition} onChange={(event) => updatePartition(event.target.value)}>
-          <option value="arknights_test">arknights_test</option>
-          <option value="noble_etiquette">noble_etiquette</option>
-          <option value="goslo">goslo</option>
-          <option value="maid">maid</option>
-          <option value="scene">scene</option>
-          <option value="user">user</option>
+          {partitionOptions.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
       </label>
       <label>
@@ -6110,7 +6231,7 @@ function GraphitiSourceCard({
         />
       </label>
       <label>
-        <span>Strategy</span>
+        <span>{t.searchStrategyLabel}</span>
         <select value={searchStrategy} onChange={(event) => updateSearchStrategy(event.target.value)}>
           <option value="iterative_hybrid">iterative hybrid</option>
           <option value="hybrid">hybrid</option>
@@ -6118,7 +6239,7 @@ function GraphitiSourceCard({
         </select>
       </label>
       <label>
-        <span>Recipe</span>
+        <span>{t.searchRecipeLabel}</span>
         <select value={searchRecipe} onChange={(event) => updateSearchRecipe(event.target.value)}>
           <option value="">public/default</option>
           <option value="combined_rrf">combined RRF</option>
@@ -6138,7 +6259,7 @@ function GraphitiSourceCard({
         </select>
       </label>
       <label>
-        <span>Depth</span>
+        <span>{t.searchDepthLabel}</span>
         <input
           type="number"
           min={1}
@@ -6148,7 +6269,7 @@ function GraphitiSourceCard({
         />
       </label>
       <label>
-        <span>Focal UUID</span>
+        <span>{t.focalUuid}</span>
         <input
           value={focalNodeUuid}
           onChange={(event) => updateFocalNodeUuid(event.target.value)}
@@ -6156,7 +6277,7 @@ function GraphitiSourceCard({
         />
       </label>
       <label>
-        <span>Node labels</span>
+        <span>{t.nodeLabels}</span>
         <input
           value={searchNodeLabelsText}
           onChange={(event) => updateSearchNodeLabels(event.target.value)}
@@ -6164,7 +6285,7 @@ function GraphitiSourceCard({
         />
       </label>
       <label>
-        <span>Edge types</span>
+        <span>{t.edgeTypes}</span>
         <input
           value={searchEdgeTypesText}
           onChange={(event) => updateSearchEdgeTypes(event.target.value)}
@@ -7801,6 +7922,33 @@ function isFiniteFlowPosition(position: { x: number; y: number } | null | undefi
     && Number.isFinite(position.y)
     && Math.abs(position.x) <= MAX_SAVED_FLOW_POSITION_ABS
     && Math.abs(position.y) <= MAX_SAVED_FLOW_POSITION_ABS
+  );
+}
+
+function isUsableManualNodePosition(
+  position: { x: number; y: number } | null | undefined,
+  layoutPosition: { x: number; y: number }
+): position is { x: number; y: number } {
+  if (!isFiniteFlowPosition(position)) return false;
+  if (!isFiniteFlowPosition(layoutPosition)) return true;
+  return (
+    Math.abs(position.x - layoutPosition.x) <= MAX_MANUAL_NODE_LAYOUT_OFFSET
+    && Math.abs(position.y - layoutPosition.y) <= MAX_MANUAL_NODE_LAYOUT_OFFSET
+  );
+}
+
+function isReasonableNodePositionChange(
+  nodeId: string,
+  nextPosition: { x: number; y: number },
+  manualPositions: Record<string, { x: number; y: number }>,
+  graphPositions: Record<string, { x: number; y: number }>
+): boolean {
+  if (!isFiniteFlowPosition(nextPosition)) return false;
+  const previous = manualPositions[nodeId] ?? graphPositions[nodeId];
+  if (!isFiniteFlowPosition(previous)) return true;
+  return (
+    Math.abs(nextPosition.x - previous.x) <= MAX_SINGLE_NODE_POSITION_JUMP
+    && Math.abs(nextPosition.y - previous.y) <= MAX_SINGLE_NODE_POSITION_JUMP
   );
 }
 

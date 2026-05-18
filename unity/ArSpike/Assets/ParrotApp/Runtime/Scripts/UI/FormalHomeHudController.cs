@@ -486,6 +486,9 @@ namespace ParrotApp.UI
                    + " ch=" + microphonePublisher.LastAudioReadChannels
                    + " readSr=" + microphonePublisher.LastAudioReadSampleRate
                    + " peak=" + microphonePublisher.LastAudioReadPeak.ToString("0.000")
+                   + " gate=" + (microphonePublisher.UplinkMutedByAgentSpeech ? "mute" : "clear")
+                   + " gpk=" + microphonePublisher.UplinkGateRemotePeak.ToString("0.000")
+                   + " gr=" + ShortLabel(microphonePublisher.UplinkGateReason, 16)
                    + " age=" + microphonePublisher.LastAudioReadAgeSeconds.ToString("0.0")
                    + " nz=" + microphonePublisher.LastNonSilentAudioAgeSeconds.ToString("0.0")
                    + " wd=" + ShortLabel(microphonePublisher.UplinkWatchdogState, 24)

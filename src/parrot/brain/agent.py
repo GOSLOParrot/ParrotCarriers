@@ -34,6 +34,10 @@ from livekit.agents.llm import ChatMessage
 from livekit.agents.voice.events import ConversationItemAddedEvent, UserInputTranscribedEvent
 from livekit.plugins import google
 
+from parrot.brain.linea_turn_policy import (
+    build_linea_realtime_input_config,
+    linea_turn_policy_status,
+)
 from parrot.brain.soul import get_instructions
 from parrot.brain.telemetry_receiver import attach_telemetry_receiver
 from parrot.brain.vision.state import attach_video_state_rpc
@@ -174,16 +178,24 @@ def _build_session(pipeline: str, config: ParrotConfig) -> AgentSession:
     context_injector C2/C3/C4) consumes.
     """
     if pipeline == _PIPELINE_LINE_A:
+        turn_policy = linea_turn_policy_status()
+        realtime_kwargs: dict[str, Any] = {
+            "voice": config.gemini.live_voice,
+            "model": config.gemini.live_model,
+            "api_key": config.google_api_key or None,
+        }
+        if realtime_input_config := build_linea_realtime_input_config():
+            realtime_kwargs["realtime_input_config"] = realtime_input_config
         logger.info(
-            "Brain pipeline=line_a (Gemini Live): model=%s voice=%s",
-            config.gemini.live_model, config.gemini.live_voice,
+            "Brain pipeline=line_a (Gemini Live): model=%s voice=%s turn_policy=%s",
+            config.gemini.live_model, config.gemini.live_voice, turn_policy,
         )
+        # Keep Gemini Live's native end-of-turn detection but default barge-in
+        # off for the phone App. This is the Google Realtime-side switch; using
+        # AgentSession allow_interruptions=False is invalid while server-side
+        # realtime turn detection remains enabled.
         return AgentSession(
-            llm=google.realtime.RealtimeModel(
-                voice=config.gemini.live_voice,
-                model=config.gemini.live_model,
-                api_key=config.google_api_key or None,
-            ),
+            llm=google.realtime.RealtimeModel(**realtime_kwargs),
         )
 
     # line_b — STT-LLM-TTS pipeline (no fallback if any plugin import fails).

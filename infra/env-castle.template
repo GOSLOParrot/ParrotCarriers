@@ -74,6 +74,11 @@ FALKORDB_PORT=6380
 # 一旦 orchestrator 写过 runtime_config.json，本变量会被忽略。
 PARROT_LLM_PIPELINE=line_a
 
+# LineA Gemini Live barge-in policy. Default is demo-safe one-question-one-answer:
+# unset/0 -> Google Realtime activity_handling=NO_INTERRUPTION.
+# Set to 1 only for deliberate low-latency overlap labs with isolated audio.
+PARROT_LINEA_BARGE_IN_ENABLED=0
+
 # =====================================================================
 # §E. 调试 / 可选
 # =====================================================================

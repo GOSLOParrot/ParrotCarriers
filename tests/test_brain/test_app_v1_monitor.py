@@ -122,6 +122,68 @@ def test_app_monitor_proxies_live_state_to_brain_room_job(
     ]
 
 
+def test_app_monitor_proxies_operator_l2b_write_to_brain_room_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv(
+        "PARROT_APP_MONITOR_BRAIN_LIVE_STATE_URL",
+        "http://brain:7889",
+    )
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def fake_post(base_url: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append((base_url, path, payload))
+        return {
+            "success": True,
+            "action": "l2b.subgraph.apply",
+            "dry_run": False,
+            "operator_mode": True,
+            "data": {
+                "direct_l2b_write": True,
+                "member_node_uuids": ["node-from-brain"],
+            },
+        }
+
+    monkeypatch.setattr(
+        app_monitor_server,
+        "_post_brain_live_state_json_sync",
+        fake_post,
+    )
+
+    client = TestClient(app_monitor_server.build_app())
+    body = client.post(
+        "/api/l2b/subgraphs/apply",
+        json={
+            "label": "Brain write proxy smoke",
+            "node_uuids": ["node-from-brain"],
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+
+    assert body["success"] is True
+    assert body["action"] == "l2b.subgraph.apply"
+    assert body["data"]["direct_l2b_write"] is True
+    assert body["data"]["brain_write_proxy"]["source"] == "brain_room_job"
+    assert body["data"]["brain_write_proxy"]["read_write"] is True
+    assert calls == [
+        (
+            "http://brain:7889",
+            "/api/l2b/subgraphs/apply",
+            {
+                "label": "Brain write proxy smoke",
+                "node_uuids": ["node-from-brain"],
+                "dry_run": False,
+                "operator_mode": True,
+                "_remote_proxy_disable": True,
+                "_brain_proxy_disable": True,
+            },
+        )
+    ]
+
+
 def test_monitor_health_and_canvas_endpoints() -> None:
     from fastapi.testclient import TestClient
 
@@ -229,7 +291,145 @@ def test_monitor_exposes_l2b_node_operator_route_for_web_console() -> None:
     assert node["success"] is True
     assert node["action"] == "l2b.node.apply"
     assert node["data"]["admit_outcome"]["rejected"] == []
-    assert any(row["label"] == "Monitor Web Node" for row in live["l2b"]["nodes"])
+    monitor_node = next(row for row in live["l2b"]["nodes"] if row["label"] == "Monitor Web Node")
+
+    work_subgraph = client.post(
+        "/api/l2b/subgraphs/apply",
+        json={
+            "label": "Monitor work subgraph",
+            "node_uuids": [monitor_node["uuid"]],
+            "dry_run": False,
+            "operator_mode": True,
+        },
+    ).json()
+    live_after = client.get("/api/app/live-state?limit=40").json()
+
+    assert work_subgraph["action"] == "l2b.subgraph.apply"
+    assert work_subgraph["success"] is True
+    assert work_subgraph["data"]["direct_l2b_write"] is True
+    assert work_subgraph["data"]["member_node_uuids"] == [monitor_node["uuid"]]
+    assert any(row["label"] == "Monitor work subgraph" for row in live_after["l2b"]["nodes"])
+
+
+def test_monitor_exposes_identity_ref_routes_for_ref_scan(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+
+    index_path = tmp_path / "memory_identity_ref_index.json"
+    ref_file = tmp_path / "ref.md"
+    ref_file.write_text("laptop ref scan route smoke\n", encoding="utf-8")
+    monkeypatch.setenv("PARROT_MEMORY_IDENTITY_REF_INDEX_PATH", str(index_path))
+    client = TestClient(build_app())
+    payload = {
+        "canonical_uuid": "canon-monitor-ref-route",
+        "l2b_uuid": "l2b-monitor-ref-route",
+        "ref_id": "monitor-ref-route",
+        "ref_kind": "obsidian_doc",
+        "locator": str(ref_file),
+        "managed_by": "nanobot",
+    }
+
+    draft = client.post("/api/memory/identity-ref-index/draft", json=payload).json()
+    applied = client.post(
+        "/api/memory/identity-ref-index/apply",
+        json={**payload, "dry_run": False, "operator_mode": True},
+    ).json()
+    snapshot = client.get("/api/memory/identity-ref-index").json()
+    plan = client.post(
+        "/api/memory/identity-ref-index/ref-scan-plan",
+        json={"limit": 10},
+    ).json()
+
+    assert draft["action"] == "memory.identity_ref_index.draft"
+    assert draft["data"]["would_persist"] is False
+    assert applied["action"] == "memory.identity_ref_index.apply"
+    assert applied["data"]["mutated"] is True
+    assert snapshot["data"]["ref_count"] == 1
+    assert plan["action"] == "memory.identity_ref_index.ref_scan_plan"
+    assert plan["data"]["counts"]["ref_count"] == 1
+    assert plan["data"]["ref_scan_plan"][0]["ref_id"] == "monitor-ref-route"
+
+
+def test_monitor_exposes_obsidian_source_board_and_photo_routes(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "daily.md").write_text(
+        "---\n"
+        "profile: daily\n"
+        "label: Laptop Obsidian Smoke\n"
+        "kind: object\n"
+        "tags: laptop,smoke\n"
+        "---\n"
+        "A laptop source-board smoke note can rise into L1.5 as an Obsidian observation.",
+        encoding="utf-8",
+    )
+    photo_day = "2026-05-18"
+    photo_id = "monitor_photo_route"
+    photo_root = tmp_path / "photos"
+    (photo_root / photo_day).mkdir(parents=True)
+    photo_bytes = b"\xff\xd8monitor-photo-route\xff\xd9"
+    (photo_root / photo_day / f"{photo_id}.jpg").write_bytes(photo_bytes)
+    monkeypatch.setenv("PARROT_PHOTO_CACHE_ROOT", str(photo_root))
+
+    client = TestClient(build_app())
+    scan = client.get(
+        "/api/l15/obsidian-vault/scan",
+        params={"vault_path": str(vault), "limit": "8"},
+    ).json()
+    draft = client.post(
+        "/api/l15/obsidian-vault/import-draft",
+        json={"vault_path": str(vault), "paths": ["daily.md"], "limit": 8},
+    ).json()
+    plan = client.post(
+        "/api/l15/obsidian-vault/import-plan",
+        json={
+            "vault_path": str(vault),
+            "paths": ["daily.md"],
+            "destination": "isolated_compartment",
+        },
+    ).json()
+    dry_apply = client.post(
+        "/api/l15/obsidian-vault/import",
+        json={
+            "vault_path": str(vault),
+            "paths": ["daily.md"],
+            "dry_run": True,
+            "operator_mode": False,
+        },
+    ).json()
+    node_draft = client.post(
+        "/api/l15/obsidian-node/draft",
+        json={"profile": "daily", "label": "Manual source note", "body": "Draft only."},
+    ).json()
+    photo = client.get(f"/api/photos/asset/{photo_day}/{photo_id}")
+    bad_photo = client.get(f"/api/photos/asset/not-a-day/{photo_id}")
+
+    assert scan["action"] == "l15.obsidian_vault.scan"
+    assert scan["success"] is True
+    assert scan["data"]["vault"]["status"] == "ingest_ready"
+    assert scan["data"]["notes"][0]["path"] == "daily.md"
+    assert draft["action"] == "l15.obsidian_vault.import_draft"
+    assert draft["success"] is True
+    assert draft["data"]["selected_count"] == 1
+    assert plan["action"] == "l15.obsidian_vault.import_plan"
+    assert plan["success"] is True
+    assert plan["data"]["apply_route"] == "/api/l15/obsidian-vault/import"
+    assert dry_apply["action"] == "l15.obsidian_vault.import"
+    assert dry_apply["data"]["would_apply"] is True
+    assert dry_apply["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
+    assert node_draft["action"] == "l15.obsidian_node.draft"
+    assert node_draft["success"] is True
+    assert photo.status_code == 200
+    assert photo.content == photo_bytes
+    assert photo.headers["Cache-Control"] == "no-store"
+    assert bad_photo.status_code == 400
 
 
 def test_monitor_exposes_google_calendar_true_fetch_routes(monkeypatch: pytest.MonkeyPatch) -> None:

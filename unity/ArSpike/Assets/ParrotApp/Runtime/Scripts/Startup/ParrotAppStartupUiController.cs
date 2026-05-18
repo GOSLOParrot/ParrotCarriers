@@ -77,6 +77,7 @@ namespace ParrotApp.UI
         private float _statusTick;
         private float _transitionTick;
         private bool _subscribed;
+        private bool _startupOverlayReleased;
         private FormalMainReadyGate _subscribedMainReadyGate;
         private bool _useChinese = true;
         private VisibleScreen _visibleScreen = VisibleScreen.Startup;
@@ -143,7 +144,16 @@ namespace ParrotApp.UI
             ResolveServices();
             EnsureEventSystem();
             BuildUi();
-            ShowStartup(Tr("就绪。", "Ready."));
+            if (startupFlow != null && startupFlow.MainUiReadyOnce)
+            {
+                ShowMain("Loading home gates...");
+                if (mainReadyGate != null && mainReadyGate.IsReady)
+                    ReleaseStartupOverlayForFormalHome("start_after_home_ready");
+            }
+            else
+            {
+                ShowStartup(Tr("就绪。", "Ready."));
+            }
             RefreshSelectionSummary();
             RefreshStatus();
             LoadRoomSettingSnapshotIfNeeded();
@@ -429,6 +439,8 @@ namespace ParrotApp.UI
 
         private void ShowRoomSetting()
         {
+            _startupOverlayReleased = false;
+            EnableStartupCanvasInteraction();
             _visibleScreen = VisibleScreen.RoomSetting;
             SetActive(_startupSurface, false);
             SetActive(_transitionSurface, false);
@@ -909,6 +921,7 @@ namespace ParrotApp.UI
         private void HandleTransitionStarted(AppStartupConfigDto config)
         {
             _config = CopyConfig(config);
+            _startupOverlayReleased = false;
             ShowTransition(Tr("启动中...", "Starting..."));
         }
 
@@ -916,14 +929,17 @@ namespace ParrotApp.UI
         {
             _config = CopyConfig(config);
             ShowMain("Loading home gates...");
+            if (mainReadyGate != null && mainReadyGate.IsReady)
+                ReleaseStartupOverlayForFormalHome("main_ready_event_gate_already_ready");
         }
 
         private void HandleMainReadyGateChanged(FormalMainReadySnapshot snapshot)
         {
+            if (_startupOverlayReleased) return;
             if (_visibleScreen != VisibleScreen.Main) return;
             if (snapshot != null && snapshot.ready)
             {
-                HideMainReadySurfaceForFormalHome();
+                ReleaseStartupOverlayForFormalHome("main_ready_gate_ready");
             }
             else
             {
@@ -936,17 +952,25 @@ namespace ParrotApp.UI
 
         private void HideMainReadySurfaceForFormalHome()
         {
-            SetActive(_mainSurface, false);
-            Debug.Log("[StartupUI] Main-ready gate satisfied; startup surface hidden for formal home.");
+            ReleaseStartupOverlayForFormalHome("formal_home_gate");
         }
 
         private void HandleStartupFailed(string reason)
         {
+            if (ShouldIgnoreLateStartupFailure())
+            {
+                Debug.LogWarning(
+                    "[StartupUI] Ignoring late startup failure after formal home release: "
+                    + (string.IsNullOrWhiteSpace(reason) ? "unknown" : reason));
+                return;
+            }
             ShowStartup(Tr("启动失败：", "START failed: ") + (string.IsNullOrWhiteSpace(reason) ? Tr("未知", "unknown") : reason));
         }
 
         private void ShowStartup(string message)
         {
+            _startupOverlayReleased = false;
+            EnableStartupCanvasInteraction();
             _visibleScreen = VisibleScreen.Startup;
             _startupMessage = string.IsNullOrWhiteSpace(message) ? "Ready." : message;
             SetActive(_startupSurface, true);
@@ -959,6 +983,8 @@ namespace ParrotApp.UI
 
         private void ShowTransition(string message)
         {
+            _startupOverlayReleased = false;
+            EnableStartupCanvasInteraction();
             _visibleScreen = VisibleScreen.Transition;
             SetActive(_startupSurface, false);
             SetActive(_roomSettingSurface, false);
@@ -969,6 +995,8 @@ namespace ParrotApp.UI
 
         private void ShowMain(string message)
         {
+            if (_startupOverlayReleased) return;
+            EnableStartupCanvasInteraction();
             _visibleScreen = VisibleScreen.Main;
             SetActive(_startupSurface, false);
             SetActive(_roomSettingSurface, false);
@@ -981,6 +1009,42 @@ namespace ParrotApp.UI
             if (mainReadyGate != null && mainReadyGate.IsReady)
                 HideMainReadySurfaceForFormalHome();
             RefreshStatus();
+        }
+
+        private void ReleaseStartupOverlayForFormalHome(string reason)
+        {
+            _startupOverlayReleased = true;
+            _visibleScreen = VisibleScreen.Main;
+            SetActive(_startupSurface, false);
+            SetActive(_roomSettingSurface, false);
+            SetActive(_transitionSurface, false);
+            SetActive(_mainSurface, false);
+
+            // Runtime reconnect/media failures after home entry should degrade
+            // the HUD, not resurrect the blocking startup surface.
+            if (_canvas != null)
+            {
+                var raycaster = _canvas.GetComponent<GraphicRaycaster>();
+                if (raycaster != null)
+                    raycaster.enabled = false;
+            }
+
+            Debug.Log("[StartupUI] Main-ready gate satisfied; startup surface hidden for formal home. reason=" + reason);
+        }
+
+        private bool ShouldIgnoreLateStartupFailure()
+        {
+            return _startupOverlayReleased
+                   || (startupFlow != null && startupFlow.MainUiReadyOnce)
+                   || (mainReadyGate != null && mainReadyGate.IsReady);
+        }
+
+        private void EnableStartupCanvasInteraction()
+        {
+            if (_canvas == null) return;
+            var raycaster = _canvas.GetComponent<GraphicRaycaster>();
+            if (raycaster != null)
+                raycaster.enabled = true;
         }
 
         private void TickTransition()
@@ -1126,20 +1190,31 @@ namespace ParrotApp.UI
             EnsureEventSystem();
             BuildUi();
 
-            switch (screen)
+            if (_startupOverlayReleased || (mainReadyGate != null && mainReadyGate.IsReady))
             {
-                case VisibleScreen.RoomSetting:
-                    ShowRoomSetting();
-                    break;
-                case VisibleScreen.Transition:
-                    ShowTransition(Tr("启动中...", "Starting..."));
-                    break;
-                case VisibleScreen.Main:
-                    ShowMain("Loading home gates...");
-                    break;
-                default:
-                    ShowStartup(Tr("就绪。", "Ready."));
-                    break;
+                ReleaseStartupOverlayForFormalHome("language_rebuild_home_ready");
+            }
+            else if (startupFlow != null && startupFlow.MainUiReadyOnce)
+            {
+                ShowMain("Loading home gates...");
+            }
+            else
+            {
+                switch (screen)
+                {
+                    case VisibleScreen.RoomSetting:
+                        ShowRoomSetting();
+                        break;
+                    case VisibleScreen.Transition:
+                        ShowTransition(Tr("启动中...", "Starting..."));
+                        break;
+                    case VisibleScreen.Main:
+                        ShowMain("Loading home gates...");
+                        break;
+                    default:
+                        ShowStartup(Tr("就绪。", "Ready."));
+                        break;
+                }
             }
         }
 

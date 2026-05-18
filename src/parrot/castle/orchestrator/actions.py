@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 import subprocess
 import threading
@@ -43,6 +44,13 @@ logger = logging.getLogger(__name__)
 
 
 KNOWN_COMPONENTS = ("brain", "scheduler", "maid", "goslo-chat", "orchestrator")
+LAPTOP_SERVICE_ALIASES = {
+    "maid": "nanobot-worker",
+    "goslo-chat": "goslo-chat",
+    "brain": "brain",
+    "scheduler": "scheduler",
+    "orchestrator": "orchestrator",
+}
 
 
 # Phase 5.3 — restart rate limiter to avoid thrash.
@@ -234,6 +242,30 @@ def restart_component(
             "reason": "unknown_component",
             "detail": f"{component!r} not in {KNOWN_COMPONENTS}",
         }
+    external_mode = _external_restart_mode()
+    if external_mode:
+        service = LAPTOP_SERVICE_ALIASES.get(component, component)
+        command_template = (
+            os.getenv("PARROT_ORCH_RESTART_OPERATOR_COMMAND", "").strip()
+            or "powershell -ExecutionPolicy Bypass -File infra\\laptop-castle.ps1 "
+            "-Action restart -Service {component}"
+        )
+        return {
+            "status": "error",
+            "reason": "restart_managed_externally",
+            "detail": (
+                "This orchestrator is running without host process-control "
+                "privileges. Restart the laptop component from the host "
+                "operator shell instead."
+            ),
+            "mode": external_mode,
+            "component": component,
+            "compose_service": service,
+            "operator_command": command_template.format(
+                component=service,
+                logical_component=component,
+            ),
+        }
     blocked, stats = _restart_rate_limited(component)
     if blocked:
         return {
@@ -297,6 +329,13 @@ def restart_component(
             "becomes true again (typical 5-15s)."
         ),
     }
+
+
+def _external_restart_mode() -> str:
+    mode = os.getenv("PARROT_ORCH_RESTART_MODE", "").strip().lower()
+    if mode in {"external_operator", "compose_external", "disabled"}:
+        return mode
+    return ""
 
 
 async def wait_for_heartbeat(

@@ -6,6 +6,7 @@ using ParrotApp.Config;
 using ParrotApp.Core;
 using ParrotApp.Ecp;
 using ParrotApp.LiveKit;
+using ParrotApp.RPC;
 using ParrotApp.UI;
 using ParrotApp.VisualTools;
 using UnityEngine;
@@ -35,6 +36,7 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private AppHomeMenuClient homeMenuClient;
         [SerializeField] private LifecycleHeartbeatPublisher heartbeatPublisher;
         [SerializeField] private EcpEventPublisher ecpEventPublisher;
+        [SerializeField] private ParrotRpcHandler parrotRpcHandler;
         [SerializeField] private FormalMainReadyGate mainReadyGate;
         [SerializeField] private FormalHomeHudController homeHudController;
         [SerializeField] private FormalHomeMenuLoader homeMenuLoader;
@@ -1250,6 +1252,14 @@ namespace ParrotApp.Lifecycle
                     ? roomManager.gameObject
                     : (lifecycleManager != null ? lifecycleManager.gameObject : gameObject);
                 ecpEventPublisher = host.AddComponent<EcpEventPublisher>();
+            }
+            if (parrotRpcHandler == null) parrotRpcHandler = FindObjectOfType<ParrotRpcHandler>();
+            if (parrotRpcHandler == null)
+            {
+                var host = roomManager != null
+                    ? roomManager.gameObject
+                    : (lifecycleManager != null ? lifecycleManager.gameObject : gameObject);
+                parrotRpcHandler = host.AddComponent<ParrotRpcHandler>();
             }
             if (mainReadyGate == null) mainReadyGate = FindObjectOfType<FormalMainReadyGate>();
             if (mainReadyGate == null)

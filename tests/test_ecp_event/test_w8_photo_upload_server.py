@@ -191,6 +191,34 @@ def test_brain_read_only_live_state_routes(_isolated):
 # ─── publish bridge ─────────────────────────────────────────────
 
 
+def test_brain_l2b_operator_write_routes_preserve_photo_upload_auth_boundary(
+    _isolated,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Brain exposes Web Console write routes without globally locking photo upload."""
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("PARROT_APP_MONITOR_SECRET", "unit-secret")
+    client = TestClient(build_app())
+
+    write_without_auth = client.post(
+        "/api/l2b/subgraphs/apply",
+        json={"node_uuids": ["missing"], "dry_run": False, "operator_mode": True},
+    )
+    photo_upload = client.post("/upload/photo/ph_no_global_auth", content=b"photo-bytes")
+    write_with_auth = client.post(
+        "/api/l2b/subgraphs/apply",
+        headers={"Authorization": "Bearer unit-secret"},
+        json={"node_uuids": ["missing"], "dry_run": True, "operator_mode": False},
+    )
+
+    assert write_without_auth.status_code == 401
+    assert write_without_auth.json()["detail"] == "brain_operator_auth_required"
+    assert photo_upload.status_code == 200
+    assert write_with_auth.status_code == 200
+    assert write_with_auth.json()["action"] == "l2b.subgraph.apply"
+
+
 def test_upload_publishes_photo_asset_uploaded_event(_isolated):
     """Wire EcpEventPublisher to a fake Room → POST → publish_data must
     have been awaited with a JSON containing event_type=photo.asset_uploaded

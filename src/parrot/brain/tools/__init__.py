@@ -24,12 +24,14 @@ from parrot.brain.tools.calendar_task_status import calendar_task_status
 from parrot.brain.tools.dispatch_task import dispatch_task
 from parrot.brain.tools.fly_to import fly_to
 from parrot.brain.tools.manage_episode import manage_episode
+from parrot.brain.tools.message_check_request import message_check_request
 from parrot.brain.tools.perch_to_finger import perch_to_finger
 from parrot.brain.tools.play_capability import play_capability
 from parrot.brain.tools.query_etiquette_memory import query_etiquette_memory
 from parrot.brain.tools.query_memory import query_memory
 from parrot.brain.tools.query_scene import query_scene
 from parrot.brain.tools.remember import remember
+from parrot.brain.tools.reminder_request import reminder_request
 from parrot.brain.tools.return_to_view import return_to_view
 from parrot.brain.tools.set_mode import set_mode
 from parrot.brain.tools.set_video_tier import set_video_tier
@@ -47,6 +49,8 @@ _BASE_TOOLS = [
     calendar_context,
     calendar_change_request,
     calendar_task_status,
+    message_check_request,
+    reminder_request,
     remember,
     query_memory,
     query_etiquette_memory,
@@ -98,6 +102,8 @@ def tools_for_active_model():
         calendar_context,
         calendar_change_request,
         calendar_task_status,
+        message_check_request,
+        reminder_request,
         dispatch_task,
         remember,
         query_memory,
@@ -134,7 +140,7 @@ def tools_for_active_model():
     return tools
 
 
-if _env_enabled("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", True):
+if _env_enabled("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", False):
     # Default-on T1 visual recognition bridge. Gemini Live receives native
     # video_input=True, but those frames are not auditable evidence. This tool
     # uses Parrot's visual evidence path plus L0/L1/Graphiti matching so GOSLO
@@ -167,6 +173,8 @@ __all__ = [
     "calendar_context",
     "calendar_change_request",
     "calendar_task_status",
+    "message_check_request",
+    "reminder_request",
     "remember",
     "query_memory",
     "query_etiquette_memory",

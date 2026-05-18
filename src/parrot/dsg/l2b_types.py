@@ -409,6 +409,7 @@ class SemanticNode:
             salience=Salience.ACTIVE,  # caller may override after construction
             reference_image_path=obs.reference_image_path,
             last_sighting_path=obs.last_sighting_path,
+            time_span=obs.time_span,
             provenance_stream_id=obs.provenance_stream_id,
             source=source_value,
             source_meta=source_meta,

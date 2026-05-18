@@ -8,6 +8,7 @@ default to dry-run and require an explicit operator flag.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import urllib.error
@@ -19,6 +20,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 _TRIGGER_EVENT_HINTS: dict[str, list[dict[str, Any]]] = {
@@ -2393,6 +2396,13 @@ def draft_obsidian_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
         policy_skipped_reason = "no_importable_obsidian_items"
     policy_data = dict((policy_receipt or {}).get("data") or {})
     policy_success = bool(policy_receipt and policy_receipt.get("success"))
+    source_pack = _obsidian_source_pack(
+        items=items,
+        vault_path=vault_path,
+        label=str(body.get("subgraph_label") or "Obsidian source pack"),
+        destination=str(body.get("destination") or "isolated_compartment"),
+        scan_summary=data.get("scan_summary", {}),
+    )
     return _receipt(
         action="l15.obsidian_vault.import_plan",
         success=bool(items) and not errors and policy_success,
@@ -2411,6 +2421,7 @@ def draft_obsidian_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
                 "runtime_path",
                 "ObsidianIngestTrigger -> TriggerOutcome.commit_observations -> L15Pool.admit",
             ),
+            "source_pack": source_pack,
             "import_policy": policy_data.get("policy", {}),
             "import_draft": policy_data.get("draft", {}),
             "policy_skipped_reason": policy_skipped_reason,
@@ -2418,8 +2429,9 @@ def draft_obsidian_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
                 "scan local Obsidian vault",
                 "operator selects ready daily / roleplay / ref notes",
                 "UserTagFilter normalizes selected notes into Observations",
+                "normalize selected notes into a Source Pack envelope",
                 "preview CORE-013 import destination / overlay policy",
-                "real import, if chosen later, must admit through L1.5 under operator mode",
+                "real import admits through L1.5 and can materialize a L2-B WorkSubgraph from admitted nodes",
             ],
             "operator_required_for_execute": True,
             "apply_route": "/api/l15/obsidian-vault/import",
@@ -2449,6 +2461,19 @@ def draft_obsidian_vault_import(payload: dict[str, Any] | None = None) -> dict[s
     body = payload or {}
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
+    scan_summary = {
+        "vault": (scan_receipt.get("data") or {}).get("vault", {}),
+        "ready_count": len((scan_receipt.get("data") or {}).get("notes", [])),
+        "invalid_count": len((scan_receipt.get("data") or {}).get("invalid_notes", [])),
+    }
+    vault_data = scan_summary["vault"] if isinstance(scan_summary.get("vault"), dict) else {}
+    source_pack = _obsidian_source_pack(
+        items=items,
+        vault_path=str(body.get("vault_path") or vault_data.get("vault_path") or "obsidian_vault"),
+        label=str(body.get("subgraph_label") or "Obsidian source pack"),
+        destination=str(body.get("destination") or "isolated_compartment"),
+        scan_summary=scan_summary,
+    )
     return _receipt(
         action="l15.obsidian_vault.import_draft",
         success=bool(items) and not errors,
@@ -2458,11 +2483,8 @@ def draft_obsidian_vault_import(payload: dict[str, Any] | None = None) -> dict[s
             "items": items,
             "errors": errors,
             "selected_count": len(items),
-            "scan_summary": {
-                "vault": (scan_receipt.get("data") or {}).get("vault", {}),
-                "ready_count": len((scan_receipt.get("data") or {}).get("notes", [])),
-                "invalid_count": len((scan_receipt.get("data") or {}).get("invalid_notes", [])),
-            },
+            "scan_summary": scan_summary,
+            "source_pack": source_pack,
             "write_path": "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)",
             "runtime_path": "ObsidianIngestTrigger -> TriggerOutcome.commit_observations -> L15Pool.admit",
             "operator_required_for_import": True,
@@ -2501,6 +2523,24 @@ async def apply_obsidian_vault_import(payload: dict[str, Any] | None = None) -> 
         if isinstance(item, dict) and isinstance(item.get("observation"), dict)
     )
     outcome = await get_l1_5_pool().admit(observations)
+    node_uuids = _node_uuids_from_admit_outcome(outcome)
+    source_pack = _obsidian_source_pack(
+        items=[item for item in draft["data"]["items"] if isinstance(item, dict)],
+        vault_path=str(
+            ((draft["data"].get("scan_summary") or {}).get("vault") or {}).get("vault_path")
+            or body.get("vault_path")
+            or "obsidian_vault"
+        ),
+        label=str(body.get("subgraph_label") or "Obsidian source pack"),
+        destination=str(body.get("destination") or "isolated_compartment"),
+        scan_summary=draft["data"].get("scan_summary", {}),
+    )
+    work_subgraph = _materialize_source_pack_work_subgraph_if_requested(
+        body,
+        source_pack=source_pack,
+        node_uuids=node_uuids,
+        default_label="Obsidian source pack",
+    )
     return _receipt(
         action="l15.obsidian_vault.import",
         success=not bool(outcome.rejected),
@@ -2509,6 +2549,8 @@ async def apply_obsidian_vault_import(payload: dict[str, Any] | None = None) -> 
         data={
             "imported_count": len(observations),
             "admit_outcome": _jsonable(outcome),
+            "source_pack": source_pack,
+            "work_subgraph": work_subgraph,
             "write_path": "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)",
         },
     )
@@ -2920,6 +2962,20 @@ def draft_google_calendar_import(payload: dict[str, Any] | None = None) -> dict[
     errors: list[dict[str, Any]] = []
     if not observations:
         errors.append({"error": "no_calendar_observations"})
+    calendar_ids = sorted({
+        str(row.get("calendar_id") or "primary")
+        for row in mapping_rows
+        if isinstance(row, dict)
+    })
+    source_pack = _google_calendar_source_pack(
+        observations=observations,
+        mapping_rows=mapping_rows,
+        normalized_events=normalized_events,
+        raw_events=data.get("raw_events", []),
+        calendar_ids=calendar_ids,
+        label=str(body.get("subgraph_label") or "Google Calendar source pack"),
+        destination=str(body.get("destination") or "isolated_compartment"),
+    )
     return _receipt(
         action="google.calendar.import_draft",
         success=bool(observations),
@@ -2932,6 +2988,7 @@ def draft_google_calendar_import(payload: dict[str, Any] | None = None) -> dict[
             "mapping_rows": mapping_rows,
             "observation_count": len(observations),
             "errors": errors,
+            "source_pack": source_pack,
             "write_path": "CalendarTrigger._event_to_observation -> L15Pool.admit(GOOGLE_CALENDAR)",
             "operator_required_for_import": True,
         },
@@ -3005,6 +3062,15 @@ def draft_google_calendar_l2b_import_plan(
         policy_skipped_reason = "no_calendar_observations"
     policy_data = dict((policy_receipt or {}).get("data") or {})
     policy_success = bool(policy_receipt and policy_receipt.get("success"))
+    source_pack = _google_calendar_source_pack(
+        observations=observations,
+        mapping_rows=mapping_rows,
+        normalized_events=normalized_events,
+        raw_events=data.get("raw_events", []),
+        calendar_ids=calendar_ids,
+        label=str(body.get("subgraph_label") or "Google Calendar source pack"),
+        destination=str(body.get("destination") or "isolated_compartment"),
+    )
     return _receipt(
         action="google.calendar.import_plan",
         success=bool(observations) and not errors and policy_success,
@@ -3021,6 +3087,7 @@ def draft_google_calendar_l2b_import_plan(
                 "write_path",
                 "CalendarTrigger._event_to_observation -> L15Pool.admit(GOOGLE_CALENDAR)",
             ),
+            "source_pack": source_pack,
             "import_policy": policy_data.get("policy", {}),
             "import_draft": policy_data.get("draft", {}),
             "policy_skipped_reason": policy_skipped_reason,
@@ -3028,8 +3095,9 @@ def draft_google_calendar_l2b_import_plan(
                 "manual fetch or pasted Nanobot/Google JSON",
                 "CalendarTrigger normalizes event identity, time, status, and object hints",
                 "draft GOOGLE_CALENDAR Observations for L1.5",
+                "normalize selected events into a Source Pack envelope",
                 "preview CORE-013 import destination / overlay policy",
-                "real import, if chosen later, must admit through L1.5 under operator mode",
+                "real import admits through L1.5 and can materialize a L2-B WorkSubgraph from admitted nodes",
             ],
             "operator_required_for_execute": True,
             "apply_route": "/api/google/calendar/import",
@@ -3077,6 +3145,34 @@ async def apply_google_calendar_import(payload: dict[str, Any] | None = None) ->
         if isinstance(item, dict)
     )
     outcome = await get_l1_5_pool().admit(observations)
+    node_uuids = _node_uuids_from_admit_outcome(outcome)
+    source_pack = _google_calendar_source_pack(
+        observations=[
+            item for item in draft["data"].get("observations", []) if isinstance(item, dict)
+        ],
+        mapping_rows=[
+            item for item in draft["data"].get("mapping_rows", []) if isinstance(item, dict)
+        ],
+        normalized_events=[
+            item for item in draft["data"].get("normalized_events", []) if isinstance(item, dict)
+        ],
+        raw_events=[
+            item for item in draft["data"].get("raw_events", []) if isinstance(item, dict)
+        ],
+        calendar_ids=sorted({
+            str(row.get("calendar_id") or "primary")
+            for row in draft["data"].get("mapping_rows", [])
+            if isinstance(row, dict)
+        }),
+        label=str(body.get("subgraph_label") or "Google Calendar source pack"),
+        destination=str(body.get("destination") or "isolated_compartment"),
+    )
+    work_subgraph = _materialize_source_pack_work_subgraph_if_requested(
+        body,
+        source_pack=source_pack,
+        node_uuids=node_uuids,
+        default_label="Google Calendar source pack",
+    )
     return _receipt(
         action="google.calendar.import",
         success=not bool(outcome.rejected),
@@ -3086,6 +3182,8 @@ async def apply_google_calendar_import(payload: dict[str, Any] | None = None) ->
             "imported_count": len(observations),
             "admit_outcome": _jsonable(outcome),
             "mapping_rows": draft["data"].get("mapping_rows", []),
+            "source_pack": source_pack,
+            "work_subgraph": work_subgraph,
             "write_path": "CalendarTrigger._event_to_observation -> L15Pool.admit(GOOGLE_CALENDAR)",
         },
     )
@@ -3294,6 +3392,253 @@ async def apply_l2b_node(payload: dict[str, Any] | None = None) -> dict[str, Any
         dry_run=False,
         operator_mode=True,
         data={"admit_outcome": _jsonable(outcome)},
+    )
+
+
+def apply_l2b_work_subgraph(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Materialize a L2-B work-subgraph grouping node around live nodes.
+
+    This is the apply companion to the overlay draft route.  It deliberately
+    does not create a new NodeKind; a work-subgraph is represented as an
+    EVENT-like grouping node plus CONTAINS edges so the current RustWorkX graph
+    schema stays stable while Web/GOSLO can select, inspect, and reuse it.
+    """
+
+    from parrot.dsg.l2b_types import (
+        ConfirmationStatus,
+        EdgeKind,
+        NodeKind,
+        Salience,
+        SemanticEdge,
+        SemanticNode,
+    )
+    from parrot.web_console.source_pack import source_pack_summary, work_subgraph_uuid
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    if _should_proxy_l2b_operator(body, dry_run=dry_run, operator_mode=operator_mode):
+        return _proxy_l2b_operator_route(
+            action="l2b.subgraph.apply",
+            path="/api/l2b/subgraphs/apply",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
+
+    source_pack = body.get("source_pack") if isinstance(body.get("source_pack"), dict) else {}
+    source_pack_safe = source_pack_summary(source_pack) if source_pack else {}
+    node_uuids = _unique_texts(
+        body.get("node_uuids")
+        or body.get("nodes")
+        or body.get("member_node_uuids")
+        or source_pack_safe.get("l2b_node_uuids")
+        or []
+    )
+    label = str(
+        body.get("label")
+        or body.get("subgraph_label")
+        or source_pack_safe.get("label")
+        or "L2-B work subgraph"
+    ).strip()[:120]
+    source_kind = str(
+        body.get("source_kind")
+        or source_pack_safe.get("source_kind")
+        or "manual"
+    ).strip() or "manual"
+    source_id = str(
+        body.get("source_id")
+        or source_pack_safe.get("source_id")
+        or source_pack_safe.get("pack_id")
+        or ""
+    )
+    source_ref = str(
+        body.get("source_ref")
+        or source_pack_safe.get("source_ref")
+        or source_id
+    )
+    subgraph_uuid = str(body.get("subgraph_id") or body.get("uuid") or "").strip()
+    if not subgraph_uuid:
+        subgraph_uuid = work_subgraph_uuid(
+            source_kind=source_kind,
+            source_id=source_id or label,
+            item_ids=node_uuids or list(source_pack_safe.get("item_ids") or []),
+        )
+    if not node_uuids:
+        return _receipt(
+            action="l2b.subgraph.apply",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "error": "missing_node_selection",
+                "subgraph_uuid": subgraph_uuid,
+                "source_pack": source_pack_safe,
+                "operator_required_for_execute": True,
+            },
+        )
+
+    try:
+        from parrot.dsg.l2b_graph import get_l2b_graph
+
+        graph = get_l2b_graph()
+        existing_nodes = {str(node.uuid): node for node in graph.all_nodes()}
+    except Exception as exc:
+        return _receipt(
+            action="l2b.subgraph.apply",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={
+                "error": "l2b_graph_unavailable",
+                "message": f"{type(exc).__name__}: {exc}",
+                "subgraph_uuid": subgraph_uuid,
+                "source_pack": source_pack_safe,
+            },
+        )
+
+    present_node_uuids = [uuid for uuid in node_uuids if uuid in existing_nodes]
+    missing_node_uuids = [uuid for uuid in node_uuids if uuid not in existing_nodes]
+    base_data = {
+        "subgraph_uuid": subgraph_uuid,
+        "label": label,
+        "member_node_uuids": present_node_uuids,
+        "missing_node_uuids": missing_node_uuids,
+        "source_pack": source_pack_safe,
+        "source_kind": source_kind,
+        "source_id": source_id,
+        "source_ref": source_ref,
+        "operator_required_for_execute": True,
+        "representation": {
+            "node_kind": NodeKind.EVENT.value,
+            "node_role": "l2b_work_subgraph",
+            "membership_edge_kind": EdgeKind.CONTAINS.value,
+            "reason": "NodeKind remains stable; grouping is expressed through source_meta/meta and hierarchy edges.",
+        },
+        "direct_graphiti_write": False,
+        "direct_falkordb_write": False,
+    }
+    if not present_node_uuids:
+        return _receipt(
+            action="l2b.subgraph.apply",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={**base_data, "error": "no_existing_l2b_members"},
+        )
+    if dry_run or not operator_mode:
+        return _receipt(
+            action="l2b.subgraph.apply",
+            success=True,
+            dry_run=True,
+            operator_mode=False,
+            data={
+                **base_data,
+                "would_apply": True,
+                "apply_skipped_reason": "dry_run_or_operator_mode_missing",
+                "direct_l2b_write": False,
+            },
+        )
+
+    before_nodes = graph.node_count()
+    before_edges = len(graph.all_edges())
+    subgraph_node = SemanticNode(
+        uuid=subgraph_uuid,
+        kind=NodeKind.EVENT,
+        label=label or "L2-B work subgraph",
+        category="l2b_work_subgraph",
+        description=str(body.get("description") or f"Work subgraph for {source_kind}")[:400],
+        known_facts=[
+            f"Work subgraph from {source_kind}",
+            f"{len(present_node_uuids)} L2-B member node(s)",
+        ],
+        tags=_unique_texts(["l2b_work_subgraph", source_kind, "source_pack"]),
+        attention=0.5,
+        salience=Salience.ACTIVE,
+        confirmation=ConfirmationStatus.EXPECTED,
+        evidence_score=0.5,
+        bucket_id=str(body.get("bucket_id") or "work_subgraph"),
+        source="web_console",
+        source_meta={
+            "node_role": "l2b_work_subgraph",
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "source_ref": source_ref,
+            "source_pack_id": str(source_pack_safe.get("pack_id") or ""),
+            "membership_policy": str(body.get("membership_policy") or "explicit_member_nodes"),
+            "member_count": len(present_node_uuids),
+        },
+        meta={
+            "work_subgraph": True,
+            "source_pack": source_pack_safe,
+            "missing_node_uuids": missing_node_uuids,
+        },
+    )
+    graph.upsert_node(subgraph_node)
+    existing_edge_keys = {
+        (
+            str(getattr(src, "uuid", "") or ""),
+            str(getattr(dst, "uuid", "") or ""),
+            _enum_value(getattr(edge, "kind", "")),
+            str(getattr(edge, "source", "") or ""),
+        )
+        for src, dst, edge in graph.all_edges()
+    }
+    edge_reports: list[dict[str, Any]] = []
+    for member_uuid in present_node_uuids:
+        edge_key = (
+            subgraph_uuid,
+            member_uuid,
+            EdgeKind.CONTAINS.value,
+            "web_console.work_subgraph",
+        )
+        if edge_key in existing_edge_keys:
+            edge_reports.append({
+                "source": subgraph_uuid,
+                "target": member_uuid,
+                "connected": False,
+                "skipped_duplicate": True,
+            })
+            continue
+        connected = graph.connect(
+            subgraph_uuid,
+            member_uuid,
+            SemanticEdge(
+                kind=EdgeKind.CONTAINS,
+                strength=0.8,
+                source="web_console.work_subgraph",
+                meta={
+                    "source_pack_id": str(source_pack_safe.get("pack_id") or ""),
+                    "source_kind": source_kind,
+                    "membership_policy": str(body.get("membership_policy") or "explicit_member_nodes"),
+                },
+            ),
+        )
+        if connected:
+            existing_edge_keys.add(edge_key)
+        edge_reports.append({
+            "source": subgraph_uuid,
+            "target": member_uuid,
+            "connected": bool(connected),
+            "skipped_duplicate": False,
+        })
+    after_nodes = graph.node_count()
+    after_edges = len(graph.all_edges())
+    return _receipt(
+        action="l2b.subgraph.apply",
+        success=True,
+        dry_run=False,
+        operator_mode=True,
+        data={
+            **base_data,
+            "mutated": True,
+            "direct_l2b_write": True,
+            "before": {"node_count": before_nodes, "edge_count": before_edges},
+            "after": {"node_count": after_nodes, "edge_count": after_edges},
+            "edges_added": sum(1 for row in edge_reports if row.get("connected")),
+            "edge_reports": edge_reports,
+            "materialization_state": "materialized_l2b_work_subgraph",
+        },
     )
 
 
@@ -4111,13 +4456,161 @@ def _calendar_time_window(
         tz = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError:
         tz = timezone.utc
+    now = datetime.now(tz)
     if date_text:
-        day = datetime.fromisoformat(date_text).date()
+        relative = date_text.lower()
+        if relative == "today":
+            day = now.date()
+        elif relative == "tomorrow":
+            day = (now + timedelta(days=1)).date()
+        elif relative == "yesterday":
+            day = (now - timedelta(days=1)).date()
+        else:
+            try:
+                day = datetime.fromisoformat(date_text).date()
+            except ValueError:
+                logger.warning("invalid calendar date %r; falling back to today", date_text)
+                day = now.date()
         start = datetime.combine(day, datetime.min.time(), tzinfo=tz)
     else:
-        start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
     return time_min or start.isoformat(), time_max or end.isoformat()
+
+
+def _google_calendar_source_pack(
+    *,
+    observations: list[dict[str, Any]],
+    mapping_rows: list[dict[str, Any]],
+    normalized_events: list[dict[str, Any]],
+    raw_events: Any,
+    calendar_ids: list[str],
+    label: str,
+    destination: str,
+) -> dict[str, Any]:
+    from parrot.web_console.source_pack import build_source_pack
+
+    raw_event_rows = raw_events if isinstance(raw_events, list) else []
+    items: list[dict[str, Any]] = []
+    for index, mapping in enumerate(mapping_rows):
+        observation = observations[index] if index < len(observations) else {}
+        normalized = normalized_events[index] if index < len(normalized_events) else {}
+        raw = raw_event_rows[index] if index < len(raw_event_rows) and isinstance(raw_event_rows[index], dict) else {}
+        provider_ref = str(
+            mapping.get("provider_ref")
+            or mapping.get("merge_key")
+            or normalized.get("id")
+            or ""
+        )
+        items.append({
+            **mapping,
+            "item_id": str(mapping.get("merge_key") or provider_ref or index),
+            "label": str(mapping.get("title") or normalized.get("title") or normalized.get("summary") or provider_ref),
+            "source_kind": "google_calendar",
+            "provider_ref": provider_ref,
+            "source_ref": str(normalized.get("html_link") or raw.get("htmlLink") or provider_ref),
+            "l2b_kind": "event",
+            "observation": observation,
+            "raw": raw,
+            "meta": {"normalized_event": normalized},
+        })
+    return build_source_pack(
+        source_kind="google_calendar",
+        source_id=",".join(calendar_ids) or "google_calendar",
+        label=label,
+        items=items,
+        destination=destination,
+        source_ref="google-calendar://events",
+        raw_summary={
+            "calendar_ids": calendar_ids,
+            "raw_event_count": len(raw_event_rows),
+            "normalized_event_count": len(normalized_events),
+            "observation_count": len(observations),
+        },
+    )
+
+
+def _obsidian_source_pack(
+    *,
+    items: list[dict[str, Any]],
+    vault_path: str,
+    label: str,
+    destination: str,
+    scan_summary: Any,
+) -> dict[str, Any]:
+    from parrot.web_console.source_pack import build_source_pack
+
+    pack_items: list[dict[str, Any]] = []
+    for row in items:
+        observation = row.get("observation") if isinstance(row.get("observation"), dict) else {}
+        event = row.get("event") if isinstance(row.get("event"), dict) else {}
+        pack_items.append({
+            **row,
+            "item_id": str(row.get("path") or observation.get("obs_id") or row.get("label") or ""),
+            "label": str(row.get("label") or observation.get("label") or row.get("path") or ""),
+            "source_kind": "obsidian",
+            "provider_ref": str(row.get("path") or observation.get("obsidian_uuid") or ""),
+            "source_ref": str(row.get("path") or event.get("provenance_stream_id") or ""),
+            "l2b_kind": str(observation.get("kind") or "object"),
+        })
+    return build_source_pack(
+        source_kind="obsidian",
+        source_id=vault_path or "obsidian_vault",
+        label=label,
+        items=pack_items,
+        destination=destination,
+        source_ref=f"obsidian-vault://{vault_path}" if vault_path else "obsidian-vault://",
+        raw_summary=scan_summary if isinstance(scan_summary, dict) else {},
+    )
+
+
+def _node_uuids_from_admit_outcome(outcome: Any) -> list[str]:
+    values: list[Any] = []
+    values.extend(getattr(outcome, "admitted_node_uuids", ()) or ())
+    values.extend(getattr(outcome, "promoted", ()) or ())
+    assignments = getattr(outcome, "bucket_assignments", {}) or {}
+    if isinstance(assignments, dict):
+        values.extend(assignments.keys())
+    return _unique_texts(values)
+
+
+def _materialize_source_pack_work_subgraph_if_requested(
+    body: dict[str, Any],
+    *,
+    source_pack: dict[str, Any],
+    node_uuids: list[str],
+    default_label: str,
+) -> dict[str, Any]:
+    if not _body_bool(body.get("materialize_work_subgraph"), True):
+        return {
+            "success": True,
+            "action": "l2b.subgraph.apply",
+            "skipped": True,
+            "reason": "materialize_work_subgraph_disabled",
+            "node_uuids": node_uuids,
+        }
+    if not node_uuids:
+        return {
+            "success": False,
+            "action": "l2b.subgraph.apply",
+            "skipped": True,
+            "reason": "no_l2b_nodes_returned_from_l15_admit",
+            "node_uuids": [],
+        }
+    work = source_pack.get("work_subgraph") if isinstance(source_pack.get("work_subgraph"), dict) else {}
+    return apply_l2b_work_subgraph({
+        "dry_run": False,
+        "operator_mode": True,
+        "_remote_proxy_disable": True,
+        "source_pack": source_pack,
+        "node_uuids": node_uuids,
+        "subgraph_id": str(work.get("uuid") or ""),
+        "label": str(body.get("subgraph_label") or work.get("label") or default_label),
+        "source_kind": str(source_pack.get("source_kind") or ""),
+        "source_id": str(source_pack.get("source_id") or ""),
+        "source_ref": str(source_pack.get("source_ref") or ""),
+        "membership_policy": "source_pack_admitted_nodes",
+    })
 
 
 async def _fetch_google_calendar_events_from_api(

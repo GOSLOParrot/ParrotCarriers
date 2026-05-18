@@ -32,56 +32,75 @@ namespace ParrotApp.RPC
     ///   两个 RegisterRpcMethod 都成功后灌 <see cref="ConnectionHealthAggregator.ReportRpcReady"/>。</item>
     /// </list>
     ///
-    /// 挂载：与 <see cref="ParrotController"/> 同 GameObject。
+    /// Mounting: one persistent router on RuntimeServices / RoomManager. It
+    /// resolves the currently placed model at call time; do not mount one copy
+    /// per model instance.
     /// </summary>
-    [RequireComponent(typeof(ParrotController))]
+    [DisallowMultipleComponent]
     public class ParrotRpcHandler : MonoBehaviour
     {
         [Tooltip("可选；为空时 FindObjectOfType。用于灌 rpc_ready。")]
         [SerializeField] private AppLifecycleManager lifecycleManager;
+        [SerializeField] private RoomManager roomManager;
 
-        private ParrotController _parrot;
         private Room _rpcRegisteredOnRoom;
         private bool _rpcReadyReported;
+        private bool _roomManagerBound;
+        private static ParrotRpcHandler _activeHandler;
 
         private ConnectionHealthAggregator HealthAggregator =>
             lifecycleManager != null ? lifecycleManager.HealthAggregator : null;
-
-        void Awake()
-        {
-            _parrot = GetComponent<ParrotController>();
-        }
 
         void Start()
         {
             if (lifecycleManager == null)
                 lifecycleManager = FindObjectOfType<AppLifecycleManager>();
 
-            var rm = RoomManager.Instance;
-            if (rm == null)
-            {
-                Debug.LogError("[ParrotRPC] RoomManager not found");
-                return;
-            }
+            BindRoomManager();
+        }
 
-            rm.OnConnected += Register;
-            rm.OnDisconnected += OnRoomDisconnected;
-            if (rm.IsConnected) Register();
+        void Update()
+        {
+            if (!_roomManagerBound)
+                BindRoomManager();
+        }
+
+        private void BindRoomManager()
+        {
+            if (_roomManagerBound) return;
+
+            if (roomManager == null)
+                roomManager = RoomManager.Instance ?? FindObjectOfType<RoomManager>();
+            if (roomManager == null) return;
+
+            roomManager.OnConnected += Register;
+            roomManager.OnDisconnected += OnRoomDisconnected;
+            _roomManagerBound = true;
+            if (roomManager.IsConnected) Register();
         }
 
         private void Register()
         {
-            var room = RoomManager.Instance?.Room;
+            if (roomManager == null)
+                roomManager = RoomManager.Instance ?? FindObjectOfType<RoomManager>();
+
+            var room = roomManager != null ? roomManager.Room : null;
             if (room == null) return;
             if (_rpcRegisteredOnRoom == room) return;
 
             try
             {
+                if (_rpcRegisteredOnRoom != null)
+                    UnregisterFromCurrentRoom(reportHealth: false);
+                if (_activeHandler != null && _activeHandler != this)
+                    _activeHandler.UnregisterFromCurrentRoom(reportHealth: false);
+
                 room.LocalParticipant.RegisterRpcMethod("flyTo", HandleFlyTo);
                 room.LocalParticipant.RegisterRpcMethod("animate", HandleAnimate);
                 room.LocalParticipant.RegisterRpcMethod("perchToFinger", HandlePerchToFinger);
                 room.LocalParticipant.RegisterRpcMethod("returnToView", HandleReturnToView);
                 _rpcRegisteredOnRoom = room;
+                _activeHandler = this;
                 Debug.Log("[ParrotRPC] Registered: flyTo, animate, perchToFinger, returnToView");
 
                 if (!_rpcReadyReported)
@@ -102,7 +121,37 @@ namespace ParrotApp.RPC
         private void OnRoomDisconnected()
         {
             _rpcRegisteredOnRoom = null;
+            if (_activeHandler == this) _activeHandler = null;
             if (_rpcReadyReported)
+            {
+                _rpcReadyReported = false;
+                HealthAggregator?.ReportRpcReady(false, UnixSeconds());
+            }
+        }
+
+        private void UnregisterFromCurrentRoom(bool reportHealth)
+        {
+            var room = _rpcRegisteredOnRoom;
+            _rpcRegisteredOnRoom = null;
+
+            if (room != null)
+            {
+                try
+                {
+                    room.LocalParticipant.UnregisterRpcMethod("flyTo");
+                    room.LocalParticipant.UnregisterRpcMethod("animate");
+                    room.LocalParticipant.UnregisterRpcMethod("perchToFinger");
+                    room.LocalParticipant.UnregisterRpcMethod("returnToView");
+                    Debug.Log("[ParrotRPC] Unregistered: flyTo, animate, perchToFinger, returnToView");
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[ParrotRPC] UnregisterRpcMethod failed: {ex.Message}");
+                }
+            }
+
+            if (_activeHandler == this) _activeHandler = null;
+            if (reportHealth && _rpcReadyReported)
             {
                 _rpcReadyReported = false;
                 HealthAggregator?.ReportRpcReady(false, UnixSeconds());
@@ -139,14 +188,13 @@ namespace ParrotApp.RPC
                 // scenes that haven't added a ModelDriver keep working.
                 string modelId = p._ecp?.ModelId ?? "";
 
-                var tcs = new TaskCompletionSource<bool>();
-                UnityMainThread.Enqueue(() =>
+                await RunOnUnityThread(() =>
                 {
-                    _parrot.FlyTo(new Vector3(p.x, p.y, p.z), modelId);
-                    tcs.SetResult(true);
+                    var parrot = ResolveParrotController(modelId);
+                    if (parrot == null) throw new InvalidOperationException("parrot_controller_missing");
+                    parrot.FlyTo(new Vector3(p.x, p.y, p.z), modelId);
+                    return true;
                 });
-
-                await tcs.Task;
                 return EcpAckJson.Completed(
                     p._ecp,
                     EcpFrontendStateDto.ForBody("flying", p._ecp?.command_id, new[] { "body" })
@@ -198,13 +246,12 @@ namespace ParrotApp.RPC
                     $"[ParrotRPC] animate parsed animation='{p.animation}' model_id='{modelId}' " +
                     $"strict={p.strict_capability} command_id='{commandId}'");
 
-                var tcs = new TaskCompletionSource<bool>();
-                UnityMainThread.Enqueue(() =>
+                bool played = await RunOnUnityThread(() =>
                 {
-                    tcs.SetResult(_parrot.TryPlayAnimation(p.animation, modelId, p.parameters_json, p.strict_capability));
+                    var parrot = ResolveParrotController(modelId);
+                    if (parrot == null) throw new InvalidOperationException("parrot_controller_missing");
+                    return parrot.TryPlayAnimation(p.animation, modelId, p.parameters_json, p.strict_capability);
                 });
-
-                bool played = await tcs.Task;
                 if (!played)
                 {
                     return EcpAckJson.Failed(p._ecp, $"capability_unsupported:{p.animation}");
@@ -405,10 +452,71 @@ namespace ParrotApp.RPC
             }
         }
 
+        private static Task<T> RunOnUnityThread<T>(Func<T> work)
+        {
+            var tcs = new TaskCompletionSource<T>();
+            UnityMainThread.Enqueue(() =>
+            {
+                try
+                {
+                    tcs.TrySetResult(work());
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            });
+            return tcs.Task;
+        }
+
+        private static ParrotController ResolveParrotController(string modelId)
+        {
+            var placement = FindObjectOfType<FormalModelPlacementController>(true);
+            if (placement != null && placement.PlacedModel != null)
+            {
+                var placed = placement.PlacedModel;
+                if (string.IsNullOrWhiteSpace(modelId) || MatchesModel(placed, modelId))
+                {
+                    var parrot = placed.GetComponentInChildren<ParrotController>(true);
+                    if (parrot != null) return parrot;
+                }
+            }
+
+            var drivers = FindObjectsOfType<ModelDriver>(true);
+            for (int i = 0; i < drivers.Length; i++)
+            {
+                var driver = drivers[i];
+                if (driver == null) continue;
+                if (!string.IsNullOrWhiteSpace(modelId) && !MatchesModel(driver.gameObject, modelId))
+                    continue;
+
+                var parrot = driver.GetComponentInParent<ParrotController>();
+                if (parrot != null) return parrot;
+                parrot = driver.GetComponentInChildren<ParrotController>(true);
+                if (parrot != null) return parrot;
+                parrot = driver.gameObject.GetComponent<ParrotController>();
+                if (parrot != null) return parrot;
+            }
+
+            var all = FindObjectsOfType<ParrotController>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                var parrot = all[i];
+                if (parrot == null) continue;
+                if (string.IsNullOrWhiteSpace(modelId) || MatchesModel(parrot.gameObject, modelId))
+                    return parrot;
+            }
+            return null;
+        }
+
         private PerchOnHand ResolvePerchOwner(string modelId)
         {
-            var own = GetComponent<PerchOnHand>();
-            if (own != null && MatchesModel(own, modelId)) return own;
+            var placement = FindObjectOfType<FormalModelPlacementController>(true);
+            if (placement != null && placement.PlacedModel != null)
+            {
+                var placed = placement.PlacedModel.GetComponentInChildren<PerchOnHand>(true);
+                if (placed != null && MatchesModel(placed, modelId)) return placed;
+            }
 
             var all = FindObjectsOfType<PerchOnHand>(true);
             PerchOnHand fallback = null;
@@ -421,6 +529,19 @@ namespace ParrotApp.RPC
                     fallback = candidate;
             }
             return fallback;
+        }
+
+        private static bool MatchesModel(GameObject model, string modelId)
+        {
+            if (model == null) return false;
+            if (string.IsNullOrWhiteSpace(modelId)) return true;
+
+            var driver = model.GetComponentInChildren<ModelDriver>(true);
+            if (driver == null) return false;
+            if (driver.Manifest != null
+                && string.Equals(driver.Manifest.model_id, modelId, StringComparison.Ordinal))
+                return true;
+            return string.Equals(driver.EffectiveModelId, modelId, StringComparison.Ordinal);
         }
 
         private static bool MatchesModel(PerchOnHand perch, string modelId)
@@ -438,13 +559,15 @@ namespace ParrotApp.RPC
 
         void OnDestroy()
         {
-            var rm = RoomManager.Instance;
-            if (rm != null)
+            if (roomManager != null)
             {
-                rm.OnConnected -= Register;
-                rm.OnDisconnected -= OnRoomDisconnected;
+                roomManager.OnConnected -= Register;
+                roomManager.OnDisconnected -= OnRoomDisconnected;
             }
-            _rpcRegisteredOnRoom = null;
+            if (_activeHandler == this)
+                UnregisterFromCurrentRoom(reportHealth: true);
+            else
+                _rpcRegisteredOnRoom = null;
         }
 
         private static double UnixSeconds()

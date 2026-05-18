@@ -20,9 +20,12 @@ FORMAL_STARTUP_SCENE = PARROT_APP / "Scenes" / "ParrotApp_Startup.unity"
 SCRIPT_ROOT = PARROT_APP / "Runtime" / "Scripts"
 SMOKE_REFERENCE_UI = UNITY_ROOT / "Tests" / "Smoke" / "Scripts" / "AppV1SmokeReferenceUiController.cs"
 SMOKE_LIFECYCLE_FORCER = UNITY_ROOT / "Tests" / "Smoke" / "Scripts" / "LifecycleSmokeForcer.cs"
+SMOKE_RPC_PROBE = UNITY_ROOT / "Tests" / "Smoke" / "Scripts" / "RpcSmokeProbe.cs"
+RPC_SMOKE_MATRIX = ROOT / "tools" / "rpc_smoke_matrix.py"
 STARTUP_CONFIG = (
     SCRIPT_ROOT / "Config" / "AppStartupConfigDto.cs"
 )
+FORMAL_MODEL_PLACEMENT = SCRIPT_ROOT / "Lifecycle" / "FormalModelPlacementController.cs"
 STARTUP_FLOW = (
     SCRIPT_ROOT / "Lifecycle" / "AppStartupFlowController.cs"
 )
@@ -118,6 +121,12 @@ GOSLO_LEGACY_CONTROLLER = (
 )
 MODEL_DRIVER = (
     SCRIPT_ROOT / "Parrot" / "ModelDriver.cs"
+)
+PARROT_REGISTRY = (
+    SCRIPT_ROOT / "Parrot" / "ParrotRegistry.cs"
+)
+PARROT_RPC_HANDLER = (
+    SCRIPT_ROOT / "RPC" / "ParrotRpcHandler.cs"
 )
 MODEL_MANIFEST_DTO = (
     SCRIPT_ROOT / "Parrot" / "ModelManifestDto.cs"
@@ -380,6 +389,96 @@ def test_smoke_reference_ui_keeps_app_v1_reference_flow_and_boundaries() -> None
     assert "bboxController.PlaceBBox" in text
     assert "bboxController.RemoveBBox" in text
     assert "startupFlow.ReportGosloPlaced()" in text
+
+
+def test_rpc_smoke_probe_stays_development_only_and_reports_raw_rpc_results() -> None:
+    text = SMOKE_RPC_PROBE.read_text(encoding="utf-8")
+
+    assert text.startswith("#if UNITY_EDITOR || DEVELOPMENT_BUILD")
+    assert "namespace ParrotApp.Tests.Smoke" in text
+    assert "class RpcSmokeProbe" in text
+    assert "PerformRpc(new PerformRpcParams" in text
+    assert "RegisterRpcMethod(localEchoMethod, HandleLocalEcho)" in text
+    assert '"onSceneReady"' in text
+    assert '"setCameraMode"' in text
+    assert '"setXrHandMode"' in text
+    assert "rpcCall.Error.Code" in text
+    assert "rpcCall.Error.Message" in text
+    assert "LastRawResponse" in text
+
+    assert not (SCRIPT_ROOT / "RPC" / "RpcSmokeProbe.cs").exists()
+
+
+def test_rpc_smoke_matrix_uses_safe_fixed_rpc_surface() -> None:
+    text = RPC_SMOKE_MATRIX.read_text(encoding="utf-8")
+
+    assert "identity = args.identity or f\"rpc-smoke-matrix-{int(time.time() * 1000)}\"" in text
+    assert "UNITY_PROBE_IDENTITY_MARKERS" in text
+    assert "connected_url" in text
+    assert "target_missing" in text
+    assert '"setCameraMode"' in text
+    assert '"setPhotoAwareness"' in text
+    assert '"setXrHandMode"' in text
+    assert '"animate", {"animation": "dance"}' in text
+    assert '"animate", {"animation": "wing_flap"}' in text
+    assert "--include-motion" in text
+    assert "--include-perch" in text
+    assert "--include-video-tier" in text
+
+
+def test_formal_placed_model_registers_runtime_rpc_endpoint() -> None:
+    text = FORMAL_MODEL_PLACEMENT.read_text(encoding="utf-8")
+    startup_flow = STARTUP_FLOW.read_text(encoding="utf-8")
+
+    assert "using ParrotApp.RPC;" not in text
+    assert "EnsureLegacyGosloAnimationEndpoint(go, driver.Manifest);" in text
+    assert "model.AddComponent<AnimationDriver>()" in text
+    assert "model.AddComponent<GosloLegacyController>()" in text
+    assert "EnsureRuntimeControlEndpoint(go);" in text
+    assert "model.AddComponent<ParrotController>()" in text
+    assert "model.AddComponent<ParrotRpcHandler>()" not in text
+    assert "using ParrotApp.RPC;" in startup_flow
+    assert "ParrotRpcHandler parrotRpcHandler" in startup_flow
+    assert "parrotRpcHandler = host.AddComponent<ParrotRpcHandler>()" in startup_flow
+
+
+def test_parrot_rpc_animation_endpoint_recovers_late_bound_animation_driver() -> None:
+    controller = PARROT_CONTROLLER.read_text(encoding="utf-8")
+    animation = ANIMATION_DRIVER.read_text(encoding="utf-8")
+    model_driver = MODEL_DRIVER.read_text(encoding="utf-8")
+    registry = PARROT_REGISTRY.read_text(encoding="utf-8")
+    rpc = PARROT_RPC_HANDLER.read_text(encoding="utf-8")
+
+    assert "private void RefreshAnimationEndpoints()" in controller
+    assert "GetComponentInChildren<AnimationDriver>(true)" in controller
+    assert controller.count("RefreshAnimationEndpoints();") >= 5
+    assert "public void RestartState(BodyState state)" in animation
+    assert "BodyState restart ->" in animation
+    assert "private void ApplyBodyStateEntrySideEffects(BodyState state)" in animation
+    assert "ApplyBodyStateEntrySideEffects(state);" in animation
+    assert 'case "dancing":         RestartState(BodyState.Dance);' in animation
+    assert 'case "wingflap":        RestartState(BodyState.WingFlap);' in animation
+    assert "private static Type ResolveControllerType(string controllerType)" in model_driver
+    assert "AppDomain.CurrentDomain.GetAssemblies()" in model_driver
+    assert "void OnDestroy()" in model_driver
+    assert "ParrotRegistry.Instance?.Unregister(Controller)" in model_driver
+    assert "public void Unregister(IParrotController controller)" in registry
+    assert "PruneDestroyedControllers();" in registry
+    assert "private static bool IsDestroyed(IParrotController controller)" in registry
+    assert "ReferenceEquals(controller, null)" in registry
+    assert "private static ParrotRpcHandler _activeHandler;" in rpc
+    assert "[DisallowMultipleComponent]" in rpc
+    assert "[RequireComponent(typeof(ParrotController))]" not in rpc
+    assert "private void BindRoomManager()" in rpc
+    assert "private static ParrotController ResolveParrotController(string modelId)" in rpc
+    assert "FindObjectOfType<FormalModelPlacementController>(true)" in rpc
+    assert "ResolveParrotController(modelId)" in rpc
+    assert "_activeHandler.UnregisterFromCurrentRoom(reportHealth: false)" in rpc
+    assert 'room.LocalParticipant.UnregisterRpcMethod("animate")' in rpc
+    assert "UnregisterFromCurrentRoom(reportHealth: true)" in rpc
+    assert "private static Task<T> RunOnUnityThread<T>(Func<T> work)" in rpc
+    assert "tcs.TrySetException(ex)" in rpc
+    assert 'throw new InvalidOperationException("parrot_controller_missing")' in rpc
 
 
 def test_unity_ar_foundation_and_livekit_version_locks_are_pinned() -> None:
@@ -745,6 +844,11 @@ def test_formal_startup_layout_targets_landscape_phone_and_theme_selector() -> N
     assert "MainReadyMissingText" in text
     assert "HideMainReadySurfaceForFormalHome" in text
     assert "startup surface hidden for formal home" in text
+    assert "ReleaseStartupOverlayForFormalHome" in text
+    assert "ShouldIgnoreLateStartupFailure" in text
+    assert "startupFlow.MainUiReadyOnce" in text
+    assert "raycaster.enabled = false" in text
+    assert "Ignoring late startup failure after formal home release" in text
     assert "RemoveLegacyInputModule(standaloneModule)" in text
     assert "GetComponent<InputSystemUIInputModule>()" in text
     assert "GetComponent<StandaloneInputModule>()" in text
@@ -1285,6 +1389,18 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "UplinkStateLabel" in mic
     assert "AudioReadFrameCount" in mic
     assert "ActiveAudioSourceKind" in mic
+    assert "agentSpeechUplinkGateEnabled = true" in mic
+    assert "AgentSpeechUplinkGateLoop" in mic
+    assert "((ILocalTrack)_audioTrack).SetMute(muted)" in mic
+    assert "agent_downlink_audio" in mic
+    assert "RemoteAudioPlaybackActive" in room_manager
+    assert "RemoteAudioPlaybackPeak" in room_manager
+    assert "_remoteAudioStreams[key] = new AudioStream(audioTrack, source)" in room_manager
+    assert "_remoteAudioSources[key] = source" in room_manager
+    assert "source.GetOutputData(_remoteAudioProbeBuffer, 0)" in room_manager
+    assert "microphonePublisher.UplinkMutedByAgentSpeech" in home_hud
+    assert "microphonePublisher.UplinkGateRemotePeak" in home_hud
+    assert "microphonePublisher.UplinkGateReason" in home_hud
     assert "NativeAudioRecordState" in mic
     assert "NativeAudioRecordError" in mic
     assert "NativeAudioRecordSource" in mic
@@ -2568,7 +2684,7 @@ def test_custom_capability_parameters_reach_model_controller() -> None:
     assert "controller.ApplyCapability(animationName, parametersJson ?? \"\")" in controller
     assert "public string parameters_json" in rpc
     assert "public bool strict_capability" in rpc
-    assert "_parrot.TryPlayAnimation(p.animation, modelId, p.parameters_json, p.strict_capability)" in rpc
+    assert "parrot.TryPlayAnimation(p.animation, modelId, p.parameters_json, p.strict_capability)" in rpc
     assert "missing_animation" in rpc
     assert "animate parsed animation=" in rpc
     assert "capability_unsupported" in controller
@@ -2583,8 +2699,8 @@ def test_goslo_fixed_action_capabilities_have_distinct_animation_states() -> Non
     assert "BodyState.Sleep" in goslo
     assert 'case "wing_flap":' in goslo
     assert 'case "sleep":' in goslo
-    assert 'case "wing_flap":\n                    _animDriver.SetState(AnimationDriver.BodyState.WingFlap);' in goslo
-    assert 'case "sleep":\n                    _animDriver.SetState(AnimationDriver.BodyState.Sleep);' in goslo
+    assert 'case "wing_flap":\n                    _animDriver.RestartState(AnimationDriver.BodyState.WingFlap);' in goslo
+    assert 'case "sleep":\n                    _animDriver.RestartState(AnimationDriver.BodyState.Sleep);' in goslo
 
     assert "WingFlap" in animation
     assert "Sleep" in animation

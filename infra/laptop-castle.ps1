@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("init", "config", "up", "rebuild", "up-brain", "down", "restart", "status", "logs", "unity-config")]
+    [ValidateSet("init", "config", "up", "rebuild", "up-brain", "up-chat", "down", "restart", "status", "logs", "unity-config")]
     [string]$Action = "status",
     [string]$Service = ""
 )
@@ -13,6 +13,13 @@ $EnvExample = Join-Path $ScriptDir "laptop.env.example"
 $EnvLocal = Join-Path $ScriptDir "laptop.env.local"
 $RuntimeRoot = Join-Path $RepoRoot "codex_workspace\local_runtime\castle_laptop"
 $RuntimeData = Join-Path $RuntimeRoot "data"
+$RuntimePhotos = Join-Path $RuntimeData "photos"
+$RuntimeRegistries = Join-Path $RuntimeData "registries"
+$RuntimeWorkshop = Join-Path $RuntimeRoot "workshop"
+$RuntimeWorkshopDocuments = Join-Path $RuntimeWorkshop "documents"
+$RuntimeWorkshopSorted = Join-Path $RuntimeWorkshop "sorted"
+$RuntimeWorkshopRefs = Join-Path $RuntimeWorkshop "refs"
+$RuntimeGosloWorkspace = Join-Path $RuntimeRoot "goslo_workspace"
 $LiveKitTemplate = Join-Path $ScriptDir "livekit\livekit-laptop.template.yaml"
 $LiveKitGenerated = Join-Path $RuntimeRoot "livekit-laptop.yaml"
 $UnityConfigGenerated = Join-Path $RuntimeRoot "parrot_config.laptop.generated.json"
@@ -148,6 +155,17 @@ function Copy-SeedDir {
     }
 }
 
+function Ensure-TextFile {
+    param(
+        [string]$Path,
+        [string]$Text
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Utf8NoBom -Path $Path -Text $Text
+    }
+}
+
 function Update-LocalRoomProfiles {
     param([string]$RoomId)
 
@@ -185,6 +203,12 @@ function Update-LocalRoomProfiles {
 function Initialize-LaptopCastle {
     New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
     New-Item -ItemType Directory -Force -Path $RuntimeData | Out-Null
+    New-Item -ItemType Directory -Force -Path $RuntimePhotos | Out-Null
+    New-Item -ItemType Directory -Force -Path $RuntimeRegistries | Out-Null
+    New-Item -ItemType Directory -Force -Path $RuntimeWorkshop | Out-Null
+    New-Item -ItemType Directory -Force -Path $RuntimeWorkshopDocuments | Out-Null
+    New-Item -ItemType Directory -Force -Path $RuntimeWorkshopSorted | Out-Null
+    New-Item -ItemType Directory -Force -Path $RuntimeWorkshopRefs | Out-Null
 
     if (-not (Test-Path -LiteralPath $EnvLocal)) {
         Copy-Item -LiteralPath $EnvExample -Destination $EnvLocal
@@ -201,6 +225,12 @@ function Initialize-LaptopCastle {
     Copy-SeedDir -Source (Join-Path $RepoRoot "data\presets") -Destination (Join-Path $RuntimeData "presets")
     Copy-SeedDir -Source (Join-Path $RepoRoot "data\line_profiles") -Destination (Join-Path $RuntimeData "line_profiles")
     Copy-SeedDir -Source (Join-Path $RepoRoot "data\registries") -Destination (Join-Path $RuntimeData "registries")
+    Copy-SeedDir -Source (Join-Path $env:USERPROFILE ".nanobot\goslo-workspace") -Destination $RuntimeGosloWorkspace
+    New-Item -ItemType Directory -Force -Path $RuntimeGosloWorkspace | Out-Null
+    Ensure-TextFile -Path (Join-Path $RuntimeGosloWorkspace "SOUL.md") -Text "# GOSLO Chat`n`nLocal laptop chat workspace placeholder.`n"
+    Ensure-TextFile -Path (Join-Path $RuntimeGosloWorkspace "AGENTS.md") -Text "# Agents`n`nGOSLO chat body runs here when enabled.`n"
+    Ensure-TextFile -Path (Join-Path $RuntimeGosloWorkspace "USER.md") -Text "# User`n`nLaptop sandbox user profile placeholder.`n"
+    Ensure-TextFile -Path (Join-Path $RuntimeGosloWorkspace "TOOLS.md") -Text "# Tools`n`nUse configured nanobot tools conservatively.`n"
     Update-LocalRoomProfiles -RoomId $envMap["LIVEKIT_ROOM"]
 
     if (-not (Test-Path -LiteralPath (Join-Path $RuntimeData "runtime_config.json"))) {
@@ -310,14 +340,22 @@ switch ($Action) {
     }
     "up-brain" {
         Initialize-LaptopCastle
-        Invoke-LaptopCompose -ComposeCommandArgs @("--profile", "brain", "up", "-d")
+        Invoke-LaptopCompose -ComposeCommandArgs @("--profile", "brain", "up", "-d", "--build", "brain", "scheduler", "nanobot-worker")
+    }
+    "up-chat" {
+        Initialize-LaptopCastle
+        Invoke-LaptopCompose -ComposeCommandArgs @("--profile", "chat", "up", "-d", "--build", "goslo-chat")
     }
     "down" {
         Invoke-LaptopCompose -ComposeCommandArgs @("down")
     }
     "restart" {
         Initialize-LaptopCastle
-        Invoke-LaptopCompose -ComposeCommandArgs @("restart")
+        if ([string]::IsNullOrWhiteSpace($Service)) {
+            Invoke-LaptopCompose -ComposeCommandArgs @("restart")
+        } else {
+            Invoke-LaptopCompose -ComposeCommandArgs @("restart", $Service)
+        }
     }
     "status" {
         Show-Status

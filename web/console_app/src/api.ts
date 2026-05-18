@@ -326,6 +326,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body)
     }),
+  l2bSubgraphApply: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/l2b/subgraphs/apply", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
   l2bTransformDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/l2b/transforms/draft", {
       method: "POST",

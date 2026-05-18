@@ -116,9 +116,11 @@ def asset_ref_for(photo_id: str, *, today: str | None = None) -> str:
 
 
 try:
-    from fastapi import FastAPI, HTTPException, Request
+    from fastapi import Body, FastAPI, Header, HTTPException, Request
 except ImportError:  # pragma: no cover — only matters on real boot
+    Body = None  # type: ignore[assignment]
     FastAPI = None  # type: ignore[assignment]
+    Header = None  # type: ignore[assignment]
     HTTPException = None  # type: ignore[assignment]
     Request = None  # type: ignore[assignment]
 
@@ -139,6 +141,13 @@ def build_app():  # type: ignore[no-untyped-def]
         )
 
     app = FastAPI(title="Parrot Photo Upload", version="1.0.0")
+    write_secret = os.environ.get("PARROT_APP_MONITOR_SECRET", "").strip()
+
+    def require_operator_auth(authorization: str = "") -> None:
+        if not write_secret:
+            return
+        if authorization.strip() != f"Bearer {write_secret}":
+            raise HTTPException(status_code=401, detail="brain_operator_auth_required")
 
     @app.get("/health")
     async def health() -> dict:  # noqa: D401  - one-liner FastAPI handler
@@ -172,6 +181,97 @@ def build_app():  # type: ignore[no-untyped-def]
         body["remote_source"] = "brain.photo_upload_server"
         body["read_only_proxy_surface"] = True
         return body
+
+    @app.post("/api/l2b/node")
+    async def l2b_node(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ) -> dict:
+        """Apply a Web Console L2-B node write inside the Brain process."""
+        require_operator_auth(authorization)
+        from parrot.web_console.memory_ops import apply_l2b_node
+
+        return await apply_l2b_node(_brain_write_payload(payload))
+
+    @app.post("/api/l2b/node/delete")
+    async def l2b_node_delete(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ) -> dict:
+        require_operator_auth(authorization)
+        from parrot.web_console.memory_ops import delete_l2b_node
+
+        return await delete_l2b_node(_brain_write_payload(payload))
+
+    @app.post("/api/l2b/edge")
+    async def l2b_edge(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ) -> dict:
+        require_operator_auth(authorization)
+        from parrot.web_console.memory_ops import apply_l2b_edge
+
+        return await apply_l2b_edge(_brain_write_payload(payload))
+
+    @app.post("/api/l2b/edge/update")
+    async def l2b_edge_update(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ) -> dict:
+        require_operator_auth(authorization)
+        from parrot.web_console.memory_ops import apply_l2b_edge_update
+
+        return await apply_l2b_edge_update(_brain_write_payload(payload))
+
+    @app.post("/api/l2b/edge/delete")
+    async def l2b_edge_delete(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ) -> dict:
+        require_operator_auth(authorization)
+        from parrot.web_console.memory_ops import delete_l2b_edge
+
+        return await delete_l2b_edge(_brain_write_payload(payload))
+
+    @app.post("/api/l2b/subgraphs/apply")
+    async def l2b_subgraphs_apply(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ) -> dict:
+        require_operator_auth(authorization)
+        from parrot.web_console.memory_ops import apply_l2b_work_subgraph
+
+        return apply_l2b_work_subgraph(_brain_write_payload(payload))
+
+    @app.post("/api/graphiti/subgraph/materialize-l2b")
+    async def graphiti_subgraph_materialize_l2b(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ) -> dict:
+        require_operator_auth(authorization)
+        from parrot.web_console.memory_ops import materialize_graphiti_l2b_subgraph
+
+        return materialize_graphiti_l2b_subgraph(_brain_write_payload(payload))
+
+    @app.post("/api/google/calendar/import")
+    async def google_calendar_import(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ) -> dict:
+        require_operator_auth(authorization)
+        from parrot.web_console.memory_ops import apply_google_calendar_import
+
+        return await apply_google_calendar_import(_brain_write_payload(payload))
+
+    @app.post("/api/l15/obsidian-vault/import")
+    async def l15_obsidian_vault_import(
+        payload: dict[str, Any] | None = Body(default=None),
+        authorization: str = Header(default=""),
+    ) -> dict:
+        require_operator_auth(authorization)
+        from parrot.web_console.memory_ops import apply_obsidian_vault_import
+
+        return await apply_obsidian_vault_import(_brain_write_payload(payload))
 
     @app.post("/upload/photo/{photo_id}")
     async def upload_photo(photo_id: str, request: Request) -> dict:
@@ -231,6 +331,13 @@ def build_app():  # type: ignore[no-untyped-def]
         }
 
     return app
+
+
+def _brain_write_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    body = dict(payload or {})
+    body["_remote_proxy_disable"] = True
+    body["_brain_proxy_disable"] = True
+    return body
 
 
 # ─── EcpEvent publish bridge ───────────────────────────────────────

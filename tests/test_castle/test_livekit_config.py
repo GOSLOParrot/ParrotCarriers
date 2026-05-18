@@ -39,12 +39,19 @@ def test_laptop_compose_does_not_use_ecs_env_or_shared_data() -> None:
     assert "python -m parrot.brain.agent dev --no-reload" in text
     assert "PARROT_MINT_AGENT_NAME=parrot-brain" in text
     assert "PARROT_BRAIN_AGENT_NAME=parrot-brain" in text
+    brain_section = text.split("\n  brain:", 1)[1].split("\nvolumes:", 1)[0]
+    assert "- PARROT_BRAIN_AGENT_NAME=parrot-brain" in brain_section
+    assert "- PARROT_MINT_AGENT_NAME=parrot-brain" in brain_section
     assert "PARROT_PRESETS_DIR=/app/data/presets" in text
     assert "PARROT_LINE_PROFILES_DIR=/app/data/line_profiles" in text
     assert "PARROT_APP_MONITOR_BRAIN_LIVE_STATE_URL=http://brain:7889" in text
     assert "PARROT_PHOTO_UPLOAD_HOST=0.0.0.0" in text
     assert "PARROT_PHOTO_UPLOAD_PORT=7889" in text
     assert "PARROT_PHOTO_CACHE_ROOT=/app/data/photos" in text
+    assert "PARROT_WORKSHOP_ROOT=/data/workshop" in text
+    assert "PARROT_MEMORY_IDENTITY_REF_INDEX_PATH=/app/data/registries/memory_identity_ref_index.json" in text
+    assert "../codex_workspace/local_runtime/castle_laptop/workshop/documents:/data/workshop/documents" in text
+    assert "../codex_workspace/local_runtime/castle_laptop/workshop/sorted:/data/workshop/sorted" in text
 
 
 def test_laptop_init_rewrites_seed_room_profiles_to_local_room() -> None:
