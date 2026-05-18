@@ -17,6 +17,7 @@ def isolated_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.delenv("PARROT_LLM_PIPELINE", raising=False)
     monkeypatch.delenv("PARROT_ACTIVE_LINE_PROFILE_ID", raising=False)
     monkeypatch.delenv("PARROT_ACTIVE_ROOM_PROFILE_ID", raising=False)
+    monkeypatch.delenv("PARROT_ORCH_SECRET", raising=False)
     import parrot.castle.runtime_config as rc
 
     monkeypatch.setattr(rc, "_bb_get", lambda key: None)

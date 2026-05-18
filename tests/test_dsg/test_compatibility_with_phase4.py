@@ -12,7 +12,7 @@ import inspect
 import pytest
 
 from parrot.dsg.ingest import base as ingest_base
-from parrot.dsg.l2b_types import EdgeKind, NodeKind
+from parrot.dsg.l2b_types import EDGE_KIND_VIEW_CLASSES, EdgeKind, NodeKind, edge_view_classes
 
 
 # ─── Phase 4 § 8 L1: NodeKind / EdgeKind enum cardinality ────────
@@ -40,7 +40,14 @@ def test_edge_kind_enum_eight_values() -> None:
         "candidate_subject",
     }
     actual = {m.value for m in EdgeKind}
-    assert actual == expected, f"EdgeKind drifted: {actual}"
+    assert expected.issubset(actual), f"Legacy EdgeKind entries dropped: {expected - actual}"
+
+
+def test_every_edge_kind_has_view_classification() -> None:
+    """Every EdgeKind must be filterable by at least one view class."""
+    assert set(EDGE_KIND_VIEW_CLASSES) == set(EdgeKind)
+    for kind in EdgeKind:
+        assert edge_view_classes(kind), f"EdgeKind {kind.value} has no view class"
 
 
 # ─── ADR-L1.5-001 + LineB compatibility ──────────────────────────

@@ -125,6 +125,10 @@ if _env_enabled("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", True):
     from parrot.brain.tools.identify_object import identify_object
 
     ALL_TOOLS.append(identify_object)
+else:
+    # importlib.reload() reuses the existing module dict. Remove the old symbol
+    # so runtime tests or hot reloads cannot keep exposing a disabled tool.
+    globals().pop("identify_object", None)
 
 
 __all__ = [

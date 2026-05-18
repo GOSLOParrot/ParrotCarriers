@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 
 import parrot.brain.tools as tools_mod
 from parrot.brain.tools.query_etiquette_memory import do_query_etiquette_memory
@@ -30,6 +31,19 @@ def test_gemini_provider_search_is_skipped_for_line_b(monkeypatch) -> None:
 
     assert "gemini_google_search" not in ids
     assert "web_lookup_intent" in ids
+
+
+def test_identify_object_env_gate_survives_module_reload(monkeypatch) -> None:
+    monkeypatch.setenv("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", "0")
+    reloaded = importlib.reload(tools_mod)
+
+    try:
+        ids = _tool_ids(reloaded.tools_for_active_model())
+
+        assert "identify_object" not in ids
+    finally:
+        monkeypatch.setenv("PARROT_ENABLE_IDENTIFY_OBJECT_TOOL", "1")
+        importlib.reload(tools_mod)
 
 
 def test_query_etiquette_memory_uses_noble_partition_and_multihop_strategy() -> None:
