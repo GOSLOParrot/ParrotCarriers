@@ -535,6 +535,18 @@ def _attach_realtime_app_rpc(room: "Any") -> None:
             draft_or_id,
             experience_mode=payload.get("experience_mode"),
         )
+        profile = applied.get("room_profile") if isinstance(applied, dict) else {}
+        if isinstance(profile, dict):
+            logger.info(
+                "applyRoomProfile: success=%s room=%s model=%s persona=%s experience=%s",
+                applied.get("success"),
+                profile.get("room_profile_id") or applied.get("room_profile_id"),
+                profile.get("model_id"),
+                profile.get("persona_id"),
+                profile.get("experience_mode"),
+            )
+        else:
+            logger.info("applyRoomProfile: result=%s", applied)
         return _dump({"status": "ok" if applied.get("success") else "error", "result": applied})
 
     @room.local_participant.register_rpc_method("setAppCapabilityMode")
@@ -840,6 +852,16 @@ def _attach_scene_ready_rpc(
     """
     import json as _json
 
+    def _write_paired_unity_identity(identity: str, reason: str) -> None:
+        """Persist the formal App participant used for outbound Unity RPC."""
+        try:
+            from parrot.scheduler.blackboard import open_bb_client
+
+            bb = open_bb_client(name="agent_unity_pairing", writer="brain.agent")
+            bb.set("session/unity_identity", identity)
+        except Exception:
+            logger.exception("%s: failed to write session/unity_identity=%s", reason, identity)
+
     def _bind_room_io_to_rpc_caller(data: "Any", reason: str) -> str:
         """Make the active phone the RoomIO audio/video participant.
 
@@ -861,6 +883,8 @@ def _attach_scene_ready_rpc(
                 identity,
             )
             return identity
+
+        _write_paired_unity_identity(identity, reason)
 
         try:
             active_room_io = session.room_io
@@ -1000,6 +1024,7 @@ def _attach_session_context_watchers(session: AgentSession) -> None:
 
     watcher_names = (
         "session_context.persona",
+        "session_context.model",
         "session_context.mode",
         "session_context.scene",
         "session_context.room",
@@ -1076,6 +1101,43 @@ def _attach_session_context_watchers(session: AgentSession) -> None:
                 reason,
             )
 
+    async def _refresh_tools_async(reason: str) -> None:
+        try:
+            agent = session.current_agent
+        except RuntimeError:
+            logger.debug(
+                "session_context: session not running yet, skipping tool refresh (%s)",
+                reason,
+            )
+            return
+        updater = getattr(agent, "update_tools", None)
+        if updater is None:
+            logger.warning(
+                "session_context: Agent.update_tools unavailable (%s)",
+                reason,
+            )
+            return
+        try:
+            tools = tools_for_active_model()
+            await updater(tools)
+            tool_ids = [str(getattr(tool, "id", "?")) for tool in tools]
+            logger.info(
+                "session_context: refreshed tools (%s): %s",
+                reason,
+                ",".join(tool_ids),
+            )
+        except Exception:
+            logger.exception("session_context: update_tools failed (%s)", reason)
+
+    def _refresh_tools(reason: str) -> None:
+        try:
+            asyncio.create_task(_refresh_tools_async(reason))
+        except RuntimeError:
+            logger.debug(
+                "session_context: no running loop for tool refresh (%s)",
+                reason,
+            )
+
     def _schedule_l15_bootstrap(reason: str) -> None:
         async def _run() -> None:
             try:
@@ -1101,18 +1163,23 @@ def _attach_session_context_watchers(session: AgentSession) -> None:
     def _on_context_change(bb_key: str, old: Any, new: Any) -> None:
         del old, new
         _refresh_instructions(bb_key)
+        if bb_key == "global/active_model_id":
+            _refresh_tools(bb_key)
         if bb_key == "global/active_room_profile_id":
             _schedule_l15_bootstrap(bb_key)
 
     for name, key in (
         ("session_context.persona", "global/active_persona_id"),
+        ("session_context.model", "global/active_model_id"),
         ("session_context.mode", "global/active_mode"),
         ("session_context.scene", "global/active_scene_id"),
         ("session_context.room", "global/active_room_profile_id"),
     ):
         registry.register(WatcherSpec(name=name, bb_key=key, callback=_on_context_change))
 
-    logger.info("session_context: Room/persona/mode/scene watchers attached")
+    _refresh_tools("session_context.attach_initial")
+
+    logger.info("session_context: Room/persona/model/mode/scene watchers attached")
 
 
 def _clean_task_summary(value: Any, limit: int = 700) -> str:

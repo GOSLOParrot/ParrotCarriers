@@ -97,6 +97,18 @@ type EdgeHandlePair = {
   targetHandle?: string;
 };
 
+type L2BViewGraphSnapshot = {
+  nodes: Array<Record<string, unknown>>;
+  edges: Array<Record<string, unknown>>;
+  signature: string;
+  emptyPolls: number;
+  heldEmptySnapshot: boolean;
+};
+
+type RefreshMemoryOptions = {
+  quiet?: boolean;
+};
+
 type GraphitiPreviewPayload = {
   hits?: Array<Record<string, unknown>>;
   nodes?: Array<Record<string, unknown>>;
@@ -191,6 +203,9 @@ const FLOATING_PANEL_DEFAULT_HEIGHT = 360;
 const FLOATING_PANEL_SELECTION_HEIGHT = 350;
 const FLOATING_PANEL_GRID: [number, number] = [8, 8];
 const MAX_SAVED_FLOW_POSITION_ABS = 50000;
+const EMPTY_L2B_SNAPSHOT_CONFIRM_POLLS = 3;
+const NODE_DRAG_EMPTY_SNAPSHOT_GRACE_MS = 1800;
+const BLANK_VIEWPORT_HARD_RESET_ATTEMPTS = 2;
 const FLOATING_PANEL_RESIZE_ENABLE = {
   top: false,
   topLeft: false,
@@ -798,8 +813,17 @@ export function App() {
   const livePillClass = `live-pill ${transportTone(activeTransport)}${loading ? " loading" : ""}`;
   const operatorMode = executionMode === "operator";
   const environment = config.environment ?? {};
+  const environmentActive = recordFromUnknown(environment.active);
   const environmentProfile = environment.profile || "local-bff";
   const environmentService = environment.service || "web-console";
+  const memoryBackendKey = [
+    String(environmentProfile),
+    String(environmentService),
+    String(environmentActive.app_api_base_url || ""),
+    String(environmentActive.graphiti_proxy_url || ""),
+    String(environmentActive.livekit_url || ""),
+    String(environmentActive.room || "")
+  ].join("|");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -840,9 +864,12 @@ export function App() {
     }
   }, []);
 
-  const refreshMemoryNow = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const refreshMemoryNow = useCallback(async (options: RefreshMemoryOptions = {}) => {
+    const quiet = options.quiet === true;
+    if (!quiet) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const [snapshot, nextPool] = await Promise.all([
         api.liveState(),
@@ -850,20 +877,26 @@ export function App() {
       ]);
       setLiveState(snapshot);
       setL15Pool(nextPool);
-      const buckets = nextPool.buckets ?? [];
-      pushReceipt(localReceipt("memory.refresh_after_import", true, {
-        l2b_nodes: snapshot.l2b?.node_count ?? 0,
-        l2b_edges: snapshot.l2b?.edge_count ?? 0,
-        l15_buckets: buckets.length,
-        l15_nodes: buckets.reduce((total, bucket) => total + Number(bucket.node_count ?? 0), 0),
-        blackboard: snapshot.blackboard?.present_count ?? 0,
-        intent_refs: snapshot.intent_workspace?.ref_count ?? 0
-      }, { dryRun: false }));
+      if (!quiet) {
+        const buckets = nextPool.buckets ?? [];
+        pushReceipt(localReceipt("memory.refresh_after_import", true, {
+          l2b_nodes: snapshot.l2b?.node_count ?? 0,
+          l2b_edges: snapshot.l2b?.edge_count ?? 0,
+          l15_buckets: buckets.length,
+          l15_nodes: buckets.reduce((total, bucket) => total + Number(bucket.node_count ?? 0), 0),
+          blackboard: snapshot.blackboard?.present_count ?? 0,
+          intent_refs: snapshot.intent_workspace?.ref_count ?? 0
+        }, { dryRun: false }));
+      }
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : String(exc));
-      pushReceipt(errorReceipt("memory.refresh_after_import", exc));
+      if (!quiet) {
+        setError(exc instanceof Error ? exc.message : String(exc));
+        pushReceipt(errorReceipt("memory.refresh_after_import", exc));
+      }
     } finally {
-      setLoading(false);
+      if (!quiet) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -1089,7 +1122,15 @@ export function App() {
         </header>
 
         {view === "memory" ? (
-          <MemoryGraphWorkspace liveState={liveState} l15Pool={l15Pool} pushReceipt={pushReceipt} t={t} operatorMode={operatorMode} onRefreshMemory={refreshMemoryNow} />
+          <MemoryGraphWorkspace
+            liveState={liveState}
+            l15Pool={l15Pool}
+            memoryBackendKey={memoryBackendKey}
+            pushReceipt={pushReceipt}
+            t={t}
+            operatorMode={operatorMode}
+            onRefreshMemory={refreshMemoryNow}
+          />
         ) : (
           <RuntimeFlowWorkspace flow={runtimeFlow} triggerCatalog={triggerCatalog} capabilityCatalog={capabilityCatalog} pushReceipt={pushReceipt} t={t} operatorMode={operatorMode} />
         )}
@@ -1166,6 +1207,7 @@ function ConsoleConnectionSummary({
 function MemoryGraphWorkspace({
   liveState,
   l15Pool,
+  memoryBackendKey,
   pushReceipt,
   t,
   operatorMode,
@@ -1173,10 +1215,11 @@ function MemoryGraphWorkspace({
 }: {
   liveState: LiveState;
   l15Pool: L15Pool;
+  memoryBackendKey: string;
   pushReceipt: (receipt: Receipt | null) => void;
   t: ConsoleCopy;
   operatorMode: boolean;
-  onRefreshMemory: () => Promise<void>;
+  onRefreshMemory: (options?: RefreshMemoryOptions) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
   const [previewNodes, setPreviewNodes] = useState<Array<Record<string, unknown>>>([]);
@@ -1202,10 +1245,23 @@ function MemoryGraphWorkspace({
     nodes: Array<Record<string, unknown>>;
     edges: Array<Record<string, unknown>>;
   } | null>(null);
+  const [l2bViewGraph, setL2bViewGraph] = useState<L2BViewGraphSnapshot>({
+    nodes: [],
+    edges: [],
+    signature: "",
+    emptyPolls: 0,
+    heldEmptySnapshot: false
+  });
+  const [flowRenderVersion, setFlowRenderVersion] = useState(0);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<MemoryNodeData> | null>(null);
   const lastAutoFitSignatureRef = useRef("");
   const lastBlankViewportRecoveryKeyRef = useRef("");
+  const blankViewportRecoveryAttemptsRef = useRef(0);
   const nodeDragActiveRef = useRef(false);
+  const lastNodeDragEndedAtRef = useRef(0);
+  const lastCountedEmptyL2bSnapshotKeyRef = useRef("");
+  const lastIncompleteL2bSnapshotRefreshKeyRef = useRef("");
+  const incompleteL2bSnapshotRefreshInFlightRef = useRef(false);
   const dragBufferReleaseTimerRef = useRef<number | null>(null);
   const [activeTool, setActiveTool] = useState<MemoryToolId | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -1257,6 +1313,39 @@ function MemoryGraphWorkspace({
       window.clearTimeout(dragBufferReleaseTimerRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    if (dragBufferReleaseTimerRef.current != null) {
+      window.clearTimeout(dragBufferReleaseTimerRef.current);
+      dragBufferReleaseTimerRef.current = null;
+    }
+    nodeDragActiveRef.current = false;
+    lastNodeDragEndedAtRef.current = 0;
+    lastCountedEmptyL2bSnapshotKeyRef.current = "";
+    lastIncompleteL2bSnapshotRefreshKeyRef.current = "";
+    incompleteL2bSnapshotRefreshInFlightRef.current = false;
+    lastAutoFitSignatureRef.current = "";
+    lastBlankViewportRecoveryKeyRef.current = "";
+    blankViewportRecoveryAttemptsRef.current = 0;
+    setL2bViewGraph({
+      nodes: [],
+      edges: [],
+      signature: "",
+      emptyPolls: 0,
+      heldEmptySnapshot: false
+    });
+    setDragBufferedGraph(null);
+    setFlowInstance(null);
+    setFlowRenderVersion((version) => version + 1);
+    setManualPositions({});
+    setPreviewNodes([]);
+    setPreviewEdges([]);
+    setSubgraphContext(null);
+    setGraphHealth(null);
+    setSelected(null);
+    setEdgeFrom("");
+    setEdgeTo("");
+  }, [memoryBackendKey]);
 
   // react-rnd owns pointer drag/resize; this only keeps controlled panel state inside the canvas after release.
   const fitFloatingPanelState = useCallback((
@@ -1478,8 +1567,133 @@ function MemoryGraphWorkspace({
 
   const rawL2bNodes = liveState.l2b?.nodes ?? [];
   const rawL2bEdges = liveState.l2b?.edges ?? [];
-  const l2bNodes = dragBufferedGraph?.nodes ?? rawL2bNodes;
-  const l2bEdges = dragBufferedGraph?.edges ?? rawL2bEdges;
+  const reportedL2bNodeCount = Number(liveState.l2b?.node_count ?? 0);
+  const reportedL2bEdgeCount = Number(liveState.l2b?.edge_count ?? 0);
+  const rawL2bSignature = useMemo(
+    () => l2bGraphSignature(rawL2bNodes, rawL2bEdges),
+    [rawL2bEdges, rawL2bNodes]
+  );
+  const liveSnapshotVersion = String(liveState.sequence ?? liveState.generated_at ?? rawL2bSignature);
+  const rawL2bSnapshotKey = `${liveSnapshotVersion}:${rawL2bSignature}`;
+  const hasIncomingLiveGraph = rawL2bNodes.length > 0 || rawL2bEdges.length > 0;
+  const hasReportedL2bGraph = reportedL2bNodeCount > 0 || reportedL2bEdgeCount > 0;
+  const hasIncompleteL2bSnapshot = hasReportedL2bGraph && !hasIncomingLiveGraph;
+
+  useEffect(() => {
+    const shouldCountEmptySnapshot = (
+      !hasIncomingLiveGraph
+      && !hasIncompleteL2bSnapshot
+      && lastCountedEmptyL2bSnapshotKeyRef.current !== rawL2bSnapshotKey
+    );
+    if (hasIncomingLiveGraph) {
+      lastCountedEmptyL2bSnapshotKeyRef.current = "";
+    } else if (shouldCountEmptySnapshot) {
+      lastCountedEmptyL2bSnapshotKeyRef.current = rawL2bSnapshotKey;
+    }
+
+    setL2bViewGraph((current) => {
+      const hasLiveGraph = hasIncomingLiveGraph;
+      const hasCurrentGraph = current.nodes.length > 0 || current.edges.length > 0;
+
+      if (hasLiveGraph) {
+        const nodes = mergeGraphRowsByStableId(current.nodes, rawL2bNodes);
+        const edges = rawL2bEdges;
+        const signature = l2bGraphSignature(nodes, edges);
+        if (
+          current.signature === signature
+          && current.emptyPolls === 0
+          && !current.heldEmptySnapshot
+        ) {
+          return current;
+        }
+        return {
+          nodes,
+          edges,
+          signature,
+          emptyPolls: 0,
+          heldEmptySnapshot: false
+        };
+      }
+
+      if (hasIncompleteL2bSnapshot) {
+        return hasCurrentGraph
+          ? {
+              ...current,
+              heldEmptySnapshot: true
+            }
+          : {
+              nodes: [],
+              edges: [],
+              signature: rawL2bSignature,
+              emptyPolls: 0,
+              heldEmptySnapshot: true
+            };
+      }
+
+      if (!hasCurrentGraph) {
+        if (current.signature === rawL2bSignature && current.emptyPolls === 0) return current;
+        return {
+          nodes: [],
+          edges: [],
+          signature: rawL2bSignature,
+          emptyPolls: 0,
+          heldEmptySnapshot: false
+        };
+      }
+
+      const emptyPolls = shouldCountEmptySnapshot ? current.emptyPolls + 1 : current.emptyPolls;
+      const dragGraceActive = (
+        nodeDragActiveRef.current
+        || Date.now() - lastNodeDragEndedAtRef.current < NODE_DRAG_EMPTY_SNAPSHOT_GRACE_MS
+      );
+      if (dragGraceActive || emptyPolls < EMPTY_L2B_SNAPSHOT_CONFIRM_POLLS) {
+        return {
+          ...current,
+          emptyPolls,
+          heldEmptySnapshot: true
+        };
+      }
+
+      return {
+        nodes: [],
+        edges: [],
+        signature: rawL2bSignature,
+        emptyPolls,
+        heldEmptySnapshot: false
+      };
+    });
+  }, [
+    hasIncompleteL2bSnapshot,
+    hasIncomingLiveGraph,
+    rawL2bEdges,
+    rawL2bNodes,
+    rawL2bSignature,
+    rawL2bSnapshotKey
+  ]);
+
+  useEffect(() => {
+    if (!hasIncompleteL2bSnapshot) return;
+    if (lastIncompleteL2bSnapshotRefreshKeyRef.current === rawL2bSnapshotKey) return;
+    lastIncompleteL2bSnapshotRefreshKeyRef.current = rawL2bSnapshotKey;
+    if (incompleteL2bSnapshotRefreshInFlightRef.current) return;
+    incompleteL2bSnapshotRefreshInFlightRef.current = true;
+    let refreshStarted = false;
+    const timer = window.setTimeout(() => {
+      refreshStarted = true;
+      void onRefreshMemory({ quiet: true }).finally(() => {
+        incompleteL2bSnapshotRefreshInFlightRef.current = false;
+      });
+    }, 80);
+    return () => {
+      window.clearTimeout(timer);
+      if (!refreshStarted) {
+        incompleteL2bSnapshotRefreshInFlightRef.current = false;
+      }
+    };
+  }, [hasIncompleteL2bSnapshot, onRefreshMemory, rawL2bSnapshotKey]);
+
+  const l2bNodes = dragBufferedGraph?.nodes ?? l2bViewGraph.nodes;
+  const l2bEdges = dragBufferedGraph?.edges ?? l2bViewGraph.edges;
   const selectedNodeId = selected?.selection_type === "node" ? String(selected.uuid || selected.id || "") : "";
   const selectedEdgeId = selected?.selection_type === "edge" ? String(selected.id || "") : "";
   const selectedNodeRefs = useMemo(
@@ -1842,8 +2056,26 @@ function MemoryGraphWorkspace({
       const canvas = canvasRef.current;
       if (!canvas) return;
       const canvasRect = canvas.getBoundingClientRect();
+      const recoverCamera = () => {
+        blankViewportRecoveryAttemptsRef.current += 1;
+        lastBlankViewportRecoveryKeyRef.current = recoveryKey;
+        flowInstance.fitView({ padding: 0.34, duration: 180, maxZoom: 0.78 });
+        if (blankViewportRecoveryAttemptsRef.current < BLANK_VIEWPORT_HARD_RESET_ATTEMPTS) return;
+
+        blankViewportRecoveryAttemptsRef.current = 0;
+        lastAutoFitSignatureRef.current = "";
+        lastBlankViewportRecoveryKeyRef.current = "";
+        setManualPositions({});
+        setFlowRenderVersion((version) => version + 1);
+      };
       const renderedNodes = Array.from(canvas.querySelectorAll(".react-flow__node"));
-      if (!renderedNodes.length) return;
+      if (!renderedNodes.length) {
+        // ReactFlow may virtualize nodes out of the DOM after an accidental long pane drag.
+        // The L2-B view model still has data, so recover the camera instead of showing a blank canvas.
+        if (!allowRepeat && lastBlankViewportRecoveryKeyRef.current === recoveryKey) return;
+        recoverCamera();
+        return;
+      }
       const anyNodeVisible = renderedNodes.some((node) => {
         const rect = node.getBoundingClientRect();
         return (
@@ -1855,9 +2087,12 @@ function MemoryGraphWorkspace({
           && rect.top < canvasRect.bottom - 12
         );
       });
-      if (anyNodeVisible || (!allowRepeat && lastBlankViewportRecoveryKeyRef.current === recoveryKey)) return;
-      lastBlankViewportRecoveryKeyRef.current = recoveryKey;
-      flowInstance.fitView({ padding: 0.34, duration: 180, maxZoom: 0.78 });
+      if (anyNodeVisible) {
+        blankViewportRecoveryAttemptsRef.current = 0;
+        return;
+      }
+      if (!allowRepeat && lastBlankViewportRecoveryKeyRef.current === recoveryKey) return;
+      recoverCamera();
     }, 80);
   }, [
     activeTool,
@@ -1882,6 +2117,7 @@ function MemoryGraphWorkspace({
 
   const onNodeDragStop: NodeDragHandler = useCallback((_, node) => {
     nodeDragActiveRef.current = false;
+    lastNodeDragEndedAtRef.current = Date.now();
     if (isFiniteFlowPosition(node.position)) {
       setManualPositions((current) => ({ ...current, [node.id]: node.position }));
     }
@@ -1892,13 +2128,14 @@ function MemoryGraphWorkspace({
       dragBufferReleaseTimerRef.current = null;
       setDragBufferedGraph(null);
     }, 650);
-    window.setTimeout(() => recoverBlankViewport(false), 120);
+    window.setTimeout(() => recoverBlankViewport(true), 120);
   }, [recoverBlankViewport]);
 
   useEffect(() => {
     if (!flowInstance || !layoutReady || !graphNodeSignature || !graphNodes.length) return;
     if (lastAutoFitSignatureRef.current === graphNodeSignature) return;
     lastAutoFitSignatureRef.current = graphNodeSignature;
+    blankViewportRecoveryAttemptsRef.current = 0;
     const timer = window.setTimeout(() => {
       flowInstance.fitView({ padding: 0.32, duration: 180, maxZoom: 0.78 });
     }, 40);
@@ -1911,6 +2148,15 @@ function MemoryGraphWorkspace({
     }, 80);
     return () => window.clearTimeout(timer);
   }, [recoverBlankViewport]);
+
+  useEffect(() => {
+    if (!flowInstance || !layoutReady || !graphNodeSignature || !graphNodes.length) return;
+    // Safety net for missed ReactFlow move/drag events: only acts when no graph node is visible.
+    const timer = window.setInterval(() => {
+      recoverBlankViewport(true);
+    }, 1600);
+    return () => window.clearInterval(timer);
+  }, [flowInstance, graphNodeSignature, graphNodes.length, layoutReady, recoverBlankViewport]);
 
   const onReconnect = (oldEdge: Edge, connection: Connection) => {
     const source = connection.source || oldEdge.source;
@@ -2006,19 +2252,38 @@ function MemoryGraphWorkspace({
       return;
     }
     if (operatorMode && !window.confirm("Delete this L2-B Edge from the runtime graph?")) return;
+    const matchKind = isSelectedEdge(selected) ? String(selected.kind || "") : "";
+    const matchSource = isSelectedEdge(selected) ? String(selected.edge_source || selected.source_tool || "") : "";
     if (selectedEdgeId && previewEdges.some((edge) => edge.id === selectedEdgeId)) {
       setPreviewEdges((rows) => rows.filter((edge) => edge.id !== selectedEdgeId));
     }
     try {
-      pushReceipt(await api.l2bEdgeDelete({
+      const receipt = await api.l2bEdgeDelete({
         from_uuid: source,
         to_uuid: target,
-        match_kind: isSelectedEdge(selected) ? String(selected.kind || "") : "",
-        match_source: isSelectedEdge(selected) ? String(selected.edge_source || selected.source_tool || "") : "",
+        match_kind: matchKind,
+        match_source: matchSource,
         dry_run: !operatorMode,
         operator_mode: operatorMode
-      }));
-      if (operatorMode) await onRefreshMemory();
+      });
+      pushReceipt(receipt);
+      if (receipt.success !== false && operatorMode) {
+        setL2bViewGraph((current) => {
+          const edges = current.edges.filter((row) => {
+            const rowSource = edgeEndpoint(row, "source");
+            const rowTarget = edgeEndpoint(row, "target");
+            const kindMatches = !matchKind || String(row.kind || "") === matchKind;
+            const sourceMatches = !matchSource || String(row.edge_source || row.source_tool || "") === matchSource;
+            return !(rowSource === source && rowTarget === target && kindMatches && sourceMatches);
+          });
+          return {
+            ...current,
+            edges,
+            signature: l2bGraphSignature(current.nodes, edges)
+          };
+        });
+        await onRefreshMemory();
+      }
     } catch (exc) {
       pushReceipt(errorReceipt("l2b.edge.delete", exc, { from_uuid: source, to_uuid: target }));
     }
@@ -2037,8 +2302,30 @@ function MemoryGraphWorkspace({
       setSelected(null);
     }
     try {
-      pushReceipt(await api.l2bNodeDelete({ node_uuid: uuid, dry_run: !operatorMode, operator_mode: operatorMode }));
-      if (operatorMode) await onRefreshMemory();
+      const receipt = await api.l2bNodeDelete({ node_uuid: uuid, dry_run: !operatorMode, operator_mode: operatorMode });
+      pushReceipt(receipt);
+      if (receipt.success !== false && operatorMode) {
+        setL2bViewGraph((current) => {
+          const nodes = current.nodes.filter((row) => graphRowStableId(row) !== uuid);
+          const edges = current.edges.filter((row) => (
+            edgeEndpoint(row, "source") !== uuid && edgeEndpoint(row, "target") !== uuid
+          ));
+          return {
+            ...current,
+            nodes,
+            edges,
+            signature: l2bGraphSignature(nodes, edges)
+          };
+        });
+        setManualPositions((current) => {
+          if (!(uuid in current)) return current;
+          const next = { ...current };
+          delete next[uuid];
+          return next;
+        });
+        setSelected(null);
+        await onRefreshMemory();
+      }
     } catch (exc) {
       pushReceipt(errorReceipt("l2b.node.delete", exc, { node_uuid: uuid }));
     }
@@ -2401,6 +2688,7 @@ function MemoryGraphWorkspace({
           <span>{t.connectHint}</span>
         </div>
         <ReactFlow
+          key={`${memoryBackendKey}:${flowRenderVersion}`}
           nodes={graphNodes}
           edges={graphEdges}
           nodeTypes={memoryNodeTypes}
@@ -7429,6 +7717,72 @@ function memoryNode(row: Record<string, unknown>, index: number, stateColors = t
     className: `memory-node kind-${String(row.kind || "node")}${stateColors ? ` ${memoryStateClass(row)}` : ""}`,
     connectable: true
   };
+}
+
+function mergeGraphRowsByStableId(
+  previousRows: Array<Record<string, unknown>>,
+  incomingRows: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> {
+  const incomingById = new Map<string, Record<string, unknown>>();
+  incomingRows.forEach((row) => {
+    const id = graphRowStableId(row);
+    if (id) incomingById.set(id, row);
+  });
+
+  const seen = new Set<string>();
+  const merged: Array<Record<string, unknown>> = [];
+  previousRows.forEach((row) => {
+    const id = graphRowStableId(row);
+    if (!id) return;
+    const incoming = incomingById.get(id);
+    if (!incoming) return;
+    merged.push(incoming);
+    seen.add(id);
+  });
+
+  incomingRows.forEach((row) => {
+    const id = graphRowStableId(row);
+    if (id && seen.has(id)) return;
+    merged.push(row);
+    if (id) seen.add(id);
+  });
+  return merged;
+}
+
+function l2bGraphSignature(
+  nodes: Array<Record<string, unknown>>,
+  edges: Array<Record<string, unknown>>
+): string {
+  const nodePart = nodes.map((row, index) => graphRowSignature(row, index, "node")).sort().join("|");
+  const edgePart = edges.map((row, index) => graphRowSignature(row, index, "edge")).sort().join("|");
+  return `${nodes.length}:${nodePart}::${edges.length}:${edgePart}`;
+}
+
+function graphRowStableId(row: Record<string, unknown>): string {
+  return String(
+    row.uuid
+    || row.id
+    || row.graphiti_uuid
+    || row.canonical_uuid
+    || ""
+  ).trim();
+}
+
+function graphRowSignature(row: Record<string, unknown>, index: number, fallbackKind: string): string {
+  const source = String(row.source ?? row.from_uuid ?? "");
+  const target = String(row.target ?? row.to_uuid ?? "");
+  const stableId = graphRowStableId(row) || `${fallbackKind}:${source}:${target}:${index}`;
+  return [
+    stableId,
+    String(row.label || row.name || ""),
+    String(row.kind || row.type || fallbackKind),
+    String(row.confirmation || ""),
+    String(row.salience || ""),
+    source,
+    target,
+    String(row.strength || ""),
+    String(row.edge_source || row.source_tool || "")
+  ].join("\u001f");
 }
 
 function memoryStateClass(row: Record<string, unknown>): string {

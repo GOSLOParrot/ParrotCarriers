@@ -113,6 +113,9 @@ PARROT_CONTROLLER = (
 ANIMATION_DRIVER = (
     SCRIPT_ROOT / "Parrot" / "AnimationDriver.cs"
 )
+GOSLO_LEGACY_CONTROLLER = (
+    SCRIPT_ROOT / "Parrot" / "GosloLegacyController.cs"
+)
 MODEL_DRIVER = (
     SCRIPT_ROOT / "Parrot" / "ModelDriver.cs"
 )
@@ -2403,6 +2406,9 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "public void PlayHeadTiltOnce()" in animation
     assert "_headTiltOneShot" in animation
     assert 'RegisterRpcMethod("returnToView", HandleReturnToView)' in rpc
+    assert rpc.index('RegisterRpcMethod("returnToView", HandleReturnToView)') < rpc.index("_rpcRegisteredOnRoom = room;")
+    assert "catch (Exception ex)" in rpc
+    assert "_rpcRegisteredOnRoom = null;" in rpc
     assert "HandleReturnToView" in rpc
 
     assert "class FormalArSessionBaselineReporter" in ar_reporter
@@ -2563,8 +2569,30 @@ def test_custom_capability_parameters_reach_model_controller() -> None:
     assert "public string parameters_json" in rpc
     assert "public bool strict_capability" in rpc
     assert "_parrot.TryPlayAnimation(p.animation, modelId, p.parameters_json, p.strict_capability)" in rpc
+    assert "missing_animation" in rpc
+    assert "animate parsed animation=" in rpc
     assert "capability_unsupported" in controller
     assert "capability_unsupported" in rpc
+
+
+def test_goslo_fixed_action_capabilities_have_distinct_animation_states() -> None:
+    goslo = GOSLO_LEGACY_CONTROLLER.read_text(encoding="utf-8")
+    animation = ANIMATION_DRIVER.read_text(encoding="utf-8")
+
+    assert "BodyState.WingFlap" in goslo
+    assert "BodyState.Sleep" in goslo
+    assert 'case "wing_flap":' in goslo
+    assert 'case "sleep":' in goslo
+    assert 'case "wing_flap":\n                    _animDriver.SetState(AnimationDriver.BodyState.WingFlap);' in goslo
+    assert 'case "sleep":\n                    _animDriver.SetState(AnimationDriver.BodyState.Sleep);' in goslo
+
+    assert "WingFlap" in animation
+    assert "Sleep" in animation
+    assert "UpdateWingFlap()" in animation
+    assert "UpdateSleep()" in animation
+    assert 'case "wing_flap":' in animation
+    assert 'case "sleep":' in animation
+    assert "wingFlapDurationSeconds" in animation
 
 
 def test_model_driver_configures_manifest_back_into_controllers() -> None:

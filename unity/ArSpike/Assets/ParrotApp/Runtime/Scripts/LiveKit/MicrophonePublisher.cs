@@ -13,8 +13,10 @@ namespace ParrotApp.LiveKit
 {
     /// <summary>
     /// Encodes the local microphone as a LiveKit local audio track.<br/>
-    /// Migrated from ParrotDev for Sprint4 Phase 3 / L3 Group 3, then extended
-    /// with Bluetooth route handling and sample-rate adaptation.
+    /// Migrated from ParrotDev for Sprint4 Phase 3 / L3 Group 3. The formal
+    /// demo baseline intentionally defaults to the same fixed phone-mic path;
+    /// Bluetooth/SCO routing remains behind <c>simplePhoneMicMode=false</c>
+    /// because the extra route ladder proved less stable on iQOO Neo9.
     /// <list type="bullet">
     /// <item>Namespace is narrowed to <c>ParrotApp.LiveKit</c>.</item>
     /// <item>Implements <see cref="IGracefulShutdownParticipant"/> so
@@ -85,6 +87,13 @@ namespace ParrotApp.LiveKit
 
         [Tooltip("Formal App route facade. Android native routing is preferred; AudioRouteDetector remains fallback.")]
         [SerializeField] private AudioRouteManager routeManager;
+
+        [Header("Stable Demo Audio")]
+        [Tooltip("Default ON: bypass Android route/SCO/AudioRecord ladders and publish one fixed Unity phone-mic track like ParrotDev. This is the formal demo baseline until Bluetooth routing is stable.")]
+        [SerializeField] private bool simplePhoneMicMode = true;
+
+        [Tooltip("Simple phone-mic mode ignores Settings/manual microphone cycling and always uses Unity's default microphone device.")]
+        [SerializeField] private bool simplePhoneMicIgnoresPreferredDevice = true;
 
         [Tooltip("Small debounce to coalesce Bluetooth/SCO route-change bursts before rebuilding the LiveKit audio source.")]
         [SerializeField] private float routeRepublishDebounceSeconds = 0.5f;
@@ -229,6 +238,7 @@ namespace ParrotApp.LiveKit
         public int UnityOutputSampleRate => _unityOutputSampleRate;
         public AudioRoutePolicy ActivePolicy => _activePolicy;
         public AudioRouteManager RouteManager => routeManager;
+        public bool SimplePhoneMicMode => simplePhoneMicMode;
         public bool PublishIntentEnabled => publishIntentEnabled;
         public string PreferredDevice => preferredDevice ?? "";
         public string LastManualDeviceStatus { get; private set; } = "auto";
@@ -337,27 +347,35 @@ namespace ParrotApp.LiveKit
             if (lifecycleManager != null)
                 lifecycleManager.OnStateChanged += OnLifecycleStateChanged;
 
-            if (routeManager == null)
-                routeManager = FindObjectOfType<AudioRouteManager>();
-            if (routeManager == null)
+            if (simplePhoneMicMode)
             {
-                routeManager = gameObject.AddComponent<AudioRouteManager>();
-                Debug.Log("[MicrophonePublisher] no AudioRouteManager found; auto-added on this GameObject");
+                _activePolicy = SimplePhoneMicPolicy();
+                _lastCaptureFallbackStatus = "simple_phone_mic_mode";
             }
+            else
+            {
+                if (routeManager == null)
+                    routeManager = FindObjectOfType<AudioRouteManager>();
+                if (routeManager == null)
+                {
+                    routeManager = gameObject.AddComponent<AudioRouteManager>();
+                    Debug.Log("[MicrophonePublisher] no AudioRouteManager found; auto-added on this GameObject");
+                }
 
-            if (routeDetector == null)
-                routeDetector = FindObjectOfType<AudioRouteDetector>();
-            if (routeDetector == null && routeManager == null)
-            {
-                routeDetector = gameObject.AddComponent<AudioRouteDetector>();
-                Debug.Log("[MicrophonePublisher] no AudioRouteDetector found; auto-added on this GameObject");
+                if (routeDetector == null)
+                    routeDetector = FindObjectOfType<AudioRouteDetector>();
+                if (routeDetector == null && routeManager == null)
+                {
+                    routeDetector = gameObject.AddComponent<AudioRouteDetector>();
+                    Debug.Log("[MicrophonePublisher] no AudioRouteDetector found; auto-added on this GameObject");
+                }
             }
-            if (routeManager != null)
+            if (routeManager != null && !simplePhoneMicMode)
             {
                 routeManager.OnRoutePolicyChanged += OnAudioRouteChanged;
                 _activePolicy = routeManager.CurrentPolicy;
             }
-            else if (routeDetector != null)
+            else if (routeDetector != null && !simplePhoneMicMode)
             {
                 routeDetector.OnRouteChanged += OnAudioRouteChanged;
                 _activePolicy = routeDetector.CurrentPolicy;
@@ -387,8 +405,20 @@ namespace ParrotApp.LiveKit
             // Resume can change Android's communication device without a new
             // plug/unplug callback. Pull a fresh snapshot; normal route-change
             // handling decides whether the LiveKit mic track needs rebuilding.
-            if (routeManager != null)
+            if (simplePhoneMicMode)
+            {
+                _activePolicy = SimplePhoneMicPolicy();
+            }
+            else if (routeManager != null)
+            {
+                // Android may silently drop audio focus / communication mode
+                // after screenshots, notification shade, permission dialogs,
+                // or brief app switches while the LiveKit room and local track
+                // remain published. Reassert the voice session before reading
+                // the route snapshot so HUD "Mic pub" cannot mask MODE_NORMAL.
+                routeManager.RequestCommunicationMode(true);
                 RefreshActivePolicy(routeManager.RefreshCurrentPolicy("lifecycle_resumed"), "lifecycle_resumed");
+            }
             else if (routeDetector != null)
                 RefreshActivePolicy(routeDetector.DetectNow(), "lifecycle_resumed");
         }
@@ -405,8 +435,15 @@ namespace ParrotApp.LiveKit
             // regain is only a health probe. It must not tear down a
             // just-started AudioRecord; the watchdog owns recovery when frames
             // actually go stale.
-            if (routeManager != null)
+            if (simplePhoneMicMode)
+            {
+                _activePolicy = SimplePhoneMicPolicy();
+            }
+            else if (routeManager != null)
+            {
+                routeManager.RequestCommunicationMode(true);
                 RefreshActivePolicy(routeManager.RefreshCurrentPolicy("focus_resume"), "focus_resume");
+            }
             else if (routeDetector != null)
                 RefreshActivePolicy(routeDetector.DetectNow(), "focus_resume");
 
@@ -435,7 +472,11 @@ namespace ParrotApp.LiveKit
             }
             if (_isPublishing || _publishInProgress) return;
             // Pull the detector before publishing so the route policy is fresh.
-            if (routeManager != null)
+            if (simplePhoneMicMode)
+            {
+                _activePolicy = SimplePhoneMicPolicy();
+            }
+            else if (routeManager != null)
             {
                 RefreshActivePolicy(routeManager.RefreshCurrentPolicy("room_connected"), "room_connected");
             }
@@ -465,7 +506,8 @@ namespace ParrotApp.LiveKit
             publishIntentEnabled = enabled;
             if (!enabled)
             {
-                routeManager?.RequestCommunicationMode(false);
+                if (!simplePhoneMicMode)
+                    routeManager?.RequestCommunicationMode(false);
                 if (_publishInProgress && !_isPublishing && _audioTrack == null && _micSource == null)
                 {
                     Debug.Log($"[MicrophonePublisher] publish disable queued while permission/setup is in progress ({reason})");
@@ -522,15 +564,23 @@ namespace ParrotApp.LiveKit
             }
 
             _lastPublishStage = "android_route_permission";
-            yield return RequestAndroidBluetoothPermissionIfNeeded();
-            if (routeManager != null)
+            if (!simplePhoneMicMode)
             {
-                routeManager.RequestCommunicationMode(true);
-                RefreshActivePolicy(routeManager.RefreshCurrentPolicy("publish_permission_granted"), "publish_permission_granted");
+                yield return RequestAndroidBluetoothPermissionIfNeeded();
+                if (routeManager != null)
+                {
+                    routeManager.RequestCommunicationMode(true);
+                    RefreshActivePolicy(routeManager.RefreshCurrentPolicy("publish_permission_granted"), "publish_permission_granted");
+                }
+                else if (routeDetector != null)
+                {
+                    RefreshActivePolicy(routeDetector.DetectNow(), "publish_permission_granted");
+                }
             }
-            else if (routeDetector != null)
+            else
             {
-                RefreshActivePolicy(routeDetector.DetectNow(), "publish_permission_granted");
+                _activePolicy = SimplePhoneMicPolicy();
+                _lastCaptureFallbackStatus = "simple_phone_mic_mode";
             }
 
             if (!publishIntentEnabled)
@@ -557,7 +607,9 @@ namespace ParrotApp.LiveKit
                 yield break;
             }
 
-            string device = SelectDevice(publishPolicy, useAndroidDefaultMicFallback);
+            string device = simplePhoneMicMode
+                ? SelectSimplePhoneMicDevice()
+                : SelectDevice(publishPolicy, useAndroidDefaultMicFallback);
             string deviceLabel = string.IsNullOrEmpty(device) && useAndroidDefaultMicFallback
                 ? "android_default_microphone"
                 : device;
@@ -628,6 +680,20 @@ namespace ParrotApp.LiveKit
             string selectedDevice,
             string selectedDeviceLabel)
         {
+            if (simplePhoneMicMode)
+            {
+                return new[]
+                {
+                    new CaptureAttemptSpec(
+                        selectedDevice,
+                        string.IsNullOrWhiteSpace(selectedDeviceLabel) ? "unity_default_microphone" : selectedDeviceLabel,
+                        SimplePhoneMicPolicy(),
+                        "simple_phone_mic_primary",
+                        forceAndroidAudioRecord: false,
+                        startupTimeoutSeconds: Mathf.Max(0.1f, microphoneStartTimeoutSeconds))
+                };
+            }
+
             if (_forceAndroidAudioRecordNextPublish)
             {
                 _forceAndroidAudioRecordNextPublish = false;
@@ -1147,7 +1213,7 @@ namespace ParrotApp.LiveKit
             sourceKind = "unity_microphone";
 
 #if UNITY_ANDROID && !UNITY_EDITOR
-            if (ShouldUseAndroidAudioRecordFallbackSource(attempt))
+            if (!simplePhoneMicMode && ShouldUseAndroidAudioRecordFallbackSource(attempt))
             {
                 // Unity's mobile Microphone API can report an empty device list
                 // while Android AudioRecord still captures the active
@@ -1240,6 +1306,32 @@ namespace ParrotApp.LiveKit
             }
 
             return devices[0];
+        }
+
+        private string SelectSimplePhoneMicDevice()
+        {
+            var devices = Microphone.devices;
+            if (devices == null || devices.Length == 0)
+                return null;
+
+            // Match the proven ParrotDev smoke path: use Unity's default
+            // Android microphone device and keep Bluetooth/SCO routing out of
+            // the capture path. Manual device cycling remains available only
+            // when simplePhoneMicMode is disabled for the future route lab.
+            if (simplePhoneMicIgnoresPreferredDevice || string.IsNullOrEmpty(preferredDevice))
+                return devices[0];
+
+            foreach (var device in devices)
+            {
+                if (device == preferredDevice)
+                    return device;
+            }
+            return devices[0];
+        }
+
+        private static AudioRoutePolicy SimplePhoneMicPolicy()
+        {
+            return new AudioRoutePolicy(AudioRouteKind.Speaker, "simple_phone_mic_48k", 48000);
         }
 
         private void OnMicrophoneAudioRead(float[] data, int channels, int sampleRate)
@@ -1617,6 +1709,8 @@ namespace ParrotApp.LiveKit
         private bool ShouldPromoteSilentUnityStreamToAndroidAudioRecord()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
+            if (simplePhoneMicMode)
+                return false;
             if (!allowAndroidAudioRecordAfterUnityTimeout)
                 return false;
             if (!string.Equals(_activeAudioSourceKind, "unity_microphone", StringComparison.Ordinal))
@@ -1970,8 +2064,17 @@ namespace ParrotApp.LiveKit
 
         private void QueueManualDeviceRepublish(string reason)
         {
+            if (simplePhoneMicMode)
+            {
+                LastManualDeviceStatus = "ignored:simple_phone_mic_mode";
+                Debug.Log("[MicrophonePublisher] manual mic device change ignored in simple phone-mic mode");
+                return;
+            }
+
             if (routeManager != null)
+            {
                 RefreshActivePolicy(routeManager.RefreshCurrentPolicy("manual_mic_device_preference"), "manual_mic_device_preference");
+            }
             else if (routeDetector != null)
                 RefreshActivePolicy(routeDetector.DetectNow(), "manual_mic_device_preference");
 
@@ -2112,7 +2215,8 @@ namespace ParrotApp.LiveKit
             }
             StopPublishingInner();
             _publishInProgress = false;
-            routeManager?.RequestCommunicationMode(false);
+            if (!simplePhoneMicMode)
+                routeManager?.RequestCommunicationMode(false);
             HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), $"policy_disabled:{reason}");
             Debug.Log($"[MicrophonePublisher] microphone publish disabled by policy ({reason})");
         }
@@ -2129,12 +2233,14 @@ namespace ParrotApp.LiveKit
             if (!_isPublishing && _micSource == null && _audioTrack == null)
             {
                 StopUplinkWatchdog(reason);
-                routeManager?.RequestCommunicationMode(false);
+                if (!simplePhoneMicMode)
+                    routeManager?.RequestCommunicationMode(false);
                 return;
             }
 
             StopPublishingInner();
-            routeManager?.RequestCommunicationMode(false);
+            if (!simplePhoneMicMode)
+                routeManager?.RequestCommunicationMode(false);
             HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), "");
             Debug.Log($"[MicrophonePublisher] Microphone publishing stopped ({reason})");
         }
@@ -2171,6 +2277,8 @@ namespace ParrotApp.LiveKit
         private void StartMicForegroundServiceIfNeeded(string reason)
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
+            if (simplePhoneMicMode)
+                return;
             if (_micForegroundServiceRequested)
                 return;
             _micForegroundServiceRequested = true;
@@ -2191,6 +2299,8 @@ namespace ParrotApp.LiveKit
         private void StopMicForegroundServiceIfNeeded()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
+            if (simplePhoneMicMode)
+                return;
             if (!_micForegroundServiceRequested)
                 return;
             _micForegroundServiceRequested = false;
@@ -2212,7 +2322,8 @@ namespace ParrotApp.LiveKit
             if (routeManager != null)
             {
                 routeManager.OnRoutePolicyChanged -= OnAudioRouteChanged;
-                routeManager.RequestCommunicationMode(false);
+                if (!simplePhoneMicMode)
+                    routeManager.RequestCommunicationMode(false);
             }
             if (lifecycleManager != null)
                 lifecycleManager.OnStateChanged -= OnLifecycleStateChanged;

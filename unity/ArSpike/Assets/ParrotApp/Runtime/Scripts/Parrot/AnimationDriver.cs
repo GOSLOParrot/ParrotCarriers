@@ -56,7 +56,7 @@ namespace ParrotApp.Parrot
     {
         // ─── 枚举 ────────────────────────────────────────────────────────
 
-        public enum BodyState { Idle, HeadBob, Fly, Perch, PerchedOnHand, Dance, Sit, Walk }
+        public enum BodyState { Idle, HeadBob, Fly, Perch, PerchedOnHand, Dance, Sit, WingFlap, Sleep, Walk }
         public enum HeadState { Forward, LookAt, Tilt, Nod }
 
         /// <summary>
@@ -200,6 +200,15 @@ namespace ParrotApp.Parrot
         [SerializeField] private float danceWingSpreadDegrees = 22f;
         [Tooltip("尾巴扇形幅度（度）")]
         [SerializeField] private float danceTailFanDegrees = 18f;
+
+        [Header("Wing flap / Sleep fixed actions")]
+        [SerializeField] private float wingFlapDurationSeconds = 0.75f;
+        [SerializeField] private float wingFlapActionAmpDegrees = 42f;
+        [SerializeField] private float wingFlapActionHz = 4.2f;
+        [SerializeField] private float sleepBodyLower = 0.025f;
+        [SerializeField] private float sleepBreathAmplitude = 0.012f;
+        [SerializeField] private float sleepHeadPitchDegrees = 18f;
+        [SerializeField] private float sleepWingFoldDegrees = 12f;
 
         // ─── Inspector：PerchedOnHand / Sit ──────────────────────────────
 
@@ -387,11 +396,13 @@ namespace ParrotApp.Parrot
                 case BodyState.PerchedOnHand: UpdatePerchedOnHand(); break;
                 case BodyState.Dance:         UpdateDance();         break;
                 case BodyState.Sit:           UpdateSit();           break;
+                case BodyState.WingFlap:      UpdateWingFlap();      break;
+                case BodyState.Sleep:         UpdateSleep();         break;
                 case BodyState.Walk:          UpdateWalk();          break;
             }
 
             // Head overlay 和 Dance 各自管头部，Dance 跳过 overlay
-            if (CurrentState != BodyState.Dance)
+            if (CurrentState != BodyState.Dance && CurrentState != BodyState.Sleep)
                 UpdateHeadOverlay();
         }
 
@@ -503,6 +514,10 @@ namespace ParrotApp.Parrot
                 case "dancing":         SetState(BodyState.Dance);         break;
                 case "sit":
                 case "sitting":         SetState(BodyState.Sit);           break;
+                case "wing_flap":
+                case "wingflap":        SetState(BodyState.WingFlap);      break;
+                case "sleep":
+                case "sleeping":        SetState(BodyState.Sleep);         break;
                 case "walk":
                 case "walking":         SetState(BodyState.Walk);          break;
                 default:
@@ -543,6 +558,8 @@ namespace ParrotApp.Parrot
                 case BodyState.PerchedOnHand: return "perched_on_hand";
                 case BodyState.Dance:         return "dancing";
                 case BodyState.Sit:           return "idle";
+                case BodyState.WingFlap:      return "idle";
+                case BodyState.Sleep:         return "idle";
                 case BodyState.Walk:          return "walking";
                 default:                      return "idle";
             }
@@ -892,6 +909,79 @@ namespace ParrotApp.Parrot
                     5f * Time.deltaTime);
 
             ResetBodyToBase(4f);
+        }
+
+        private void UpdateWingFlap()
+        {
+            if (useMinecraftJavaParrotPose)
+            {
+                transform.localPosition = _basePosition;
+                transform.localScale = _baseScale;
+                ApplyMinecraftPose(MinecraftParrotPose.Standing, 0f, 0f, 0f, 0f);
+            }
+            else
+            {
+                transform.localPosition = Vector3.Lerp(
+                    transform.localPosition,
+                    _basePosition,
+                    8f * Time.deltaTime);
+                ResetBodyToBase(6f);
+                LerpLegsToBase(6f);
+            }
+
+            float wingDeg = (1f - Mathf.Cos(_stateTimer * wingFlapActionHz * Mathf.PI * 2f))
+                            * 0.5f
+                            * wingFlapActionAmpDegrees;
+            SetWingsMirrored(wingDeg);
+
+            if (_stateTimer >= wingFlapDurationSeconds)
+                SetState(BodyState.Idle);
+        }
+
+        private void UpdateSleep()
+        {
+            float breath = Mathf.Sin(_stateTimer * perchBreathFrequency * Mathf.PI * 2f)
+                           * sleepBreathAmplitude;
+
+            if (useMinecraftJavaParrotPose)
+            {
+                transform.localPosition = _basePosition;
+                transform.localScale = _baseScale * (1f + breath);
+                ApplyMinecraftPose(MinecraftParrotPose.Sitting, 0f, 0f, 0f, 0f);
+            }
+            else
+            {
+                transform.localPosition = Vector3.Lerp(
+                    transform.localPosition,
+                    _basePosition - new Vector3(0f, sleepBodyLower, 0f),
+                    4f * Time.deltaTime);
+                transform.localScale = _baseScale * (1f + breath);
+            }
+
+            if (_headTransform != null)
+            {
+                _headTransform.localRotation = Quaternion.Slerp(
+                    _headTransform.localRotation,
+                    _headBaseRot * Quaternion.Euler(sleepHeadPitchDegrees, 0f, 0f),
+                    5f * Time.deltaTime);
+            }
+
+            SetWings(-sleepWingFoldDegrees);
+
+            if (_leftLegTransform != null && _rightLegTransform != null)
+            {
+                var bent = Quaternion.Euler(sitLegBendDegrees, 0f, 0f);
+                _leftLegTransform.localRotation = Quaternion.Slerp(
+                    _leftLegTransform.localRotation,
+                    _leftLegBaseRot * bent,
+                    5f * Time.deltaTime);
+                _rightLegTransform.localRotation = Quaternion.Slerp(
+                    _rightLegTransform.localRotation,
+                    _rightLegBaseRot * bent,
+                    5f * Time.deltaTime);
+            }
+
+            ResetBodyToBase(3f);
         }
 
         private void UpdateWalk()

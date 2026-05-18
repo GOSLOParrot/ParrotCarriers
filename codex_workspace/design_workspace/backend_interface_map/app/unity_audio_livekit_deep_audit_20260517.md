@@ -851,12 +851,14 @@ Bug found:
 
 Fix:
 
-- `system_default` and `phone_mic` still stay media-safe.
+- `system_default` and `phone_mic` still stay media-safe in the route-lab
+  bridge. The current formal demo default does not depend on this bridge
+  because `simplePhoneMicMode=true` bypasses Android communication routing.
 - `auto` now checks `hasSelectableCommunicationCaptureDevice()`.
 - If Android exposes SCO / BLE headset / wired / USB headset capture, `auto`
   proceeds to `MODE_IN_COMMUNICATION` and `setCommunicationDevice`.
-- If no such capture device exists, `auto` stays media-safe and preserves
-  A2DP/output-only Bluetooth while using phone/default mic.
+- If no such capture device exists, `auto` stays media-safe and preserves the
+  phone/default mic path.
 
 This is still a local route repair only: it does not reconnect the room, mint a
 new token, or dispatch a new Brain job. The next iQOO build should compare:
@@ -867,3 +869,82 @@ new token, or dispatch a new Brain job. The next iQOO build should compare:
   remains phone/default mic.
 - Bluetooth off/no device: START and uplink must not block; phone/default mic
   remains the fallback.
+
+## 2026-05-18 Phone Route Regression After Laptop Restart
+
+Evidence from iQOO after restarting the laptop Castle backend:
+
+- Unity HUD showed `LK on / Brain on / Mic pub`, `Uplink published`, non-zero
+  local audio `peak`, and `wd=healthy`.
+- LiveKit server logs showed both Unity and Brain participants active; Unity
+  published an audio track and Brain published its agent audio track.
+- Android `dumpsys audio` showed the App recorder active and `not silenced`,
+  but the global audio session had `Requested mode = MODE_NORMAL`,
+  `Actual mode = MODE_NORMAL`, and the route snapshot/HUD had
+  `audio_focus=abandoned`.
+- Brain logs showed normal startup/registering but no later user-turn evidence.
+
+Conclusion:
+
+- This was not Mint, RoomSetting, or laptop LiveKit reachability.
+- The formal App had a false-good state: the mic track existed, but Android
+  route ownership was relaxed back to media mode. That can make the App look
+  connected while Realtime voice turns do not reliably trigger.
+
+Superseding decision:
+
+- The route-lab Java bridge is no longer used by the formal default App audio
+  path. It keeps its previous media-safe semantics behind
+  `simplePhoneMicMode=false`.
+- The default fix is now simpler: `MicrophonePublisher.simplePhoneMicMode=true`
+  avoids Android communication routing entirely and returns to the proven
+  ParrotDev-style Unity phone microphone path.
+
+Next proof:
+
+- Rebuild the Android app after the simple phone-mic change.
+- HUD should show `simple phone mic / route lab off` and uplink route
+  `simple_phone_mic_48k`.
+- Do not use `audio_focus=abandoned` as the primary pass/fail signal in simple
+  mode; the pass/fail signal is whether Brain hears the phone mic reliably.
+
+## 2026-05-18 Stable Demo Audio Baseline
+
+User decision after repeated iQOO proof attempts: stop making the formal demo
+depend on the Bluetooth/SCO/AudioRecord route ladder. The route-aware design is
+not deleted, but it is now an experiment behind `simplePhoneMicMode=false`.
+
+Current formal default:
+
+- `MicrophonePublisher.simplePhoneMicMode=true`.
+- Unity publishes exactly one `MicrophoneSource` track using the default phone
+  microphone device, fixed to `simple_phone_mic_48k`.
+- The publish path does not request Bluetooth permission, does not call
+  `AudioRouteManager.RequestCommunicationMode(...)`, does not subscribe to
+  route-change republish events, does not start the App-owned Android
+  `AudioRecord` source, and does not promote zero-peak Unity mic frames into
+  Android AudioRecord.
+- Settings-page mic cycling is ignored and reported as
+  `ignored:simple_phone_mic_mode`.
+- HUD/menu labels must make the mode visible as `simple phone mic / route lab
+  off` so a later test cannot confuse this with production Bluetooth routing.
+
+Reason:
+
+- ParrotDev's simple phone-mic path was the only proven stable voice path.
+- The formal route ladder fixed several real bugs but produced regressions that
+  blocked the real App loop: delayed/unstable speech, route churn, false-good
+  states, and Bluetooth behavior that was harder to reason about than Android's
+  own phone default.
+- The immediate product goal is a stable phone App for AR placement, model
+  control, LineA/LineB conversation, and homepage testing. Bluetooth/SCO input
+  can return later as a focused lab feature with its own phone matrix.
+
+Future route-lab rule:
+
+- Re-enabling `simplePhoneMicMode=false` must be treated as a separate
+  Bluetooth/SCO feature branch, not as the default formal App path.
+- It must pass: Bluetooth connected before START, connect-after-start,
+  disconnect fallback, other-media coexistence, app pause/resume, LineA,
+  LineB, and no room reconnect/token mint/Brain redispatch on local device
+  changes.

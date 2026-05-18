@@ -10,7 +10,8 @@ Coverage map (kept narrow on purpose — see `sprint4_ecp_minimal_audit_20260429
     - `EcpCommand.layer` round-trips through the shared `EventLayer` enum.
 """
 
-from parrot.brain.tools._rpc_bridge import _classify_response
+from parrot.brain.tools._rpc_bridge import _classify_response, _find_unity_participant
+from parrot.scheduler.blackboard import open_bb_client
 from parrot.shared.ecp import (
     ConnectionOverall,
     EcpAck,
@@ -243,6 +244,35 @@ def test_rpc_bridge_legacy_ok_response_still_classified():
     assert ok is True
     assert reason == ""
     assert detail == ""
+
+
+class _FakeRoom:
+    def __init__(self, identities: list[str]) -> None:
+        self.remote_participants = {identity: object() for identity in identities}
+
+
+def test_rpc_bridge_prefers_formal_unity_over_probe_identity():
+    room = _FakeRoom(["unity-photo-node-probe-1", "unity-phone-1"])
+
+    assert _find_unity_participant(room) == "unity-phone-1"
+
+
+def test_rpc_bridge_prefers_paired_unity_identity_when_present():
+    bb = open_bb_client(name="test_unity_pairing_writer", writer="brain.agent")
+    bb.set("session/unity_identity", "unity-phone-paired")
+    room = _FakeRoom([
+        "unity-photo-node-probe-2",
+        "unity-phone-other",
+        "unity-phone-paired",
+    ])
+
+    assert _find_unity_participant(room) == "unity-phone-paired"
+
+
+def test_rpc_bridge_unity_identity_prefix_is_case_insensitive():
+    room = _FakeRoom(["Unity-Phone-MixedCase"])
+
+    assert _find_unity_participant(room) == "Unity-Phone-MixedCase"
 
 
 # ─── Sprint4 Phase 3: EcpState / ConnectionHealth ─────────────────────────

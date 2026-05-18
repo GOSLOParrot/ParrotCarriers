@@ -385,6 +385,11 @@ namespace ParrotApp.UI
 
         private string AudioRouteHudLabel()
         {
+            if (microphonePublisher == null)
+                microphonePublisher = FindObjectOfType<MicrophonePublisher>();
+            if (microphonePublisher != null && microphonePublisher.SimplePhoneMicMode)
+                return "simple phone mic / route lab off";
+
             if (audioRouteManager != null)
             {
                 var snapshot = audioRouteManager.CurrentSnapshot;
@@ -442,6 +447,7 @@ namespace ParrotApp.UI
                 return ReporterHudSuffix("publisher_missing");
 
             string intent = microphonePublisher.PublishIntentEnabled ? "intent on" : "intent off";
+            string mode = microphonePublisher.SimplePhoneMicMode ? "simple-phone-mic" : "route-aware";
             string device = string.IsNullOrWhiteSpace(microphonePublisher.SelectedDevice)
                 ? "auto"
                 : microphonePublisher.SelectedDevice;
@@ -449,7 +455,8 @@ namespace ParrotApp.UI
                 ? "auto"
                 : microphonePublisher.LastManualDeviceStatus;
 
-            return intent
+            return mode
+                   + " " + intent
                    + " selected=" + device
                    + " manual=" + manual
                    + " count=" + microphonePublisher.AvailableDeviceCount

@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 UNITY_IDENTITY_PREFIX = "unity"
+UNITY_PROBE_IDENTITY_MARKERS = ("photo-node-probe",)
 _WRITER = "brain._rpc_bridge"
 
 
@@ -117,20 +118,79 @@ def set_scene(scene: Scene) -> None:
         logger.info("BB session/scene: %s → %s", current, scene)
 
 
+def _iter_remote_identities(room) -> tuple[str, ...]:
+    remote = getattr(room, "remote_participants", {}) or {}
+    if isinstance(remote, dict):
+        values = list(remote.keys()) + [
+            str(getattr(participant, "identity", "") or "")
+            for participant in remote.values()
+        ]
+    else:
+        values = [
+            str(getattr(participant, "identity", participant) or "")
+            for participant in remote
+        ]
+    return tuple(dict.fromkeys(identity for identity in values if identity))
+
+
+def _is_unity_identity(identity: str) -> bool:
+    return identity.lower().startswith(UNITY_IDENTITY_PREFIX)
+
+
+def _is_probe_identity(identity: str) -> bool:
+    lowered = identity.lower()
+    return any(marker in lowered for marker in UNITY_PROBE_IDENTITY_MARKERS)
+
+
+def _paired_unity_identity(remote_identities: tuple[str, ...]) -> str:
+    """Return the current formal App pairing if BB still matches the room."""
+    if not remote_identities:
+        return ""
+    remote = set(remote_identities)
+    bb = _ensure_bb()
+    candidates: list[str] = []
+    try:
+        candidates.append(str(bb.get("session/unity_identity") or ""))
+    except KeyError:
+        pass
+    try:
+        ecp_state = bb.get("session/ecp_state")
+        if isinstance(ecp_state, dict):
+            candidates.append(str(ecp_state.get("unity_identity", "") or ""))
+    except KeyError:
+        pass
+
+    for candidate in candidates:
+        if candidate in remote and _is_unity_identity(candidate):
+            return candidate
+    return ""
+
+
 def _find_unity_participant(room) -> str | None:
-    """Find the first Unity client participant in the room.
+    """Find the paired formal Unity App participant in the room.
 
     ARCHITECTURAL RISK (P2+):
-    Currently returns the FIRST participant with the 'unity' prefix.
-    If multiple Unity clients (e.g., sim_client + Unity Editor) are in the room,
-    RPC commands (flyTo, animate) will only be sent to one arbitrary client.
+    The current app room can contain diagnostic Unity-like participants such as
+    photo node probes. Prefer the explicit app pairing captured from
+    onSceneReady/onGosloPlaced or ECP state, then fall back to a non-probe
+    Unity participant. Multi-user/Multi-device still needs a real target model.
     In P2+ (Multi-user/Multi-device), this needs to be refactored to either
     broadcast to all, or target a specific user's AR view via Context.
     """
-    for identity in room.remote_participants:
-        if identity.startswith(UNITY_IDENTITY_PREFIX):
+    remote_identities = _iter_remote_identities(room)
+    paired = _paired_unity_identity(remote_identities)
+    if paired:
+        return paired
+
+    first_unity = None
+    for identity in remote_identities:
+        if not _is_unity_identity(identity):
+            continue
+        if first_unity is None:
+            first_unity = identity
+        if not _is_probe_identity(identity):
             return identity
-    return None
+    return first_unity
 
 
 def _classify_response(response: str) -> tuple[bool, str, str]:
@@ -252,7 +312,15 @@ async def call_unity_rpc(
         command_id=command_id,
         ecp_status=ecp_status,
     )
-    if not ok:
+    if ok:
+        logger.info(
+            "RPC Unity ack method=%s status=%s reason=%s command_id=%s",
+            method,
+            ecp_status or "ok",
+            reason or "-",
+            command_id or "-",
+        )
+    else:
         logger.info("RPC %s rejected: reason=%s detail=%s", method, reason, detail)
     return response
 

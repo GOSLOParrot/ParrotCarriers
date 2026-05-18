@@ -75,13 +75,13 @@ namespace ParrotApp.RPC
             if (room == null) return;
             if (_rpcRegisteredOnRoom == room) return;
 
-            _rpcRegisteredOnRoom = room;
             try
             {
                 room.LocalParticipant.RegisterRpcMethod("flyTo", HandleFlyTo);
                 room.LocalParticipant.RegisterRpcMethod("animate", HandleAnimate);
                 room.LocalParticipant.RegisterRpcMethod("perchToFinger", HandlePerchToFinger);
                 room.LocalParticipant.RegisterRpcMethod("returnToView", HandleReturnToView);
+                _rpcRegisteredOnRoom = room;
                 Debug.Log("[ParrotRPC] Registered: flyTo, animate, perchToFinger, returnToView");
 
                 if (!_rpcReadyReported)
@@ -92,6 +92,8 @@ namespace ParrotApp.RPC
             }
             catch (Exception ex)
             {
+                _rpcRegisteredOnRoom = null;
+                _rpcReadyReported = false;
                 Debug.LogError($"[ParrotRPC] RegisterRpcMethod failed: {ex.Message}");
                 HealthAggregator?.ReportRpcReady(false, UnixSeconds());
             }
@@ -172,6 +174,12 @@ namespace ParrotApp.RPC
             {
                 p = JsonUtility.FromJson<AnimatePayload>(data.Payload);
 
+                if (string.IsNullOrWhiteSpace(p.animation))
+                {
+                    Debug.LogWarning("[ParrotRPC] animate malformed: missing animation");
+                    return EcpAckJson.Failed(p._ecp, "missing_animation", EcpAckJson.ReasonMalformed);
+                }
+
                 if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
                 {
                     Debug.LogWarning($"[ParrotRPC] animate expired (command_id={p._ecp.command_id})");
@@ -186,6 +194,9 @@ namespace ParrotApp.RPC
                 // pass model_id through to ParrotController; see HandleFlyTo
                 // for the routing rationale.
                 string modelId = p._ecp?.ModelId ?? "";
+                Debug.Log(
+                    $"[ParrotRPC] animate parsed animation='{p.animation}' model_id='{modelId}' " +
+                    $"strict={p.strict_capability} command_id='{commandId}'");
 
                 var tcs = new TaskCompletionSource<bool>();
                 UnityMainThread.Enqueue(() =>

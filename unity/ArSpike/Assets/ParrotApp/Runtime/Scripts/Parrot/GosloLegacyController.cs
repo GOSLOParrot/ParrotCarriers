@@ -112,8 +112,11 @@ namespace ParrotApp.Parrot
                     return true;
 
                 case "idle":
-                case "sleep":
                     _animDriver.SetState(AnimationDriver.BodyState.Idle);
+                    return true;
+
+                case "sleep":
+                    _animDriver.SetState(AnimationDriver.BodyState.Sleep);
                     return true;
 
                 case "head_bob":
@@ -129,8 +132,11 @@ namespace ParrotApp.Parrot
                     return true;
 
                 case "dance":
-                case "wing_flap":
                     _animDriver.SetState(AnimationDriver.BodyState.Dance);
+                    return true;
+
+                case "wing_flap":
+                    _animDriver.SetState(AnimationDriver.BodyState.WingFlap);
                     return true;
 
                 default:

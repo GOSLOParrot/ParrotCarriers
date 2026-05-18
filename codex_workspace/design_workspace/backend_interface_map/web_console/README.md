@@ -58,10 +58,56 @@ Promote durable decisions back into the active business files above.
 - The 2026-05-18 drag fix buffers the currently displayed L2-B snapshot while a
   node is being dragged and rejects non-finite/huge positions, so SSE/poll
   refreshes cannot wipe the canvas mid-drag.
+- Follow-up fix: the Memory Canvas now keeps a page-lifetime `l2bViewGraph`
+  read model that merges live L2-B rows by stable UUID and preserves node order
+  across polls. A single empty live snapshot is treated as transient; the view
+  only clears after repeated empty confirmations outside the drag grace window.
+- The empty-snapshot counter is keyed by live snapshot signature so React 18
+  StrictMode does not double-count the same dev-server poll. Operator delete
+  actions remove the affected node/edge from `l2bViewGraph` immediately, then
+  let the next live refresh reconcile with the backend.
+- The viewport recovery must also handle the ReactFlow virtualization case:
+  after a background pane drag, `.react-flow__node` may be absent even though
+  live L2-B still reports nodes. In that case the canvas immediately runs
+  `fitView` instead of waiting for another graph update.
+- The view cache is also keyed by the active backend profile/app URL/Graphiti
+  URL/LiveKit URL/room. Switching `laptop`/`ecs` clears page-local canvas
+  state, preview overlays, and selections so one backend's graph cannot bleed
+  into another.
 - L2-B runtime projection is still Brain/app-monitor memory, not a browser
   source of truth. If the app-monitor process restarts, materialized Graphiti
   projections must be re-imported or re-fetched from Graphiti; the browser must
   not resurrect them from stale persistence.
+- 2026-05-18 local true-connection smoke: `7894 -> 7893 BFF -> 18790
+  app-monitor` read `29` L2-B nodes / `56` edges; Graphiti
+  `arknights_test` search for `Amiya Chernobog` returned `3 hit(s), 7 node(s)`;
+  operator materialize re-applied as duplicate-only (`0` new nodes, `0` new
+  edges, `9` duplicate edges), confirming the route is real and idempotent.
+- Node write smoke used the same `7894` route to create one temporary operator
+  L2-B node through the remote proxy (`29 -> 30`) and delete only that node
+  (`30 -> 29`, edges stayed `56`). This confirms Node apply/delete are real
+  app-monitor writes, not browser-local persistence.
+- UI smoke also opened the Memory Canvas `New Node` tool, submitted a unique
+  label, observed both ReactFlow DOM and live-state move to `30` nodes, then
+  removed that temporary node through the operator delete route and confirmed
+  the canvas returned to `29` visible nodes / `56` edges.
+- Node drag stop uses repeat-enabled viewport recovery. This is intentional:
+  repeated drags can produce the same graph/canvas recovery key, so a
+  de-duplicated recovery call can leave the operator in a blank viewport even
+  while live-state counters still show L2-B nodes.
+- A low-frequency canvas watchdog also calls the same recovery path while
+  graph nodes exist. It does nothing when any node is visible; it only repairs
+  the pathological state where counters show L2-B nodes but ReactFlow is
+  rendering an empty viewport/minimap.
+- If the blank viewport persists across two recovery attempts, the Web Console
+  treats ReactFlow's internal viewport/render cache as suspect: it clears only
+  page-local manual node positions and remounts the ReactFlow instance from the
+  current L2-B snapshot. This is a frontend hard reset, not an L2-B mutation.
+- Follow-up root-cause guard: bounded SSE/poll snapshots may report nonzero
+  `l2b.node_count` / `l2b.edge_count` while omitting the full `nodes` / `edges`
+  arrays. React must treat that as an incomplete snapshot, keep the current
+  `l2bViewGraph`, and silently pull a full `/api/app/live-state` snapshot
+  instead of clearing the canvas.
 
 ## Completed Interface Ledger
 

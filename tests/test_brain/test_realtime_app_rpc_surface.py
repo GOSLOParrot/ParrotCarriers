@@ -60,10 +60,26 @@ def test_scene_ready_rpcs_rebind_roomio_to_current_unity_caller() -> None:
     assert "LiveKit Agents auto-selects the first accepted remote participant" in text
     assert 'getattr(data, "caller_identity"' in text
     assert 'identity.lower().startswith("unity")' in text
+    assert "def _write_paired_unity_identity" in text
+    assert '"session/unity_identity"' in text
+    assert 'writer="brain.agent"' in text
     assert "active_room_io = session.room_io" in text
     assert "active_room_io.set_participant(identity)" in text
     assert '_bind_room_io_to_rpc_caller(data, "onSceneReady")' in text
     assert '_bind_room_io_to_rpc_caller(data, "onGosloPlaced")' in text
+
+
+def test_active_model_changes_refresh_live_agent_tools() -> None:
+    text = AGENT.read_text(encoding="utf-8")
+
+    assert '"session_context.model"' in text
+    assert '"global/active_model_id"' in text
+    assert "def _refresh_tools_async" in text
+    assert "Agent.update_tools unavailable" in text
+    assert "tools_for_active_model()" in text
+    assert "await updater(tools)" in text
+    assert 'if bb_key == "global/active_model_id":' in text
+    assert '_refresh_tools("session_context.attach_initial")' in text
 
 
 def test_full_app_menu_and_roomsetting_surfaces_stay_http_owned() -> None:

@@ -647,6 +647,13 @@ namespace ParrotApp.UI
                 }
             }
 
+            if (microphonePublisher.SimplePhoneMicMode)
+            {
+                SetStatus("Mic fixed to phone default", warning: false);
+                RefreshQuickActions();
+                return;
+            }
+
             if (!microphonePublisher.CyclePreferredDevice("formal_home_mic_device_cycle"))
             {
                 SetStatus("No microphone devices", warning: false);
@@ -668,6 +675,13 @@ namespace ParrotApp.UI
                     SetStatus("Microphone publisher missing", warning: false);
                     return;
                 }
+            }
+
+            if (microphonePublisher.SimplePhoneMicMode)
+            {
+                SetStatus("Mic already fixed to phone default", warning: false);
+                RefreshQuickActions();
+                return;
             }
 
             microphonePublisher.ClearPreferredDevice("formal_home_mic_device_auto");
@@ -962,8 +976,9 @@ namespace ParrotApp.UI
                                                     && (modelPlacementController.HasPlacedModel
                                                         || modelPlacementController.CanPlaceNow);
             if (_audioRouteActionButton != null) _audioRouteActionButton.interactable = canSend && !audioPending;
-            if (_micDeviceNextButton != null) _micDeviceNextButton.interactable = microphonePublisher != null;
-            if (_micDeviceAutoButton != null) _micDeviceAutoButton.interactable = microphonePublisher != null && !string.IsNullOrWhiteSpace(microphonePublisher.PreferredDevice);
+            bool simpleMicMode = microphonePublisher != null && microphonePublisher.SimplePhoneMicMode;
+            if (_micDeviceNextButton != null) _micDeviceNextButton.interactable = microphonePublisher != null && !simpleMicMode;
+            if (_micDeviceAutoButton != null) _micDeviceAutoButton.interactable = microphonePublisher != null && !simpleMicMode && !string.IsNullOrWhiteSpace(microphonePublisher.PreferredDevice);
 
             if (_cameraActionText != null)
                 _cameraActionText.text = "CAM\n" + PendingOrCurrentLabel(_cameraMode, _pendingCameraMode, "off");
@@ -982,9 +997,9 @@ namespace ParrotApp.UI
             if (_audioRouteActionText != null)
                 _audioRouteActionText.text = "AUDIO\n" + (audioPending ? "..." : AudioRouteShortLabel());
             if (_micDeviceNextText != null)
-                _micDeviceNextText.text = "MIC\nNEXT";
+                _micDeviceNextText.text = simpleMicMode ? "MIC\nFIXED" : "MIC\nNEXT";
             if (_micDeviceAutoText != null)
-                _micDeviceAutoText.text = "MIC\nAUTO";
+                _micDeviceAutoText.text = simpleMicMode ? "MIC\nPHONE" : "MIC\nAUTO";
             if (_settingsAudioRouteText != null)
                 _settingsAudioRouteText.text =
                     "Audio  " + ShortLabel(AudioRouteStatusLabel(), "unknown", 64)
@@ -1377,6 +1392,9 @@ namespace ParrotApp.UI
 
         private string AudioRouteStatusLabel()
         {
+            if (microphonePublisher != null && microphonePublisher.SimplePhoneMicMode)
+                return "simple phone mic / route lab off";
+
             if (audioRouteManager != null)
             {
                 var snapshot = audioRouteManager.CurrentSnapshot;
@@ -1422,6 +1440,15 @@ namespace ParrotApp.UI
             if (microphonePublisher == null)
                 return "publisher missing";
 
+            if (microphonePublisher.SimplePhoneMicMode)
+            {
+                string selectedSimple = string.IsNullOrWhiteSpace(microphonePublisher.SelectedDevice)
+                    ? "not published"
+                    : microphonePublisher.SelectedDevice;
+                return "simple phone mic / selected " + selectedSimple
+                       + " / devices " + microphonePublisher.AvailableDeviceCount;
+            }
+
             string pref = string.IsNullOrWhiteSpace(microphonePublisher.PreferredDevice)
                 ? "auto"
                 : "manual " + microphonePublisher.PreferredDevice;
@@ -1448,6 +1475,8 @@ namespace ParrotApp.UI
 
         private string AudioRouteShortLabel()
         {
+            if (microphonePublisher != null && microphonePublisher.SimplePhoneMicMode)
+                return "simple";
             if (audioRouteManager != null)
                 return AudioRouteLabel(audioRouteManager.CurrentPolicy.RouteName);
             if (audioRouteReporter == null)
