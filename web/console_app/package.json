@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 7894",
+    "dev:laptop": "vite --host 127.0.0.1 --port 7894 --mode laptop",
+    "dev:ecs": "vite --host 127.0.0.1 --port 7894 --mode ecs",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
   },

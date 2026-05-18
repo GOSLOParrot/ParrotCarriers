@@ -24,6 +24,9 @@ def test_console_config_uses_env_without_leaking_secret(monkeypatch) -> None:
     assert body["orchestrator_base_url"] == "http://127.0.0.1:9876"
     assert body["orchestrator_auth_mode"] == "bearer"
     assert body["refresh_interval_s"] == 9.0
+    assert body["environment"]["service"] == "web-console"
+    assert body["environment"]["profile"] in {"local-bff", "ecs", "laptop"}
+    assert body["environment"]["secrets"]["orchestrator_secret_configured"] is True
     assert "secret-value" not in str(body)
 
 

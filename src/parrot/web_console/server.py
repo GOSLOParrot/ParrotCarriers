@@ -19,6 +19,8 @@ from typing import Any, Awaitable, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from parrot.web_console.environment_config import build_console_environment
+
 try:
     from fastapi import Body, FastAPI, HTTPException
     from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
@@ -93,6 +95,11 @@ def build_app(
             "orchestrator_base_url": config.base_url,
             "orchestrator_auth_mode": config.auth_mode,
             "refresh_interval_s": _env_float("PARROT_WEB_CONSOLE_REFRESH_S", 15.0),
+            "environment": build_console_environment(
+                service_name="web-console",
+                orchestrator_base_url=config.base_url,
+                orchestrator_auth_mode=config.auth_mode,
+            ),
             "now": time.time(),
         }
 

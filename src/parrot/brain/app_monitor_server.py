@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,7 @@ from parrot.brain.graphiti_console import (
 )
 from parrot.brain.app_live_state import build_app_live_state
 from parrot.brain.l2b_monitor import build_l2b_snapshot
+from parrot.web_console.environment_config import build_console_environment
 
 try:
     from fastapi import Body, FastAPI, Header, HTTPException, Request
@@ -80,6 +82,26 @@ def build_app():  # type: ignore[no-untyped-def]
     asset_root = _pixel_asset_root()
     if asset_root.exists():
         app.mount("/pixel-assets", StaticFiles(directory=str(asset_root)), name="pixel-assets")
+
+    @app.get("/api/console/config")
+    async def console_config():  # type: ignore[no-untyped-def]
+        orch_base_url = _clean_base_url(
+            os.environ.get("PARROT_WEB_CONSOLE_ORCH_URL", "")
+            or os.environ.get("PARROT_ORCH_URL", "")
+            or "http://127.0.0.1:7890"
+        )
+        orch_auth_mode = "bearer" if os.environ.get("PARROT_ORCH_SECRET", "").strip() else "dev-open"
+        return {
+            "orchestrator_base_url": orch_base_url,
+            "orchestrator_auth_mode": orch_auth_mode,
+            "refresh_interval_s": _env_float("PARROT_WEB_CONSOLE_REFRESH_S", 15.0),
+            "environment": build_console_environment(
+                service_name="app-monitor",
+                orchestrator_base_url=orch_base_url,
+                orchestrator_auth_mode=orch_auth_mode,
+            ),
+            "now": time.time(),
+        }
 
     @app.get("/", response_class=HTMLResponse)
     async def index():  # type: ignore[no-untyped-def]
@@ -647,6 +669,18 @@ def build_app():  # type: ignore[no-untyped-def]
 
 def _pixel_asset_root() -> Path:
     return Path("codex_workspace/design_workspace/asset_pipeline/pixel_asset_workspace").resolve()
+
+
+def _clean_base_url(value: str) -> str:
+    cleaned = value.strip() or "http://127.0.0.1:7890"
+    return cleaned[:-1] if cleaned.endswith("/") else cleaned
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
 
 
 def _index_html() -> str:

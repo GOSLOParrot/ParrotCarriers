@@ -164,8 +164,18 @@ export type VisionEvidenceTimeline = {
 };
 
 export type ConsoleConfig = {
+  orchestrator_base_url?: string;
   orchestrator_auth_mode?: string;
   refresh_interval_s?: number;
+  environment?: {
+    schema_version?: number;
+    service?: string;
+    profile?: string;
+    active?: Record<string, unknown>;
+    profiles?: Array<Record<string, unknown>>;
+    secrets?: Record<string, unknown>;
+    warnings?: string[];
+  };
 };
 
 export type LiveKitConfig = {

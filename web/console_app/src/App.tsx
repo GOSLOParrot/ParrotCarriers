@@ -793,6 +793,9 @@ export function App() {
   const transportStatusText = transportText(activeTransport, `${t.autoRefresh} ${refreshIntervalS}s`);
   const livePillClass = `live-pill ${transportTone(activeTransport)}${loading ? " loading" : ""}`;
   const operatorMode = executionMode === "operator";
+  const environment = config.environment ?? {};
+  const environmentProfile = environment.profile || "local-bff";
+  const environmentService = environment.service || "web-console";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1001,6 +1004,9 @@ export function App() {
             <span className={livePillClass}>
               <Sparkles size={15} /> {t.live} / {transportStatusText}
             </span>
+            <span className="mode-chip">
+              <Link2 size={14} /> {environmentProfile} / {environmentService}
+            </span>
             <span className={operatorMode ? "mode-chip active" : "mode-chip"}>
               <ShieldCheck size={14} /> {operatorMode ? "真实连接" : "预演模式"}
             </span>
@@ -1034,6 +1040,7 @@ export function App() {
                       <small>dry_run=true / operator_mode=false</small>
                     </span>
                   </button>
+                  <ConsoleConnectionSummary config={config} />
                 </div>
               ) : null}
             </div>
@@ -1048,6 +1055,56 @@ export function App() {
       </main>
 
       <ReceiptRail receipts={receipts} t={t} open={recordsOpen} onToggle={() => setRecordsOpen((open) => !open)} />
+    </div>
+  );
+}
+
+function ConsoleConnectionSummary({ config }: { config: ConsoleConfig }) {
+  const environment = config.environment ?? {};
+  const active = recordFromUnknown(environment.active);
+  const secrets = recordFromUnknown(environment.secrets);
+  const profiles = Array.isArray(environment.profiles)
+    ? environment.profiles.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
+  const warnings = Array.isArray(environment.warnings)
+    ? environment.warnings.map((warning) => String(warning || "")).filter(Boolean)
+    : [];
+  const profile = String(environment.profile || active.profile || "unknown");
+  const service = String(environment.service || "unknown");
+  const appTarget = String(active.dev_proxy_target || active.app_api_base_url || active.api_path || "/api");
+  const graphitiTarget = String(active.graphiti_proxy_url || "same target");
+  const runtimeRoot = String(active.runtime_data_root || "server default");
+
+  return (
+    <div className="connection-panel">
+      <strong><Link2 size={14} /> Connection</strong>
+      <div className="connection-grid">
+        <span>Profile</span><code>{profile}</code>
+        <span>Service</span><code>{service}</code>
+        <span>API target</span><code>{appTarget}</code>
+        <span>Graphiti</span><code>{graphitiTarget}</code>
+        <span>Runtime data</span><code>{runtimeRoot}</code>
+      </div>
+      <div className="connection-secrets">
+        <span className={secrets.app_monitor_secret_configured ? "secret-dot on" : "secret-dot"}>App write</span>
+        <span className={secrets.orchestrator_secret_configured ? "secret-dot on" : "secret-dot"}>Orch auth</span>
+        <span className={secrets.google_credentials_configured ? "secret-dot on" : "secret-dot"}>Google OAuth</span>
+      </div>
+      {profiles.length ? (
+        <div className="connection-profiles">
+          {profiles.map((row) => (
+            <span key={String(row.id || row.label)}>
+              <strong>{String(row.id || row.label)}</strong>
+              <small>{String(row.app_api_base_url || "")}</small>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {warnings.length ? (
+        <div className="connection-warnings">
+          {warnings.map((warning) => <small key={warning}>{warning}</small>)}
+        </div>
+      ) : null}
     </div>
   );
 }

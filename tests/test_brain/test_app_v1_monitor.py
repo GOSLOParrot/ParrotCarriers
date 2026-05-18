@@ -71,6 +71,7 @@ def test_monitor_health_and_canvas_endpoints() -> None:
 
     page = client.get("/")
     health = client.get("/health")
+    console_config = client.get("/api/console/config")
     canvas = client.get("/api/app/canvas")
 
     assert page.status_code == 200
@@ -89,6 +90,9 @@ def test_monitor_health_and_canvas_endpoints() -> None:
     assert "/pixel-assets/curated/00_previews/Paper_UI_preview.png" in page.text
     assert health.status_code == 200
     assert health.json()["service"] == "app-v1-monitor"
+    assert console_config.status_code == 200
+    assert console_config.json()["environment"]["service"] == "app-monitor"
+    assert "local_laptop_app_api_secret_change_me" not in json.dumps(console_config.json())
     assert canvas.status_code == 200
     body = canvas.json()
     assert len(body["module_statuses"]) == 8
