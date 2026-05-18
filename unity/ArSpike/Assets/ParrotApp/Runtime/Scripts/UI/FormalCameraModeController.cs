@@ -55,6 +55,7 @@ namespace ParrotApp.UI
 
         public string CurrentMode => _mode;
         public string PendingMode => _pendingMode;
+        public bool HasPendingHttpRequest => _modeApplyCoroutine != null || !string.IsNullOrWhiteSpace(_pendingMode);
         public string LastCameraStatus { get; private set; } = "camera_mode_idle";
         public string LastHttpStatus => _lastHttpStatus;
         public string LastPhotoStatus => _lastPhotoStatus;
@@ -114,9 +115,10 @@ namespace ParrotApp.UI
             EnsureUi();
             string normalized = NormalizeMode(mode);
             string previous = _mode;
-            if (_modeApplyCoroutine != null)
+            if (HasPendingHttpRequest)
             {
-                LastCameraStatus = "camera_http_request_already_pending:" + _pendingMode;
+                string pendingMode = string.IsNullOrWhiteSpace(_pendingMode) ? "active" : _pendingMode;
+                LastCameraStatus = "camera_http_request_already_pending:" + pendingMode;
                 RefreshUi();
                 return LastCameraStatus;
             }
@@ -189,7 +191,7 @@ namespace ParrotApp.UI
             if (homeMenuClient == null)
             {
                 SetModeLocal(previousMode);
-                MarkHttpResult(previousMode, false, "home_menu_client_missing");
+                MarkHttpResult(mode, false, "home_menu_client_missing");
                 _modeApplyCoroutine = null;
                 yield break;
             }
@@ -203,7 +205,7 @@ namespace ParrotApp.UI
             else
             {
                 SetModeLocal(previousMode);
-                MarkHttpResult(previousMode, false, result.Error);
+                MarkHttpResult(mode, false, result.Error);
             }
             _modeApplyCoroutine = null;
         }

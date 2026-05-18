@@ -72,11 +72,10 @@ CMD ["python", "-m", "parrot.castle.token_mint"]
 FROM base AS full
 
 USER root
-RUN pip install --no-cache-dir -e ".[memory]" \
-    && pip install --no-cache-dir \
-        "livekit-agents>=0.10,<1.0" \
-        "livekit-plugins-google>=0.6,<1.0" \
-        "livekit-plugins-silero>=0.6,<1.0"
+# Keep the Brain image on the same LiveKit Agents major line as pyproject.toml.
+# Older 0.x agents packages do not expose the Agent/AgentSession APIs used by
+# parrot.brain.agent and will make the worker fail at import time.
+RUN pip install --no-cache-dir -e ".[memory,line_b,line_b_cartesia]"
 USER parrot
 
 # Phase 3.2: Brain entrypoint. The dev/prod selection is via env

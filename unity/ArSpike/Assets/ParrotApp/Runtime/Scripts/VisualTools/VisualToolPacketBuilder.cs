@@ -15,13 +15,11 @@ namespace ParrotApp.VisualTools
     public static class VisualToolPhases
     {
         public const string PreviewStart = "preview_start";
-        public const string Hover = "hover";
         public const string DragUpdate = "drag_update";
         public const string ResizeUpdate = "resize_update";
         public const string DwellTick = "dwell_tick";
         public const string Lock = "lock";
         public const string Unlock = "unlock";
-        public const string SettingsOpen = "settings_open";
         public const string Confirm = "confirm";
         public const string ExplicitSend = "explicit_send";
         public const string Cancel = "cancel";

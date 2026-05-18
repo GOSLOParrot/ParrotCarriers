@@ -439,7 +439,7 @@ def _write_sampler_status(status: dict[str, Any]) -> None:
     path = _sampler_status_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
         payload = dict(status)
         payload["available"] = True
         tmp.write_text(json.dumps(payload, ensure_ascii=True, sort_keys=True), encoding="utf-8")

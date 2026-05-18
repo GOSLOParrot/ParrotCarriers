@@ -556,15 +556,20 @@ namespace ParrotApp.UI
                 SetStatus("Camera waits App HTTP", warning: false);
                 return;
             }
-            if (!string.IsNullOrWhiteSpace(_pendingCameraMode))
+            ResolveCameraModeController();
+            string controllerPendingMode = cameraModeController != null ? cameraModeController.PendingMode : "";
+            if (!string.IsNullOrWhiteSpace(_pendingCameraMode)
+                || !string.IsNullOrWhiteSpace(controllerPendingMode))
             {
-                SetStatus("Camera HTTP pending " + _pendingCameraMode, warning: true);
+                string pendingMode = !string.IsNullOrWhiteSpace(_pendingCameraMode)
+                    ? _pendingCameraMode
+                    : controllerPendingMode;
+                SetStatus("Camera HTTP pending " + pendingMode, warning: true);
                 return;
             }
 
             string nextMode = NextCameraMode(_cameraMode);
             _pendingCameraMode = nextMode;
-            ResolveCameraModeController();
             cameraModeController?.MarkHttpPending(nextMode);
             StartCoroutine(ApplyCameraModeHttp(nextMode));
             RefreshQuickActions();
@@ -840,7 +845,7 @@ namespace ParrotApp.UI
             {
                 ResolveCameraModeController();
                 cameraModeController?.SetModeLocal(_cameraMode);
-                cameraModeController?.MarkHttpResult(_cameraMode, false, result.Error);
+                cameraModeController?.MarkHttpResult(mode, false, result.Error);
                 SetStatus("Camera HTTP failed " + ShortLabel(result.Error, "unknown", 28), warning: false);
             }
             RefreshQuickActions();

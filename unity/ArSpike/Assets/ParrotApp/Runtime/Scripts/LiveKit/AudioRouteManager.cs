@@ -1,4 +1,5 @@
 using System;
+using ParrotApp.Core;
 using UnityEngine;
 
 namespace ParrotApp.LiveKit
@@ -44,6 +45,12 @@ namespace ParrotApp.LiveKit
                 _native = new AndroidAudioRouteManager(OnAndroidAudioRouteSnapshot);
                 if (_native.IsAvailable)
                 {
+                    // The Java route owner is a process-level singleton. Force
+                    // observe/media mode when the formal App facade starts so a
+                    // stale communication-device pin from a previous scene or
+                    // failed publish cannot steal Bluetooth output or gate mic
+                    // capture before the next START.
+                    _native.RequestCommunicationMode(false);
                     _native.SetRoutePreference(AudioRouteSnapshotDto.PreferenceWireValue(preference));
                     _native.Refresh();
                 }
@@ -232,7 +239,7 @@ namespace ParrotApp.LiveKit
                 output_route = policy.RouteName,
                 available_inputs = Array.Empty<string>(),
                 available_outputs = Array.Empty<string>(),
-                microphone_permission = Application.HasUserAuthorization(UserAuthorization.Microphone) ? "granted" : "unknown",
+                microphone_permission = AndroidRuntimePermissions.HasMicrophonePermission() ? "granted" : "unknown",
                 bluetooth_connect_permission = "unknown",
                 audio_focus = "not_requested",
                 mode = "normal",

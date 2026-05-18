@@ -23,6 +23,7 @@ namespace ParrotApp.UI
     {
         private const string BodyLock = "body";
         private const float LiftJoystickDirectionDeadZone = 0.12f;
+        private const float FallbackMotionFacingYawOffsetDegrees = 180f;
         private static readonly Color JoystickPadColor = new Color(1f, 1f, 1f, 0.16f);
         private static readonly Color JoystickKnobColor = new Color(1f, 1f, 1f, 0.38f);
         private static Sprite _joystickCircleSprite;
@@ -294,12 +295,13 @@ namespace ParrotApp.UI
 
             BeginRemoteBodyControl("walk");
             PublishRemoteBodyState("walking");
+            Vector2 worldInput = ResolveCameraRelativePlanarInput(input);
 
             var parrot = model.GetComponentInChildren<ParrotController>(true);
             if (parrot != null)
             {
-                parrot.WalkOnPlane(input, deltaTime);
-                LastRemoteStatus = "walking:parrot_controller";
+                parrot.WalkOnPlane(worldInput, deltaTime);
+                LastRemoteStatus = "walking:parrot_controller:camera_relative";
                 return true;
             }
 
@@ -314,13 +316,13 @@ namespace ParrotApp.UI
             {
                 var payload = new WalkPayload
                 {
-                    x = input.x,
-                    z = input.y,
+                    x = worldInput.x,
+                    z = worldInput.y,
                     deltaTime = deltaTime,
                 };
                 if (controller.ApplyCapability("spine_walk", JsonUtility.ToJson(payload)))
                 {
-                    LastRemoteStatus = "walking:spine_walk";
+                    LastRemoteStatus = "walking:spine_walk:camera_relative";
                     return true;
                 }
             }
@@ -328,13 +330,13 @@ namespace ParrotApp.UI
             var animationDriver = model.GetComponentInChildren<AnimationDriver>(true);
             if (animationDriver != null)
             {
-                animationDriver.WalkOnPlane(input, deltaTime, fallbackWalkSpeedMetersPerSecond, fallbackTurnSpeed);
-                LastRemoteStatus = "walking:animation_driver";
+                animationDriver.WalkOnPlane(worldInput, deltaTime, fallbackWalkSpeedMetersPerSecond, fallbackTurnSpeed);
+                LastRemoteStatus = "walking:animation_driver:camera_relative";
                 return true;
             }
 
-            ApplyFallbackTranslate(model.transform, input, deltaTime);
-            LastRemoteStatus = "walking:fallback_translate";
+            ApplyFallbackTranslate(model.transform, worldInput, deltaTime);
+            LastRemoteStatus = "walking:fallback_translate:camera_relative";
             return true;
         }
 
@@ -412,7 +414,7 @@ namespace ParrotApp.UI
             {
                 target.rotation = Quaternion.Slerp(
                     target.rotation,
-                    Quaternion.LookRotation(planar, Vector3.up),
+                    ResolveMotionFacingRotation(planar, animationDriver),
                     fallbackTurnSpeed * deltaTime);
             }
 
@@ -593,24 +595,30 @@ namespace ParrotApp.UI
         private void ApplyFallbackTranslate(Transform target, Vector2 input, float deltaTime)
         {
             if (target == null) return;
-            Camera camera = Camera.main;
-            Vector3 forward = camera != null ? camera.transform.forward : Vector3.forward;
-            Vector3 right = camera != null ? camera.transform.right : Vector3.right;
-            forward.y = 0f;
-            right.y = 0f;
-            if (forward.sqrMagnitude < 0.001f) forward = Vector3.forward;
-            if (right.sqrMagnitude < 0.001f) right = Vector3.right;
-            forward.Normalize();
-            right.Normalize();
-
-            Vector3 direction = right * input.x + forward * input.y;
+            Vector3 direction = new Vector3(input.x, 0f, input.y);
             if (direction.sqrMagnitude < 0.001f) return;
             direction = Vector3.ClampMagnitude(direction, 1f);
             target.position += direction * (fallbackWalkSpeedMetersPerSecond * deltaTime);
             target.rotation = Quaternion.Slerp(
                 target.rotation,
-                Quaternion.LookRotation(direction, Vector3.up),
+                ResolveMotionFacingRotation(direction, null),
                 fallbackTurnSpeed * deltaTime);
+        }
+
+        private static Vector2 ResolveCameraRelativePlanarInput(Vector2 input)
+        {
+            Vector3 direction = ResolveCameraRelativePlanarDirection(input);
+            if (direction.sqrMagnitude < 0.001f)
+                return Vector2.zero;
+            return Vector2.ClampMagnitude(new Vector2(direction.x, direction.z), 1f);
+        }
+
+        private static Quaternion ResolveMotionFacingRotation(Vector3 direction, AnimationDriver animationDriver)
+        {
+            if (animationDriver != null)
+                return animationDriver.ResolveMotionFacingRotation(direction, Vector3.up);
+            return Quaternion.LookRotation(direction, Vector3.up)
+                   * Quaternion.Euler(0f, FallbackMotionFacingYawOffsetDegrees, 0f);
         }
 
         private Transform ResolveMotionTarget(GameObject model, out AnimationDriver animationDriver, out Animator animator)

@@ -3,6 +3,7 @@ using System.Collections;
 using LiveKit;
 using ParrotApp.Backend;
 using ParrotApp.Config;
+using ParrotApp.Core;
 using ParrotApp.Ecp;
 using ParrotApp.LiveKit;
 using ParrotApp.UI;
@@ -907,10 +908,18 @@ namespace ParrotApp.Lifecycle
                 network_reachable = Application.internetReachability != NetworkReachability.NotReachable,
             };
 
-            if (snap.microphone_required && !Application.HasUserAuthorization(UserAuthorization.Microphone))
-                yield return Application.RequestUserAuthorization(UserAuthorization.Microphone);
+            if (snap.microphone_required && !AndroidRuntimePermissions.HasMicrophonePermission())
+                yield return AndroidRuntimePermissions.RequestMicrophonePermission();
             snap.microphone_authorized = !snap.microphone_required
-                                         || Application.HasUserAuthorization(UserAuthorization.Microphone);
+                                         || AndroidRuntimePermissions.HasMicrophonePermission();
+            if (snap.microphone_required)
+            {
+                string permissionState = AndroidRuntimePermissions.MicrophonePermissionState();
+                if (snap.microphone_authorized)
+                    Debug.Log("[AppStartupFlow] microphone permission ok: " + permissionState);
+                else
+                    Debug.LogError("[AppStartupFlow] microphone permission denied: " + permissionState);
+            }
 
             if (snap.camera_required && !Application.HasUserAuthorization(UserAuthorization.WebCam))
                 yield return Application.RequestUserAuthorization(UserAuthorization.WebCam);

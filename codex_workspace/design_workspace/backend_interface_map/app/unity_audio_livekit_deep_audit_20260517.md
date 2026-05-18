@@ -782,3 +782,51 @@ truth, Unity/LiveKit local mic executor, serial track rebuild only, phone/defaul
 MIC as reliable fallback, and Brain RoomIO rebinding to the active Unity phone.
 The next blocker is evidence, not another protocol rewrite: one rebuilt iQOO
 pass must pair HUD local capture fields with Castle Brain logs.
+
+## 2026-05-18 iQOO Live Run - Uplink Starts, Then Android Silences It
+
+Fresh ADB/LogCat review after the rebuilt iQOO run changes the current
+diagnosis:
+
+- The App is no longer in the old "no uplink ever starts" state. Unity logs
+  show LiveKit connected in about 1.66s, Brain/agent audio subscribed, AR video
+  first frame published, and `MicrophonePublisher` started the App-owned
+  `android_audio_record` source on `speaker@48000Hz`.
+- The successful start line was:
+  `publishing started: device='android_audio_record' ... audioReadFrames=1`.
+  The phone HUD also showed fresh AR frames and a non-zero local audio peak in
+  the user screenshot. This means local capture and LiveKit track publication
+  initially worked.
+- Android `dumpsys audio` later records the same package's active recorder as
+  `rec update ... silenced pack:com.parrotcarriers.app`, followed by
+  `rec release ... silenced`, around the same time Unity logged
+  `ARVideoPublisher Blit paused (lifecycle=ShortBackground)`.
+- Therefore the current "responds at first, then stops hearing me" blocker is
+  most likely Android lifecycle/audio policy silencing or releasing the local
+  recorder after focus/background/route changes. It is not proven to be
+  LiveKit server capacity, Mint, Brain dispatch, or RoomSetting.
+
+Code follow-up:
+
+- `MicrophonePublisher.OnApplicationFocus(true)` no longer republishes during
+  `_publishInProgress`. The old path could tear down a just-started
+  `AndroidAudioRecord` track on focus-regain callbacks.
+- Focus regain now only schedules a delayed health probe. It rebuilds the
+  local mic track if `AudioRead` frames are stale or the native recorder has
+  stopped; otherwise it keeps the existing track.
+- This remains a local media repair only: no LiveKit room reconnect, no Mint
+  token refresh, no Brain redispatch.
+
+Open proof / next instrumentation:
+
+- The next phone pass must start from fresh LogCat (`adb logcat -c`), keep the
+  App foreground for at least 2-3 minutes, then intentionally test app switch,
+  Bluetooth connect/disconnect, and network flap as separate cases.
+- HUD must show `frames/ch/readSr/peak/nz/wd/native/nerr` continuously. If
+  `frames` stop and `wd=` changes to a recovery reason, check that the local
+  mic track rebuilds without room reconnect.
+- The 3-5s response delay is not yet attributed. PC control-plane health for
+  App API, Mint, and Orchestrator is around 120-130ms, but the missing metric is
+  end-to-end voice timing: client capture -> LiveKit publish -> Brain
+  STT/VAD -> LLM -> TTS -> LiveKit downlink. Add latency telemetry before
+  blaming LiveKit server size or ECS CPU.

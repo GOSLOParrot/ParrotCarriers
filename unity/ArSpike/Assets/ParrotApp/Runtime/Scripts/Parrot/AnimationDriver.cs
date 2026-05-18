@@ -169,6 +169,10 @@ namespace ParrotApp.Parrot
         [Range(0f, 1f)]
         [SerializeField] private float minecraftWalkLimbSwingAmount = 0.65f;
 
+        [Header("AR motion facing")]
+        [Tooltip("GOSLO.glb visually faces local -Z, while Unity LookRotation points +Z. Keep movement direction unchanged and rotate the root 180 degrees so the face leads walking/flying.")]
+        [SerializeField] private float motionFacingYawOffsetDegrees = 180f;
+
         // ─── Inspector：Fly ──────────────────────────────────────────────
 
         [Header("Fly — 简单翅膀拍动")]
@@ -329,6 +333,33 @@ namespace ParrotApp.Parrot
             _baseScale = transform.localScale;
         }
 
+        public Quaternion ResolveMotionFacingRotation(Vector3 direction, Vector3 up)
+        {
+            if (direction.sqrMagnitude < 0.0001f)
+                return transform.rotation;
+            Vector3 safeUp = up.sqrMagnitude > 0.0001f ? up.normalized : Vector3.up;
+            return ResolveMotionFacingRotation(Quaternion.LookRotation(direction.normalized, safeUp));
+        }
+
+        public Quaternion ResolveMotionFacingRotation(Quaternion visualForwardRotation)
+        {
+            return visualForwardRotation * Quaternion.Euler(0f, motionFacingYawOffsetDegrees, 0f);
+        }
+
+        public Vector3 ResolveMotionForward(Quaternion rootRotation)
+        {
+            Quaternion facingOffset = Quaternion.Euler(0f, motionFacingYawOffsetDegrees, 0f);
+            Vector3 forward = rootRotation * Quaternion.Inverse(facingOffset) * Vector3.forward;
+            return forward.sqrMagnitude < 0.0001f ? Vector3.forward : forward.normalized;
+        }
+
+        private Vector3 ResolveCurrentMotionForward()
+        {
+            Vector3 forward = ResolveMotionForward(transform.rotation);
+            forward.y = 0f;
+            return forward.sqrMagnitude < 0.0001f ? Vector3.forward : forward.normalized;
+        }
+
         // ─── Update ──────────────────────────────────────────────────────
 
         void Update()
@@ -396,7 +427,7 @@ namespace ParrotApp.Parrot
             {
                 transform.rotation = Quaternion.Slerp(
                     transform.rotation,
-                    Quaternion.LookRotation(direction, Vector3.up),
+                    ResolveMotionFacingRotation(direction, Vector3.up),
                     turnSpeed * deltaTime);
                 _baseRotation = transform.localRotation;
             }
@@ -538,7 +569,7 @@ namespace ParrotApp.Parrot
         private void DebugPlayFly()
         {
             // 5m 距离足够展示完整的加速→拍翅→减速循环
-            _flyTarget = transform.position + transform.forward * 5f;
+            _flyTarget = transform.position + ResolveCurrentMotionForward() * 5f;
             _isFlying  = true;
             SetState(BodyState.Fly);
         }
@@ -667,7 +698,7 @@ namespace ParrotApp.Parrot
 
             if (dir.sqrMagnitude > 0.0001f)
             {
-                var targetRot = Quaternion.LookRotation(dir, Vector3.up)
+                var targetRot = ResolveMotionFacingRotation(dir, Vector3.up)
                                 * Quaternion.Euler(-flyBodyTiltDegrees * 0.5f, 0f, 0f);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, 8f * Time.deltaTime);
             }

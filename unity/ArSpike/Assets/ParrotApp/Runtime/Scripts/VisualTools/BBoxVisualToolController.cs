@@ -170,6 +170,26 @@ namespace ParrotApp.VisualTools
                 _canvas.gameObject.SetActive(visible && FeatureEnabled && IsOpen);
         }
 
+        protected override void OnPreviewOpened()
+        {
+            EndLocalPointerGesture();
+        }
+
+        protected override void OnStableInteractionApplied(string phase)
+        {
+            EndLocalPointerGesture();
+        }
+
+        protected override void OnStableInteractionReleased(string phase)
+        {
+            EndLocalPointerGesture();
+        }
+
+        protected override void OnToolClosed(string phase)
+        {
+            EndLocalPointerGesture();
+        }
+
         private void HandlePointerInput()
         {
             if (!TryReadPrimaryPointer(out var pointer))
@@ -283,6 +303,12 @@ namespace ParrotApp.VisualTools
         private string ToggleSemanticLock()
         {
             return IsLocked ? Unlock() : Lock();
+        }
+
+        private void EndLocalPointerGesture()
+        {
+            _pointerActive = false;
+            _interactionMode = BBoxInteractionMode.None;
         }
 
         private static bool ResizesLeft(BBoxInteractionMode mode)

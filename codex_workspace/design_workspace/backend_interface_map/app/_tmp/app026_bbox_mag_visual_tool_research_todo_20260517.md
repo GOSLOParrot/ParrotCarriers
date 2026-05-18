@@ -378,10 +378,274 @@ Fix:
 - Static tests now guard that both visual-tool overlays gate `EnsureOverlay()`
   behind `FeatureEnabled && IsOpen` when no canvas exists.
 
-Verification pending in this pass:
+Verification:
 
-- Focused static/backend tests, forbidden-path scan, Unity refresh/console, and
-  `git diff --check`.
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py
+  tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 35 passed.
+- Forbidden-path scan across VisualTools and formal camera/menu/HUD/tool/runtime
+  config found no `captureSnapshot`, C4 send constant, direct Brain memory
+  writes, legacy BBox/Focus pulse calls, or image-byte RPC/ECP marker.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after an
+  automatic Unity reconnect and completed ready; Console error entries: 0.
+- `git diff --check` on touched files completed cleanly.
+
+## Bugfix Pass 18 - App-Side Lifecycle Phase Whitelist (2026-05-17)
+
+Pre-edit audit:
+
+- Re-read the original App request and CORE-014 notes around stable semantic
+  phases.
+- Found that `UpdateLocalRegion(region, updatePhase)` was public and could
+  emit whichever phase string a future caller supplied whenever low-frequency
+  update events were enabled.
+- `VisualToolPhases` also still exposed `hover` / `settings_open` constants
+  even though this App controller slice intentionally keeps hover/settings UI
+  local and only sends stable milestones plus necessary low-frequency updates.
+
+Bug found:
+
+- A future App caller could accidentally send a non-approved lifecycle phase to
+  `/api/app/visual-tool/event`, weakening the "do not spam backend / stable
+  semantic stages only" boundary.
+
+Fix:
+
+- Removed unused App-side `Hover` and `SettingsOpen` phase constants from the
+  Unity packet builder.
+- Added a lifecycle phase allow-list in `VisualToolControllerBase` covering only
+  `preview_start`, `lock`, `unlock`, `confirm`, `explicit_send`, `cancel`,
+  `release`, and optional low-frequency `dwell_tick` / `drag_update` /
+  `resize_update`.
+- Normalized public local region update calls to `drag_update` or
+  `resize_update` before any low-frequency HTTP emission.
+- Added static tests so the App send path keeps this white-list boundary.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 7 passed.
+- Forbidden-path scan across VisualTools and formal camera/menu/HUD/tool/runtime
+  config found no `captureSnapshot`, C4 send constant, direct Brain memory
+  writes, legacy BBox/Focus pulse calls, image-byte RPC/ECP marker, or
+  App-side `Hover` / `SettingsOpen` phase constants.
+- Unity MCP script validation: `VisualToolControllerBase.cs` and
+  `VisualToolPacketBuilder.cs` have 0 errors; base-controller warnings are
+  pre-existing broad static hints about `FindObjectOfType` / string
+  concatenation.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after an
+  automatic Unity reconnect and completed ready; Console error entries: 0.
+- `git diff --check` on touched files completed cleanly, with only LF/CRLF
+  normalization warnings.
+
+## Bugfix Pass 19 - Public Region Update Opens With Preview Start (2026-05-17)
+
+Pre-edit audit:
+
+- Continued the Pass 18 audit around `UpdateLocalRegion()`.
+- Found that the method could be called while the tool was closed. It opened
+  local state and, if low-frequency update events were enabled, could make the
+  first backend event a `drag_update` or `resize_update`.
+
+Bug found:
+
+- A future external BBox/MAG caller could bypass the `preview_start` lifecycle
+  milestone even though it had just opened the tool surface.
+
+Fix:
+
+- `UpdateLocalRegion()` now detects closed-state entry, sets the supplied
+  region first, opens/selects the local tool, and emits `preview_start` with
+  that current region.
+- The optional low-frequency `drag_update` / `resize_update` path is only used
+  after the tool is already open.
+- Static tests now guard that closed-state region updates return
+  `preview_start` before the low-frequency update branch.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 7 passed.
+- Forbidden-path scan across VisualTools and formal camera/menu/HUD/tool/runtime
+  config found no `captureSnapshot`, C4 send constant, direct Brain memory
+  writes, legacy BBox/Focus pulse calls, image-byte RPC/ECP marker, or
+  App-side `Hover` / `SettingsOpen` phase constants.
+- Unity MCP script validation: `VisualToolControllerBase.cs` and
+  `VisualToolPacketBuilder.cs` have 0 errors; base-controller warnings are
+  pre-existing broad static hints about `FindObjectOfType` / string
+  concatenation.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after an
+  automatic Unity reconnect and completed ready; Console error entries: 0.
+- `git diff --check` on touched files completed cleanly, with only LF/CRLF
+  normalization warnings.
+
+## Bugfix Pass 20 - Ignore Older HTTP Completion Statuses (2026-05-17)
+
+Pre-edit audit:
+
+- Continued auditing same-interaction lifecycle ordering after the
+  `preview_start` entry fix.
+- Found that multiple stable lifecycle HTTP requests can be in flight at once
+  during natural App use, for example `preview_start` followed quickly by
+  `confirm` or asset-backed `explicit_send`.
+
+Bug found:
+
+- An older HTTP completion could arrive after a newer semantic phase and write
+  stale local HUD/status text, making a confirmed/asset-backed tool appear to
+  have regressed to `preview_start_sent` or another earlier phase.
+
+Fix:
+
+- Added a local-only semantic sequence counter in
+  `VisualToolControllerBase`.
+- Each outbound lifecycle/capture/upload flow gets a sequence value when it is
+  queued.
+- Older completions are still allowed to finish their backend HTTP path, but
+  they no longer overwrite `LastStatus`, `LastHttpStatus`, `LastAssetStatus`,
+  `LastRenderStatus`, or `LastReceiptJson` after a newer semantic action has
+  been queued.
+- Existing interaction-generation checks still own cancel/release stale-work
+  cancellation, so backend semantics and local HUD ordering remain separate.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 7 passed.
+- Forbidden-path scan across VisualTools and formal camera/menu/HUD/tool/runtime
+  config found no `captureSnapshot`, C4 send constant, direct Brain memory
+  writes, legacy BBox/Focus pulse calls, image-byte RPC/ECP marker, or
+  App-side `Hover` / `SettingsOpen` phase constants.
+- Unity MCP script validation: `VisualToolControllerBase.cs` and
+  `VisualToolPacketBuilder.cs` have 0 errors; base-controller warnings are
+  pre-existing broad static hints about `FindObjectOfType` / string
+  concatenation.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after an
+  automatic Unity reconnect and completed ready; Console error entries: 0.
+- `git diff --check` on touched files completed cleanly, with only LF/CRLF
+  normalization warnings.
+
+## Bugfix Pass 21 - Local Body-Feel Interaction Hygiene (2026-05-17)
+
+Pre-edit audit:
+
+- Audited the BBox/MAG flow from a body-feel angle rather than only transport
+  correctness.
+- Re-read the visual-tool body-feel taxonomy: BBox confirm should feel like a
+  deliberate strong mark; MAG should feel ambient/inspection-first, with C3 only
+  on explicit send.
+
+Issues found:
+
+- If a semantic `lock`, `confirm`, or `explicit_send` happened while a pointer
+  gesture was still active, BBox/MAG could keep internal drag/resize state until
+  pointer release. That made the HUD/body feel say "still dragging" even after a
+  lock/confirm.
+- MAG closed-state `UpdateLocalRegion()` entry did not run the same dwell timer
+  reset as `BeginPreview()`, so a newly opened lens could dwell-tick too soon.
+- Overlapping screen-region asset captures could show the dev overlay between
+  two pending captures, risking a crop/preview that includes tool UI.
+
+Fix:
+
+- Added local interaction hooks in `VisualToolControllerBase` for preview open,
+  stable lock/confirm application, unlock, and close.
+- BBox now ends the current local pointer gesture on preview open, lock/confirm,
+  unlock, cancel, and release.
+- MAG now resets local inspection timing on preview open, unlock, cancel, and
+  release, and ends any active drag on lock/confirm/explicit send.
+- Screen-region capture overlay hiding now uses a small depth counter, so
+  overlapping captures do not restore the overlay until the last capture exits.
+- Static tests now guard these body-feel hooks and the overlay hide-depth path.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 7 passed.
+- Forbidden-path scan across VisualTools and formal camera/menu/HUD/tool/runtime
+  config found no `captureSnapshot`, C4 send constant, direct Brain memory
+  writes, legacy BBox/Focus pulse calls, image-byte RPC/ECP marker, or
+  App-side `Hover` / `SettingsOpen` phase constants.
+- Unity MCP script validation: `VisualToolControllerBase.cs`,
+  `BBoxVisualToolController.cs`, and `MagnifierVisualToolController.cs` have 0
+  errors; warnings are broad static hints about `FindObjectOfType` / string
+  concatenation in update paths.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after an
+  automatic Unity reconnect and completed ready; Console error entries: 0.
+- `git diff --check` on touched files completed cleanly, with only LF/CRLF
+  normalization warnings.
+
+## Bugfix Pass 22 - Superseded Asset Flow Stops Before Crop/Upload (2026-05-17)
+
+Pre-edit audit:
+
+- Rechecked Pass 20/21 from a body-feel angle: local HUD/status was protected
+  from older async completions, but asset-backed crop/upload flows could still
+  keep running after a newer semantic action had been queued.
+
+Bug found:
+
+- If a user tapped `IMG` and then quickly changed their mind with `OK`, `C3`,
+  cancel, or release, the older asset-backed flow could still hide the overlay,
+  crop, upload bytes, and possibly emit the older asset lifecycle. That is
+  technically traceable, but it feels wrong because the user's newer action
+  should own the visible tool state.
+
+Fix:
+
+- `UploadAssetThenLifecycle()` now exits before upload if its semantic sequence
+  has been superseded, and exits after upload before lifecycle emission if a
+  newer semantic action arrived mid-flight.
+- `CaptureScreenRegionAssetThenLifecycle()` now exits before hiding the overlay
+  if already superseded, exits after the end-of-frame wait before reading pixels
+  if superseded, and exits after capture before upload if superseded.
+- Static tests now guard these early exits so asset-backed flows cannot revive a
+  stale body-feel action path.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 7 passed.
+- Forbidden-path scan across VisualTools and formal camera/menu/HUD/tool/runtime
+  config found no `captureSnapshot`, C4 send constant, direct Brain memory
+  writes, legacy BBox/Focus pulse calls, image-byte RPC/ECP marker, or
+  App-side `Hover` / `SettingsOpen` phase constants.
+- Unity MCP script validation: `VisualToolControllerBase.cs`,
+  `BBoxVisualToolController.cs`, and `MagnifierVisualToolController.cs` have 0
+  errors; warnings are broad static hints about `FindObjectOfType` / string
+  concatenation in update paths.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after an
+  automatic Unity reconnect and completed ready; Console error entries: 0.
+- `git diff --check` on touched files completed cleanly, with only LF/CRLF
+  normalization warnings.
 
 ## Continue Pass 5 - Asset Failure Fallback (2026-05-17)
 
@@ -664,6 +928,191 @@ Verification:
   -q` -> 7 passed.
 - Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` completed ready with
   0 Console errors after an automatic MCP reconnect.
+
+## Review/Fix Pass 24 - Chat-Level Flow Audit And Camera Pending Race (2026-05-18)
+
+Review scope:
+
+- Re-read the original App evidence-tool docs, Time-Aligned Evidence SSOT,
+  GOSLO Trigger/Awareness taxonomy, CORE candidate queue, App/Web TODO board,
+  this work log, and the current Unity controllers.
+- Audited the implementation against the user's original constraints: stable
+  lifecycle events only, no per-frame backend spam, image bytes only through
+  HTTP asset upload, no snapshot RPC, no ECP/RPC binary payloads, no App direct
+  writes to IntentWorkspace/Blackboard/Graphiti/L2-B, and no App-side C4
+  interrupt semantics.
+
+What this chat completed:
+
+- App-side visual-tool packet builder and HTTP wrapper for
+  `/api/app/visual-tool/event` plus
+  `/api/app/visual-tool/asset/{asset_id}`.
+- Feature-flagged BBox/MAG controller scaffolds with local drag/resize/lens
+  movement, local lock/selection/body-feel state, optional low-frequency
+  lifecycle updates, stable `confirm` / `explicit_send` / `cancel` / `release`
+  semantics, and dev HUD diagnostics.
+- Optional dev screen-region PNG asset probe: crop/render bytes are uploaded
+  over HTTP first, then the returned asset ref is attached to lifecycle.
+- Photo upload timebase header support, so CAM/Photo aligns with the backend
+  timebase path while keeping PhotoController as the only pixel owner.
+- Formal camera-mode HUD/controller: WYSIWYG overlay, Ready/Preview/Close mode
+  apply through App HTTP, Capture through `FormalHomeToolController`, and HUD
+  diagnostics for mode/HTTP/photo state.
+- Multiple follow-up fixes for lifecycle phase allow-listing, stale async
+  asset/crop work, lock/unlock body feel, disabled asset fallback, EventSystem
+  isolation, and camera-mode pending/commit behavior.
+
+True-connection gap:
+
+- This is Editor/static/backend-route validated, not phone-production proven.
+- APP-024 remains the production gate: iQOO phone pass must prove App HTTP
+  reachability, real rendered/HUD body feel, screen-region asset throughput,
+  screen-share/LiveKit evidence freshness, app pause/resume/reconnect, audio
+  route stability, and no CAM/Photo regressions.
+- BBox/MAG are still default-disabled behind `visualToolDevEnabled=false`.
+  Formal toolbar production enablement must wait for phone smoke and
+  UI/body-feel tuning.
+- MAG optical magnification is currently a dev lens/controller scaffold rather
+  than final production visual magnification.
+
+Design/performance drift audit:
+
+- No confirmed drift from the original transport/performance design: pointer
+  movement, hover, selected state, resize handles, zoom, and dwell timing remain
+  local by default; backend traffic is restricted to stable milestones plus
+  optional low-frequency updates.
+- The only intentional scope expansion was adding the camera-mode HUD, because
+  the user explicitly allowed completing camera mode in the same workstream.
+- Production enablement language remains conservative: backend CORE-014
+  unblocks controller implementation, but it does not replace APP-024 real
+  phone/screen-share proof.
+
+Bug found and fixed:
+
+- QuickCameraMode used `cameraModeController.MarkHttpPending()` for shared HUD
+  visibility, but it did not set the camera controller's own coroutine field.
+  While a menu-triggered camera-mode HTTP request was pending, the Camera HUD
+  could still start another mode request.
+- `FormalCameraModeController` now treats either an active coroutine or a
+  non-empty external `_pendingMode` as `HasPendingHttpRequest`.
+- `FormalHomeMenuController.CycleCameraMode()` now checks both its own
+  `_pendingCameraMode` and `cameraModeController.PendingMode` before starting a
+  new QuickCameraMode request.
+- Static tests now guard both sides of this pending-state bridge.
+
+Camera mode completion answer:
+
+- The formal camera-mode code path was first completed in Continue Pass 3 on
+  2026-05-17.
+- It was hardened by Pass 9/10/11/13 and this Pass 24. After Pass 24 it is
+  App-side complete for Editor/static/backend-route validation.
+- It is not production-complete until APP-024 phone smoke proves the real
+  device capture/mode UX with phone-safe HTTP upload and no CAM/Photo
+  regression.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 7 passed.
+- Forbidden-path scan across VisualTools, Formal Camera, Formal Home menu/HUD,
+  Formal Tool, and PhotoController found no active snapshot RPC,
+  `identify_object`, C4 send constant, direct Brain memory write, or image-byte
+  ECP/RPC marker.
+- `git diff --check` on touched files reported only LF/CRLF normalization
+  warnings.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after a
+  reconnect and completed ready; `validate_script` reported 0 errors for
+  `FormalCameraModeController` and `FormalHomeMenuController`; Console error
+  entries: 0.
+
+## Bugfix Pass 25 - Camera Mode Failure Labels Use Attempted Mode (2026-05-18)
+
+Pre-edit audit:
+
+- Continued the camera-mode true-connection review after Pass 24.
+- Found that both the camera HUD path and QuickCameraMode path rolled the local
+  UI back correctly on HTTP failure, but then called `MarkHttpResult()` with
+  the previous/current mode rather than the mode that had just failed.
+
+Bug found:
+
+- APP-024 smoke diagnostics could report a failed request against the old mode
+  instead of the attempted target mode, hiding whether `preview`,
+  `photo_ready`, or `off` was rejected.
+
+Fix:
+
+- `FormalCameraModeController.ApplyModeHttp()` now still rolls back local
+  display to `previousMode`, but records the HTTP failure against the attempted
+  `mode`.
+- `FormalHomeMenuController.ApplyCameraModeHttp()` does the same for the
+  QuickCameraMode path.
+- Static tests now forbid the old `MarkHttpResult(previousMode, false)` /
+  `_cameraMode` failure-label pattern.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_brain/test_app_v1_monitor.py::test_console_action_endpoints_drive_app_tool_flows
+  tests/test_ecp_event/test_w8_photo_upload_server.py::test_upload_publishes_photo_timebase_metadata
+  tests/test_ecp_event/test_w8_observer_photo.py::test_asset_uploaded_timebase_metadata_reaches_evidence_ledger
+  -q` -> 7 passed.
+- Forbidden-path scan across VisualTools, Formal Camera, Formal Home menu/HUD,
+  Formal Tool, and PhotoController found no active snapshot RPC,
+  `identify_object`, C4 send constant, direct Brain memory write, or image-byte
+  ECP/RPC marker.
+- `git diff --check` on touched files reported only LF/CRLF normalization
+  warnings.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after a
+  reconnect and completed ready; `validate_script` reported 0 errors for
+  `FormalCameraModeController` and `FormalHomeMenuController`; Console error
+  entries: 0.
+
+## Bugfix Pass 23 - Dev EventSystem Isolation (2026-05-18)
+
+Pre-edit audit:
+
+- Re-read the current VisualTools controller base and the static guards after
+  the latest bugfix request.
+- Found a body-feel/mainline isolation issue: opening a BBox/MAG dev canvas
+  could mutate the existing scene `EventSystem` by removing a
+  `StandaloneInputModule` and adding `InputSystemUIInputModule`.
+- This crossed the original boundary that BBox/MAG must stay separate from the
+  FormalHomeToolController CAM/Photo path and could disturb existing menu
+  routing when the visual-tool dev flag is enabled.
+
+Fix:
+
+- `EnsureEventSystemForDevCanvas()` now returns immediately when an
+  `EventSystem` already exists.
+- BBox/MAG only create a minimal `VisualToolDevEventSystem` when the scene does
+  not already provide one.
+- Static tests now guard against mutating or destroying modules on an existing
+  `EventSystem`.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 28
+  passed.
+- Forbidden-path scan across VisualTools, formal camera, menu, and HUD found no
+  C4 send constant, legacy snapshot RPC, Brain RPC, direct memory writes, or
+  legacy BBox/Focus pulse calls.
+- EventSystem isolation scan now only finds `EnsureEventSystemForDevCanvas()`
+  and `VisualToolDevEventSystem`; the old existing-EventSystem mutation strings
+  are absent.
+- `git diff --check` on the touched files reported only LF/CRLF normalization
+  warnings.
+- Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` recovered after a
+  reconnect and completed ready; `validate_script` reported 0 errors for
+  `VisualToolControllerBase`, `BBoxVisualToolController`, and
+  `MagnifierVisualToolController`; Console error entries: 0.
 
 ## Bugfix Pass 11 - Camera HUD/Menu Mode State Sync (2026-05-17)
 

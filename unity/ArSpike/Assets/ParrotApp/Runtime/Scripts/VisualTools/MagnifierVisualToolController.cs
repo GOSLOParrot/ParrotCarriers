@@ -39,13 +39,6 @@ namespace ParrotApp.VisualTools
         protected override string ExplicitSendDeliveryPreference => VisualToolDeliveryPreferences.C3;
         protected override float ConfirmAttentionHint => 0.35f;
 
-        public override string BeginPreview()
-        {
-            _lastLocalMotionAt = Time.unscaledTime;
-            _lastDwellTickAt = -999f;
-            return base.BeginPreview();
-        }
-
         private void Update()
         {
             if (!FeatureEnabled || !IsOpen)
@@ -210,6 +203,26 @@ namespace ParrotApp.VisualTools
                 _canvas.gameObject.SetActive(visible && FeatureEnabled && IsOpen);
         }
 
+        protected override void OnPreviewOpened()
+        {
+            ResetLocalInspectionTiming(endPointerGesture: true, resetDwellTick: true);
+        }
+
+        protected override void OnStableInteractionApplied(string phase)
+        {
+            ResetLocalInspectionTiming(endPointerGesture: true, resetDwellTick: false);
+        }
+
+        protected override void OnStableInteractionReleased(string phase)
+        {
+            ResetLocalInspectionTiming(endPointerGesture: true, resetDwellTick: true);
+        }
+
+        protected override void OnToolClosed(string phase)
+        {
+            ResetLocalInspectionTiming(endPointerGesture: true, resetDwellTick: true);
+        }
+
         private void HandlePointerInput()
         {
             if (!TryReadPrimaryPointer(out var pointer))
@@ -304,6 +317,15 @@ namespace ParrotApp.VisualTools
         private string ToggleSemanticLock()
         {
             return IsLocked ? Unlock() : Lock();
+        }
+
+        private void ResetLocalInspectionTiming(bool endPointerGesture, bool resetDwellTick)
+        {
+            if (endPointerGesture)
+                _pointerActive = false;
+            _lastLocalMotionAt = Time.unscaledTime;
+            if (resetDwellTick)
+                _lastDwellTickAt = -999f;
         }
 
         private static RectTransform CreateArea(

@@ -17,6 +17,7 @@ namespace ParrotApp.Parrot
         [SerializeField] private float arrivalThreshold = 0.05f;
         [SerializeField] private float planeWalkSpeed = 0.45f;
         [SerializeField] private float planeWalkTurnSpeed = 12f;
+        [SerializeField] private float motionFacingYawOffsetDegrees = 180f;
 
         [Header("Dev fallback (no Animator, no AnimationDriver)")]
         [SerializeField] private float devPulseScaleAmplitude = 0.35f;
@@ -188,7 +189,7 @@ namespace ParrotApp.Parrot
             {
                 transform.rotation = Quaternion.Slerp(
                     transform.rotation,
-                    Quaternion.LookRotation(direction, Vector3.up),
+                    ResolveMotionFacingRotation(direction, Vector3.up),
                     planeWalkTurnSpeed * deltaTime);
             }
 
@@ -303,5 +304,16 @@ namespace ParrotApp.Parrot
         // Local payload helper kept private to avoid leaking a typed payload
         // to other modules. Mirrors the FlyToPayload x/y/z subset.
         [System.Serializable] private struct Vec3JsonPayload { public float x, y, z; }
+
+        private Quaternion ResolveMotionFacingRotation(Vector3 direction, Vector3 up)
+        {
+            if (direction.sqrMagnitude < 0.0001f)
+                return transform.rotation;
+            if (_animDriver != null)
+                return _animDriver.ResolveMotionFacingRotation(direction, up);
+            Vector3 safeUp = up.sqrMagnitude > 0.0001f ? up.normalized : Vector3.up;
+            return Quaternion.LookRotation(direction.normalized, safeUp)
+                   * Quaternion.Euler(0f, motionFacingYawOffsetDegrees, 0f);
+        }
     }
 }

@@ -47,6 +47,8 @@ def test_calendar_context_formats_t1_preview() -> None:
     assert "requested_import_downgraded_to_preview" in text
     assert "No Google Calendar write" in text
     assert "no L2-B mutation" in text
+    assert "Use calendar_change_request for Intent/Plan drafting" in text
+    assert "approved T1 direct or T3 Nanobot route" in text
 
 
 def test_do_calendar_context_uses_api_fetcher_and_returns_compact_context() -> None:

@@ -64,15 +64,18 @@ GOSLO:
 - Should get compact status/context tools, not raw backend surgery routes.
 - Should monitor Plan/nanobot results and bring complex choices back to the
   user through voice/HITL.
-- Should not directly own Google OAuth, direct Calendar API mutation, or L2-B
-  graph persistence.
+- Should not silently mutate Google Calendar as a conversational side effect.
+  After Plan/HITL approval, a dedicated T1 direct Calendar API route is allowed
+  for normal fast software-style writes; complex/slow writes may go to T3.
+- Should not own L2-B graph persistence or treat memory projection as task
+  truth.
 
 Nanobot:
 
 - Background execution worker for complex or slow Tasks.
-- Owns Google Workspace MCP/API execution through Scheduler-dispatched task
-  types such as `calendar_fetch`, `calendar_create`, `calendar_patch`, and
-  `calendar_delete`.
+- Owns the T3 Google Workspace MCP/API execution route through
+  Scheduler-dispatched task types such as `calendar_fetch`, `calendar_create`,
+  `calendar_patch`, and `calendar_delete`.
 - Returns structured receipts/results to Scheduler/Runtime Flow/IntentWorkspace.
 
 Plan/HITL:
@@ -82,6 +85,8 @@ Plan/HITL:
   actions such as writing to Google Calendar.
 - Calendar write should be plan/gate-driven, not a direct conversational side
   effect.
+- After approval, Plan/GOSLO chooses whether execution is a fast T1 direct
+  Calendar API write or a T3 Nanobot/Scheduler task.
 
 IntentWorkspace:
 
@@ -118,9 +123,9 @@ Web Console:
 ## Current Code Facts
 
 - `src/parrot/brain/tools/__init__.py` exposes GOSLO tools including
+  `calendar_context`, `calendar_change_request`, `calendar_task_status`,
   `dispatch_task`, `query_memory`, `remember`, `manage_episode`, and scene/App
-  controls. There is no dedicated `calendar_context` or
-  `calendar_change_request` GOSLO tool yet.
+  controls.
 - `src/parrot/brain/tools/dispatch_task.py` already documents calendar task
   types: `calendar_fetch`, `calendar_create`, `calendar_patch`, and
   `calendar_delete`. This is the right low-level execution boundary, but it is
@@ -130,8 +135,8 @@ Web Console:
   `arknights_test`, and `noble_etiquette` partitions. It is not a Calendar
   status tool.
 - `src/parrot/brain/app_first_version.py` has `create_calendar_draft()`, which
-  stages a Calendar write action as an IntentWorkspace `calendar_draft` paper
-  note. It does not write Google Calendar.
+  stages an Intent-layer Calendar decision draft as an IntentWorkspace
+  `calendar_draft` paper note. It does not write Google Calendar.
 - `src/parrot/dsg/triggers/calendar_trigger.py` already models the read path as
   `Scheduler -> Nanobot -> Google Workspace MCP -> calendar_result ->
   CalendarTrigger -> L1.5 Pool -> GOOGLE_CALENDAR bucket -> L2-B EVENT nodes`.
@@ -178,12 +183,13 @@ Preferred option unless later research finds a stronger scheme:
    - `calendar_change_request`: draft create/patch/delete intent, stage it to
      IntentWorkspace, and optionally produce a Plan/HITL gate.
    - `calendar_task_status`: check dispatched nanobot task/result state.
-2. GOSLO does not call Google Calendar directly. It issues structured commands
-   and monitors receipts.
+2. GOSLO does not write Google Calendar from `calendar_change_request`. It
+   issues structured Intent/Plan drafts and monitors receipts.
 3. Plan/HITL decides whether a Calendar write is allowed.
-4. Scheduler dispatches nanobot Tasks for actual Google Calendar operations.
-5. Nanobot executes against Google Workspace MCP/API and returns structured
-   result receipts.
+4. After approval, GOSLO/Plan chooses the execution route:
+   T1 direct Google Calendar API for fast ordinary writes, or
+   T3 Nanobot/Scheduler for slow/complex/AgentTeam operations.
+5. The selected execution route returns structured result receipts.
 6. The result is staged back to IntentWorkspace for GOSLO/User visibility.
 7. CalendarTrigger/import policy normalizes the result into L1.5 observations.
 8. L2-B receives working-memory pointers/attention/subgraph context from
@@ -192,8 +198,9 @@ Preferred option unless later research finds a stronger scheme:
    and durable provenance.
 
 This matches the user's framing: Web proves the interfaces; GOSLO provides the
-voice/decision loop; nanobot does complex execution; L2-B stays a subconscious
-sync/buffer layer rather than the task SSOT.
+voice/decision loop; T1 can handle ordinary fast software operations; nanobot
+handles complex background execution; L2-B stays a subconscious sync/buffer
+layer rather than the task SSOT.
 
 ## Non-Goals For The Next Slice
 
@@ -206,11 +213,13 @@ sync/buffer layer rather than the task SSOT.
 
 ## Immediate Capability Gaps
 
-1. Dedicated GOSLO Calendar tools are missing.
-2. Calendar task schemas are generic strings inside `dispatch_task`, not typed
+1. Dedicated GOSLO Calendar tools now exist for context, draft, and status;
+   remaining work is approved execution routing and end-to-end receipts.
+2. Calendar task schemas are still generic strings inside `dispatch_task`, not typed
    GOSLO-friendly commands with result/status receipts.
-3. Calendar write-back through nanobot is documented as a task type but is not
-   yet proven as a Web/GOSLO/HITL end-to-end path.
+3. Calendar write-back needs two approved execution routes: T1 direct Calendar
+   API for ordinary fast writes, and T3 Nanobot/Scheduler for complex/slow
+   operations. The Intent draft tool must not force either path.
 4. Runtime Flow/HITL exists, but Calendar write action gates need capability
    mapping and safe preview/apply receipts.
 5. L1.5 import works as a source path, but automatic Calendar result-to-L1.5
@@ -228,9 +237,9 @@ Define the first GOSLO-facing Calendar tool contract. Recommended minimal set:
   reason, require_user_confirmation: bool = true)`
 - `calendar_task_status(task_id?, plan_id?, include_workspace_refs: bool = true)`
 
-The first implementation should be read/preview/draft first, then one
-operator/HITL-gated write path, then automatic state sync to IntentWorkspace,
-L1.5, and L2-B.
+The first implementation should be read/preview/draft first, then approved
+execution routes, then result sync to IntentWorkspace and optional
+L1.5/L2-B/Graphiti projection. Memory projection is not the Calendar task SSOT.
 
 ## GOSLO Tool Manual Taxonomy
 
@@ -444,9 +453,17 @@ Calendar planning:
 Calendar write:
 
 - Never a casual direct write.
-- Should enter IntentWorkspace as a draft, then Plan/HITL, then nanobot
-  execution.
-- After execution, sync the result back to IntentWorkspace, L1.5, and L2-B.
+- Should enter IntentWorkspace as an Intent/Plan draft first.
+- `calendar_change_request` only stages that draft. It is not an execution
+  tool, does not write Calendar, does not dispatch nanobot, and does not import
+  or mutate L1.5/L2-B/Graphiti.
+- After Plan/HITL approval, GOSLO/Plan decides the route:
+  T1 direct Google Calendar API for normal fast software-style changes, or
+  T3 Nanobot/Scheduler when the operation is slow, complex, needs richer
+  receipts, or belongs to AgentTeam/Plan workflow.
+- After execution, sync the result back to IntentWorkspace and optionally into
+  L1.5/L2-B/Graphiti as working-memory or audit projection. These memory layers
+  are not the Calendar task SSOT.
 
 ## Tool Documentation Template
 
@@ -555,10 +572,9 @@ Implemented the next two GOSLO-facing Calendar tools:
     into an IntentWorkspace `calendar_draft` paper note.
   - Supported action normalization: create/add/insert/new -> `create`;
     patch/update/edit/modify -> `patch`; delete/remove/cancel -> `delete`.
-  - Draft payload records the future Nanobot task type
-    (`calendar_create`, `calendar_patch`, or `calendar_delete`),
-    `result_channel=calendar_result`, Plan/step ids when provided, HITL
-    requirement, and the post-execution sync route.
+  - Draft payload records the Intent decision, Plan/step ids when provided,
+    HITL requirement, allowed execution routes after approval, and a suggested
+    Nanobot task type only for the optional T3 background route.
   - Mutation policy: no direct Google Calendar write, no Nanobot dispatch, no
     L1.5 import, no L2-B mutation, and no Graphiti write. It only stages the
     decision payload for later user/Plan/HITL approval.
@@ -628,9 +644,11 @@ Updated interpretation:
 
 Tool wording correction:
 
-- `calendar_change_request` now records both
+- `calendar_change_request` records
+  `draft_is_execution_request = false`,
+  `execution_route_owner = GOSLO/Plan after Plan/HITL approval`,
   `allowed_execution_routes_after_approval = [T1_DIRECT_GOOGLE_CALENDAR_API,
-  T3_NANOBOT_SCHEDULER_TASK]` and `suggested_nanobot_task_type`.
+  T3_NANOBOT_SCHEDULER_TASK]`, and `suggested_nanobot_task_type`.
 - The draft keeps the Nanobot task type as a suggested background route, while
   preserving GOSLO/Plan's authority to choose T1 direct execution after HITL
   approval.

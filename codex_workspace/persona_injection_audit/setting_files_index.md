@@ -1,12 +1,13 @@
 # Setting Files Index
 
-Updated: 2026-05-17
+Updated: 2026-05-18
 
 ## Runtime Parrot Persona Files
 
 | Path | Status | Notes |
 | --- | --- | --- |
-| `src/parrot/brain/personas/goslo_parrot_default.md` | Runtime persona | Default GOSLO Parrot identity, modes, tool rules, visual-state behavior. |
+| `src/parrot/brain/personas/goslo_parrot_default.md` | Runtime persona | Temporary demo default: normal AR reminder parrot, modes, Calendar tool rules, visual-state behavior. |
+| `src/parrot/brain/personas/goslo_parrot_default_ojousama_backup_20260518.md` | Runtime persona backup | Previous shared-mansion ojousama default, preserved beside the temporary demo default for later restore. Persona id: `goslo_parrot_default_ojousama_backup_20260518`. |
 | `src/parrot/brain/personas/ner_companion.md` | Runtime persona | Ner/LineB test persona and voice/style constraints. |
 | `src/parrot/brain/persona_loader.py` | Runtime loader | Parses persona frontmatter/sections and honors `PARROT_PERSONA_DIRS`. |
 | `src/parrot/brain/soul.py` | Runtime assembler | Active persona selection and session-context append point. |
@@ -43,6 +44,9 @@ Updated: 2026-05-17
 | `src/parrot/brain/session_policy.py` | C4 gating | Suppresses proactive replies in `SessionOnlySilent` and derives capability mode behavior. |
 | `src/parrot/brain/tools/_state_context.py` | Tool-result state header | Adds body/head/cognitive/ECP state to selected tool results. |
 | `src/parrot/brain/tools/dispatch_task.py` | Scheduler/Nanobot dispatch | Lets Parrot delegate background work. |
+| `src/parrot/brain/tools/calendar_context.py` | T1 Calendar Intent read | Quick Google Calendar context read with T3 `calendar_fetch` fallback when slow; read-only, preview-only sync. |
+| `src/parrot/brain/tools/calendar_change_request.py` | T2 Calendar Intent draft | Stages Plan/HITL Calendar change decisions in IntentWorkspace; not execution, no Google write, no Nanobot dispatch, no L1.5/L2-B/Graphiti mutation. |
+| `src/parrot/brain/tools/calendar_task_status.py` | T1/T3 Calendar monitor | Read-only monitor over Nanobot dispatch and Scheduler `calendar_result` ledgers; task truth is not L2-B. |
 | `src/parrot/scheduler/service.py` | Nanobot dispatch and C4 result path | Routes background tasks and forwards summaries to Brain. |
 | `src/parrot/scheduler/task_catalog.py` | Task catalog | Defines supported background task types. |
 

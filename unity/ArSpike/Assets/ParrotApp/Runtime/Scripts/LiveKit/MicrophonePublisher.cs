@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading;
 using LiveKit;
 using LiveKit.Proto;
+using ParrotApp.Core;
 using ParrotApp.Health;
 using ParrotApp.Lifecycle;
 using UnityEngine;
@@ -129,6 +130,13 @@ namespace ParrotApp.LiveKit
         [Tooltip("Small Android route-settle wait before the phone mic fallback starts after SCO capture produced no frames.")]
         [SerializeField] private float phoneMicFallbackRouteSettleSeconds = 0.25f;
 
+        private const string UplinkWatchdogPrefix = "uplink_watchdog";
+        private const string UplinkWatchdogAudioFramesStaleReason = "uplink_watchdog_audio_frames_stale";
+        private const string UplinkWatchdogMicrophoneStoppedReason = "uplink_watchdog_microphone_stopped";
+        private const string FocusResumePrefix = "focus_resume";
+        private const string FocusResumeAudioFramesStaleReason = "focus_resume_audio_frames_stale";
+        private const string FocusResumeMicrophoneStoppedReason = "focus_resume_microphone_stopped";
+
         private RtcAudioSource _micSource;
         private LocalAudioTrack _audioTrack;
         private bool _isPublishing;
@@ -152,6 +160,7 @@ namespace ParrotApp.LiveKit
         private long _lastAudioReadUtcTicks;
         private long _lastNonSilentAudioUtcTicks;
         private Coroutine _uplinkWatchdogCoroutine;
+        private Coroutine _focusResumeCheckCoroutine;
         private string _uplinkWatchdogState = "idle";
         private string _uplinkWatchdogLastRecoveryReason = "";
         private bool _uplinkWatchdogMicrophoneRecording;
@@ -392,9 +401,10 @@ namespace ParrotApp.LiveKit
 
             // Android may keep the LiveKit room alive while resetting the
             // communication device or microphone session during app switch,
-            // permission dialog, or Bluetooth settings focus hops. Treat focus
-            // resume as a local capture refresh only: rebuild the mic track,
-            // but do not reconnect the room, mint a token, or dispatch Brain.
+            // permission dialog, Bluetooth panels, or audio-focus hops. Focus
+            // regain is only a health probe. It must not tear down a
+            // just-started AudioRecord; the watchdog owns recovery when frames
+            // actually go stale.
             if (routeManager != null)
                 RefreshActivePolicy(routeManager.RefreshCurrentPolicy("focus_resume"), "focus_resume");
             else if (routeDetector != null)
@@ -402,13 +412,13 @@ namespace ParrotApp.LiveKit
 
             if (_publishInProgress)
             {
-                QueueRouteRepublish(_activePolicy, "focus_resume_during_publish");
+                Debug.Log("[MicrophonePublisher] focus_resume_during_publish ignored; keeping current mic setup");
                 return;
             }
 
             if (_isPublishing)
             {
-                QueueRouteRepublish(_activePolicy, "focus_resume");
+                QueueFocusResumeHealthCheck();
                 return;
             }
 
@@ -499,13 +509,13 @@ namespace ParrotApp.LiveKit
             if (initialReason != null)
                 HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), initialReason);
 
-            yield return Application.RequestUserAuthorization(UserAuthorization.Microphone);
+            yield return AndroidRuntimePermissions.RequestMicrophonePermission();
 
-            if (!Application.HasUserAuthorization(UserAuthorization.Microphone))
+            if (!AndroidRuntimePermissions.HasMicrophonePermission())
             {
-                _lastError = "permission_denied";
+                _lastError = "permission_denied:" + AndroidRuntimePermissions.MicrophonePermissionState();
                 _lastPublishStage = "permission_denied";
-                Debug.LogError("[MicrophonePublisher] ERROR permission_denied");
+                Debug.LogError("[MicrophonePublisher] ERROR " + _lastError);
                 HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), _lastError);
                 _publishInProgress = false;
                 yield break;
@@ -934,7 +944,7 @@ namespace ParrotApp.LiveKit
             catch (Exception e)
             {
                 CacheNativeAudioRecordDiagnostics();
-                _lastError = "microphone_start_exception:" + e.GetType().Name;
+                _lastError = "microphone_start_exception:" + e.GetType().Name + ":" + ShortExceptionMessage(e);
                 if (!string.IsNullOrWhiteSpace(_lastNativeAudioRecordError))
                     _lastError += ":" + _lastNativeAudioRecordError;
                 _lastPublishStage = "microphone_start_exception";
@@ -1105,6 +1115,15 @@ namespace ParrotApp.LiveKit
                        || error.StartsWith("native_audio_record_failed", StringComparison.Ordinal));
         }
 
+        private static string ShortExceptionMessage(Exception exception)
+        {
+            if (exception == null || string.IsNullOrWhiteSpace(exception.Message))
+                return "no_message";
+            string message = exception.Message.Replace('\r', ' ').Replace('\n', ' ').Trim();
+            const int max = 180;
+            return message.Length <= max ? message : message.Substring(0, max);
+        }
+
         private static string BuildSuccessFallbackStatus(CaptureAttemptSpec attempt, string sourceKind)
         {
             string status = attempt != null && attempt.Reason == "primary"
@@ -1155,7 +1174,9 @@ namespace ParrotApp.LiveKit
         /// <item>Do not use <c>AudioSettings.outputSampleRate</c>; it is unreliable
         /// after route changes.</item>
         /// <item>Set <see cref="RtcAudioSource.DefaultMicrophoneSampleRate"/> before
-        /// constructing <see cref="MicrophoneSource"/>.</item>
+        /// constructing <see cref="MicrophoneSource"/> and
+        /// <see cref="RtcAudioSource.DefaultSampleRate"/> before constructing the
+        /// App-owned Android PCM source.</item>
         /// <item>Match the active route to avoid
         /// <c>InvalidState: sample_rate and num_channels don't match</c>.</item>
         /// </list>
@@ -1168,6 +1189,7 @@ namespace ParrotApp.LiveKit
                 : (fallbackSampleRate > 0 ? fallbackSampleRate : 48000);
 
             RtcAudioSource.DefaultMicrophoneSampleRate = (uint)targetRate;
+            RtcAudioSource.DefaultSampleRate = (uint)targetRate;
             _configuredSampleRate = targetRate;
             Debug.Log(
                 $"[MicrophonePublisher] LiveKit microphone sample rate configured: {targetRate}Hz " +
@@ -1256,8 +1278,57 @@ namespace ParrotApp.LiveKit
                 _uplinkWatchdogCoroutine = StartCoroutine(UplinkRuntimeWatchdogLoop());
         }
 
+        private void QueueFocusResumeHealthCheck()
+        {
+            if (!uplinkRuntimeWatchdogEnabled)
+                return;
+            if (_focusResumeCheckCoroutine != null)
+                StopCoroutine(_focusResumeCheckCoroutine);
+            _focusResumeCheckCoroutine = StartCoroutine(FocusResumeHealthCheck());
+        }
+
+        private IEnumerator FocusResumeHealthCheck()
+        {
+            // Let Android finish dispatching audio-focus and route callbacks
+            // before deciding whether the local mic track is stale. This avoids
+            // the startup loop where focus regain arrived while AudioRecord was
+            // already publishing and forced an unnecessary unpublish/recreate.
+            float delay = Mathf.Max(0.5f, uplinkWatchdogIntervalSeconds);
+            yield return new WaitForSeconds(delay);
+            _focusResumeCheckCoroutine = null;
+
+            if (!_isPublishing || _publishInProgress || !publishIntentEnabled || _shutdownInitiated
+                || RoomManager.Instance?.IsConnected != true)
+                yield break;
+
+            string recoveryReason;
+            if (!TryBuildUplinkRecoveryReason(FocusResumePrefix, out recoveryReason))
+            {
+                _uplinkWatchdogState = "healthy:focus_resume";
+                Debug.Log(
+                    $"[MicrophonePublisher] focus resume kept mic track: " +
+                    $"age={LastAudioReadAgeSeconds:0.00}s frames={AudioReadFrameCount} " +
+                    $"peak={LastAudioReadPeak:0.000000}");
+                yield break;
+            }
+
+            _uplinkWatchdogState = recoveryReason;
+            _uplinkWatchdogLastRecoveryReason = recoveryReason;
+            _uplinkWatchdogRecoveryCount++;
+            _lastError = recoveryReason;
+            _lastPublishStage = "uplink_watchdog_recovering";
+            HealthAggregator?.ReportAudioPublished(false, UnixSeconds(), recoveryReason);
+            Debug.LogWarning("[MicrophonePublisher] focus resume recovering local mic track: " + recoveryReason);
+            QueueRouteRepublish(_activePolicy, recoveryReason);
+        }
+
         private void StopUplinkWatchdog(string reason)
         {
+            if (_focusResumeCheckCoroutine != null)
+            {
+                StopCoroutine(_focusResumeCheckCoroutine);
+                _focusResumeCheckCoroutine = null;
+            }
             if (_uplinkWatchdogCoroutine != null)
             {
                 StopCoroutine(_uplinkWatchdogCoroutine);
@@ -1368,11 +1439,11 @@ namespace ParrotApp.LiveKit
                     continue;
                 }
 
-                string reason = recordingKnown && !isRecording
-                    ? "uplink_watchdog_microphone_stopped"
-                    : "uplink_watchdog_audio_frames_stale";
-                if (!string.IsNullOrWhiteSpace(recordingError))
-                    reason += ":" + recordingError;
+                string reason = BuildUplinkRecoveryReason(
+                    UplinkWatchdogPrefix,
+                    recordingKnown,
+                    isRecording,
+                    recordingError);
 
                 _uplinkWatchdogState = reason;
                 _uplinkWatchdogLastRecoveryReason = reason;
@@ -1395,6 +1466,68 @@ namespace ParrotApp.LiveKit
             _uplinkWatchdogCoroutine = null;
         }
 
+        private bool TryBuildUplinkRecoveryReason(string prefix, out string reason)
+        {
+            reason = "";
+            float interval = Mathf.Max(0.2f, uplinkWatchdogIntervalSeconds);
+            float staleSeconds = Mathf.Max(interval * 1.5f, uplinkWatchdogStaleSeconds);
+            float lastFrameAge = LastAudioReadAgeSeconds;
+            if (lastFrameAge >= 0f && lastFrameAge <= staleSeconds)
+                return false;
+
+            string probeDevice = ProbeDeviceNameForSelectedDevice();
+            bool recordingKnown;
+            bool isRecording;
+            string recordingError;
+#if UNITY_ANDROID && !UNITY_EDITOR
+            if (_micSource is AndroidPcmMicrophoneSource nativePcmSource)
+            {
+                CacheNativeAudioRecordDiagnostics(nativePcmSource);
+                recordingKnown = true;
+                isRecording = nativePcmSource.IsNativeRecording;
+                recordingError = nativePcmSource.LastNativeError;
+            }
+            else
+#endif
+            {
+                recordingKnown = TryIsMicrophoneRecording(probeDevice, out isRecording, out recordingError);
+            }
+
+            reason = BuildUplinkRecoveryReason(prefix, recordingKnown, isRecording, recordingError);
+            return true;
+        }
+
+        private static string BuildUplinkRecoveryReason(
+            string prefix,
+            bool recordingKnown,
+            bool isRecording,
+            string recordingError)
+        {
+            string safePrefix = string.IsNullOrWhiteSpace(prefix) ? "uplink" : prefix;
+            string reason;
+            if (string.Equals(safePrefix, UplinkWatchdogPrefix, StringComparison.Ordinal))
+            {
+                reason = recordingKnown && !isRecording
+                    ? UplinkWatchdogMicrophoneStoppedReason
+                    : UplinkWatchdogAudioFramesStaleReason;
+            }
+            else if (string.Equals(safePrefix, FocusResumePrefix, StringComparison.Ordinal))
+            {
+                reason = recordingKnown && !isRecording
+                    ? FocusResumeMicrophoneStoppedReason
+                    : FocusResumeAudioFramesStaleReason;
+            }
+            else
+            {
+                reason = recordingKnown && !isRecording
+                    ? safePrefix + "_microphone_stopped"
+                    : safePrefix + "_audio_frames_stale";
+            }
+            if (!string.IsNullOrWhiteSpace(recordingError))
+                reason += ":" + recordingError;
+            return reason;
+        }
+
         private bool ShouldUseAndroidDefaultMicrophoneWhenDeviceListEmpty()
         {
             if (!allowAndroidDefaultMicrophoneWhenDeviceListEmpty)
@@ -1408,7 +1541,7 @@ namespace ParrotApp.LiveKit
             if (routeManager == null || !routeManager.NativeAvailable)
                 return false;
 
-            bool unityPermissionGranted = Application.HasUserAuthorization(UserAuthorization.Microphone);
+            bool unityPermissionGranted = AndroidRuntimePermissions.HasMicrophonePermission();
             var snapshot = routeManager.CurrentSnapshot;
             if (snapshot == null)
                 return unityPermissionGranted;
@@ -1455,7 +1588,7 @@ namespace ParrotApp.LiveKit
                 return false;
             if (routeManager == null || !routeManager.NativeAvailable)
                 return false;
-            if (!Application.HasUserAuthorization(UserAuthorization.Microphone))
+            if (!AndroidRuntimePermissions.HasMicrophonePermission())
                 return false;
 
             var snapshot = routeManager.CurrentSnapshot;
@@ -1465,7 +1598,7 @@ namespace ParrotApp.LiveKit
                 snapshot.microphone_permission,
                 "granted",
                 StringComparison.OrdinalIgnoreCase)
-                || Application.HasUserAuthorization(UserAuthorization.Microphone);
+                || AndroidRuntimePermissions.HasMicrophonePermission();
             if (!permissionGranted)
                 return false;
 

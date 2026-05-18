@@ -1,6 +1,6 @@
 # Persona Injection Open Issues
 
-Updated: 2026-05-17
+Updated: 2026-05-18
 
 ## PIA-001 Double Greeting / Startup Speech Leak
 
@@ -243,3 +243,28 @@ Candidate fix: make the App status show both selected line and running line,
 including the source (`runtime_config`, `blackboard`, `.env`, or default), and
 make a line-switch menu action explicitly request reconnect / runtime_config
 application instead of looking like an immediate hot toggle.
+
+## PIA-022 Calendar Intent Draft Must Not Be Treated As Execution
+
+Status: recorded and synced 2026-05-18. `goslo_parrot_default.md` now lists the
+three GOSLO Calendar tools with T1/T2/T1-T3 roles. `calendar_change_request`
+is explicitly an Intent-layer decision / Plan-HITL draft tool, not an execution
+tool.
+
+User requirement: `calendar_context` is T1 Intent/Thinking and may fall back to
+T3 `calendar_fetch` if slow. `calendar_change_request` is for confirming
+whether to change Calendar, checking conflicts, and shaping a Plan/HITL draft;
+it must not write Google Calendar, dispatch Nanobot, import L1.5, mutate L2-B,
+or write Graphiti. `calendar_task_status` is a read-only T1/T3 monitor over
+Nanobot dispatch and Scheduler `calendar_result` ledgers.
+
+Risk: wording like "Calendar write through Nanobot" or the old field name
+`task_type_after_approval` can make GOSLO treat an Intent draft as an
+execution instruction, or assume every approved write must go through T3
+Nanobot.
+
+Current rule: after approval, GOSLO/Plan decides the execution route:
+`T1_DIRECT_GOOGLE_CALENDAR_API` for ordinary fast software-style changes, or
+`T3_NANOBOT_SCHEDULER_TASK` for slow, complex, richer-receipt, or AgentTeam
+work. L1.5/L2-B/Graphiti are post-result sync, working-memory projection, or
+audit surfaces, not the Calendar task SSOT.

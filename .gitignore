@@ -83,6 +83,12 @@ agent-transcripts/
 # ECS 本地 secrets 目录（service account JSON、voiceprint manifest 等）
 data/secrets/
 
+# Local laptop Castle/ECS sandbox. Generated from infra/laptop.env.example by
+# infra/laptop-castle.ps1; contains local-only secrets, generated LiveKit config,
+# runtime_config, Redis/Falkor state, and Unity parrot_config variants.
+/infra/laptop.env.local
+/codex_workspace/local_runtime/
+
 # Temporary transfer files / build artifacts
 FilePort/
 FilePort2/

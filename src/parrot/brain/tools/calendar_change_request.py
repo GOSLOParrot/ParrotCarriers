@@ -1,7 +1,7 @@
-"""GOSLO Calendar write-draft tool.
+"""GOSLO Calendar Intent decision-draft tool.
 
-This tool stages a Calendar mutation request for Plan/HITL review. It never
-writes Google Calendar directly.
+This tool stages a Calendar change decision for Plan/HITL review. It is not an
+execution tool and never writes Google Calendar directly.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ async def calendar_change_request(
     plan_id: str = "",
     step_id: str = "",
 ) -> str:
-    """Stage a Google Calendar change request for Plan/HITL approval.
+    """Stage a Google Calendar change decision for Plan/HITL approval.
 
     Category: Intent-layer Calendar decision/draft tool. Use this while GOSLO
     is deciding with the user whether a Calendar change should happen, checking
@@ -51,7 +51,8 @@ async def calendar_change_request(
     approval, GOSLO/Plan may choose the execution route: a fast T1 direct
     Calendar API action if the operation is safe and quick enough, or a T3
     Nanobot/Scheduler task (`calendar_create`, `calendar_patch`, or
-    `calendar_delete`) when the work should run in the background.
+    `calendar_delete`) when the work should run in the background. This tool
+    deliberately does not choose or execute that route.
 
     Args:
         action: Requested mutation: 'create', 'patch', 'update', or 'delete'.
@@ -128,13 +129,24 @@ async def do_calendar_change_request(
     draft_payload = {
         "schema": "goslo_calendar_change_request_v1",
         "tool_category": "T2_INTENT_PLAN_HITL_DRAFT",
+        "decision_layer": "Intent",
+        "draft_is_execution_request": False,
         "action": normalized_action,
         "suggested_nanobot_task_type": task_type,
-        "task_type_after_approval": task_type,
-        "execution_route_policy": "GOSLO/Plan chooses T1 direct or T3 Nanobot after approval",
+        "execution_route_owner": "GOSLO/Plan after Plan/HITL approval",
+        "execution_route_policy": (
+            "not hardcoded; GOSLO/Plan chooses T1 direct or T3 Nanobot after approval"
+        ),
         "allowed_execution_routes_after_approval": [
             "T1_DIRECT_GOOGLE_CALENDAR_API",
             "T3_NANOBOT_SCHEDULER_TASK",
+        ],
+        "blocked_side_effects": [
+            "google_calendar_write",
+            "nanobot_dispatch",
+            "l1_5_import",
+            "l2b_mutation",
+            "graphiti_write",
         ],
         "calendar_id": str(calendar_id or "primary"),
         "event_id": str(event_id or ""),
@@ -157,6 +169,10 @@ async def do_calendar_change_request(
             "L1.5 GOOGLE_CALENDAR observation import",
             "L2-B event pointer projection",
         ],
+        "memory_sync_policy": (
+            "L1.5/L2-B/Graphiti are post-result working-memory or audit projections, "
+            "not the Calendar task SSOT"
+        ),
     }
 
     try:
@@ -185,11 +201,11 @@ async def do_calendar_change_request(
     return (
         "Calendar change draft staged (Intent-layer Plan/HITL draft).\n"
         f"Draft ref: {ref_id or 'unknown'}.\n"
-        f"Action: {normalized_action}; suggested T3 task={task_type} if background execution is chosen.\n"
+        f"Action: {normalized_action}; suggested background task={task_type} only if T3 execution is chosen.\n"
         f"Calendar/event: {draft_payload['calendar_id']} / {draft_payload['event_id'] or 'new event'}.\n"
         f"{confirmation_line}\n"
         "Next step: present the draft to the user or a Plan/HITL gate; after approval, "
-        "GOSLO/Plan chooses either fast T1 direct execution or T3 Nanobot dispatch "
+        "GOSLO/Plan chooses either T1 direct Google Calendar API execution or T3 Nanobot dispatch "
         f"({task_type}, result_channel=calendar_result).\n"
         "No Google Calendar write, no Nanobot dispatch, no L1.5 import, no L2-B mutation, "
         "and no Graphiti write occurred."

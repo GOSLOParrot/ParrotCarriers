@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 import jwt
 from fastapi.testclient import TestClient
@@ -12,8 +13,14 @@ def _reload_token_mint(
     mode: str = "unity",
     agent_name: str = "",
     active_dispatch: str = "1",
+    internal_url: str | None = None,
 ):
     monkeypatch.setenv("LIVEKIT_URL", "ws://example.test:7880")
+    if internal_url is None:
+        monkeypatch.delenv("PARROT_MINT_LIVEKIT_INTERNAL_URL", raising=False)
+        monkeypatch.delenv("LIVEKIT_INTERNAL_URL", raising=False)
+    else:
+        monkeypatch.setenv("PARROT_MINT_LIVEKIT_INTERNAL_URL", internal_url)
     monkeypatch.setenv("LIVEKIT_API_KEY", "devkey")
     monkeypatch.setenv(
         "LIVEKIT_API_SECRET",
@@ -63,6 +70,16 @@ def test_mint_agent_dispatch_can_be_disabled(monkeypatch) -> None:
     assert "roomConfig" not in claims
 
 
+def test_livekit_internal_url_is_used_only_for_server_api(monkeypatch) -> None:
+    token_mint = _reload_token_mint(
+        monkeypatch,
+        internal_url="ws://livekit:7880",
+    )
+
+    assert token_mint._LIVEKIT_URL == "ws://example.test:7880"
+    assert token_mint._livekit_http_url() == "http://livekit:7880"
+
+
 def test_mint_endpoint_actively_dispatches_for_unity_identity(monkeypatch) -> None:
     token_mint = _reload_token_mint(monkeypatch)
     calls: list[str] = []
@@ -95,6 +112,7 @@ def test_mint_endpoint_actively_dispatches_for_unity_identity(monkeypatch) -> No
     assert body["agent_dispatch_active_created"] is True
     assert body["agent_dispatch_active_already_present"] is False
     assert body["agent_dispatch_active_error"] == ""
+    assert "roomConfig" not in _claims(body["token"])
 
 
 def test_mint_endpoint_skips_active_dispatch_for_observer(monkeypatch) -> None:
@@ -157,3 +175,15 @@ def test_mint_endpoint_can_disable_active_dispatch(monkeypatch) -> None:
     body = response.json()
     assert body["agent_dispatch_requested"] is True
     assert body["agent_dispatch_active_attempted"] is False
+    assert _claims(body["token"])["roomConfig"]["agents"] == [{}]
+
+
+def test_active_dispatch_path_reuses_existing_room_dispatch() -> None:
+    root = Path(__file__).resolve().parents[2]
+    text = (root / "src" / "parrot" / "castle" / "token_mint.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "lk.agent_dispatch.list_dispatch(room)" in text
+    assert "Brain dispatch already present" in text
+    assert "JRP_NEVER" in text

@@ -392,9 +392,27 @@ async def start_photo_upload_server(
     )
     server = uvicorn.Server(config)
 
+    async def _serve_guarded() -> None:
+        """Run uvicorn without letting a bind-race SystemExit kill the job.
+
+        The pre-bind socket check catches the normal stale-port case, but two
+        LiveKit room jobs can still race between the check and uvicorn's bind.
+        Uvicorn raises ``SystemExit`` for that late bind failure; catching it
+        here keeps the Brain room job alive and simply disables photo upload for
+        this session.
+        """
+        try:
+            await server.serve()
+        except SystemExit as exc:
+            logger.error(
+                "[photo_upload] uvicorn raised SystemExit(%s) during serve; "
+                "photo upload disabled for this room job",
+                getattr(exc, "code", "?"),
+            )
+
     # Run in the same loop as the agent; the Server object exposes
     # `should_exit` for cooperative shutdown.
-    task = asyncio.create_task(server.serve(), name="photo_upload_server")
+    task = asyncio.create_task(_serve_guarded(), name="photo_upload_server")
     setattr(server, "_parrot_task", task)
 
     # FIX (2026-05-11 audit Round 5, Bug M): the photo upload task is

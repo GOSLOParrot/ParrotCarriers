@@ -27,6 +27,9 @@ namespace ParrotApp.Lifecycle
         [SerializeField] private float reevaluateIntervalSeconds = 0.35f;
         [SerializeField] private bool showRuntimeDiagnostics = true;
         [SerializeField] private float diagnosticRefreshSeconds = 0.2f;
+        [SerializeField] private Vector2 diagnosticPanelSize = new Vector2(800f, 124f);
+        [SerializeField] private Vector2 diagnosticPanelTopRightOffset = new Vector2(-132f, -32f);
+        [SerializeField] private int diagnosticFontSize = 17;
 
         public bool PerchMounted { get; private set; }
         public string LastXrHandStatus { get; private set; } = "waiting_start";
@@ -291,13 +294,13 @@ namespace ParrotApp.Lifecycle
             var panel = new GameObject("FormalXrHandDiagnosticsPanel");
             panel.transform.SetParent(canvasObject.transform, false);
             var panelRt = panel.AddComponent<RectTransform>();
-            panelRt.anchorMin = new Vector2(0f, 1f);
-            panelRt.anchorMax = new Vector2(0f, 1f);
-            panelRt.pivot = new Vector2(0f, 1f);
-            panelRt.anchoredPosition = new Vector2(34f, -34f);
-            panelRt.sizeDelta = new Vector2(920f, 150f);
+            panelRt.anchorMin = new Vector2(1f, 1f);
+            panelRt.anchorMax = new Vector2(1f, 1f);
+            panelRt.pivot = new Vector2(1f, 1f);
+            panelRt.anchoredPosition = diagnosticPanelTopRightOffset;
+            panelRt.sizeDelta = diagnosticPanelSize;
             var image = panel.AddComponent<Image>();
-            image.color = new Color(0f, 0f, 0f, 0.32f);
+            image.color = new Color(0f, 0f, 0f, 0.46f);
             image.raycastTarget = false;
 
             var textObject = new GameObject("FormalXrHandDiagnosticsText");
@@ -311,17 +314,26 @@ namespace ParrotApp.Lifecycle
 
             _diagnosticText = textObject.AddComponent<Text>();
             _diagnosticText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            _diagnosticText.fontSize = 22;
-            _diagnosticText.alignment = TextAnchor.MiddleLeft;
-            _diagnosticText.color = new Color(1f, 1f, 1f, 0.92f);
+            _diagnosticText.fontSize = Mathf.Clamp(diagnosticFontSize, 12, 22);
+            _diagnosticText.alignment = TextAnchor.UpperLeft;
+            _diagnosticText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            _diagnosticText.verticalOverflow = VerticalWrapMode.Truncate;
+            _diagnosticText.resizeTextForBestFit = true;
+            _diagnosticText.resizeTextMinSize = 12;
+            _diagnosticText.resizeTextMaxSize = Mathf.Clamp(diagnosticFontSize, 12, 22);
+            _diagnosticText.lineSpacing = 0.92f;
+            _diagnosticText.color = new Color(1f, 1f, 1f, 0.95f);
             _diagnosticText.raycastTarget = false;
+            var shadow = textObject.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0f, 0f, 0f, 0.65f);
+            shadow.effectDistance = new Vector2(1.4f, -1.4f);
         }
 
         private string BuildDiagnosticText()
         {
-            string owner = "owner=" + ShortReason(LastXrHandStatus);
+            string owner = CompactStatus(LastXrHandStatus);
             if (handGestureSource == null)
-                return "XRHAND " + owner + "\nsource=missing gesture=none\nperch=not_mounted";
+                return "XRHAND | " + owner + "\nsource missing | hand wait | gesture none\nperch not mounted";
 
             string source = string.IsNullOrWhiteSpace(handGestureSource.TrackingSource)
                 ? "none"
@@ -339,17 +351,16 @@ namespace ParrotApp.Lifecycle
             string perch = _mountedPerch == null
                 ? "not_mounted"
                 : _mountedPerch.State
-                  + " status=" + ShortReason(_mountedPerch.LastPerchStatus)
-                  + " lifecycle=" + ShortReason(_mountedPerch.LastPerchLifecycle);
+                  + " | " + CompactStatus(_mountedPerch.LastPerchStatus)
+                  + " | " + CompactStatus(_mountedPerch.LastPerchLifecycle);
 
-            return "XRHAND " + owner
-                   + "\nsource=" + source
-                   + " detected=" + handGestureSource.IsHandDetected
-                   + " gesture=" + gesture
-                   + " conf=" + handGestureSource.LastGestureConfidence.ToString("0.00")
-                   + " tracking=" + ShortReason(tracking)
-                   + "\n" + ShortDiagnostic(gestureDebug)
-                   + "\nperch=" + perch;
+            return "XRHAND | " + owner
+                   + "\nhand " + (handGestureSource.IsHandDetected ? "seen" : "wait")
+                   + " | src " + CompactStatus(source)
+                   + " | gesture " + CompactStatus(gesture)
+                   + " | conf " + handGestureSource.LastGestureConfidence.ToString("0.00")
+                   + "\ntrack " + CompactDiagnostic(tracking)
+                   + "\nperch " + CompactDiagnostic(perch + " | " + gestureDebug);
         }
 
         private string WithTracking(string ownerStatus)
@@ -423,15 +434,40 @@ namespace ParrotApp.Lifecycle
         private static string ShortReason(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
-            raw = raw.Trim();
+            raw = OneLine(raw);
             return raw.Length <= 42 ? raw : raw.Substring(0, 42);
         }
 
         private static string ShortDiagnostic(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
-            raw = raw.Trim();
-            return raw.Length <= 132 ? raw : raw.Substring(0, 132);
+            raw = OneLine(raw);
+            return raw.Length <= 96 ? raw : raw.Substring(0, 96);
+        }
+
+        private static string CompactStatus(string raw)
+        {
+            raw = ShortReason(raw);
+            if (string.IsNullOrWhiteSpace(raw)) return "unknown";
+            return raw.Replace("_", " ");
+        }
+
+        private static string CompactDiagnostic(string raw)
+        {
+            raw = OneLine(raw);
+            if (string.IsNullOrWhiteSpace(raw)) return "unknown";
+            if (raw.IndexOf("libc++_shared.so", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "native missing: libc++_shared.so";
+            if (raw.IndexOf("mediapipe_native_unavailable", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "native unavailable";
+            return ShortDiagnostic(raw).Replace("_", " ");
+        }
+
+        private static string OneLine(string raw)
+        {
+            return string.IsNullOrWhiteSpace(raw)
+                ? ""
+                : raw.Trim().Replace("\r", " ").Replace("\n", " ");
         }
     }
 }

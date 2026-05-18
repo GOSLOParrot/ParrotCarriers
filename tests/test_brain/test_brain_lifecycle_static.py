@@ -19,6 +19,8 @@ def test_brain_room_job_tracks_and_cancels_background_tasks() -> None:
     assert "asyncio.create_task(start_trigger_listener())" not in text
     assert 'name="scheduler_result_listener"' in text
     assert 'name="l2b_trigger_boot"' in text
+    assert 'os.getenv("PARROT_BRAIN_AGENT_NAME", "")' in text
+    assert "@server.rtc_session(agent_name=_BRAIN_AGENT_NAME)" in text
     assert 'await pubsub.unsubscribe(CH_SCHEDULER_TO_BRAIN)' in text
     assert '_stop_room_scoped_background("room_disconnected")' in text
     assert "stop_photo_upload_server(photo_upload_server)" in text
@@ -27,7 +29,9 @@ def test_brain_room_job_tracks_and_cancels_background_tasks() -> None:
 def test_photo_upload_server_has_cooperative_stop_handle() -> None:
     text = PHOTO_UPLOAD.read_text(encoding="utf-8")
 
-    assert 'asyncio.create_task(server.serve(), name="photo_upload_server")' in text
+    assert "async def _serve_guarded" in text
+    assert 'asyncio.create_task(_serve_guarded(), name="photo_upload_server")' in text
+    assert "except SystemExit as exc" in text
     assert 'setattr(server, "_parrot_task", task)' in text
     assert "async def stop_photo_upload_server" in text
     assert "server.should_exit = True" in text

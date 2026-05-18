@@ -76,6 +76,14 @@ app = FastAPI(title="Parrot Token Mint", version="1.0.0")
 
 _MINT_SECRET = os.getenv("PARROT_MINT_SECRET", "")
 _LIVEKIT_URL = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
+# ``LIVEKIT_URL`` is the URL returned to Unity, so laptop/phone tests often
+# need it to be a LAN address such as ``ws://192.168.x.y:17880``. Containers
+# cannot reliably call that host-facing address for LiveKit server APIs, so the
+# mint service accepts a separate internal URL for active Brain dispatch.
+_LIVEKIT_INTERNAL_URL = os.getenv(
+    "PARROT_MINT_LIVEKIT_INTERNAL_URL",
+    os.getenv("LIVEKIT_INTERNAL_URL", _LIVEKIT_URL),
+)
 _LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY", "devkey")
 _LIVEKIT_API_SECRET = os.getenv(
     "LIVEKIT_API_SECRET",
@@ -113,12 +121,15 @@ _AGENT_NAME = os.getenv("PARROT_MINT_AGENT_NAME", "").strip()
 async def _log_startup_config() -> None:
     logger.info(
         "Token mint starting: port=%s livekit_url_scheme=%s livekit_url_length=%d "
+        "internal_livekit_url_scheme=%s internal_livekit_url_length=%d "
         "api_key_present=%s api_secret_length=%d mint_secret_present=%s default_room=%s "
         "agent_dispatch_mode=%s active_agent_dispatch=%s active_agent_dispatch_timeout_s=%.1f "
         "agent_name_configured=%s",
         os.getenv("PARROT_MINT_PORT", "7888"),
         _LIVEKIT_URL.split(":", 1)[0] if ":" in _LIVEKIT_URL else "",
         len(_LIVEKIT_URL),
+        _LIVEKIT_INTERNAL_URL.split(":", 1)[0] if ":" in _LIVEKIT_INTERNAL_URL else "",
+        len(_LIVEKIT_INTERNAL_URL),
         bool(_LIVEKIT_API_KEY),
         len(_LIVEKIT_API_SECRET),
         bool(_MINT_SECRET),
@@ -202,7 +213,9 @@ def _is_brain_identity(identity: str) -> bool:
 
 
 def _livekit_http_url() -> str:
-    return _LIVEKIT_URL.replace("ws://", "http://").replace("wss://", "https://")
+    return _LIVEKIT_INTERNAL_URL.replace("ws://", "http://").replace(
+        "wss://", "https://"
+    )
 
 
 async def _ensure_agent_dispatch(room: str) -> dict[str, Any]:
@@ -219,6 +232,7 @@ async def _ensure_agent_dispatch(room: str) -> dict[str, Any]:
         ListParticipantsRequest,
         LiveKitAPI,
     )
+    from livekit.protocol import agent_dispatch as agent_dispatch_pb  # type: ignore
 
     result: dict[str, Any] = {
         "attempted": True,
@@ -254,9 +268,35 @@ async def _ensure_agent_dispatch(room: str) -> dict[str, Any]:
                 type(exc).__name__,
             )
 
+        try:
+            dispatches = await lk.agent_dispatch.list_dispatch(room)
+            for dispatch in dispatches:
+                agent_name = getattr(dispatch, "agent_name", "")
+                if agent_name == _AGENT_NAME:
+                    result["already_present"] = True
+                    logger.info(
+                        "Brain dispatch already present during mint dispatch check: "
+                        "room=%s dispatch_id=%s agent_name=%s",
+                        room,
+                        getattr(dispatch, "id", ""),
+                        agent_name,
+                    )
+                    return result
+        except Exception as exc:
+            logger.info(
+                "Could not list LiveKit agent dispatches before active dispatch: "
+                "room=%s exception_type=%s",
+                room,
+                type(exc).__name__,
+            )
+
         dispatch_request = CreateAgentDispatchRequest(room=room)
         if _AGENT_NAME:
             dispatch_request.agent_name = _AGENT_NAME
+        # Phone START calls mint repeatedly across retries/reconnects. Do not let
+        # LiveKit restart a failed stale room job into a second Brain while Unity
+        # is already creating the next clean dispatch.
+        dispatch_request.restart_policy = agent_dispatch_pb.JobRestartPolicy.JRP_NEVER
         dispatch = await lk.agent_dispatch.create_dispatch(dispatch_request)
         result["created"] = True
         logger.info(
@@ -269,7 +309,12 @@ async def _ensure_agent_dispatch(room: str) -> dict[str, Any]:
         await lk.aclose()
 
 
-def _generate_token(room: str, identity: str) -> str:
+def _generate_token(
+    room: str,
+    identity: str,
+    *,
+    include_agent_dispatch: bool | None = None,
+) -> str:
     """Generate a LiveKit JWT using livekit-server-sdk-python."""
     try:
         from livekit.api import AccessToken, RoomAgentDispatch, VideoGrants
@@ -303,7 +348,9 @@ def _generate_token(room: str, identity: str) -> str:
         )
         .with_ttl(timedelta(seconds=_TOKEN_TTL_S))
     )
-    if _should_request_agent_dispatch(identity):
+    if include_agent_dispatch is None:
+        include_agent_dispatch = _should_request_agent_dispatch(identity)
+    if include_agent_dispatch:
         # RoomConfiguration.agents asks LiveKit to dispatch the server-side
         # Brain room job as part of the room join. This does not grant Unity any
         # admin privilege and does not change media grants. If ECS Brain is
@@ -332,8 +379,18 @@ async def mint_token(req: MintRequest, request: Request) -> MintResponse:
     )
     _check_auth(request)
     agent_dispatch_requested = _should_request_agent_dispatch(req.identity)
+    active_dispatch_enabled = _active_agent_dispatch_enabled()
+    # Use exactly one Brain-dispatch path. The phone-facing default is active
+    # server-side dispatch, because it also works when a room already exists.
+    # Only fall back to token RoomConfiguration dispatch when active dispatch is
+    # explicitly disabled for a diagnostic or older direct-token flow.
+    include_token_agent_dispatch = agent_dispatch_requested and not active_dispatch_enabled
     try:
-        jwt = _generate_token(req.room, req.identity)
+        jwt = _generate_token(
+            req.room,
+            req.identity,
+            include_agent_dispatch=include_token_agent_dispatch,
+        )
     except Exception as exc:
         logger.exception("Token generation failed: exception_type=%s", type(exc).__name__)
         raise HTTPException(status_code=500, detail="token generation failed") from exc
@@ -344,7 +401,7 @@ async def mint_token(req: MintRequest, request: Request) -> MintResponse:
         "already_present": False,
         "error": "",
     }
-    if agent_dispatch_requested and _active_agent_dispatch_enabled():
+    if agent_dispatch_requested and active_dispatch_enabled:
         active_dispatch_result["attempted"] = True
         try:
             active_dispatch_result = await asyncio.wait_for(

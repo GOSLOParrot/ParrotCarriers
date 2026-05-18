@@ -768,7 +768,7 @@ class AppFirstVersionFacade:
         time_range: str = "",
         payload: dict[str, Any] | None = None,
     ) -> AppActionResult:
-        """Stage a Google Calendar write action as an IntentWorkspace draft."""
+        """Stage an Intent-layer Calendar decision draft in IntentWorkspace."""
         draft = {
             "action": action,
             "title": title,

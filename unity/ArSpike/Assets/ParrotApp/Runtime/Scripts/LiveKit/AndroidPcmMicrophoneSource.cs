@@ -1,5 +1,6 @@
 using System;
 using LiveKit;
+using ParrotApp.Core;
 using UnityEngine;
 
 namespace ParrotApp.LiveKit
@@ -32,7 +33,7 @@ namespace ParrotApp.LiveKit
         public string LastNativeSourceName { get; private set; } = "";
 
         public AndroidPcmMicrophoneSource(int sampleRate, int channels, string routeHint)
-            : base(Mathf.Clamp(channels, 1, 2), RtcAudioSourceType.AudioSourceMicrophone)
+            : base(Mathf.Clamp(channels, 1, 2), RtcAudioSourceType.AudioSourceCustom)
         {
             _sampleRate = sampleRate > 0 ? sampleRate : 48000;
             _channels = Mathf.Clamp(channels, 1, 2);
@@ -45,7 +46,7 @@ namespace ParrotApp.LiveKit
             base.Start();
 
 #if UNITY_ANDROID && !UNITY_EDITOR
-            if (!Application.HasUserAuthorization(UserAuthorization.Microphone))
+            if (!AndroidRuntimePermissions.HasMicrophonePermission())
             {
                 base.Stop();
                 throw new InvalidOperationException("Microphone access not authorized");

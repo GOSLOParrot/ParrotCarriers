@@ -32,6 +32,9 @@ FORMAL_MAIN_READY_GATE = (
 APP_LIFECYCLE_MANAGER = (
     SCRIPT_ROOT / "Lifecycle" / "AppLifecycleManager.cs"
 )
+ANDROID_RUNTIME_PERMISSIONS = (
+    SCRIPT_ROOT / "Core" / "AndroidRuntimePermissions.cs"
+)
 SHUTDOWN_SERVICE = (
     SCRIPT_ROOT / "Lifecycle" / "LifecycleShutdownService.cs"
 )
@@ -85,6 +88,9 @@ MEDIAPIPE_HAND_LANDMARKER_MODEL = (
 )
 MEDIAPIPE_UNITY_PACKAGE = (
     ROOT / "unity" / "ArSpike" / "Packages" / "com.github.homuler.mediapipe-0.16.3.tgz"
+)
+ANDROID_LIBCXX_SHARED = (
+    UNITY_ROOT / "Plugins" / "Android" / "arm64-v8a" / "libc++_shared.so"
 )
 ROOM_SETTING_CLIENT = (
     SCRIPT_ROOT / "Backend" / "AppRoomSettingClient.cs"
@@ -948,14 +954,22 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "getAvailableCommunicationDevices" in android_route_java
     assert "requestAudioFocus" in android_route_java
     assert "preference_changed_cached" in android_route_java
+    assert "Always enter observe/media mode on initialize" in android_route_java
+    assert "MicrophonePublisher will explicitly request routing again" in android_route_java
     assert "boolean canUseBluetooth = hasBluetoothConnectPermission()" in android_route_java
     assert 'if (canUseBluetooth && ("bluetooth".equals(preference) || "auto".equals(preference)))' in android_route_java
     assert "hasBluetoothOutputType(getDevices(AudioManager.GET_DEVICES_OUTPUTS))" in android_route_java
     assert "shouldKeepMediaModeForOutputBluetooth" in android_route_java
+    assert "shouldKeepMediaModeForDefaultCapture" in android_route_java
+    assert '"auto".equals(preference)' in android_route_java
+    assert '"system_default".equals(preference)' in android_route_java
+    assert '"phone_mic".equals(preference)' in android_route_java
     assert "communication_mode_kept_media_bluetooth_output" in android_route_java
     assert "communication_mode_kept_media_phone_output" in android_route_java
     assert "mediaBluetoothReason(reason)" in android_route_java
     assert "mediaPhoneReason(reason)" in android_route_java
+    assert "mediaModeReason(\"communication_mode\")" in android_route_java
+    assert "setSpeakerphoneOn(false)" in android_route_java
     assert 'keepMediaMode(mediaBluetoothReason(reason), "normal_bt_output")' in android_route_java
     assert 'keepMediaMode(mediaPhoneReason(reason), "normal_phone_output")' in android_route_java
     assert 'reasonPrefix + "_bluetooth_rejected"' in android_route_java
@@ -1311,10 +1325,19 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "android_audio_record_primary" in mic
     assert "Unity MicrophoneSource can locally" in mic
     assert "emit AudioRead frames while the remote room still receives no" in mic
+    assert "RtcAudioSource.DefaultSampleRate = (uint)targetRate" in mic
     assert "private void OnApplicationFocus(bool hasFocus)" in mic
+    assert "ShortExceptionMessage" in mic
     assert "focus_resume" in mic
     assert "focus_resume_during_publish" in mic
     assert "Android may keep the LiveKit room alive while resetting" in mic
+    android_pcm_source = (
+        SCRIPT_ROOT / "LiveKit" / "AndroidPcmMicrophoneSource.cs"
+    ).read_text(encoding="utf-8")
+    assert "RtcAudioSourceType.AudioSourceCustom" in android_pcm_source
+    assert "RtcAudioSourceType.AudioSourceMicrophone" not in android_pcm_source
+    assert "_native.RequestCommunicationMode(false);" in route_manager
+    assert "stale communication-device pin" in route_manager
     assert "_forceAndroidAudioRecordVoiceCommunicationNextPublish" in mic
     assert "ShouldPromoteSilentAndroidAudioRecordToVoiceCommunication" in mic
     assert "android_audio_record_voice_communication_after_zero_peak" in mic
@@ -1461,7 +1484,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "cameraModeController?.SetModeLocal" in menu_controller
     assert "cameraModeController?.MarkHttpPending(nextMode)" in menu_controller
     assert "cameraModeController?.MarkHttpResult(mode, true)" in menu_controller
-    assert "cameraModeController?.MarkHttpResult(_cameraMode, false" in menu_controller
+    assert "cameraModeController?.MarkHttpResult(mode, false" in menu_controller
     assert "FormalCameraModeController _subscribedCameraModeController" in menu_controller
     assert "ResolveCameraModeController" in menu_controller
     assert "SyncCameraModeSubscription" in menu_controller
@@ -1484,7 +1507,9 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "cameraModeController?.SetModeLocal(nextMode)" not in camera_cycle_block
     assert camera_cycle_block.index("cameraModeController?.MarkHttpPending(nextMode)") < camera_cycle_block.index("StartCoroutine(ApplyCameraModeHttp(nextMode))")
     assert "Camera HTTP pending " in camera_cycle_block
-    assert camera_cycle_block.index("if (!string.IsNullOrWhiteSpace(_pendingCameraMode))") < camera_cycle_block.index("string nextMode = NextCameraMode(_cameraMode)")
+    assert camera_cycle_block.index("if (!string.IsNullOrWhiteSpace(_pendingCameraMode)") < camera_cycle_block.index("string nextMode = NextCameraMode(_cameraMode)")
+    assert "string controllerPendingMode = cameraModeController != null ? cameraModeController.PendingMode : \"\"" in camera_cycle_block
+    assert "|| !string.IsNullOrWhiteSpace(controllerPendingMode)" in camera_cycle_block
     assert "cameraModeController?.MarkPhotoCaptureStatus" in menu_controller
     assert "BBoxVisualToolController bboxVisualToolController" in menu_controller
     assert "MagnifierVisualToolController magnifierVisualToolController" in menu_controller
@@ -1616,6 +1641,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "public event Action<string> OnModeApplyPending" in camera_mode_controller
     assert "public event Action<string> OnModeApplySucceeded" in camera_mode_controller
     assert "public event Action<string, string> OnModeApplyFailed" in camera_mode_controller
+    assert "public bool HasPendingHttpRequest => _modeApplyCoroutine != null || !string.IsNullOrWhiteSpace(_pendingMode)" in camera_mode_controller
     assert "OnModeApplyPending?.Invoke(_pendingMode)" in camera_mode_controller
     assert "OnModeApplySucceeded?.Invoke(normalized)" in camera_mode_controller
     assert "OnModeApplyFailed?.Invoke(normalized, error ?? \"\")" in camera_mode_controller
@@ -1626,7 +1652,15 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
         camera_mode_controller.index("public void MarkHttpPending")
     ]
     assert "SetModeLocal(normalized)" not in camera_mode_apply_block
-    assert camera_mode_apply_block.index("if (_modeApplyCoroutine != null)") < camera_mode_apply_block.index("MarkHttpPending(normalized)")
+    assert "if (HasPendingHttpRequest)" in camera_mode_apply_block
+    assert camera_mode_apply_block.index("if (HasPendingHttpRequest)") < camera_mode_apply_block.index("MarkHttpPending(normalized)")
+    camera_mode_http_block = camera_mode_controller[
+        camera_mode_controller.index("private IEnumerator ApplyModeHttp"):
+        camera_mode_controller.index("public void MarkPhotoCaptureStatus")
+    ]
+    assert 'MarkHttpResult(mode, false, "home_menu_client_missing")' in camera_mode_http_block
+    assert "MarkHttpResult(mode, false, result.Error)" in camera_mode_http_block
+    assert "MarkHttpResult(previousMode, false" not in camera_mode_http_block
     camera_mark_pending_block = camera_mode_controller[
         camera_mode_controller.index("public void MarkHttpPending"):
         camera_mode_controller.index("public void MarkHttpResult")
@@ -1700,6 +1734,8 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert '"resize_update"' in visual_packet
     assert '"confirm"' in visual_packet
     assert '"explicit_send"' in visual_packet
+    assert "public const string Hover" not in visual_packet
+    assert "public const string SettingsOpen" not in visual_packet
     assert '"screen_normalized"' in visual_packet
     assert '"unity:formal_app"' in visual_packet
     assert '"c4"' not in visual_packet
@@ -1751,8 +1787,14 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "ScreenDeltaToNormalizedTopLeft" in visual_base
     assert "EnsureEventSystemForDevCanvas" in visual_base
     assert "using UnityEngine.InputSystem.UI" in visual_base
-    assert "current.GetComponent<StandaloneInputModule>()" in visual_base
-    assert "current.gameObject.AddComponent<InputSystemUIInputModule>()" in visual_base
+    ensure_event_system_block = visual_base[
+        visual_base.index("protected static void EnsureEventSystemForDevCanvas"):
+        visual_base.index("protected static Vector2 ScreenToNormalizedTopLeft")
+    ]
+    assert "if (EventSystem.current != null) return;" in ensure_event_system_block
+    assert "current.GetComponent<StandaloneInputModule>()" not in ensure_event_system_block
+    assert "current.gameObject.AddComponent<InputSystemUIInputModule>()" not in ensure_event_system_block
+    assert "Destroy(legacy)" not in ensure_event_system_block
     assert "eventSystem.AddComponent<InputSystemUIInputModule>()" in visual_base
     assert "UpdateLocalRegion" in visual_base
     update_region_block = visual_base[
@@ -1760,21 +1802,56 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
         visual_base.index("public virtual string Lock")
     ]
     assert update_region_block.index("if (IsLocked)") < update_region_block.index("CurrentRegion = region.Clamped()")
+    assert "string phase = NormalizeUpdatePhase(updatePhase)" in update_region_block
+    assert "bool openedFromClosed = !IsOpen" in update_region_block
+    assert "return EmitPhase(VisualToolPhases.PreviewStart, PreviewDeliveryPreference)" in update_region_block
+    assert update_region_block.index("return EmitPhase(VisualToolPhases.PreviewStart, PreviewDeliveryPreference)") < update_region_block.index("if (allowLowFrequencyUpdateEvents")
+    assert "return EmitPhase(phase, PreviewDeliveryPreference)" in update_region_block
+    assert 'return SetStatus(ToolKind + "_local_" + phase, true)' in update_region_block
     assert "DwellTick" in visual_base
     assert "ConfirmWithRenderedAsset" in visual_base
     assert "ApplyStablePhaseLocalState(VisualToolPhases.Confirm)" in visual_base
     assert "_interactionGeneration = 1" in visual_base
+    assert "_semanticSequence = 1" in visual_base
     assert "BeginNewInteractionGeneration()" in visual_base
+    assert "BeginSemanticSequence()" in visual_base
+    assert "IsOlderSemanticCompletion" in visual_base
     assert "InvalidatePendingSemanticWork()" in visual_base
     assert "IsStaleInteraction" in visual_base
     assert "ShouldIgnoreStaleCompletion" in visual_base
     assert "SetStaleSemanticStatus" in visual_base
+    assert "OnPreviewOpened()" in visual_base
+    assert "OnStableInteractionApplied" in visual_base
+    assert "OnStableInteractionReleased" in visual_base
+    assert "OnToolClosed" in visual_base
+    assert "_screenRegionAssetOverlayHideDepth" in visual_base
+    assert "BeginScreenRegionAssetOverlayHide" in visual_base
+    assert "EndScreenRegionAssetOverlayHide" in visual_base
+    assert "SetOverlayVisibleForScreenRegionAsset(true)" in visual_base
+    unlock_block = visual_base[
+        visual_base.index("public virtual string Unlock"):
+        visual_base.index("public virtual string DwellTick")
+    ]
+    assert unlock_block.index("IsLocked = false") < unlock_block.index("OnStableInteractionReleased")
+    confirm_block = visual_base[
+        visual_base.index("public virtual string Confirm()"):
+        visual_base.index("public virtual string ExplicitSend()")
+    ]
+    assert "ApplyStablePhaseLocalState(VisualToolPhases.Confirm)" in confirm_block
+    assert "IsLocked = true" not in confirm_block
+    explicit_block = visual_base[
+        visual_base.index("public virtual string ExplicitSend()"):
+        visual_base.index("public virtual string ConfirmWithRenderedAsset")
+    ]
+    assert "ApplyStablePhaseLocalState(VisualToolPhases.ExplicitSend)" in explicit_block
+    assert "IsLocked = true" not in explicit_block
     rendered_asset_block = visual_base[
         visual_base.index("public virtual string ConfirmWithRenderedAsset"):
         visual_base.index("public virtual string ConfirmWithScreenRegionAsset")
     ]
     assert rendered_asset_block.index("ApplyStablePhaseLocalState(VisualToolPhases.Confirm)") < rendered_asset_block.index("if (!RuntimeHttpEnabled || !sendHttpLifecycleEvents)")
-    assert "UploadAssetThenLifecycle(packet, imageBytes, mimeType, _interactionGeneration)" in rendered_asset_block
+    assert "long semanticSequence = BeginSemanticSequence()" in rendered_asset_block
+    assert "UploadAssetThenLifecycle(packet, imageBytes, mimeType, _interactionGeneration, semanticSequence)" in rendered_asset_block
     cancel_release_block = visual_base[
         visual_base.index("public virtual string Cancel"):
         visual_base.index("protected VisualToolLifecyclePacket BuildPacket")
@@ -1792,22 +1869,40 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
         visual_base.index("protected string QueueScreenRegionAssetLifecycle"):
         visual_base.index("protected struct PointerSample")
     ]
+    assert "if (!IsAllowedLifecyclePhase(phase))" in screen_asset_block
     assert screen_asset_block.index("ApplyStablePhaseLocalState(phase)") < screen_asset_block.index("if (!enableScreenRegionAssetCapture)")
     assert screen_asset_block.index("if (!enableScreenRegionAssetCapture)") < screen_asset_block.index("EmitLifecycleWithAssetStatus")
-    assert "CaptureScreenRegionAssetThenLifecycle(packet, _interactionGeneration)" in screen_asset_block
+    assert "long semanticSequence = BeginSemanticSequence()" in screen_asset_block
+    assert "CaptureScreenRegionAssetThenLifecycle(packet, _interactionGeneration, semanticSequence)" in screen_asset_block
     send_lifecycle_block = visual_base[
         visual_base.index("private IEnumerator SendLifecycle"):
         visual_base.index("private IEnumerator UploadAssetThenLifecycle")
     ]
     assert "int generation" in send_lifecycle_block
     assert "allowStaleCompletion" in send_lifecycle_block
+    assert "long semanticSequence" in send_lifecycle_block
     assert "ShouldIgnoreStaleCompletion(packet, generation)" in send_lifecycle_block
+    assert "IsOlderSemanticCompletion(semanticSequence)" in send_lifecycle_block
+    assert send_lifecycle_block.index("if (!IsOlderSemanticCompletion(semanticSequence))") < send_lifecycle_block.index("SetStaleSemanticStatus(packet)")
+    emit_phase_block = visual_base[
+        visual_base.index("protected string EmitPhase"):
+        visual_base.index("protected string SetStatus")
+    ]
+    assert "if (!IsAllowedLifecyclePhase(phase))" in emit_phase_block
+    assert "RejectUnsupportedLifecyclePhase(phase)" in emit_phase_block
+    assert "NormalizeUpdatePhase" in visual_base
+    assert "IsAllowedLifecyclePhase" in visual_base
+    assert "RejectUnsupportedLifecyclePhase" in visual_base
     upload_lifecycle_block = visual_base[
         visual_base.index("private IEnumerator UploadAssetThenLifecycle"):
         visual_base.index("private IEnumerator CaptureScreenRegionAssetThenLifecycle")
     ]
+    assert upload_lifecycle_block.index("if (IsOlderSemanticCompletion(semanticSequence))") < upload_lifecycle_block.index("if (IsStaleInteraction(generation))")
     assert upload_lifecycle_block.index("IsStaleInteraction(generation)") < upload_lifecycle_block.index("httpClient.UploadAsset")
+    assert upload_lifecycle_block.index("httpClient.UploadAsset") < upload_lifecycle_block.index("if (IsOlderSemanticCompletion(semanticSequence))", upload_lifecycle_block.index("httpClient.UploadAsset"))
     assert "SetStaleSemanticStatus(packet)" in upload_lifecycle_block
+    assert "IsOlderSemanticCompletion(semanticSequence)" in upload_lifecycle_block
+    assert upload_lifecycle_block.index("if (!IsOlderSemanticCompletion(semanticSequence))") < upload_lifecycle_block.index("SetStaleSemanticStatus(packet)")
     assert "string.Equals(phase, VisualToolPhases.ExplicitSend" in visual_base
     assert "CaptureScreenRegionAssetThenLifecycle" in visual_base
     assert "WaitForEndOfFrame" in visual_base
@@ -1815,12 +1910,20 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "EncodeToPNG" in visual_base
     assert "SetOverlayVisibleForScreenRegionAsset" in visual_base
     assert "hideOverlayDuringAssetCapture" in visual_base
+    capture_overlay_block = visual_base[
+        visual_base.index("private IEnumerator CaptureScreenRegionAssetThenLifecycle"):
+        visual_base.index("private bool EnsureOpenForStablePhase")
+    ]
+    assert capture_overlay_block.index("if (IsOlderSemanticCompletion(semanticSequence))") < capture_overlay_block.index("bool restoreOverlay = BeginScreenRegionAssetOverlayHide()")
+    assert "bool restoreOverlay = BeginScreenRegionAssetOverlayHide()" in capture_overlay_block
+    assert "EndScreenRegionAssetOverlayHide(restoreOverlay)" in capture_overlay_block
+    assert capture_overlay_block.index("yield return new WaitForEndOfFrame()") < capture_overlay_block.index("EndScreenRegionAssetOverlayHide(restoreOverlay)")
     assert "sendLifecycleIfAssetCaptureFails" in visual_base
     assert "sendLifecycleIfAssetUploadFails" in visual_base
     assert "AddMetaField" in visual_base
     assert '"asset_status"' in visual_base
     assert "asset_upload_failed" in visual_base
-    assert "yield return SendLifecycle(packet, generation, allowStaleCompletion: false)" in visual_base
+    assert "yield return SendLifecycle(packet, generation, allowStaleCompletion: false, semanticSequence: semanticSequence)" in visual_base
     assert "UploadAssetThenLifecycle" in visual_base
     assert "LastAssetStatus" in visual_base
     assert "IntentWorkspace" not in visual_base
@@ -1850,6 +1953,11 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "emitLockOnPointerRelease" in bbox_visual
     assert "ConfirmAttentionHint => 1.0f" in bbox_visual
     assert "bbox_locked_unlock_required" in bbox_visual
+    assert "protected override void OnPreviewOpened()" in bbox_visual
+    assert "protected override void OnStableInteractionApplied" in bbox_visual
+    assert "protected override void OnStableInteractionReleased" in bbox_visual
+    assert "protected override void OnToolClosed" in bbox_visual
+    assert "EndLocalPointerGesture()" in bbox_visual
     bbox_update_overlay_block = bbox_visual[
         bbox_visual.index("protected override void UpdateOverlay"):
         bbox_visual.index("private void EnsureOverlay")
@@ -1885,6 +1993,12 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "VisualToolDeliveryPreferences.IntentOnly" in mag_visual
     assert "VisualToolDeliveryPreferences.C3" in mag_visual
     assert "mag_locked_unlock_required" in mag_visual
+    assert "protected override void OnPreviewOpened()" in mag_visual
+    assert "protected override void OnStableInteractionApplied" in mag_visual
+    assert "protected override void OnStableInteractionReleased" in mag_visual
+    assert "protected override void OnToolClosed" in mag_visual
+    assert "ResetLocalInspectionTiming" in mag_visual
+    assert "public override string BeginPreview" not in mag_visual
     mag_update_overlay_block = mag_visual[
         mag_visual.index("protected override void UpdateOverlay"):
         mag_visual.index("private void EnsureOverlay")
@@ -2135,10 +2249,13 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "SetAnimatorBoolIfExists" in model_remote
     assert "AnimatorControllerParameterType.Bool" in model_remote
     assert "localFromCenter" in model_remote
-    assert "WalkOnPlane(input, deltaTime)" in model_remote
+    assert "ResolveCameraRelativePlanarInput(input)" in model_remote
+    assert "WalkOnPlane(worldInput, deltaTime)" in model_remote
+    assert "ResolveMotionFacingRotation(planar, animationDriver)" in model_remote
+    assert "new Vector3(input.x, 0f, input.y)" in model_remote
     assert "ApplyCapability(\"spine_walk\"" in model_remote
     assert "ParrotRegistry.Instance.Resolve(modelId)" in model_remote
-    assert "fallback_translate" in model_remote
+    assert "fallback_translate:camera_relative" in model_remote
     assert "CallBrainRpc" not in model_remote
     assert "PerformRpc" not in model_remote
     assert "AppV1SmokeReferenceUiController" not in model_remote
@@ -2175,7 +2292,13 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "FormalXrHandDiagnosticsCanvas" in xrhand_perch
     assert "FormalXrHandDiagnosticsText" in xrhand_perch
     assert "BuildDiagnosticText" in xrhand_perch
-    assert "ShortDiagnostic(gestureDebug)" in xrhand_perch
+    assert "diagnosticPanelTopRightOffset" in xrhand_perch
+    assert "TextAnchor.UpperLeft" in xrhand_perch
+    assert "HorizontalWrapMode.Wrap" in xrhand_perch
+    assert "VerticalWrapMode.Truncate" in xrhand_perch
+    assert "resizeTextForBestFit = true" in xrhand_perch
+    assert "native missing: libc++_shared.so" in xrhand_perch
+    assert "CompactDiagnostic(tracking)" in xrhand_perch
     assert "handGestureSource.LastGestureDebugSummary" in xrhand_perch
     assert "_mountedPerch.LastPerchLifecycle" in xrhand_perch
     assert "_mountedPerch.LastPerchStatus" in xrhand_perch
@@ -2221,17 +2344,23 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "TryAcquireLatestCpuImage" in mediapipe_provider
     assert "TryDetectForVideo" in mediapipe_provider
     assert "bindRetryIntervalSeconds" in mediapipe_provider
+    assert 'CallStatic("loadLibrary", "c++_shared")' in mediapipe_provider
     assert 'CallStatic("loadLibrary", "mediapipe_jni")' in mediapipe_provider
     assert "PreloadAndroidNativeLibraries" in mediapipe_provider
     assert "mediapipe_native_unavailable" in mediapipe_provider
     assert "_landmarkerInitBlocked" in mediapipe_provider
     assert "assumedIndexFingerLengthMeters" in mediapipe_provider
     assert "EstimateDepth" in mediapipe_provider
+    assert "compensateCameraImageAspectToScreen" in mediapipe_provider
+    assert "ToScreenViewport" in mediapipe_provider
+    assert "LogPoseDiagnosticIfNeeded" in mediapipe_provider
     assert "Resources.Load<TextAsset>(resourcesModelPath)" in mediapipe_provider
     assert '"MediaPipe/hand_landmarker"' in mediapipe_provider
     assert "cpu_image_first_frame" in mediapipe_provider
     assert "first_hand depth=" in mediapipe_provider
     assert 'PublishLost("mediapipe_detect_failed:" + ShortReason(ex.Message))' in mediapipe_provider
+    assert ANDROID_LIBCXX_SHARED.exists()
+    assert ANDROID_LIBCXX_SHARED.stat().st_size > 1_000_000
 
     assert "TryRequestReturnToView" in perch_on_hand
     assert "HandGestureSource _subscribedHandTracker" in perch_on_hand
@@ -2243,6 +2372,14 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "GetComponentInChildren<AnimationDriver>(true)" in perch_on_hand
     assert "_subscribedHandTracker.OnGestureSnapshot -= OnGesture" in perch_on_hand
     assert "ResolveFootAnchor(force: true)" in perch_on_hand
+    assert "ResolveMotionFacingRotation(pose.Rotation)" in perch_on_hand
+    assert "ResolveMotionFacingRotation(tangent.normalized, Vector3.up)" in perch_on_hand
+    assert "ResolveMotionForward(targetRotation)" in perch_on_hand
+    assert "animDriver.ResolveMotionFacingRotation(visualForwardRotation)" in perch_on_hand
+    assert "ScaleLocalOffsetForCurrentRoot(_resolvedFootAnchorLocalOffset)" in perch_on_hand
+    assert "StabilizeCameraCvRootPosition(pose, rootPosition)" in perch_on_hand
+    assert "cameraCvAllowedBelowStartMeters" in perch_on_hand
+    assert "camera_cv_target" in perch_on_hand
     assert "tracking_lost_hold_on_hand" in perch_on_hand
     assert 'ReportBodyState("flying")' in perch_on_hand
     assert 'ReportBodyState("perched_on_hand")' in perch_on_hand
@@ -2388,8 +2525,14 @@ def test_parrot_joystick_uses_existing_parrot_controller_boundary() -> None:
     assert "public void ReturnToPlaneWalkHome()" in controller
     assert "does not create a Brain" in controller
     assert "BodyState.Walk" in controller
+    assert "motionFacingYawOffsetDegrees = 180f" in controller
+    assert "ResolveMotionFacingRotation(direction, Vector3.up)" in controller
 
     assert "WalkOnPlane(Vector2 input" in animation
+    assert "motionFacingYawOffsetDegrees = 180f" in animation
+    assert "ResolveMotionFacingRotation(Vector3 direction, Vector3 up)" in animation
+    assert "ResolveMotionFacingRotation(Quaternion visualForwardRotation)" in animation
+    assert "ResolveMotionForward(Quaternion rootRotation)" in animation
     assert "UpdateWalk()" in animation
     assert "case BodyState.Walk" in animation
     assert 'case "walking"' in animation
@@ -2626,6 +2769,28 @@ def test_arspike_mint_client_uses_gitignored_runtime_config_without_logging_secr
     assert config["orchestratorUrl"].startswith("http://YOUR_CASTLE_IP:")
     assert config["orchestratorSecret"] == "dev-only-same-as-PARROT_ORCH_SECRET"
     assert config["photoUploadUrl"].endswith(":7889")
+
+
+def test_android_microphone_permission_uses_runtime_permission_gate() -> None:
+    permission_util = ANDROID_RUNTIME_PERMISSIONS.read_text(encoding="utf-8")
+    startup = STARTUP_FLOW.read_text(encoding="utf-8")
+    publisher = (SCRIPT_ROOT / "LiveKit" / "MicrophonePublisher.cs").read_text(encoding="utf-8")
+    route_manager = (SCRIPT_ROOT / "LiveKit" / "AudioRouteManager.cs").read_text(encoding="utf-8")
+    android_pcm = (SCRIPT_ROOT / "LiveKit" / "AndroidPcmMicrophoneSource.cs").read_text(encoding="utf-8")
+
+    assert 'RecordAudio = "android.permission.RECORD_AUDIO"' in permission_util
+    assert "UnityEngine.Android.Permission.RequestUserPermission(RecordAudio, callbacks)" in permission_util
+    assert "UnityEngine.Android.Permission.HasUserAuthorizedPermission(RecordAudio)" in permission_util
+    assert "MicrophonePermissionState" in permission_util
+    assert "|| Application.HasUserAuthorization(UserAuthorization.Microphone)" not in permission_util
+    assert "RequestMicrophonePermission" in startup
+    assert "HasMicrophonePermission" in startup
+    assert "MicrophonePermissionState" in startup
+    assert "RequestMicrophonePermission" in publisher
+    assert "HasMicrophonePermission" in publisher
+    assert "MicrophonePermissionState" in publisher
+    assert "HasMicrophonePermission" in route_manager
+    assert "HasMicrophonePermission" in android_pcm
 
 
 def test_unity_project_has_no_legacy_duplicate_app_roots() -> None:

@@ -34,9 +34,10 @@ def test_calendar_change_request_stages_hitl_draft_without_dispatch() -> None:
     )
 
     assert "Calendar change draft staged" in text
-    assert "suggested T3 task=calendar_create" in text
-    assert "fast T1 direct execution or T3 Nanobot dispatch" in text
+    assert "suggested background task=calendar_create only if T3 execution is chosen" in text
+    assert "T1 direct Google Calendar API execution or T3 Nanobot dispatch" in text
     assert "No Google Calendar write" in text
+    assert "No Google Calendar write, no Nanobot dispatch" in text
 
     from parrot.brain.intent_workspace import get_intent_workspace
 
@@ -45,11 +46,15 @@ def test_calendar_change_request_stages_hitl_draft_without_dispatch() -> None:
     payload = json.loads(get_intent_workspace().fetch_payload(drafts[0].ref_id))
     draft_payload = payload["payload"]
     assert draft_payload["schema"] == "goslo_calendar_change_request_v1"
+    assert draft_payload["decision_layer"] == "Intent"
+    assert draft_payload["draft_is_execution_request"] is False
     assert draft_payload["requires_hitl"] is True
-    assert draft_payload["task_type_after_approval"] == "calendar_create"
     assert draft_payload["suggested_nanobot_task_type"] == "calendar_create"
+    assert draft_payload["execution_route_owner"] == "GOSLO/Plan after Plan/HITL approval"
     assert "T1_DIRECT_GOOGLE_CALENDAR_API" in draft_payload["allowed_execution_routes_after_approval"]
     assert "T3_NANOBOT_SCHEDULER_TASK" in draft_payload["allowed_execution_routes_after_approval"]
+    assert "nanobot_dispatch" in draft_payload["blocked_side_effects"]
+    assert "Calendar task SSOT" in draft_payload["memory_sync_policy"]
     assert draft_payload["details"]["location"] == "Library"
 
 

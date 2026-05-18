@@ -110,6 +110,24 @@ public final class AndroidAudioRouteManager {
             audioManager = (AudioManager) activity.getSystemService(Context.AUDIO_SERVICE);
         }
 
+        if (audioManager != null) {
+            // Unity can recreate the C# facade while this Java singleton keeps
+            // its process state. Always enter observe/media mode on initialize;
+            // MicrophonePublisher will explicitly request routing again only
+            // for the local mic publish attempt.
+            clearCommunicationDevice();
+            try {
+                audioManager.setSpeakerphoneOn(false);
+            } catch (Throwable ignored) {
+            }
+            abandonAudioFocus();
+            try {
+                audioManager.setMode(AudioManager.MODE_NORMAL);
+            } catch (Throwable ignored) {
+            }
+            mode = "normal";
+        }
+
         registerCallbacks();
         sendSnapshot("initialize");
     }
@@ -186,6 +204,10 @@ public final class AndroidAudioRouteManager {
 
         try {
             if (enabled) {
+                if (shouldKeepMediaModeForDefaultCapture()) {
+                    keepMediaMode(mediaModeReason("communication_mode"), mediaModeName());
+                    return;
+                }
                 if (shouldKeepMediaModeForOutputBluetooth()) {
                     keepMediaMode(COMMUNICATION_MODE_MEDIA_BLUETOOTH_REASON, "normal_bt_output");
                     return;
@@ -200,6 +222,10 @@ public final class AndroidAudioRouteManager {
                 applyPreferredCommunicationDevice();
             } else {
                 clearCommunicationDevice();
+                try {
+                    audioManager.setSpeakerphoneOn(false);
+                } catch (Throwable ignored) {
+                }
                 abandonAudioFocus();
                 audioManager.setMode(AudioManager.MODE_NORMAL);
                 mode = "normal";
@@ -224,6 +250,11 @@ public final class AndroidAudioRouteManager {
             return false;
         }
         try {
+            if (shouldKeepMediaModeForDefaultCapture()) {
+                keepMediaMode(mediaModeReason(reasonPrefix), mediaModeName());
+                return true;
+            }
+
             if ("system_default".equals(preference)) {
                 if (shouldKeepMediaModeForOutputBluetooth()) {
                     keepMediaMode(mediaBluetoothReason(reasonPrefix), "normal_bt_output");
@@ -283,6 +314,12 @@ public final class AndroidAudioRouteManager {
         unregisterCallbacks();
 
         clearCommunicationDevice();
+        if (audioManager != null) {
+            try {
+                audioManager.setSpeakerphoneOn(false);
+            } catch (Throwable ignored) {
+            }
+        }
         abandonAudioFocus();
         if (audioManager != null) {
             try {
@@ -332,6 +369,10 @@ public final class AndroidAudioRouteManager {
             // speaker/SCO communication device. Re-apply the current preference
             // while voice capture is active; system_default remains a clear
             // operation so A2DP output is not stolen by speaker fallback.
+            if (shouldKeepMediaModeForDefaultCapture()) {
+                keepMediaMode(mediaModeReason(reason), mediaModeName());
+                return;
+            }
             if (shouldKeepMediaModeForOutputBluetooth()) {
                 keepMediaMode(mediaBluetoothReason(reason), "normal_bt_output");
                 return;
@@ -491,6 +532,18 @@ public final class AndroidAudioRouteManager {
         return bluetoothVoice == null;
     }
 
+    private boolean shouldKeepMediaModeForDefaultCapture() {
+        // Formal App default is stable phone/default capture. Do not enter
+        // Android's communication mode for auto/system-default/phone-mic
+        // capture: on iQOO/OEM Android this can route downlink to speaker or
+        // earpiece and can gate the near-end microphone before Unity/LiveKit
+        // receives any PCM frames. A future explicit Bluetooth-mic setting may
+        // opt into SCO/communication mode; auto should stay media-safe.
+        return "auto".equals(preference)
+            || "system_default".equals(preference)
+            || "phone_mic".equals(preference);
+    }
+
     private boolean shouldKeepMediaModeForPhoneOutput() {
         if (audioManager == null || Build.VERSION.SDK_INT < 31) return false;
         if (!"auto".equals(preference) && !"system_default".equals(preference)) return false;
@@ -520,6 +573,18 @@ public final class AndroidAudioRouteManager {
         return (reasonPrefix == null ? "route" : reasonPrefix) + MEDIA_PHONE_REASON_SUFFIX;
     }
 
+    private String mediaModeReason(String reasonPrefix) {
+        return hasBluetoothOutputType(getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+            ? mediaBluetoothReason(reasonPrefix)
+            : mediaPhoneReason(reasonPrefix);
+    }
+
+    private String mediaModeName() {
+        return hasBluetoothOutputType(getDevices(AudioManager.GET_DEVICES_OUTPUTS))
+            ? "normal_bt_output"
+            : "normal_phone_output";
+    }
+
     private void keepMediaMode(String reason, String nextMode) {
         if (audioManager == null) return;
         try {
@@ -532,6 +597,10 @@ public final class AndroidAudioRouteManager {
             // AudioRecord / phone MIC without reconnecting the LiveKit room or
             // Brain job.
             clearCommunicationDevice();
+            try {
+                audioManager.setSpeakerphoneOn(false);
+            } catch (Throwable ignored) {
+            }
             abandonAudioFocus();
             audioManager.setMode(AudioManager.MODE_NORMAL);
             mode = nextMode == null || nextMode.length() == 0 ? "normal_media_output" : nextMode;

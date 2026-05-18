@@ -51,7 +51,8 @@ async def calendar_context(
     L2-B event pointers later. If the read does not finish inside the thinking
     budget, it dispatches a T3 `calendar_fetch` task and returns the task id so
     GOSLO can continue speaking. For Calendar write actions, create a Calendar
-    change draft and require Plan/HITL approval before nanobot runs.
+    change draft and require Plan/HITL approval; after approval, GOSLO/Plan
+    chooses T1 direct Calendar API execution or T3 Nanobot/Scheduler execution.
 
     Args:
         intent: Why GOSLO is checking the calendar in this conversational turn.
@@ -329,8 +330,9 @@ async def _dispatch_calendar_fetch_task(
         "sync_policy": "preview",
         "instructions": (
             "Fetch read-only Google Calendar context for GOSLO. Return a compact "
-            "receipt; do not create, patch, delete, import to L1.5, write L2-B, "
-            "or write Graphiti unless a later Plan/HITL gate explicitly asks."
+        "receipt; do not create, patch, delete, import to L1.5, write L2-B, "
+            "or write Graphiti. Later writes require Plan/HITL approval and a "
+            "separate T1 direct or T3 Nanobot execution route."
         ),
     }
     return await dispatcher("calendar_fetch", params, "high")
@@ -394,8 +396,9 @@ def format_calendar_context(
     )
     lines.append(
         "No Google Calendar write, no L1.5 import, no L2-B mutation, and no "
-        "Graphiti write occurred. Use Plan/HITL plus nanobot for create, patch, "
-        "or delete."
+        "Graphiti write occurred. Use calendar_change_request for Intent/Plan "
+        "drafting, then an approved T1 direct or T3 Nanobot route for create, "
+        "patch, or delete."
     )
     return "\n".join(lines)
 

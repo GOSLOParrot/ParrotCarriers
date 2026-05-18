@@ -61,6 +61,7 @@ namespace ParrotApp.Hands
         [SerializeField] private XRCpuImage.Transformation cpuImageTransformation = XRCpuImage.Transformation.None;
         [SerializeField] private int imageRotationDegrees = 0;
         [SerializeField] private bool mirrorNormalizedX = false;
+        [SerializeField] private bool compensateCameraImageAspectToScreen = true;
 
         [Header("MediaPipe")]
         [SerializeField] private TextAsset handLandmarkerModel;
@@ -82,6 +83,7 @@ namespace ParrotApp.Hands
         [SerializeField] private bool faceMainCameraWhenPossible = true;
         [SerializeField] private float handLostAfterSeconds = 0.45f;
         [SerializeField] private bool diagnosticLog = true;
+        [SerializeField] private float poseDiagnosticIntervalSeconds = 1.0f;
 
         private HandLandmarker _landmarker;
         private HandLandmarkerResult _result;
@@ -100,6 +102,7 @@ namespace ParrotApp.Hands
         private bool _landmarkerInitBlocked;
         private bool _nativeUnavailableLogged;
         private string _lastLoggedStatus = "";
+        private float _nextPoseDiagnosticAt;
 #if UNITY_ANDROID && !UNITY_EDITOR
         private static bool _androidNativeLibrariesPreloaded;
 #endif
@@ -418,6 +421,7 @@ namespace ParrotApp.Hands
                     + " confidence=" + perchPose.Confidence.ToString("0.00")
                     + " right=" + isRightHand);
             }
+            LogPoseDiagnosticIfNeeded(cam, normalized[IndexPip], depth, perchPose);
 
             OnHandPose?.Invoke(new CameraHandPoseFrame
             {
@@ -514,11 +518,60 @@ namespace ParrotApp.Hands
 
         private Vector3 ToWorld(TaskNormalizedLandmark landmark, float depth, Camera cam)
         {
-            float x = mirrorNormalizedX ? 1f - landmark.x : landmark.x;
-            float viewportY = 1f - landmark.y;
-            Ray ray = cam.ViewportPointToRay(new Vector3(Mathf.Clamp01(x), Mathf.Clamp01(viewportY), 0f));
+            Vector2 viewport = ToScreenViewport(landmark, cam);
+            Ray ray = cam.ViewportPointToRay(new Vector3(viewport.x, viewport.y, 0f));
             float localDepth = Mathf.Clamp(-landmark.z * landmarkZScale, -0.08f, 0.08f);
             return ray.GetPoint(Mathf.Clamp(depth + localDepth, minDepthMeters, maxDepthMeters));
+        }
+
+        private Vector2 ToScreenViewport(TaskNormalizedLandmark landmark, Camera cam)
+        {
+            float x = mirrorNormalizedX ? 1f - landmark.x : landmark.x;
+            Vector2 imageViewport = new Vector2(x, 1f - landmark.y);
+            if (!compensateCameraImageAspectToScreen || cam == null || _inputDimensions.x <= 0 || _inputDimensions.y <= 0)
+            {
+                return new Vector2(Mathf.Clamp01(imageViewport.x), Mathf.Clamp01(imageViewport.y));
+            }
+
+            float imageAspect = _inputDimensions.x / (float)Mathf.Max(1, _inputDimensions.y);
+            float screenAspect = Mathf.Max(0.01f, cam.aspect);
+            Vector2 screenViewport = imageViewport;
+            if (screenAspect > imageAspect)
+            {
+                float visibleImageHeight = Mathf.Clamp01(imageAspect / screenAspect);
+                float cropY = (1f - visibleImageHeight) * 0.5f;
+                screenViewport.y = visibleImageHeight > 0.0001f
+                    ? (imageViewport.y - cropY) / visibleImageHeight
+                    : imageViewport.y;
+            }
+            else
+            {
+                float visibleImageWidth = Mathf.Clamp01(screenAspect / imageAspect);
+                float cropX = (1f - visibleImageWidth) * 0.5f;
+                screenViewport.x = visibleImageWidth > 0.0001f
+                    ? (imageViewport.x - cropX) / visibleImageWidth
+                    : imageViewport.x;
+            }
+            return new Vector2(Mathf.Clamp01(screenViewport.x), Mathf.Clamp01(screenViewport.y));
+        }
+
+        private void LogPoseDiagnosticIfNeeded(
+            Camera cam,
+            TaskNormalizedLandmark referenceLandmark,
+            float depth,
+            HandPerchPose perchPose)
+        {
+            if (!diagnosticLog || Time.unscaledTime < _nextPoseDiagnosticAt)
+                return;
+            _nextPoseDiagnosticAt = Time.unscaledTime + Mathf.Max(0.1f, poseDiagnosticIntervalSeconds);
+            Vector2 viewport = ToScreenViewport(referenceLandmark, cam);
+            Vector3 camLocal = cam != null ? cam.transform.InverseTransformPoint(perchPose.Position) : Vector3.zero;
+            DebugLog(
+                "pose depth=" + depth.ToString("0.00")
+                + " viewport=" + viewport.x.ToString("0.00") + "," + viewport.y.ToString("0.00")
+                + " world=" + FormatVec3(perchPose.Position)
+                + " cam_local=" + FormatVec3(camLocal)
+                + " confidence=" + perchPose.Confidence.ToString("0.00"));
         }
 
         private bool TryBuildPerchPose(
@@ -636,6 +689,7 @@ namespace ParrotApp.Hands
 
             using (var systemClass = new AndroidJavaClass("java.lang.System"))
             {
+                systemClass.CallStatic("loadLibrary", "c++_shared");
                 systemClass.CallStatic("loadLibrary", "opencv_java4");
                 systemClass.CallStatic("loadLibrary", "mediapipe_jni");
             }
@@ -660,6 +714,11 @@ namespace ParrotApp.Hands
         }
 
 #if UNITY_MEDIAPIPE && UNITY_AR_FOUNDATION
+        private static string FormatVec3(Vector3 value)
+        {
+            return value.x.ToString("0.00") + "," + value.y.ToString("0.00") + "," + value.z.ToString("0.00");
+        }
+
         private void SetStatus(string status)
         {
             LastStatus = string.IsNullOrWhiteSpace(status) ? "unknown" : status;

@@ -93,6 +93,10 @@ def _create_manifest() -> ModuleManifest:
 
 
 server = AgentServer()
+_BRAIN_AGENT_NAME = (
+    os.getenv("PARROT_BRAIN_AGENT_NAME", "")
+    or os.getenv("PARROT_MINT_AGENT_NAME", "")
+).strip()
 
 
 # region pipeline selection (Sprint 4 Phase 5+ Line B, 2026-05-04)
@@ -1213,15 +1217,15 @@ async def _handle_scheduler_message(
     )
 
 
-@server.rtc_session()
+@server.rtc_session(agent_name=_BRAIN_AGENT_NAME)
 async def brain_entrypoint(ctx: agents.JobContext):
     """Handle LiveKit's default room jobs and boot the Bus + Gemini session.
 
-    Unity currently creates normal room-join tokens and does not request a
-    named agent. Keep this handler unnamed so LiveKit's JT_ROOM dispatch with
-    agentName="" can reach Brain. If future clients request named agents,
-    route that explicitly at the token/room-config layer instead of changing
-    this default handler.
+    With no PARROT_BRAIN_AGENT_NAME, this remains the legacy unnamed worker so
+    older RoomConfiguration(agents=[{}]) tokens keep working. Server-side
+    CreateDispatch should set PARROT_BRAIN_AGENT_NAME / PARROT_MINT_AGENT_NAME
+    to the same explicit value; LiveKit's explicit dispatch API is designed for
+    named agents and can create duplicate room jobs when used unnamed.
     """
     config = ParrotConfig()
     # region agent log

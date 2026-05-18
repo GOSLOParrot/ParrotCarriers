@@ -1,0 +1,156 @@
+# Isolated laptop Castle stack for Unity phone comparisons.
+#
+# Use infra/laptop-castle.ps1 so this stack never reads the repo .env and never
+# writes the shared data/ runtime_config. Compose project name:
+# parrot-laptop-castle.
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:16379:6379"
+    volumes:
+      - laptop_redis_data:/data
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports:
+      - "127.0.0.1:16380:6379"
+    volumes:
+      - laptop_falkordb_data:/var/lib/falkordb/data
+    environment:
+      - REDIS_ARGS=--maxmemory 512mb --maxmemory-policy noeviction --appendonly yes --appendfsync everysec --save 60 1
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:v1.10.1
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:17880:7880"
+      - "0.0.0.0:17881:7881"
+      - "51000-51200:51000-51200/udp"
+    volumes:
+      - ../codex_workspace/local_runtime/castle_laptop/livekit-laptop.yaml:/etc/livekit.yaml:ro
+    command: --config /etc/livekit.yaml
+    restart: unless-stopped
+
+  token-mint:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.brain
+      target: base
+    command: python -m parrot.castle.token_mint
+    env_file:
+      - ./laptop.env.local
+    environment:
+      - PARROT_MINT_PORT=7888
+      - PARROT_MINT_LIVEKIT_INTERNAL_URL=ws://livekit:7880
+      - PARROT_MINT_AGENT_NAME=parrot-brain
+    ports:
+      - "0.0.0.0:17888:7888"
+    depends_on:
+      redis:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    restart: unless-stopped
+
+  app-monitor:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.brain
+      target: full
+    command: python src/scripts/start_app_monitor_server.py --host 0.0.0.0 --port 8790
+    env_file:
+      - ./laptop.env.local
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379/0
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - PARROT_RUNTIME_CONFIG_PATH=/app/data/runtime_config.json
+      - PARROT_BRAIN_AGENT_NAME=parrot-brain
+      - PARROT_MINT_AGENT_NAME=parrot-brain
+    ports:
+      - "0.0.0.0:18790:8790"
+    volumes:
+      - ../codex_workspace/local_runtime/castle_laptop/data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      falkordb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.brain
+      target: base
+    command: python -m parrot.castle.orchestrator
+    env_file:
+      - ./laptop.env.local
+    environment:
+      - PARROT_ORCH_HOST=0.0.0.0
+      - PARROT_ORCH_PORT=7890
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379/0
+      - PARROT_RUNTIME_CONFIG_PATH=/app/data/runtime_config.json
+    ports:
+      - "0.0.0.0:17890:7890"
+    volumes:
+      - ../codex_workspace/local_runtime/castle_laptop/data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  brain:
+    profiles: ["brain", "all"]
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.brain
+      target: full
+    command: python -m parrot.brain.agent dev --no-reload
+    env_file:
+      - ./laptop.env.local
+    environment:
+      - LIVEKIT_URL=ws://livekit:7880
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379/0
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - PARROT_RUNTIME_CONFIG_PATH=/app/data/runtime_config.json
+    volumes:
+      - ../codex_workspace/local_runtime/castle_laptop/data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      falkordb:
+        condition: service_healthy
+      livekit:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  laptop_redis_data:
+  laptop_falkordb_data:

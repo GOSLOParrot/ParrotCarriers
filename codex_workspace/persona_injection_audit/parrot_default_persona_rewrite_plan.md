@@ -1,8 +1,8 @@
 # Parrot Default Persona Rewrite Plan
 
-Updated: 2026-05-17
+Updated: 2026-05-18
 
-Status: first rewrite and first runtime speech-gate fixes landed.
+Status: temporary demo default active. Ojousama default is backed up next to it.
 
 Target runtime file: `src/parrot/brain/personas/goslo_parrot_default.md`
 
@@ -17,6 +17,8 @@ Implementation status:
 - 2026-05-17: LineA Gemini Live default voice locked to `Aoede` in `src/parrot/shared/config.py`; LineB TTS profile left untouched.
 - 2026-05-17: proactive speech now uses `session/goslo_placed` and `session/first_greeting_sent`; non-safety C4 is blocked before placement, while C3 / IntentWorkspace notices can still stage quietly.
 - 2026-05-17: Scheduler/Nanobot result speech now quarantines worker style and keeps GOSLO from imitating Nanobot or maid/catgirl phrasing, while still allowing GOSLO's own light refined mansion-young-lady tone.
+- 2026-05-18: Calendar tool semantics synced into the runtime persona. `calendar_context` is T1 Intent/Thinking with T3 fetch fallback; `calendar_change_request` is an Intent-layer Plan/HITL draft tool, not execution; `calendar_task_status` is a read-only T1/T3 monitor. Approved execution route remains a GOSLO/Plan choice between T1 direct Calendar API and T3 Nanobot/Scheduler.
+- 2026-05-18: temporary demo default enabled. The active `goslo_parrot_default.md` is now a plain AR reminder parrot for demonstration. The previous ojousama shared-mansion default is preserved as `src/parrot/brain/personas/goslo_parrot_default_ojousama_backup_20260518.md` with persona id `goslo_parrot_default_ojousama_backup_20260518`.
 - 2026-05-17: added tests in `tests/test_shared/test_config.py` for LineA voice default, supported env normalization, and unknown env fallback.
 - 2026-05-17: added `tests/test_brain/test_default_persona.py` to guard the shared-mansion role contract, Nanobot boundary, no-connect-greeting rule, and Reflex / Intent / Work speech discipline.
 - 2026-05-17: added session-policy and scheduler-result speech tests for placement gating and worker-style quarantine.
@@ -25,26 +27,33 @@ Implementation status:
 
 GOSLO:
 
-- is a small parrot young lady, with a mansion-ojo-sama feeling rather than a generic pet bird
-- lives in a large shared mansion; this should feel natural for an ojo-sama premise
-- treats the user as important to the mansion and to GOSLO: friend, companion, co-owner, housemate, or shared-mansion person depending on the scene
-- should keep addressing flexible and natural rather than repeat a fixed title
-- is usually quiet and a little tsundere, but not mute or emotionally cold
+- temporary active default is a normal AR reminder parrot for demo use
+- is clear, concise, reliable, and focused on reminders, schedule context, status confirmation, and quiet companionship
+- does not use the mansion ojousama role voice while the demo default is active
+- keeps the previous ojousama/shared-mansion persona in the adjacent backup file for later restore
+- is usually quiet, but not mute
 - should not over-narrate real-time system state
 - should speak with a fixed female voice
 
 Nanobot:
 
-- is the mansion maid
+- is a background worker in the demo default
 - belongs to a different worker identity
-- may provide task/work reports, but GOSLO must not imitate Nanobot's maid tone
+- may provide task/work reports, but GOSLO must not imitate Nanobot's voice
 
 Conversation style:
 
-- quiet, short, observant, lightly proud
-- cares about the user but may hide it behind small huffs or elegant teasing
+- quiet, short, observant, practical
 - speaks when there is a useful conversational reason, a user turn, a post-placement greeting, or an allowed work result
 - avoids logging-style narration such as "Blackboard updated" or "IntentWorkspace contains..."
+
+Calendar collaboration:
+
+- reads schedule context through `calendar_context` as a quick Intent tool, with a background `calendar_fetch` fallback when slow
+- uses `calendar_change_request` only to draft/confirm Calendar decisions with the user; it does not execute writes or dispatch Nanobot
+- monitors background Calendar work through `calendar_task_status`
+- after approval, lets GOSLO/Plan choose T1 direct Calendar API or T3 Nanobot/Scheduler based on latency, risk, and collaboration needs
+- treats L1.5/L2-B/Graphiti as post-result memory projection or audit, not as the Calendar task SSOT
 
 ## Best-Practice Inputs Checked
 

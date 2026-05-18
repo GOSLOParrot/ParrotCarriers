@@ -1,6 +1,6 @@
 # Design Workspace Active Context
 
-> Updated: 2026-05-17
+> Updated: 2026-05-18
 > Code repo / Codex project route: `D:\GOSLOParrot\ParrotCarriers`
 > App design workspace: `D:\GOSLOParrot\ParrotCarriers\codex_workspace\design_workspace`
 > Clean status report: `.cursor/memory/architecture/Interface/app_v1_current_status_and_test_report_20260510.md`
@@ -8,6 +8,16 @@
 ## Current Truth
 
 The formal App frontend is **not complete**.
+
+2026-05-18 local comparison route: a gitignored laptop Castle sandbox is now
+available for iQOO / LiveKit latency and audio-route comparison without touching
+public ECS state. Use `infra/laptop-castle.ps1` and
+`infra/docker-compose.laptop.yml`; generated data/config live under
+`codex_workspace/local_runtime/castle_laptop/`. Base services are verified on
+`192.168.2.4` with `17888` token-mint health, `17890` orchestrator health, and
+`18790` RoomSetting returning 200. Brain is intentionally not started until a
+local `GOOGLE_API_KEY` is added. This is a local lab route, not
+production/TLS/TURN proof.
 
 2026-05-13 parallel work route:
 
@@ -19,6 +29,8 @@ The formal App frontend is **not complete**.
   `codex_workspace/design_workspace/tasks/APP_WEB_CHAT_START_PROMPTS_20260513.md`.
 - Unity App business interfaces:
   `codex_workspace/design_workspace/backend_interface_map/app/`.
+- Unity App laptop Castle sandbox for local iQOO / LiveKit comparison:
+  `codex_workspace/design_workspace/backend_interface_map/app/local_laptop_castle_app_env_20260518.md`.
 - Unity App transport/interface taxonomy:
   `codex_workspace/design_workspace/backend_interface_map/app/unity_app_transport_interface_taxonomy_20260515.md`.
 - Unity App LiveKit/ECP/SVA data-flow map:
@@ -215,6 +227,20 @@ The formal App frontend is **not complete**.
   `normal_bt_output` instead of leaving the App in a half-communication state.
   This is still a local mic-track rebuild path only; iQOO proof must show
   non-zero `frames/ch/readSr/peak` before calling voice stable.
+- 2026-05-18 iQOO screenshot showed the previous guard was still too narrow:
+  `pref auto` could enter `mode communication` and pin output to `earpiece`
+  while `Uplink not_published stage=microphone_start_exception frames=0`. The
+  formal Android route owner now treats `auto`, `system_default`, and
+  `phone_mic` as media-mode capture preferences unconditionally: they keep
+  `MODE_NORMAL` and only rebuild the local mic source/track. Explicit Bluetooth
+  mic remains future/manual. The bridge also clears stale speakerphone pins
+  with `setSpeakerphoneOn(false)` and surfaces the full native start exception
+  message in HUD.
+  Follow-up hardening: the Java route owner and C# `AudioRouteManager` now force
+  observe/media mode on initialize, so a process-level Android singleton cannot
+  carry a stale communication-device pin into the next START. The App-owned
+  Android `AudioRecord` source uses LiveKit's custom PCM source contract and
+  sets both Unity-SDK sample-rate defaults before constructing each retry source.
   Temporary native route overrides are session-local and are restored to the
   durable user preference when communication mode is disabled, so one failed
   mic recovery cannot poison the next START.
@@ -840,6 +866,32 @@ These are useful test evidence only. They must not be used as App completion evi
   `uplink_watchdog_zero_peak_unity_microphone` and forces the next local-track
   rebuild into Android AudioRecord attempts. HUD `nz=` is the age since source
   start or latest non-zero peak.
+- 2026-05-18 iQOO audio permission blocker: ADB showed the installed formal
+  package had `RECORD_AUDIO: ignore` / `granted=false`, so no user speech could
+  be captured regardless of LiveKit/Brain health. Formal App code now uses
+  `ParrotApp.Core.AndroidRuntimePermissions` for microphone permission gates in
+  startup, `MicrophonePublisher`, route diagnostics, and Android AudioRecord
+  startup. The follow-up bug was that the helper still OR'ed Android's runtime
+  permission with Unity's legacy microphone flag, which can fake-grant on
+  targetSdk 36. Android players now trust only
+  `Permission.HasUserAuthorizedPermission(RECORD_AUDIO)` and log the legacy
+  state as diagnostics. The connected phone was manually granted mic permission
+  for the current smoke, but the package must be rebuilt to prove the new
+  visible runtime gate.
+- 2026-05-18 iQOO post-rebuild evidence: formal App now gets past the old
+  zero-uplink blocker. LogCat shows LiveKit connected, Brain agent audio
+  subscribed, AR video first frame published, and the App-owned
+  `android_audio_record` source started with `audioReadFrames=1`; screenshot
+  HUD showed a non-zero local peak. Later, Android `dumpsys audio` records the
+  same recorder as `silenced` and then `release`, near a `ShortBackground`
+  lifecycle pause. Current diagnosis is therefore "uplink starts, then Android
+  lifecycle/audio policy can silence/release it", not "Mint/Brain/LiveKit never
+  connected". `MicrophonePublisher` focus-resume handling now probes first and
+  only rebuilds the local mic track when frames are stale or recording stopped;
+  it no longer republishes during `_publishInProgress`. Next proof must use a
+  fresh foreground LogCat run plus separate app-switch, Bluetooth, and network
+  tests. The 3-5s response delay still needs end-to-end voice latency telemetry
+  before blaming ECS size or LiveKit.
 
 ## App Frontend Longline
 

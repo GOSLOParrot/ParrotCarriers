@@ -37,6 +37,16 @@ namespace ParrotApp.Hands
         [SerializeField] private float perchedFollowLerp = 18f;
         [SerializeField] private float perchedRotateLerp = 14f;
 
+        [Header("Camera CV safety")]
+        [SerializeField] private bool stabilizeCameraCvRootPose = true;
+        [SerializeField] private float cameraCvMinForwardMeters = 0.18f;
+        [SerializeField] private float cameraCvMaxForwardMeters = 1.25f;
+        [SerializeField] private float cameraCvMaxLateralMeters = 0.75f;
+        [SerializeField] private float cameraCvMaxVerticalMeters = 0.55f;
+        [SerializeField] private float cameraCvAllowedBelowStartMeters = 0.06f;
+        [SerializeField] private float cameraCvMaxDistanceFromStartMeters = 1.45f;
+        [SerializeField] private bool logCameraCvTargets = true;
+
         [Header("Return")]
         [SerializeField] private float returnSpeed = 1.8f;
         [SerializeField] private float returnArrivalDistance = 0.05f;
@@ -69,6 +79,7 @@ namespace ParrotApp.Hands
         private string _lastGestureEvent = HandGestureSource.GestureNone;
         private float _perchStartedAt;
         private float _nextReferenceRetryAt;
+        private float _nextCameraCvTargetLogAt;
 
         public enum PerchState
         {
@@ -388,7 +399,7 @@ namespace ParrotApp.Hands
             transform.position = next;
             Quaternion desired = targetRoot.rotation;
             if (tangent.sqrMagnitude > 0.0001f && t < 0.85f)
-                desired = Quaternion.LookRotation(tangent.normalized, Vector3.up);
+                desired = ResolveMotionFacingRotation(tangent.normalized, Vector3.up);
             transform.rotation = Quaternion.Slerp(transform.rotation, desired, flightRotationLerp * Time.deltaTime);
             UpdateTrail();
 
@@ -487,8 +498,62 @@ namespace ParrotApp.Hands
         private Pose ResolveRootPose(HandPerchPose pose)
         {
             ResolveFootAnchor();
-            Vector3 rootPosition = pose.ToRootPosition(_resolvedFootAnchorLocalOffset, rootClearanceLocalOffset);
-            return new Pose(rootPosition, pose.Rotation);
+            Quaternion rootRotation = ResolveMotionFacingRotation(pose.Rotation);
+            Vector3 footOffset = ScaleLocalOffsetForCurrentRoot(_resolvedFootAnchorLocalOffset);
+            Vector3 clearanceOffset = ScaleLocalOffsetForCurrentRoot(rootClearanceLocalOffset);
+            Vector3 rootPosition = pose.Position
+                                   - (rootRotation * footOffset)
+                                   + (rootRotation * clearanceOffset);
+            rootPosition = StabilizeCameraCvRootPosition(pose, rootPosition);
+            return new Pose(rootPosition, rootRotation);
+        }
+
+        private Vector3 ScaleLocalOffsetForCurrentRoot(Vector3 localOffset)
+        {
+            Vector3 scale = transform.lossyScale;
+            return new Vector3(localOffset.x * scale.x, localOffset.y * scale.y, localOffset.z * scale.z);
+        }
+
+        private Vector3 StabilizeCameraCvRootPosition(HandPerchPose pose, Vector3 rootPosition)
+        {
+            if (!stabilizeCameraCvRootPose
+                || !string.Equals(pose.Source, "mediapipe_camera", StringComparison.OrdinalIgnoreCase))
+            {
+                return rootPosition;
+            }
+
+            Vector3 original = rootPosition;
+            Vector3 stabilized = rootPosition;
+            Camera cam = Camera.main;
+            if (cam != null)
+            {
+                Vector3 local = cam.transform.InverseTransformPoint(stabilized);
+                local.z = Mathf.Clamp(
+                    local.z,
+                    Mathf.Max(0.05f, cameraCvMinForwardMeters),
+                    Mathf.Max(cameraCvMinForwardMeters + 0.05f, cameraCvMaxForwardMeters));
+                local.x = Mathf.Clamp(
+                    local.x,
+                    -Mathf.Max(0.05f, cameraCvMaxLateralMeters),
+                    Mathf.Max(0.05f, cameraCvMaxLateralMeters));
+                local.y = Mathf.Clamp(
+                    local.y,
+                    -Mathf.Max(0.05f, cameraCvMaxVerticalMeters),
+                    Mathf.Max(0.05f, cameraCvMaxVerticalMeters));
+                stabilized = cam.transform.TransformPoint(local);
+            }
+
+            float minY = _returnPosition.y - Mathf.Max(0f, cameraCvAllowedBelowStartMeters);
+            if (stabilized.y < minY)
+                stabilized.y = minY;
+
+            float maxDistance = Mathf.Max(0.2f, cameraCvMaxDistanceFromStartMeters);
+            Vector3 fromStart = stabilized - _returnPosition;
+            if (fromStart.sqrMagnitude > maxDistance * maxDistance)
+                stabilized = _returnPosition + fromStart.normalized * maxDistance;
+
+            LogCameraCvTargetIfNeeded(pose.Position, original, stabilized);
+            return stabilized;
         }
 
         private Vector3 ResolveReturnToViewPosition()
@@ -510,7 +575,7 @@ namespace ParrotApp.Hands
             if (cam == null) return _returnRotation;
             Vector3 towardCamera = cam.transform.position - returnPosition;
             if (towardCamera.sqrMagnitude < 0.0001f) return _returnRotation;
-            return Quaternion.LookRotation(towardCamera.normalized, Vector3.up);
+            return ResolveMotionFacingRotation(towardCamera.normalized, Vector3.up);
         }
 
         private void PlanRouteToCurrentHandPose(bool force)
@@ -526,10 +591,12 @@ namespace ParrotApp.Hands
             Vector3 start = transform.position;
             Vector3 toTarget = targetPosition - start;
             float distance = Mathf.Max(0.01f, toTarget.magnitude);
-            Vector3 dir = toTarget.sqrMagnitude > 0.0001f ? toTarget.normalized : transform.forward;
+            Vector3 dir = toTarget.sqrMagnitude > 0.0001f
+                ? toTarget.normalized
+                : ResolveMotionForward(transform.rotation);
             float height = Mathf.Clamp(distance * flightArcHeightPerMeter, flightArcMinHeight, flightArcMaxHeight);
 
-            Vector3 approach = targetRotation * Vector3.forward;
+            Vector3 approach = ResolveMotionForward(targetRotation);
             if (approach.sqrMagnitude < 0.0001f) approach = -dir;
             approach.Normalize();
 
@@ -551,7 +618,7 @@ namespace ParrotApp.Hands
         private void UpdateRouteEnd(Vector3 targetPosition, Quaternion targetRotation)
         {
             _route.P3 = targetPosition;
-            Vector3 approach = targetRotation * Vector3.forward;
+            Vector3 approach = ResolveMotionForward(targetRotation);
             if (approach.sqrMagnitude < 0.0001f)
                 approach = (_route.P3 - _route.P2).normalized;
             _route.P2 = targetPosition - approach.normalized * landingApproachDistance
@@ -612,6 +679,49 @@ namespace ParrotApp.Hands
             completion.TrySetResult(ok
                 ? PerchRpcResult.Completed()
                 : PerchRpcResult.Rejected(string.IsNullOrWhiteSpace(reason) ? EcpAckJson.ReasonRejected : reason));
+        }
+
+        private Quaternion ResolveMotionFacingRotation(Vector3 direction, Vector3 up)
+        {
+            if (animDriver != null)
+                return animDriver.ResolveMotionFacingRotation(direction, up);
+            if (direction.sqrMagnitude < 0.0001f)
+                return transform.rotation;
+            Vector3 safeUp = up.sqrMagnitude > 0.0001f ? up.normalized : Vector3.up;
+            return Quaternion.LookRotation(direction.normalized, safeUp);
+        }
+
+        private Quaternion ResolveMotionFacingRotation(Quaternion visualForwardRotation)
+        {
+            return animDriver != null
+                ? animDriver.ResolveMotionFacingRotation(visualForwardRotation)
+                : visualForwardRotation;
+        }
+
+        private Vector3 ResolveMotionForward(Quaternion rootRotation)
+        {
+            return animDriver != null
+                ? animDriver.ResolveMotionForward(rootRotation)
+                : rootRotation * Vector3.forward;
+        }
+
+        private void LogCameraCvTargetIfNeeded(Vector3 perchPosition, Vector3 originalRoot, Vector3 stabilizedRoot)
+        {
+            if (!logCameraCvTargets || Time.unscaledTime < _nextCameraCvTargetLogAt)
+                return;
+            _nextCameraCvTargetLogAt = Time.unscaledTime + 1.0f;
+            Debug.Log(
+                "[PerchOnHand] camera_cv_target perch=" + FormatVec3(perchPosition)
+                + " root_raw=" + FormatVec3(originalRoot)
+                + " root_safe=" + FormatVec3(stabilizedRoot)
+                + " start=" + FormatVec3(_returnPosition)
+                + " foot_local=" + FormatVec3(_resolvedFootAnchorLocalOffset)
+                + " scale=" + FormatVec3(transform.lossyScale));
+        }
+
+        private static string FormatVec3(Vector3 value)
+        {
+            return value.x.ToString("0.00") + "," + value.y.ToString("0.00") + "," + value.z.ToString("0.00");
         }
 
         private void PublishGestureEventIfChanged(HandGestureSource.HandGestureSnapshot snap)
