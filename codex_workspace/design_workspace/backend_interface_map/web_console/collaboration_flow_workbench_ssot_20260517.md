@@ -1028,6 +1028,23 @@ Current ECS Google Calendar/OAuth state:
   Google Calendar) is not yet a confirmed Web Console operator route and must
   stay separate from memory import.
 
+Nanobot Google Workspace OAuth split-brain fix:
+
+- `scripts/google_oauth.py` now records the authenticated Google account email
+  in `credentials_python.json` and also writes the native
+  `@aaronsb/google-workspace-mcp` state shape: `accounts.json` plus
+  `credentials/{email_slug}.json`.
+- `src/scripts/start_nanobot_worker.py` now migrates stale `google-workspace`
+  MCP config to the version-locked `google_workspace` server from the nanobot
+  template, injects Google OAuth client metadata from the mounted credential
+  when available, and bridges Parrot's `.nanobot/google-workspace-credentials`
+  export into MCP native account files on worker startup.
+- This bug looked like an expired nanobot OAuth token, but the verified failure
+  mode was different: Python/Web direct reads could refresh the token, while
+  the Node MCP process logged `startup: no accounts configured` because it
+  searches `~/.config/google-workspace-mcp/accounts.json` and
+  `~/.local/share/google-workspace-mcp/credentials/{email_slug}.json`.
+
 Current L1.5/Calendar source state:
 
 - Calendar can be fetched and imported through the L1.5 source-import path as
