@@ -701,6 +701,13 @@ namespace ParrotApp.UI
 
             if (modelPlacementController.HasPlacedModel)
             {
+                if (!modelPlacementController.HasSelectedModel)
+                {
+                    SetStatus("Tap parrot to select before clearing", warning: false);
+                    RefreshQuickActions();
+                    return;
+                }
+
                 modelPlacementController.ClearPlacedModel();
                 SetStatus("Model cleared", warning: true);
                 RefreshQuickActions();
@@ -723,7 +730,7 @@ namespace ParrotApp.UI
             }
 
             string status = homeToolController.CapturePhoto();
-            bool photoOk = !status.Contains("missing") && !status.Contains("waits") && !status.Contains("not_phone_safe");
+            bool photoOk = ToolStatusLooksOk(status) && !status.Contains("waits");
             ResolveCameraModeController();
             if (photoOk)
                 cameraModeController?.SetModeLocal("capture_locked");
@@ -970,11 +977,13 @@ namespace ParrotApp.UI
             if (_modelPlacementActionButton != null)
                 _modelPlacementActionButton.interactable = modelPlacementController != null
                                                            && (modelPlacementController.HasPlacedModel
-                                                               || modelPlacementController.CanPlaceNow);
+                                                               ? modelPlacementController.HasSelectedModel
+                                                               : modelPlacementController.CanPlaceNow);
             if (_demoPlacementButton != null)
                 _demoPlacementButton.interactable = modelPlacementController != null
                                                     && (modelPlacementController.HasPlacedModel
-                                                        || modelPlacementController.CanPlaceNow);
+                                                        ? modelPlacementController.HasSelectedModel
+                                                        : modelPlacementController.CanPlaceNow);
             if (_audioRouteActionButton != null) _audioRouteActionButton.interactable = canSend && !audioPending;
             bool simpleMicMode = microphonePublisher != null && microphonePublisher.SimplePhoneMicMode;
             if (_micDeviceNextButton != null) _micDeviceNextButton.interactable = microphonePublisher != null && !simpleMicMode;
@@ -988,10 +997,12 @@ namespace ParrotApp.UI
                 _handActionText.text = "HAND\n" + PendingOrCurrentLabel(_xrHandMode, _pendingXrHandMode, "off");
             if (_modelPlacementActionText != null)
                 _modelPlacementActionText.text =
-                    (modelPlacementController != null && modelPlacementController.HasPlacedModel ? "CLEAR\n" : "PLACE\n")
+                    ModelPlacementActionLabel()
                     + PlacementShortLabel();
             if (_demoPlacementButtonText != null)
-                _demoPlacementButtonText.text = modelPlacementController != null && modelPlacementController.HasPlacedModel
+                _demoPlacementButtonText.text = modelPlacementController != null
+                                                && modelPlacementController.HasPlacedModel
+                                                && modelPlacementController.HasSelectedModel
                     ? "CLEAR"
                     : "";
             if (_audioRouteActionText != null)
@@ -1004,6 +1015,8 @@ namespace ParrotApp.UI
                 _settingsAudioRouteText.text =
                     "Audio  " + ShortLabel(AudioRouteStatusLabel(), "unknown", 64)
                     + "\nMic    " + ShortLabel(MicrophoneStatusLabel(), "unknown", 64);
+
+            ApplyDrawerState();
         }
 
         private string PlacementShortLabel()
@@ -1011,10 +1024,22 @@ namespace ParrotApp.UI
             if (modelPlacementController == null)
                 modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
             if (modelPlacementController == null) return "owner?";
-            if (modelPlacementController.HasPlacedModel) return "done";
+            if (modelPlacementController.HasPlacedModel)
+                return modelPlacementController.HasSelectedModel ? "selected" : "select";
             if (startupFlow == null || !startupFlow.MainUiReadyOnce) return "wait";
             if (!modelPlacementController.CanPlaceNow) return "gates";
             return "ready";
+        }
+
+        private string ModelPlacementActionLabel()
+        {
+            if (modelPlacementController == null)
+                modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
+            if (modelPlacementController == null)
+                return "PLACE\n";
+            if (!modelPlacementController.HasPlacedModel)
+                return "PLACE\n";
+            return modelPlacementController.HasSelectedModel ? "CLEAR\n" : "SELECT\n";
         }
 
         private void SetStatus(string text, bool warning)
@@ -1052,7 +1077,18 @@ namespace ParrotApp.UI
             if (_toolbarRoot != null)
                 _toolbarRoot.gameObject.SetActive(_visible);
             if (_demoPlacementButtonRoot != null)
-                _demoPlacementButtonRoot.gameObject.SetActive(_visible);
+                _demoPlacementButtonRoot.gameObject.SetActive(_visible && ShouldShowDemoPlacementButton());
+        }
+
+        private bool ShouldShowDemoPlacementButton()
+        {
+            if (modelPlacementController == null)
+                modelPlacementController = FindObjectOfType<FormalModelPlacementController>();
+            if (modelPlacementController == null)
+                return false;
+            if (!modelPlacementController.HasPlacedModel)
+                return modelPlacementController.CanPlaceNow;
+            return modelPlacementController.HasSelectedModel;
         }
 
         private void SetVisible(bool visible)
@@ -1387,7 +1423,9 @@ namespace ParrotApp.UI
             return !status.Contains("missing")
                    && !status.Contains("failed")
                    && !status.Contains("dev_flag_off")
-                   && !status.Contains("not_phone_safe");
+                   && !status.Contains("not_phone_safe")
+                   && !status.Contains("rejected")
+                   && !status.Contains("too_large");
         }
 
         private string AudioRouteStatusLabel()

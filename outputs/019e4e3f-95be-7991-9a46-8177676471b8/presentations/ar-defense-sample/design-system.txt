@@ -1,0 +1,32 @@
+slide size: 1280x720
+background:
+- warm white #F7F8FA
+- white content planes #FFFFFF
+- no dark sci-fi background, no neon, no large gradient field
+typography:
+- Chinese/UI sans: Microsoft YaHei UI preferred, fallback Aptos / Inter
+- claim titles: 42-54px, dark ink, confident but not marketing
+- body: 20-28px, short lines only
+color palette:
+- ink #111827
+- secondary text #475569
+- muted text #64748B
+- blue accent #2563EB
+- cyan accent #0891B2
+- soft line #D8DEE8
+- pale blue #EAF2FF
+- pale cyan #E8F7FA
+diagram grammar:
+- use native editable shapes
+- few arrows; direction only when it encodes flow
+- labels are larger than decorative objects
+- no invented official product logos
+layout families for sample:
+- slide 1: editorial cover with right-side system motif
+- slide 2: comparison proof with simple transformation arrow
+- slide 3: input-source map with five lanes and a convergence rail
+banned motifs:
+- black neon AR cyberpunk
+- dense thesis flowcharts
+- repeated rounded SaaS cards
+- decorative orbs / bokeh / pseudo logos

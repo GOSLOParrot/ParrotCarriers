@@ -1,0 +1,72 @@
+{
+  "photo_object": {
+    "bbox": {
+      "coordinate_space": "normalized",
+      "height": 0.4,
+      "width": 0.3,
+      "x": 0.1,
+      "y": 0.2
+    },
+    "candidate_object_uuid": "",
+    "category_guess": "",
+    "confidence": 0.0,
+    "created_at_ms": 1779669721934,
+    "crop_path": "",
+    "edge_uuid": "",
+    "evidence_id": "ev_a1b5771e653c44e0",
+    "label_guess": "blue mug",
+    "meta": {
+      "packet_meta": {},
+      "schema": "vision_photo_object_draft_v1",
+      "source_ref_id": "ref_019e5c94e34e_f16b92a5",
+      "source_surface": "app_ar_overlay"
+    },
+    "object_ref_id": "pobj_14e9836361104ecf8cfdbcf7f40466c3",
+    "photo_uuid": "",
+    "review_status": "needs_crop",
+    "sample_draft_id": "os_47374074fd0c452ca210495608133534",
+    "schema_version": 1,
+    "source": "user_bbox",
+    "source_asset_path": "",
+    "tool_event_id": "vtool_1779669721934_5842d0c8",
+    "tool_id": "bbox_app_1",
+    "tool_kind": "bbox",
+    "updated_at_ms": 1779669721934
+  },
+  "sample": {
+    "bbox": {
+      "coordinate_space": "normalized",
+      "height": 0.4,
+      "width": 0.3,
+      "x": 0.1,
+      "y": 0.2
+    },
+    "category": "",
+    "content_sha256": "",
+    "created_at_ms": 1779669721934,
+    "created_by": "user_bbox",
+    "crop_path": "",
+    "evidence_id": "ev_a1b5771e653c44e0",
+    "label": "blue mug",
+    "meta": {
+      "schema": "vision_object_sample_draft_v1",
+      "source_ref_id": "ref_019e5c94e34e_f16b92a5",
+      "source_tool_event_id": "vtool_1779669721934_5842d0c8",
+      "source_tool_id": "bbox_app_1"
+    },
+    "object_ref_id": "pobj_14e9836361104ecf8cfdbcf7f40466c3",
+    "object_uuid": "",
+    "photo_uuid": "",
+    "quality_flags": [
+      "missing_asset"
+    ],
+    "review_status": "needs_crop",
+    "sample_uuid": "os_47374074fd0c452ca210495608133534",
+    "schema_version": 1,
+    "source_asset_path": "",
+    "updated_at_ms": 1779669721934,
+    "visual_description": ""
+  },
+  "schema_version": 1,
+  "updated_at_ms": 1779669721938
+}

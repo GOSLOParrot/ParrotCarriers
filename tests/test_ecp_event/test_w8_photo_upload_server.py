@@ -315,6 +315,45 @@ def test_upload_locally_dispatches_asset_uploaded_to_existing_photo_node(_isolat
     set_pool_for_test(None)
 
 
+def test_upload_without_preview_repairs_photo_node(_isolated, monkeypatch):
+    """HTTP asset upload must still create a PHOTO node if preview ECP was missed."""
+    import py_trees
+    from fastapi.testclient import TestClient
+
+    from parrot.brain.event_ingest import get_ecp_event_ingest
+    from parrot.brain.intent_workspace import IntentWorkspace, set_intent_workspace_for_test
+    from parrot.dsg.l1_5 import L15Pool, set_pool_for_test
+    from parrot.dsg.l2b_graph import L2BGraph
+
+    py_trees.blackboard.Blackboard.storage = {}
+    py_trees.blackboard.Blackboard.metadata = {}
+    set_intent_workspace_for_test(IntentWorkspace())
+    set_pool_for_test(L15Pool())
+    graph = L2BGraph()
+    monkeypatch.setattr("parrot.dsg.l2b_graph.get_l2b_graph", lambda: graph)
+
+    photo_observer.register(get_ecp_event_ingest())
+    room = _fake_room()
+    attach_ecp_event_publisher(room)
+    resp = TestClient(build_app()).post(
+        "/upload/photo/ph_http_orphan",
+        content=b"asset-without-preview",
+    )
+
+    assert resp.status_code == 200, resp.text
+    node = graph.get_node("ph_http_orphan")
+    assert node is not None
+    assert node.reference_image_path.endswith("ph_http_orphan.jpg")
+    metrics = photo_observer.get_metrics_snapshot()
+    assert metrics["asset_for_unknown_photo_id"] == 1
+    assert metrics["asset_orphan_nodes_repaired"] == 1
+    assert metrics["photo_nodes_upserted"] == 1
+    assert metrics["photo_nodes_updated_with_asset"] == 1
+
+    set_intent_workspace_for_test(None)
+    set_pool_for_test(None)
+
+
 def test_upload_publishes_photo_timebase_metadata(_isolated):
     """HTTP uploads can carry producer sample time without ECP top-level churn."""
     from fastapi.testclient import TestClient

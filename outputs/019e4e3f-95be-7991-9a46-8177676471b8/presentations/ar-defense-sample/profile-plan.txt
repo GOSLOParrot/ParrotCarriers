@@ -1,0 +1,19 @@
+task mode: create
+primary deck-profile: engineering-platform
+required proof objects:
+- cover thesis that frames the project as an AR scene agent, not a generic chatbot
+- problem comparison: traditional assistant vs AR scene agent
+- input-source map that prepares LiveKit/SVA, nanobot, Google Calendar, Obsidian, and CV extensions
+source/asset requirements:
+- use local outline, speech script, and module audit as content sources
+- no external template file is imported; external templates are only used as style inspiration
+brand authenticity constraints:
+- do not fabricate official logos for LiveKit, Google, Obsidian, nanobot, or CV projects
+- use neutral labels and original editable diagram shapes
+profile-specific QA gates:
+- architecture and input labels must stay technically precise
+- avoid generic card-grid sameness
+- keep all text editable in PowerPoint
+known missing inputs:
+- project demo screenshots are not currently available in the sample workspace
+- official screenshots are intentionally not embedded in the first sample

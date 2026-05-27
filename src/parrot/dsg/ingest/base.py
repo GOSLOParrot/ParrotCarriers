@@ -191,6 +191,9 @@ def _copy_obsidian_source_meta(obs: Observation) -> dict[str, Any]:
         "file_mtime",
         "double_link_count",
         "tags",
+        "ref_mode",
+        "context_role",
+        "ascent_channel",
     )
     return {key: obs.meta[key] for key in keys if key in obs.meta}
 

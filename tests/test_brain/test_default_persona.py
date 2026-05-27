@@ -23,6 +23,11 @@ def test_default_goslo_persona_demo_ar_reminder_contract(monkeypatch):
     assert "日程与提醒" in instructions
     assert "不用鸟叫拟声词代替说话" in instructions
     assert "LiveKit 刚连接时不要打招呼" in instructions
+    assert "演示来源通道" in instructions
+    assert "RPC 指令已发送给 Unity" in instructions
+    assert "tool 调用" in instructions
+    assert "Nanobot 返回的结果摘要" in instructions
+    assert "不全文朗读原始邮件、原始文件、JSON 或 task_id" in instructions
     assert "Reflex 层" in instructions
     assert "Intent 层" in instructions
     assert "Work 层" in instructions
@@ -36,6 +41,7 @@ def test_default_goslo_persona_demo_ar_reminder_contract(monkeypatch):
     assert "calendar_change_request" in instructions
     assert "message_check_request" in instructions
     assert "reminder_request" in instructions
+    assert "这是 Nanobot 返回的 Google 邮件结果摘要" in instructions
     assert "laptop_profile_test" in instructions
     assert "它不是执行工具" in instructions
     assert "T1_DIRECT_GOOGLE_CALENDAR_API" in instructions

@@ -1,0 +1,19 @@
+thesis:
+AR 生活助手的核心不是多接几个工具，而是把实时交互、场景上下文、长期记忆和后台任务组织成一条可追踪的数据流。
+
+audience:
+计算机 / 软件工程毕业答辩老师。需要先听懂系统解决什么问题，再看懂架构和核心设计。
+
+one-line arc:
+传统助手缺少现场上下文 -> AR Agent 需要多源输入 -> 系统把这些输入统一到实时通信、记忆和任务协作链路里。
+
+slides:
+1. claim: 这不是聊天机器人，而是面向 AR 场景的生活助手原型。
+   proof object: clean cover with three capability rails and a system-flow motif
+   source: speech script M0
+2. claim: 传统助手的短板不是回答能力，而是缺少场景上下文。
+   proof object: two-column comparison between text/time reminder and scene-aware agent
+   source: outline M0, speech script M0
+3. claim: 场景 Agent 的输入是一组可追踪信号，而不是一条文本。
+   proof object: five input-source lanes converging into Observation / Ref / Task
+   source: outline M1, module audit M1

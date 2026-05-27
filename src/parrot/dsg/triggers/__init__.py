@@ -14,7 +14,7 @@ Legacy triggers (Phase 4):
   - CalendarTrigger: STARTUP + PERIODIC — three-tier Google Calendar reminders
   - SSOTEnrichmentTrigger: EVENT-DRIVEN — enriches new objects from Obsidian/Graphiti
   - SceneContextTrigger: STARTUP + EVENT-DRIVEN — searches similar past scenes
-  - MessageNotificationTrigger: PERIODIC + EVENT-DRIVEN — Gmail important alerts
+  - MessageNotificationTrigger: STARTUP + PERIODIC + EVENT-DRIVEN — Gmail important alerts
 
 DSG-TRIGGER-V2 new triggers (2026-05-06):
   - SceneSwitchTrigger: ON_DEMAND — set_scene → freeze authority bucket + snapshot

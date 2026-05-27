@@ -107,6 +107,7 @@ class RuntimeHumanGate:
     created_at: float = 0.0
     expires_at: float = 0.0
     payload_ref: str = ""
+    payload: dict[str, Any] = field(default_factory=dict)
 
     def as_json(self) -> dict[str, Any]:
         return {
@@ -124,6 +125,7 @@ class RuntimeHumanGate:
             "created_at": self.created_at,
             "expires_at": self.expires_at,
             "payload_ref": self.payload_ref,
+            "payload": dict(self.payload),
         }
 
 

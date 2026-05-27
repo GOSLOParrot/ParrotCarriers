@@ -246,6 +246,16 @@ for the same module-level decision.
   identifiers. Graphiti Episodes are provenance/audit, not the only mutable
   locator store. Future promotion should require a DB-backed RefIndex review
   before high-volume external ref sync.
+  M21 planning continuation adds
+  `web_console/workspace_ref_sync_design_20260527.md` as the active tracking
+  note for IntentWorkspace/nanobot workspace large-file refs. The current
+  recommendation is nanobot + Git-tracked small manifests + RefIndex as
+  locator truth, with Git LFS/git-annex/DVC treated as payload/backend options
+  rather than the UUID authority. The exploratory helper
+  `src/parrot/dsg/workspace_ref_sync.py` is intentionally isolated: it stages a
+  handle, writes IdentityRefIndex, and materializes an L2-B pointer node/edge,
+  but it does not move files, write Graphiti, persist rustworkx indices, or
+  promote a shared App DTO.
 - CORE-009: 2026-05-15 Web implemented the first concrete Memory
   changed-since polling envelope at
   `GET /api/memory/live-state/changes?since=...&limit=...`. Shape is

@@ -1,0 +1,9 @@
+sample slide rhythm:
+1. cover: large title, sparse claim rail, abstract system motif
+2. problem: two-column comparison, one central transition idea
+3. input sources: compact but readable input map, prepares later architecture
+
+macro layout checks:
+- no repeated title + three cards pattern
+- slide 2 and 3 both use structured diagrams, but their geometry differs
+- no real screenshots embedded yet, so the sample judges typography, whitespace, and diagram style

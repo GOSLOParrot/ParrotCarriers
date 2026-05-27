@@ -115,6 +115,127 @@ async def test_legal_transition_chain_to_complete(env) -> None:
     assert plan.state == PlanState.COMPLETE
 
 
+async def test_calendar_write_plan_step_dispatches_approval_metadata(env) -> None:
+    plan = await env["registry"].draft(_proposal(steps=(
+        PlanStepProposal(
+            step_id="calendar-step",
+            title="move tea",
+            expected_tool="calendar_patch",
+            inputs={"calendar_id": "primary", "event_id": "evt_1"},
+        ),
+    )))
+    await env["registry"].submit_for_confirmation(plan.plan_id)
+    await env["registry"].approve(plan.plan_id)
+    await env["registry"].start_executing(plan.plan_id)
+
+    params = env["dispatched"][0]["params"]
+    assert env["dispatched"][0]["task_type"] == "calendar_patch"
+    assert params["result_channel"] == "calendar_result"
+    assert params["calendar_write_approved"] is True
+    assert params["hitl_approved"] is True
+    assert params["approval_source"] == "PlanRegistry.approve"
+    assert params["approval_plan_state"] == PlanState.APPROVED.value
+
+
+async def test_plan_step_waits_for_nanobot_user_decision_then_resumes(env) -> None:
+    plan = await env["registry"].draft(_proposal(steps=(
+        PlanStepProposal(
+            step_id="calendar-mission",
+            title="calendar mission",
+            expected_tool="calendar_mission",
+            inputs={"goal": "find a safe slot", "authority": "draft_only"},
+        ),
+    )))
+    await env["registry"].submit_for_confirmation(plan.plan_id)
+    await env["registry"].approve(plan.plan_id)
+    await env["registry"].start_executing(plan.plan_id)
+
+    await env["registry"].report_step_result(
+        plan.plan_id,
+        "calendar-mission",
+        success=False,
+        status="needs_user_decision",
+        result_summary="choose a slot",
+        decision_payload={
+            "options": [
+                {
+                    "id": "slot_a",
+                    "label": "14:30",
+                    "proposed_write": {"action": "create", "event_body": {"summary": "Tea"}},
+                }
+            ]
+        },
+    )
+
+    step = plan.step_by_id("calendar-mission")
+    assert step is not None
+    assert plan.state == PlanState.WAITING_USER_DECISION
+    assert step.state == PlanStepState.WAITING_USER_DECISION
+    assert step.decision_payload["options"][0]["id"] == "slot_a"
+
+    await env["registry"].resolve_step_user_decision(
+        plan.plan_id,
+        "calendar-mission",
+        decision="resume",
+        payload={"selected_option_id": "slot_a"},
+    )
+
+    assert plan.state == PlanState.EXECUTING
+    assert step.state == PlanStepState.DISPATCHED
+    assert step.inputs["selected_option"]["id"] == "slot_a"
+    assert step.inputs["proposed_write"]["event_body"]["summary"] == "Tea"
+    assert env["dispatched"][1]["task_type"] == "calendar_mission"
+    resumed_params = env["dispatched"][1]["params"]
+    assert resumed_params["result_channel"] == "calendar_result"
+    assert resumed_params["authority"] == "approved_write"
+    assert resumed_params["calendar_write_approved"] is True
+    assert resumed_params["hitl_approved"] is True
+    assert resumed_params["approval_source"] == "PlanRegistry.resolve_step_user_decision"
+
+
+async def test_plan_step_with_goal_and_no_tool_routes_as_nanobot_mission(env) -> None:
+    plan = await env["registry"].draft(_proposal(steps=(
+        PlanStepProposal(
+            step_id="mission-step",
+            title="open ended background work",
+            expected_tool="",
+            inputs={
+                "goal": "Investigate the situation and report options",
+                "mode": "flexible",
+            },
+        ),
+    )))
+    await env["registry"].submit_for_confirmation(plan.plan_id)
+    await env["registry"].approve(plan.plan_id)
+    await env["registry"].start_executing(plan.plan_id)
+
+    assert plan.state == PlanState.EXECUTING
+    assert env["dispatched"][0]["task_type"] == "nanobot_mission"
+    assert env["dispatched"][0]["params"]["goal"] == "Investigate the situation and report options"
+    assert env["dispatched"][0]["params"]["requested_expected_tool"] == ""
+
+
+async def test_plan_step_mission_alias_routes_calendar_domain(env) -> None:
+    plan = await env["registry"].draft(_proposal(steps=(
+        PlanStepProposal(
+            step_id="calendar-alias",
+            title="calendar mission alias",
+            expected_tool="mission",
+            inputs={
+                "goal": "Find a safe Calendar slot",
+                "domain": "calendar",
+            },
+        ),
+    )))
+    await env["registry"].submit_for_confirmation(plan.plan_id)
+    await env["registry"].approve(plan.plan_id)
+    await env["registry"].start_executing(plan.plan_id)
+
+    assert env["dispatched"][0]["task_type"] == "calendar_mission"
+    assert env["dispatched"][0]["params"]["result_channel"] == "calendar_result"
+    assert env["dispatched"][0]["params"]["requested_expected_tool"] == "mission"
+
+
 def test_illegal_transition_raises() -> None:
     plan_state = PlanState.COMPLETE
     legal = PlanLifecycle.LEGAL_TRANSITIONS[plan_state]

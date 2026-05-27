@@ -48,6 +48,10 @@ UNITY_IDENTITY_PREFIX = "unity"
 UNITY_PROBE_IDENTITY_MARKERS = ("photo-node-probe",)
 _WRITER = "brain._rpc_bridge"
 
+# LiveKit RPC itself is still bounded by response_timeout; this ECP TTL only
+# protects Unity's wall-clock expiry check from common phone/host clock skew.
+UNITY_RPC_ECP_TTL_S = 90.0
+
 
 @dataclass(frozen=True)
 class RpcPushResult:
@@ -383,7 +387,7 @@ async def push_video_tier_result(video_tier: str, *, reason: str = "") -> RpcPus
         kind=EcpCommandKind.SET_VIDEO_TIER,
         target={"vision_channel": "video", "video_tier": video_tier},
         actor="brain.perception_supervisor",
-        expires_in_s=12.0,
+        expires_in_s=UNITY_RPC_ECP_TTL_S,
         expected_duration_ms=1500,
     )
     logger.info(

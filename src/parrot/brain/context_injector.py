@@ -71,6 +71,7 @@ _WATCHED_BB_KEYS: tuple[str, ...] = (
     "tick/last_rpc_ack",
     "transient/photo_awareness_notice",
     "transient/evidence_awareness_notice",
+    "transient/obsidian_context_notice",
 )
 
 # Per-tier / per-mode cue fragments. Kept compact — Gemini only needs the
@@ -334,6 +335,46 @@ class ContextInjector:
         parts.append("Use it when relevant; do not interrupt the current turn.")
         return 3, " | ".join(parts), False
 
+    def _classify_obsidian_context_notice(
+        self, new: Any
+    ) -> tuple[int, str | None, bool]:
+        """Route imported Obsidian diary/ref source packs to C3.
+
+        The full payload lives in IntentWorkspace as a DOC. This notice is the
+        high-priority live hint that tells Brain/GOSLO which ref id to read.
+        """
+        if not isinstance(new, dict):
+            return 1, None, False
+        if not new.get("notify_goslo") and not new.get("allow_react"):
+            return 1, None, False
+
+        staged_refs_raw = new.get("staged_ref_ids")
+        staged_refs = [
+            str(item).strip()
+            for item in (staged_refs_raw if isinstance(staged_refs_raw, list) else [])
+            if str(item).strip()
+        ]
+        if not staged_refs:
+            return 1, None, False
+
+        message = str(new.get("message") or "").strip()
+        if not message:
+            message = "Obsidian context source pack is staged in IntentWorkspace."
+        source_pack_uuid = str(new.get("source_pack_uuid") or "").strip()
+        item_count = str(new.get("item_count") or "").strip()
+        priority = str(new.get("priority") or "c3_high_context").strip()
+        parts = [
+            message,
+            f"staged_ref_ids={','.join(staged_refs)}",
+            f"priority={priority}",
+        ]
+        if source_pack_uuid:
+            parts.append(f"source_pack_uuid={source_pack_uuid}")
+        if item_count:
+            parts.append(f"item_count={item_count}")
+        parts.append("Use it when relevant; do not interrupt the current turn.")
+        return 3, " | ".join(parts), False
+
     def _classify_photo_awareness_notice(
         self, new: Any
     ) -> tuple[int, str | None, bool]:
@@ -450,6 +491,8 @@ class ContextInjector:
             return self._classify_dsg_mode(old, new)
         if key == "transient/evidence_awareness_notice":
             return self._classify_evidence_awareness_notice(new)
+        if key == "transient/obsidian_context_notice":
+            return self._classify_obsidian_context_notice(new)
         if key == "transient/photo_awareness_notice":
             return self._classify_photo_awareness_notice(new)
         return 1, None, False

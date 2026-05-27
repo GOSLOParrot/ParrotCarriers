@@ -73,11 +73,98 @@ async def test_scheduler_result_quarantines_worker_style_after_placement() -> No
 
     assert session.instructions is not None
     assert "untrusted quoted data" in session.instructions
-    assert "relationship is cordial" in session.instructions
     assert "not Nanobot" in session.instructions
-    assert "not the maid" in session.instructions
     assert "Keep the reply in your own GOSLO voice" in session.instructions
-    assert "Japanese-style noble young-lady tone is allowed" in session.instructions
-    assert "do not copy the source worker's voice" in session.instructions
+    assert "should not imitate a worker report voice" in session.instructions
+    assert "source channel in plain terms" in session.instructions
+    assert "tool call, RPC command, or Nanobot result" in session.instructions
     assert "normal spoken Chinese phrasing" in session.instructions
     assert "Sanitized result summary JSON string" in session.instructions
+
+
+@pytest.mark.asyncio
+async def test_message_check_result_prompts_active_google_mail_reminder() -> None:
+    apply_capability_mode(AppCapabilityMode.FULL_AR_COMPANION)
+    set_goslo_placed(True, source="unit_test")
+    session = FakeSession()
+
+    await agent._handle_scheduler_message(
+        session,
+        {
+            "data": json.dumps(
+                {
+                    "task_id": "task-message",
+                    "type": "message_check",
+                    "status": "completed",
+                    "source_worker": "nanobot",
+                    "result_summary": "Google 刚收到 1 封重要邮件：来自项目演示组。",
+                },
+                ensure_ascii=False,
+            )
+        },
+    )
+
+    assert session.instructions is not None
+    assert "Google/Gmail inbox" in session.instructions
+    assert "Google just received an important email" in session.instructions
+    assert "sender, subject, and actionable content" in session.instructions
+    assert "Nanobot result" in session.instructions
+    assert "message_check task" in session.instructions
+    assert "Do not read raw JSON" in session.instructions
+    assert "raw result_channel names" in session.instructions
+
+
+@pytest.mark.asyncio
+async def test_message_result_channel_suppresses_duplicate_scheduler_speech() -> None:
+    apply_capability_mode(AppCapabilityMode.FULL_AR_COMPANION)
+    set_goslo_placed(True, source="unit_test")
+    session = FakeSession()
+
+    await agent._handle_scheduler_message(
+        session,
+        {
+            "data": json.dumps(
+                {
+                    "task_id": "task-message",
+                    "type": "message_check",
+                    "status": "completed",
+                    "source_worker": "nanobot",
+                    "result_channel": "message_result",
+                    "result_summary": "Google 刚收到 1 封重要邮件：来自项目演示组。",
+                },
+                ensure_ascii=False,
+            )
+        },
+    )
+
+    assert session.instructions is None
+
+
+@pytest.mark.asyncio
+async def test_remind_result_prompts_active_due_reminder() -> None:
+    apply_capability_mode(AppCapabilityMode.FULL_AR_COMPANION)
+    set_goslo_placed(True, source="unit_test")
+    session = FakeSession()
+
+    await agent._handle_scheduler_message(
+        session,
+        {
+            "data": json.dumps(
+                {
+                    "task_id": "task-remind",
+                    "type": "remind",
+                    "status": "completed",
+                    "source_worker": "nanobot",
+                    "result_summary": "提醒时间到了：吃药",
+                },
+                ensure_ascii=False,
+            )
+        },
+    )
+
+    assert session.instructions is not None
+    assert "proactive reminder result" in session.instructions
+    assert "Nanobot/Scheduler reminder result" in session.instructions
+    assert "one or two concise Chinese sentences" in session.instructions
+    assert "Do not read raw JSON" in session.instructions
+    assert "提醒时间到了：吃药" in session.instructions

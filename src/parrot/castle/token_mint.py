@@ -272,16 +272,28 @@ async def _ensure_agent_dispatch(room: str) -> dict[str, Any]:
             dispatches = await lk.agent_dispatch.list_dispatch(room)
             for dispatch in dispatches:
                 agent_name = getattr(dispatch, "agent_name", "")
-                if agent_name == _AGENT_NAME:
-                    result["already_present"] = True
-                    logger.info(
-                        "Brain dispatch already present during mint dispatch check: "
-                        "room=%s dispatch_id=%s agent_name=%s",
-                        room,
-                        getattr(dispatch, "id", ""),
-                        agent_name,
-                    )
-                    return result
+                if agent_name != _AGENT_NAME:
+                    continue
+
+                dispatch_id = getattr(dispatch, "id", "")
+                logger.warning(
+                    "Stale Brain dispatch found without Brain participant; "
+                    "deleting before fresh dispatch: room=%s dispatch_id=%s agent_name=%s",
+                    room,
+                    dispatch_id,
+                    agent_name,
+                )
+                if dispatch_id:
+                    try:
+                        await lk.agent_dispatch.delete_dispatch(dispatch_id, room)
+                    except Exception as exc:
+                        logger.info(
+                            "Could not delete stale Brain dispatch before active dispatch: "
+                            "room=%s dispatch_id=%s exception_type=%s",
+                            room,
+                            dispatch_id,
+                            type(exc).__name__,
+                        )
         except Exception as exc:
             logger.info(
                 "Could not list LiveKit agent dispatches before active dispatch: "

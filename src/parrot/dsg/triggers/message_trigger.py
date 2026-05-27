@@ -1,7 +1,7 @@
 """Message notification trigger for Gmail / Google Workspace.
 
-The trigger can run periodically or react to pushed ``message_result`` /
-``message_push`` events. Important messages are converted into
+The trigger can run on startup, periodically, or react to pushed
+``message_result`` / ``message_push`` events. Important messages are converted into
 ``Observation(source=GOOGLE_MESSAGE)`` and returned through
 ``TriggerOutcome.commit_observations`` so the normal L1.5 Pool / Ingest path
 owns all L2-B writes.
@@ -9,6 +9,7 @@ owns all L2-B writes.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import datetime
@@ -29,7 +30,7 @@ class MessageNotificationTrigger(BaseTrigger):
     """Checks for important messages and notifies Gemini."""
 
     name = "message_notification"
-    kinds = [TriggerKind.PERIODIC, TriggerKind.EVENT_DRIVEN]
+    kinds = [TriggerKind.STARTUP, TriggerKind.PERIODIC, TriggerKind.EVENT_DRIVEN]
     interval_seconds = 600.0  # 10 minutes
 
     def __init__(self, graph):
@@ -54,52 +55,46 @@ class MessageNotificationTrigger(BaseTrigger):
 
     async def _fetch_messages(self) -> TriggerOutcome | None:
         """Dispatch Nanobot to check Gmail for unread important messages."""
+        params = {
+            "query": "Check Gmail for unread important messages",
+            "instructions": (
+                "Use the Gmail API or MCP tool to fetch unread messages "
+                "that are: starred, marked important, or from known contacts. "
+                "Skip marketing emails and automated notifications. "
+                "For each message extract: id, sender, subject, snippet "
+                "(first 100 chars), timestamp, is_reply (bool), "
+                "importance ('high'/'normal'/'low'). "
+                "Return as JSON array: "
+                '[{"id": str, "sender": str, "subject": str, '
+                '"snippet": str, "timestamp": str, '
+                '"is_reply": bool, "importance": str}]'
+            ),
+            "result_channel": "message_result",
+        }
         task_id = await self._dispatch_nanobot(
             task_type="message_check",
-            params={
-                "query": "Check Gmail for unread important messages",
-                "instructions": (
-                    "Use the Gmail API or MCP tool to fetch unread messages "
-                    "that are: starred, marked important, or from known contacts. "
-                    "Skip marketing emails and automated notifications. "
-                    "For each message extract: id, sender, subject, snippet "
-                    "(first 100 chars), timestamp, is_reply (bool), "
-                    "importance ('high'/'normal'/'low'). "
-                    "Return as JSON array: "
-                    '[{"id": str, "sender": str, "subject": str, '
-                    '"snippet": str, "timestamp": str, '
-                    '"is_reply": bool, "importance": str}]'
-                ),
-                "result_channel": "message_result",
-            },
+            params=params,
         )
 
         if task_id:
             return TriggerOutcome(
                 trigger_name=self.name,
                 summary=f"Message check dispatched (task={task_id})",
-                dispatch_to_nanobot=True,
+                # _dispatch_nanobot already sent the task. Keep this false so
+                # the runner does not try to dispatch a second legacy task.
+                dispatch_to_nanobot=False,
+                nanobot_task={
+                    "task_id": task_id,
+                    "task_type": "message_check",
+                    "params": params,
+                },
             )
         return None
 
     async def _parse_and_process(self, raw_result: str) -> TriggerOutcome | None:
         """Parse a Nanobot message-check result."""
-        import json
-
-        try:
-            if isinstance(raw_result, str):
-                data = json.loads(raw_result)
-            else:
-                data = raw_result
-
-            if isinstance(data, list):
-                messages = data
-            elif isinstance(data, dict) and "messages" in data:
-                messages = data["messages"]
-            else:
-                messages = []
-        except (json.JSONDecodeError, TypeError):
-            messages = []
+        data = _loads_jsonish(raw_result)
+        messages = _extract_message_list(data)
 
         if messages:
             return await self._process_messages(messages)
@@ -127,7 +122,7 @@ class MessageNotificationTrigger(BaseTrigger):
 
         for msg in messages:
             msg_id = str(msg.get("id", "") or "")
-            importance = str(msg.get("importance", "normal") or "normal")
+            importance = _normalize_importance(msg.get("importance", "normal"))
 
             if not self._passes_filter(msg_id, importance, now):
                 continue
@@ -161,6 +156,7 @@ class MessageNotificationTrigger(BaseTrigger):
             commit_observations=tuple(observations),
             notify_gemini=True,
             notification_text=notification,
+            proactive_speech=True,
         )
 
     @staticmethod
@@ -170,7 +166,7 @@ class MessageNotificationTrigger(BaseTrigger):
         sender = str(msg.get("sender", "Unknown") or "Unknown")
         subject = str(msg.get("subject", "(no subject)") or "(no subject)")
         snippet = str(msg.get("snippet", "") or "")
-        importance = str(msg.get("importance", "normal") or "normal")
+        importance = _normalize_importance(msg.get("importance", "normal"))
         label = f"Message: {subject[:40]}"
         description = f"From {sender}: {subject}"
         if snippet:
@@ -197,6 +193,7 @@ class MessageNotificationTrigger(BaseTrigger):
 
     def _passes_filter(self, msg_id: str, importance: str, now: float) -> bool:
         """Check if a message should trigger a notification."""
+        importance = _normalize_importance(importance)
         if self._is_quiet_hour() and importance != "high":
             return False
 
@@ -252,6 +249,73 @@ class MessageNotificationTrigger(BaseTrigger):
         ]
         for key in expired:
             del self._notified_ids[key]
+
+
+def _loads_jsonish(raw: Any) -> Any:
+    """Load Nanobot JSON while tolerating Markdown fenced blocks."""
+    if not isinstance(raw, str):
+        return raw
+
+    text = raw.strip()
+    candidates: list[str] = []
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            body_lines = lines[1:]
+            if body_lines and body_lines[-1].strip().startswith("```"):
+                body_lines = body_lines[:-1]
+            fenced = "\n".join(body_lines).strip()
+            if fenced:
+                candidates.append(fenced)
+
+    candidates.append(text)
+    json_slice = _slice_jsonish(text)
+    if json_slice and json_slice not in candidates:
+        candidates.append(json_slice)
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    logger.debug("message_trigger: failed to parse result: %s", text[:160])
+    return []
+
+
+def _slice_jsonish(text: str) -> str:
+    """Return the first plausible top-level JSON object/array slice."""
+    starts = [pos for pos in (text.find("["), text.find("{")) if pos >= 0]
+    if not starts:
+        return ""
+    start = min(starts)
+    opener = text[start]
+    closer = "]" if opener == "[" else "}"
+    end = text.rfind(closer)
+    if end <= start:
+        return ""
+    return text[start : end + 1].strip()
+
+
+def _extract_message_list(data: Any) -> list[dict[str, Any]]:
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        value = data.get("messages")
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _normalize_importance(value: Any) -> str:
+    if isinstance(value, bool):
+        return "high" if value else "normal"
+    text = str(value or "normal").strip().lower()
+    if text in {"high", "important", "urgent", "starred", "true", "yes", "p0", "p1"}:
+        return "high"
+    if text in {"low", "false", "no", "promo", "marketing"}:
+        return "low"
+    return "normal"
 
 
 __all__ = ["MessageNotificationTrigger"]

@@ -533,6 +533,40 @@ those buttons back to dry-run receipts.
   import policy and SSE read streams are stable. Google Calendar itself does
   not require Redis; Redis is useful in this repo as the Scheduler/Nanobot
   cross-process result ledger and Web observability bus.
+
+2026-05-23 Nanobot result content ownership note:
+
+- A Nanobot result has two different products: a worker report/artifact and one
+  or more trigger projections. The worker report is the Nanobot-facing summary
+  and structured payload returned from Google Workspace/MCP/API work. Trigger
+  projections are downstream interpretations such as Calendar/Gmail
+  Observations, C3 status notices, safe-turn speech, and future Plan/archive
+  requests.
+- Triggers must not be treated as the owner of the original worker result and
+  must not silently discard it after conversion. `TriggerOutcome` should project
+  the result into `commit_observations`, `bucket_ops`, `staged_refs`,
+  `plan_request`, or `notify_gemini`, while the original worker report remains
+  available through a result artifact, a source locator, or a bounded receipt.
+- For user-visible Google/Nanobot work (`calendar_fetch`, `message_check`, and
+  later Calendar write tasks), the target contract is: compact event metadata
+  enters L1.5/L2-B, notification text enters C3/safe-turn delivery only when
+  policy allows, and the readable report/original locator is staged as an
+  `IntentWorkspace` ref or 2D workdesk paper note. The App/Web 2D workdesk must
+  be able to show a selectable Nanobot report/card rather than relying only on
+  the trigger notification text.
+- Current implementation status: Calendar read results are parsed by
+  `CalendarTrigger` into L1.5/L2-B metadata and Web has a bounded
+  `calendar_result` ledger. Gmail/message results are parsed by
+  `MessageNotificationTrigger` into `GOOGLE_MESSAGE` metadata plus C3/speech
+  policy. The 2D workdesk has a generic `stage_nanobot_report` / paper-note
+  facility, but Scheduler/TriggerRunner do not yet automatically stage every
+  user-visible Nanobot result into `IntentWorkspace`. This is an explicit
+  product gap, not permission for triggers to drop worker content.
+- Full Gmail bodies, OAuth tokens, and private mailbox payloads must not be
+  copied into L2-B or Web snapshots by default. Preserve canonical originals as
+  provider locators such as `gmail://<account>/<message_id>` or Gmail links, and
+  let Nanobot/Google Workspace fetch expanded content on demand for GOSLO or
+  the 2D workdesk under the existing credential boundary.
 - Calendar EVENT lifecycle should preserve Google event status (`confirmed`,
   `tentative`, `cancelled`) and add Parrot lifecycle overlays such as
   `scheduled`, `tentative`, `cancelled_tombstone`, `expired`,

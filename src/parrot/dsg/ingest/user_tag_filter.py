@@ -5,7 +5,9 @@ UUID-bound lane:
 
 * ``profile=ref`` is a binding/strengthening note. It must carry
   ``obsidian_uuid`` because it points at an existing L2-B / Graphiti node and
-  must not create a new setting node.
+  must not create a new setting node. Operator imports may set
+  ``ref_mode=direct_context`` to lift a UUID-free ref diary as a setting/source
+  context node instead of a RefBinding.
 * ``profile=daily`` and ``profile=roleplay`` are setting-source notes. They
   may omit ``obsidian_uuid`` and use ``obsidian_note_key`` / path / title as
   local provenance.
@@ -103,9 +105,18 @@ class UserTagFilter(IngestFilter):
                 rejected=1,
                 reason="invalid_profile",
             )
-        # Only ref notes require an Obsidian UUID. Daily/roleplay notes are
-        # setting sources for the menu and can be identified by path/title.
-        if profile == "ref" and not uuid:
+        ref_mode = str(payload.get("ref_mode") or "").strip().lower().replace("-", "_")
+        uuid_free_ref_direct = (
+            profile == "ref"
+            and not uuid
+            and ref_mode == "direct_context"
+            and bool(payload.get("allow_uuid_free_ref", True))
+        )
+        # Only normal ref notes require an Obsidian UUID. Daily/roleplay notes
+        # are setting sources for the menu and can be identified by path/title;
+        # the operator-only direct-context ref lane intentionally behaves like
+        # those source notes while preserving profile=ref metadata.
+        if profile == "ref" and not uuid and not uuid_free_ref_direct:
             return IngestOutcome(
                 filter_name=self.name,
                 rejected=1,
@@ -127,6 +138,9 @@ class UserTagFilter(IngestFilter):
             "file_mtime",
             "double_link_count",
             "target_node_uuid",
+            "ref_mode",
+            "context_role",
+            "ascent_channel",
         ):
             if key in payload:
                 meta[key] = payload[key]

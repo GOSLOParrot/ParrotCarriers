@@ -153,6 +153,68 @@ APP-024 local-route correction (2026-05-18): user clarified that laptop Castle h
 
 Latest APP-026 App-side review/fix: detailed log is `backend_interface_map/app/_tmp/app026_bbox_mag_visual_tool_research_todo_20260517.md`. This chat added the feature-flagged BBox/MAG packet builder, HTTP lifecycle/asset wrapper, local BBox/MAG controllers, optional dev screen-region asset probe, Photo upload timebase header support, and the formal camera-mode HUD/controller. Follow-up audits fixed phase allow-listing, stale async crop/upload work, local lock/body-feel handling, disabled asset fallback, EventSystem isolation, and camera-mode pending races. Current status: App-side Editor/static/backend-route validation passes, but production enablement still waits for APP-024 iQOO phone/screen-share smoke, real rendered/HUD body-feel tuning, tool asset throughput proof, and CAM/Photo regression checks. Camera mode is App-side complete for static/backend-route validation as of 2026-05-18; phone-production complete still belongs to APP-024.
 
+2026-05-22 UX gap audit: current CAM is a real request/upload chain but only a
+rough first-pass camera HUD; it lacks polished shutter/capture animation and
+visible async upload/PhotoNode feedback. BBox/MAG are protocol/dev-overlay
+controllers, not finished product tools. MAG still needs real background/AR
+render magnification, selectable drag, two-finger resize/zoom, and a visible
+zoom rail. BBox still needs production selection handles, two-finger resize,
+color selection, sample/property input, and capture/upload feedback. CAM, BBox,
+and MAG should share a visible capture/upload feedback component while keeping
+the original evidence-tool constraints: high-frequency motion local, only
+stable semantic phases to backend, image bytes only through HTTP/storage,
+never `captureSnapshot` RPC, never ECP/RPC image bytes, never direct Unity
+L2-B/Graphiti/IntentWorkspace/Blackboard writes, and no App-side C4/interrupt.
+
+Follow-up user correction: keep the visible upload/capture feedback simple
+for now, success vs failure only, with a camera-like flash/freeze-frame or
+thumbnail animation acceptable. Before polishing controllers, generate/import
+pixel-style MAG and BBox sprites: magnifying-glass/lens art, BBox frame
+corners/edges, selected white outlines, resize/drag handles, color swatches,
+and a small sample/property input plate. Camera mode should be redesigned to
+feel like a phone camera / photography game: large viewfinder, bottom-center
+shutter, last-shot thumbnail, minimal controls, and debug/pro status hidden
+behind an advanced affordance.
+
+2026-05-22 quick App fix: `FormalCameraModeController` now anchors a large
+round shutter at the normal phone-camera bottom-center position, hides the
+non-real zoom/exposure rails from the main view, and shows only a flash plus
+OK/FAIL badge after capture request. `FormalModelPlacementController` no
+longer auto-selects the parrot on placement; `FormalHomeMenuController` gates
+the CLEAR action and bottom placement/clear button on explicit selection, so
+the existing joystick gate now also waits for selecting the parrot. Static
+Unity guard: 35 passed.
+
+2026-05-25 pixel tool pass: user supplied desktop references for a pixel camera
+button, pixel magnifier, and YOLO-style BBox detections. The App now keeps the
+references out of the repo and generates clean runtime pixel sprites through
+`VisualToolPixelSprites`. Camera mode supports two-finger view zoom and keeps
+focus/exposure out of the visible flow. BBox has thicker YOLO-style frame
+edges, selected white pixel outline/handles, two-finger resize, and a
+bottom-center shutter confirm wired to HTTP screen-region asset upload plus
+visual-tool event. MAG uses the generated pixel magnifier sprite, selected
+white ring, zoom rail, two-finger resize/zoom, and the same shutter-confirm
+HTTP path. Static Unity guard: 35 passed.
+
+2026-05-25 iQOO layout correction: user rejected the camera-mode bottom black
+strip and requested the provided MAG art directly. Camera mode now keeps the
+AR view unobscured and leaves only the bottom-center shutter plus capture
+feedback in the normal view. `Mag.png` was converted into
+`Resources/ParrotApp/VisualTools/MagPixelTransparent.png` with the white
+background removed while enclosed lens highlights remain; the runtime sprite
+loader now prefers that asset and only falls back to generated art when the
+Resource is absent. BBox and MAG now share `VisualToolHudMetrics` for the
+iQOO Neo9 `2800 x 1260` reference resolution, bottom shutter position/size,
+and first-open default regions. The BBox/MAG dev action rows default hidden,
+so the confirm shutter is the primary user path. Static Unity guard: 35 passed.
+
+Follow-up correction in the same pass: the shared shutter position must be
+orientation-responsive, not always bottom-center. `VisualToolHudMetrics` now
+applies one rule for CAM/BBox/MAG: landscape uses the right-side middle anchor,
+portrait uses the bottom-center anchor. Camera mode refresh/update and
+BBox/MAG overlay refresh re-apply the rule so rotation or screen-size changes
+do not leave stale anchors. Static Unity guard remains 35 passed.
+
 Latest APP-015.23 audio blocker follow-up: iQOO still showed `Mic wait` and
 `microphone_start_exception` during the native fallback, while route,
 permission, and focus looked valid. Wider LiveKit/Unity audit found two
@@ -189,6 +251,20 @@ Bluetooth now actively calls `clearCommunicationDevice()` so Android can return
 downlink audio to A2DP while keeping phone/default mic capture. Static guard and
 Java compile pass; this still needs iQOO proof for `frames/ch/readSr/peak` and
 Bluetooth output.
+
+Latest APP-024.1 / APP-024.2 demo-stability correction: the formal App now
+implements the chosen conservative route: phone mic uplink plus local
+half-duplex gating while Parrot/agent downlink is audible. `RoomManager` keeps
+all remote audio playback but only samples `agent-*` / `brain` `AudioSource`
+output peak for the local gate; `MicrophonePublisher` calls
+`ILocalTrack.SetMute(true/false)` on the already-published microphone track
+while remote speech is active. This does not unpublish the track, reconnect the
+room, mint a token, redispatch Brain, or force Android Bluetooth/SCO
+communication routing. HUD exposes `gate`, `gpk`, and `gr` so iQOO proof can
+confirm the gate is active only during Parrot speech. Next proof: rebuild phone
+App, verify Parrot speech sets `gate=mute`, user speech after the answer still
+reaches Brain, and no `UnpublishTrack` / route rebuild happens during the local
+gate.
 Latest follow-up: A2DP-only Bluetooth must also avoid entering
 `MODE_IN_COMMUNICATION` in the first place. The native route owner now keeps
 `MODE_NORMAL` / media routing when there is Bluetooth media output but no

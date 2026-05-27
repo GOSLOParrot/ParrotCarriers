@@ -983,3 +983,49 @@ Validation:
 - `uv run pytest tests/test_brain/test_linea_turn_policy.py -q`
 - `uv run pytest tests/test_brain/test_app_first_version_facade.py -q`
 - `uv run python -m py_compile src/parrot/brain/agent.py src/parrot/brain/line_status.py src/parrot/brain/linea_turn_policy.py`
+
+## 2026-05-19 Local Half-Duplex Phone-Mic Gate
+
+User decision: keep the current demo path simple and stable:
+
+- phone microphone is the only default uplink source;
+- Parrot/agent downlink speech locally mutes the already-published uplink track;
+- the LiveKit room is not reconnected;
+- the local audio track is not unpublished for agent speech;
+- Android Bluetooth/SCO communication routing is not forced or stolen.
+
+Implementation:
+
+- `RoomManager` keeps the strong `AudioStream` references and records local
+  `AudioSource` objects for playback; only `agent-*` / `brain` downlink
+  sources feed the microphone gate.
+- Each frame, `RoomManager` samples Brain/agent remote audio output peak
+  locally with `AudioSource.GetOutputData(...)`. If the peak is above the
+  small speech threshold, it holds `RemoteAudioPlaybackActive` for a short tail
+  window.
+- `MicrophonePublisher` polls `RoomManager.RemoteAudioPlaybackActive`. On state
+  changes it calls `((ILocalTrack)_audioTrack).SetMute(muted)` on the existing
+  local audio track. This uses the pinned LiveKit Unity SDK's supported mute
+  path and preserves the current track/room/session.
+- HUD now exposes `gate=clear|mute`, `gpk=<remote peak>`, and
+  `gr=<gate reason>` beside the microphone uplink status.
+
+Reason:
+
+- This directly addresses external-speaker echo and Gemini self-interruption
+  without depending on Android Bluetooth microphone behavior.
+- It is compatible with LineA and LineB because it is local downlink-vs-uplink
+  gating, not a provider-specific RPC or backend policy.
+- It is deliberately not a replacement for production echo cancellation,
+  Bluetooth route UX, or LineB voiceprint/echo policy. Those remain later
+  route-lab/phone-stability work.
+
+Phone proof required:
+
+- With phone speaker output, Parrot speech should set HUD `gate=mute` while it
+  talks and return to `gate=clear` after the tail.
+- User speech after Parrot finishes should still reach Brain without room
+  reconnect, token mint, Brain redispatch, or `UnpublishTrack`.
+- With Bluetooth output, this should not force SCO/communication mode; if
+  Android routes output to the headset naturally, the same phone-mic uplink gate
+  still applies.

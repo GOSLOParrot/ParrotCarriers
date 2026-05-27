@@ -29,6 +29,11 @@ CH_TRIGGER_RESULTS = "parrot.trigger.results"
 
 # Redis Streams
 STREAM_NANOBOT_DISPATCH = "parrot.nanobot.dispatch"
+# Bounded Scheduler-owned ledger of every Nanobot result after correlation.
+# Pub/Sub channels are momentary; this read model lets Brain/Web inspect recent
+# background task receipts even when a task did not declare a trigger
+# result_channel.
+STREAM_NANOBOT_RESULTS = "parrot.nanobot.results.stream"
 # Bounded Scheduler-owned ledger of trigger-result fan-out payloads. Pub/Sub
 # wakes the TriggerRunner, while this stream lets Web/ops inspect recent routed
 # results after the moment has passed. It is an observability read model, not a

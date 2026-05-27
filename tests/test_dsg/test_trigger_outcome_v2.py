@@ -304,7 +304,7 @@ async def test_legacy_notify_gemini_routes_to_c3_status_notice(env) -> None:
         runner = TriggerRunner(graph=env["graph"])
         runner._session = object()
         outcome = TriggerOutcome(
-            trigger_name="calendar_trigger",
+            trigger_name="generic_trigger",
             notify_gemini=True,
             notification_text="Calendar digest ready.",
         )
@@ -313,5 +313,57 @@ async def test_legacy_notify_gemini_routes_to_c3_status_notice(env) -> None:
 
         assert fake.notices == ["Calendar digest ready."]
         assert fake.speeches == []
+    finally:
+        context_injector_module._injector = old_injector
+
+
+async def test_proactive_message_trigger_speaks_after_policy_allows(
+    env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from parrot.brain import context_injector as context_injector_module
+
+    class _FakeInjector:
+        def __init__(self) -> None:
+            self.notices: list[str] = []
+
+        async def inject_status_notice(self, message: str) -> None:
+            self.notices.append(message)
+
+    class _FakeSession:
+        current_speech = None
+
+        def __init__(self) -> None:
+            self.instructions: str | None = None
+
+        async def generate_reply(self, *, instructions: str) -> None:
+            self.instructions = instructions
+
+    fake = _FakeInjector()
+    session = _FakeSession()
+    old_injector = context_injector_module._injector
+    context_injector_module._injector = fake  # type: ignore[assignment]
+    monkeypatch.setattr(
+        "parrot.brain.session_policy.should_generate_reply",
+        lambda reason: True,
+    )
+    try:
+        runner = TriggerRunner(graph=env["graph"])
+        runner._session = session
+        outcome = TriggerOutcome(
+            trigger_name="message_notification",
+            notify_gemini=True,
+            notification_text="Important mail from demo@example.com.",
+            proactive_speech=True,
+        )
+
+        await runner._process_result(outcome)
+
+        assert fake.notices == ["Important mail from demo@example.com."]
+        assert session.instructions is not None
+        assert "Proactively remind the user" in session.instructions
+        assert "source channel" in session.instructions
+        assert "Nanobot/Google result" in session.instructions
+        assert "Do not read raw worker output aloud" in session.instructions
+        assert "Important mail from demo@example.com." in session.instructions
     finally:
         context_injector_module._injector = old_injector

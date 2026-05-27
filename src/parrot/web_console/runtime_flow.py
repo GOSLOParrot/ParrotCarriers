@@ -183,9 +183,14 @@ def pending_human_gates() -> dict[str, Any]:
         }
 
     for plan in plans:
-        if getattr(plan, "state", None) != PlanState.AWAITING_USER_CONFIRMATION:
+        state = getattr(plan, "state", None)
+        if state not in {
+            PlanState.AWAITING_USER_CONFIRMATION,
+            PlanState.WAITING_USER_DECISION,
+        }:
             continue
         plan_id = str(getattr(plan, "plan_id", ""))
+        waiting_step = _waiting_user_decision_step(plan)
         valid_actions = _valid_hitl_actions_for_state(plan)
         # Use the same state-aware policy that draft/apply validation uses, so
         # the Web workspace cannot render a button the BFF will refuse.
@@ -196,14 +201,26 @@ def pending_human_gates() -> dict[str, Any]:
             trace_id=f"plan:{plan_id}",
             state="pending",
             plan_state=_plan_state_value(plan),
-            prompt="Plan is awaiting operator confirmation.",
-            summary=str(getattr(plan, "title", "") or plan_id),
+            prompt=(
+                "Plan step is waiting for a user decision."
+                if waiting_step is not None
+                else "Plan is awaiting operator confirmation."
+            ),
+            summary=(
+                str(getattr(waiting_step, "result_summary", "") or getattr(waiting_step, "title", ""))
+                if waiting_step is not None
+                else str(getattr(plan, "title", "") or plan_id)
+            ),
             options=valid_actions,
             valid_actions_for_state=valid_actions,
             operator_required_for_execute=True,
             created_at=float(getattr(plan, "drafted_at", 0.0) or 0.0),
             expires_at=0.0,
             payload_ref=str(getattr(plan, "staged_ref_id", "") or ""),
+            payload={
+                "waiting_step_id": str(getattr(waiting_step, "step_id", "") or ""),
+                "decision_payload": dict(getattr(waiting_step, "decision_payload", {}) or {}),
+            } if waiting_step is not None else {},
         ).as_json())
     return {
         "success": True,
@@ -279,13 +296,19 @@ async def apply_human_gate_decision(payload: dict[str, Any] | None = None) -> di
         if decision == "approve":
             await registry.approve(plan_id)
         elif decision == "approve_and_start":
+            if plan_state == PlanState.WAITING_USER_DECISION:
+                await _resolve_waiting_step_decision(registry, plan_id, decision, body)
             if plan_state == PlanState.AWAITING_USER_CONFIRMATION:
                 await registry.approve(plan_id)
-            await registry.start_executing(plan_id)
+            if plan_state != PlanState.WAITING_USER_DECISION:
+                await registry.start_executing(plan_id)
         elif decision == "resume":
+            if plan_state == PlanState.WAITING_USER_DECISION:
+                await _resolve_waiting_step_decision(registry, plan_id, decision, body)
             if plan_state == PlanState.AWAITING_USER_CONFIRMATION:
                 await registry.approve(plan_id)
-            await registry.start_executing(plan_id)
+            if plan_state != PlanState.WAITING_USER_DECISION:
+                await registry.start_executing(plan_id)
         elif decision == "reject":
             await registry.cancel(plan_id, reason=str(body.get("reason") or decision))
         elif decision == "cancel":
@@ -589,14 +612,18 @@ def _add_plan_nodes(
             trace_id=f"plan:{plan_id}",
             payload_ref=str(plan.get("staged_ref_id") or ""),
         ))
-        if str(plan.get("state")) == PlanState.AWAITING_USER_CONFIRMATION.value:
+        if str(plan.get("state")) in {
+            PlanState.AWAITING_USER_CONFIRMATION.value,
+            PlanState.WAITING_USER_DECISION.value,
+        }:
             gate_id = f"gate:plan:{plan_id}"
+            waiting = str(plan.get("state")) == PlanState.WAITING_USER_DECISION.value
             nodes.append(_node(
                 node_id=gate_id,
                 lane="human_gate",
                 entity_kind="human_gate",
                 entity_id=f"plan:{plan_id}",
-                label="Awaiting approval",
+                label="Awaiting decision" if waiting else "Awaiting approval",
                 status="pending",
                 summary=str(plan.get("title") or plan_id),
                 trace_id=f"plan:{plan_id}",
@@ -1297,6 +1324,7 @@ def _valid_hitl_actions_for_state(plan: Any | None) -> list[str]:
         PlanState.AWAITING_USER_CONFIRMATION,
         PlanState.APPROVED,
         PlanState.PARTIAL_COMPLETE,
+        PlanState.WAITING_USER_DECISION,
     }:
         valid.add("resume")
     if state == PlanState.AWAITING_USER_CONFIRMATION:
@@ -1306,6 +1334,32 @@ def _valid_hitl_actions_for_state(plan: Any | None) -> list[str]:
     if PlanLifecycle.can_transition(state, PlanState.REVISED):
         valid.add("revise")
     return sorted(valid)
+
+
+def _waiting_user_decision_step(plan: Any | None) -> Any | None:
+    for step in getattr(plan, "steps", []) or []:
+        state = str(getattr(getattr(step, "state", ""), "value", getattr(step, "state", "")))
+        if state == "waiting_user_decision":
+            return step
+    return None
+
+
+async def _resolve_waiting_step_decision(
+    registry: Any,
+    plan_id: str,
+    decision: str,
+    body: dict[str, Any],
+) -> None:
+    plan = registry.get(plan_id)
+    step = _waiting_user_decision_step(plan)
+    if step is None:
+        return
+    await registry.resolve_step_user_decision(
+        plan_id,
+        str(getattr(step, "step_id", "")),
+        decision=decision,
+        payload=body,
+    )
 
 
 def _plan_state(plan: Any | None) -> PlanState | None:

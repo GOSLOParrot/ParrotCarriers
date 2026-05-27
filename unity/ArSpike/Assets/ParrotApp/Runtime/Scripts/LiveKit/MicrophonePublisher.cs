@@ -1397,7 +1397,7 @@ namespace ParrotApp.LiveKit
 
         private IEnumerator AgentSpeechUplinkGateLoop()
         {
-            var wait = new WaitForSeconds(Mathf.Max(0.02f, agentSpeechGatePollSeconds));
+            var wait = new WaitForSecondsRealtime(Mathf.Max(0.02f, agentSpeechGatePollSeconds));
             while (true)
             {
                 yield return wait;
@@ -2383,6 +2383,8 @@ namespace ParrotApp.LiveKit
                 catch (Exception e) { Debug.LogWarning($"[MicrophonePublisher] Dispose microphone source failed: {e.Message}"); }
             }
             _audioTrack = null;
+            _uplinkMutedByAgentSpeech = false;
+            _uplinkGateRemotePeak = 0f;
             StopMicForegroundServiceIfNeeded();
             if (string.IsNullOrWhiteSpace(_lastError))
                 _lastPublishStage = "stopped";

@@ -1,0 +1,72 @@
+{
+  "photo_object": {
+    "bbox": {
+      "coordinate_space": "normalized",
+      "height": 0.5,
+      "width": 0.5,
+      "x": 0.0,
+      "y": 0.0
+    },
+    "candidate_object_uuid": "",
+    "category_guess": "",
+    "confidence": 0.0,
+    "created_at_ms": 1779669642054,
+    "crop_path": "",
+    "edge_uuid": "",
+    "evidence_id": "ev_e2a4316829ec4425",
+    "label_guess": "",
+    "meta": {
+      "packet_meta": {},
+      "schema": "vision_photo_object_draft_v1",
+      "source_ref_id": "ref_019e5c93ab46_1a35c551",
+      "source_surface": "app_ar_overlay"
+    },
+    "object_ref_id": "pobj_9efd6c184d1842e6831baad4a2482e61",
+    "photo_uuid": "",
+    "review_status": "needs_crop",
+    "sample_draft_id": "os_64fa36ed40294bc78fc5f71f92df45cd",
+    "schema_version": 1,
+    "source": "user_bbox",
+    "source_asset_path": "",
+    "tool_event_id": "vtool_1779669642054_c75d35c5",
+    "tool_id": "bbox_ecp",
+    "tool_kind": "bbox",
+    "updated_at_ms": 1779669642054
+  },
+  "sample": {
+    "bbox": {
+      "coordinate_space": "normalized",
+      "height": 0.5,
+      "width": 0.5,
+      "x": 0.0,
+      "y": 0.0
+    },
+    "category": "",
+    "content_sha256": "",
+    "created_at_ms": 1779669642054,
+    "created_by": "user_bbox",
+    "crop_path": "",
+    "evidence_id": "ev_e2a4316829ec4425",
+    "label": "",
+    "meta": {
+      "schema": "vision_object_sample_draft_v1",
+      "source_ref_id": "ref_019e5c93ab46_1a35c551",
+      "source_tool_event_id": "vtool_1779669642054_c75d35c5",
+      "source_tool_id": "bbox_ecp"
+    },
+    "object_ref_id": "pobj_9efd6c184d1842e6831baad4a2482e61",
+    "object_uuid": "",
+    "photo_uuid": "",
+    "quality_flags": [
+      "missing_asset"
+    ],
+    "review_status": "needs_crop",
+    "sample_uuid": "os_64fa36ed40294bc78fc5f71f92df45cd",
+    "schema_version": 1,
+    "source_asset_path": "",
+    "updated_at_ms": 1779669642054,
+    "visual_description": ""
+  },
+  "schema_version": 1,
+  "updated_at_ms": 1779669642058
+}

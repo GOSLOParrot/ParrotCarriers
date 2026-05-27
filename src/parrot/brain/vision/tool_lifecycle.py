@@ -146,6 +146,7 @@ class VisualToolReceipt(BaseModel):
     salience: dict[str, Any] = Field(default_factory=dict)
     delivery: dict[str, Any] = Field(default_factory=dict)
     awareness: dict[str, Any] = Field(default_factory=dict)
+    object_discovery: dict[str, Any] = Field(default_factory=dict)
     audit: dict[str, Any] = Field(default_factory=dict)
 
     def as_json(self) -> dict[str, Any]:
@@ -222,6 +223,7 @@ async def handle_visual_tool_lifecycle(
 
     ref = _bind_or_lookup_ref(packet, source_event=source_event)
     sample = _record_lifecycle_sample(packet, ref_id=ref.ref_id if ref else "", source=source, source_event=source_event)
+    object_discovery = _record_object_discovery(packet, sample, ref_id=ref.ref_id if ref else "")
     state = _update_tool_state(packet, ref_id=ref.ref_id if ref else "", evidence_id=sample.evidence_id)
     delivery = _delivery_for_packet(packet, state)
 
@@ -254,6 +256,7 @@ async def handle_visual_tool_lifecycle(
         },
         delivery=delivery,
         awareness=awareness.as_json() if awareness else {},
+        object_discovery=object_discovery,
         audit={
             "schema": "VisualToolEvidenceLifecycle.backend_v1",
             "source": source,
@@ -569,6 +572,25 @@ def _description(packet: VisualToolLifecyclePacket, state: _VisualToolState | No
 def _write_receipt(receipt: VisualToolReceipt) -> None:
     bb = open_bb_client(name="visual_tool.receipt_write", writer=_BB_WRITER)
     bb.set(_BB_KEY_RECEIPT, receipt.as_json())
+
+
+def _record_object_discovery(
+    packet: VisualToolLifecyclePacket,
+    sample: TimeAlignedSampleRef,
+    *,
+    ref_id: str,
+) -> dict[str, Any]:
+    try:
+        from parrot.brain.vision.object_discovery import record_visual_tool_object_draft
+
+        return record_visual_tool_object_draft(packet=packet, sample=sample, ref_id=ref_id)
+    except Exception:
+        logger.debug("visual tool object discovery draft failed", exc_info=True)
+        return {
+            "action": "vision.object_discovery.object_draft",
+            "success": False,
+            "error": "object_discovery_failed",
+        }
 
 
 def _asset_path_for(asset_id: str, *, mime_type: str) -> Path:

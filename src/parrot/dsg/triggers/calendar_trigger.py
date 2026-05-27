@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -32,6 +33,10 @@ TIER_DIGEST = "digest"
 TIER_PREP = "prep"
 TIER_IMMINENT = "imminent"
 CALENDAR_INACTIVE_STATES = frozenset({"cancelled", "canceled", "deleted"})
+HIGH_PRIORITY_EVENT_RE = re.compile(
+    r"(?:^|[\s\[\(\{:/#-])(p0|p1|urgent|important|high)(?:$|[\s\]\)\}:/#-])",
+    re.IGNORECASE,
+)
 
 PREP_MINUTES = 30
 IMMINENT_MINUTES = 5
@@ -176,6 +181,14 @@ class CalendarTrigger(BaseTrigger):
             commit_observations=tuple(observations),
             notify_gemini=bool(notification),
             notification_text=notification,
+            proactive_speech=bool(
+                notification
+                and (
+                    prep_parts
+                    or imminent_parts
+                    or any(bool(ev.get("is_urgent")) for ev in events)
+                )
+            ),
         )
 
     def _event_to_observation(
@@ -322,6 +335,14 @@ class CalendarTrigger(BaseTrigger):
         if not isinstance(objects, list):
             objects = []
 
+        is_urgent = _coerce_bool(ev.get("is_urgent") or ev.get("urgent"))
+        if not is_urgent:
+            is_urgent = _event_is_marked_urgent(
+                title,
+                ev.get("description", ""),
+                ev.get("priority", ""),
+            )
+
         return {
             "id": str(event_id),
             "calendar_id": str(ev.get("calendar_id", "primary") or "primary"),
@@ -332,7 +353,7 @@ class CalendarTrigger(BaseTrigger):
             "location": str(ev.get("location", "") or ""),
             "description": str(ev.get("description", "") or ""),
             "objects": [str(item) for item in objects[:16]],
-            "is_urgent": _coerce_bool(ev.get("is_urgent") or ev.get("urgent")),
+            "is_urgent": is_urgent,
             "html_link": str(ev.get("html_link") or ev.get("htmlLink") or ""),
             "etag": str(ev.get("etag", "") or ""),
             "updated": str(ev.get("updated", "") or ""),
@@ -447,6 +468,20 @@ def _coerce_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "urgent", "important"}
     return bool(value)
+
+
+def _event_is_marked_urgent(*values: Any) -> bool:
+    """Infer high calendar priority from compact title/description markers."""
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered in {"p0", "p1", "high", "urgent", "important"}:
+            return True
+        if HIGH_PRIORITY_EVENT_RE.search(text):
+            return True
+    return False
 
 
 __all__ = ["CalendarTrigger"]

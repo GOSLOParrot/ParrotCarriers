@@ -101,7 +101,7 @@ async def do_message_check_request(
     return (
         "Message check dispatched to Nanobot "
         f"(task={task_id}, result_channel=message_result, max_messages={bounded_limit}). "
-        "GOSLO can continue the conversation and use calendar_task_status or "
+        "GOSLO can continue the conversation and use nanobot_task_status or "
         "runtime ledgers later if the user asks for progress. No Gmail write, "
         "Graphiti write, or L2-B mutation occurred in this tool."
     )

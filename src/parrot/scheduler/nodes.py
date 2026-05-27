@@ -14,7 +14,7 @@ import logging
 
 import py_trees
 
-from parrot.scheduler.task_catalog import NANOBOT_TASK_TYPES
+from parrot.scheduler.task_catalog import normalize_nanobot_task_type
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +45,19 @@ class DispatchToNanobot(py_trees.behaviour.Behaviour):
             return py_trees.common.Status.FAILURE
 
         task_type = event.get("type", "unknown")
-        if task_type not in NANOBOT_TASK_TYPES:
+        params = event.get("params", {}) or {}
+        normalized_task_type = normalize_nanobot_task_type(task_type, params=params)
+        if not normalized_task_type:
             return py_trees.common.Status.FAILURE
 
         task_id = event.get("task_id", "unknown")
 
         # Plan correlation stays in Scheduler metadata rather than Nanobot
         # internals; service.py uses it for result/timeout writeback.
-        params = event.get("params", {}) or {}
         active = self.blackboard.active_tasks
         active[task_id] = {
-            "type": task_type,
+            "type": normalized_task_type,
+            "requested_type": task_type,
             "status": "dispatched",
             "destination": "nanobot",
             # Trigger-driven tasks use this to fan the Nanobot result back to
@@ -68,9 +70,24 @@ class DispatchToNanobot(py_trees.behaviour.Behaviour):
             "step_id": params.get("step_id", ""),
         }
         self.blackboard.active_tasks = active
-        self.blackboard.route_result = {"destination": "nanobot", "task_id": task_id}
+        normalized_event = dict(event)
+        normalized_event["type"] = normalized_task_type
+        normalized_event.setdefault("params", params)
+        if str(task_type or "") != normalized_task_type:
+            normalized_event["requested_type"] = task_type
+            normalized_event["params"] = {
+                **params,
+                "requested_task_type": task_type,
+            }
+        self.blackboard.route_result = {
+            "destination": "nanobot",
+            "task_id": task_id,
+            "type": normalized_task_type,
+            "requested_type": task_type,
+            "task": normalized_event,
+        }
 
-        self.feedback_message = f"dispatched {task_type} (id={task_id})"
+        self.feedback_message = f"dispatched {normalized_task_type} (id={task_id})"
         logger.info("BT DispatchToNanobot: %s → nanobot", task_type)
         return py_trees.common.Status.SUCCESS
 

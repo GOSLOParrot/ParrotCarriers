@@ -7,7 +7,11 @@ import pytest
 
 from parrot.scheduler.router import BTRouter
 from parrot.scheduler.service import SchedulerService
-from parrot.shared.constants import CH_TRIGGER_RESULTS, STREAM_TRIGGER_RESULTS
+from parrot.shared.constants import (
+    CH_TRIGGER_RESULTS,
+    STREAM_NANOBOT_RESULTS,
+    STREAM_TRIGGER_RESULTS,
+)
 from parrot.shared.parrot_actions import BehaviorMode
 
 
@@ -50,6 +54,50 @@ def test_route_google_calendar_fetch_to_nanobot(router):
     })
     assert result["destination"] == "nanobot"
     assert router.active_tasks["gcal"]["result_channel"] == "calendar_result"
+
+
+def test_route_natural_language_calendar_mission_alias_to_nanobot(router):
+    result = router.route({
+        "task_id": "mission-calendar",
+        "type": "mission",
+        "params": {
+            "goal": "Find a safe meeting slot on my calendar",
+            "domain": "calendar",
+            "result_channel": "calendar_result",
+        },
+    })
+
+    assert result["destination"] == "nanobot"
+    assert result["type"] == "calendar_mission"
+    assert result["task"]["type"] == "calendar_mission"
+    assert result["task"]["requested_type"] == "mission"
+    assert result["task"]["params"]["requested_task_type"] == "mission"
+    assert router.active_tasks["mission-calendar"]["type"] == "calendar_mission"
+    assert router.active_tasks["mission-calendar"]["requested_type"] == "mission"
+
+
+def test_route_empty_type_goal_as_general_nanobot_mission(router):
+    result = router.route({
+        "task_id": "mission-general",
+        "type": "",
+        "params": {
+            "goal": "Investigate the documents and report options",
+        },
+    })
+
+    assert result["destination"] == "nanobot"
+    assert result["type"] == "nanobot_mission"
+    assert result["task"]["type"] == "nanobot_mission"
+
+
+def test_route_diary_query_to_nanobot(router):
+    result = router.route({
+        "task_id": "diary",
+        "type": "diary_query",
+        "params": {"result_channel": "diary_result"},
+    })
+    assert result["destination"] == "nanobot"
+    assert router.active_tasks["diary"]["result_channel"] == "diary_result"
 
 
 def test_route_unknown_to_brain_direct(router):
@@ -139,3 +187,44 @@ async def test_scheduler_trigger_result_fanout_writes_bounded_ledger():
     assert redis.published[0][0] == CH_TRIGGER_RESULTS
     published_payload = json.loads(redis.published[0][1])
     assert published_payload["type"] == "calendar_result"
+
+
+@pytest.mark.asyncio
+async def test_scheduler_nanobot_result_ledger_records_without_result_channel():
+    class FakeRedis:
+        def __init__(self):
+            self.xadded: list[dict] = []
+
+        async def xadd(self, stream, fields, *, maxlen=None, approximate=False):
+            self.xadded.append({
+                "stream": stream,
+                "fields": fields,
+                "maxlen": maxlen,
+                "approximate": approximate,
+            })
+
+    redis = FakeRedis()
+    service = SchedulerService()
+
+    await service._write_nanobot_result_ledger(
+        redis,
+        result={
+            "task_id": "mission_no_channel",
+            "type": "nanobot_mission",
+            "status": "draft_ready",
+            "result": '{"summary":"draft"}',
+        },
+        result_channel="",
+        task_id="mission_no_channel",
+        task_type="nanobot_mission",
+        task_meta={"requested_type": "mission"},
+    )
+
+    assert redis.xadded[0]["stream"] == STREAM_NANOBOT_RESULTS
+    assert redis.xadded[0]["maxlen"] == 300
+    assert redis.xadded[0]["approximate"] is True
+    payload = json.loads(redis.xadded[0]["fields"]["payload"])
+    assert payload["task_id"] == "mission_no_channel"
+    assert payload["type"] == "nanobot_mission"
+    assert payload["original_type"] == "nanobot_mission"
+    assert payload["task_meta"]["requested_type"] == "mission"

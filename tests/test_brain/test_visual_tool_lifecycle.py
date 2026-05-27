@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import py_trees
 import pytest
+from PIL import Image
 
 from parrot.brain import refs as refs_registry
 from parrot.brain.event_ingest import EcpEventIngest
@@ -74,6 +76,48 @@ async def test_bbox_confirm_records_evidence_and_c3_notice() -> None:
     assert notice["notify_goslo"] is True
     assert notice["allow_interrupt"] is False
     assert notice["evidence_id"] == receipt["evidence"]["evidence_id"]
+
+
+@pytest.mark.asyncio
+async def test_bbox_confirm_with_asset_creates_object_discovery_draft(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PARROT_VISION_ROOT", str(tmp_path / "vision"))
+    asset_path = tmp_path / "bbox_asset.png"
+    Image.new("RGB", (96, 96), color=(120, 30, 220)).save(asset_path)
+
+    receipt = await handle_visual_tool_lifecycle(
+        {
+            "tool_id": "bbox_app_asset",
+            "tool_kind": "bbox",
+            "interaction_phase": "confirm",
+            "region": {
+                "x": 0.0,
+                "y": 0.0,
+                "width": 1.0,
+                "height": 1.0,
+                "coordinate_space": "normalized",
+            },
+            "asset_path": str(asset_path),
+            "mime_type": "image/png",
+            "subject_hint": "purple box",
+            "meta": {
+                "photo_id": "ph_bbox_asset",
+                "sample_label": "box",
+            },
+        },
+        source="unit_test",
+    )
+
+    discovery = receipt["object_discovery"]
+    assert receipt["success"] is True
+    assert discovery["success"] is True
+    assert discovery["photo_object"]["object_ref_id"].startswith("pobj_")
+    assert discovery["photo_object"]["photo_uuid"] == "ph_bbox_asset"
+    assert discovery["sample"]["sample_uuid"].startswith("os_")
+    assert discovery["sample"]["object_uuid"] == ""
+    assert Path(discovery["sample"]["crop_path"]).is_file()
 
 
 @pytest.mark.asyncio

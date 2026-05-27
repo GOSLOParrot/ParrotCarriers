@@ -20,6 +20,7 @@ _CALENDAR_TASK_TYPES = {
     "calendar_create",
     "calendar_patch",
     "calendar_delete",
+    "calendar_mission",
 }
 
 

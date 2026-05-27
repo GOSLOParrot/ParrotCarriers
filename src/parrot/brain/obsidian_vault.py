@@ -2,7 +2,9 @@
 
 The first App version treats Obsidian as a local user-owned vault. Daily and
 roleplay notes are setting sources and can be identified by path/title. Ref
-notes are binding/strengthening sources and must carry an Obsidian UUID.
+notes are binding/strengthening sources and normally carry an Obsidian UUID.
+Operator import paths may explicitly lift UUID-free ref diary notes as direct
+context instead of RefBinding targets.
 """
 
 from __future__ import annotations
@@ -85,7 +87,11 @@ def note_identity(meta: dict[str, str], path: Path) -> str:
     return meta.get("uuid") or meta.get("obsidian_uuid") or str(path)
 
 
-def note_to_ingest_payload(path: Path) -> dict[str, Any] | None:
+def note_to_ingest_payload(
+    path: Path,
+    *,
+    allow_uuid_free_ref: bool = False,
+) -> dict[str, Any] | None:
     """Convert one note to the payload consumed by ObsidianIngestTrigger.
 
     Returns None when the note should not enter GOSLO memory.
@@ -98,7 +104,11 @@ def note_to_ingest_payload(path: Path) -> dict[str, Any] | None:
     profile = normalize_profile(meta.get("profile", "daily"))
     uuid = meta.get("uuid") or meta.get("obsidian_uuid") or ""
     if profile == "ref" and not uuid:
-        return None
+        if not allow_uuid_free_ref:
+            return None
+        ref_mode = "direct_context"
+    else:
+        ref_mode = str(meta.get("ref_mode") or "").strip()
 
     label = meta.get("label") or meta.get("title") or path.stem
     tags = _list_value(meta.get("tags"))
@@ -106,13 +116,17 @@ def note_to_ingest_payload(path: Path) -> dict[str, Any] | None:
         if meta.get(key):
             tags.append(f"{key}:{meta[key]}")
 
-    return {
+    kind = meta.get("kind", "object") or "object"
+    if profile == "ref" and not uuid and ref_mode == "direct_context":
+        kind = meta.get("kind") or "event"
+
+    payload = {
         "type": "obsidian_note",
         "label": label,
         "obsidian_uuid": uuid,
         "obsidian_note_key": note_identity(meta, path),
         "profile": profile,
-        "kind": meta.get("kind", "object") or "object",
+        "kind": kind,
         "description": (meta.get("description") or body or "")[:400],
         "tags": tags[:10],
         "obsidian_path": str(path),
@@ -121,9 +135,20 @@ def note_to_ingest_payload(path: Path) -> dict[str, Any] | None:
         "target_node_uuid": meta.get("target_node_uuid", "") or "",
         "graphiti_uuid": meta.get("graphiti_uuid", "") or "",
     }
+    if ref_mode:
+        payload["ref_mode"] = ref_mode
+    if profile == "ref" and not uuid and ref_mode == "direct_context":
+        payload["context_role"] = "obsidian_ref_diary_context"
+        payload["ascent_channel"] = "intent_workspace_doc+c3_context_notice"
+    return payload
 
 
-def check_obsidian_vault(vault_path: Path, sample_limit: int = 5) -> VaultCheckResult:
+def check_obsidian_vault(
+    vault_path: Path,
+    sample_limit: int = 5,
+    *,
+    allow_uuid_free_ref: bool = False,
+) -> VaultCheckResult:
     """Scan a vault and classify whether it can feed the Obsidian bridge."""
     vault = Path(vault_path).expanduser().resolve()
     if not vault.exists():
@@ -146,7 +171,10 @@ def check_obsidian_vault(vault_path: Path, sample_limit: int = 5) -> VaultCheckR
     ready_count = 0
 
     for md_file in md_files:
-        payload = note_to_ingest_payload(md_file)
+        payload = note_to_ingest_payload(
+            md_file,
+            allow_uuid_free_ref=allow_uuid_free_ref,
+        )
         if payload is None:
             if len(invalid_samples) < sample_limit:
                 invalid_samples.append(_relative_or_name(md_file, vault))

@@ -607,6 +607,14 @@ BB_KEYS: tuple[BlackboardKey, ...] = (
     ),
     BlackboardKey(
         BbScope.TRANSIENT,
+        "transient/obsidian_context_notice",
+        "dict[str, Any]",
+        "web_console.memory_ops",
+        "Latest Obsidian source-pack DOC staged for Brain/GOSLO context.",
+        event_driven=True,
+    ),
+    BlackboardKey(
+        BbScope.TRANSIENT,
         "transient/visual_tool_lifecycle_receipt",
         "dict[str, Any]",
         "brain.vision.tool_lifecycle",

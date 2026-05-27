@@ -30,12 +30,14 @@ namespace ParrotApp.UI
 
         private Canvas _canvas;
         private Text _statusText;
+        private PhotoController _photoUploadEventSource;
 
         public bool MagnifierOpen => false;
         public bool BBoxOpen => false;
         public string ActiveFocusId => "";
         public string ActiveBBoxId => "";
         public string LastToolStatus { get; private set; } = "tools_idle";
+        public event Action<string, string, bool> OnPhotoUploadCompleted;
 
         private void Awake()
         {
@@ -48,6 +50,11 @@ namespace ParrotApp.UI
             ConfigurePhotoUploadEndpoint();
             EnsureUi();
             SetVisible(false);
+        }
+
+        private void OnDestroy()
+        {
+            BindPhotoUploadEvents(null);
         }
 
         public string CapturePhoto()
@@ -64,8 +71,8 @@ namespace ParrotApp.UI
                 return SetStatus("photo_upload_endpoint_not_phone_safe", false);
 
             SetVisible(true);
-            photoController.CapturePhoto();
-            return SetStatus("photo_capture_requested", true);
+            string status = photoController.CapturePhoto();
+            return SetStatus(status, ToolStatusLooksOk(status));
         }
 
         public string ToggleMagnifier()
@@ -100,6 +107,24 @@ namespace ParrotApp.UI
             if (mainReadyGate == null) mainReadyGate = FindObjectOfType<FormalMainReadyGate>();
             if (photoController == null) photoController = PhotoController.Instance ?? FindObjectOfType<PhotoController>();
             if (photoController == null) photoController = gameObject.AddComponent<PhotoController>();
+            BindPhotoUploadEvents(photoController);
+        }
+
+        private void BindPhotoUploadEvents(PhotoController source)
+        {
+            if (_photoUploadEventSource == source)
+                return;
+            if (_photoUploadEventSource != null)
+                _photoUploadEventSource.OnPhotoUploadCompleted -= HandlePhotoUploadCompleted;
+            _photoUploadEventSource = source;
+            if (_photoUploadEventSource != null)
+                _photoUploadEventSource.OnPhotoUploadCompleted += HandlePhotoUploadCompleted;
+        }
+
+        private void HandlePhotoUploadCompleted(string photoId, string status, bool ok)
+        {
+            SetStatus(status, ok);
+            OnPhotoUploadCompleted?.Invoke(photoId, status, ok);
         }
 
         private void ConfigurePhotoUploadEndpoint()
@@ -125,6 +150,18 @@ namespace ParrotApp.UI
         private bool RequiresPhoneSafeUploadEndpoint()
         {
             return requireNonLoopbackPhotoUploadOnDevice && !Application.isEditor;
+        }
+
+        private static bool ToolStatusLooksOk(string status)
+        {
+            if (string.IsNullOrWhiteSpace(status)) return false;
+            string value = status.ToLowerInvariant();
+            return !(value.Contains("failed")
+                     || value.Contains("missing")
+                     || value.Contains("waits")
+                     || value.Contains("not_phone_safe")
+                     || value.Contains("rejected")
+                     || value.Contains("too_large"));
         }
 
         private string SetStatus(string status, bool ok)

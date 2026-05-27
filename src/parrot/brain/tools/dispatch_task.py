@@ -80,10 +80,16 @@ async def dispatch_task(
             'research' — web search, fact lookup, information gathering.
             'summarize' — summarize text or conversation.
             'remind' — create a reminder or timed notification.
+            'diary_query' reads UUID-free Obsidian diary Markdown files through
+            Nanobot and returns diary_result.
             'memory_consolidation' — summarize and archive conversation history.
             'vocabulary_learn' — learn new words or concepts.
+            'nanobot_mission' / 'calendar_mission' are agentic background
+            missions that can self-investigate and report draft_ready or
+            needs_user_decision before execution.
             'calendar_fetch' / 'calendar_create' / 'calendar_patch' /
-            'calendar_delete' use Google Calendar via Nanobot Google Workspace MCP.
+            'calendar_delete' use Google Calendar via Nanobot Google Workspace MCP
+            or the local fallback Calendar API actuator.
             'message_check' uses Gmail via Nanobot Google Workspace MCP.
             Other types are handled directly by Brain (not dispatched to Nanobot).
         params: JSON-encoded parameters for the task.

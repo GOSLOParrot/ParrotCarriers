@@ -352,11 +352,13 @@ def _trigger_capabilities() -> list[dict[str, Any]]:
 def _nanobot_capabilities() -> list[dict[str, Any]]:
     route_by_task = {
         "calendar_fetch": "/api/google/calendar/nanobot-fetch",
+        "diary_query": "/api/obsidian/diary/query",
         "message_check": "/api/google/messages/check",
         "ref_scan": "/api/memory/identity-ref-index/ref-scan-dispatch",
     }
     tags_by_task = {
         "calendar_fetch": ["calendar_event", "provider_identity"],
+        "diary_query": ["obsidian", "diary", "local_path"],
         "message_check": ["google_message", "provider_identity"],
         "ref_scan": ["staged_ref", "provider_identity"],
         "memory_consolidation": ["archive_request", "graphiti_context"],
@@ -364,10 +366,30 @@ def _nanobot_capabilities() -> list[dict[str, Any]]:
         "summarize": ["plan_request"],
         "remind": ["plan_request"],
         "vocabulary_learn": ["plan_request"],
+        "nanobot_mission": ["nanobot_task", "agentic_mission", "plan_request"],
+        "calendar_mission": ["calendar_event", "agentic_mission", "provider_identity"],
+    }
+    policy_by_task = {
+        "calendar_create": "operator_gated",
+        "calendar_patch": "operator_gated",
+        "calendar_delete": "operator_gated",
+        "calendar_mission": "operator_gated",
+        "nanobot_mission": "nanobot_dispatch",
     }
     rows: list[dict[str, Any]] = []
     for task_type in sorted(NANOBOT_TASK_TYPES):
         route = route_by_task.get(task_type)
+        execution_policy = policy_by_task.get(
+            task_type,
+            "nanobot_dispatch" if route else "draft_only",
+        )
+        true_connection_state = (
+            "operator_gated_write"
+            if execution_policy == "operator_gated"
+            else "nanobot_dispatch"
+            if execution_policy == "nanobot_dispatch"
+            else "draft_route"
+        )
         rows.append(_capability(
             f"nanobot.{task_type}",
             f"Nanobot task: {task_type}",
@@ -375,8 +397,8 @@ def _nanobot_capabilities() -> list[dict[str, Any]]:
             kind="nanobot_task",
             route=route or "PlanRegistry/Scheduler dispatch",
             method="POST" if route else "INTERNAL",
-            execution_policy="nanobot_dispatch" if route else "draft_only",
-            true_connection_state="nanobot_dispatch" if route else "draft_route",
+            execution_policy=execution_policy,
+            true_connection_state=true_connection_state,
             modules=["scheduler_nanobot", "plan_registry"],
             tags=tags_by_task.get(task_type, ["nanobot_task"]),
             plan_step_compatible=True,

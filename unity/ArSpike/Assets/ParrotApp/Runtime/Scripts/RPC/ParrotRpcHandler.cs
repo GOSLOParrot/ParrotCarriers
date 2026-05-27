@@ -168,10 +168,10 @@ namespace ParrotApp.RPC
             {
                 p = JsonUtility.FromJson<FlyToPayload>(data.Payload);
 
-                if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
+                if (IsExpiredForLiveKitRpc(p._ecp, "flyTo"))
                 {
                     Debug.LogWarning($"[ParrotRPC] flyTo expired (command_id={p._ecp.command_id})");
-                    return EcpAckJson.Expired(p._ecp, $"expires_at={p._ecp.expires_at}");
+                    return EcpAckJson.Expired(p._ecp, ExpiredDetail(p._ecp));
                 }
 
                 // Sprint4 Phase 4 W3.A.3: surface active_command_id + locks=["body"]
@@ -228,10 +228,10 @@ namespace ParrotApp.RPC
                     return EcpAckJson.Failed(p._ecp, "missing_animation", EcpAckJson.ReasonMalformed);
                 }
 
-                if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
+                if (IsExpiredForLiveKitRpc(p._ecp, "animate"))
                 {
                     Debug.LogWarning($"[ParrotRPC] animate expired (command_id={p._ecp.command_id})");
-                    return EcpAckJson.Expired(p._ecp, $"expires_at={p._ecp.expires_at}");
+                    return EcpAckJson.Expired(p._ecp, ExpiredDetail(p._ecp));
                 }
 
                 commandId = p._ecp?.command_id ?? "";
@@ -282,10 +282,10 @@ namespace ParrotApp.RPC
             {
                 p = JsonUtility.FromJson<PerchToFingerPayload>(data.Payload);
 
-                if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
+                if (IsExpiredForLiveKitRpc(p._ecp, "perchToFinger"))
                 {
                     Debug.LogWarning($"[ParrotRPC] perchToFinger expired (command_id={p._ecp.command_id})");
-                    return EcpAckJson.Expired(p._ecp, $"expires_at={p._ecp.expires_at}");
+                    return EcpAckJson.Expired(p._ecp, ExpiredDetail(p._ecp));
                 }
 
                 string commandId = p._ecp?.command_id ?? "";
@@ -366,10 +366,10 @@ namespace ParrotApp.RPC
             {
                 p = JsonUtility.FromJson<ReturnToViewPayload>(data.Payload);
 
-                if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
+                if (IsExpiredForLiveKitRpc(p._ecp, "returnToView"))
                 {
                     Debug.LogWarning($"[ParrotRPC] returnToView expired (command_id={p._ecp.command_id})");
-                    return EcpAckJson.Expired(p._ecp, $"expires_at={p._ecp.expires_at}");
+                    return EcpAckJson.Expired(p._ecp, ExpiredDetail(p._ecp));
                 }
 
                 string commandId = p._ecp?.command_id ?? "";
@@ -452,6 +452,27 @@ namespace ParrotApp.RPC
             }
         }
 
+        private static bool IsExpiredForLiveKitRpc(EcpCommandDto command, string rpcName)
+        {
+            if (command == null) return false;
+            double now = EcpAckJson.UnixSeconds();
+            if (command.IsExpiredForLiveKitRpc(now)) return true;
+            if (command.IsPastExpiresAt(now))
+            {
+                Debug.LogWarning(
+                    $"[ParrotRPC] {rpcName} accepted within LiveKit RPC clock-skew grace " +
+                    $"(command_id={command.command_id}, expired_by={command.SecondsPastExpiresAt(now):F1}s, " +
+                    $"grace={EcpCommandDto.LiveKitRpcClockSkewGraceSeconds:F0}s)");
+            }
+            return false;
+        }
+
+        private static string ExpiredDetail(EcpCommandDto command)
+        {
+            if (command == null) return "expires_at=<missing>";
+            return $"expires_at={command.expires_at} grace={EcpCommandDto.LiveKitRpcClockSkewGraceSeconds:F0}s";
+        }
+
         private static Task<T> RunOnUnityThread<T>(Func<T> work)
         {
             var tcs = new TaskCompletionSource<T>();
@@ -479,7 +500,20 @@ namespace ParrotApp.RPC
                 {
                     var parrot = placed.GetComponentInChildren<ParrotController>(true);
                     if (parrot != null) return parrot;
+                    return EnsureParrotController(placed, "placed_model");
                 }
+            }
+
+            var registryController = ParrotRegistry.Instance != null
+                ? ParrotRegistry.Instance.Resolve(modelId)
+                : null;
+            if (registryController is Component registryComponent)
+            {
+                var parrot = registryComponent.GetComponentInParent<ParrotController>(true);
+                if (parrot != null) return parrot;
+                parrot = registryComponent.GetComponentInChildren<ParrotController>(true);
+                if (parrot != null) return parrot;
+                return EnsureParrotController(registryComponent.gameObject, "registry_controller");
             }
 
             var drivers = FindObjectsOfType<ModelDriver>(true);
@@ -496,6 +530,22 @@ namespace ParrotApp.RPC
                 if (parrot != null) return parrot;
                 parrot = driver.gameObject.GetComponent<ParrotController>();
                 if (parrot != null) return parrot;
+                return EnsureParrotController(driver.gameObject, "model_driver");
+            }
+
+            var animationDrivers = FindObjectsOfType<AnimationDriver>(true);
+            for (int i = 0; i < animationDrivers.Length; i++)
+            {
+                var driver = animationDrivers[i];
+                if (driver == null) continue;
+                if (!string.IsNullOrWhiteSpace(modelId) && !MatchesModel(driver.gameObject, modelId))
+                    continue;
+
+                var parrot = driver.GetComponentInParent<ParrotController>(true);
+                if (parrot != null) return parrot;
+                parrot = driver.GetComponentInChildren<ParrotController>(true);
+                if (parrot != null) return parrot;
+                return EnsureParrotController(driver.gameObject, "animation_driver");
             }
 
             var all = FindObjectsOfType<ParrotController>(true);
@@ -507,6 +557,21 @@ namespace ParrotApp.RPC
                     return parrot;
             }
             return null;
+        }
+
+        private static ParrotController EnsureParrotController(GameObject owner, string reason)
+        {
+            if (owner == null) return null;
+            var parrot = owner.GetComponentInParent<ParrotController>(true);
+            if (parrot != null) return parrot;
+            parrot = owner.GetComponentInChildren<ParrotController>(true);
+            if (parrot != null) return parrot;
+
+            parrot = owner.AddComponent<ParrotController>();
+            Debug.LogWarning(
+                $"[ParrotRPC] Added missing ParrotController at RPC time " +
+                $"(reason={reason}, object='{owner.name}')");
+            return parrot;
         }
 
         private PerchOnHand ResolvePerchOwner(string modelId)

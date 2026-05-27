@@ -74,6 +74,23 @@ def test_user_tag_filter_requires_uuid_for_ref_profile():
     assert outcome.reason == "missing_ref_uuid"
 
 
+def test_user_tag_filter_allows_operator_direct_context_ref_without_uuid():
+    outcome = UserTagFilter().process_tag({
+        "label": "demo ref diary",
+        "profile": "ref",
+        "kind": "event",
+        "ref_mode": "direct_context",
+        "obsidian_path": "Vault/ref diary.md",
+        "obsidian_note_key": "Vault/ref diary.md",
+    })
+
+    assert outcome.accepted == 1
+    obs = outcome.observations[0]
+    assert obs.obsidian_uuid == ""
+    assert obs.meta["profile"] == "ref"
+    assert obs.meta["ref_mode"] == "direct_context"
+
+
 @pytest.mark.asyncio
 async def test_obsidian_daily_setting_without_uuid_enters_daily_bucket(env):
     graph, pool = env
@@ -117,6 +134,32 @@ async def test_obsidian_ref_profile_binds_existing_node_without_creating_node(en
     roleplay = pool.get_bucket(BucketKind.OBSIDIAN_SETTING_ROLEPLAY)
     assert daily is not None and "node_1" not in daily.node_uuids
     assert roleplay is not None and "node_1" not in roleplay.node_uuids
+
+
+@pytest.mark.asyncio
+async def test_obsidian_uuid_free_ref_direct_context_creates_daily_bucket_node(env):
+    graph, pool = env
+    outcome = UserTagFilter().process_tag({
+        "label": "demo ref diary",
+        "profile": "ref",
+        "kind": "event",
+        "ref_mode": "direct_context",
+        "obsidian_path": "Vault/ref diary.md",
+        "obsidian_note_key": "Vault/ref diary.md",
+    })
+
+    admit = await pool.admit(outcome.observations)
+
+    assert len(admit.admitted_node_uuids) == 1
+    assert admit.promoted == ()
+    handle = pool.get_bucket(BucketKind.OBSIDIAN_SETTING_DAILY)
+    assert handle is not None
+    assert admit.admitted_node_uuids[0] in handle.node_uuids
+    assert graph.node_count() == 1
+    node = graph.all_nodes()[0]
+    assert node.obsidian_uuid == ""
+    assert node.source_meta["profile"] == "ref"
+    assert node.source_meta["ref_mode"] == "direct_context"
 
 
 @pytest.mark.asyncio

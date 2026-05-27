@@ -1,0 +1,28 @@
+{
+  "audit": {
+    "ambiguous_match_confidence": 0.55,
+    "candidate_count": 0,
+    "execution_model": "sync_wait_core_worker_compatible",
+    "no_inline_image_bytes": true,
+    "object_ref_id": "",
+    "schema": "SameObjectResolver.backend_v1",
+    "strong_match_confidence": 0.75,
+    "visual_candidate_count": 0
+  },
+  "best_confidence": 0.0,
+  "best_object_uuid": "",
+  "candidate_objects": [],
+  "compared_samples": [],
+  "created_at_ms": 1779836186451,
+  "job_uuid": "job_978379c86fbe4336b709a043e54e91ae",
+  "photo_report_path": "",
+  "reasoning_summary": "No storage-backed target image was available.",
+  "recommended_action": "need_better_crop",
+  "report_path": "data\\vision\\reports\\same_object\\2026\\05\\26\\job_978379c86fbe4336b709a043e54e91ae.json",
+  "schema_version": 1,
+  "status": "no_evidence",
+  "target_crop_path": "",
+  "target_evidence_id": "snap_l1hit",
+  "target_photo_id": "",
+  "updated_at_ms": 1779836186451
+}

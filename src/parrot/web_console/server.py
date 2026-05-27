@@ -27,12 +27,14 @@ from parrot.web_console.environment_config import (
 
 try:
     from fastapi import Body, FastAPI, HTTPException
+    from fastapi import Request as FastAPIRequest
     from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
     from fastapi.staticfiles import StaticFiles
 except ImportError:  # pragma: no cover - install gate
     Body = None  # type: ignore[assignment]
     FastAPI = None  # type: ignore[assignment]
     HTTPException = None  # type: ignore[assignment]
+    FastAPIRequest = None  # type: ignore[assignment]
     FileResponse = None  # type: ignore[assignment]
     HTMLResponse = None  # type: ignore[assignment]
     StreamingResponse = None  # type: ignore[assignment]
@@ -719,10 +721,15 @@ def build_app(
     async def l15_obsidian_vault_scan(  # type: ignore[misc]
         vault_path: str = "",
         limit: str = "24",
+        allow_uuid_free_ref: bool = False,
     ) -> dict[str, Any]:
         from parrot.web_console.memory_ops import scan_obsidian_vault
 
-        return scan_obsidian_vault({"vault_path": vault_path, "limit": limit})
+        return scan_obsidian_vault({
+            "vault_path": vault_path,
+            "limit": limit,
+            "allow_uuid_free_ref": allow_uuid_free_ref,
+        })
 
     @app.post("/api/l15/obsidian-vault/import-draft")
     async def l15_obsidian_vault_import_draft(  # type: ignore[misc]
@@ -747,6 +754,20 @@ def build_app(
         from parrot.web_console.memory_ops import apply_obsidian_vault_import
 
         return await apply_obsidian_vault_import(payload or {})
+
+    @app.post("/api/obsidian/diary/query")
+    async def obsidian_diary_query(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import dispatch_obsidian_diary_query
+
+        return await dispatch_obsidian_diary_query(payload or {})
+
+    @app.get("/api/obsidian/diary/results")
+    async def obsidian_diary_results(limit: int = 20) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import obsidian_diary_result_history
+
+        return await obsidian_diary_result_history(limit=limit)
 
     @app.post("/api/l15/bucket-op/draft")
     async def l15_bucket_op_draft(  # type: ignore[misc]
@@ -997,6 +1018,26 @@ def build_app(
         from parrot.web_console.memory_ops import push_test_message
 
         return await push_test_message(payload or {})
+
+    @app.post("/api/google/messages/pubsub-push")
+    async def google_messages_pubsub_push(  # type: ignore[misc]
+        request: FastAPIRequest,
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import receive_gmail_pubsub_push
+
+        return await receive_gmail_pubsub_push(
+            payload or {},
+            token=str(request.query_params.get("token") or ""),
+        )
+
+    @app.post("/api/google/messages/watch")
+    async def google_messages_watch(  # type: ignore[misc]
+        payload: dict[str, Any] | None = Body(default=None),
+    ) -> dict[str, Any]:
+        from parrot.web_console.memory_ops import setup_gmail_watch
+
+        return await setup_gmail_watch(payload or {})
 
     @app.post("/api/google/calendar/preview")
     async def google_calendar_preview(  # type: ignore[misc]

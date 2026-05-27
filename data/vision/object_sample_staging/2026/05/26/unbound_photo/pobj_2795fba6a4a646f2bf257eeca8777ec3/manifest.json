@@ -1,0 +1,72 @@
+{
+  "photo_object": {
+    "bbox": {
+      "coordinate_space": "normalized",
+      "height": 0.5,
+      "width": 0.5,
+      "x": 0.0,
+      "y": 0.0
+    },
+    "candidate_object_uuid": "",
+    "category_guess": "",
+    "confidence": 0.0,
+    "created_at_ms": 1779837061403,
+    "crop_path": "",
+    "edge_uuid": "",
+    "evidence_id": "ev_b22940c75880412b",
+    "label_guess": "",
+    "meta": {
+      "packet_meta": {},
+      "schema": "vision_photo_object_draft_v1",
+      "source_ref_id": "ref_019e668e491a_2508a10f",
+      "source_surface": "app_ar_overlay"
+    },
+    "object_ref_id": "pobj_2795fba6a4a646f2bf257eeca8777ec3",
+    "photo_uuid": "",
+    "review_status": "needs_crop",
+    "sample_draft_id": "os_6666d60dd0e8485099caab148ebdf7b2",
+    "schema_version": 1,
+    "source": "user_bbox",
+    "source_asset_path": "",
+    "tool_event_id": "vtool_1779837061402_793f73c6",
+    "tool_id": "bbox_ecp",
+    "tool_kind": "bbox",
+    "updated_at_ms": 1779837061403
+  },
+  "sample": {
+    "bbox": {
+      "coordinate_space": "normalized",
+      "height": 0.5,
+      "width": 0.5,
+      "x": 0.0,
+      "y": 0.0
+    },
+    "category": "",
+    "content_sha256": "",
+    "created_at_ms": 1779837061403,
+    "created_by": "user_bbox",
+    "crop_path": "",
+    "evidence_id": "ev_b22940c75880412b",
+    "label": "",
+    "meta": {
+      "schema": "vision_object_sample_draft_v1",
+      "source_ref_id": "ref_019e668e491a_2508a10f",
+      "source_tool_event_id": "vtool_1779837061402_793f73c6",
+      "source_tool_id": "bbox_ecp"
+    },
+    "object_ref_id": "pobj_2795fba6a4a646f2bf257eeca8777ec3",
+    "object_uuid": "",
+    "photo_uuid": "",
+    "quality_flags": [
+      "missing_asset"
+    ],
+    "review_status": "needs_crop",
+    "sample_uuid": "os_6666d60dd0e8485099caab148ebdf7b2",
+    "schema_version": 1,
+    "source_asset_path": "",
+    "updated_at_ms": 1779837061403,
+    "visual_description": ""
+  },
+  "schema_version": 1,
+  "updated_at_ms": 1779837061406
+}

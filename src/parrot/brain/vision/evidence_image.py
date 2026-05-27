@@ -8,6 +8,7 @@ asset, applies an optional evidence region, and prepares bytes for VLM tools.
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,18 @@ class PreparedEvidenceImage:
     height: int
     cropped: bool
     asset_path: str
+
+
+@dataclass(slots=True, frozen=True)
+class PersistedEvidenceCrop:
+    """A local crop/reference image written to disk for object samples."""
+
+    crop_path: str
+    width: int
+    height: int
+    cropped: bool
+    source_asset_path: str
+    content_sha256: str
 
 
 def prepare_evidence_image(
@@ -75,6 +88,57 @@ def prepare_evidence_image(
     )
 
 
+def persist_evidence_crop(
+    sample: "TimeAlignedSampleRef",
+    output_path: str | Path,
+    *,
+    max_dimension: int = 0,
+    assume_source_is_crop: bool = False,
+) -> PersistedEvidenceCrop | None:
+    """Persist a sample image or its region crop to ``output_path``.
+
+    The caller decides whether the source asset is already a region capture.
+    This matters for App BBox/MAG assets, where Unity often uploads the
+    selected screen region directly; cropping those a second time would lose
+    the user's chosen pixels.
+    """
+    path_text = str(getattr(sample, "asset_path", "") or "")
+    if not path_text:
+        return None
+    path = Path(path_text)
+    if not path.is_file():
+        return None
+
+    with Image.open(path) as opened:
+        image = opened.convert("RGB")
+    cropped = False
+    region = getattr(sample, "region", None)
+    if region is not None and not assume_source_is_crop:
+        next_image = _crop_region(image, region)
+        if next_image is not image:
+            image = next_image
+            cropped = True
+
+    if max_dimension and max(image.size) > max_dimension:
+        scale = max_dimension / float(max(image.size))
+        resized = (max(1, int(image.width * scale)), max(1, int(image.height * scale)))
+        resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS", Image.BICUBIC)
+        image = image.resize(resized, resample)
+
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output, format="JPEG", quality=88)
+    digest = hashlib.sha256(output.read_bytes()).hexdigest()
+    return PersistedEvidenceCrop(
+        crop_path=str(output),
+        width=image.width,
+        height=image.height,
+        cropped=cropped,
+        source_asset_path=str(path),
+        content_sha256=digest,
+    )
+
+
 async def describe_evidence_sample(sample: "TimeAlignedSampleRef") -> str:
     """Describe a stored evidence image through the existing VLM helper."""
     prepared = prepare_evidence_image(sample)
@@ -102,7 +166,7 @@ def _region_box(image: Image.Image, region: "SampleRegion") -> tuple[int, int, i
         return None
 
     coordinate_space = str(getattr(region, "coordinate_space", "") or "normalized").lower()
-    if coordinate_space == "normalized":
+    if coordinate_space in {"normalized", "screen_normalized", "image_normalized"}:
         x *= image.width
         width *= image.width
         y *= image.height
@@ -118,7 +182,9 @@ def _region_box(image: Image.Image, region: "SampleRegion") -> tuple[int, int, i
 
 
 __all__ = [
+    "PersistedEvidenceCrop",
     "PreparedEvidenceImage",
     "describe_evidence_sample",
+    "persist_evidence_crop",
     "prepare_evidence_image",
 ]

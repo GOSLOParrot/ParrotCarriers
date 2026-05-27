@@ -65,6 +65,9 @@ VISUAL_TOOL_PACKET_BUILDER = (
 VISUAL_TOOL_HTTP_CLIENT = (
     SCRIPT_ROOT / "VisualTools" / "VisualToolHttpClient.cs"
 )
+VISUAL_TOOL_BLACKOUT_FEEDBACK = (
+    SCRIPT_ROOT / "VisualTools" / "VisualToolShutterBlackoutFeedback.cs"
+)
 BBOX_VISUAL_TOOL_CONTROLLER = (
     SCRIPT_ROOT / "VisualTools" / "BBoxVisualToolController.cs"
 )
@@ -472,6 +475,11 @@ def test_parrot_rpc_animation_endpoint_recovers_late_bound_animation_driver() ->
     assert "private void BindRoomManager()" in rpc
     assert "private static ParrotController ResolveParrotController(string modelId)" in rpc
     assert "FindObjectOfType<FormalModelPlacementController>(true)" in rpc
+    assert 'EnsureParrotController(placed, "placed_model")' in rpc
+    assert 'EnsureParrotController(registryComponent.gameObject, "registry_controller")' in rpc
+    assert 'EnsureParrotController(driver.gameObject, "model_driver")' in rpc
+    assert 'EnsureParrotController(driver.gameObject, "animation_driver")' in rpc
+    assert "Added missing ParrotController at RPC time" in rpc
     assert "ResolveParrotController(modelId)" in rpc
     assert "_activeHandler.UnregisterFromCurrentRoom(reportHealth: false)" in rpc
     assert 'room.LocalParticipant.UnregisterRpcMethod("animate")' in rpc
@@ -479,6 +487,22 @@ def test_parrot_rpc_animation_endpoint_recovers_late_bound_animation_driver() ->
     assert "private static Task<T> RunOnUnityThread<T>(Func<T> work)" in rpc
     assert "tcs.TrySetException(ex)" in rpc
     assert 'throw new InvalidOperationException("parrot_controller_missing")' in rpc
+
+
+def test_livekit_rpc_expiry_tolerates_mobile_host_clock_skew() -> None:
+    ecp = (SCRIPT_ROOT / "RPC" / "EcpDtos.cs").read_text(encoding="utf-8")
+    rpc = PARROT_RPC_HANDLER.read_text(encoding="utf-8")
+    video_tier_receiver = (SCRIPT_ROOT / "LiveKit" / "VideoTierReceiver.cs").read_text(encoding="utf-8")
+
+    assert "LiveKitRpcClockSkewGraceSeconds = 120.0" in ecp
+    assert "IsExpiredForLiveKitRpc(double nowUnix)" in ecp
+    assert "IsPastExpiresAt(double nowUnix)" in ecp
+    assert "SecondsPastExpiresAt(double nowUnix)" in ecp
+    assert "IsExpiredForLiveKitRpc(p._ecp, \"animate\")" in rpc
+    assert "IsExpiredForLiveKitRpc(p._ecp, \"flyTo\")" in rpc
+    assert "accepted within LiveKit RPC clock-skew grace" in rpc
+    assert "IsExpiredForLiveKitRpc(p._ecp, p.video_tier)" in video_tier_receiver
+    assert "accepted within LiveKit RPC clock-skew grace" in video_tier_receiver
 
 
 def test_unity_ar_foundation_and_livekit_version_locks_are_pinned() -> None:
@@ -1395,9 +1419,12 @@ def test_startup_livekit_tier1_rpc_business_failure_and_heartbeat_contract() -> 
     assert "agent_downlink_audio" in mic
     assert "RemoteAudioPlaybackActive" in room_manager
     assert "RemoteAudioPlaybackPeak" in room_manager
+    assert "Room.TrackUnsubscribed += OnTrackUnsubscribed" in room_manager
     assert "_remoteAudioStreams[key] = new AudioStream(audioTrack, source)" in room_manager
+    assert "BrainParticipantResolver.IsBrainIdentity(participant?.Identity)" in room_manager
     assert "_remoteAudioSources[key] = source" in room_manager
     assert "source.GetOutputData(_remoteAudioProbeBuffer, 0)" in room_manager
+    assert "new WaitForSecondsRealtime" in mic
     assert "microphonePublisher.UplinkMutedByAgentSpeech" in home_hud
     assert "microphonePublisher.UplinkGateRemotePeak" in home_hud
     assert "microphonePublisher.UplinkGateReason" in home_hud
@@ -1512,6 +1539,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     camera_mode_controller = FORMAL_CAMERA_MODE_CONTROLLER.read_text(encoding="utf-8")
     visual_packet = VISUAL_TOOL_PACKET_BUILDER.read_text(encoding="utf-8")
     visual_http = VISUAL_TOOL_HTTP_CLIENT.read_text(encoding="utf-8")
+    blackout_feedback = VISUAL_TOOL_BLACKOUT_FEEDBACK.read_text(encoding="utf-8")
     bbox_visual = BBOX_VISUAL_TOOL_CONTROLLER.read_text(encoding="utf-8")
     mag_visual = MAGNIFIER_VISUAL_TOOL_CONTROLLER.read_text(encoding="utf-8")
     model_remote = FORMAL_MODEL_REMOTE_CONTROLLER.read_text(encoding="utf-8")
@@ -1640,11 +1668,14 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "ToggleMagnifierTool" in menu_controller
     assert "ToggleBBoxTool" in menu_controller
     assert "homeToolController.CapturePhoto()" in menu_controller
+    assert "bool photoOk = ToolStatusLooksOk(status) && !status.Contains(\"waits\")" in menu_controller
     assert "homeToolController.ToggleMagnifier()" not in menu_controller
     assert "homeToolController.ToggleBBox()" not in menu_controller
     assert "magnifierVisualToolController.ToggleTool()" in menu_controller
     assert "bboxVisualToolController.ToggleTool()" in menu_controller
     assert "ToolStatusForMenu" in menu_controller
+    assert "status.Contains(\"rejected\")" in menu_controller
+    assert "status.Contains(\"too_large\")" in menu_controller
     assert "dev_flag_off" in menu_controller
     assert "MAG after phone stability" in menu_controller
     assert "BOX after phone stability" in menu_controller
@@ -1750,13 +1781,16 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "class FormalCameraModeController" in camera_mode_controller
     assert "FormalCameraModeCanvas" in camera_mode_controller
     assert "FormalCameraModeOverlay_TransparentWysiwyg" in camera_mode_controller
-    assert "FormalCameraModeTinyTopEdge" in camera_mode_controller
-    assert "FormalCameraModeTinyBottomEdge" in camera_mode_controller
+    assert "FormalCameraModeTinyTopEdge" not in camera_mode_controller
+    assert "FormalCameraModeTinyBottomEdge" not in camera_mode_controller
     assert "CameraGestureRail_Zoom" in camera_mode_controller
     assert "CameraExposureRail" in camera_mode_controller
     assert "CameraProSettingsPanel" in camera_mode_controller
     assert "CameraToolbox_PixelBBoxStamp" in camera_mode_controller
     assert "FormalCameraModeShutterButton" in camera_mode_controller
+    assert "HandlePinchViewZoom" in camera_mode_controller
+    assert "enablePinchViewZoom" in camera_mode_controller
+    assert "VisualToolPixelSprites.ShutterCircle()" in camera_mode_controller
     assert "SetModeLocal" in camera_mode_controller
     assert "RequestModeApply" in camera_mode_controller
     assert "ApplyModeHttp" in camera_mode_controller
@@ -1764,6 +1798,9 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "public event Action<string> OnModeApplyPending" in camera_mode_controller
     assert "public event Action<string> OnModeApplySucceeded" in camera_mode_controller
     assert "public event Action<string, string> OnModeApplyFailed" in camera_mode_controller
+    assert "BindPhotoUploadEvents(homeToolController)" in camera_mode_controller
+    assert "OnPhotoUploadCompleted += HandlePhotoUploadCompleted" in camera_mode_controller
+    assert "IsPhotoUploadPendingStatus" in camera_mode_controller
     assert "public bool HasPendingHttpRequest => _modeApplyCoroutine != null || !string.IsNullOrWhiteSpace(_pendingMode)" in camera_mode_controller
     assert "OnModeApplyPending?.Invoke(_pendingMode)" in camera_mode_controller
     assert "OnModeApplySucceeded?.Invoke(normalized)" in camera_mode_controller
@@ -1796,7 +1833,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "homeToolController.CapturePhoto()" in camera_mode_controller
     assert '"Ready", () => RequestModeApply("photo_ready")' in camera_mode_controller
     assert '"Preview", () => RequestModeApply("preview")' in camera_mode_controller
-    assert '"x", () => RequestModeApply("off")' in camera_mode_controller
+    assert '"x", () => RequestModeApply("off")' not in camera_mode_controller
     assert '() => SetModeLocal("photo_ready")' not in camera_mode_controller
     assert '() => SetModeLocal("preview")' not in camera_mode_controller
     camera_capture_block = camera_mode_controller[
@@ -1804,6 +1841,16 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
         camera_mode_controller.index("public void MarkPhotoCaptureStatus")
     ]
     assert camera_capture_block.index("homeToolController.CapturePhoto()") < camera_capture_block.index("SetModeLocal(\"capture_locked\")")
+    assert "MarkPhotoCaptureStatus(status, ok)" in camera_capture_block
+    assert "PlayCaptureFeedback(ok)" not in camera_capture_block
+    camera_photo_status_block = camera_mode_controller[
+        camera_mode_controller.index("public void MarkPhotoCaptureStatus"):
+        camera_mode_controller.index("public string ToggleProSettings")
+    ]
+    assert "bool pendingUpload = ok && IsPhotoUploadPendingStatus(status)" in camera_photo_status_block
+    assert "_pendingPhotoId = photoId" in camera_photo_status_block
+    assert '_pendingPhotoId = ""' in camera_photo_status_block
+    assert "if (!pendingUpload)" in camera_photo_status_block
     assert "SetZoom" in camera_mode_controller
     assert "SetExposure" in camera_mode_controller
     assert "CycleFilter" in camera_mode_controller
@@ -1819,9 +1866,81 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "PerformRpc" not in camera_mode_controller
     assert "AppV1SmokeReferenceUiController" not in camera_mode_controller
 
+    pixel_sprites = (SCRIPT_ROOT / "VisualTools" / "VisualToolPixelSprites.cs").read_text(encoding="utf-8")
+    hud_metrics = (SCRIPT_ROOT / "VisualTools" / "VisualToolHudMetrics.cs").read_text(encoding="utf-8")
+    assert "class VisualToolPixelSprites" in pixel_sprites
+    assert 'MagnifierResourcePath = "ParrotApp/VisualTools/MagPixelTransparent"' in pixel_sprites
+    assert "Resources.Load<Sprite>(MagnifierResourcePath)" in pixel_sprites
+    assert "class VisualToolHudMetrics" in hud_metrics
+    assert "IqooNeo9LandscapeReferenceResolution = new Vector2(2800f, 1260f)" in hud_metrics
+    assert "BottomShutterPosition = new Vector2(0f, 42f)" in hud_metrics
+    assert "RightSideShutterPosition = new Vector2(-42f, 0f)" in hud_metrics
+    assert "BottomShutterControlStripInset" in hud_metrics
+    assert "RightSideShutterControlStripInset" in hud_metrics
+    assert "ApplyResponsiveShutterLayout" in hud_metrics
+    assert "ApplyResponsiveShutterFeedbackLayout" in hud_metrics
+    assert "Screen.width >= Screen.height" in hud_metrics
+    assert "class VisualToolShutterBlackoutFeedback" in blackout_feedback
+    assert "ViewfinderBlackout" in blackout_feedback
+    assert "overrideSorting = true" in blackout_feedback
+    assert "preserveShutterControlsArea" in blackout_feedback
+    assert "BottomShutterControlStripInset" in blackout_feedback
+    assert "RightSideShutterControlStripInset" in blackout_feedback
+    assert "raycastTarget = false" in blackout_feedback
+    assert "ApplyResponsiveShutterLayout(_shutterButtonRoot)" in camera_mode_controller
+    assert "ApplyResponsiveShutterFeedbackLayout(_feedbackBadge.rectTransform)" in camera_mode_controller
+    assert "VisualToolShutterBlackoutFeedback _shutterBlackout" in camera_mode_controller
+    assert "PlayShutterBlackout(photoId)" in camera_mode_controller
+    assert "_pendingPhotoId" in camera_mode_controller
+    assert "_lastBlackoutPhotoId" in camera_mode_controller
+    assert "TryExtractPhotoIdFromStatus" in camera_mode_controller
+    assert "ShouldIgnorePhotoUploadCompletion" in camera_mode_controller
+    assert "BBoxVisualToolConfirmShutterButton" in bbox_visual
+    assert "DefaultRegion => VisualToolHudMetrics.DefaultBBoxRegion" in bbox_visual
+    assert "VisualToolHudMetrics.ApplyResponsiveShutterLayout(_confirmShutterRoot)" in bbox_visual
+    assert "BBoxVisualToolConfirmFeedbackBadge" in bbox_visual
+    assert "ConfirmFromShutter" in bbox_visual
+    assert "BBoxSampleAttributeStrip" in bbox_visual
+    assert "BBoxSemanticSampleLabel" in bbox_visual
+    assert "BBoxSemanticSampleLabelText" in bbox_visual
+    assert "BBoxSampleColorButton" in bbox_visual
+    assert "BBoxSampleLabelButton" in bbox_visual
+    assert "CycleSampleLabel" in bbox_visual
+    assert "CycleSampleColor" in bbox_visual
+    assert "sample_label" in bbox_visual
+    assert "sample_color" in bbox_visual
+    assert "BBoxSelectedHandle" in bbox_visual
+    assert "HandlePinchResize" in bbox_visual
+    assert "ConfirmWithScreenRegionAsset" in bbox_visual
+    assert "VisualToolShutterBlackoutFeedback _shutterBlackout" in bbox_visual
+    assert "OnScreenRegionAssetCapturedForFeedback" in bbox_visual
+    assert "ApplyCaptureOperationVisibility(false)" in bbox_visual
+    assert "_sampleChipRoot.gameObject.SetActive(selected && IsOpen && operationVisible)" in bbox_visual
+    assert "MagnifierVisualToolConfirmShutterButton" in mag_visual
+    assert "DefaultRegion => VisualToolHudMetrics.DefaultMagnifierRegion" in mag_visual
+    assert "VisualToolHudMetrics.ApplyResponsiveShutterLayout(_confirmShutterRoot)" in mag_visual
+    assert "MagnifierVisualToolConfirmFeedbackBadge" in mag_visual
+    assert "ConfirmFromShutter" in mag_visual
+    assert "MagnifierSelectedWhitePixelOutline" in mag_visual
+    assert "MagnifierLiveLensViewport" in mag_visual
+    assert "MagnifierLiveLensTexture" in mag_visual
+    assert "LiveLensRenderLoop" in mag_visual
+    assert "TryRenderLiveLensFromCamera" in mag_visual
+    assert "TryRenderLiveLensFromScreen" in mag_visual
+    assert "mag_live_lens" in mag_visual
+    assert "MagnifierZoomRail" in mag_visual
+    assert "HandlePinchResizeAndZoom" in mag_visual
+    assert "VisualToolPixelSprites.Magnifier()" in mag_visual
+    assert "VisualToolShutterBlackoutFeedback _shutterBlackout" in mag_visual
+    assert "OnScreenRegionAssetCapturedForFeedback" in mag_visual
+    assert "ApplyCaptureOperationVisibility(false)" in mag_visual
+
     assert "class FormalHomeToolController" in tool_controller
     assert "FormalHomeToolCanvas" in tool_controller
     assert "PhotoController photoController" in tool_controller
+    assert "public event Action<string, string, bool> OnPhotoUploadCompleted" in tool_controller
+    assert "BindPhotoUploadEvents(photoController)" in tool_controller
+    assert "HandlePhotoUploadCompleted" in tool_controller
     assert "FocusController focusController" not in tool_controller
     assert "BBoxController bboxController" not in tool_controller
     assert "EcpEventPublisher ecpEventPublisher" not in tool_controller
@@ -1835,7 +1954,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "RemoveBBox" not in tool_controller
     assert "magnifier_deferred_phone_stability" in tool_controller
     assert "bbox_deferred_phone_stability" in tool_controller
-    assert "photoController.CapturePhoto()" in tool_controller
+    assert "string status = photoController.CapturePhoto()" in tool_controller
     assert "photo_upload_endpoint_not_phone_safe" in tool_controller
     assert "_statusText.raycastTarget = false" in tool_controller
     assert "!Application.isEditor" in tool_controller
@@ -1886,18 +2005,27 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "AssetDescription(packet)" in visual_http
     assert "config.appApiUrl" in visual_http
     assert "config.appApiSecret" in visual_http
-    assert "UploadHandlerRaw" in visual_http
+    assert "System.Net.Http" in visual_http
+    assert "HttpClient" in visual_http
+    assert "HttpRequestMessage" in visual_http
+    assert "ByteArrayContent" in visual_http
+    assert "UnityWebRequest" not in visual_http
+    assert "UploadHandlerRaw" not in visual_http
+    assert "RetryDelaysMs" in visual_http
+    assert "ShouldRetryStatus" in visual_http
+    assert "AwaitHttpTextTask" in visual_http
+    assert "ResolveHttpTextTask" in visual_http
     assert "RequestErrorLabel" in visual_http
     lifecycle_request_error_block = visual_http[
-        visual_http.index('LastLifecycleOk = false;'):
-        visual_http.index('string text = req.downloadHandler.text ?? "";')
+        visual_http.index('HttpTextResult http = ResolveHttpTextTask(task, "visual_tool_lifecycle_request_failed");'):
+        visual_http.index('string text = http.Text ?? "";')
     ]
-    assert 'RequestErrorLabel(req, "visual_tool_lifecycle_request_failed")' in lifecycle_request_error_block
+    assert 'RequestErrorLabel(http, "visual_tool_lifecycle_request_failed")' in lifecycle_request_error_block
     asset_request_error_block = visual_http[
-        visual_http.index('LastAssetOk = false;', visual_http.index('if (req.result != UnityWebRequest.Result.Success)', visual_http.index('public IEnumerator UploadAsset'))):
-        visual_http.index('string text = req.downloadHandler.text ?? "";', visual_http.index('public IEnumerator UploadAsset'))
+        visual_http.index('HttpTextResult http = ResolveHttpTextTask(task, "visual_tool_asset_request_failed");'):
+        visual_http.index('string text = http.Text ?? "";', visual_http.index('public IEnumerator UploadAsset'))
     ]
-    assert 'RequestErrorLabel(req, "visual_tool_asset_request_failed")' in asset_request_error_block
+    assert 'RequestErrorLabel(http, "visual_tool_asset_request_failed")' in asset_request_error_block
 
     assert "class VisualToolControllerBase" in (SCRIPT_ROOT / "VisualTools" / "VisualToolControllerBase.cs").read_text(encoding="utf-8")
     visual_base = (SCRIPT_ROOT / "VisualTools" / "VisualToolControllerBase.cs").read_text(encoding="utf-8")
@@ -1947,6 +2075,10 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "OnStableInteractionApplied" in visual_base
     assert "OnStableInteractionReleased" in visual_base
     assert "OnToolClosed" in visual_base
+    assert "OnSemanticHttpCompleted" in visual_base
+    assert "OnScreenRegionAssetCapturedForFeedback" in visual_base
+    assert "PacketHasAssetFailureStatus" in visual_base
+    assert "IsBackendCompletionPendingStatus" in visual_base
     assert "_screenRegionAssetOverlayHideDepth" in visual_base
     assert "BeginScreenRegionAssetOverlayHide" in visual_base
     assert "EndScreenRegionAssetOverlayHide" in visual_base
@@ -2006,6 +2138,8 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "long semanticSequence" in send_lifecycle_block
     assert "ShouldIgnoreStaleCompletion(packet, generation)" in send_lifecycle_block
     assert "IsOlderSemanticCompletion(semanticSequence)" in send_lifecycle_block
+    assert "OnSemanticHttpCompleted(packet.interaction_phase" in send_lifecycle_block
+    assert "PacketHasAssetFailureStatus(packet)" in send_lifecycle_block
     assert send_lifecycle_block.index("if (!IsOlderSemanticCompletion(semanticSequence))") < send_lifecycle_block.index("SetStaleSemanticStatus(packet)")
     emit_phase_block = visual_base[
         visual_base.index("protected string EmitPhase"):
@@ -2025,6 +2159,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert upload_lifecycle_block.index("httpClient.UploadAsset") < upload_lifecycle_block.index("if (IsOlderSemanticCompletion(semanticSequence))", upload_lifecycle_block.index("httpClient.UploadAsset"))
     assert "SetStaleSemanticStatus(packet)" in upload_lifecycle_block
     assert "IsOlderSemanticCompletion(semanticSequence)" in upload_lifecycle_block
+    assert "OnSemanticHttpCompleted(packet.interaction_phase" in upload_lifecycle_block
     assert upload_lifecycle_block.index("if (!IsOlderSemanticCompletion(semanticSequence))") < upload_lifecycle_block.index("SetStaleSemanticStatus(packet)")
     assert "string.Equals(phase, VisualToolPhases.ExplicitSend" in visual_base
     assert "CaptureScreenRegionAssetThenLifecycle" in visual_base
@@ -2032,6 +2167,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "ReadPixels" in visual_base
     assert "EncodeToPNG" in visual_base
     assert "SetOverlayVisibleForScreenRegionAsset" in visual_base
+    assert "OnScreenRegionAssetCapturedForFeedback(packet.interaction_phase)" in visual_base
     assert "hideOverlayDuringAssetCapture" in visual_base
     capture_overlay_block = visual_base[
         visual_base.index("private IEnumerator CaptureScreenRegionAssetThenLifecycle"):
@@ -2049,6 +2185,7 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "yield return SendLifecycle(packet, generation, allowStaleCompletion: false, semanticSequence: semanticSequence)" in visual_base
     assert "UploadAssetThenLifecycle" in visual_base
     assert "LastAssetStatus" in visual_base
+    assert "protected bool IsScreenRegionAssetOverlayHidden" in visual_base
     assert "IntentWorkspace" not in visual_base
     assert "Graphiti" not in visual_base
     assert "Blackboard" not in visual_base
@@ -2075,11 +2212,19 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "SetOverlayVisibleForScreenRegionAsset" in bbox_visual
     assert "emitLockOnPointerRelease" in bbox_visual
     assert "ConfirmAttentionHint => 1.0f" in bbox_visual
+    assert "ToolLabel => \"BBox:\" + CurrentSampleLabel" in bbox_visual
+    assert "bbox_sample_overlay" in bbox_visual
+    assert "BBoxSemanticSampleLabel" in bbox_visual
+    assert "SetSampleLabel" in bbox_visual
+    assert "SetSampleColorIndex" in bbox_visual
     assert "bbox_locked_unlock_required" in bbox_visual
     assert "protected override void OnPreviewOpened()" in bbox_visual
     assert "protected override void OnStableInteractionApplied" in bbox_visual
     assert "protected override void OnStableInteractionReleased" in bbox_visual
     assert "protected override void OnToolClosed" in bbox_visual
+    assert "protected override void OnSemanticHttpCompleted" in bbox_visual
+    assert "PlayConfirmFeedback(ok)" in bbox_visual
+    assert "if (!IsBackendCompletionPendingStatus(status))" in bbox_visual
     assert "EndLocalPointerGesture()" in bbox_visual
     bbox_update_overlay_block = bbox_visual[
         bbox_visual.index("protected override void UpdateOverlay"):
@@ -2087,6 +2232,10 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     ]
     assert "if (_canvas == null && (!FeatureEnabled || !IsOpen))" in bbox_update_overlay_block
     assert bbox_update_overlay_block.index("if (_canvas == null && (!FeatureEnabled || !IsOpen))") < bbox_update_overlay_block.index("EnsureOverlay()")
+    assert "_canvas.gameObject.SetActive(FeatureEnabled && IsOpen)" in bbox_update_overlay_block
+    assert "bool operationVisible = !IsScreenRegionAssetOverlayHidden" in bbox_update_overlay_block
+    assert "selected && operationVisible" in bbox_update_overlay_block
+    assert "showConfirmShutter && operationVisible && FeatureEnabled && IsOpen" in bbox_update_overlay_block
     bbox_pointer_block = bbox_visual[
         bbox_visual.index("private void HandlePointerInput"):
         bbox_visual.index("private BBoxInteractionMode HitTestInteraction")
@@ -2107,6 +2256,12 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "emitDwellTicks" in mag_visual
     assert "SetZoom" in mag_visual
     assert "AdjustZoom" in mag_visual
+    assert "enableLiveLensRender" in mag_visual
+    assert "CreateLiveLensViewport" in mag_visual
+    assert "Mask" in mag_visual
+    assert "RawImage" in mag_visual
+    assert "ReadPixels" in mag_visual
+    assert "RenderTexture.GetTemporary" in mag_visual
     assert "MagnifierDevExplicitSendButton" in mag_visual
     assert "MagnifierDevAssetConfirmButton" in mag_visual
     assert "MagnifierDevZoomInButton" in mag_visual
@@ -2115,11 +2270,23 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "SetOverlayVisibleForScreenRegionAsset" in mag_visual
     assert "VisualToolDeliveryPreferences.IntentOnly" in mag_visual
     assert "VisualToolDeliveryPreferences.C3" in mag_visual
+    mag_update_overlay_block = mag_visual[
+        mag_visual.index("protected override void UpdateOverlay"):
+        mag_visual.index("private void EnsureOverlay")
+    ]
+    assert "_canvas.gameObject.SetActive(FeatureEnabled && IsOpen)" in mag_update_overlay_block
+    assert "bool operationVisible = !IsScreenRegionAssetOverlayHidden" in mag_update_overlay_block
+    assert "selected && operationVisible" in mag_update_overlay_block
+    assert "showConfirmShutter && operationVisible && FeatureEnabled && IsOpen" in mag_update_overlay_block
+    assert "_zoomRailRoot.gameObject.SetActive(operationVisible)" in mag_update_overlay_block
     assert "mag_locked_unlock_required" in mag_visual
     assert "protected override void OnPreviewOpened()" in mag_visual
     assert "protected override void OnStableInteractionApplied" in mag_visual
     assert "protected override void OnStableInteractionReleased" in mag_visual
     assert "protected override void OnToolClosed" in mag_visual
+    assert "protected override void OnSemanticHttpCompleted" in mag_visual
+    assert "PlayConfirmFeedback(ok)" in mag_visual
+    assert "if (!IsBackendCompletionPendingStatus(status))" in mag_visual
     assert "ResetLocalInspectionTiming" in mag_visual
     assert "public override string BeginPreview" not in mag_visual
     mag_update_overlay_block = mag_visual[
@@ -2147,6 +2314,36 @@ def test_formal_home_loaders_use_app_http_model_manifest_and_ar_gate() -> None:
     assert "public bool visualToolDevEnabled" in runtime_config
     assert "public bool visualToolHttpEnabled" in runtime_config
     assert "public string UploadEndpointLabel" in photo_controller
+    assert "public string LastCaptureStatus" in photo_controller
+    assert "public string LastUploadStatus" in photo_controller
+    assert "public event Action<string, string, bool> OnPhotoUploadCompleted" in photo_controller
+    assert "_uploadCompletionLock" in photo_controller
+    assert "UploadCompletionNotification" in photo_controller
+    assert "_pendingUploadCompletions.Enqueue" in photo_controller
+    assert "_pendingUploadCompletions.Dequeue()" in photo_controller
+    assert "void Update()" in photo_controller
+    assert "DispatchPendingUploadCompletion()" in photo_controller
+    assert "public string CapturePhoto() => CapturePhotoInternal" in photo_controller
+    assert "private string CapturePhotoInternal" in photo_controller
+    assert "SetCaptureStatus(\"photo_capture_requested:\" + photoId, true)" in photo_controller
+    assert "SetUploadStatus(photoId, \"photo_upload_ok:\" + photoId, true)" in photo_controller
+    assert "SetUploadStatus(photoId, \"photo_upload_failed:\" + photoId, false)" in photo_controller
+    configure_upload_block = photo_controller[
+        photo_controller.index("public void ConfigureUploadEndpoint"):
+        photo_controller.index("public bool TryConfigureUploadEndpoint")
+    ]
+    assert "return SetCaptureStatus" not in configure_upload_block
+    awake_block = photo_controller[
+        photo_controller.index("void Awake()"):
+        photo_controller.index("void Start()")
+    ]
+    assert "return SetCaptureStatus" not in awake_block
+    upload_status_block = photo_controller[
+        photo_controller.index("private void SetUploadStatus"):
+        photo_controller.index("private void DispatchPendingUploadCompletion")
+    ]
+    assert "OnPhotoUploadCompleted?.Invoke" not in upload_status_block
+    assert "OnPhotoUploadCompleted?.Invoke(notification.PhotoId, notification.Status, notification.Ok)" in photo_controller
     assert 'brainScheme = "http"' in photo_controller
     assert 'brainScheme = string.Equals(uri.Scheme, Uri.UriSchemeHttps' in photo_controller
     assert 'string url = $"{brainScheme}://{brainHost}:{brainPort}/upload/photo/{photoId}"' in photo_controller

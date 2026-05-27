@@ -87,6 +87,7 @@ namespace ParrotApp.LiveKit
         public static RoomManager Instance { get; private set; }
         private readonly Dictionary<string, AudioStream> _remoteAudioStreams = new();
         private readonly Dictionary<string, AudioSource> _remoteAudioSources = new();
+        private readonly Dictionary<string, GameObject> _remoteAudioObjects = new();
         private readonly float[] _remoteAudioProbeBuffer = new float[256];
 
         [Header("Remote Audio Probe")]
@@ -101,7 +102,7 @@ namespace ParrotApp.LiveKit
         private float _remoteAudioLastProbeTime = -1f;
 
         public bool RemoteAudioPlaybackActive =>
-            Time.unscaledTime <= _remoteAudioActiveUntil;
+            _remoteAudioActiveUntil > 0f && Time.unscaledTime <= _remoteAudioActiveUntil;
 
         public float RemoteAudioPlaybackPeak => _remoteAudioLastPeak;
 
@@ -413,6 +414,7 @@ namespace ParrotApp.LiveKit
             Room = new Room();
 
             Room.TrackSubscribed += OnTrackSubscribed;
+            Room.TrackUnsubscribed += OnTrackUnsubscribed;
             Room.ParticipantConnected += p =>
             {
                 Debug.Log($"[RoomManager] + {p.Identity}");
@@ -475,7 +477,7 @@ namespace ParrotApp.LiveKit
             if (track is RemoteAudioTrack audioTrack)
             {
                 Debug.Log($"[RoomManager] Audio track from {participant.Identity}");
-                var key = $"{participant.Identity}:{publication.Sid}";
+                var key = RemoteAudioKey(publication, participant);
                 if (_remoteAudioStreams.ContainsKey(key))
                 {
                     Debug.Log($"[RoomManager] Audio stream already exists for {key}");
@@ -491,22 +493,61 @@ namespace ParrotApp.LiveKit
                 // 强引用：避免 Mono GC 在远端 track 仍订阅时回收 AudioStream，
                 // 否则真机会随机断流 (Sprint3 已踩)。
                 _remoteAudioStreams[key] = new AudioStream(audioTrack, source);
-                _remoteAudioSources[key] = source;
+                _remoteAudioObjects[key] = go;
+                if (BrainParticipantResolver.IsBrainIdentity(participant?.Identity))
+                    _remoteAudioSources[key] = source;
+            }
+        }
+
+        private void OnTrackUnsubscribed(
+            IRemoteTrack track,
+            RemoteTrackPublication publication,
+            RemoteParticipant participant)
+        {
+            if (track is RemoteAudioTrack)
+                ClearRemoteAudioStream(RemoteAudioKey(publication, participant), "track_unsubscribed");
+        }
+
+        private static string RemoteAudioKey(
+            RemoteTrackPublication publication,
+            RemoteParticipant participant)
+        {
+            return $"{participant?.Identity ?? "unknown"}:{publication?.Sid ?? ""}";
+        }
+
+        private void ClearRemoteAudioStream(string key, string reason)
+        {
+            if (_remoteAudioStreams.TryGetValue(key, out var stream))
+            {
+                try { stream.Dispose(); }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[RoomManager] Dispose audio stream {key} failed ({reason}): {e.Message}");
+                }
+                _remoteAudioStreams.Remove(key);
+            }
+
+            _remoteAudioSources.Remove(key);
+
+            if (_remoteAudioObjects.TryGetValue(key, out var go) && go != null)
+                Destroy(go);
+            _remoteAudioObjects.Remove(key);
+
+            if (_remoteAudioSources.Count == 0)
+            {
+                _remoteAudioLastPeak = 0f;
+                _remoteAudioLastProbeTime = -1f;
+                _remoteAudioActiveUntil = 0f;
             }
         }
 
         private void ClearRemoteAudioStreams(string reason)
         {
-            foreach (var kv in _remoteAudioStreams)
-            {
-                try { kv.Value.Dispose(); }
-                catch (Exception e)
-                {
-                    Debug.LogWarning($"[RoomManager] Dispose audio stream {kv.Key} failed ({reason}): {e.Message}");
-                }
-            }
+            foreach (var key in new List<string>(_remoteAudioStreams.Keys))
+                ClearRemoteAudioStream(key, reason);
             _remoteAudioStreams.Clear();
             _remoteAudioSources.Clear();
+            _remoteAudioObjects.Clear();
             _remoteAudioLastPeak = 0f;
             _remoteAudioLastProbeTime = -1f;
             _remoteAudioActiveUntil = 0f;

@@ -11,6 +11,7 @@ from parrot.brain.tools.calendar_change_request import calendar_change_request
 from parrot.brain.tools.calendar_change_request import do_calendar_change_request
 from parrot.brain.tools.calendar_task_status import calendar_task_status
 from parrot.brain.tools.calendar_task_status import do_calendar_task_status
+from parrot.brain.tools.nanobot_task_status import nanobot_task_status
 from parrot.shared.constants import STREAM_NANOBOT_DISPATCH, STREAM_TRIGGER_RESULTS
 
 
@@ -63,6 +64,7 @@ def test_calendar_collaboration_tools_are_registered_for_goslo() -> None:
 
     assert calendar_change_request in tools
     assert calendar_task_status in tools
+    assert nanobot_task_status in tools
 
 
 def test_calendar_change_request_rejects_patch_without_event_id() -> None:

@@ -120,6 +120,35 @@ async def test_photo_awareness_notice_routes_to_c3_without_speech() -> None:
 
 
 @pytest.mark.asyncio
+async def test_obsidian_context_notice_routes_to_c3_without_speech() -> None:
+    session = _FakeSession()
+    injector = ContextInjector(session)  # type: ignore[arg-type]
+
+    await injector._dispatch(
+        "transient/obsidian_context_notice",
+        {},
+        {
+            "source_pack_uuid": "pack_123",
+            "staged_ref_ids": ["ref_obsidian_456"],
+            "item_count": 1,
+            "notify_goslo": True,
+            "allow_react": False,
+            "priority": "c3_high_context",
+            "message": "Obsidian diary/context source pack is staged.",
+        },
+    )
+
+    assert session.update_count == 1
+    assert session.generated_replies == []
+    pushed = session.chat_ctx.messages[-1]
+    assert pushed["role"] == "user"
+    assert "Obsidian diary/context source pack is staged" in pushed["content"][0]
+    assert "staged_ref_ids=ref_obsidian_456" in pushed["content"][0]
+    assert "source_pack_uuid=pack_123" in pushed["content"][0]
+    assert "do not interrupt" in pushed["content"][0]
+
+
+@pytest.mark.asyncio
 async def test_photo_awareness_pending_notice_waits_for_staged_ref() -> None:
     session = _FakeSession()
     injector = ContextInjector(session)  # type: ignore[arg-type]

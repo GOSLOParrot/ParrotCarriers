@@ -5,7 +5,7 @@ from __future__ import annotations
 from livekit.agents import RunContext, function_tool
 
 from parrot.brain.tools._capability_gate import supports_capability, unsupported_message
-from parrot.brain.tools._rpc_bridge import call_unity_rpc
+from parrot.brain.tools._rpc_bridge import UNITY_RPC_ECP_TTL_S, call_unity_rpc
 from parrot.brain.tools._state_context import attach_state_header
 from parrot.shared.ecp import EcpCommandKind, wrap_legacy_rpc_payload
 
@@ -43,7 +43,7 @@ async def perch_to_finger(
             "anchor": "index_finger_middle_segment",
         },
         actor="brain.tools.perch_to_finger",
-        expires_in_s=6.0,
+        expires_in_s=UNITY_RPC_ECP_TTL_S,
         expected_duration_ms=2500,
         meta=meta_kwarg,
     )

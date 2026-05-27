@@ -62,6 +62,10 @@ class TriggerOutcome:
     # body-feel/priority policy instead of this boolean alone.
     notify_gemini: bool = False
     notification_text: str = ""
+    # Explicit opt-in for server-initiated speech. Keep this narrow: ordinary
+    # trigger hints should stay C3, while demo-critical reminders can speak
+    # after the central session_policy placement gate allows it.
+    proactive_speech: bool = False
 
     # DSG-TRIGGER-V2 upload channels.
     commit_observations: tuple["Observation", ...] = ()

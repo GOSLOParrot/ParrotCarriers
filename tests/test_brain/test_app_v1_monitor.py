@@ -404,6 +404,10 @@ def test_monitor_exposes_obsidian_source_board_and_photo_routes(
             "operator_mode": False,
         },
     ).json()
+    diary_query = client.post(
+        "/api/obsidian/diary/query",
+        json={"vault_path": str(vault), "diary_root": str(vault), "dry_run": True, "operator_mode": False},
+    ).json()
     node_draft = client.post(
         "/api/l15/obsidian-node/draft",
         json={"profile": "daily", "label": "Manual source note", "body": "Draft only."},
@@ -424,6 +428,9 @@ def test_monitor_exposes_obsidian_source_board_and_photo_routes(
     assert dry_apply["action"] == "l15.obsidian_vault.import"
     assert dry_apply["data"]["would_apply"] is True
     assert dry_apply["data"]["apply_skipped_reason"] == "dry_run_or_operator_mode_missing"
+    assert diary_query["action"] == "obsidian.diary.query.dispatch"
+    assert diary_query["data"]["task_type"] == "diary_query"
+    assert diary_query["data"]["would_dispatch"] is True
     assert node_draft["action"] == "l15.obsidian_node.draft"
     assert node_draft["success"] is True
     assert photo.status_code == 200

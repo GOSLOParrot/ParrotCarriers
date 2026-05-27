@@ -1,7 +1,9 @@
 using System;
 using System.Collections;
 using ParrotApp.Backend;
+using ParrotApp.VisualTools;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace ParrotApp.UI
@@ -27,6 +29,9 @@ namespace ParrotApp.UI
         [SerializeField] private float defaultExposure = 0.0f;
         [SerializeField] private float minExposure = -2.0f;
         [SerializeField] private float maxExposure = 2.0f;
+        [SerializeField] private bool enablePinchViewZoom = true;
+        [SerializeField] private float minViewZoom = 1.0f;
+        [SerializeField] private float maxViewZoom = 3.0f;
 
         private readonly string[] _filters = { "natural", "paper", "low_light" };
 
@@ -34,14 +39,18 @@ namespace ParrotApp.UI
         private RectTransform _overlayRoot;
         private RectTransform _proPanel;
         private RectTransform _transitionSlot;
+        private RectTransform _feedbackFlash;
+        private RectTransform _shutterButtonRoot;
         private Text _modeLabel;
         private Text _zoomLabel;
         private Text _exposureLabel;
         private Text _proLabel;
         private Text _statusLabel;
         private Text _transitionText;
+        private Text _feedbackBadge;
         private Slider _zoomSlider;
         private Slider _exposureSlider;
+        private VisualToolShutterBlackoutFeedback _shutterBlackout;
 
         private string _mode = "off";
         private string _pendingMode = "";
@@ -52,6 +61,16 @@ namespace ParrotApp.UI
         private int _filterIndex;
         private bool _proOpen;
         private Coroutine _modeApplyCoroutine;
+        private Coroutine _feedbackCoroutine;
+        private float _pinchStartDistance;
+        private float _pinchStartZoom = 1f;
+        private Camera _zoomCamera;
+        private float _baseCameraFieldOfView;
+        private float _baseCameraOrthographicSize;
+        private bool _hasCameraZoomBase;
+        private FormalHomeToolController _photoUploadEventSource;
+        private string _pendingPhotoId = "";
+        private string _lastBlackoutPhotoId = "";
 
         public string CurrentMode => _mode;
         public string PendingMode => _pendingMode;
@@ -84,6 +103,24 @@ namespace ParrotApp.UI
             RefreshUi();
         }
 
+        private void OnDestroy()
+        {
+            BindPhotoUploadEvents(null);
+        }
+
+        private void Update()
+        {
+            if (IsOpen)
+            {
+                VisualToolHudMetrics.ApplyResponsiveShutterLayout(_shutterButtonRoot);
+                HandlePinchViewZoom();
+            }
+            else
+            {
+                _pinchStartDistance = 0f;
+            }
+        }
+
         public string TogglePreviewLocal()
         {
             EnsureUi();
@@ -97,11 +134,13 @@ namespace ParrotApp.UI
             if (string.Equals(_mode, "off", StringComparison.OrdinalIgnoreCase))
             {
                 _proOpen = false;
+                ResetCameraViewZoom();
                 SetVisible(false);
             }
             else if (showOverlay && showOverlayForPreviewModes)
             {
                 SetVisible(true);
+                ApplyCameraViewZoom();
             }
 
             LastCameraStatus = "camera_mode_" + _mode;
@@ -179,9 +218,7 @@ namespace ParrotApp.UI
             bool ok = ToolStatusLooksOk(status);
             if (ok)
                 SetModeLocal("capture_locked");
-            _lastPhotoStatus = ok ? "camera_photo_requested" : "camera_photo_failed:" + ShortLabel(status, "unknown", 24);
-            LastCameraStatus = status;
-            RefreshUi();
+            MarkPhotoCaptureStatus(status, ok);
             return status;
         }
 
@@ -212,10 +249,22 @@ namespace ParrotApp.UI
 
         public void MarkPhotoCaptureStatus(string status, bool ok)
         {
-            _lastPhotoStatus = ok
+            bool pendingUpload = ok && IsPhotoUploadPendingStatus(status);
+            string photoId = TryExtractPhotoIdFromStatus(status);
+            if (pendingUpload)
+                _pendingPhotoId = photoId;
+            else
+                _pendingPhotoId = "";
+            _lastPhotoStatus = pendingUpload
+                ? "camera_photo_upload_pending"
+                : ok
                 ? "camera_photo_requested"
                 : "camera_photo_failed:" + ShortLabel(status, "unknown", 24);
             LastCameraStatus = string.IsNullOrWhiteSpace(status) ? _lastPhotoStatus : status;
+            if (pendingUpload)
+                PlayShutterBlackout(photoId);
+            if (!pendingUpload)
+                PlayCaptureFeedback(ok);
             RefreshUi();
         }
 
@@ -229,8 +278,9 @@ namespace ParrotApp.UI
 
         public string SetZoom(float value)
         {
-            _zoom = Mathf.Clamp(value, minZoom, maxZoom);
+            _zoom = Mathf.Clamp(value, Mathf.Max(minZoom, minViewZoom), Mathf.Max(maxZoom, maxViewZoom));
             LastCameraStatus = "camera_zoom_" + _zoom.ToString("0.0");
+            ApplyCameraViewZoom();
             RefreshUi();
             return LastCameraStatus;
         }
@@ -255,6 +305,31 @@ namespace ParrotApp.UI
         {
             if (homeMenuClient == null) homeMenuClient = FindObjectOfType<AppHomeMenuClient>();
             if (homeToolController == null) homeToolController = FindObjectOfType<FormalHomeToolController>();
+            BindPhotoUploadEvents(homeToolController);
+        }
+
+        private void BindPhotoUploadEvents(FormalHomeToolController source)
+        {
+            if (_photoUploadEventSource == source)
+                return;
+            if (_photoUploadEventSource != null)
+                _photoUploadEventSource.OnPhotoUploadCompleted -= HandlePhotoUploadCompleted;
+            _photoUploadEventSource = source;
+            if (_photoUploadEventSource != null)
+                _photoUploadEventSource.OnPhotoUploadCompleted += HandlePhotoUploadCompleted;
+        }
+
+        private void HandlePhotoUploadCompleted(string photoId, string status, bool ok)
+        {
+            if (ShouldIgnorePhotoUploadCompletion(photoId))
+                return;
+            _pendingPhotoId = "";
+            _lastPhotoStatus = ok
+                ? "camera_photo_upload_ok"
+                : "camera_photo_upload_failed:" + ShortLabel(status, "unknown", 24);
+            LastCameraStatus = string.IsNullOrWhiteSpace(status) ? _lastPhotoStatus : status;
+            PlayCaptureFeedback(ok);
+            RefreshUi();
         }
 
         private void EnsureUi()
@@ -266,10 +341,11 @@ namespace ParrotApp.UI
             _canvas = root.AddComponent<Canvas>();
             _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             _canvas.sortingOrder = 71;
+            _shutterBlackout = root.AddComponent<VisualToolShutterBlackoutFeedback>();
 
             var scaler = root.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(2800f, 1260f);
+            scaler.referenceResolution = VisualToolHudMetrics.IqooNeo9LandscapeReferenceResolution;
             scaler.matchWidthOrHeight = 0.5f;
             root.AddComponent<GraphicRaycaster>();
 
@@ -282,66 +358,10 @@ namespace ParrotApp.UI
                 Vector2.zero,
                 Vector2.zero);
 
-            // WYSIWYG means the AR camera feed stays untouched; these edges only
-            // reserve touch-safe control space around the real rendered view.
-            var topEdge = CreatePanel(
-                "FormalCameraModeTinyTopEdge",
+            _shutterButtonRoot = CreateShutterButton(
+                "FormalCameraModeShutterButton",
                 _overlayRoot,
-                new Vector2(0f, 1f),
-                new Vector2(1f, 1f),
-                new Vector2(0.5f, 1f),
-                Vector2.zero,
-                new Vector2(0f, 58f),
-                new Color(0.01f, 0.012f, 0.016f, 0.32f));
-            topEdge.offsetMin = new Vector2(0f, -58f);
-            topEdge.offsetMax = Vector2.zero;
-
-            var bottomEdge = CreatePanel(
-                "FormalCameraModeTinyBottomEdge",
-                _overlayRoot,
-                new Vector2(0f, 0f),
-                new Vector2(1f, 0f),
-                new Vector2(0.5f, 0f),
-                Vector2.zero,
-                new Vector2(0f, 96f),
-                new Color(0.01f, 0.012f, 0.016f, 0.34f));
-            bottomEdge.offsetMin = Vector2.zero;
-            bottomEdge.offsetMax = new Vector2(0f, 96f);
-
-            _modeLabel = CreateText(
-                "FormalCameraModeLabel",
-                _overlayRoot,
-                new Vector2(0f, 1f),
-                new Vector2(0f, 1f),
-                new Vector2(0f, 1f),
-                new Vector2(24f, -12f),
-                new Vector2(500f, 46f),
-                16,
-                TextAnchor.MiddleLeft);
-
-            CreateButton("FormalCameraModeCloseButton", _overlayRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-28f, -12f), new Vector2(48f, 38f), "x", () => RequestModeApply("off"));
-            CreateButton("FormalCameraModeSettingsButton", _overlayRoot, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-86f, -12f), new Vector2(72f, 38f), "gear", ToggleProSettings);
-            CreateButton("FormalCameraModeReadyButton", _overlayRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(-110f, 22f), new Vector2(110f, 54f), "Ready", () => RequestModeApply("photo_ready"));
-            CreateButton("FormalCameraModeShutterButton", _overlayRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(16f, 22f), new Vector2(130f, 54f), "Capture", CapturePhotoFromCameraMode);
-            CreateButton("FormalCameraModePreviewButton", _overlayRoot, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(154f, 22f), new Vector2(126f, 54f), "Preview", () => RequestModeApply("preview"));
-
-            _zoomLabel = CreateText("FormalCameraZoomLabel", _overlayRoot, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(28f, -72f), new Vector2(96f, 56f), 15, TextAnchor.MiddleCenter);
-            _zoomSlider = CreateSlider("CameraGestureRail_Zoom", _overlayRoot, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(130f, -72f), new Vector2(210f, 30f), minZoom, maxZoom, _zoom, SetZoom);
-
-            _exposureLabel = CreateText("FormalCameraExposureLabel", _overlayRoot, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-28f, -72f), new Vector2(96f, 56f), 15, TextAnchor.MiddleCenter);
-            _exposureSlider = CreateSlider("CameraExposureRail", _overlayRoot, new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(1f, 0.5f), new Vector2(-130f, -72f), new Vector2(210f, 30f), minExposure, maxExposure, _exposure, SetExposure);
-
-            _transitionSlot = CreatePanel(
-                "FormalCameraModeTransitionSlot",
-                _overlayRoot,
-                new Vector2(0.5f, 0.5f),
-                new Vector2(0.5f, 0.5f),
-                new Vector2(0.5f, 0.5f),
-                new Vector2(0f, 160f),
-                new Vector2(430f, 56f),
-                new Color(0.02f, 0.024f, 0.032f, 0.40f));
-            _transitionText = CreateText("FormalCameraModeTransitionText", _transitionSlot, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, 18, TextAnchor.MiddleCenter);
-            _transitionSlot.gameObject.SetActive(false);
+                CapturePhotoFromCameraMode);
 
             _proPanel = CreatePanel(
                 "CameraProSettingsPanel",
@@ -350,7 +370,7 @@ namespace ParrotApp.UI
                 new Vector2(1f, 0.5f),
                 new Vector2(1f, 0.5f),
                 new Vector2(-24f, 12f),
-                new Vector2(330f, 420f),
+                new Vector2(330f, 320f),
                 new Color(0.035f, 0.04f, 0.052f, 0.88f));
 
             CreateText("FormalCameraProSettingsTitle", _proPanel, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, 1f), new Vector2(20f, -18f), new Vector2(-40f, 44f), 20, TextAnchor.MiddleLeft).text = "PRO CAMERA";
@@ -360,19 +380,43 @@ namespace ParrotApp.UI
             CreateButton("FormalCameraProPreviewButton", _proPanel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(-82f, 94f), new Vector2(122f, 38f), "Preview", () => RequestModeApply("preview"));
             CreateButton("FormalCameraHideUiButton", _proPanel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(82f, 94f), new Vector2(122f, 38f), "Hide UI", ToggleProSettings);
 
+            _zoomLabel = CreateText("FormalCameraZoomLabel", _proPanel, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(18f, 8f), new Vector2(72f, 42f), 13, TextAnchor.MiddleCenter);
+            _zoomSlider = CreateSlider("CameraGestureRail_Zoom", _proPanel, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(98f, 14f), new Vector2(190f, 24f), minZoom, maxZoom, _zoom, SetZoom);
+            _exposureLabel = CreateText("FormalCameraExposureLabel", _proPanel, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(18f, 52f), new Vector2(72f, 42f), 13, TextAnchor.MiddleCenter);
+            _exposureSlider = CreateSlider("CameraExposureRail", _proPanel, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(98f, 58f), new Vector2(190f, 24f), minExposure, maxExposure, _exposure, SetExposure);
+            _zoomLabel.gameObject.SetActive(false);
+            _zoomSlider.gameObject.SetActive(false);
+            _exposureLabel.gameObject.SetActive(false);
+            _exposureSlider.gameObject.SetActive(false);
+
             var stamp = CreatePanel("CameraToolbox_PixelBBoxStamp", _proPanel, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 28f), new Vector2(246f, 58f), new Color(0.78f, 0.74f, 0.56f, 0.94f));
             CreateText("FormalCameraPixelBBoxStampText", stamp, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, 14, TextAnchor.MiddleCenter).text = "Pixel BBox stamp slot";
 
-            _statusLabel = CreateText(
-                "FormalCameraModeStatus",
+            _feedbackFlash = CreatePanel(
+                "FormalCameraModeCaptureFlash",
                 _overlayRoot,
-                new Vector2(0f, 0f),
-                new Vector2(0f, 0f),
-                new Vector2(0f, 0f),
-                new Vector2(24f, 18f),
-                new Vector2(760f, 48f),
-                13,
-                TextAnchor.MiddleLeft);
+                Vector2.zero,
+                Vector2.one,
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                Vector2.zero,
+                new Color(1f, 1f, 1f, 0f));
+            _feedbackFlash.gameObject.SetActive(false);
+            var feedbackImage = _feedbackFlash.GetComponent<Image>();
+            if (feedbackImage != null)
+                feedbackImage.raycastTarget = false;
+            _feedbackBadge = CreateText(
+                "FormalCameraModeCaptureBadge",
+                _overlayRoot,
+                new Vector2(0.5f, 0f),
+                new Vector2(0.5f, 0f),
+                new Vector2(0.5f, 0f),
+                new Vector2(0f, 164f),
+                new Vector2(160f, 42f),
+                18,
+                TextAnchor.MiddleCenter);
+            VisualToolHudMetrics.ApplyResponsiveShutterFeedbackLayout(_feedbackBadge.rectTransform);
+            _feedbackBadge.gameObject.SetActive(false);
         }
 
         private void SetVisible(bool visible)
@@ -383,14 +427,15 @@ namespace ParrotApp.UI
         private void RefreshUi()
         {
             if (_canvas == null) return;
+            VisualToolHudMetrics.ApplyResponsiveShutterLayout(_shutterButtonRoot);
+            if (_feedbackBadge != null)
+                VisualToolHudMetrics.ApplyResponsiveShutterFeedbackLayout(_feedbackBadge.rectTransform);
             if (_zoomSlider != null && !Mathf.Approximately(_zoomSlider.value, _zoom))
                 _zoomSlider.SetValueWithoutNotify(_zoom);
             if (_exposureSlider != null && !Mathf.Approximately(_exposureSlider.value, _exposure))
                 _exposureSlider.SetValueWithoutNotify(_exposure);
             if (_modeLabel != null)
-                _modeLabel.text = "CAM " + ModeLabel(_mode) + "  "
-                                  + "zoom " + _zoom.ToString("0.0") + "x  "
-                                  + "EV " + _exposure.ToString("0.0");
+                _modeLabel.text = "CAM " + ModeLabel(_mode) + "  " + _zoom.ToString("0.0") + "x";
             if (_zoomLabel != null) _zoomLabel.text = "ZOOM\n" + _zoom.ToString("0.0") + "x";
             if (_exposureLabel != null) _exposureLabel.text = "EV\n" + _exposure.ToString("0.0");
             if (_proLabel != null)
@@ -435,7 +480,35 @@ namespace ParrotApp.UI
             return !status.Contains("missing")
                    && !status.Contains("failed")
                    && !status.Contains("waits")
-                   && !status.Contains("not_phone_safe");
+                   && !status.Contains("not_phone_safe")
+                   && !status.Contains("rejected")
+                   && !status.Contains("too_large");
+        }
+
+        private static bool IsPhotoUploadPendingStatus(string status)
+        {
+            return !string.IsNullOrWhiteSpace(status)
+                   && status.IndexOf("photo_capture_requested", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string TryExtractPhotoIdFromStatus(string status)
+        {
+            if (string.IsNullOrWhiteSpace(status))
+                return "";
+            int colon = status.LastIndexOf(':');
+            if (colon < 0 || colon >= status.Length - 1)
+                return "";
+            string id = status.Substring(colon + 1).Trim();
+            return id.StartsWith("ph_", StringComparison.OrdinalIgnoreCase) ? id : "";
+        }
+
+        private bool ShouldIgnorePhotoUploadCompletion(string photoId)
+        {
+            if (string.IsNullOrWhiteSpace(_pendingPhotoId))
+                return true;
+            if (string.IsNullOrWhiteSpace(photoId))
+                return true;
+            return !string.Equals(_pendingPhotoId, photoId, StringComparison.OrdinalIgnoreCase);
         }
 
         private static RectTransform CreatePanel(
@@ -475,6 +548,44 @@ namespace ParrotApp.UI
             var text = CreateText(name + "Label", rect, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, 13, TextAnchor.MiddleCenter);
             text.text = label;
             return text;
+        }
+
+        private static RectTransform CreateShutterButton(
+            string name,
+            Transform parent,
+            Func<string> action)
+        {
+            var rect = CreateArea(
+                name,
+                parent,
+                new Vector2(0.5f, 0f),
+                new Vector2(0.5f, 0f),
+                new Vector2(0.5f, 0f),
+                Vector2.zero,
+                VisualToolHudMetrics.BottomShutterSize);
+            VisualToolHudMetrics.ApplyResponsiveShutterLayout(rect);
+            var image = rect.gameObject.AddComponent<Image>();
+            image.sprite = VisualToolPixelSprites.ShutterCircle();
+            image.preserveAspect = true;
+            image.color = new Color(1f, 1f, 1f, 0.96f);
+            image.raycastTarget = true;
+            var button = rect.gameObject.AddComponent<Button>();
+            button.onClick.AddListener(() => action?.Invoke());
+
+            var inner = CreateArea(
+                name + "Inner",
+                rect,
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f),
+                Vector2.zero,
+                VisualToolHudMetrics.BottomShutterSize * 0.72f);
+            var innerImage = inner.gameObject.AddComponent<Image>();
+            innerImage.sprite = VisualToolPixelSprites.ShutterCircle();
+            innerImage.preserveAspect = true;
+            innerImage.color = new Color(0.08f, 0.065f, 0.055f, 0.94f);
+            innerImage.raycastTarget = false;
+            return rect;
         }
 
         private static Slider CreateSlider(
@@ -539,6 +650,120 @@ namespace ParrotApp.UI
             text.color = new Color(0.96f, 0.92f, 0.80f, 0.96f);
             text.raycastTarget = false;
             return text;
+        }
+
+        private void PlayShutterBlackout(string photoId = "")
+        {
+            EnsureUi();
+            if (!string.IsNullOrWhiteSpace(photoId)
+                && string.Equals(_lastBlackoutPhotoId, photoId, StringComparison.OrdinalIgnoreCase))
+                return;
+            if (!string.IsNullOrWhiteSpace(photoId))
+                _lastBlackoutPhotoId = photoId;
+            _shutterBlackout?.Play();
+        }
+
+        private void PlayCaptureFeedback(bool ok)
+        {
+            EnsureUi();
+            if (!IsOpen)
+                return;
+            if (_feedbackCoroutine != null)
+                StopCoroutine(_feedbackCoroutine);
+            _feedbackCoroutine = StartCoroutine(CaptureFeedbackRoutine(ok));
+        }
+
+        private IEnumerator CaptureFeedbackRoutine(bool ok)
+        {
+            if (_feedbackBadge != null)
+            {
+                _feedbackBadge.text = ok ? "OK" : "FAIL";
+                _feedbackBadge.color = ok
+                    ? new Color(0.72f, 1f, 0.62f, 1f)
+                    : new Color(1f, 0.36f, 0.28f, 1f);
+                _feedbackBadge.gameObject.SetActive(true);
+            }
+
+            if (_feedbackFlash != null)
+                _feedbackFlash.gameObject.SetActive(false);
+
+            yield return new WaitForSecondsRealtime(0.75f);
+            if (_feedbackBadge != null)
+                _feedbackBadge.gameObject.SetActive(false);
+            _feedbackCoroutine = null;
+        }
+
+        private void HandlePinchViewZoom()
+        {
+            if (!enablePinchViewZoom || Input.touchCount < 2)
+            {
+                _pinchStartDistance = 0f;
+                return;
+            }
+
+            var a = Input.GetTouch(0);
+            var b = Input.GetTouch(1);
+            if (IsFingerOverUi(a.fingerId) || IsFingerOverUi(b.fingerId))
+                return;
+
+            float distance = Vector2.Distance(a.position, b.position);
+            if (_pinchStartDistance <= 1f
+                || a.phase == TouchPhase.Began
+                || b.phase == TouchPhase.Began)
+            {
+                _pinchStartDistance = Mathf.Max(1f, distance);
+                _pinchStartZoom = Mathf.Max(0.1f, _zoom);
+                LastCameraStatus = "camera_zoom_pinch_start";
+                RefreshUi();
+                return;
+            }
+
+            float nextZoom = _pinchStartZoom * distance / Mathf.Max(1f, _pinchStartDistance);
+            _zoom = Mathf.Clamp(nextZoom, Mathf.Max(1f, minViewZoom), Mathf.Max(minViewZoom, maxViewZoom));
+            LastCameraStatus = "camera_zoom_" + _zoom.ToString("0.0");
+            ApplyCameraViewZoom();
+            RefreshUi();
+        }
+
+        private static bool IsFingerOverUi(int fingerId)
+        {
+            return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(fingerId);
+        }
+
+        private void ApplyCameraViewZoom()
+        {
+            if (_zoomCamera == null)
+                _zoomCamera = Camera.main;
+            if (_zoomCamera == null)
+                return;
+
+            if (!_hasCameraZoomBase)
+            {
+                _baseCameraFieldOfView = _zoomCamera.fieldOfView;
+                _baseCameraOrthographicSize = _zoomCamera.orthographicSize;
+                _hasCameraZoomBase = true;
+            }
+
+            float zoomValue = Mathf.Clamp(_zoom, Mathf.Max(1f, minViewZoom), Mathf.Max(minViewZoom, maxViewZoom));
+            if (_zoomCamera.orthographic)
+                _zoomCamera.orthographicSize = Mathf.Max(0.01f, _baseCameraOrthographicSize / zoomValue);
+            else
+                _zoomCamera.fieldOfView = Mathf.Clamp(_baseCameraFieldOfView / zoomValue, 12f, _baseCameraFieldOfView);
+        }
+
+        private void ResetCameraViewZoom()
+        {
+            if (_zoomCamera == null)
+                _zoomCamera = Camera.main;
+            if (_zoomCamera != null && _hasCameraZoomBase)
+            {
+                if (_zoomCamera.orthographic)
+                    _zoomCamera.orthographicSize = _baseCameraOrthographicSize;
+                else
+                    _zoomCamera.fieldOfView = _baseCameraFieldOfView;
+            }
+            _zoom = Mathf.Clamp(defaultZoom, Mathf.Max(minZoom, minViewZoom), Mathf.Max(maxZoom, maxViewZoom));
+            _pinchStartDistance = 0f;
         }
 
         private static RectTransform CreateArea(

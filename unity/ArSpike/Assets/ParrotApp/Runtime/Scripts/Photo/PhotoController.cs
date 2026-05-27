@@ -93,14 +93,26 @@ namespace ParrotApp.Photo
             public string TimebaseJson;
         }
 
+        private struct UploadCompletionNotification
+        {
+            public string PhotoId;
+            public string Status;
+            public bool Ok;
+        }
+
         // ─── State ────────────────────────────────────────────────────
 
         // Key: photo_id. Source of truth for all captured photos this session.
         private readonly Dictionary<string, PendingPhoto> _pendingPhotos = new();
+        private readonly object _uploadCompletionLock = new object();
+        private readonly Queue<UploadCompletionNotification> _pendingUploadCompletions = new();
 
         public int PendingCount => _pendingPhotos.Count;
         public string UploadEndpointLabel => $"{brainScheme}://{brainHost}:{brainPort}";
         public bool IsUploadEndpointLoopback => IsLoopbackHost(brainHost);
+        public string LastCaptureStatus { get; private set; } = "photo_capture_idle";
+        public string LastUploadStatus { get; private set; } = "photo_upload_idle";
+        public event Action<string, string, bool> OnPhotoUploadCompleted;
 
         public void ConfigureUploadEndpoint(string host, int port)
         {
@@ -168,6 +180,11 @@ namespace ParrotApp.Photo
             if (Instance == this) Instance = null;
         }
 
+        void Update()
+        {
+            DispatchPendingUploadCompletion();
+        }
+
         // ─── Reconnect (§B.5) ─────────────────────────────────────────
 
         private void OnRoomConnected()
@@ -215,22 +232,22 @@ namespace ParrotApp.Photo
         // ─── Public API ───────────────────────────────────────────────
 
         /// <summary>拍照（无候选对象）。</summary>
-        public void CapturePhoto() => CapturePhotoInternal("");
+        public string CapturePhoto() => CapturePhotoInternal("");
 
         /// <summary>拍照并指定候选对象 UUID（Brain 端 CANDIDATE_SUBJECT edge，Phase 5+ 实际建边）。</summary>
-        public void CapturePhotoWithCandidate(string subjectUuid)
+        public string CapturePhotoWithCandidate(string subjectUuid)
             => CapturePhotoInternal(subjectUuid ?? "");
 
         // ─── Main capture flow ─────────────────────────────────────────
 
-        private void CapturePhotoInternal(string candidateSubjectUuid)
+        private string CapturePhotoInternal(string candidateSubjectUuid)
         {
             // 1. Capture full-res JPEG from Camera.main (spike: offscreen render)
             (byte[] fullResJpeg, int srcWidth, int srcHeight) = CaptureFullResJpeg();
             if (fullResJpeg == null || fullResJpeg.Length == 0)
             {
                 Debug.LogError("[PhotoController] CapturePhoto: frame capture failed — Camera.main null or zero size");
-                return;
+                return SetCaptureStatus("photo_capture_frame_failed", false);
             }
 
             // 2. Generate photo_id (ph_<guid8>)
@@ -250,7 +267,7 @@ namespace ParrotApp.Photo
                 Debug.LogError(
                     $"[PhotoController] CapturePhoto: photo_id={photoId} — " +
                     $"preview_jpeg_b64 still >{EcpEventConsts.PayloadLimitBytes}B at Q40 (unusual for 256px). Aborting.");
-                return;
+                return SetCaptureStatus("photo_preview_too_large", false);
             }
 
             // 6. Build 12-field payload JSON (schema_version=1, entry §8.3 + bb_schema.py transient/last_photo_event)
@@ -279,7 +296,7 @@ namespace ParrotApp.Photo
                 Debug.LogError(
                     $"[PhotoController] photo_id={photoId} — EcpEventBuilder rejected payload " +
                     $"(preview_jpeg_b64 Q{usedQuality} too large). Cascade logic should prevent this.");
-                return;
+                return SetCaptureStatus("photo_preview_event_rejected", false);
             }
             string previewEventId = dto.event_id;
 
@@ -329,6 +346,45 @@ namespace ParrotApp.Photo
 
             // 10. HTTP POST full-res asset (async, non-blocking)
             _ = UploadAssetAsync(photoId, fullResJpeg, previewEventId, uploadTimebaseJson);
+            return SetCaptureStatus("photo_capture_requested:" + photoId, true);
+        }
+
+        private string SetCaptureStatus(string status, bool ok)
+        {
+            LastCaptureStatus = string.IsNullOrWhiteSpace(status) ? "photo_capture_idle" : status;
+            if (!ok)
+                LastUploadStatus = LastCaptureStatus;
+            return LastCaptureStatus;
+        }
+
+        private void SetUploadStatus(string photoId, string status, bool ok)
+        {
+            string normalized = string.IsNullOrWhiteSpace(status) ? "photo_upload_idle" : status;
+            lock (_uploadCompletionLock)
+            {
+                LastUploadStatus = normalized;
+                _pendingUploadCompletions.Enqueue(new UploadCompletionNotification
+                {
+                    PhotoId = photoId ?? "",
+                    Status = normalized,
+                    Ok = ok,
+                });
+            }
+        }
+
+        private void DispatchPendingUploadCompletion()
+        {
+            while (true)
+            {
+                UploadCompletionNotification notification;
+                lock (_uploadCompletionLock)
+                {
+                    if (_pendingUploadCompletions.Count == 0)
+                        return;
+                    notification = _pendingUploadCompletions.Dequeue();
+                }
+                OnPhotoUploadCompleted?.Invoke(notification.PhotoId, notification.Status, notification.Ok);
+            }
         }
 
         // ─── Frame capture ────────────────────────────────────────────
@@ -602,6 +658,7 @@ namespace ParrotApp.Photo
                             p.Status = UploadStatus.Uploaded;
                             p.FullResJpeg = null;  // Release cached bytes once uploaded
                         }
+                        SetUploadStatus(photoId, "photo_upload_ok:" + photoId, true);
                         success = true;
                         break;
                     }
@@ -624,6 +681,7 @@ namespace ParrotApp.Photo
                     p.Status = UploadStatus.Failed;
                 Debug.LogError(
                     $"[PhotoController] HTTP POST /upload/photo/{photoId} FAILED after 3 attempts (status=Failed).");
+                SetUploadStatus(photoId, "photo_upload_failed:" + photoId, false);
             }
         }
 

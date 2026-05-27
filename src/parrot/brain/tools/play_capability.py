@@ -15,7 +15,7 @@ from parrot.brain.tools._capability_gate import (
     supports_capability,
     unsupported_message,
 )
-from parrot.brain.tools._rpc_bridge import call_unity_rpc
+from parrot.brain.tools._rpc_bridge import UNITY_RPC_ECP_TTL_S, call_unity_rpc
 from parrot.brain.tools._state_context import attach_state_header
 from parrot.shared.ecp import EcpCommandKind, wrap_legacy_rpc_payload
 
@@ -58,7 +58,7 @@ async def play_capability(
             "parameters_json": parameters_json or "",
         },
         actor="brain.tools.play_capability",
-        expires_in_s=5.0,
+        expires_in_s=UNITY_RPC_ECP_TTL_S,
         expected_duration_ms=1000,
         meta=meta_kwarg,
     )

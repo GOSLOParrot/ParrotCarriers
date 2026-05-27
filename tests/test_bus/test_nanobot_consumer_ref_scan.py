@@ -51,6 +51,420 @@ def published_body(redis: FakeRedis) -> dict[str, object]:
 
 
 @pytest.mark.asyncio
+async def test_fallback_nanobot_diary_query_reads_daily_markdown(tmp_path) -> None:
+    diary_root = tmp_path / "Diary" / "2026"
+    diary_root.mkdir(parents=True)
+    note = diary_root / "2026-05-18.md"
+    note.write_text(
+        "---\nprofile: daily\ntitle: Diary 2026-05-18\ndate: 2026-05-18\n---\n"
+        "Practiced guitar chords, watched anime, drank water, took medicine.",
+        encoding="utf-8",
+    )
+    redis = FakeRedis()
+    task = {
+        "task_id": "task-diary",
+        "type": "diary_query",
+        "params": {
+            "diary_root": str(tmp_path / "Diary"),
+            "date_from": "2026-05-12",
+            "date_to": "2026-05-18",
+            "result_channel": "diary_result",
+            "query": "guitar water medicine",
+        },
+    }
+
+    await NanobotConsumer()._handle_task(
+        redis,
+        "1710000000-0",
+        {"payload": json.dumps(task)},
+    )
+
+    published = json.loads(redis.published[0][1])
+    body = json.loads(published["result"])
+    assert published["type"] == "diary_query"
+    assert published["result_channel"] == "diary_result"
+    assert published["result_summary"].startswith("Diary query found 1 entry")
+    assert body["entries"][0]["date"] == "2026-05-18"
+    assert body["entries"][0]["path"] == str(note)
+    assert "profile=daily" in body["profile_policy"]
+
+
+@pytest.mark.asyncio
+async def test_fallback_nanobot_calendar_fetch_reads_demo_fixture(tmp_path) -> None:
+    fixture = tmp_path / "calendar.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "id": "evt_future",
+                        "summary": "Demo future event",
+                        "start": {"dateTime": "2026-05-21T10:00:00+08:00"},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    redis = FakeRedis()
+    task = {
+        "task_id": "task-calendar",
+        "type": "calendar_fetch",
+        "params": {
+            "demo_events_path": str(fixture),
+            "time_min": "2026-05-20T00:00:00+08:00",
+            "time_max": "2026-05-22T00:00:00+08:00",
+            "result_channel": "calendar_result",
+        },
+    }
+
+    await NanobotConsumer()._handle_task(
+        redis,
+        "1710000000-1",
+        {"payload": json.dumps(task)},
+    )
+
+    published = json.loads(redis.published[0][1])
+    body = json.loads(published["result"])
+    assert published["type"] == "calendar_fetch"
+    assert published["result_channel"] == "calendar_result"
+    assert published["result_summary"].startswith("Calendar query found 1 event")
+    assert body["events"][0]["id"] == "evt_future"
+    assert body["events"][0]["title"] == "Demo future event"
+
+
+@pytest.mark.asyncio
+async def test_fallback_nanobot_calendar_create_calls_google_api(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_calendar_api_request(**kwargs):
+        calls.append(kwargs)
+        event_body = kwargs["body"]
+        assert isinstance(event_body, dict)
+        return (
+            {
+                "id": "evt_created",
+                "summary": event_body["summary"],
+                "start": event_body["start"],
+                "end": event_body["end"],
+                "status": "confirmed",
+                "htmlLink": "https://calendar.google.com/event?eid=created",
+            },
+            200,
+            "unit_oauth",
+        )
+
+    monkeypatch.setattr(nanobot_consumer, "_calendar_google_api_request", fake_calendar_api_request)
+    redis = FakeRedis()
+    task = {
+        "task_id": "task-calendar-create",
+        "type": "calendar_create",
+        "params": {
+            "calendar_write_approved": True,
+            "calendar_id": "primary",
+            "title": "Tea planning",
+            "time_range": "2026-05-18 15:00-15:30",
+            "details": {"location": "Library"},
+            "result_channel": "calendar_result",
+        },
+    }
+
+    await NanobotConsumer()._handle_task(redis, "1710000000-10", {"payload": json.dumps(task)})
+
+    published = json.loads(redis.published[0][1])
+    body = json.loads(published["result"])
+    assert published["type"] == "calendar_create"
+    assert published["status"] == "completed"
+    assert published["result_channel"] == "calendar_result"
+    assert published["result_summary"].startswith("Calendar create completed")
+    assert body["event_id"] == "evt_created"
+    assert body["events"][0]["title"] == "Tea planning"
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["calendar_id"] == "primary"
+    assert calls[0]["event_id"] == ""
+    assert calls[0]["body"]["location"] == "Library"
+    assert calls[0]["body"]["start"]["dateTime"].startswith("2026-05-18T15:00:00")
+    assert calls[0]["body"]["end"]["dateTime"].startswith("2026-05-18T15:30:00")
+    assert calls[0]["query"]["sendUpdates"] == "none"
+
+
+@pytest.mark.asyncio
+async def test_fallback_nanobot_calendar_patch_calls_google_api(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_calendar_api_request(**kwargs):
+        calls.append(kwargs)
+        event_body = kwargs["body"]
+        assert isinstance(event_body, dict)
+        return (
+            {
+                "id": "evt_patch",
+                "summary": event_body["summary"],
+                "start": {"dateTime": "2026-05-18T16:00:00+08:00"},
+                "end": {"dateTime": "2026-05-18T16:30:00+08:00"},
+                "location": event_body["location"],
+                "status": "confirmed",
+            },
+            200,
+            "unit_oauth",
+        )
+
+    monkeypatch.setattr(nanobot_consumer, "_calendar_google_api_request", fake_calendar_api_request)
+    redis = FakeRedis()
+    task = {
+        "task_id": "task-calendar-patch",
+        "type": "calendar_patch",
+        "params": {
+            "hitl_approved": True,
+            "calendar_id": "primary",
+            "event_id": "evt_patch",
+            "title": "Moved tea planning",
+            "details": {"location": "Study"},
+            "result_channel": "calendar_result",
+        },
+    }
+
+    await NanobotConsumer()._handle_task(redis, "1710000000-11", {"payload": json.dumps(task)})
+
+    published = json.loads(redis.published[0][1])
+    body = json.loads(published["result"])
+    assert published["type"] == "calendar_patch"
+    assert published["status"] == "completed"
+    assert body["event_id"] == "evt_patch"
+    assert body["events"][0]["location"] == "Study"
+    assert calls[0]["method"] == "PATCH"
+    assert calls[0]["event_id"] == "evt_patch"
+    assert calls[0]["body"] == {"location": "Study", "summary": "Moved tea planning"}
+
+
+@pytest.mark.asyncio
+async def test_fallback_nanobot_calendar_delete_calls_google_api(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_calendar_api_request(**kwargs):
+        calls.append(kwargs)
+        return {}, 204, "unit_oauth"
+
+    monkeypatch.setattr(nanobot_consumer, "_calendar_google_api_request", fake_calendar_api_request)
+    redis = FakeRedis()
+    task = {
+        "task_id": "task-calendar-delete",
+        "type": "calendar_delete",
+        "params": {
+            "operator_mode": True,
+            "calendar_id": "primary",
+            "event_id": "evt_delete",
+            "title": "Cancelled tea planning",
+            "result_channel": "calendar_result",
+        },
+    }
+
+    await NanobotConsumer()._handle_task(redis, "1710000000-12", {"payload": json.dumps(task)})
+
+    published = json.loads(redis.published[0][1])
+    body = json.loads(published["result"])
+    assert published["type"] == "calendar_delete"
+    assert published["status"] == "completed"
+    assert body["event_id"] == "evt_delete"
+    assert body["events"][0]["status"] == "cancelled"
+    assert calls[0]["method"] == "DELETE"
+    assert calls[0]["event_id"] == "evt_delete"
+    assert calls[0]["body"] is None
+
+
+@pytest.mark.asyncio
+async def test_fallback_nanobot_calendar_write_requires_approval(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_calendar_api_request(**kwargs):
+        calls.append(kwargs)
+        return {}, 200, "unit_oauth"
+
+    monkeypatch.setattr(nanobot_consumer, "_calendar_google_api_request", fake_calendar_api_request)
+    redis = FakeRedis()
+    task = {
+        "task_id": "task-calendar-unapproved",
+        "type": "calendar_delete",
+        "params": {
+            "calendar_id": "primary",
+            "event_id": "evt_delete",
+            "result_channel": "calendar_result",
+        },
+    }
+
+    await NanobotConsumer()._handle_task(redis, "1710000000-13", {"payload": json.dumps(task)})
+
+    published = json.loads(redis.published[0][1])
+    body = json.loads(published["result"])
+    assert published["type"] == "calendar_delete"
+    assert published["status"] == "failed"
+    assert "calendar_write_not_approved" in body["error"]
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_fallback_nanobot_calendar_mission_reports_decision_options(tmp_path) -> None:
+    fixture = tmp_path / "calendar.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "events": [
+                    {
+                        "id": "evt_busy",
+                        "summary": "Existing meeting",
+                        "start": {"dateTime": "2026-05-18T15:00:00+08:00"},
+                        "end": {"dateTime": "2026-05-18T15:30:00+08:00"},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    redis = FakeRedis()
+    task = {
+        "task_id": "task-calendar-mission",
+        "type": "calendar_mission",
+        "params": {
+            "goal": "Find a safe time for tea planning",
+            "mode": "guided_workflow",
+            "workflow": {"steps": ["inspect_calendar", "detect_conflicts", "wait_for_approval"]},
+            "authority": "draft_only",
+            "demo_events_path": str(fixture),
+            "time_min": "2026-05-18T14:00:00+08:00",
+            "time_max": "2026-05-18T17:00:00+08:00",
+            "title": "Tea planning",
+            "time_range": "2026-05-18 15:00-15:30",
+            "result_channel": "calendar_result",
+        },
+    }
+
+    await NanobotConsumer()._handle_task(redis, "1710000000-14", {"payload": json.dumps(task)})
+
+    published = json.loads(redis.published[0][1])
+    body = json.loads(published["result"])
+    assert published["type"] == "calendar_mission"
+    assert published["status"] == "needs_user_decision"
+    assert published["result_channel"] == "calendar_result"
+    assert body["schema"] == "nanobot_mission_result_v1"
+    assert body["mode"] == "guided_workflow"
+    assert body["nanobot_capabilities"]["workflow_guided"] is True
+    assert body["investigation_trace"][0]["phase"] == "understand_goal"
+    assert body["workflow_phase_results"][1]["id"] == "detect_conflicts"
+    assert body["decision_strategy"]["next_action"] == "ask_user_to_resolve_conflict"
+    assert body["authority"] == "draft_only"
+    assert body["requires_approval"] is True
+    assert body["conflicts"][0]["event_id"] == "evt_busy"
+    assert body["options"][0]["id"] == "proceed_with_proposed_write"
+    assert body["proposed_write"]["event_body"]["summary"] == "Tea planning"
+
+
+@pytest.mark.asyncio
+async def test_fallback_nanobot_calendar_mission_executes_approved_write(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_calendar_api_request(**kwargs):
+        calls.append(kwargs)
+        return {
+            "id": "evt_created",
+            "summary": "Tea planning",
+            "start": {"dateTime": "2026-05-18T16:00:00+08:00"},
+            "end": {"dateTime": "2026-05-18T16:30:00+08:00"},
+            "htmlLink": "https://calendar.google.com/event?eid=evt_created",
+        }, 200, "unit_oauth"
+
+    monkeypatch.setattr(nanobot_consumer, "_calendar_google_api_request", fake_calendar_api_request)
+    redis = FakeRedis()
+    task = {
+        "task_id": "task-calendar-mission-write",
+        "type": "calendar_mission",
+        "params": {
+            "goal": "Create tea planning if there are no conflicts",
+            "authority": "approved_write",
+            "calendar_write_approved": True,
+            "hitl_approved": True,
+            "calendar_id": "primary",
+            "title": "Tea planning",
+            "time_range": "2026-05-18 16:00-16:30",
+            "result_channel": "calendar_result",
+        },
+    }
+
+    await NanobotConsumer()._handle_task(redis, "1710000000-15", {"payload": json.dumps(task)})
+
+    published = json.loads(redis.published[0][1])
+    body = json.loads(published["result"])
+    assert published["type"] == "calendar_mission"
+    assert published["status"] == "completed"
+    assert published["result_channel"] == "calendar_result"
+    assert body["schema"] == "nanobot_mission_result_v1"
+    assert body["status"] == "completed"
+    assert body["execution_policy"] == "approved_calendar_write_performed"
+    assert body["write_task_type"] == "calendar_create"
+    assert body["nanobot_capabilities"]["calendar_write_actuator_available"] is True
+    assert body["decision_strategy"]["next_action"] == "report_write_receipt"
+    assert body["investigation_trace"][-1]["phase"] == "approved_execution"
+    assert body["write_result"]["action"] == "create"
+    assert body["event_id"] == "evt_created"
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["calendar_id"] == "primary"
+    assert calls[0]["body"]["summary"] == "Tea planning"
+
+
+@pytest.mark.asyncio
+async def test_fallback_nanobot_message_check_returns_demo_important_mail() -> None:
+    redis = FakeRedis()
+    task = {
+        "task_id": "task-message",
+        "type": "message_check",
+        "params": {
+            "query": "important unread mail",
+            "result_channel": "message_result",
+        },
+    }
+
+    await NanobotConsumer()._handle_task(
+        redis,
+        "1710000000-2",
+        {"payload": json.dumps(task)},
+    )
+
+    published = json.loads(redis.published[0][1])
+    body = json.loads(published["result"])
+    assert published["type"] == "message_check"
+    assert published["result_channel"] == "message_result"
+    assert published["result_summary"].startswith("Google 刚收到 1 封重要邮件")
+    assert body["messages"][0]["importance"] == "high"
+    assert body["messages"][0]["subject"] == "GOSLO 演示准备确认"
+
+
+@pytest.mark.asyncio
+async def test_fallback_nanobot_remind_returns_due_summary() -> None:
+    redis = FakeRedis()
+    task = {
+        "task_id": "task-remind",
+        "type": "remind",
+        "params": {
+            "reminder_text": "吃药",
+            "when": "2026-05-19T08:00:00+08:00",
+            "result_channel": "reminder_result",
+        },
+    }
+
+    await NanobotConsumer()._handle_task(
+        redis,
+        "1710000000-3",
+        {"payload": json.dumps(task)},
+    )
+
+    published = json.loads(redis.published[0][1])
+    body = json.loads(published["result"])
+    assert published["type"] == "remind"
+    assert published["result_channel"] == "reminder_result"
+    assert published["result_summary"].startswith("提醒时间到了：吃药")
+    assert body["reminder_text"] == "吃药"
+
+
+@pytest.mark.asyncio
 async def test_fallback_nanobot_ref_scan_reports_local_file_hash(tmp_path) -> None:
     local_ref = tmp_path / "Amiya.md"
     local_ref.write_text("Amiya", encoding="utf-8")

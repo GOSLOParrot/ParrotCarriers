@@ -14,6 +14,11 @@ scope: DSG TriggerOutcome, Photo/Evidence Awareness, runtime notification body-f
 source:
   - src/parrot/dsg/triggers/base.py
   - src/parrot/dsg/triggers/__init__.py
+  - src/parrot/dsg/triggers/runner.py
+  - src/parrot/dsg/triggers/message_trigger.py
+  - src/parrot/dsg/triggers/calendar_trigger.py
+  - src/parrot/scheduler/service.py
+  - src/parrot/brain/agent.py
   - src/parrot/brain/context_injector.py
   - src/parrot/brain/photo_awareness.py
   - src/parrot/brain/vision/evidence_awareness.py
@@ -111,6 +116,78 @@ Current backend code has two paths:
   `resize_update`, `dwell_tick`, `lock`, `unlock`, `settings_open`,
   `confirm`, `explicit_send`, `cancel`, and `release`.
 
+### 3.2 Nanobot Result Channels And Trigger Dispatch
+
+This section records the 2026-05-23 user clarification request around
+`result_channel`, trigger firing modes, and C3/C4 routing.
+
+`result_channel` is a Scheduler/Nanobot result classification. When Scheduler
+fans in a Nanobot result, it republishes the result on `parrot.trigger.results`
+with `type = result_channel` and `original_type = task_type`. It is not itself
+the final GOSLO delivery channel, not a body-feel level, and not a guarantee of
+C3 speech. It is the event type that event-driven triggers inspect.
+
+Current observed result channel values include:
+
+| `result_channel` | Typical originating task | Current trigger ownership | Default delivery intent |
+|:--|:--|:--|:--|
+| `message_result` | `message_check` | `MessageNotificationTrigger` today | Usually `GOOGLE_MESSAGE` observations plus C3/C4 candidate policy. |
+| `calendar_result` | `calendar_fetch` / calendar mutation tasks | `CalendarTrigger` today | Calendar observations plus digest/prep/imminent notification policy. |
+| `diary_result` | `diary_query` | No dedicated DSG trigger confirmed | Direct Brain/tool result path unless future diary trigger is added. |
+| `reminder_result` | `remind` | No dedicated DSG trigger confirmed | Direct reminder result path unless future reminder trigger is added. |
+| `memory_ref_scan_result` | memory/ref scan tasks | No dedicated DSG trigger confirmed | Memory/ref ledger or direct result path depending caller. |
+| `research_result` | web/research Nanobot tasks | No dedicated DSG trigger confirmed | Direct Brain/report path unless future report trigger stages artifacts. |
+
+The relationship is fan-out plus self-filtering, not a hard one-to-one mapping.
+`TriggerRunner` can offer one event to every `EVENT_DRIVEN` or `ON_DEMAND`
+trigger, and each trigger decides whether it handles that event by checking
+fields such as `type`, `kind`, source metadata, cooldown keys, or payload shape.
+In current code, `message_result` effectively maps to
+`MessageNotificationTrigger` and `calendar_result` to `CalendarTrigger`, but the
+protocol allows additional triggers to observe the same `result_channel` later
+for audit, staging, planning, or visualization.
+
+`TriggerKind` answers a different question from `result_channel`:
+
+| Concept | Question it answers | Example |
+|:--|:--|:--|
+| `TriggerKind.STARTUP` | Should this trigger run when TriggerRunner starts? | Calendar/message trigger does an initial fetch. |
+| `TriggerKind.PERIODIC` | Should this trigger wake on a timer? | Calendar/message trigger polls if needed. |
+| `TriggerKind.EVENT_DRIVEN` | Should this trigger inspect incoming Pub/Sub events? | `type=message_result` after Nanobot returns. |
+| `TriggerKind.ON_DEMAND` | Can code/user explicitly fire this trigger? | Scene/roleplay/explicit boundary changes. |
+| `result_channel` | What result family should a Nanobot task return as? | `message_check` asks for `message_result`. |
+
+Upward channel selection happens after a trigger has accepted an event and built
+a `TriggerOutcome`. The trigger chooses outcome fields such as
+`commit_observations`, `staged_refs`, `plan_request`, `notify_gemini`, and
+`proactive_speech`; `TriggerRunner` and session policy then translate those into
+L0/L1/L2/C3/C4/I0 behavior. Therefore `result_channel=message_result` does not
+mean "send C3"; it means "this is a message result event that message-related
+triggers may process." The C3/C4 decision belongs to TriggerOutcome processing
+plus policy.
+
+User requirement: Nanobot should primarily do work and return structured
+results. It may include summaries, `message_to_goslo`, artifact manifests,
+source locators, and a suggested delivery hint, but it should not be the final
+authority deciding whether a result enters Brain, Plan, memory, Graphiti,
+Obsidian, or IntentWorkspace. Trigger logic should convert Nanobot returns into
+the correct combination of small notification text, observations, staged rich
+reports, source/original refs, plan proposals, and optional safe-turn speech.
+
+Large content should not be forced through `result_channel` as raw Pub/Sub
+payload. Use `staged_refs` with `DISK_PATH`, `URL`, or bounded `INLINE_TEXT` for
+rich reports, original email/document refs, and multimodal artifacts. Future
+Nanobot report triggers should support:
+
+| Return shape | Preferred TriggerOutcome relation |
+|:--|:--|
+| Short report message | `notification_text` / C3, or C4 only after policy review. |
+| Facts worth remembering | `commit_observations` into L1.5/L2-B. |
+| Rich text report | `staged_refs` as `RICH_REPORT`. |
+| Original email/doc/photo/video/audio | `staged_refs` with source locator or file path. |
+| Multi-step follow-up needed | `plan_request`. |
+| Background archive/export | `archive_request` or future export request. |
+
 ## 4. App Animation / Body-Language Hooks
 
 Animation is a separate embodied channel. It can express body feel without
@@ -155,6 +232,9 @@ Suggested clusters:
   deliberately.
 - 2026-05-15 fix: legacy DSG `notify_gemini` now routes through C3 by default
   in `TriggerRunner`; it no longer implies C4 speech.
+- `result_channel` is only the Nanobot/Scheduler result family used for trigger
+  event filtering. It must not be treated as the C3/C4 delivery level or as a
+  closed one-to-one trigger registry.
 - `PhotoAwarenessPolicy` now maps:
   - `UNAWARE_RECORDED` -> no strong GOSLO notice.
   - `AWARE_SILENT` -> C3 photo context notice.
@@ -200,3 +280,9 @@ Suggested clusters:
   `/api/app/visual-tool/event`, ECP `visual_tool.lifecycle`, Web debug
   `/api/vision/evidence/tool-lifecycle`, and BB receipt
   `transient/visual_tool_lifecycle_receipt`.
+- 2026-05-23: Added Nanobot result-channel clarification. Recorded that
+  `result_channel` classifies return events for trigger fan-out/self-filtering,
+  while TriggerOutcome plus session policy chooses L0/L1/L2/C3/C4/I0 delivery.
+  Captured the requirement that future Nanobot report flows stage rich reports,
+  originals, and multimodal artifacts via IntentWorkspace instead of treating
+  Pub/Sub payloads as large-file transport.

@@ -1,0 +1,72 @@
+{
+  "photo_object": {
+    "bbox": {
+      "coordinate_space": "normalized",
+      "height": 0.5,
+      "width": 0.5,
+      "x": 0.0,
+      "y": 0.0
+    },
+    "candidate_object_uuid": "",
+    "category_guess": "",
+    "confidence": 0.0,
+    "created_at_ms": 1779836186422,
+    "crop_path": "",
+    "edge_uuid": "",
+    "evidence_id": "ev_de42c39910f4420a",
+    "label_guess": "",
+    "meta": {
+      "packet_meta": {},
+      "schema": "vision_photo_object_draft_v1",
+      "source_ref_id": "ref_019e6680ef34_14a6a588",
+      "source_surface": "app_ar_overlay"
+    },
+    "object_ref_id": "pobj_92de9088bd404924bb6afdb18b14289f",
+    "photo_uuid": "",
+    "review_status": "needs_crop",
+    "sample_draft_id": "os_3d9d8f94f1784378bf469a4eadd92b84",
+    "schema_version": 1,
+    "source": "user_bbox",
+    "source_asset_path": "",
+    "tool_event_id": "vtool_1779836186420_9c603737",
+    "tool_id": "bbox_ecp",
+    "tool_kind": "bbox",
+    "updated_at_ms": 1779836186422
+  },
+  "sample": {
+    "bbox": {
+      "coordinate_space": "normalized",
+      "height": 0.5,
+      "width": 0.5,
+      "x": 0.0,
+      "y": 0.0
+    },
+    "category": "",
+    "content_sha256": "",
+    "created_at_ms": 1779836186422,
+    "created_by": "user_bbox",
+    "crop_path": "",
+    "evidence_id": "ev_de42c39910f4420a",
+    "label": "",
+    "meta": {
+      "schema": "vision_object_sample_draft_v1",
+      "source_ref_id": "ref_019e6680ef34_14a6a588",
+      "source_tool_event_id": "vtool_1779836186420_9c603737",
+      "source_tool_id": "bbox_ecp"
+    },
+    "object_ref_id": "pobj_92de9088bd404924bb6afdb18b14289f",
+    "object_uuid": "",
+    "photo_uuid": "",
+    "quality_flags": [
+      "missing_asset"
+    ],
+    "review_status": "needs_crop",
+    "sample_uuid": "os_3d9d8f94f1784378bf469a4eadd92b84",
+    "schema_version": 1,
+    "source_asset_path": "",
+    "updated_at_ms": 1779836186422,
+    "visual_description": ""
+  },
+  "schema_version": 1,
+  "updated_at_ms": 1779836186426
+}

@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from parrot.brain.tools._capability_gate import resolve_model_id, supports_capability
-from parrot.brain.tools._rpc_bridge import call_unity_rpc
+from parrot.brain.tools._rpc_bridge import UNITY_RPC_ECP_TTL_S, call_unity_rpc
 from parrot.scheduler.blackboard import open_bb_client
 from parrot.shared.ecp import EcpCommandKind, wrap_legacy_rpc_payload
 
@@ -126,7 +126,7 @@ async def dispatch_lineb_voice_activity_to_model(
             "reason": reason,
         },
         actor="brain.lineb_model_reaction",
-        expires_in_s=2.0,
+        expires_in_s=UNITY_RPC_ECP_TTL_S,
         expected_duration_ms=250,
         meta={"model_id": selected_model_id},
     )

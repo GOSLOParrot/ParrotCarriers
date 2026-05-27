@@ -21,10 +21,13 @@ from parrot.brain.tools.animate import (
 from parrot.brain.tools.calendar_change_request import calendar_change_request
 from parrot.brain.tools.calendar_context import calendar_context
 from parrot.brain.tools.calendar_task_status import calendar_task_status
+from parrot.brain.tools.diary_query_request import diary_query_request
 from parrot.brain.tools.dispatch_task import dispatch_task
 from parrot.brain.tools.fly_to import fly_to
 from parrot.brain.tools.manage_episode import manage_episode
 from parrot.brain.tools.message_check_request import message_check_request
+from parrot.brain.tools.nanobot_mission_request import nanobot_mission_request
+from parrot.brain.tools.nanobot_task_status import nanobot_task_status
 from parrot.brain.tools.perch_to_finger import perch_to_finger
 from parrot.brain.tools.play_capability import play_capability
 from parrot.brain.tools.query_etiquette_memory import query_etiquette_memory
@@ -49,7 +52,10 @@ _BASE_TOOLS = [
     calendar_context,
     calendar_change_request,
     calendar_task_status,
+    diary_query_request,
     message_check_request,
+    nanobot_mission_request,
+    nanobot_task_status,
     reminder_request,
     remember,
     query_memory,
@@ -102,7 +108,10 @@ def tools_for_active_model():
         calendar_context,
         calendar_change_request,
         calendar_task_status,
+        diary_query_request,
         message_check_request,
+        nanobot_mission_request,
+        nanobot_task_status,
         reminder_request,
         dispatch_task,
         remember,
@@ -173,7 +182,10 @@ __all__ = [
     "calendar_context",
     "calendar_change_request",
     "calendar_task_status",
+    "diary_query_request",
     "message_check_request",
+    "nanobot_mission_request",
+    "nanobot_task_status",
     "reminder_request",
     "remember",
     "query_memory",

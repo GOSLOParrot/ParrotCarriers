@@ -239,7 +239,8 @@ Fix:
 - Lifecycle and asset-upload HTTP transport failures now call
   `RequestErrorLabel()`.
 - `RequestErrorLabel()` prefers backend `error` / `detail` JSON fields, then
-  falls back to `UnityWebRequest.error`, then to the local fallback label.
+  falls back to the HTTP transport/status label, then to the local fallback
+  label.
 - Static tests now guard that both lifecycle and asset upload request-error
   paths use the backend-aware label helper.
 
@@ -929,6 +930,642 @@ Verification:
 - Unity MCP `refresh_unity` on `ArSpike@a0c0295f7bd40ecc` completed ready with
   0 Console errors after an automatic MCP reconnect.
 
+## Body-Feel Pass - Viewfinder Blackout And Capture Layer Split (2026-05-25)
+
+User clarification:
+
+- Camera, BBox, and MAG share the same camera-style shutter position and should
+  play a phone-camera-like viewfinder blackout when the shutter is pressed.
+- Uploaded evidence must not include the blackout, shutter button, OK/FAIL
+  badge, selection white border, resize handles, zoom rail, or debug controls.
+- BBox/MAG semantic rendering may be captured: BBox YOLO-style frame and MAG
+  magnified render are valid preview/evidence overlays when the tool itself is
+  the thing being confirmed.
+
+Implementation notes:
+
+- Added a shared Unity HUD component,
+  `VisualToolShutterBlackoutFeedback`, for a short black viewfinder blackout
+  animation. It preserves the camera control strip: landscape leaves the
+  right-side shutter area visible, portrait leaves the bottom shutter area
+  visible.
+- Camera mode plays blackout immediately after a successful local
+  `CapturePhoto()` request; upload completion still only shows OK/FAIL.
+- BBox/MAG screen-region capture now hides operation UI only. Their semantic
+  render layers remain visible for `ReadPixels`, then blackout plays after the
+  capture is complete so the black frame cannot enter the uploaded PNG.
+- Existing HTTP behavior is unchanged: asset bytes still go through
+  `/api/app/visual-tool/asset/{asset_id}` first, then lifecycle event metadata
+  goes through `/api/app/visual-tool/event`.
+
+Audit TODO:
+
+- Verify on iQOO Neo9 that the blackout viewfinder inset leaves the shutter
+  visible in portrait and landscape.
+- Smoke-test that BBox uploaded PNG includes the colored box but not selected
+  white handles/status/OK badge.
+- Smoke-test that MAG uploaded PNG includes the magnifier render but not the
+  zoom rail/status/OK badge.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_ecp_event/test_w8_photo_upload_server.py
+  tests/test_ecp_event/test_w8_observer_photo.py -q` -> 33 passed.
+- Forbidden-path scan across Camera/BBox/MAG visual-tool App scripts found no
+  legacy snapshot RPC, direct memory writes, C4 send preference, UnityWebRequest
+  image upload, or raw ECP/RPC image byte path.
+
+Follow-up bugfix:
+
+- Found a stale HUD-result risk in the Photo upload completion path. The event
+  only carried `status/ok`, so a delayed retry from an older photo could update
+  the current camera HUD.
+- `PhotoController.OnPhotoUploadCompleted` now carries
+  `photoId/status/ok`; `FormalHomeToolController` forwards the same tuple.
+- `FormalCameraModeController` tracks the pending shutter `photo_id`, ignores
+  stale or uncorrelated upload completions, and de-duplicates blackout playback
+  for the same photo.
+- BBox capture layering follow-up: the clickable sample-attribute strip is now
+  treated as operation UI and hidden during capture; a separate non-interactive
+  `BBoxSemanticSampleLabel` remains as the YOLO-style semantic label that may
+  enter the uploaded preview/evidence PNG.
+- BBox body-feel follow-up: the semantic label is positioned like a classic
+  detector label at the top edge of the box, and the box fill was reduced to
+  near-transparent so uploaded evidence is framed instead of tinted.
+
+Follow-up verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_ecp_event/test_w8_photo_upload_server.py
+  tests/test_ecp_event/test_w8_observer_photo.py -q` -> 33 passed.
+
+## Phone HTTP Path Fix - VisualTool Client (2026-05-25)
+
+Bug/risk found:
+
+- BBox/MAG asset and lifecycle traffic still used `UnityWebRequest`, while the
+  production Photo upload path already moved to `System.Net.Http.HttpClient` to
+  avoid Android cleartext behavior blocking local `http://` laptop backend
+  routes in Android-targeted Unity/editor/device flows.
+- This meant BBox/MAG could look correct in HUD but fail before creating the
+  backend visual-tool evidence lifecycle when the backend is a notebook on the
+  LAN.
+
+Fix:
+
+- Replaced `VisualToolHttpClient` transport internals with a shared
+  `HttpClient` while preserving the public coroutine API consumed by
+  `VisualToolControllerBase`.
+- Kept lifecycle and asset upload order unchanged:
+  `/api/app/visual-tool/asset/{asset_id}` first for images, then
+  `/api/app/visual-tool/event` with returned `asset_path` / `mime_type`.
+- Kept all visual-tool metadata headers on asset upload:
+  `X-Parrot-Tool-*`, `X-Parrot-Timebase`, `X-Parrot-Region`,
+  `X-Parrot-Source-*`, and description.
+- Added retry for transient HTTP failures (`408`, `429`, `5xx`) and network
+  exceptions; backend error-body parsing remains on the coroutine/main flow.
+- Added static Unity guard coverage to ensure VisualTools no longer depend on
+  `UnityWebRequest` / `UploadHandlerRaw`.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_ecp_event/test_w8_photo_upload_server.py
+  tests/test_ecp_event/test_w8_observer_photo.py -q` -> 33 passed.
+- Forbidden-path scan over VisualTools, FormalCameraModeController, and
+  FormalHomeToolController found no `UnityWebRequest`, `UploadHandlerRaw`,
+  `captureSnapshot`, direct memory writes, or App-side C4 constants.
+- `git diff --check` on touched files passed; only existing workspace CRLF
+  warnings were reported.
+
+## Body-Feel Fix - Shutter Feedback Waits For Real Upload (2026-05-25)
+
+Bug found:
+
+- BBox/MAG confirm shutters played `OK` immediately when the semantic work was
+  merely queued. If the laptop backend endpoint was wrong, asset upload failed,
+  or lifecycle event was rejected later, the HUD could show success while no
+  backend evidence was created.
+- Camera mode had the same product-level ambiguity: the shutter feedback was
+  tied to `photo_capture_requested`, not the final HTTP upload result.
+
+Fix:
+
+- Added `OnSemanticHttpCompleted()` in `VisualToolControllerBase`; BBox/MAG now
+  play shutter `OK` / `FAIL` only after lifecycle/asset work actually completes.
+- Queued BBox/MAG statuses no longer trigger success feedback. Immediate local
+  failures still show `FAIL`.
+- Asset capture/upload fallback lifecycle packets with `asset_status` failure
+  are treated as user-visible failures even if the metadata-only lifecycle event
+  itself reaches backend.
+- `PhotoController.CapturePhoto()` now returns a capture-start status and
+  exposes `OnPhotoUploadCompleted(status, ok)`.
+- `FormalHomeToolController` forwards Photo upload completion, and
+  `FormalCameraModeController` waits for that event before playing camera
+  shutter `OK` / `FAIL`. While upload is in flight, camera status reads
+  `camera_photo_upload_pending`.
+
+Follow-up fix:
+
+- Fixed a compile-level regression where a generic status return was
+  accidentally inserted into `void` lifecycle/config methods.
+- Photo upload completion is now queued and dispatched from `Update()` on the
+  Unity main thread. Multiple uploads completing before the next frame are
+  delivered in order, so rapid captures do not overwrite earlier completion
+  feedback.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35
+  passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_ecp_event/test_w8_photo_upload_server.py
+  tests/test_ecp_event/test_w8_observer_photo.py -q` -> 33 passed.
+- Forbidden-path scan over VisualTools, FormalCameraModeController,
+  FormalHomeToolController, and PhotoController found no `captureSnapshot`,
+  App-side memory writes, or App-side C4 constants.
+
+## Flow Audit - Selection, Pinch, Upload, Nodes, Awareness (2026-05-25)
+
+Scope:
+
+- Rechecked App interaction flow for Camera, BBox, and MAG against the original
+  VisualToolEvidenceLifecycle App V1 requirements.
+- Rechecked backend ownership boundaries: App sends stable visual-tool
+  lifecycle events and storage-backed image assets; backend owns Evidence,
+  IntentWorkspace staging, Blackboard receipts, and any L2-B promotion.
+- Rechecked photo capture flow because it is the only path that currently
+  creates L2-B PhotoNodes directly.
+
+Current pass status:
+
+- BBox and MAG have real App-side controllers behind visual-tool dev/http
+  flags. They support local drag, selected white outline visuals, confirm
+  shutter, and two-finger resize/zoom handling without per-frame backend sends.
+- Camera/BBox/MAG share the responsive shutter rule: landscape right-middle,
+  portrait bottom-center.
+- Visual-tool confirm uploads a PNG via
+  `POST /api/app/visual-tool/asset/{asset_id}`, then sends
+  `POST /api/app/visual-tool/event` with `asset_path` and `mime_type`.
+- Backend policy matches the requirement: BBox confirm stages IntentWorkspace
+  and notifies GOSLO through C3 no-interrupt; MAG confirm stages silently; MAG
+  explicit_send notifies GOSLO.
+- Photo upload still uses the older photo preview/upload path: preview ECP
+  creates the PhotoNode, HTTP asset upload updates `reference_image_path` and
+  stages the photo in IntentWorkspace.
+
+Known gaps / TODO:
+
+- Closed in later pass: add a reliable fallback when `photo.taken_preview` is
+  dropped. Backend now repairs a missing PhotoNode from `photo.asset_uploaded`
+  and stages the photo asset through the normal observer path.
+- P0: Run a true phone-to-laptop smoke test: iQOO capture -> laptop backend ->
+  `/api/app/live-state` and `/api/l2b/snapshot` show a PhotoNode with
+  `reference_image_path`, and Web console refreshes it.
+- P0: Run the same true phone-to-laptop smoke for visual-tool asset/event
+  routes. Visual tools now use `System.Net.Http.HttpClient`, but the iQOO
+  device path still needs APP-024 proof against the notebook backend.
+- Closed in later pass: implement true MAG render behavior. MAG now keeps a
+  local low-FPS live lens texture and does not send per-frame data.
+- P0: Decide backend-owned promotion for BBox/MAG visual evidence into semantic
+  nodes. Current lifecycle creates Evidence/Ref/IntentWorkspace entries, not
+  L2-B PhotoNodes/ObjectNodes directly, which is correct for the App boundary
+  but may not satisfy the product expectation of "Node created" for BBox/MAG.
+- P1: Make selection state explicit. Current BBox/MAG are effectively selected
+  while open; outside tap/reselect semantics and selected-only handles need
+  body-feel tuning on phone.
+- P1: Unify camera photo metadata with the new BBox/MAG controllers. The legacy
+  `PhotoController` still reads active refs from old `BBoxController` /
+  `FocusController`, not from the new visual-tool lifecycle controllers.
+- P1: Add a polished MAG explicit-send affordance. Dev buttons are hidden, so a
+  user-visible path to "send to GOSLO" is not yet designed even though backend
+  policy supports it.
+- P1: Add BBox sample attributes and color/class controls requested by UX. The
+  current BBox is a draggable/resizable visual frame and lifecycle packet, not
+  a finished annotation editor.
+- P1: Replace debug-ish feedback with one shared OK/FAIL upload component for
+  Camera, BBox, and MAG, ideally indicating capture/upload/receipt rather than
+  only local button success.
+- P1: Validate screen-region crop coordinates on real orientations and Canvas
+  scaling, especially landscape right-middle shutter layout and iQOO Neo9
+  dimensions.
+- P2: Reduce duplicate visual evidence rows if desired. The asset upload route
+  records image evidence, then lifecycle confirm records another image evidence
+  for the same `asset_path`.
+- P2: Pixel-aware MAG hit-testing would feel better than using its full
+  rectangular transparent sprite bounds.
+- P2: Production enablement is still gated by APP-024 phone/screen-share smoke
+  and UI/body-feel tuning.
+
+## Unified Shutter Semantics Pass (2026-05-25)
+
+Objective analysis:
+
+- Common surface: Camera, MAG, and BBox all use the same phone-camera style
+  confirmation affordance. In portrait the shutter stays bottom-center; in
+  landscape it stays right-middle. Pressing it gives the same short OK/FAIL
+  capture feedback.
+- Camera semantic: the shutter requests a normal photo capture through
+  `PhotoController`. Preview ECP creates/updates the L2-B PhotoNode; HTTP asset
+  upload fills `reference_image_path` and stages the photo asset.
+- MAG semantic: the shutter confirms "this region is worth looking at" for a
+  magnifier/focus context. Confirm remains weak attention: stage to
+  IntentWorkspace, no GOSLO C3 notice unless explicit_send is used.
+- BBox semantic: the shutter confirms "sample this object/region". Confirm is
+  strong attention: backend stages IntentWorkspace and may notify GOSLO through
+  C3 no-interrupt.
+
+Implementation:
+
+- Added responsive feedback layout next to the shared shutter position.
+- Camera capture feedback now follows that responsive feedback layout.
+- BBox/MAG confirm shutters now use the same camera-style outer/inner shutter
+  visual, not just a flat circle.
+- BBox/MAG shutter actions now show the same OK/FAIL flash/badge feedback as
+  camera mode while keeping their separate lifecycle packet semantics.
+
+## Continue Pass - MAG Live Lens Local Render (2026-05-25)
+
+Pre-edit audit:
+
+- MAG already had the pixel magnifier sprite, selected white outline,
+  drag/two-finger resize, zoom rail, and confirm lifecycle upload.
+- The missing user-facing function was the actual magnified view. The tool was
+  still a visual marker over the scene, so it did not help inspect details in
+  the camera/document view before confirm.
+
+Implementation:
+
+- Added a masked `RawImage` viewport inside the magnifier lens area.
+- Added a local-only live lens render loop. It first tries to render
+  `Camera.main` into a temporary `RenderTexture` so the lens does not feed back
+  on its own UI overlay, then falls back to screen `ReadPixels` when no camera
+  path is available.
+- The lens source crop tracks the MAG lens center and scales inversely with the
+  current MAG zoom, so pinch zoom changes both the sprite size and the inspected
+  crop scale.
+- Lifecycle metadata now reports `local_render=mag_live_lens` and includes a
+  `live_lens` boolean. Backend semantics are unchanged: the render loop never
+  sends frame data; confirm/explicit_send still use stable lifecycle HTTP.
+
+Remaining:
+
+- Needs iQOO phone visual QA for ARFoundation camera background correctness,
+  because `Camera.main.Render()` behavior can differ between normal Unity
+  scenes, AR camera backgrounds, and document/UI surfaces.
+- If screen fallback is used heavily, check for self-feedback artifacts and tune
+  the capture path after real screenshots.
+
+## Continue Pass - BBox Sample Attributes And Color (2026-05-25)
+
+Pre-edit audit:
+
+- BBox had a real movable/resizable YOLO-style frame, selected white outline,
+  two-finger resize, and confirm shutter.
+- It still behaved like a generic frame. For the product purpose "sample an
+  object/region", the App needed a lightweight way to mark what kind of sample
+  is being sent and which visual color/class is attached to it.
+
+Implementation:
+
+- Added BBox sample state: `sample_label`, `sample_color`, and
+  `sample_color_hex` flow into visual-tool lifecycle `meta_json`.
+- BBox packet label now includes the current sample label, e.g. `BBox:object`,
+  so backend RefBinding/evidence receipts are more readable without App writing
+  L2-B directly.
+- Added a selected-state sample attribute strip on the BBox itself:
+  - color swatch button cycles YOLO-style box colors.
+  - label chip cycles phone-friendly sample labels (`object`, `person`,
+    `document`, `screen`, `unknown` by default).
+- BBox edge/fill color now follows the chosen sample color while locked state
+  still turns the frame yellow.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35
+  passed.
+- VisualTools forbidden-path scan found no snapshot RPC, direct
+  IntentWorkspace/Graphiti/Blackboard writes, or legacy bbox/focus events.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_ecp_event/test_w8_photo_upload_server.py
+  tests/test_ecp_event/test_w8_observer_photo.py -q` -> 32 passed.
+
+Remaining:
+
+- This is phone-friendly cycling, not full free-text keyboard entry. A later UI
+  pass can add a compact text input / voice label path if needed.
+
+## Bugfix Pass - Keep Overlay Hidden During Asset Capture (2026-05-25)
+
+Bug:
+
+- Screen-region confirm hides the BBox/MAG overlay before `ReadPixels()` so the
+  uploaded crop does not include the tool UI itself.
+- After adding MAG live lens and shared confirm feedback, controller
+  `UpdateOverlay()` calls could run during that hidden capture window and turn
+  the Canvas back on. On phone this could pollute uploaded crops with the
+  magnifier/BBox frame, sample chips, or OK/FAIL flash.
+
+Fix:
+
+- `VisualToolControllerBase` now exposes the overlay-hide depth as
+  `IsScreenRegionAssetOverlayHidden`.
+- BBox and MAG `UpdateOverlay()` now keep their Canvas inactive while this flag
+  is true, even if local render/status refreshes run during the capture frame.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35
+  passed.
+- VisualTools forbidden-path scan found no snapshot RPC, direct
+  IntentWorkspace/Graphiti/Blackboard writes, or legacy bbox/focus events.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_ecp_event/test_w8_photo_upload_server.py
+  tests/test_ecp_event/test_w8_observer_photo.py -q` -> 32 passed.
+
+## Reliability Fix - Photo Asset Upload Repairs Missing PhotoNode (2026-05-25)
+
+Bug:
+
+- The App sends the photo preview over ECP and the full-resolution image over
+  HTTP. If `photo.taken_preview` is dropped because the room/publisher is not
+  ready, the HTTP upload still lands on disk but `observer.photo` previously
+  logged `asset_uploaded for unknown photo_id` and did not create/update a
+  PhotoNode.
+- Product symptom: phone shows an upload success path, but Web/L2-B may not show
+  a PhotoNode or `reference_image_path`, and IntentWorkspace may not receive the
+  final photo asset.
+
+Fix:
+
+- `observer.photo` still counts `asset_for_unknown_photo_id` for observability,
+  but now repairs the missing node by creating a `NodeKind.PHOTO` from the
+  storage-backed asset event, then writes `reference_image_path`.
+- This does not create ObjectNodes and does not promote candidate subjects; it
+  only preserves the user-taken photo as a PhotoNode.
+- Added metric `asset_orphan_nodes_repaired`.
+- Added HTTP-level regression coverage for upload-without-preview.
+
+Verification:
+
+- `uv run pytest tests/test_ecp_event/test_w8_photo_upload_server.py
+  tests/test_ecp_event/test_w8_observer_photo.py -q` -> 29 passed.
+- `uv run pytest tests/test_brain/test_visual_tool_lifecycle.py
+  tests/test_ecp_event/test_w8_photo_upload_server.py
+  tests/test_ecp_event/test_w8_observer_photo.py -q` -> 33 passed.
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35
+  passed.
+
+## UX Gap Audit / User Requirement Capture (2026-05-22)
+
+Prompt/context:
+
+- User reviewed current App feel and asked whether camera mode is actually
+  complete, whether its buttons/components work, why the layout feels rough,
+  and why BBox/MAG still feel like empty shells.
+- User clarified the expected product behavior: CAM, BBox, and MAG all need
+  clear capture/upload feedback; MAG needs true magnified background/rendered
+  view; BBox/MAG must be selectable and touch-draggable, with two-finger
+  scale/resize affordances; BBox must support color and sample/property input;
+  the camera shutter and feedback need a better body feel.
+
+Current code audit:
+
+- CAM is the most complete of the three. `FormalCameraModeController` owns a
+  WYSIWYG camera HUD; Ready/Preview/Close apply backend camera mode through
+  App HTTP; Capture delegates to `FormalHomeToolController.CapturePhoto()`;
+  `PhotoController` emits `photo.taken_preview` ECP metadata and uploads the
+  JPEG through HTTP/storage. The laptop true-connection path previously proved
+  PhotoNode/L2-B visibility after app-monitor refresh.
+- CAM is not product-polished. The HUD is programmatic first-pass UI, the
+  shutter only reports request-level status, and there is no user-visible
+  async chain for preview sent -> upload pending -> upload ok/failed ->
+  PhotoNode visible. Zoom/exposure/filter controls are local UI state only;
+  they do not yet drive AR camera hardware, render effects, or stored asset
+  metadata.
+- BBox/MAG are not empty at protocol level: `VisualToolPacketBuilder`,
+  `VisualToolHttpClient`, feature flags, lifecycle phases, dev overlays, and
+  optional screen-region asset upload exist. They stay separate from
+  `FormalHomeToolController`, honor stable-phase backend emission, and avoid
+  image bytes over ECP/RPC.
+- BBox/MAG are still dev tools, not final embodied tools. They are behind
+  `visualToolDevEnabled` / `visualToolHttpEnabled`, use ScreenSpaceOverlay
+  diagnostics, and need APP-024 phone/body-feel proof before production
+  enablement.
+- MAG currently draws a translucent lens/rim/crosshair and sends lifecycle
+  metadata. It supports single-pointer drag plus mouse-wheel/dev-button zoom,
+  but it does not magnify the live AR/camera background, does not render a
+  zoomed texture/crop, has no touch pinch, and has no proper zoom bar/rail.
+- BBox currently supports single-pointer move/edge resize and dev action
+  buttons. It lacks explicit production selection handles, two-finger resize,
+  color change UI, sample/label/property input, and polished capture/upload
+  feedback.
+
+Captured requirements for the next implementation pass:
+
+1. Shared capture/upload feedback component for CAM, BBox, and MAG. It must
+   show at least captured/requested, preview/lifecycle sent, asset upload
+   pending, upload ok, upload failed/retry, and backend receipt/PhotoNode or
+   visual-tool receipt when available.
+2. Camera mode redesign. Keep the real capture owner path, but replace the
+   rough first-pass buttons with a clearer shutter, stronger capture animation
+   or haptic-style visual feedback, and honest control states. Zoom/exposure
+   and filters should either become real camera/render controls or be visibly
+   downgraded until they are real.
+3. MAG production behavior. Add selectable lens state, touch drag, two-finger
+   pinch to resize/zoom, visible zoom factor rail/bar, and a real magnified
+   view of the live rendered background or AR camera frame. Confirm remains
+   weak attention / IntentWorkspace-only by default; explicit send or C3
+   delivery preference is the user-controlled GOSLO notification path.
+4. BBox production behavior. Add selectable frame state, handles, touch drag,
+   two-finger resize, color selection, and sample/property input such as label,
+   subject hint, or class/attribute fields. Confirm remains strong attention by
+   default and may request C3 no-interrupt notice through backend policy.
+5. Preserve original protocol boundaries. High-frequency hover/drag/pinch stays
+   local; backend receives only stable phases or deliberately low-frequency
+   dwell/drag/resize ticks. Rendered/cropped images upload through
+   `/api/app/visual-tool/asset/{asset_id}` before lifecycle event references.
+   No `captureSnapshot` RPC, no image bytes through ECP/RPC, no Unity direct
+   L2-B/Graphiti/IntentWorkspace/Blackboard writes, and no App-side C4 or
+   immediate interrupt semantics.
+
+Implementation implication:
+
+- The next useful code slice is not another protocol wrapper. It should add a
+  small formal visual-tool UI layer shared by BBox/MAG/CAM feedback, then
+  implement MAG's real render/magnification path and BBox's production edit
+  affordances behind the existing dev/prod flags.
+
+## Design Reference Pass - Pixel Tools And Camera Feel (2026-05-22)
+
+User correction:
+
+- Feedback should stay simple for now: success vs failure is enough. A camera
+  shutter flash, screenshot freeze, or small captured-thumbnail animation is
+  acceptable and better than a verbose upload state machine.
+- MAG and BBox should be designed as pixel-style tool sprites first, then
+  controlled by code. They should not look like generic programmatically drawn
+  rectangles. Required assets include a pixel magnifying glass/lens, pixel BBox
+  frame pieces, and white selected/drag affordance pieces.
+- Camera mode should feel closer to a phone camera or a photography game, not
+  like a debug control panel.
+
+Reference scan:
+
+- Apple Camera Control/HIG guidance emphasizes a large viewfinder with minimal
+  distractions and placing controls outside overlay-conflict zones.
+- Apple button guidance supports compact feedback inside/near the control when
+  an action has delay; for our first pass this maps to shutter flash plus
+  success/failure badge instead of a long status rail.
+- New Pokemon Snap's public materials emphasize scoring by pose/proximity/frame
+  and photo decoration with filters/stamps/frames, which supports a playful
+  camera/game feel rather than a desktop debug panel.
+- Umurangi Generation is useful as a photography-game reference because its
+  loop is first-person camera handling, lenses/equipment, composition/content
+  scoring, and photo editing/color grading. We should borrow the "camera as
+  embodied tool" feel, not its exact visual style.
+- Kenney Pixel UI Pack and OpenGameArt pixel magnifier / selection-border
+  entries confirm the asset direction: transparent PNG sprites, pixel panels,
+  pixel buttons, selection borders, and UI icons should be generated/imported
+  as sprites and then arranged in Unity.
+
+Design decisions for the next code/art pass:
+
+1. Shared feedback becomes two-state: success and failure. During capture/upload
+   we can use local motion only: quick white flash, freeze-frame thumbnail, and
+   a small check/cross badge. The backend can still record detailed lifecycle,
+   but the user-facing UI should not narrate every network step.
+2. Camera mode should be rebuilt around a big unobstructed AR viewfinder,
+   bottom-center pixel shutter button, small gallery/last-shot thumbnail, mode
+   chips, and optional compact top controls. The current large pro/status panel
+   should move behind an explicit advanced/debug affordance.
+3. MAG needs pixel-art lens assets: idle lens, selected white outline/handles,
+   locked/confirm accent, plus a zoom rail/bar. The controller should render or
+   crop a magnified view inside that lens rather than only drawing a translucent
+   rectangle.
+4. BBox needs pixel-art frame assets: corners, edges, selected white outline,
+   resize handles, color swatches, and a small sample/property input plate. The
+   controller should compose sprite pieces around the selected region.
+5. Asset generation should happen before controller polish so the App body feel
+   can be tuned against the actual visual language instead of placeholder
+   debug geometry.
+
+Reference links captured for implementation notes:
+
+- Apple Camera Control:
+  `https://developer.apple.com/design/human-interface-guidelines/camera-control`
+- Apple Buttons:
+  `https://developer.apple.com/design/human-interface-guidelines/buttons`
+- New Pokemon Snap official page:
+  `https://www.nintendo.com/en-gb/Games/Nintendo-Switch-games/New-Pokemon-Snap-1799500.html`
+- Umurangi Generation Steam page:
+  `https://store.steampowered.com/app/1223500/Umurangi_Generation/`
+- Kenney Pixel UI Pack:
+  `https://kenney.nl/assets/pixel-ui-pack`
+- OpenGameArt magnifying glass:
+  `https://opengameart.org/content/magnifying-glass`
+- OpenGameArt selection border:
+  `https://lpc.opengameart.org/content/iron-plague-selection-border`
+
+## Quick Body-Feel Fix - Camera Shutter And Selected-Parrot Gates (2026-05-22)
+
+User correction:
+
+- The camera shutter should be fixed where a normal phone camera shutter lives:
+  bottom-center, large, round, and easy to hit. It should not feel like a small
+  debug toolbar button.
+- Zoom/exposure controls looked bad and did not function as real camera
+  controls, so they should not be visible in the main camera layout.
+- Clear and joystick controls should only appear after the placed parrot is
+  explicitly selected.
+
+Fix applied:
+
+- `FormalCameraModeController` now uses a bottom-center circular shutter
+  button and a taller bottom camera-control band.
+- Main camera UI no longer shows zoom/exposure rails. The existing code paths
+  remain for static compatibility, but the controls are hidden until they can
+  drive real camera/render behavior.
+- Capture feedback is intentionally simple: a short white flash plus `OK` or
+  `FAIL` badge based on whether the photo request was accepted.
+- `FormalModelPlacementController.PlaceAt(...)` no longer selects the model
+  automatically after placement. The user must tap/select the parrot before
+  selected-only controls appear.
+- `FormalHomeMenuController` now gates the `CLEAR` action and bottom placement
+  button on `HasSelectedModel`; placed-but-unselected state shows a select
+  hint instead of a clear action.
+- `FormalModelRemoteController` already required
+  `placementController.HasSelectedModel`; with placement no longer
+  auto-selecting, the joystick now appears only after explicit selection.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35
+  passed.
+- `git diff --check` on the touched Unity scripts reported only existing
+  LF/CRLF conversion warnings and no whitespace errors.
+
+## Pixel Asset Reference / Shutter Confirm Pass (2026-05-25)
+
+User-provided local references:
+
+- `C:/Users/Bin/Desktop/camera button.png`: pixel camera reference for the
+  camera/shutter feeling.
+- `C:/Users/Bin/Desktop/Mag.png`: pixel magnifier reference for the MAG lens
+  and selected outline.
+- `C:/Users/Bin/Desktop/traffic_detections.jpg`: YOLO-like BBox reference,
+  with thick colored detection frames and label plates.
+
+Interpretation:
+
+- Treat the desktop images as style references. Do not commit the watermarked
+  reference images as production assets. Generate/import App-owned clean pixel
+  sprites instead.
+- BBox should be drawn like a traditional YOLO detection frame: thicker colored
+  box, obvious label/status area later, selected white pixel outline, and
+  resize handles.
+- MAG should look like a pixel magnifying glass/lens, not a generic translucent
+  rectangle. Selected state needs a pixel white outline.
+- Camera mode does not need focus/exposure for now. It only needs the normal
+  camera shutter plus two-finger zoom of the screen/camera view.
+- CAM/BBox/MAG all reuse the shutter idea as the "confirm/send image" affordance.
+  CAM shutter calls `PhotoController` through `FormalHomeToolController`; BBox
+  and MAG shutter call `ConfirmWithScreenRegionAsset()`, which uploads the
+  screen-region image by HTTP asset route and then sends the visual-tool event.
+
+Fix applied:
+
+- Added `VisualToolPixelSprites`, a runtime-generated clean pixel sprite helper
+  for shutter circles, white selected rings, and a MAG lens. This avoids
+  directly importing the watermarked desktop reference images while preserving
+  the intended pixel style.
+- Camera mode now supports two-finger pinch zoom via `HandlePinchViewZoom()` and
+  applies it to the active camera's FOV/orthographic size where Unity allows it.
+  The hidden old zoom/exposure slider code remains for static compatibility but
+  is no longer the visible interaction model.
+- BBox dev controller now uses thicker YOLO-style red/yellow frame edges, white
+  selected outlines, selected corner handles, two-finger resize, and a fixed
+  bottom-center shutter confirm button wired to `ConfirmWithScreenRegionAsset`.
+- MAG dev controller now uses the generated pixel magnifier sprite, white
+  selected ring, visible zoom rail, two-finger resize/zoom, and a fixed
+  bottom-center shutter confirm button wired to `ConfirmWithScreenRegionAsset`.
+- Static guards were extended so the new pixel sprites, pinch handlers, and
+  shutter-confirm buttons remain present.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35
+  passed.
+- `git diff --check` on touched Unity scripts/tests reported only existing
+  LF/CRLF conversion warnings and no whitespace errors.
+
 ## Review/Fix Pass 24 - Chat-Level Flow Audit And Camera Pending Race (2026-05-18)
 
 Review scope:
@@ -1253,6 +1890,51 @@ Boundary note fixed in follow-up pass:
   `PhotoNode.reference_image_path` empty. The HTTP upload path now mirrors the
   same Brain-source `EcpEvent` into the existing local `EcpEventIngest`; dedup
   protects against future self-loop duplication.
+
+## UX Alignment Pass - iQOO Shutter And MAG Asset (2026-05-25)
+
+User correction:
+
+- The camera-mode bottom black strip is not acceptable; the normal camera view
+  should stay unobscured and keep the bottom-center shutter as the main control.
+- MAG should use the provided `Mag.png` art, not the generated fallback. Its
+  white background must become transparent while enclosed white highlights stay
+  visible.
+- BBox and MAG first-open sizes should be tuned against the iQOO Neo9 landscape
+  screen, and their confirm shutter must sit at the same bottom-center position
+  as camera mode.
+
+Implementation:
+
+- Added `VisualToolHudMetrics` with the iQOO Neo9 `2800 x 1260` reference
+  resolution, shared bottom shutter position/size, and BBox/MAG default regions.
+- Removed the visible camera-mode top/bottom edge panels from normal view; the
+  camera HUD now relies on the shutter plus OK/FAIL flash feedback.
+- Converted `C:/Users/Bin/Desktop/Mag.png` into
+  `Assets/ParrotApp/Resources/ParrotApp/VisualTools/MagPixelTransparent.png`.
+  The runtime MAG sprite loader now loads this transparent Resource first and
+  falls back to generated art only when the Resource is missing.
+- Replaced MAG's circular selected ring with offset white silhouettes using the
+  same MAG sprite, so selected state follows the actual pixel asset shape.
+- BBox/MAG confirm shutters now use the shared camera shutter position and
+  size; dev action rows default hidden so the shutter path is the visible path.
+
+Verification:
+
+- `uv run pytest tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35
+  passed.
+- `git diff --check` -> no code whitespace errors; only existing LF/CRLF
+  warnings in the workspace.
+
+Follow-up correction:
+
+- User clarified that "same shutter position" means camera-style orientation
+  behavior: landscape at the right-side middle, portrait at the bottom-center.
+- `VisualToolHudMetrics.ApplyResponsiveShutterLayout()` now owns this rule for
+  Camera, BBox, and MAG. Camera mode reapplies it during update/refresh; BBox
+  and MAG reapply it during overlay refresh before showing the confirm button.
+- Static Unity guard after the correction: `uv run pytest
+  tests/test_unity/test_app_v1_meta_ui_static.py -q` -> 35 passed.
 
 ## Continue Pass 9 - Requirements Compliance Fixes (2026-05-17)
 

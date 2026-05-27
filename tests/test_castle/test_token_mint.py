@@ -178,12 +178,13 @@ def test_mint_endpoint_can_disable_active_dispatch(monkeypatch) -> None:
     assert _claims(body["token"])["roomConfig"]["agents"] == [{}]
 
 
-def test_active_dispatch_path_reuses_existing_room_dispatch() -> None:
+def test_active_dispatch_path_replaces_stale_existing_room_dispatch() -> None:
     root = Path(__file__).resolve().parents[2]
     text = (root / "src" / "parrot" / "castle" / "token_mint.py").read_text(
         encoding="utf-8"
     )
 
     assert "lk.agent_dispatch.list_dispatch(room)" in text
-    assert "Brain dispatch already present" in text
+    assert "Stale Brain dispatch found without Brain participant" in text
+    assert "lk.agent_dispatch.delete_dispatch(dispatch_id, room)" in text
     assert "JRP_NEVER" in text

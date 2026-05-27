@@ -1,0 +1,72 @@
+{
+  "photo_object": {
+    "bbox": {
+      "coordinate_space": "normalized",
+      "height": 0.5,
+      "width": 0.5,
+      "x": 0.0,
+      "y": 0.0
+    },
+    "candidate_object_uuid": "",
+    "category_guess": "",
+    "confidence": 0.0,
+    "created_at_ms": 1779836434201,
+    "crop_path": "",
+    "edge_uuid": "",
+    "evidence_id": "ev_c53f60ec225c4390",
+    "label_guess": "",
+    "meta": {
+      "packet_meta": {},
+      "schema": "vision_photo_object_draft_v1",
+      "source_ref_id": "ref_019e6684b719_e0f62f01",
+      "source_surface": "app_ar_overlay"
+    },
+    "object_ref_id": "pobj_decf2a1f8afe4b92bd83cee331a3cae4",
+    "photo_uuid": "",
+    "review_status": "needs_crop",
+    "sample_draft_id": "os_7bd0f2dd3aea402aba3ec0526736c0c8",
+    "schema_version": 1,
+    "source": "user_bbox",
+    "source_asset_path": "",
+    "tool_event_id": "vtool_1779836434201_a05694a9",
+    "tool_id": "bbox_ecp",
+    "tool_kind": "bbox",
+    "updated_at_ms": 1779836434201
+  },
+  "sample": {
+    "bbox": {
+      "coordinate_space": "normalized",
+      "height": 0.5,
+      "width": 0.5,
+      "x": 0.0,
+      "y": 0.0
+    },
+    "category": "",
+    "content_sha256": "",
+    "created_at_ms": 1779836434201,
+    "created_by": "user_bbox",
+    "crop_path": "",
+    "evidence_id": "ev_c53f60ec225c4390",
+    "label": "",
+    "meta": {
+      "schema": "vision_object_sample_draft_v1",
+      "source_ref_id": "ref_019e6684b719_e0f62f01",
+      "source_tool_event_id": "vtool_1779836434201_a05694a9",
+      "source_tool_id": "bbox_ecp"
+    },
+    "object_ref_id": "pobj_decf2a1f8afe4b92bd83cee331a3cae4",
+    "object_uuid": "",
+    "photo_uuid": "",
+    "quality_flags": [
+      "missing_asset"
+    ],
+    "review_status": "needs_crop",
+    "sample_uuid": "os_7bd0f2dd3aea402aba3ec0526736c0c8",
+    "schema_version": 1,
+    "source_asset_path": "",
+    "updated_at_ms": 1779836434201,
+    "visual_description": ""
+  },
+  "schema_version": 1,
+  "updated_at_ms": 1779836434204
+}

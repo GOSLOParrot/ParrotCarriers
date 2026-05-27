@@ -27,6 +27,7 @@ from parrot.shared.constants import (
     CH_SCHEDULER_TO_BRAIN,
     CH_TRIGGER_RESULTS,
     STREAM_NANOBOT_DISPATCH,
+    STREAM_NANOBOT_RESULTS,
     STREAM_TRIGGER_RESULTS,
 )
 from parrot.shared.redis_client import get_redis
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 NANOBOT_TASK_TIMEOUT = 120.0
 TIMEOUT_CHECK_INTERVAL = 15.0
 TRIGGER_RESULT_LEDGER_MAXLEN = 200
+NANOBOT_RESULT_LEDGER_MAXLEN = 300
 
 
 class SchedulerService:
@@ -117,6 +119,7 @@ class SchedulerService:
                 destination = result.get("destination", "brain_direct")
 
                 if destination == "nanobot":
+                    task = result.get("task") if isinstance(result.get("task"), dict) else task
                     await r.xadd(
                         STREAM_NANOBOT_DISPATCH, {"payload": json.dumps(task)}
                     )
@@ -177,6 +180,14 @@ class SchedulerService:
                     result.get("result_channel")
                     or task_meta.get("result_channel", "")
                 )
+                await self._write_nanobot_result_ledger(
+                    r,
+                    result=result,
+                    result_channel=str(result_channel or ""),
+                    task_id=str(task_id),
+                    task_type=str(task_type),
+                    task_meta=task_meta,
+                )
                 await self._publish_trigger_result(
                     r,
                     result=result,
@@ -189,7 +200,12 @@ class SchedulerService:
                     "task_id": task_id,
                     "type": task_type,
                     "status": status,
-                    "result_summary": result.get("result", ""),
+                    "result_channel": str(result_channel or ""),
+                    "result_summary": (
+                        result.get("result_summary")
+                        or result.get("summary")
+                        or result.get("result", "")
+                    ),
                     "source_worker": "nanobot",
                 }
                 await r.publish(CH_SCHEDULER_TO_BRAIN, json.dumps(summary))
@@ -264,16 +280,76 @@ class SchedulerService:
             await get_plan_registry().report_step_result(
                 plan_id,
                 step_id,
-                success=str(status).lower() in {"ok", "success", "completed", "done"},
-                result_summary=str(result.get("result") or result.get("summary") or ""),
+                success=str(status).lower() in {
+                    "ok",
+                    "success",
+                    "completed",
+                    "done",
+                    "draft_ready",
+                },
+                result_summary=str(
+                    result.get("result_summary")
+                    or result.get("result")
+                    or result.get("summary")
+                    or ""
+                ),
                 result_ref_id=str(result.get("result_ref_id") or ""),
                 error=str(result.get("error") or ""),
+                status=str(status or ""),
+                decision_payload=_result_decision_payload(result),
             )
         except Exception:
             logger.exception(
                 "Scheduler failed to report Plan step result: plan=%s step=%s",
                 plan_id,
                 step_id,
+            )
+
+    async def _write_nanobot_result_ledger(
+        self,
+        r,
+        *,
+        result: dict,
+        result_channel: str,
+        task_id: str,
+        task_type: str,
+        task_meta: dict,
+    ) -> None:
+        """Best-effort durable trace for all Nanobot result receipts."""
+
+        try:
+            payload = dict(result)
+            payload.setdefault("task_id", task_id)
+            payload.setdefault("type", task_type)
+            payload.setdefault("original_type", task_type)
+            if result_channel:
+                payload.setdefault("result_channel", result_channel)
+            if task_meta:
+                payload.setdefault("task_meta", {
+                    "type": str(task_meta.get("type") or ""),
+                    "requested_type": str(task_meta.get("requested_type") or ""),
+                    "plan_id": str(task_meta.get("plan_id") or ""),
+                    "step_id": str(task_meta.get("step_id") or ""),
+                    "result_channel": str(task_meta.get("result_channel") or ""),
+                })
+            await r.xadd(
+                STREAM_NANOBOT_RESULTS,
+                {
+                    "payload": json.dumps(payload, ensure_ascii=False),
+                    "task_id": task_id,
+                    "task_type": task_type,
+                    "result_channel": result_channel,
+                    "created_at": str(time.time()),
+                },
+                maxlen=NANOBOT_RESULT_LEDGER_MAXLEN,
+                approximate=True,
+            )
+        except Exception:
+            logger.debug(
+                "Scheduler could not write Nanobot result ledger: task=%s type=%s",
+                task_id,
+                task_type,
+                exc_info=True,
             )
 
     async def _report_plan_step_timeout(self, *, task_meta: dict, task_id: str) -> None:
@@ -367,6 +443,30 @@ class SchedulerService:
                 result_channel,
                 exc_info=True,
             )
+
+
+def _result_decision_payload(result: dict) -> dict:
+    """Extract the structured HITL payload from a Nanobot result."""
+
+    payload: dict = {
+        "status": str(result.get("status") or ""),
+        "task_id": str(result.get("task_id") or ""),
+        "task_type": str(result.get("type") or ""),
+    }
+    raw_result = result.get("result")
+    if isinstance(raw_result, str) and raw_result.strip():
+        try:
+            decoded = json.loads(raw_result)
+        except json.JSONDecodeError:
+            decoded = {}
+        if isinstance(decoded, dict):
+            payload.update(decoded)
+    elif isinstance(raw_result, dict):
+        payload.update(raw_result)
+    for key in ("findings", "conflicts", "options", "recommended_option", "proposed_write", "reason"):
+        if key in result and key not in payload:
+            payload[key] = result[key]
+    return payload
 
 
 async def run_scheduler() -> None:

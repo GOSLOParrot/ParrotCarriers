@@ -23,6 +23,7 @@ class PlanState(str, Enum):
     APPROVED = "approved"
     EXECUTING = "executing"
     PARTIAL_COMPLETE = "partial_complete"
+    WAITING_USER_DECISION = "waiting_user_decision"
     COMPLETE = "complete"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -33,6 +34,7 @@ class PlanStepState(str, Enum):
     PENDING = "pending"
     DISPATCHED = "dispatched"
     RUNNING = "running"
+    WAITING_USER_DECISION = "waiting_user_decision"
     DONE = "done"
     FAILED = "failed"
     SKIPPED = "skipped"
@@ -77,6 +79,7 @@ class PlanStep:
     result_summary: str = ""
     result_ref_id: str = ""
     error: str = ""
+    decision_payload: dict[str, Any] = field(default_factory=dict)
 
     def is_terminal(self) -> bool:
         return self.state in (

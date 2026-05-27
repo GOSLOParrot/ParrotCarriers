@@ -216,7 +216,7 @@ export const api = {
       body: JSON.stringify(body)
     }),
   obsidianVaultScan: (vaultPath = "") => {
-    const params = new URLSearchParams({ limit: "24" });
+    const params = new URLSearchParams({ limit: "24", allow_uuid_free_ref: "true" });
     if (vaultPath.trim()) params.set("vault_path", vaultPath.trim());
     return json<Receipt>("/api/l15/obsidian-vault/scan?" + params.toString());
   },
@@ -379,6 +379,13 @@ export const api = {
     }),
   googleCalendarResults: (limit = 12) =>
     json<Receipt>("/api/google/calendar/results?limit=" + encodeURIComponent(String(limit))),
+  obsidianDiaryQuery: (body: Record<string, unknown>) =>
+    json<Receipt>("/api/obsidian/diary/query", {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  obsidianDiaryResults: (limit = 12) =>
+    json<Receipt>("/api/obsidian/diary/results?limit=" + encodeURIComponent(String(limit))),
   googleCalendarImportDraft: (body: Record<string, unknown>) =>
     json<Receipt>("/api/google/calendar/import-draft", {
       method: "POST",

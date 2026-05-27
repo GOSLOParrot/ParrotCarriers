@@ -353,7 +353,7 @@ namespace ParrotApp.Lifecycle
             }
             ApplyScaleMultiplier();
             SnapPlacedModelBottomToLastSurface("place");
-            SelectPlacedModel(true, "placed");
+            SelectPlacedModel(false, "placed");
             HasPlacedModel = true;
             LastPlacementStatus = "placed:" + ShortReason(reason);
 

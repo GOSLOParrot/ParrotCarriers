@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import base64
 import re
 import time
 from dataclasses import dataclass
@@ -339,6 +340,8 @@ def test_runtime_capability_catalog_indexes_real_workbench_routes() -> None:
     assert by_id["l2b.subgraph.context"]["execution_policy"] == "read_only"
     assert by_id["refs.ref_scan.dispatch"]["nanobot_task_type"] == "ref_scan"
     assert by_id["nanobot.calendar_fetch"]["plan_step_compatible"] is True
+    assert by_id["nanobot.diary_query"]["route"] == "/api/obsidian/diary/query"
+    assert by_id["nanobot.diary_query"]["nanobot_task_type"] == "diary_query"
 
     trigger_rows = [row for row in body["capabilities"] if row["kind"] == "trigger"]
     assert trigger_rows
@@ -1923,6 +1926,34 @@ def test_obsidian_vault_scan_previews_three_profiles(tmp_path) -> None:
     assert body["data"]["invalid_notes"][0]["reason"] == "missing_frontmatter_or_ref_target"
 
 
+def test_obsidian_vault_scan_can_lift_uuid_free_ref_as_direct_context(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "ref_diary.md").write_text(
+        "---\nprofile: ref\nlabel: Demo ref diary\n---\nDiary source without a stable UUID.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    body = client.get(
+        "/api/l15/obsidian-vault/scan",
+        params={"vault_path": str(vault), "limit": 8, "allow_uuid_free_ref": "true"},
+    ).json()
+
+    assert body["action"] == "l15.obsidian_vault.scan"
+    assert body["success"] is True
+    assert body["data"]["allow_uuid_free_ref"] is True
+    assert body["data"]["invalid_notes"] == []
+    note = body["data"]["notes"][0]
+    assert note["profile"] == "ref"
+    assert note["obsidian_uuid"] == ""
+    assert note["uuid_free_allowed"] is True
+    assert note["ref_mode"] == "direct_context"
+    assert note["target_bucket"] == "obsidian_setting_daily"
+    assert note["payload"]["kind"] == "event"
+    assert note["payload"]["ascent_channel"] == "intent_workspace_doc+c3_context_notice"
+
+
 def test_obsidian_vault_import_draft_uses_l15_observation_path(tmp_path) -> None:
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -2066,6 +2097,91 @@ def test_obsidian_vault_operator_import_materializes_l2b_work_subgraph(tmp_path,
     assert [(src, dst) for src, dst, _ in contains_edges] == [
         (work_nodes[0].uuid, obsidian_nodes[0].uuid)
     ]
+
+
+def test_obsidian_vault_operator_import_pushes_uuid_free_ref_diary_to_brain_context(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import py_trees
+    import parrot.dsg.ingest.runner as runner_module
+    import parrot.dsg.l1_5.pool as pool_module
+    import parrot.dsg.l2b_graph as l2b_graph_module
+    from parrot.brain.intent_workspace import (
+        IntentWorkspace,
+        get_intent_workspace,
+        set_intent_workspace_for_test,
+    )
+    from parrot.dsg.l1_5.pool import L15Pool
+    from parrot.dsg.l1_5.buckets import BucketKind
+    from parrot.dsg.l2b_graph import L2BGraph
+    from parrot.scheduler.blackboard import open_bb_client
+
+    py_trees.blackboard.Blackboard.storage = {}
+    py_trees.blackboard.Blackboard.metadata = {}
+    graph = L2BGraph()
+    pool = L15Pool()
+    monkeypatch.setattr(l2b_graph_module, "_instance", graph)
+    monkeypatch.setattr(runner_module, "_runner", None)
+    monkeypatch.setattr(pool_module, "_pool", pool)
+    set_intent_workspace_for_test(IntentWorkspace())
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "ref_diary.md").write_text(
+        "---\nprofile: ref\nlabel: Demo ref diary\n---\n"
+        "A UUID-free Ref diary note should rise into L2-B and live context.",
+        encoding="utf-8",
+    )
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    try:
+        body = client.post(
+            "/api/l15/obsidian-vault/import",
+            json={
+                "vault_path": str(vault),
+                "paths": ["ref_diary.md"],
+                "allow_uuid_free_ref": True,
+                "push_to_brain_context": True,
+                "push_to_goslo_context": True,
+                "subgraph_label": "Demo Obsidian ref diary",
+                "dry_run": False,
+                "operator_mode": True,
+            },
+        ).json()
+
+        assert body["action"] == "l15.obsidian_vault.import"
+        assert body["success"] is True
+        assert body["data"]["imported_count"] == 1
+        obsidian_nodes = [
+            node for node in graph.all_nodes()
+            if node.source == "user_tag_obsidian" and node.label == "Demo ref diary"
+        ]
+        assert len(obsidian_nodes) == 1
+        assert obsidian_nodes[0].source_meta["profile"] == "ref"
+        assert obsidian_nodes[0].source_meta["ref_mode"] == "direct_context"
+        daily = pool.get_bucket(BucketKind.OBSIDIAN_SETTING_DAILY)
+        assert daily is not None
+        assert obsidian_nodes[0].uuid in daily.node_uuids
+
+        push = body["data"]["brain_context_push"]
+        assert push["success"] is True
+        assert push["skipped"] is False
+        assert push["ascent_channel"] == "intent_workspace_doc+c3_context_notice"
+        ref_id = push["intent_workspace_ref_ids"][0]
+        staged = get_intent_workspace().fetch(ref_id)
+        assert staged is not None
+        assert "Demo ref diary" in str(staged.payload)
+        assert staged.metadata.custom_meta["role"] == "obsidian_ref_diary_context"
+
+        bb = open_bb_client(name="test.obsidian_context.read", writer=None)
+        notice = bb.get("transient/obsidian_context_notice")
+        assert notice["staged_ref_ids"] == [ref_id]
+        assert notice["notify_goslo"] is True
+        assert notice["priority"] == "c3_high_context"
+    finally:
+        set_intent_workspace_for_test(None)
+        py_trees.blackboard.Blackboard.storage = {}
+        py_trees.blackboard.Blackboard.metadata = {}
 
 
 def test_obsidian_vault_import_plan_combines_l15_and_graph_policy(tmp_path) -> None:
@@ -2488,6 +2604,125 @@ def test_google_calendar_results_tolerates_missing_redis(monkeypatch) -> None:
     assert body["success"] is True
     assert body["data"]["available"] is False
     assert body["data"]["rows"] == []
+
+
+def test_obsidian_diary_query_dispatch_is_operator_gated(tmp_path) -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    diary_root = tmp_path / "Diary"
+
+    body = client.post(
+        "/api/obsidian/diary/query",
+        json={"diary_root": str(diary_root), "date_from": "2026-05-12", "date_to": "2026-05-18"},
+    ).json()
+
+    assert body["action"] == "obsidian.diary.query.dispatch"
+    assert body["success"] is True
+    assert body["dry_run"] is True
+    assert body["operator_mode"] is False
+    assert body["data"]["task_type"] == "diary_query"
+    assert body["data"]["params"]["result_channel"] == "diary_result"
+    assert body["data"]["params"]["diary_root"] == str(diary_root.resolve())
+    assert body["data"]["would_dispatch"] is True
+    assert body["data"]["dispatch_skipped_reason"] == "dry_run_or_operator_mode_missing"
+    assert body["data"]["profile_boundary"]["diary"].startswith("Diary")
+
+
+def test_obsidian_diary_query_can_dispatch_in_operator_mode(tmp_path, monkeypatch) -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    diary_root = tmp_path / "Diary"
+    calls: list[dict[str, Any]] = []
+
+    async def fake_do_dispatch_task(
+        task_type: str,
+        *,
+        params: dict[str, Any] | None = None,
+        priority: str = "normal",
+    ) -> str:
+        calls.append({"task_type": task_type, "params": params or {}, "priority": priority})
+        return "task_diary_real"
+
+    dispatch_module = import_module("parrot.brain.tools.dispatch_task")
+    monkeypatch.setattr(dispatch_module, "do_dispatch_task", fake_do_dispatch_task)
+
+    body = client.post(
+        "/api/obsidian/diary/query",
+        json={
+            "diary_root": str(diary_root),
+            "dry_run": False,
+            "operator_mode": True,
+            "priority": "high",
+        },
+    ).json()
+
+    assert body["action"] == "obsidian.diary.query.dispatch"
+    assert body["success"] is True
+    assert body["data"]["dispatched"] is True
+    assert body["data"]["task_id"] == "task_diary_real"
+    assert calls == [
+        {
+            "task_type": "diary_query",
+            "params": body["data"]["params"],
+            "priority": "high",
+        }
+    ]
+
+
+def test_obsidian_diary_results_reads_scheduler_ledger(monkeypatch) -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+
+    class FakeRedis:
+        async def xrevrange(self, stream: str, count: int = 20):
+            assert stream == "parrot.trigger.results.stream"
+            assert count >= 6
+            return [
+                (
+                    "1710000000000-0",
+                    {
+                        "payload": json.dumps(
+                            {
+                                "task_id": "task_diary",
+                                "type": "diary_result",
+                                "original_type": "diary_query",
+                                "status": "completed",
+                                "result": json.dumps(
+                                    {
+                                        "diary_root": "D:/GOSLOParrot/GOSLObsidian/Diary",
+                                        "entries": [
+                                            {
+                                                "date": "2026-05-18",
+                                                "title": "Diary 2026-05-18",
+                                                "path": "D:/GOSLOParrot/GOSLObsidian/Diary/2026/2026-05-18.md",
+                                                "summary": "Guitar and milk tea.",
+                                            }
+                                        ],
+                                        "summary": "Diary query found 1 entry.",
+                                    }
+                                ),
+                            },
+                            ensure_ascii=False,
+                        ),
+                        "result_channel": "diary_result",
+                        "task_id": "task_diary",
+                        "created_at": "1710000000.0",
+                    },
+                )
+            ]
+
+    async def fake_get_redis():
+        return FakeRedis()
+
+    monkeypatch.setattr("parrot.shared.redis_client.get_redis", fake_get_redis)
+
+    body = client.get("/api/obsidian/diary/results", params={"limit": 2}).json()
+
+    assert body["action"] == "obsidian.diary.query.results"
+    assert body["success"] is True
+    row = body["data"]["rows"][0]
+    assert row["task_id"] == "task_diary"
+    assert row["result_channel"] == "diary_result"
+    assert row["original_type"] == "diary_query"
+    assert row["entry_count"] == 1
+    assert row["entry_sample"][0]["date"] == "2026-05-18"
 
 
 def test_google_calendar_api_fetch_uses_official_api_preview(monkeypatch) -> None:
@@ -4038,6 +4273,75 @@ def test_google_message_routes_use_nanobot_and_trigger_drafts() -> None:
     assert push["action"] == "dsg.trigger.fire_event"
     assert push["data"]["event"]["type"] == "message_push"
     assert push["data"]["would_publish"] is True
+
+
+def test_google_message_pubsub_push_dispatches_message_check(monkeypatch) -> None:
+    dispatch_module = import_module("parrot.brain.tools.dispatch_task")
+
+    calls = []
+
+    async def fake_do_dispatch_task(task_type: str, params: dict, priority: str):
+        calls.append((task_type, params, priority))
+        return "task-gmail-push"
+
+    monkeypatch.setattr(dispatch_module, "do_dispatch_task", fake_do_dispatch_task)
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    data = base64.urlsafe_b64encode(
+        json.dumps(
+            {"emailAddress": "goslo@example.com", "historyId": "12345"}
+        ).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+
+    body = client.post(
+        "/api/google/messages/pubsub-push",
+        json={
+            "message": {
+                "data": data,
+                "messageId": "pubsub-1",
+                "publishTime": "2026-05-19T07:00:00Z",
+            },
+            "subscription": "projects/demo/subscriptions/gmail",
+        },
+    ).json()
+
+    assert body["action"] == "google.message.pubsub_push"
+    assert body["success"] is True
+    assert body["data"]["accepted"] is True
+    assert body["data"]["task_id"] == "task-gmail-push"
+    task_type, params, priority = calls[0]
+    assert task_type == "message_check"
+    assert priority == "high"
+    assert params["result_channel"] == "message_result"
+    assert params["source"] == "gmail_pubsub_push"
+    assert params["emailAddress"] == "goslo@example.com"
+    assert params["historyId"] == "12345"
+
+
+def test_google_message_pubsub_push_rejects_bad_token(monkeypatch) -> None:
+    monkeypatch.setenv("PARROT_GMAIL_PUBSUB_PUSH_TOKEN", "secret")
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    body = client.post(
+        "/api/google/messages/pubsub-push?token=wrong",
+        json={"message": {"data": ""}},
+    ).json()
+
+    assert body["action"] == "google.message.pubsub_push"
+    assert body["success"] is False
+    assert body["data"]["error"] == "invalid_pubsub_push_token"
+
+
+def test_google_message_watch_is_operator_gated() -> None:
+    client = TestClient(build_app(status_fetcher=_fake_fetcher))
+    body = client.post(
+        "/api/google/messages/watch",
+        json={"topicName": "projects/demo/topics/gmail"},
+    ).json()
+
+    assert body["action"] == "google.message.watch"
+    assert body["success"] is True
+    assert body["data"]["would_call_watch"] is True
+    assert body["data"]["request_body"]["labelIds"] == ["INBOX"]
+    assert body["data"]["request_body"]["labelFilterBehavior"] == "INCLUDE"
 
 
 def test_ref_binding_draft_is_core_candidate_and_draft_only() -> None:

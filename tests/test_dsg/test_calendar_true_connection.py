@@ -30,6 +30,29 @@ def env():
     l2b_graph_module._instance = None
 
 
+def test_calendar_normalize_treats_p1_title_as_urgent(env):
+    graph, _pool = env
+    trigger = CalendarTrigger(graph)
+
+    urgent = trigger._normalize_event(
+        {
+            "id": "evt_medicine",
+            "title": "[P1] Eat medicine",
+            "start_time": "2026-05-19T08:00:00+08:00",
+        }
+    )
+    normal = trigger._normalize_event(
+        {
+            "id": "evt_guitar",
+            "title": "[P3] Practice guitar",
+            "start_time": "2026-05-19T20:00:00+08:00",
+        }
+    )
+
+    assert urgent["is_urgent"] is True
+    assert normal["is_urgent"] is False
+
+
 @pytest.mark.asyncio
 async def test_calendar_result_enters_l1_5_google_bucket(env):
     graph, pool = env

@@ -73,6 +73,7 @@ namespace ParrotApp.VisualTools
         protected virtual string ConfirmDeliveryPreference => VisualToolDeliveryPreferences.Default;
         protected virtual string ExplicitSendDeliveryPreference => VisualToolDeliveryPreferences.C3;
         protected virtual float ConfirmAttentionHint => 0f;
+        protected bool IsScreenRegionAssetOverlayHidden => _screenRegionAssetOverlayHideDepth > 0;
 
         protected virtual void Awake()
         {
@@ -356,6 +357,14 @@ namespace ParrotApp.VisualTools
         {
         }
 
+        protected virtual void OnSemanticHttpCompleted(string phase, bool ok, bool hadAsset, string status)
+        {
+        }
+
+        protected virtual void OnScreenRegionAssetCapturedForFeedback(string phase)
+        {
+        }
+
         protected string QueueScreenRegionAssetLifecycle(
             string phase,
             string deliveryPreference,
@@ -568,12 +577,15 @@ namespace ParrotApp.VisualTools
             {
                 LastReceiptJson = result.Value.raw_json ?? "";
                 LastHttpStatus = httpClient.LastLifecycleStatus;
-                SetStatus(ToolKind + "_" + packet.interaction_phase + "_sent", true);
+                bool ok = !PacketHasAssetFailureStatus(packet);
+                string status = SetStatus(ToolKind + "_" + packet.interaction_phase + "_sent", ok);
+                OnSemanticHttpCompleted(packet.interaction_phase, ok, PacketHasAssetStatus(packet), status);
             }
             else
             {
                 LastHttpStatus = string.IsNullOrWhiteSpace(result.Error) ? httpClient.LastLifecycleStatus : result.Error;
-                SetStatus(ToolKind + "_" + packet.interaction_phase + "_http_failed", false);
+                string status = SetStatus(ToolKind + "_" + packet.interaction_phase + "_http_failed", false);
+                OnSemanticHttpCompleted(packet.interaction_phase, false, PacketHasAssetStatus(packet), status);
             }
             UpdateOverlay();
         }
@@ -629,7 +641,10 @@ namespace ParrotApp.VisualTools
                 else
                 {
                     if (!IsOlderSemanticCompletion(semanticSequence))
-                        SetStatus(ToolKind + "_asset_upload_failed", false);
+                    {
+                        string status = SetStatus(ToolKind + "_asset_upload_failed", false);
+                        OnSemanticHttpCompleted(packet.interaction_phase, false, true, status);
+                    }
                 }
                 yield break;
             }
@@ -653,14 +668,16 @@ namespace ParrotApp.VisualTools
             {
                 LastReceiptJson = lifecycleResult.Value.raw_json ?? "";
                 LastHttpStatus = httpClient.LastLifecycleStatus;
-                SetStatus(ToolKind + "_" + packet.interaction_phase + "_asset_sent", true);
+                string status = SetStatus(ToolKind + "_" + packet.interaction_phase + "_asset_sent", true);
+                OnSemanticHttpCompleted(packet.interaction_phase, true, true, status);
             }
             else
             {
                 LastHttpStatus = string.IsNullOrWhiteSpace(lifecycleResult.Error)
                     ? httpClient.LastLifecycleStatus
                     : lifecycleResult.Error;
-                SetStatus(ToolKind + "_" + packet.interaction_phase + "_asset_event_failed", false);
+                string status = SetStatus(ToolKind + "_" + packet.interaction_phase + "_asset_event_failed", false);
+                OnSemanticHttpCompleted(packet.interaction_phase, false, true, status);
             }
             UpdateOverlay();
         }
@@ -733,6 +750,9 @@ namespace ParrotApp.VisualTools
 
             if (IsOlderSemanticCompletion(semanticSequence))
                 yield break;
+            if (string.IsNullOrWhiteSpace(captureError) && pngBytes != null && pngBytes.Length > 0
+                && !IsStaleInteraction(generation))
+                OnScreenRegionAssetCapturedForFeedback(packet.interaction_phase);
             if (!string.IsNullOrWhiteSpace(captureError) || pngBytes == null || pngBytes.Length == 0)
             {
                 string assetStatus = string.IsNullOrWhiteSpace(captureError)
@@ -754,7 +774,10 @@ namespace ParrotApp.VisualTools
                 else
                 {
                     if (!IsOlderSemanticCompletion(semanticSequence))
-                        SetStatus(ToolKind + "_screen_asset_capture_failed", false);
+                    {
+                        string status = SetStatus(ToolKind + "_screen_asset_capture_failed", false);
+                        OnSemanticHttpCompleted(packet.interaction_phase, false, true, status);
+                    }
                 }
                 yield break;
             }
@@ -925,6 +948,32 @@ namespace ParrotApp.VisualTools
             packet.meta_json = string.IsNullOrWhiteSpace(body)
                 ? "{" + addition + "}"
                 : "{" + body + "," + addition + "}";
+        }
+
+        private static bool PacketHasAssetStatus(VisualToolLifecyclePacket packet)
+        {
+            return packet != null
+                   && !string.IsNullOrWhiteSpace(packet.meta_json)
+                   && packet.meta_json.IndexOf("\"asset_status\"", StringComparison.Ordinal) >= 0;
+        }
+
+        private static bool PacketHasAssetFailureStatus(VisualToolLifecyclePacket packet)
+        {
+            if (!PacketHasAssetStatus(packet)) return false;
+            string meta = packet.meta_json.ToLowerInvariant();
+            return meta.Contains("failed")
+                   || meta.Contains("empty")
+                   || meta.Contains("too_small")
+                   || meta.Contains("disabled")
+                   || meta.Contains("missing");
+        }
+
+        protected static bool IsBackendCompletionPendingStatus(string status)
+        {
+            if (string.IsNullOrWhiteSpace(status)) return false;
+            string value = status.ToLowerInvariant();
+            return value.Contains("_queued")
+                   || value.Contains("_pending");
         }
 
         private bool ShouldSendLowFrequencyUpdate()

@@ -7,11 +7,13 @@ default to dry-run and require an explicit operator flag.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import fields, is_dataclass
@@ -22,6 +24,11 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
+
+_OBSIDIAN_CONTEXT_NOTICE_KEY = "transient/obsidian_context_notice"
+_OBSIDIAN_CONTEXT_NOTICE_WRITER = "web_console.memory_ops"
+_OBSIDIAN_CONTEXT_ROLE = "obsidian_ref_diary_context"
+_OBSIDIAN_ASCENT_CHANNEL = "intent_workspace_doc+c3_context_notice"
 
 
 _TRIGGER_EVENT_HINTS: dict[str, list[dict[str, Any]]] = {
@@ -1309,7 +1316,7 @@ async def memory_ref_scan_result_history(limit: int = 20) -> dict[str, Any]:
         from parrot.shared.redis_client import get_redis
 
         redis = await get_redis()
-        raw_rows = await redis.xrevrange(STREAM_TRIGGER_RESULTS, count=limit * 3)
+        raw_rows = await redis.xrevrange(STREAM_TRIGGER_RESULTS, count=max(limit * 10, 50))
     except Exception as exc:
         return _receipt(
             action="memory.identity_ref_index.ref_scan_results",
@@ -1371,6 +1378,7 @@ def scan_obsidian_vault(payload: dict[str, Any] | None = None) -> dict[str, Any]
     body = payload or {}
     vault = _default_obsidian_vault_path(body.get("vault_path"))
     limit, limit_error = _body_int_limit(body.get("limit"), default=24, maximum=80)
+    allow_uuid_free_ref = _body_bool(body.get("allow_uuid_free_ref"), False)
     if limit_error:
         return _receipt(
             action="l15.obsidian_vault.scan",
@@ -1384,9 +1392,14 @@ def scan_obsidian_vault(payload: dict[str, Any] | None = None) -> dict[str, Any]
                 "invalid_notes": [],
                 "profiles": _obsidian_profile_descriptions(),
                 "operator_required_for_import": True,
+                "allow_uuid_free_ref": _body_bool(body.get("allow_uuid_free_ref"), False),
             },
         )
-    check = check_obsidian_vault(vault, sample_limit=min(limit, 12))
+    check = check_obsidian_vault(
+        vault,
+        sample_limit=min(limit, 12),
+        allow_uuid_free_ref=allow_uuid_free_ref,
+    )
     notes: list[dict[str, Any]] = []
     invalid_notes: list[dict[str, Any]] = []
     selected_paths = _obsidian_selected_paths(body.get("paths") or body.get("selected_paths"))
@@ -1404,7 +1417,10 @@ def scan_obsidian_vault(payload: dict[str, Any] | None = None) -> dict[str, Any]
                 and len(invalid_notes) >= invalid_preview_limit
             ):
                 break
-            payload_row = note_to_ingest_payload(path)
+            payload_row = note_to_ingest_payload(
+                path,
+                allow_uuid_free_ref=allow_uuid_free_ref,
+            )
             if payload_row is None:
                 if is_selected_path or len(invalid_notes) < invalid_preview_limit:
                     invalid_notes.append({
@@ -1415,14 +1431,17 @@ def scan_obsidian_vault(payload: dict[str, Any] | None = None) -> dict[str, Any]
             if len(notes) >= limit and not is_selected_path:
                 continue
             profile = str(payload_row.get("profile") or "daily")
+            ref_mode = str(payload_row.get("ref_mode") or "")
             notes.append({
                 "path": rel_path,
                 "profile": profile,
                 "label": str(payload_row.get("label") or path.stem),
                 "obsidian_uuid": str(payload_row.get("obsidian_uuid") or ""),
                 "obsidian_note_key": str(payload_row.get("obsidian_note_key") or ""),
-                "target_bucket": _obsidian_profile_target(profile),
-                "uuid_free_allowed": profile in {"daily", "roleplay"},
+                "target_bucket": _obsidian_profile_target(profile, ref_mode=ref_mode),
+                "uuid_free_allowed": profile in {"daily", "roleplay"} or ref_mode == "direct_context",
+                "ref_mode": ref_mode,
+                "ascent_channel": str(payload_row.get("ascent_channel") or ""),
                 "import_ready": True,
                 "payload": payload_row,
             })
@@ -1440,6 +1459,7 @@ def scan_obsidian_vault(payload: dict[str, Any] | None = None) -> dict[str, Any]
             "invalid_notes": invalid_notes,
             "profiles": _obsidian_profile_descriptions(),
             "operator_required_for_import": True,
+            "allow_uuid_free_ref": allow_uuid_free_ref,
         },
     )
 
@@ -2432,6 +2452,7 @@ def draft_obsidian_l2b_import_plan(payload: dict[str, Any] | None = None) -> dic
                 "normalize selected notes into a Source Pack envelope",
                 "preview CORE-013 import destination / overlay policy",
                 "real import admits through L1.5 and can materialize a L2-B WorkSubgraph from admitted nodes",
+                "optional direct push stages the Source Pack as an IntentWorkspace DOC and raises a C3 GOSLO context notice",
             ],
             "operator_required_for_execute": True,
             "apply_route": "/api/l15/obsidian-vault/import",
@@ -2506,6 +2527,14 @@ async def apply_obsidian_vault_import(payload: dict[str, Any] | None = None) -> 
     body = payload or {}
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
+    if _should_proxy_l2b_operator(body, dry_run=dry_run, operator_mode=operator_mode):
+        return _proxy_l2b_operator_route(
+            action="l15.obsidian_vault.import",
+            path="/api/l15/obsidian-vault/import",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
     draft = draft_obsidian_vault_import(
         {**body, "dry_run": dry_run, "operator_mode": operator_mode}
     )
@@ -2541,9 +2570,15 @@ async def apply_obsidian_vault_import(payload: dict[str, Any] | None = None) -> 
         node_uuids=node_uuids,
         default_label="Obsidian source pack",
     )
+    brain_context_push = await _stage_obsidian_context_push_if_requested(
+        body,
+        source_pack=source_pack,
+        node_uuids=node_uuids,
+        items=[item for item in draft["data"]["items"] if isinstance(item, dict)],
+    )
     return _receipt(
         action="l15.obsidian_vault.import",
-        success=not bool(outcome.rejected),
+        success=not bool(outcome.rejected) and brain_context_push.get("success", True),
         dry_run=False,
         operator_mode=True,
         data={
@@ -2551,6 +2586,7 @@ async def apply_obsidian_vault_import(payload: dict[str, Any] | None = None) -> 
             "admit_outcome": _jsonable(outcome),
             "source_pack": source_pack,
             "work_subgraph": work_subgraph,
+            "brain_context_push": brain_context_push,
             "write_path": "UserTagFilter -> L15Pool.admit(USER_TAG_OBSIDIAN)",
         },
     )
@@ -2708,7 +2744,7 @@ async def google_calendar_result_history(limit: int = 20) -> dict[str, Any]:
         from parrot.shared.redis_client import get_redis
 
         redis = await get_redis()
-        raw_rows = await redis.xrevrange(STREAM_TRIGGER_RESULTS, count=limit * 3)
+        raw_rows = await redis.xrevrange(STREAM_TRIGGER_RESULTS, count=max(limit * 10, 50))
     except Exception as exc:
         return _receipt(
             action="google.calendar.results",
@@ -2724,15 +2760,19 @@ async def google_calendar_result_history(limit: int = 20) -> dict[str, Any]:
             },
         )
 
-    rows: list[dict[str, Any]] = []
+    rows_by_task: dict[str, dict[str, Any]] = {}
     for stream_id, fields in raw_rows:
         if not isinstance(fields, dict):
             continue
         row = _calendar_result_history_row(str(stream_id), fields)
         if row:
-            rows.append(row)
-        if len(rows) >= limit:
-            break
+            task_key = row.get("task_id") or row.get("stream_id") or str(stream_id)
+            existing = rows_by_task.get(str(task_key))
+            if existing is None or _calendar_result_rank(row) > _calendar_result_rank(existing):
+                rows_by_task[str(task_key)] = row
+    rows = list(rows_by_task.values())
+    rows.sort(key=_calendar_result_rank, reverse=True)
+    rows = rows[:limit]
 
     return _receipt(
         action="google.calendar.results",
@@ -2746,6 +2786,182 @@ async def google_calendar_result_history(limit: int = 20) -> dict[str, Any]:
             "rows": rows,
             "count": len(rows),
             "read_model": "Scheduler trigger-result ledger",
+            "web_only": True,
+        },
+    )
+
+
+def draft_obsidian_diary_query(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft a read-only Nanobot task that answers from the local diary folder."""
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    diary_root = _default_obsidian_diary_root(
+        body.get("diary_root") or body.get("diary_path"),
+        vault_path=body.get("vault_path"),
+    )
+    vault = _default_obsidian_vault_path(body.get("vault_path"))
+    date_from, date_to = _diary_query_window(body)
+    limit, limit_error = _body_int_limit(body.get("limit"), default=7, maximum=30)
+    if limit_error:
+        return _receipt(
+            action="obsidian.diary.query.draft",
+            success=False,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+            data={"error": limit_error, "params": {}, "task_type": "diary_query"},
+        )
+
+    params = {
+        "query": str(
+            body.get("query")
+            or "Summarize the user's recent diary entries, focusing on guitar practice, anime/drama watching, exercise, water, medicine, and milk tea."
+        ),
+        "vault_path": str(vault),
+        "diary_root": str(diary_root),
+        "date_from": date_from,
+        "date_to": date_to,
+        "days": _body_int(body.get("days"), 7),
+        "limit": limit,
+        "profile": "daily",
+        "result_channel": str(body.get("result_channel") or "diary_result"),
+        "source": "web_console_obsidian_diary_query",
+        "instructions": (
+            "Read Markdown files under diary_root only. Treat profile=daily notes "
+            "as diaries. Do not read UUID-bound profile=ref files as diaries; those "
+            "belong under Refs and bind to L2-B nodes. Return JSON with diary_root, "
+            "entries, note paths, highlights, and a short result_summary."
+        ),
+    }
+    return _receipt(
+        action="obsidian.diary.query.draft",
+        success=True,
+        dry_run=dry_run,
+        operator_mode=operator_mode,
+        data={
+            "task_type": "diary_query",
+            "priority": str(body.get("priority") or "high"),
+            "params": params,
+            "diary_root_exists": diary_root.exists(),
+            "operator_required_for_execute": True,
+            "result_flow": "Web -> Scheduler -> Nanobot diary_query -> diary_result -> Brain/GOSLO speech path",
+            "profile_boundary": {
+                "diary": "Diary/** profile=daily, UUID-free",
+                "ref": "Refs/** profile=ref, obsidian_uuid required",
+            },
+        },
+    )
+
+
+async def dispatch_obsidian_diary_query(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Dispatch a diary query only under explicit operator mode."""
+
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    draft = draft_obsidian_diary_query({**body, "dry_run": dry_run, "operator_mode": operator_mode})
+    draft["action"] = "obsidian.diary.query.dispatch"
+    if not draft.get("success"):
+        return draft
+    if dry_run or not operator_mode:
+        draft["data"]["would_dispatch"] = True
+        draft["data"]["dispatch_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        return draft
+
+    try:
+        from parrot.brain.tools.dispatch_task import do_dispatch_task
+
+        task_id = await do_dispatch_task(
+            "diary_query",
+            params=draft["data"]["params"],
+            priority=draft["data"]["priority"],
+        )
+        return _receipt(
+            action="obsidian.diary.query.dispatch",
+            success=True,
+            dry_run=False,
+            operator_mode=True,
+            data={**draft["data"], "task_id": task_id, "dispatched": True},
+        )
+    except Exception as exc:
+        return _receipt(
+            action="obsidian.diary.query.dispatch",
+            success=False,
+            dry_run=False,
+            operator_mode=True,
+            data={**draft["data"], "error": f"{type(exc).__name__}: {exc}"},
+        )
+
+
+async def obsidian_diary_result_history(limit: int = 20) -> dict[str, Any]:
+    """Read recent Scheduler-ledger results for diary_query tasks."""
+
+    limit, limit_error = _body_int_limit(limit, default=20, maximum=50)
+    if limit_error:
+        return _receipt(
+            action="obsidian.diary.query.results",
+            success=False,
+            dry_run=True,
+            operator_mode=False,
+            data={"rows": [], "error": limit_error},
+        )
+
+    from parrot.shared.constants import CH_TRIGGER_RESULTS, STREAM_TRIGGER_RESULTS
+
+    try:
+        from parrot.shared.redis_client import get_redis
+
+        redis = await get_redis()
+        raw_rows = await redis.xrevrange(STREAM_TRIGGER_RESULTS, count=limit * 3)
+    except Exception as exc:
+        return _receipt(
+            action="obsidian.diary.query.results",
+            success=True,
+            dry_run=True,
+            operator_mode=False,
+            data={
+                "available": False,
+                "stream": STREAM_TRIGGER_RESULTS,
+                "channel": CH_TRIGGER_RESULTS,
+                "rows": [],
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        )
+
+    rows_by_task: dict[str, dict[str, Any]] = {}
+    for stream_id, fields in raw_rows:
+        if not isinstance(fields, dict):
+            continue
+        row = _diary_result_history_row(str(stream_id), fields)
+        if row:
+            task_key = row.get("task_id") or row.get("stream_id") or str(stream_id)
+            existing = rows_by_task.get(str(task_key))
+            if existing is None or _diary_result_rank(row) > _diary_result_rank(existing):
+                rows_by_task[str(task_key)] = row
+    rows = list(rows_by_task.values())
+    rows.sort(
+        key=lambda row: (
+            1 if int(row.get("entry_count") or 0) > 0 else 0,
+            float(row.get("created_at") or 0.0),
+        ),
+        reverse=True,
+    )
+    rows = rows[:limit]
+
+    return _receipt(
+        action="obsidian.diary.query.results",
+        success=True,
+        dry_run=True,
+        operator_mode=False,
+        data={
+            "available": True,
+            "stream": STREAM_TRIGGER_RESULTS,
+            "channel": CH_TRIGGER_RESULTS,
+            "rows": rows,
+            "count": len(rows),
+            "read_model": "Scheduler trigger-result ledger",
+            "result_channel": "diary_result",
             "web_only": True,
         },
     )
@@ -3127,6 +3343,14 @@ async def apply_google_calendar_import(payload: dict[str, Any] | None = None) ->
     body = payload or {}
     dry_run = _body_bool(body.get("dry_run"), True)
     operator_mode = _body_bool(body.get("operator_mode"), False)
+    if _should_proxy_l2b_operator(body, dry_run=dry_run, operator_mode=operator_mode):
+        return _proxy_l2b_operator_route(
+            action="google.calendar.import",
+            path="/api/google/calendar/import",
+            body=body,
+            dry_run=dry_run,
+            operator_mode=operator_mode,
+        )
     draft = draft_google_calendar_import(body)
     draft["action"] = "google.calendar.import"
     draft["dry_run"] = dry_run
@@ -4047,6 +4271,201 @@ async def push_test_message(payload: dict[str, Any] | None = None) -> dict[str, 
     )
 
 
+async def receive_gmail_pubsub_push(
+    payload: dict[str, Any] | None = None,
+    *,
+    token: str = "",
+) -> dict[str, Any]:
+    """Handle a real Gmail API Pub/Sub push notification.
+
+    Gmail push notifications contain only ``emailAddress`` and ``historyId``.
+    We ACK quickly by returning HTTP 200 from the route and dispatch a
+    ``message_check`` task so Nanobot/Google Workspace can fetch the actual
+    message content. ``message_result`` is then handled by
+    MessageNotificationTrigger, which owns the safe next-turn GOSLO injection.
+    """
+    body = payload or {}
+    expected_token = str(os.getenv("PARROT_GMAIL_PUBSUB_PUSH_TOKEN") or "").strip()
+    message = body.get("message") if isinstance(body.get("message"), dict) else {}
+    attributes = message.get("attributes") if isinstance(message.get("attributes"), dict) else {}
+    provided_token = str(
+        token
+        or body.get("token")
+        or attributes.get("token")
+        or ""
+    ).strip()
+    if expected_token and provided_token != expected_token:
+        return _receipt(
+            action="google.message.pubsub_push",
+            success=False,
+            dry_run=False,
+            operator_mode=True,
+            data={
+                "accepted": False,
+                "error": "invalid_pubsub_push_token",
+                "operator_required_for_execute": False,
+            },
+        )
+
+    decoded, decode_error = _decode_pubsub_message_data(message.get("data", ""))
+    email = str(decoded.get("emailAddress") or body.get("emailAddress") or "").strip()
+    history_id = str(decoded.get("historyId") or body.get("historyId") or "").strip()
+    pubsub_message_id = str(
+        message.get("messageId") or message.get("message_id") or body.get("messageId") or ""
+    )
+    subscription = str(body.get("subscription") or "")
+    if not email or not history_id:
+        return _receipt(
+            action="google.message.pubsub_push",
+            success=False,
+            dry_run=False,
+            operator_mode=True,
+            data={
+                "accepted": False,
+                "error": decode_error or "missing_email_or_history_id",
+                "emailAddress": email,
+                "historyId": history_id,
+                "pubsub_message_id": pubsub_message_id,
+                "subscription": subscription,
+            },
+        )
+
+    params = {
+        "query": (
+            "Gmail Pub/Sub push received. Fetch new unread important messages "
+            f"for {email} around historyId {history_id}."
+        ),
+        "instructions": (
+            "Use Gmail history.list/messages.get or Google Workspace MCP to "
+            "fetch new INBOX unread important messages since the pushed "
+            "historyId. Prefer starred, IMPORTANT, or known-contact mail. "
+            "Skip marketing and automated notifications. Return JSON with "
+            "messages: id, sender, subject, snippet, timestamp, is_reply, "
+            "importance."
+        ),
+        "result_channel": "message_result",
+        "source": "gmail_pubsub_push",
+        "emailAddress": email,
+        "historyId": history_id,
+        "pubsub_message_id": pubsub_message_id,
+        "subscription": subscription,
+        "max_messages": _body_int(body.get("max_messages"), 5),
+    }
+    try:
+        from parrot.brain.tools.dispatch_task import do_dispatch_task
+
+        task_id = await do_dispatch_task(
+            "message_check",
+            params=params,
+            priority=str(body.get("priority") or "high"),
+        )
+        return _receipt(
+            action="google.message.pubsub_push",
+            success=True,
+            dry_run=False,
+            operator_mode=True,
+            data={
+                "accepted": True,
+                "emailAddress": email,
+                "historyId": history_id,
+                "pubsub_message_id": pubsub_message_id,
+                "subscription": subscription,
+                "task_id": task_id,
+                "task_type": "message_check",
+                "params": params,
+                "next_turn_injection": "message_result -> MessageNotificationTrigger",
+            },
+        )
+    except Exception as exc:
+        return _receipt(
+            action="google.message.pubsub_push",
+            success=False,
+            dry_run=False,
+            operator_mode=True,
+            data={
+                "accepted": False,
+                "emailAddress": email,
+                "historyId": history_id,
+                "pubsub_message_id": pubsub_message_id,
+                "error": f"{type(exc).__name__}: {exc}",
+            },
+        )
+
+
+def draft_gmail_watch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Draft Gmail users.watch setup for real Pub/Sub notifications."""
+    body = payload or {}
+    topic_name = str(body.get("topicName") or body.get("topic_name") or "").strip()
+    label_ids = body.get("labelIds") or body.get("label_ids") or ["INBOX"]
+    if isinstance(label_ids, str):
+        label_ids = [part.strip() for part in label_ids.split(",") if part.strip()]
+    if not isinstance(label_ids, list):
+        label_ids = ["INBOX"]
+    request_body = {
+        "topicName": topic_name,
+        "labelIds": [str(item) for item in label_ids if str(item).strip()],
+        "labelFilterBehavior": str(
+            body.get("labelFilterBehavior")
+            or body.get("label_filter_behavior")
+            or "INCLUDE"
+        ),
+    }
+    return _receipt(
+        action="google.message.watch.draft",
+        success=bool(topic_name),
+        dry_run=_body_bool(body.get("dry_run"), True),
+        operator_mode=_body_bool(body.get("operator_mode"), False),
+        data={
+            "user_id": str(body.get("userId") or body.get("user_id") or "me"),
+            "request_body": request_body,
+            "operator_required_for_execute": True,
+            "error": "" if topic_name else "topicName_required",
+            "renewal_policy": "Gmail watch expires; renew at least daily or before expiration.",
+        },
+    )
+
+
+async def setup_gmail_watch(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Call Gmail users.watch after explicit operator approval."""
+    body = payload or {}
+    dry_run = _body_bool(body.get("dry_run"), True)
+    operator_mode = _body_bool(body.get("operator_mode"), False)
+    draft = draft_gmail_watch({**body, "dry_run": dry_run, "operator_mode": operator_mode})
+    draft["action"] = "google.message.watch"
+    if not draft.get("success"):
+        return draft
+    if dry_run or not operator_mode:
+        draft["data"]["would_call_watch"] = True
+        draft["data"]["watch_skipped_reason"] = "dry_run_or_operator_mode_missing"
+        return draft
+
+    try:
+        result = await _call_gmail_watch(
+            user_id=str(draft["data"]["user_id"]),
+            request_body=draft["data"]["request_body"],
+        )
+        return _receipt(
+            action="google.message.watch",
+            success=True,
+            dry_run=False,
+            operator_mode=True,
+            data={
+                **draft["data"],
+                "watch_response": result,
+                "historyId": str(result.get("historyId") or ""),
+                "expiration": str(result.get("expiration") or ""),
+            },
+        )
+    except Exception as exc:
+        return _receipt(
+            action="google.message.watch",
+            success=False,
+            dry_run=False,
+            operator_mode=True,
+            data={**draft["data"], "error": f"{type(exc).__name__}: {exc}"},
+        )
+
+
 def _event_hints_for(trigger_name: str) -> list[dict[str, Any]]:
     for key, value in _TRIGGER_EVENT_HINTS.items():
         if key in trigger_name:
@@ -4299,14 +4718,19 @@ def _obsidian_vault_import_items(
             })
             continue
         observation = outcome.observations[0]
+        ref_mode = str(payload_row.get("ref_mode") or "")
         items.append({
             "path": rel_path,
             "profile": profile,
             "label": str(note.get("label") or payload_row.get("label") or ""),
-            "target_bucket": _obsidian_profile_target(profile),
-            "uuid_free_allowed": profile in {"daily", "roleplay"},
+            "target_bucket": _obsidian_profile_target(profile, ref_mode=ref_mode),
+            "uuid_free_allowed": profile in {"daily", "roleplay"} or ref_mode == "direct_context",
+            "ref_mode": ref_mode,
+            "ascent_channel": str(payload_row.get("ascent_channel") or ""),
             "bind_policy": (
                 "ref_bind_existing_node"
+                if profile == "ref" and ref_mode != "direct_context"
+                else "ref_diary_direct_context"
                 if profile == "ref"
                 else "setting_node_uuid_free_allowed"
             ),
@@ -4401,10 +4825,26 @@ def _default_obsidian_vault_path(raw: Any = "") -> Path:
     return root.resolve()
 
 
-def _obsidian_profile_target(profile: str) -> str:
+def _default_obsidian_diary_root(raw: Any = "", *, vault_path: Any = "") -> Path:
+    candidate = str(raw or os.environ.get("GOSLO_OBSIDIAN_DIARY_ROOT") or "").strip()
+    if candidate:
+        return Path(candidate).expanduser().resolve()
+    return (_default_obsidian_vault_path(vault_path) / "Diary").resolve()
+
+
+def _default_calendar_demo_events_path(raw: Any = "") -> Path:
+    candidate = str(raw or os.environ.get("PARROT_CALENDAR_DEMO_EVENTS_PATH") or "").strip()
+    if candidate:
+        return Path(candidate).expanduser().resolve()
+    return (Path.cwd() / "data" / "demo" / "google_calendar_future_events.json").resolve()
+
+
+def _obsidian_profile_target(profile: str, *, ref_mode: str = "") -> str:
     if profile == "roleplay":
         return "obsidian_setting_roleplay"
     if profile == "ref":
+        if ref_mode == "direct_context":
+            return "obsidian_setting_daily"
         return "ref_binding"
     return "obsidian_setting_daily"
 
@@ -4413,14 +4853,14 @@ def _obsidian_profile_descriptions() -> dict[str, str]:
     return {
         "daily": "UUID-free setting profile",
         "roleplay": "UUID-free mode/profile; may contain many source packs",
-        "ref": "binding profile; requires existing target UUID",
+        "ref": "binding profile; UUID-free only when operator imports it as direct diary context",
     }
 
 
 def _calendar_fetch_params(body: dict[str, Any]) -> dict[str, Any]:
     """Build the Nanobot task params shared by draft and dispatch receipts."""
 
-    return {
+    params = {
         "query": str(body.get("query") or "Fetch today's Google Calendar events for the user"),
         "instructions": str(
             body.get("instructions")
@@ -4439,6 +4879,21 @@ def _calendar_fetch_params(body: dict[str, Any]) -> dict[str, Any]:
         ),
         "result_channel": str(body.get("result_channel") or "calendar_result"),
     }
+    for key in (
+        "account",
+        "calendar_id",
+        "time_min",
+        "time_max",
+        "timezone",
+        "limit",
+        "show_deleted",
+        "demo_events_path",
+        "fixture_path",
+        "source_hint",
+    ):
+        if key in body and body.get(key) not in (None, ""):
+            params[key] = body.get(key)
+    return params
 
 
 def _calendar_time_window(
@@ -4476,6 +4931,44 @@ def _calendar_time_window(
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=1)
     return time_min or start.isoformat(), time_max or end.isoformat()
+
+
+def _diary_query_window(body: dict[str, Any]) -> tuple[str, str]:
+    date_from = str(body.get("date_from") or body.get("from") or "").strip()
+    date_to = str(body.get("date_to") or body.get("to") or "").strip()
+    if date_from or date_to:
+        return date_from, date_to
+    timezone_name = str(body.get("timezone") or "Asia/Shanghai")
+    try:
+        tz = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        tz = timezone.utc
+    days = max(1, min(_body_int(body.get("days"), 7), 31))
+    end = datetime.now(tz).date() - timedelta(days=1)
+    start = end - timedelta(days=days - 1)
+    return start.isoformat(), end.isoformat()
+
+
+def _body_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _decode_pubsub_message_data(value: Any) -> tuple[dict[str, Any], str]:
+    text = str(value or "").strip()
+    if not text:
+        return {}, "missing_pubsub_message_data"
+    padded = text + ("=" * ((4 - len(text) % 4) % 4))
+    try:
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        decoded = json.loads(raw.decode("utf-8"))
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        return {}, f"pubsub_message_data_decode_failed:{type(exc).__name__}"
+    if not isinstance(decoded, dict):
+        return {}, "pubsub_message_data_not_object"
+    return decoded, ""
 
 
 def _google_calendar_source_pack(
@@ -4561,6 +5054,198 @@ def _obsidian_source_pack(
         destination=destination,
         source_ref=f"obsidian-vault://{vault_path}" if vault_path else "obsidian-vault://",
         raw_summary=scan_summary if isinstance(scan_summary, dict) else {},
+    )
+
+
+async def _stage_obsidian_context_push_if_requested(
+    body: dict[str, Any],
+    *,
+    source_pack: dict[str, Any],
+    node_uuids: list[str],
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Stage imported Obsidian diary/ref context for Brain + GOSLO.
+
+    This is the demo-friendly ascent lane: the durable L2-B write remains the
+    source of truth, while the selected source pack is also staged as a DOC in
+    IntentWorkspace and announced through a C3 Blackboard notice so Brain/GOSLO
+    can read it on the next live turn.
+    """
+
+    requested = any(
+        key in body
+        for key in (
+            "push_to_brain_context",
+            "push_to_goslo_context",
+            "push_ref_diary_to_brain",
+        )
+    )
+    if not requested:
+        return {
+            "success": True,
+            "skipped": True,
+            "reason": "push_to_brain_context_not_requested",
+            "ascent_channel": _OBSIDIAN_ASCENT_CHANNEL,
+        }
+    enabled = (
+        _body_bool(body.get("push_to_brain_context"), True)
+        or _body_bool(body.get("push_to_goslo_context"), False)
+        or _body_bool(body.get("push_ref_diary_to_brain"), False)
+    )
+    if not enabled:
+        return {
+            "success": True,
+            "skipped": True,
+            "reason": "push_to_brain_context_disabled",
+            "ascent_channel": _OBSIDIAN_ASCENT_CHANNEL,
+        }
+    if not items:
+        return {
+            "success": False,
+            "skipped": True,
+            "reason": "no_obsidian_items_to_push",
+            "ascent_channel": _OBSIDIAN_ASCENT_CHANNEL,
+        }
+
+    try:
+        from parrot.brain.intent_workspace import (
+            PayloadSource,
+            StagedRefKind,
+            StagedRefMetadata,
+            StagedRefRequest,
+            get_intent_workspace,
+        )
+        from parrot.scheduler.blackboard import open_bb_client
+
+        ttl_seconds = max(
+            60,
+            min(int(body.get("brain_context_ttl_seconds") or 15 * 60), 60 * 60),
+        )
+        now = time.time()
+        context_payload = _obsidian_context_push_payload(
+            source_pack=source_pack,
+            node_uuids=node_uuids,
+            items=items,
+        )
+        payload_text = json.dumps(context_payload, ensure_ascii=False)
+        handle = await get_intent_workspace().stage(StagedRefRequest(
+            kind=StagedRefKind.DOC,
+            payload_source=PayloadSource.INLINE_TEXT,
+            payload_value=payload_text,
+            metadata=StagedRefMetadata(
+                origin="web_console.obsidian_vault_import",
+                kind=StagedRefKind.DOC,
+                payload_source=PayloadSource.INLINE_TEXT,
+                related_node_uuid=node_uuids[0] if len(node_uuids) == 1 else "",
+                expires_at=now + ttl_seconds,
+                custom_meta={
+                    "role": _OBSIDIAN_CONTEXT_ROLE,
+                    "source_kind": "obsidian",
+                    "source_pack_uuid": str(source_pack.get("uuid") or ""),
+                    "source_pack_label": str(source_pack.get("label") or ""),
+                    "item_count": len(items),
+                    "node_uuids": node_uuids,
+                    "ascent_channel": _OBSIDIAN_ASCENT_CHANNEL,
+                    "priority": "c3_high_context",
+                },
+            ),
+        ))
+        notice = {
+            "schema_version": 1,
+            "role": _OBSIDIAN_CONTEXT_ROLE,
+            "source": "web_console.obsidian_vault_import",
+            "source_pack_uuid": str(source_pack.get("uuid") or ""),
+            "source_pack_label": str(source_pack.get("label") or "Obsidian source pack"),
+            "staged_ref_ids": [handle.ref_id],
+            "node_uuids": node_uuids,
+            "item_count": len(items),
+            "notify_goslo": _body_bool(body.get("notify_goslo"), True),
+            "allow_react": _body_bool(body.get("allow_react"), False),
+            "allow_interrupt": False,
+            "ascent_channel": _OBSIDIAN_ASCENT_CHANNEL,
+            "priority": "c3_high_context",
+            "message": _obsidian_context_push_message(items, handle.ref_id),
+            "ts_ms": int(now * 1000),
+        }
+        bb = open_bb_client(
+            name="web_console.obsidian_context_push",
+            writer=_OBSIDIAN_CONTEXT_NOTICE_WRITER,
+        )
+        bb.set(_OBSIDIAN_CONTEXT_NOTICE_KEY, notice)
+        return {
+            "success": True,
+            "skipped": False,
+            "ascent_channel": _OBSIDIAN_ASCENT_CHANNEL,
+            "priority": "c3_high_context",
+            "intent_workspace_ref_ids": [handle.ref_id],
+            "blackboard_key": _OBSIDIAN_CONTEXT_NOTICE_KEY,
+            "notice": notice,
+        }
+    except Exception as exc:
+        logger.exception("obsidian context push failed")
+        return {
+            "success": False,
+            "skipped": False,
+            "ascent_channel": _OBSIDIAN_ASCENT_CHANNEL,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _obsidian_context_push_payload(
+    *,
+    source_pack: dict[str, Any],
+    node_uuids: list[str],
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for item in items:
+        observation = item.get("observation") if isinstance(item.get("observation"), dict) else {}
+        event = item.get("event") if isinstance(item.get("event"), dict) else {}
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        meta = observation.get("meta") if isinstance(observation.get("meta"), dict) else {}
+        rows.append({
+            "path": str(item.get("path") or ""),
+            "label": str(item.get("label") or observation.get("label") or ""),
+            "profile": str(item.get("profile") or meta.get("profile") or ""),
+            "kind": str(observation.get("kind") or payload.get("kind") or ""),
+            "description": str(observation.get("description") or payload.get("description") or ""),
+            "obsidian_uuid": str(observation.get("obsidian_uuid") or payload.get("obsidian_uuid") or ""),
+            "obsidian_note_key": str(meta.get("obsidian_note_key") or payload.get("obsidian_note_key") or ""),
+            "ref_mode": str(item.get("ref_mode") or payload.get("ref_mode") or ""),
+            "ascent_channel": str(item.get("ascent_channel") or payload.get("ascent_channel") or ""),
+            "target_bucket": str(item.get("target_bucket") or ""),
+        })
+    return {
+        "schema_version": 1,
+        "role": _OBSIDIAN_CONTEXT_ROLE,
+        "source_pack": {
+            "uuid": str(source_pack.get("uuid") or ""),
+            "label": str(source_pack.get("label") or ""),
+            "source_kind": str(source_pack.get("source_kind") or "obsidian"),
+            "source_id": str(source_pack.get("source_id") or ""),
+            "source_ref": str(source_pack.get("source_ref") or ""),
+        },
+        "l2b_node_uuids": node_uuids,
+        "items": rows,
+        "ascent_channel": _OBSIDIAN_ASCENT_CHANNEL,
+        "instructions": (
+            "Use these imported Obsidian setting/ref diary notes as immediate "
+            "context when relevant. The L2-B nodes are the durable memory anchor."
+        ),
+    }
+
+
+def _obsidian_context_push_message(items: list[dict[str, Any]], ref_id: str) -> str:
+    labels = [
+        str(item.get("label") or item.get("path") or "").strip()
+        for item in items[:3]
+        if str(item.get("label") or item.get("path") or "").strip()
+    ]
+    joined = ", ".join(labels) if labels else "selected Obsidian notes"
+    suffix = f" (+{len(items) - 3} more)" if len(items) > 3 else ""
+    return (
+        "Obsidian diary/context source pack is staged for Brain and GOSLO: "
+        f"{joined}{suffix} (ref={ref_id})."
     )
 
 
@@ -4655,6 +5340,43 @@ async def _fetch_google_calendar_events_from_api(
         if not isinstance(data, dict):
             raise RuntimeError("Google Calendar API returned a non-object payload")
         data["credential_source"] = source
+        return data
+
+    import asyncio
+
+    return await asyncio.to_thread(_request)
+
+
+async def _call_gmail_watch(
+    *,
+    user_id: str,
+    request_body: dict[str, Any],
+) -> dict[str, Any]:
+    """Call the official Gmail users.watch endpoint with local OAuth creds."""
+    creds, credential_source = _load_google_calendar_credentials()
+
+    def _request() -> dict[str, Any]:
+        from google.auth.transport.requests import Request as GoogleAuthRequest
+
+        if not creds.valid or creds.expired:
+            creds.refresh(GoogleAuthRequest())
+        encoded_user = urllib.parse.quote(user_id or "me", safe="")
+        req = urllib.request.Request(
+            f"https://gmail.googleapis.com/gmail/v1/users/{encoded_user}/watch",
+            data=json.dumps(request_body).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {creds.token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")
+            raise RuntimeError(f"Gmail watch failed: HTTP {exc.code}: {detail[:400]}") from exc
+        data["credential_source"] = credential_source
         return data
 
     import asyncio
@@ -4998,6 +5720,19 @@ def _calendar_result_history_row(
     }
 
 
+def _calendar_result_rank(row: dict[str, Any]) -> tuple[int, int, float]:
+    """Prefer structured future-event fetches over generic empty replies."""
+
+    event_count = int(row.get("event_count") or 0)
+    summary = str(row.get("result_summary") or "").lower()
+    looks_generic_empty = "no events found" in summary or "not a recognized" in summary
+    return (
+        1 if event_count > 0 else 0,
+        0 if looks_generic_empty else 1,
+        float(row.get("created_at") or 0.0),
+    )
+
+
 def _load_result_payload(raw: Any) -> dict[str, Any]:
     if isinstance(raw, dict):
         return dict(raw)
@@ -5031,7 +5766,7 @@ def _calendar_result_summary(
     payload: dict[str, Any],
     events: list[dict[str, Any]],
 ) -> str:
-    summary = str(payload.get("summary") or "").strip()
+    summary = str(payload.get("result_summary") or payload.get("summary") or "").strip()
     if summary:
         return summary[:180]
     result = payload.get("result")
@@ -5051,6 +5786,103 @@ def _calendar_event_start(event: dict[str, Any]) -> str:
     if isinstance(start, dict):
         return str(event.get("start_time") or start.get("dateTime") or start.get("date") or "")
     return str(event.get("start_time") or start or "")
+
+
+def _diary_result_history_row(
+    stream_id: str,
+    fields: dict[str, Any],
+) -> dict[str, Any] | None:
+    payload = _load_result_payload(fields.get("payload"))
+    result_channel = str(
+        payload.get("type")
+        or fields.get("result_channel")
+        or ""
+    )
+    if result_channel != "diary_result":
+        return None
+
+    result_body = _diary_result_body(payload.get("result"))
+    entries = [
+        dict(item)
+        for item in result_body.get("entries", [])
+        if isinstance(item, dict)
+    ] if isinstance(result_body.get("entries"), list) else []
+    return {
+        "stream_id": stream_id,
+        "created_at": _body_float(fields.get("created_at"), 0.0),
+        "task_id": str(payload.get("task_id") or fields.get("task_id") or ""),
+        "result_channel": result_channel,
+        "original_type": str(payload.get("original_type") or ""),
+        "status": str(payload.get("status") or result_body.get("status") or ""),
+        "diary_root": str(result_body.get("diary_root") or ""),
+        "entry_count": len(entries),
+        "entry_sample": [
+            {
+                "date": str(entry.get("date") or ""),
+                "title": str(entry.get("title") or ""),
+                "path": str(entry.get("path") or ""),
+                "summary": str(entry.get("summary") or "")[:180],
+            }
+            for entry in entries[:4]
+        ],
+        "result_summary": _diary_result_summary(payload, result_body, entries),
+        "payload": _redact_secrets(payload),
+        "result_body": _redact_secrets(result_body),
+    }
+
+
+def _diary_result_rank(row: dict[str, Any]) -> tuple[int, int, float]:
+    """Prefer the local structured reader over generic worker refusals."""
+
+    entry_count = int(row.get("entry_count") or 0)
+    summary = str(row.get("result_summary") or "").lower()
+    looks_like_refusal = (
+        "cannot" in summary
+        and ("diary_query" in summary or "local file" in summary or "tool" in summary)
+    )
+    return (
+        1 if entry_count > 0 else 0,
+        0 if looks_like_refusal else 1,
+        float(row.get("created_at") or 0.0),
+    )
+
+
+def _diary_result_body(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return dict(raw)
+    loaded = _load_result_payload(raw)
+    result = loaded.get("result")
+    if isinstance(result, dict):
+        return dict(result)
+    if isinstance(result, list):
+        return {"entries": [dict(item) for item in result if isinstance(item, dict)]}
+    return loaded
+
+
+def _diary_result_summary(
+    payload: dict[str, Any],
+    result_body: dict[str, Any],
+    entries: list[dict[str, Any]],
+) -> str:
+    summary = str(
+        result_body.get("summary")
+        or payload.get("result_summary")
+        or payload.get("summary")
+        or ""
+    ).strip()
+    if summary:
+        return summary[:180]
+    if entries:
+        parts = [
+            f"{str(entry.get('date') or '-')}: {str(entry.get('title') or '-')}"
+            for entry in entries[:3]
+            if isinstance(entry, dict)
+        ]
+        return ", ".join(parts)[:180]
+    raw_result = payload.get("result")
+    if isinstance(raw_result, str) and raw_result.strip():
+        return raw_result.strip().replace("\n", " ")[:180]
+    return str(payload.get("status") or "")[:180]
 
 
 def _ref_scan_result_history_row(

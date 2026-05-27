@@ -43,6 +43,8 @@ public class EcpCommandMetaDto
 [Serializable]
 public class EcpCommandDto
 {
+    public const double LiveKitRpcClockSkewGraceSeconds = 120.0;
+
     public string schema_version = "ecp.v2.alpha";
     public string command_id = "";
     public string kind = "";
@@ -67,7 +69,35 @@ public class EcpCommandDto
     /// </summary>
     public bool IsExpired(double nowUnix)
     {
+        return IsExpired(nowUnix, 0.0);
+    }
+
+    /// <summary>
+    /// LiveKit RPC crosses the Brain host clock and the phone clock. Android
+    /// devices in dev sessions can drift by tens of seconds, so RPC receivers
+    /// use a grace window while transport timeout still bounds real staleness.
+    /// </summary>
+    public bool IsExpiredForLiveKitRpc(double nowUnix)
+    {
+        return IsExpired(nowUnix, LiveKitRpcClockSkewGraceSeconds);
+    }
+
+    public bool IsExpired(double nowUnix, double clockSkewGraceSeconds)
+    {
+        if (expires_at <= 0.0) return false;
+        double grace = Math.Max(0.0, clockSkewGraceSeconds);
+        return nowUnix > expires_at + grace;
+    }
+
+    public bool IsPastExpiresAt(double nowUnix)
+    {
         return expires_at > 0.0 && nowUnix > expires_at;
+    }
+
+    public double SecondsPastExpiresAt(double nowUnix)
+    {
+        if (expires_at <= 0.0) return 0.0;
+        return Math.Max(0.0, nowUnix - expires_at);
     }
 
     /// <summary>

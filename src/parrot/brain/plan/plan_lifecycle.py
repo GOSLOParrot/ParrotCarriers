@@ -31,13 +31,21 @@ class PlanLifecycle:
         }),
         PlanState.EXECUTING: frozenset({
             PlanState.PARTIAL_COMPLETE,
+            PlanState.WAITING_USER_DECISION,
             PlanState.COMPLETE,
             PlanState.FAILED,
             PlanState.CANCELLED,
         }),
         PlanState.PARTIAL_COMPLETE: frozenset({
             PlanState.EXECUTING,
+            PlanState.WAITING_USER_DECISION,
             PlanState.COMPLETE,
+            PlanState.FAILED,
+            PlanState.CANCELLED,
+            PlanState.REVISED,
+        }),
+        PlanState.WAITING_USER_DECISION: frozenset({
+            PlanState.EXECUTING,
             PlanState.FAILED,
             PlanState.CANCELLED,
             PlanState.REVISED,

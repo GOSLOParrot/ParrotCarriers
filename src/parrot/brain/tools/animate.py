@@ -10,7 +10,7 @@ from typing import Literal
 from livekit.agents import RunContext, function_tool
 
 from parrot.brain.tools._capability_gate import supports_capability, unsupported_message
-from parrot.brain.tools._rpc_bridge import call_unity_rpc
+from parrot.brain.tools._rpc_bridge import UNITY_RPC_ECP_TTL_S, call_unity_rpc
 from parrot.brain.tools._state_context import attach_state_header
 from parrot.shared.ecp import EcpCommandKind, wrap_legacy_rpc_payload
 from parrot.shared.parrot_actions import ParrotAnimation
@@ -71,7 +71,7 @@ async def animate(
             "animation": animation_name,
         },
         actor="brain.tools.animate",
-        expires_in_s=5.0,
+        expires_in_s=UNITY_RPC_ECP_TTL_S,
         expected_duration_ms=1000,
         meta=meta_kwarg,
     )
@@ -107,7 +107,7 @@ async def _play_registered_animation(animation_name: ParrotAnimationName) -> str
             "animation": animation_name,
         },
         actor=f"brain.tools.{animation_name}",
-        expires_in_s=5.0,
+        expires_in_s=UNITY_RPC_ECP_TTL_S,
         expected_duration_ms=1000,
     )
     result = await call_unity_rpc(

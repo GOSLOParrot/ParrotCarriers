@@ -85,10 +85,12 @@ namespace ParrotApp.LiveKit
             {
                 p = JsonUtility.FromJson<SetVideoTierPayload>(data.Payload);
 
-                if (p._ecp != null && p._ecp.IsExpired(EcpAckJson.UnixSeconds()))
+                if (IsExpiredForLiveKitRpc(p._ecp, p.video_tier))
                 {
                     LogExpiredCommand(p._ecp.command_id);
-                    return EcpAckJson.Expired(p._ecp, $"tier={p.video_tier}");
+                    return EcpAckJson.Expired(
+                        p._ecp,
+                        $"tier={p.video_tier} grace={EcpCommandDto.LiveKitRpcClockSkewGraceSeconds:F0}s");
                 }
 
                 var tier = ParseTier(p.video_tier);
@@ -186,6 +188,22 @@ namespace ParrotApp.LiveKit
             }
 
             _suppressedExpiredWarnings++;
+        }
+
+        private bool IsExpiredForLiveKitRpc(EcpCommandDto command, string tier)
+        {
+            if (command == null) return false;
+            double now = EcpAckJson.UnixSeconds();
+            if (command.IsExpiredForLiveKitRpc(now)) return true;
+            if (command.IsPastExpiresAt(now) && verboseLogging)
+            {
+                Debug.LogWarning(
+                    "[VideoTierReceiver] setVideoTier accepted within LiveKit RPC clock-skew grace " +
+                    $"(tier={tier}, command_id={command.command_id}, " +
+                    $"expired_by={command.SecondsPastExpiresAt(now):F1}s, " +
+                    $"grace={EcpCommandDto.LiveKitRpcClockSkewGraceSeconds:F0}s)");
+            }
+            return false;
         }
 
         private static VideoTier ParseTier(string raw)

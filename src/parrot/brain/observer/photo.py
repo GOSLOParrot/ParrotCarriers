@@ -80,6 +80,7 @@ _metrics: dict[str, int] = {
     "photo_nodes_updated_with_asset": 0,
     "missing_photo_id": 0,
     "asset_for_unknown_photo_id": 0,
+    "asset_orphan_nodes_repaired": 0,
     "awareness_decisions": 0,
     "awareness_preview_refs_staged": 0,
     "awareness_react_allowed": 0,
@@ -177,7 +178,7 @@ def _on_photo_asset_uploaded(event: EcpEvent) -> None:
     asset_path = str(payload.get("asset_path", "") or "")
     asset_bytes = int(payload.get("asset_bytes", 0) or 0)
     storage_ref = asset_path or asset_ref
-    _record_photo_asset_evidence(
+    evidence_sample = _record_photo_asset_evidence(
         event=event,
         photo_id=photo_id,
         asset_ref=asset_ref,
@@ -185,8 +186,19 @@ def _on_photo_asset_uploaded(event: EcpEvent) -> None:
         asset_bytes=asset_bytes,
         payload=payload,
     )
+    _record_photo_catalog_entry(
+        photo_id=photo_id,
+        asset_ref=asset_ref,
+        asset_path=asset_path,
+        asset_bytes=asset_bytes,
+        payload=payload,
+        evidence_id=str(getattr(evidence_sample, "evidence_id", "") or ""),
+        captured_at_ms=int(getattr(getattr(evidence_sample, "timebase", None), "wall_time_ms", 0) or 0),
+    )
 
-    # Find the existing PhotoNode created on preview.
+    # Find the existing PhotoNode created on preview. If preview was dropped or
+    # arrived out-of-order, repair the PHOTO node from the storage-backed asset
+    # event so Web/L2-B/IntentWorkspace do not lose the photo.
     updated = _update_photo_node_asset(
         photo_id=photo_id,
         storage_ref=storage_ref,
@@ -195,9 +207,24 @@ def _on_photo_asset_uploaded(event: EcpEvent) -> None:
         _metrics["asset_for_unknown_photo_id"] += 1
         logger.warning(
             "[observer.photo] asset_uploaded for unknown photo_id=%s — preview event "
-            "missed or arrived out of order; PhotoNode not created",
+            "missed or arrived out of order; repairing PhotoNode from asset",
             photo_id,
         )
+        _upsert_photo_node(
+            photo_id=photo_id,
+            episode_ref=str(payload.get("episode_ref", "") or ""),
+            candidate_subject_uuid=str(payload.get("candidate_subject_uuid", "") or ""),
+            focus_refs=tuple(payload.get("focus_refs") or ()),
+            bbox_refs=tuple(payload.get("bbox_refs") or ()),
+            pose=payload.get("pose") if isinstance(payload.get("pose"), dict) else {},
+            source_event_id=event.event_id,
+        )
+        updated = _update_photo_node_asset(
+            photo_id=photo_id,
+            storage_ref=storage_ref,
+        )
+        if updated:
+            _metrics["asset_orphan_nodes_repaired"] += 1
 
     # BB write regardless — debug HUD wants to see the upload happened.
     bb_payload = _build_bb_payload(
@@ -223,6 +250,14 @@ def _on_photo_asset_uploaded(event: EcpEvent) -> None:
             storage_ref=storage_ref,
             asset_ref=asset_ref,
             asset_bytes=asset_bytes,
+        )
+        _record_photo_analysis_report(
+            photo_id=photo_id,
+            asset_ref=asset_ref,
+            asset_path=storage_ref,
+            asset_bytes=asset_bytes,
+            payload=payload,
+            evidence_id=str(getattr(evidence_sample, "evidence_id", "") or ""),
         )
 
 
@@ -397,7 +432,7 @@ def _record_photo_asset_evidence(
     asset_path: str,
     asset_bytes: int,
     payload: dict[str, Any],
-) -> None:
+) -> Any | None:
     """Mirror full-resolution photo uploads into the temporal evidence ledger."""
     try:
         from parrot.brain.vision.evidence import (
@@ -405,7 +440,7 @@ def _record_photo_asset_evidence(
             record_ecp_evidence_sample,
         )
 
-        record_ecp_evidence_sample(
+        return record_ecp_evidence_sample(
             event,
             kind=EvidenceKind.IMAGE_ASSET,
             asset_path=asset_path,
@@ -422,6 +457,59 @@ def _record_photo_asset_evidence(
         )
     except Exception:
         logger.debug("[observer.photo] evidence ledger write failed", exc_info=True)
+        return None
+
+
+def _record_photo_catalog_entry(
+    *,
+    photo_id: str,
+    asset_ref: str,
+    asset_path: str,
+    asset_bytes: int,
+    payload: dict[str, Any],
+    evidence_id: str,
+    captured_at_ms: int,
+) -> None:
+    """Mirror PhotoNode asset uploads into the vision catalog manifest."""
+    try:
+        from parrot.brain.vision.object_discovery import record_photo_asset
+
+        record_photo_asset(
+            photo_uuid=photo_id,
+            asset_path=asset_path or asset_ref,
+            evidence_id=evidence_id,
+            asset_ref=asset_ref,
+            asset_bytes=asset_bytes,
+            payload=payload,
+            captured_at_ms=captured_at_ms,
+        )
+    except Exception:
+        logger.debug("[observer.photo] vision photo catalog write failed", exc_info=True)
+
+
+def _record_photo_analysis_report(
+    *,
+    photo_id: str,
+    asset_ref: str,
+    asset_path: str,
+    asset_bytes: int,
+    payload: dict[str, Any],
+    evidence_id: str,
+) -> None:
+    """Create a photo-level report pointer without object identity binding."""
+    try:
+        from parrot.brain.vision.photo_analysis import create_photo_analysis_report
+
+        create_photo_analysis_report(
+            photo_id=photo_id,
+            asset_path=asset_path,
+            asset_ref=asset_ref,
+            evidence_id=evidence_id,
+            asset_bytes=asset_bytes,
+            payload=payload,
+        )
+    except Exception:
+        logger.debug("[observer.photo] photo analysis report write failed", exc_info=True)
 
 
 def _build_bb_payload(

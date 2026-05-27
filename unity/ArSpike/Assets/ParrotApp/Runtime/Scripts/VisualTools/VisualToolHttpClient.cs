@@ -1,9 +1,11 @@
 using System;
 using System.Collections;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
+using System.Threading.Tasks;
 using ParrotApp.Backend;
 using UnityEngine;
-using UnityEngine.Networking;
 
 namespace ParrotApp.VisualTools
 {
@@ -60,6 +62,36 @@ namespace ParrotApp.VisualTools
     [DisallowMultipleComponent]
     public class VisualToolHttpClient : MonoBehaviour
     {
+        private sealed class HttpTextResult
+        {
+            public bool Success;
+            public int StatusCode;
+            public string Text = "";
+            public string Error = "";
+
+            public static HttpTextResult Ok(int statusCode, string text)
+                => new HttpTextResult
+                {
+                    Success = true,
+                    StatusCode = statusCode,
+                    Text = text ?? "",
+                    Error = ""
+                };
+
+            public static HttpTextResult Fail(int statusCode, string text, string error)
+                => new HttpTextResult
+                {
+                    Success = false,
+                    StatusCode = statusCode,
+                    Text = text ?? "",
+                    Error = error ?? ""
+                };
+        }
+
+        // Match PhotoController's phone-safe HTTP path for local laptop backends.
+        private static readonly HttpClient SharedHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        private static readonly int[] RetryDelaysMs = { 500, 1000, 2000 };
+
         [SerializeField] private string appApiBaseUrl = "";
         [SerializeField] private string bearerSecret = "";
 
@@ -103,54 +135,48 @@ namespace ParrotApp.VisualTools
 
             string url = appApiBaseUrl.TrimEnd('/') + "/api/app/visual-tool/event";
             string body = VisualToolPacketBuilder.ToJson(packet);
-            byte[] bytes = Encoding.UTF8.GetBytes(body);
-            using (var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST))
-            {
-                req.uploadHandler = new UploadHandlerRaw(bytes);
-                req.downloadHandler = new DownloadHandlerBuffer();
-                req.SetRequestHeader("Content-Type", "application/json");
-                ApplyAuth(req);
-                yield return req.SendWebRequest();
+            Task<HttpTextResult> task = PostJsonAsync(url, body);
+            yield return AwaitHttpTextTask(task);
 
-                if (req.result != UnityWebRequest.Result.Success)
+            HttpTextResult http = ResolveHttpTextTask(task, "visual_tool_lifecycle_request_failed");
+            if (!http.Success)
+            {
+                LastLifecycleOk = false;
+                LastLifecycleStatus = RequestErrorLabel(http, "visual_tool_lifecycle_request_failed");
+                onComplete?.Invoke(RequestResult<VisualToolLifecycleResultDto>.Fail(LastLifecycleStatus));
+                yield break;
+            }
+
+            string text = http.Text ?? "";
+            try
+            {
+                var dto = JsonUtility.FromJson<VisualToolLifecycleResultDto>(text);
+                if (dto == null)
                 {
                     LastLifecycleOk = false;
-                    LastLifecycleStatus = RequestErrorLabel(req, "visual_tool_lifecycle_request_failed");
+                    LastLifecycleStatus = "visual_tool_lifecycle_empty_response";
                     onComplete?.Invoke(RequestResult<VisualToolLifecycleResultDto>.Fail(LastLifecycleStatus));
                     yield break;
                 }
 
-                string text = req.downloadHandler.text ?? "";
-                try
+                dto.raw_json = text;
+                LastLifecycleOk = dto.success;
+                LastLifecycleStatus = dto.success
+                    ? LifecycleOkLabel(packet, dto)
+                    : ErrorLabel(text, "visual_tool_lifecycle_rejected");
+                if (!dto.success)
                 {
-                    var dto = JsonUtility.FromJson<VisualToolLifecycleResultDto>(text);
-                    if (dto == null)
-                    {
-                        LastLifecycleOk = false;
-                        LastLifecycleStatus = "visual_tool_lifecycle_empty_response";
-                        onComplete?.Invoke(RequestResult<VisualToolLifecycleResultDto>.Fail(LastLifecycleStatus));
-                        yield break;
-                    }
-
-                    dto.raw_json = text;
-                    LastLifecycleOk = dto.success;
-                    LastLifecycleStatus = dto.success
-                        ? LifecycleOkLabel(packet, dto)
-                        : ErrorLabel(text, "visual_tool_lifecycle_rejected");
-                    if (!dto.success)
-                    {
-                        onComplete?.Invoke(RequestResult<VisualToolLifecycleResultDto>.Fail(LastLifecycleStatus));
-                        yield break;
-                    }
-
-                    onComplete?.Invoke(RequestResult<VisualToolLifecycleResultDto>.Ok(dto));
-                }
-                catch (Exception ex)
-                {
-                    LastLifecycleOk = false;
-                    LastLifecycleStatus = "visual_tool_lifecycle_parse_failed:" + ex.Message;
                     onComplete?.Invoke(RequestResult<VisualToolLifecycleResultDto>.Fail(LastLifecycleStatus));
+                    yield break;
                 }
+
+                onComplete?.Invoke(RequestResult<VisualToolLifecycleResultDto>.Ok(dto));
+            }
+            catch (Exception ex)
+            {
+                LastLifecycleOk = false;
+                LastLifecycleStatus = "visual_tool_lifecycle_parse_failed:" + ex.Message;
+                onComplete?.Invoke(RequestResult<VisualToolLifecycleResultDto>.Fail(LastLifecycleStatus));
             }
         }
 
@@ -180,72 +206,175 @@ namespace ParrotApp.VisualTools
                 ? VisualToolPacketBuilder.GenerateEventId()
                 : assetId.Trim();
             string contentType = string.IsNullOrWhiteSpace(mimeType) ? "image/png" : mimeType.Trim();
-            string url = appApiBaseUrl.TrimEnd('/') + "/api/app/visual-tool/asset/" + UnityWebRequest.EscapeURL(safeAssetId);
-            using (var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST))
+            string url = appApiBaseUrl.TrimEnd('/') + "/api/app/visual-tool/asset/" + Uri.EscapeDataString(safeAssetId);
+            Task<HttpTextResult> task = PostBytesAsync(url, bytes, contentType, request =>
             {
-                req.uploadHandler = new UploadHandlerRaw(bytes);
-                req.downloadHandler = new DownloadHandlerBuffer();
-                req.SetRequestHeader("Content-Type", contentType);
                 if (packet != null)
                 {
-                    req.SetRequestHeader("X-Parrot-Tool-Id", packet.tool_id ?? "");
-                    req.SetRequestHeader("X-Parrot-Tool-Kind", packet.tool_kind ?? "");
-                    req.SetRequestHeader("X-Parrot-Tool-Phase", packet.interaction_phase ?? "");
-                    req.SetRequestHeader("X-Parrot-Source-Surface", packet.source_surface ?? "");
-                    req.SetRequestHeader("X-Parrot-Source-Id", packet.tool_event_id ?? "");
-                    req.SetRequestHeader("X-Parrot-Description", AssetDescription(packet));
-                    req.SetRequestHeader("X-Parrot-Timebase", VisualToolPacketBuilder.TimebaseJson(packet.timebase));
-                    req.SetRequestHeader("X-Parrot-Region", VisualToolPacketBuilder.RegionJson(packet.region));
+                    AddHeader(request, "X-Parrot-Tool-Id", packet.tool_id ?? "");
+                    AddHeader(request, "X-Parrot-Tool-Kind", packet.tool_kind ?? "");
+                    AddHeader(request, "X-Parrot-Tool-Phase", packet.interaction_phase ?? "");
+                    AddHeader(request, "X-Parrot-Source-Surface", packet.source_surface ?? "");
+                    AddHeader(request, "X-Parrot-Source-Id", packet.tool_event_id ?? "");
+                    AddHeader(request, "X-Parrot-Description", AssetDescription(packet));
+                    AddHeader(request, "X-Parrot-Timebase", VisualToolPacketBuilder.TimebaseJson(packet.timebase));
+                    AddHeader(request, "X-Parrot-Region", VisualToolPacketBuilder.RegionJson(packet.region));
                 }
-                ApplyAuth(req);
-                yield return req.SendWebRequest();
+            });
+            yield return AwaitHttpTextTask(task);
 
-                if (req.result != UnityWebRequest.Result.Success)
+            HttpTextResult http = ResolveHttpTextTask(task, "visual_tool_asset_request_failed");
+            if (!http.Success)
+            {
+                LastAssetOk = false;
+                LastAssetStatus = RequestErrorLabel(http, "visual_tool_asset_request_failed");
+                onComplete?.Invoke(RequestResult<VisualToolAssetUploadResultDto>.Fail(LastAssetStatus));
+                yield break;
+            }
+
+            string text = http.Text ?? "";
+            try
+            {
+                var dto = JsonUtility.FromJson<VisualToolAssetUploadResultDto>(text);
+                if (dto == null)
                 {
                     LastAssetOk = false;
-                    LastAssetStatus = RequestErrorLabel(req, "visual_tool_asset_request_failed");
+                    LastAssetStatus = "visual_tool_asset_empty_response";
                     onComplete?.Invoke(RequestResult<VisualToolAssetUploadResultDto>.Fail(LastAssetStatus));
                     yield break;
                 }
 
-                string text = req.downloadHandler.text ?? "";
-                try
+                dto.raw_json = text;
+                LastAssetOk = dto.success;
+                LastAssetStatus = dto.success
+                    ? "asset_ok:" + ShortLabel(dto.asset_path, safeAssetId, 34)
+                    : ErrorLabel(text, "visual_tool_asset_rejected");
+                if (!dto.success)
                 {
-                    var dto = JsonUtility.FromJson<VisualToolAssetUploadResultDto>(text);
-                    if (dto == null)
-                    {
-                        LastAssetOk = false;
-                        LastAssetStatus = "visual_tool_asset_empty_response";
-                        onComplete?.Invoke(RequestResult<VisualToolAssetUploadResultDto>.Fail(LastAssetStatus));
-                        yield break;
-                    }
-
-                    dto.raw_json = text;
-                    LastAssetOk = dto.success;
-                    LastAssetStatus = dto.success
-                        ? "asset_ok:" + ShortLabel(dto.asset_path, safeAssetId, 34)
-                        : ErrorLabel(text, "visual_tool_asset_rejected");
-                    if (!dto.success)
-                    {
-                        onComplete?.Invoke(RequestResult<VisualToolAssetUploadResultDto>.Fail(LastAssetStatus));
-                        yield break;
-                    }
-
-                    onComplete?.Invoke(RequestResult<VisualToolAssetUploadResultDto>.Ok(dto));
-                }
-                catch (Exception ex)
-                {
-                    LastAssetOk = false;
-                    LastAssetStatus = "visual_tool_asset_parse_failed:" + ex.Message;
                     onComplete?.Invoke(RequestResult<VisualToolAssetUploadResultDto>.Fail(LastAssetStatus));
+                    yield break;
                 }
+
+                onComplete?.Invoke(RequestResult<VisualToolAssetUploadResultDto>.Ok(dto));
+            }
+            catch (Exception ex)
+            {
+                LastAssetOk = false;
+                LastAssetStatus = "visual_tool_asset_parse_failed:" + ex.Message;
+                onComplete?.Invoke(RequestResult<VisualToolAssetUploadResultDto>.Fail(LastAssetStatus));
             }
         }
 
-        private void ApplyAuth(UnityWebRequest req)
+        private void ApplyAuth(HttpRequestMessage request)
         {
             if (!string.IsNullOrWhiteSpace(bearerSecret))
-                req.SetRequestHeader("Authorization", "Bearer " + bearerSecret);
+                AddHeader(request, "Authorization", "Bearer " + bearerSecret);
+        }
+
+        private Task<HttpTextResult> PostJsonAsync(string url, string body)
+        {
+            return PostBytesAsync(
+                url,
+                Encoding.UTF8.GetBytes(body ?? ""),
+                "application/json",
+                request => AddHeader(request, "Accept", "application/json"));
+        }
+
+        private async Task<HttpTextResult> PostBytesAsync(
+            string url,
+            byte[] payload,
+            string contentType,
+            Action<HttpRequestMessage> configureRequest)
+        {
+            HttpTextResult last = null;
+            int attempts = RetryDelaysMs.Length + 1;
+            for (int attempt = 0; attempt < attempts; attempt++)
+            {
+                if (attempt > 0)
+                    await Task.Delay(RetryDelaysMs[attempt - 1]);
+
+                try
+                {
+                    using (var request = new HttpRequestMessage(HttpMethod.Post, url))
+                    using (var content = new ByteArrayContent(payload ?? new byte[0]))
+                    {
+                        ApplyContentType(content, contentType);
+                        request.Content = content;
+                        ApplyAuth(request);
+                        configureRequest?.Invoke(request);
+
+                        using (var response = await SharedHttpClient.SendAsync(request))
+                        {
+                            string text = response.Content != null
+                                ? await response.Content.ReadAsStringAsync()
+                                : "";
+                            int statusCode = (int)response.StatusCode;
+                            if (response.IsSuccessStatusCode)
+                                return HttpTextResult.Ok(statusCode, text);
+
+                            last = HttpTextResult.Fail(
+                                statusCode,
+                                text,
+                                "http_status_" + statusCode);
+
+                            if (!ShouldRetryStatus(statusCode))
+                                return last;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    last = HttpTextResult.Fail(0, "", ex.GetType().Name + ":" + ex.Message);
+                }
+            }
+
+            return last ?? HttpTextResult.Fail(0, "", "http_request_failed");
+        }
+
+        private static IEnumerator AwaitHttpTextTask(Task<HttpTextResult> task)
+        {
+            while (task != null && !task.IsCompleted)
+                yield return null;
+        }
+
+        private static HttpTextResult ResolveHttpTextTask(Task<HttpTextResult> task, string fallback)
+        {
+            if (task == null)
+                return HttpTextResult.Fail(0, "", fallback);
+            if (task.IsCanceled)
+                return HttpTextResult.Fail(0, "", fallback + ":canceled");
+            if (task.IsFaulted)
+            {
+                Exception ex = task.Exception != null ? task.Exception.GetBaseException() : null;
+                return HttpTextResult.Fail(0, "", ex != null ? ex.GetType().Name + ":" + ex.Message : fallback);
+            }
+
+            return task.Result ?? HttpTextResult.Fail(0, "", fallback);
+        }
+
+        private static void ApplyContentType(ByteArrayContent content, string contentType)
+        {
+            string value = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType.Trim();
+            try
+            {
+                content.Headers.ContentType = new MediaTypeHeaderValue(value);
+            }
+            catch
+            {
+                content.Headers.TryAddWithoutValidation("Content-Type", value);
+            }
+        }
+
+        private static void AddHeader(HttpRequestMessage request, string name, string value)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(name))
+                return;
+            request.Headers.TryAddWithoutValidation(name, value ?? "");
+        }
+
+        private static bool ShouldRetryStatus(int statusCode)
+        {
+            return statusCode == 408 || statusCode == 429 || statusCode >= 500;
         }
 
         private static string LifecycleOkLabel(VisualToolLifecyclePacket packet, VisualToolLifecycleResultDto dto)
@@ -283,14 +412,16 @@ namespace ParrotApp.VisualTools
             return fallback;
         }
 
-        private static string RequestErrorLabel(UnityWebRequest req, string fallback)
+        private static string RequestErrorLabel(HttpTextResult result, string fallback)
         {
-            string body = req != null && req.downloadHandler != null ? req.downloadHandler.text : "";
+            string body = result != null ? result.Text : "";
             string backendLabel = ErrorLabel(body, "");
             if (!string.IsNullOrWhiteSpace(backendLabel))
                 return backendLabel;
-            if (req != null && !string.IsNullOrWhiteSpace(req.error))
-                return req.error;
+            if (result != null && !string.IsNullOrWhiteSpace(result.Error))
+                return result.Error;
+            if (result != null && result.StatusCode > 0)
+                return fallback + ":" + result.StatusCode;
             return fallback;
         }
 

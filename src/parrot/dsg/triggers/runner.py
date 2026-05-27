@@ -22,6 +22,7 @@ from parrot.dsg.triggers.base import BaseTrigger, TriggerKind, TriggerOutcome
 logger = logging.getLogger(__name__)
 
 TICK_INTERVAL_SECONDS = 60.0
+PROACTIVE_SPEECH_TRIGGERS = frozenset({"calendar_trigger", "message_notification"})
 
 
 class TriggerRunner:
@@ -250,21 +251,52 @@ class TriggerRunner:
         # ── 7. notify_gemini (legacy) ──
         if result.notify_gemini and result.notification_text and self._session:
             try:
-                # ``notify_gemini`` predates the trigger body-feel taxonomy and
-                # used to mean C4 speech. That is too strong for ordinary
-                # calendar/message/scene context. Default to C3 so GOSLO sees
-                # the hint on the next natural turn; future priority fields can
-                # opt into C4 explicitly after review.
                 from parrot.brain.context_injector import get_context_injector
 
                 injector = get_context_injector()
                 if injector:
                     await injector.inject_status_notice(result.notification_text)
+                if (
+                    result.proactive_speech
+                    and result.trigger_name in PROACTIVE_SPEECH_TRIGGERS
+                ):
+                    await self._speak_trigger_notification(result)
             except Exception:
                 logger.debug(
-                    "TriggerRunner: failed to deliver C3 trigger notice for %s",
+                    "TriggerRunner: failed to deliver trigger notice for %s",
                     result.trigger_name,
                 )
+
+    async def _speak_trigger_notification(self, result: TriggerOutcome) -> bool:
+        """Speak an explicitly opted-in reminder after session policy gates."""
+        if self._session is None:
+            return False
+        try:
+            from parrot.brain.session_policy import should_generate_reply
+        except Exception:
+            logger.debug("TriggerRunner: session policy unavailable", exc_info=True)
+            return False
+
+        reason = f"trigger.{result.trigger_name}"
+        if not should_generate_reply(reason):
+            return False
+
+        current_speech = getattr(self._session, "current_speech", None)
+        if current_speech is not None:
+            await current_speech
+
+        instructions = (
+            "You are GOSLO. Proactively remind the user in concise spoken Chinese. "
+            "For the thesis demo, briefly name the source channel when useful: "
+            "message and calendar reminders come from a Nanobot/Google result "
+            "routed through the reminder path. Do not mention internal trigger "
+            "class names, C3/C4, raw result_channel names, or JSON. Do not read "
+            "raw worker output aloud; summarize the actionable point. Use the "
+            "following trusted reminder content:\n"
+            f"{result.notification_text}"
+        )
+        await self._session.generate_reply(instructions=instructions)
+        return True
 
 
 _runner: TriggerRunner | None = None

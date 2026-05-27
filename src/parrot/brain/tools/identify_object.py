@@ -45,7 +45,6 @@ Felt-experience selection-C (entry doc §8.1 L10):
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 import json
 import logging
@@ -56,14 +55,14 @@ from typing import TYPE_CHECKING, Any
 from livekit.agents import RunContext, function_tool
 
 from parrot.brain.event_publisher import get_ecp_event_publisher
-from parrot.brain.tools._budget import SegmentResult, with_budget
+from parrot.brain.tools._budget import with_budget
 from parrot.brain.tools._state_context import attach_state_header
 from parrot.brain.vision.evidence import resolve_identify_evidence
 from parrot.brain.vision.evidence_image import describe_evidence_sample
+from parrot.brain.vision.same_object_resolver import resolve_same_object
 from parrot.shared.ecp_event import EcpEventType
 
 if TYPE_CHECKING:
-    from parrot.dsg.l2b_types import SemanticNode
     from parrot.brain.vision.evidence import TimeAlignedSampleRef
 
 logger = logging.getLogger(__name__)
@@ -73,9 +72,11 @@ logger = logging.getLogger(__name__)
 # Budget redistributed because L0 no longer does visual_match.
 _BUDGET_CAPTURE_S = 0.8
 _BUDGET_VLM_DESCRIBE_S = 0.9
+_BUDGET_SAME_OBJECT_S = 1.2
 _BUDGET_L0_TEXT_S = 0.2
 _BUDGET_L1_GRAPHITI_S = 0.8
-# 100ms tail buffer left implicit — total ≤ 1.9s wall-clock.
+# same-object may spend an extra bounded VLM compare before L0/L1; keep the
+# match path synchronous so GOSLO can voice a real result instead of a promise.
 
 # Confidence floor on L0 text match. Below this we skip the candidate to
 # reduce false positives from short common substrings ("cup" hitting "cupcake").
@@ -97,6 +98,8 @@ async def identify_object(
     bbox_ref_id: str = "",
     focus_ref_id: str = "",
     target_time_ms: int = 0,
+    photo_id: str = "",
+    object_ref_id: str = "",
 ) -> str:
     """Identify, match, or save an object you see in the camera feed.
 
@@ -119,7 +122,18 @@ async def identify_object(
     instead of pretending the result is in this tool's reply.
     """
     if action == "save_new":
-        return attach_state_header(await _save_new_object(description, category))
+        return attach_state_header(
+            await _save_new_object(
+                description,
+                category,
+                evidence_id=evidence_id,
+                bbox_ref_id=bbox_ref_id,
+                focus_ref_id=focus_ref_id,
+                target_time_ms=target_time_ms,
+                photo_id=photo_id,
+                object_ref_id=object_ref_id,
+            )
+        )
     if action == "deep_search":
         # Defensive: explicit removal banner per audit §3.4 / §9.4. We do
         # NOT silently route through dispatch_task — that would conceal the
@@ -139,6 +153,8 @@ async def identify_object(
             bbox_ref_id=bbox_ref_id,
             focus_ref_id=focus_ref_id,
             target_time_ms=target_time_ms,
+            photo_id=photo_id,
+            object_ref_id=object_ref_id,
         )
     )
 
@@ -154,6 +170,8 @@ async def _match_staged(
     bbox_ref_id: str = "",
     focus_ref_id: str = "",
     target_time_ms: int = 0,
+    photo_id: str = "",
+    object_ref_id: str = "",
 ) -> str:
     """Phase 0 + L0 + L1 + L2 staged orchestrator.
 
@@ -214,6 +232,53 @@ async def _match_staged(
             stages.append(f"[VLM] image detail: {visual_hint} ({vlm_seg.elapsed_ms}ms)")
         elif vlm_seg.error:
             stages.append(f"[VLM] skipped: {vlm_seg.error} ({vlm_seg.elapsed_ms}ms)")
+
+    if evidence_sample is not None:
+        resolver_seg = await with_budget(
+            resolve_same_object(
+                evidence_sample=evidence_sample,
+                description=search_description,
+                category=category,
+                photo_id=photo_id,
+                object_ref_id=object_ref_id,
+            ),
+            timeout_s=_BUDGET_SAME_OBJECT_S + 0.1,
+            segment="same_object_resolver",
+        )
+        if resolver_seg.ok and resolver_seg.value:
+            resolver_report = resolver_seg.value
+            resolver_status = str(resolver_report.get("status") or "")
+            best_uuid = str(resolver_report.get("best_object_uuid") or "")
+            best_conf = float(resolver_report.get("best_confidence") or 0.0)
+            stages.append(
+                f"[same-object] {resolver_status} best={best_uuid or '(none)'} "
+                f"conf={best_conf:.2f} report={resolver_report.get('report_path', '')} "
+                f"({resolver_seg.elapsed_ms}ms)"
+            )
+            if resolver_status == "matched" and best_uuid:
+                label = _resolver_label(resolver_report, best_uuid) or best_uuid
+                await _on_match(
+                    source="same_object_resolver",
+                    uuid=best_uuid,
+                    label=label,
+                    description=search_description,
+                    category=category,
+                    confidence=best_conf,
+                    snapshot_id=snapshot_id,
+                    evidence_sample=evidence_sample,
+                )
+                return _format_match_reply(
+                    stages=stages,
+                    source="same-object",
+                    label=label,
+                    uuid=best_uuid,
+                    confidence=best_conf,
+                )
+        else:
+            stages.append(
+                f"[same-object] skipped: {resolver_seg.error or 'pending'} "
+                f"({resolver_seg.elapsed_ms}ms)"
+            )
 
     # ─── L0: text fast match across L2-B (+ L1.5 hook)
     l0_seg = await with_budget(
@@ -506,6 +571,14 @@ async def _on_match(
             publisher.publish_nowait(event)
         except Exception:
             logger.debug("identify_object: sighting.matched publish failed", exc_info=True)
+    _record_candidate_object_discovery(
+        object_uuid=uuid,
+        evidence_sample=evidence_sample,
+        description=description,
+        category=category,
+        match_source=source,
+        match_confidence=confidence,
+    )
 
 
 async def _on_unmatched(
@@ -615,16 +688,35 @@ async def _upsert_to_l2b(
 # ─── save_new branch (preserved from prior implementation) ────────────
 
 
-async def _save_new_object(description: str, category: str) -> str:
+async def _save_new_object(
+    description: str,
+    category: str,
+    *,
+    evidence_id: str = "",
+    bbox_ref_id: str = "",
+    focus_ref_id: str = "",
+    target_time_ms: int = 0,
+    photo_id: str = "",
+    object_ref_id: str = "",
+) -> str:
     """Save a newly discovered object to Graphiti + L2-B + emit trigger event."""
     try:
-        from graphiti_core.nodes import EpisodeType
-
-        from parrot.memory.graphiti_client import PARTITIONS, get_graphiti
-
-        g = await get_graphiti()
-
-        obj_uuid = str(uuid_lib.uuid4())[:12]
+        obj_uuid = f"obj_{uuid_lib.uuid4().hex}"
+        evidence_sample: "TimeAlignedSampleRef | None" = None
+        evidence_seg = await with_budget(
+            resolve_identify_evidence(
+                evidence_id=evidence_id,
+                bbox_ref_id=bbox_ref_id,
+                focus_ref_id=focus_ref_id,
+                target_time_ms=target_time_ms,
+                description=description,
+                request_source="identify_object.save_new",
+            ),
+            timeout_s=_BUDGET_CAPTURE_S + 0.1,
+            segment="visual_evidence_lookup_save_new",
+        )
+        if evidence_seg.ok and evidence_seg.value is not None:
+            evidence_sample = evidence_seg.value
 
         text_parts = [f"New object discovered (uuid={obj_uuid}): {description}"]
         if category:
@@ -633,16 +725,32 @@ async def _save_new_object(description: str, category: str) -> str:
         text_parts.append("  status: newly_discovered, pending_enrichment")
         text = "\n".join(text_parts)
 
-        await g.add_episode(
-            name=f"gemini_discovery_{obj_uuid}",
-            episode_body=text,
-            source=EpisodeType.text,
-            source_description=f"gemini_discovery:{obj_uuid}",
-            reference_time=datetime.datetime.now(datetime.timezone.utc),
-            group_id=PARTITIONS.SCENE,
-        )
+        try:
+            from graphiti_core.nodes import EpisodeType
+
+            from parrot.memory.graphiti_client import PARTITIONS, get_graphiti
+
+            g = await get_graphiti()
+            await g.add_episode(
+                name=f"gemini_discovery_{obj_uuid}",
+                episode_body=text,
+                source=EpisodeType.text,
+                source_description=f"gemini_discovery:{obj_uuid}",
+                reference_time=datetime.datetime.now(datetime.timezone.utc),
+                group_id=PARTITIONS.SCENE,
+            )
+        except Exception:
+            logger.debug("identify_object: Graphiti save_new episode skipped", exc_info=True)
 
         await _upsert_to_l2b(obj_uuid, description, category)
+        accepted_sample = _accept_new_object_sample(
+            object_uuid=obj_uuid,
+            description=description,
+            category=category,
+            evidence_sample=evidence_sample,
+            photo_uuid=photo_id,
+            object_ref_id=object_ref_id,
+        )
         await _ingest_via_runner(
             label=description[:60],
             description=description,
@@ -657,9 +765,17 @@ async def _save_new_object(description: str, category: str) -> str:
         })
 
         logger.info("identify_object: saved new object %s: %s", obj_uuid, description)
+        sample_note = ""
+        sample = accepted_sample.get("sample", {}) if accepted_sample else {}
+        if sample.get("sample_uuid"):
+            sample_note = (
+                f" ObjectSample={sample.get('sample_uuid')} "
+                f"crop={sample.get('crop_path') or '(none)'}."
+            )
         return (
             f"Saved new object '{description}' (id: {obj_uuid}). "
-            "I'll remember it from now on. "
+            "I'll remember it from now on."
+            f"{sample_note} "
             "If you want me to research what this is, call dispatch_task with "
             "task_type='research'."
         )
@@ -667,6 +783,57 @@ async def _save_new_object(description: str, category: str) -> str:
     except Exception:
         logger.exception("identify_object._save_new failed")
         return "I noticed something new but couldn't save it to my memory right now."
+
+
+def _accept_new_object_sample(
+    *,
+    object_uuid: str,
+    description: str,
+    category: str,
+    evidence_sample: "TimeAlignedSampleRef | None",
+    photo_uuid: str,
+    object_ref_id: str,
+) -> dict[str, Any]:
+    try:
+        from parrot.brain.vision.object_discovery import accept_new_object_from_evidence
+
+        return accept_new_object_from_evidence(
+            object_uuid=object_uuid,
+            description=description,
+            category=category,
+            evidence_sample=evidence_sample,
+            photo_uuid=photo_uuid,
+            object_ref_id=object_ref_id,
+            match_source="user_confirmed",
+            match_confidence=0.9,
+        )
+    except Exception:
+        logger.debug("identify_object: accepted sample write skipped", exc_info=True)
+        return {}
+
+
+def _record_candidate_object_discovery(
+    *,
+    object_uuid: str,
+    evidence_sample: "TimeAlignedSampleRef | None",
+    description: str,
+    category: str,
+    match_source: str,
+    match_confidence: float,
+) -> None:
+    try:
+        from parrot.brain.vision.object_discovery import record_candidate_match_from_evidence
+
+        record_candidate_match_from_evidence(
+            object_uuid=object_uuid,
+            evidence_sample=evidence_sample,
+            description=description,
+            category=category,
+            match_source=match_source,
+            match_confidence=match_confidence,
+        )
+    except Exception:
+        logger.debug("identify_object: candidate sample write skipped", exc_info=True)
 
 
 # ─── archiver / trigger helpers (lifted from prior implementation) ────
@@ -728,6 +895,15 @@ def _merge_visual_hint(description: str, visual_hint: str) -> str:
     if not base:
         return hint
     return f"{base}. Visual evidence detail: {hint}"
+
+
+def _resolver_label(report: dict[str, Any], object_uuid: str) -> str:
+    for candidate in report.get("candidate_objects") or []:
+        if not isinstance(candidate, dict):
+            continue
+        if str(candidate.get("object_uuid") or "") == object_uuid:
+            return str(candidate.get("label") or "")
+    return ""
 
 
 def _compact_text(text: str, limit: int) -> str:

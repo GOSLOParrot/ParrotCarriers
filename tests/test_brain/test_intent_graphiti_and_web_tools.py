@@ -2,14 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 
 import parrot.brain.tools as tools_mod
+from parrot.brain.tools.diary_query_request import do_diary_query_request
 from parrot.brain.tools.message_check_request import do_message_check_request
+from parrot.brain.tools.nanobot_mission_request import do_nanobot_mission_request
+from parrot.brain.tools.nanobot_task_status import do_nanobot_task_status
 from parrot.brain.tools.query_etiquette_memory import do_query_etiquette_memory
 from parrot.brain.tools.query_memory import do_query_memory
 from parrot.brain.tools.reminder_request import do_reminder_request
 from parrot.brain.tools.web_lookup_intent import do_web_lookup_intent
 from parrot.memory.graphiti_client import PARTITIONS
+from parrot.shared.constants import (
+    STREAM_NANOBOT_DISPATCH,
+    STREAM_NANOBOT_RESULTS,
+    STREAM_TRIGGER_RESULTS,
+)
 
 
 def _tool_ids(tools):
@@ -25,7 +34,10 @@ def test_goslo_intent_tools_are_registered(monkeypatch) -> None:
     assert "web_lookup_intent" in ids
     assert "query_memory" in ids
     assert "query_etiquette_memory" in ids
+    assert "diary_query_request" in ids
     assert "message_check_request" in ids
+    assert "nanobot_mission_request" in ids
+    assert "nanobot_task_status" in ids
     assert "reminder_request" in ids
     assert "identify_object" not in ids
 
@@ -159,6 +171,205 @@ def test_message_check_request_dispatches_nanobot_message_check() -> None:
     assert params["result_channel"] == "message_result"
     assert params["max_messages"] == 20
     assert "Do not send mail" in params["instructions"]
+
+
+def test_nanobot_mission_request_dispatches_calendar_mission_with_playbook() -> None:
+    dispatched = []
+
+    async def fake_dispatch(task_type, params, priority):
+        dispatched.append((task_type, params, priority))
+        return "mission-task"
+
+    text = asyncio.run(
+        do_nanobot_mission_request(
+            goal="Find a safe slot for tea planning and propose the Calendar change",
+            domain="calendar",
+            mode="guided",
+            authority="draft_only",
+            workflow_hint="Check conflicts, propose options, then pause for approval.",
+            workflow_json=json.dumps({"steps": ["inspect_calendar", "rank_options"]}),
+            allowed_tools_json=json.dumps(["google_calendar.events.list"]),
+            context_refs_json=json.dumps([{"kind": "intent_workspace", "ref_id": "ref-1"}]),
+            expected_report="conflicts and recommended option",
+            priority="high",
+            task_dispatcher=fake_dispatch,
+        )
+    )
+
+    assert "mission-task" in text
+    assert "calendar_mission" in text
+    assert dispatched
+    task_type, params, priority = dispatched[0]
+    assert task_type == "calendar_mission"
+    assert priority == "high"
+    assert params["schema"] == "goslo_nanobot_mission_request_v1"
+    assert params["domain"] == "calendar"
+    assert params["mode"] == "guided_workflow"
+    assert params["authority"] == "draft_only"
+    assert params["result_channel"] == "calendar_result"
+    assert params["workflow"]["steps"] == ["inspect_calendar", "rank_options"]
+    assert params["allowed_tools"] == ["google_calendar.events.list"]
+    assert params["collaboration_mode"] == "guided_workflow"
+    assert params["nanobot_capabilities"]["self_investigation"] is True
+    assert params["nanobot_capabilities"]["workflow_guided"] is True
+    assert params["nanobot_capabilities"]["calendar_conflict_analysis"] is True
+    assert params["mission_protocol"]["workflow_semantics"] == "playbook_with_agentic_investigation_per_phase"
+    assert "workflow_phase_results" in params["report_contract"]
+    assert params["task_policy"]["agentic_worker"] is True
+    assert params["task_policy"]["workflow_is_playbook_not_dead_pipeline"] is True
+    assert "needs_user_decision" in params["instructions"]
+
+
+def test_nanobot_mission_request_downgrades_write_without_approval() -> None:
+    dispatched = []
+
+    async def fake_dispatch(task_type, params, priority):
+        dispatched.append((task_type, params, priority))
+        return "mission-task"
+
+    text = asyncio.run(
+        do_nanobot_mission_request(
+            goal="Create a Calendar event if it is safe",
+            domain="google_calendar",
+            authority="approved_write",
+            user_confirmation=False,
+            task_dispatcher=fake_dispatch,
+        )
+    )
+
+    assert "authority=draft_only" in text
+    task_type, params, _priority = dispatched[0]
+    assert task_type == "calendar_mission"
+    assert params["requested_authority"] == "approved_write"
+    assert params["authority"] == "draft_only"
+    assert "downgraded" in params["authority_note"]
+    assert "calendar_write_approved" not in params
+
+
+def test_nanobot_task_status_reads_mission_result() -> None:
+    async def fake_reader(stream: str, count: int):
+        if stream == STREAM_NANOBOT_RESULTS:
+            return [
+                (
+                    "3-0",
+                    {
+                        "payload": json.dumps(
+                            {
+                                "type": "nanobot_mission_result",
+                                "task_id": "mission-1",
+                                "original_type": "nanobot_mission",
+                                "status": "needs_user_decision",
+                                "result": json.dumps(
+                                    {
+                                        "schema": "nanobot_mission_result_v1",
+                                        "status": "needs_user_decision",
+                                        "goal": "Investigate options",
+                                        "reason": "approval_required",
+                                        "decision_strategy": {
+                                            "summary": "Need user choice before continuing."
+                                        },
+                                    }
+                                ),
+                            }
+                        ),
+                        "created_at": "3",
+                    },
+                )
+            ]
+        if stream == STREAM_TRIGGER_RESULTS:
+            return []
+        if stream == STREAM_NANOBOT_DISPATCH:
+            return []
+        return []
+
+    text = asyncio.run(
+        do_nanobot_task_status(
+            task_id="mission-1",
+            stream_reader=fake_reader,
+        )
+    )
+
+    assert "result available" in text
+    assert "mission-1" in text
+    assert "nanobot_mission" in text
+    assert "needs_user_decision" in text
+    assert "approval_required" in text
+    assert "did not dispatch work" in text
+
+
+def test_nanobot_task_status_reads_pending_natural_language_mission_dispatch() -> None:
+    async def fake_reader(stream: str, count: int):
+        if stream == STREAM_TRIGGER_RESULTS:
+            return []
+        if stream == STREAM_NANOBOT_DISPATCH:
+            return [
+                (
+                    "4-0",
+                    {
+                        "payload": json.dumps(
+                            {
+                                "task_id": "mission-2",
+                                "type": "nanobot_mission",
+                                "priority": "normal",
+                                "requested_type": "mission",
+                                "params": {
+                                    "goal": "Investigate the context and report options",
+                                    "requested_task_type": "mission",
+                                    "result_channel": "nanobot_mission_result",
+                                },
+                            }
+                        )
+                    },
+                )
+            ]
+        return []
+
+    text = asyncio.run(
+        do_nanobot_task_status(
+            task_id="mission-2",
+            stream_reader=fake_reader,
+        )
+    )
+
+    assert "dispatched or pending" in text
+    assert "mission-2" in text
+    assert "nanobot_mission" in text
+    assert "Requested type: mission" in text
+    assert "Investigate the context" in text
+
+
+def test_diary_query_request_dispatches_nanobot_diary_query(tmp_path) -> None:
+    dispatched = []
+    diary_root = tmp_path / "Diary"
+
+    async def fake_dispatch(task_type, params, priority):
+        dispatched.append((task_type, params, priority))
+        return "diary-task"
+
+    text = asyncio.run(
+        do_diary_query_request(
+            query="Summarize guitar practice",
+            date_from="2026-05-12",
+            date_to="2026-05-18",
+            diary_root=str(diary_root),
+            limit=99,
+            priority="high",
+            reason="demo",
+            task_dispatcher=fake_dispatch,
+        )
+    )
+
+    assert "diary-task" in text
+    assert dispatched
+    task_type, params, priority = dispatched[0]
+    assert task_type == "diary_query"
+    assert priority == "high"
+    assert params["result_channel"] == "diary_result"
+    assert params["diary_root"] == str(diary_root.resolve())
+    assert params["date_from"] == "2026-05-12"
+    assert params["date_to"] == "2026-05-18"
+    assert params["limit"] == 30
+    assert "profile=ref" in params["instructions"]
 
 
 def test_reminder_request_dispatches_nanobot_remind() -> None:

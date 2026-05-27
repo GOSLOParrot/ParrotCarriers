@@ -1,0 +1,33 @@
+{
+  "asset_path": "C:\\Users\\Bin\\AppData\\Local\\Temp\\pytest-of-Bin\\pytest-803\\test_upload_locally_dispatches0\\2026-05-26\\ph_http_local.jpg",
+  "audit": {
+    "asset_ref": "/upload/photo/2026-05-26/ph_http_local.jpg",
+    "identity_binding": "photo_level_only_no_object_identity",
+    "image_transport": "storage_path_only_no_inline_image_bytes",
+    "schema": "PhotoAnalysisReport.backend_v1"
+  },
+  "content_sha256": "d60096505d953faf83b54e563c43bf9c637ed6061c8f3441ad1f1f254619d514",
+  "content_summary": "Photo asset recorded; semantic enrichment pending.",
+  "created_at_ms": 1779837623739,
+  "evidence_id": "ev_cd9a6b4aed404f4d",
+  "height": 0,
+  "nanobot_report_path": "data\\vision\\photos\\reports\\2026\\05\\26\\ph_http_local.analysis.json",
+  "nanobot_report_ref_id": "5128bcf926724982",
+  "object_inventory_ref": "",
+  "ocr_text": [],
+  "photo_id": "ph_http_local",
+  "photo_level_brand_candidates": [],
+  "photo_level_graphiti_hits": [],
+  "photo_level_web_research": [],
+  "photo_node_uuid": "ph_http_local",
+  "possible_object_mentions": [],
+  "quality_flags": [
+    "image_size_unreadable"
+  ],
+  "rendered_preview_path": "",
+  "scene_summary": "Stored photo asset (16 bytes); dimensions pending.",
+  "schema_version": "photo_analysis_v1",
+  "updated_at_ms": 1779837623743,
+  "visible_logo_or_text": [],
+  "width": 0
+}

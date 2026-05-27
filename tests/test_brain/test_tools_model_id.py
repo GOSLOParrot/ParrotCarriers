@@ -152,6 +152,29 @@ def test_lineb_model_reaction_uses_strict_capability_rpc():
     assert 'method="animate"' in src
 
 
+def test_unity_rpc_tools_use_clock_skew_tolerant_ecp_ttl():
+    bridge = _read("_rpc_bridge.py")
+
+    assert "UNITY_RPC_ECP_TTL_S = 90.0" in bridge
+    assert "expires_in_s=UNITY_RPC_ECP_TTL_S" in bridge
+    for name in (
+        "animate.py",
+        "fly_to.py",
+        "perch_to_finger.py",
+        "return_to_view.py",
+        "play_capability.py",
+    ):
+        src = _read(name)
+        assert "UNITY_RPC_ECP_TTL_S" in src
+        assert "expires_in_s=UNITY_RPC_ECP_TTL_S" in src
+
+    lineb = (REPO_ROOT / "src" / "parrot" / "brain" / "lineb_model_reaction.py").read_text(
+        encoding="utf-8"
+    )
+    assert "UNITY_RPC_ECP_TTL_S" in lineb
+    assert "expires_in_s=UNITY_RPC_ECP_TTL_S" in lineb
+
+
 def test_fly_to_checks_capability_before_rpc():
     src = _read("fly_to.py")
 

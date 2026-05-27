@@ -16,6 +16,9 @@ Coverage focus:
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 import py_trees
 
@@ -38,7 +41,7 @@ from parrot.shared.ecp_event import EcpEvent, EcpEventSource, EcpEventType
 
 
 @pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
+def _isolated(monkeypatch, tmp_path):
     """Each test gets a fresh L2BGraph so PhotoNode upserts don't leak.
 
     L2BGraph is exposed as a singleton via get_l2b_graph(); we monkey-patch
@@ -48,6 +51,7 @@ def _isolated(monkeypatch):
     photo_observer.reset_metrics_for_tests()
     py_trees.blackboard.Blackboard.storage = {}
     py_trees.blackboard.Blackboard.metadata = {}
+    monkeypatch.setenv("PARROT_VISION_ROOT", str(tmp_path / "vision"))
     set_intent_workspace_for_test(IntentWorkspace())
     set_pool_for_test(L15Pool())
 
@@ -258,6 +262,15 @@ def test_asset_uploaded_with_asset_path_stages_photo_ref(_isolated, tmp_path):
     ws = get_intent_workspace()
     refs = ws.list_active(kinds=frozenset({StagedRefKind.PHOTO}))
     assert any(h.metadata.related_node_uuid == "ph_path" for h in refs)
+    reports = ws.list_active(kinds=frozenset({StagedRefKind.RICH_REPORT}), role="photo_analysis_report")
+    assert len(reports) == 1
+    report_path = Path(reports[0].metadata.custom_meta["report_path"])
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["photo_id"] == "ph_path"
+    assert report["asset_path"] == str(saved)
+    assert report["audit"]["identity_binding"] == "photo_level_only_no_object_identity"
+    node_after = _isolated.get_node("ph_path")
+    assert node_after.meta["photo_analysis"]["report_path"] == str(report_path)
     pool = get_l1_5_pool()
     assert pool.refs.lookup_by_ref(RefKind.PHOTO_PATH, str(saved)) == "ph_path"
 
@@ -300,18 +313,26 @@ def test_asset_uploaded_timebase_metadata_reaches_evidence_ledger(_isolated, tmp
     assert rows[0].timebase.estimated is False
 
 
-def test_asset_uploaded_for_unknown_photo_id_counted_no_crash(_isolated):
+def test_asset_uploaded_for_unknown_photo_id_repairs_photo_node(_isolated):
     ingest = EcpEventIngest()
     photo_observer.register(ingest)
     ingest.handle_raw(
         "parrot.ecp.event",
-        _asset_uploaded_event(photo_id="ph_orphan").to_wire_json().encode("utf-8"),
+        _asset_uploaded_event(
+            photo_id="ph_orphan",
+            asset_ref="/upload/photo/2026-04-30/ph_orphan.jpg",
+        ).to_wire_json().encode("utf-8"),
     )
     metrics = photo_observer.get_metrics_snapshot()
     assert metrics["asset_uploaded_received"] == 1
     assert metrics["asset_for_unknown_photo_id"] == 1
-    assert metrics["photo_nodes_updated_with_asset"] == 0
-    assert _isolated.get_node("ph_orphan") is None
+    assert metrics["asset_orphan_nodes_repaired"] == 1
+    assert metrics["photo_nodes_upserted"] == 1
+    assert metrics["photo_nodes_updated_with_asset"] == 1
+    node = _isolated.get_node("ph_orphan")
+    assert node is not None
+    assert node.kind == NodeKind.PHOTO
+    assert node.reference_image_path == "/upload/photo/2026-04-30/ph_orphan.jpg"
 
 
 # ─── defensive paths ────────────────────────────────────────────
@@ -364,6 +385,7 @@ def test_metrics_snapshot_keys():
         "photo_nodes_updated_with_asset",
         "missing_photo_id",
         "asset_for_unknown_photo_id",
+        "asset_orphan_nodes_repaired",
         "awareness_decisions",
         "awareness_preview_refs_staged",
         "awareness_react_allowed",

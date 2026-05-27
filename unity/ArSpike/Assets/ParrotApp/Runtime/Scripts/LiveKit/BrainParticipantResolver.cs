@@ -14,6 +14,13 @@ namespace ParrotApp.LiveKit
     /// </summary>
     public static class BrainParticipantResolver
     {
+        public static bool IsBrainIdentity(string identity)
+        {
+            if (string.IsNullOrEmpty(identity)) return false;
+            if (identity.StartsWith("agent-", StringComparison.Ordinal)) return true;
+            return string.Equals(identity, "brain", StringComparison.OrdinalIgnoreCase);
+        }
+
         public static string FindBrainParticipantId(Room room)
         {
             if (room?.RemoteParticipants == null || room.RemoteParticipants.Count == 0)
@@ -29,7 +36,7 @@ namespace ParrotApp.LiveKit
             foreach (var p in room.RemoteParticipants.Values)
             {
                 var id = p.Identity ?? "";
-                if (string.Equals(id, "brain", StringComparison.OrdinalIgnoreCase))
+                if (IsBrainIdentity(id))
                     return id;
             }
 

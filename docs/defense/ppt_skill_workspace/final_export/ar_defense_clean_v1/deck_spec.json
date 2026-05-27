@@ -1,0 +1,162 @@
+{
+  "deck_name": "ar_defense_clean_v1",
+  "style": "white minimal defense deck; short Chinese titles; sparse diagrams; project UI screenshots excluded",
+  "slides": [
+    {
+      "slide_number": 1,
+      "title": "项目题目",
+      "key_points": [
+        "AR 生活助手与智能提醒系统",
+        "从实时交互到场景记忆"
+      ],
+      "layout_role": "cover"
+    },
+    {
+      "slide_number": 2,
+      "title": "项目目标",
+      "key_points": [
+        "理解当前场景",
+        "在合适时机协助用户",
+        "形成可追踪数据流"
+      ],
+      "layout_role": "goal"
+    },
+    {
+      "slide_number": 3,
+      "title": "场景输入",
+      "key_points": [
+        "语音、视频、照片、日程、笔记",
+        "统一为 Observation / Ref / Task"
+      ],
+      "layout_role": "input map"
+    },
+    {
+      "slide_number": 4,
+      "title": "总体架构",
+      "key_points": [
+        "Unity AR 前端",
+        "LiveKit 实时通信",
+        "Brain / DSG / Graphiti / Scheduler / nanobot"
+      ],
+      "layout_role": "architecture"
+    },
+    {
+      "slide_number": 5,
+      "title": "实时音视频通道",
+      "key_points": [
+        "Room",
+        "Track",
+        "DataChannel",
+        "RPC"
+      ],
+      "layout_role": "concept"
+    },
+    {
+      "slide_number": 6,
+      "title": "SVA 与 Context 注入",
+      "key_points": [
+        "Video Track",
+        "Processor",
+        "Observation",
+        "LLM / DSG"
+      ],
+      "layout_role": "workflow"
+    },
+    {
+      "slide_number": 7,
+      "title": "前台动作闭环",
+      "key_points": [
+        "语音 Intent",
+        "LiveKit RPC",
+        "Unity 动作",
+        "ACK / Blackboard"
+      ],
+      "layout_role": "workflow"
+    },
+    {
+      "slide_number": 8,
+      "title": "行为分层",
+      "key_points": [
+        "Reflex",
+        "Intent",
+        "Task"
+      ],
+      "layout_role": "layering"
+    },
+    {
+      "slide_number": 9,
+      "title": "后台任务协作",
+      "key_points": [
+        "日程草稿",
+        "用户确认",
+        "Scheduler",
+        "Redis Stream",
+        "nanobot Worker"
+      ],
+      "layout_role": "workflow"
+    },
+    {
+      "slide_number": 10,
+      "title": "工作记忆与长期记忆",
+      "key_points": [
+        "DSG",
+        "Graphiti",
+        "Episode / Ref"
+      ],
+      "layout_role": "memory"
+    },
+    {
+      "slide_number": 11,
+      "title": "触发器协议",
+      "key_points": [
+        "TriggerKind",
+        "TriggerOutcome",
+        "Observation / Ref / Archive / Plan / Task / Notify"
+      ],
+      "layout_role": "protocol"
+    },
+    {
+      "slide_number": 12,
+      "title": "拍照数据流",
+      "key_points": [
+        "快门",
+        "预览事件",
+        "图片上传",
+        "PhotoNode",
+        "PHOTO Ref",
+        "UUID"
+      ],
+      "layout_role": "timeline"
+    },
+    {
+      "slide_number": 13,
+      "title": "Demo 路线",
+      "key_points": [
+        "前台交互",
+        "主动提醒 / 邮件",
+        "后台状态与日记"
+      ],
+      "layout_role": "demo"
+    },
+    {
+      "slide_number": 14,
+      "title": "完成情况",
+      "key_points": [
+        "多源输入链路",
+        "前台状态闭环",
+        "记忆与任务协作"
+      ],
+      "layout_role": "summary"
+    },
+    {
+      "slide_number": 15,
+      "title": "后续完善",
+      "key_points": [
+        "视觉稳定性",
+        "记忆治理",
+        "外部模块接入"
+      ],
+      "layout_role": "closing"
+    }
+  ]
+}

@@ -37,7 +37,7 @@ from parrot.brain.plan.plan import (
 )
 from parrot.brain.plan.plan_blackboard import PlanBlackboardClient
 from parrot.brain.plan.plan_lifecycle import PlanLifecycle
-from parrot.scheduler.task_catalog import is_nanobot_task_type
+from parrot.scheduler.task_catalog import normalize_nanobot_task_type
 from parrot.shared.constants import CH_NANOBOT_RESULTS
 
 if TYPE_CHECKING:
@@ -46,6 +46,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 PlanDispatchFn = Callable[[str, dict[str, Any], str], Awaitable[str]]
+
+CALENDAR_TASK_TYPES = frozenset({
+    "calendar_fetch",
+    "calendar_create",
+    "calendar_patch",
+    "calendar_delete",
+    "calendar_mission",
+})
+CALENDAR_WRITE_TASK_TYPES = frozenset({
+    "calendar_create",
+    "calendar_patch",
+    "calendar_delete",
+})
 
 
 class PlanRegistry:
@@ -141,10 +154,22 @@ class PlanRegistry:
         result_summary: str = "",
         result_ref_id: str = "",
         error: str = "",
+        status: str = "",
+        decision_payload: dict[str, Any] | None = None,
     ) -> None:
         plan = self._require_active(plan_id)
         step = plan.step_by_id(step_id)
         if step is None:
+            return
+        normalized_status = str(status or "").strip().lower()
+        if normalized_status == "needs_user_decision":
+            await self.report_step_needs_user_decision(
+                plan_id,
+                step_id,
+                result_summary=result_summary,
+                result_ref_id=result_ref_id,
+                decision_payload=decision_payload or {},
+            )
             return
         step.completed_at = time.time()
         step.result_summary = result_summary
@@ -156,6 +181,86 @@ class PlanRegistry:
         if success:
             await self._dispatch_ready_steps(plan)
 
+        self._settle_plan_after_step_updates(plan)
+
+    async def report_step_needs_user_decision(
+        self,
+        plan_id: str,
+        step_id: str,
+        *,
+        result_summary: str = "",
+        result_ref_id: str = "",
+        decision_payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Pause a Plan step when Nanobot needs a user/HITL decision."""
+
+        plan = self._require_active(plan_id)
+        step = plan.step_by_id(step_id)
+        if step is None:
+            return
+        step.completed_at = 0.0
+        step.result_summary = result_summary
+        step.result_ref_id = result_ref_id
+        step.error = ""
+        step.decision_payload = dict(decision_payload or {})
+        step.state = PlanStepState.WAITING_USER_DECISION
+        if plan.state in {PlanState.EXECUTING, PlanState.PARTIAL_COMPLETE}:
+            PlanLifecycle.enforce_transition(plan, PlanState.WAITING_USER_DECISION)
+        self._mark_timeline(
+            "plan_waiting_user_decision",
+            plan,
+            payload={"step_id": step.step_id, "summary": result_summary},
+        )
+
+    async def resolve_step_user_decision(
+        self,
+        plan_id: str,
+        step_id: str,
+        *,
+        decision: str = "resume",
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Apply a HITL decision to a paused Plan step and make it runnable."""
+
+        plan = self._require_active(plan_id)
+        step = plan.step_by_id(step_id)
+        if step is None:
+            raise KeyError(f"Step {step_id} not found in Plan {plan_id}")
+        if step.state != PlanStepState.WAITING_USER_DECISION:
+            return
+        normalized = str(decision or "resume").strip().lower()
+        if normalized in {"reject", "cancel"}:
+            step.state = PlanStepState.FAILED
+            step.error = str((payload or {}).get("reason") or normalized)
+            step.completed_at = time.time()
+            PlanLifecycle.enforce_transition(plan, PlanState.FAILED)
+            self._archive_plan(plan)
+            return
+        step.decision_payload = {
+            **dict(step.decision_payload or {}),
+            "user_decision": normalized,
+            "user_decision_payload": dict(payload or {}),
+        }
+        selected = _selected_decision_option(step.decision_payload, payload or {})
+        if selected:
+            step.inputs["selected_option"] = selected
+            proposed_write = selected.get("proposed_write")
+            if isinstance(proposed_write, dict):
+                step.inputs["proposed_write"] = proposed_write
+                step.inputs["authority"] = "approved_write"
+                step.inputs["calendar_write_approved"] = True
+                step.inputs["hitl_approved"] = True
+                step.inputs["user_confirmed"] = True
+                step.inputs["approval_source"] = "PlanRegistry.resolve_step_user_decision"
+                step.inputs["approval_plan_state"] = PlanState.WAITING_USER_DECISION.value
+                step.inputs["approved_at"] = time.time()
+                if _decision_option_conflict_override(selected, payload or {}):
+                    step.inputs["conflict_override_approved"] = True
+        step.state = PlanStepState.PENDING
+        step.completed_at = 0.0
+        if plan.state == PlanState.WAITING_USER_DECISION:
+            PlanLifecycle.enforce_transition(plan, PlanState.EXECUTING)
+        await self._dispatch_ready_steps(plan)
         self._settle_plan_after_step_updates(plan)
 
     def _settle_plan_after_step_updates(self, plan: Plan) -> None:
@@ -292,26 +397,21 @@ class PlanRegistry:
         for step in plan.ready_steps():
             step.state = PlanStepState.DISPATCHED
             step.started_at = time.time()
-            if not step.expected_tool:
-                step.error = "missing_expected_tool"
-                step.state = PlanStepState.FAILED
-                step.completed_at = time.time()
-                continue
-            if not is_nanobot_task_type(step.expected_tool):
-                step.error = f"unsupported_expected_tool:{step.expected_tool}"
+            task_type = normalize_nanobot_task_type(step.expected_tool, params=step.inputs)
+            if not task_type:
+                step.error = (
+                    "missing_expected_tool"
+                    if not step.expected_tool
+                    else f"unsupported_expected_tool:{step.expected_tool}"
+                )
                 step.state = PlanStepState.FAILED
                 step.completed_at = time.time()
                 continue
             try:
                 dispatch_task = self._dispatch_task or _default_dispatch_task
                 task_id = await dispatch_task(
-                    step.expected_tool,
-                    {
-                        **dict(step.inputs or {}),
-                        "plan_id": plan.plan_id,
-                        "step_id": step.step_id,
-                        "result_channel": CH_NANOBOT_RESULTS,
-                    },
+                    task_type,
+                    self._dispatch_params_for_step(plan, step, task_type=task_type),
                     "normal",
                 )
                 step.nanobot_task_id = task_id
@@ -324,6 +424,34 @@ class PlanRegistry:
                     plan.plan_id,
                     step.step_id,
                 )
+
+    @staticmethod
+    def _dispatch_params_for_step(
+        plan: Plan,
+        step: PlanStep,
+        *,
+        task_type: str = "",
+    ) -> dict[str, Any]:
+        resolved_task_type = task_type or normalize_nanobot_task_type(step.expected_tool, params=step.inputs)
+        params: dict[str, Any] = {
+            **dict(step.inputs or {}),
+            "plan_id": plan.plan_id,
+            "step_id": step.step_id,
+            "result_channel": (
+                "calendar_result"
+                if resolved_task_type in CALENDAR_TASK_TYPES
+                else CH_NANOBOT_RESULTS
+            ),
+        }
+        if str(step.expected_tool or "") != resolved_task_type:
+            params.setdefault("requested_expected_tool", step.expected_tool)
+        if resolved_task_type in CALENDAR_WRITE_TASK_TYPES:
+            params.setdefault("calendar_write_approved", True)
+            params.setdefault("hitl_approved", True)
+            params.setdefault("approval_source", "PlanRegistry.approve")
+            params.setdefault("approval_plan_state", PlanState.APPROVED.value)
+            params.setdefault("approved_at", plan.approved_at)
+        return params
 
     def _require_active(self, plan_id: str) -> Plan:
         plan = self._active.get(plan_id)
@@ -350,6 +478,7 @@ class PlanRegistry:
                 "plan_submitted_for_confirmation": TimelineMarkerKind.PLAN_DRAFTED,
                 "plan_confirmed": TimelineMarkerKind.PLAN_CONFIRMED,
                 "plan_executing": TimelineMarkerKind.PLAN_CONFIRMED,
+                "plan_waiting_user_decision": TimelineMarkerKind.PLAN_DRAFTED,
                 "plan_complete": TimelineMarkerKind.PLAN_COMPLETE,
                 "plan_failed": TimelineMarkerKind.PLAN_FAILED,
                 "plan_cancelled": TimelineMarkerKind.PLAN_CANCELLED,
@@ -389,6 +518,7 @@ class PlanRegistry:
                     "inputs": s.inputs,
                     "depends_on": list(s.depends_on),
                     "state": s.state.value,
+                    "decision_payload": s.decision_payload,
                 }
                 for s in plan.steps
             ],
@@ -420,6 +550,57 @@ async def _default_dispatch_task(
 def set_plan_registry_for_test(registry: PlanRegistry | None) -> None:
     global _registry
     _registry = registry
+
+
+def _selected_decision_option(
+    decision_payload: dict[str, Any],
+    user_payload: dict[str, Any],
+) -> dict[str, Any]:
+    selected_id = str(
+        user_payload.get("selected_option_id")
+        or user_payload.get("selected_option")
+        or user_payload.get("option_id")
+        or ""
+    ).strip()
+    options = decision_payload.get("options")
+    if selected_id and isinstance(options, list):
+        for option in options:
+            if not isinstance(option, dict):
+                continue
+            if str(option.get("id") or option.get("option_id") or "").strip() == selected_id:
+                return dict(option)
+    selected = user_payload.get("selected_option")
+    return dict(selected) if isinstance(selected, dict) else {}
+
+
+def _decision_option_conflict_override(
+    selected_option: dict[str, Any],
+    user_payload: dict[str, Any],
+) -> bool:
+    for key in ("conflict_override_approved", "allow_conflicts", "override_conflicts"):
+        if _boolish(user_payload.get(key), False) or _boolish(selected_option.get(key), False):
+            return True
+    selected_id = str(selected_option.get("id") or selected_option.get("option_id") or "").strip().lower()
+    conflict_count = selected_option.get("conflict_count")
+    try:
+        has_conflicts = int(conflict_count or 0) > 0
+    except (TypeError, ValueError):
+        has_conflicts = bool(conflict_count)
+    return has_conflicts and selected_id in {
+        "proceed_with_proposed_write",
+        "proceed_despite_conflict",
+        "override_conflict",
+    }
+
+
+def _boolish(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on", "approved"}
 
 
 __all__ = [

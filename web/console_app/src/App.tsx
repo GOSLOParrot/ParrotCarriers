@@ -21,6 +21,7 @@ import { Rnd, type DraggableData } from "react-rnd";
 import {
   Activity,
   Bell,
+  BookOpen,
   Camera,
   CalendarDays,
   CheckCircle2,
@@ -276,7 +277,7 @@ const dict = {
     obsidianUuid: "Obsidian UUID",
     settingDraft: "Draft setting",
     uuidFree: "daily / roleplay are UUID-free",
-    refRequiresUuid: "ref requires an Obsidian UUID",
+    refRequiresUuid: "ref UUID binds; UUID-free imports as direct diary context",
     registeredTriggers: "Registered triggers",
     triggerChannels: "Ascending channels",
     triggerModules: "Modules",
@@ -483,6 +484,7 @@ const dict = {
     googleCalendar: "Google Calendar",
     calendarFetch: "Fetch Preview",
     calendarFetchExecute: "Dispatch Fetch",
+    calendarDemoFetch: "Query Calendar",
     calendarApiFetch: "Local API",
     calendarNanobotFetch: "ECS Nanobot",
     calendarPreview: "Calendar Preview",
@@ -491,6 +493,10 @@ const dict = {
     calendarResults: "Result History",
     calendarResultEmpty: "No recent calendar_result rows.",
     calendarResultUnavailable: "Result ledger unavailable. Start Redis, Scheduler, and Nanobot to see real calendar_result rows.",
+    diaryQuery: "Query Diary",
+    diaryResults: "Diary Results",
+    diaryResultEmpty: "No recent diary_result rows.",
+    diaryResultUnavailable: "Result ledger unavailable. Start Redis, Scheduler, and Nanobot to see real diary_result rows.",
     manualNode: "Manual Node",
     manualNodeHint: "Use the canvas toolbar for direct Node and Edge drafts.",
     roleplayModeHint: "RolePlay is a mode/profile; it can contain many source packs.",
@@ -537,7 +543,7 @@ const dict = {
     obsidianUuid: "Obsidian UUID",
     settingDraft: "设定草稿",
     uuidFree: "daily / roleplay 可不填 UUID",
-    refRequiresUuid: "ref 必须绑定 Obsidian UUID",
+    refRequiresUuid: "ref 有 UUID 则绑定；无 UUID 作为日记上下文直推",
     registeredTriggers: "已注册触发器",
     receipt: "操作记录",
     receiptTimeline: "操作记录",
@@ -6660,14 +6666,14 @@ function CalendarSourceCard({
 }) {
   const defaultCalendarRaw = JSON.stringify([
     {
-      id: "react_source_board_calendar_event",
+      id: "demo_gcal_20260520_guitar_lesson",
       calendar_id: "primary",
-      summary: "React Source Board calendar preview",
-      start: { dateTime: "2026-05-15T10:00:00+08:00", timeZone: "Asia/Shanghai" },
-      end: { dateTime: "2026-05-15T10:30:00+08:00", timeZone: "Asia/Shanghai" },
+      summary: "Guitar lesson: open chords review",
+      start: { dateTime: "2026-05-20T19:30:00+08:00", timeZone: "Asia/Shanghai" },
+      end: { dateTime: "2026-05-20T20:20:00+08:00", timeZone: "Asia/Shanghai" },
       htmlLink: "https://calendar.google.com/",
       status: "confirmed",
-      objects: ["blue mug"]
+      objects: ["guitar", "metronome"]
     }
   ], null, 2);
   const [rawPayload, setRawPayload] = useState(defaultCalendarRaw);
@@ -6683,6 +6689,7 @@ function CalendarSourceCard({
   const [operatorImporting, setOperatorImporting] = useState(false);
   const operatorFetchingRef = useRef(false);
   const operatorImportingRef = useRef(false);
+  const calendarDemoEventsPath = "D:/GOSLOParrot/ParrotCarriers/data/demo/google_calendar_future_events.json";
   const calendarPayload = () => ({ raw: rawPayload.trim() || defaultCalendarRaw });
   const clearCalendarPreviewState = () => {
     setNormalizedEvents([]);
@@ -6741,6 +6748,34 @@ function CalendarSourceCard({
       pushReceipt(await api.googleCalendarFetch({ dry_run: !operatorMode, operator_mode: operatorMode }));
     } catch (exc) {
       pushReceipt(errorReceipt("google.calendar.fetch.execute", exc));
+    } finally {
+      operatorFetchingRef.current = false;
+      setOperatorFetching(false);
+    }
+  };
+  const fetchDemoFuture = async () => {
+    if (operatorFetchingRef.current) {
+      pushReceipt(localReceipt("google.calendar.fetch.demo", false, { error: "operator_fetch_in_flight" }));
+      return;
+    }
+    operatorFetchingRef.current = true;
+    setOperatorFetching(true);
+    try {
+      pushReceipt(await api.googleCalendarFetch({
+        dry_run: !operatorMode,
+        operator_mode: operatorMode,
+        priority: "high",
+        query: "Query future demo Google Calendar events for the room parrot to report.",
+        instructions: "Read the configured demo_events_path and return upcoming events as JSON for calendar_result.",
+        time_min: "2026-05-20T00:00:00+08:00",
+        time_max: "2026-06-01T00:00:00+08:00",
+        timezone: "Asia/Shanghai",
+        limit: 12,
+        demo_events_path: calendarDemoEventsPath,
+        source_hint: "local_demo_fixture"
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("google.calendar.fetch.demo", exc));
     } finally {
       operatorFetchingRef.current = false;
       setOperatorFetching(false);
@@ -6843,6 +6878,7 @@ function CalendarSourceCard({
       <div className="button-row compact">
         <button className="button" onClick={() => void fetchPreview()}><CalendarDays size={16} /> {t.calendarFetch}</button>
         <button className="button ghost" onClick={() => void fetchExecute()} disabled={operatorFetching}><Play size={16} /> {operatorMode ? t.calendarFetchExecute : t.dryApply}</button>
+        <button className="button ghost" onClick={() => void fetchDemoFuture()} disabled={operatorFetching}><Sparkles size={16} /> {operatorMode ? t.calendarDemoFetch : t.dryApply}</button>
         <button className="button" onClick={() => void fetchLocalApi()}><RefreshCw size={16} /> {t.calendarApiFetch}</button>
         <button className="button" onClick={() => void fetchNanobotApi()}><Sparkles size={16} /> {t.calendarNanobotFetch}</button>
         <button className="button" onClick={() => void loadResults()}><RefreshCw size={16} /> {t.calendarResults}</button>
@@ -7117,10 +7153,15 @@ function ObsidianDraftCard({
   const [importItems, setImportItems] = useState<Array<Record<string, unknown>>>([]);
   const [importErrors, setImportErrors] = useState<Array<Record<string, unknown>>>([]);
   const [importPlanMeta, setImportPlanMeta] = useState<Record<string, unknown> | null>(null);
+  const [diaryResultRows, setDiaryResultRows] = useState<Array<Record<string, unknown>>>([]);
+  const [diaryResultStatus, setDiaryResultStatus] = useState("");
+  const [diaryQuerying, setDiaryQuerying] = useState(false);
   const [operatorImporting, setOperatorImporting] = useState(false);
+  const diaryQueryingRef = useRef(false);
   const operatorImportingRef = useRef(false);
   const visibleScanNotes = scanNotes.slice(0, 12);
   const refMissingUuid = profile === "ref" && !obsidianUuid.trim();
+  const diaryRootPath = () => `${vaultPath.replace(/[\\/]+$/, "")}/Diary`;
   const clearObsidianImportState = (reason = "") => {
     setImportItems([]);
     setImportErrors([]);
@@ -7179,6 +7220,47 @@ function ObsidianDraftCard({
       pushReceipt(errorReceipt("l15.obsidian_vault.scan", exc, { vault_path: vaultPath }));
     }
   };
+  const queryDiary = async () => {
+    if (diaryQueryingRef.current) {
+      pushReceipt(localReceipt("obsidian.diary.query", false, { error: "diary_query_in_flight" }));
+      return;
+    }
+    diaryQueryingRef.current = true;
+    setDiaryQuerying(true);
+    try {
+      pushReceipt(await api.obsidianDiaryQuery({
+        vault_path: vaultPath,
+        diary_root: diaryRootPath(),
+        date_from: "2026-05-12",
+        date_to: "2026-05-18",
+        query: "Summarize the past seven daily diary notes, especially guitar practice, anime, drama, exercise, water, medicine, and milk tea.",
+        limit: 7,
+        priority: "high",
+        result_channel: "diary_result",
+        dry_run: !operatorMode,
+        operator_mode: operatorMode
+      }));
+    } catch (exc) {
+      pushReceipt(errorReceipt("obsidian.diary.query", exc, { vault_path: vaultPath, diary_root: diaryRootPath() }));
+    } finally {
+      diaryQueryingRef.current = false;
+      setDiaryQuerying(false);
+    }
+  };
+  const loadDiaryResults = async () => {
+    try {
+      const receipt = await api.obsidianDiaryResults(12);
+      setDiaryResultRows(receiptArray(receipt, "rows"));
+      const data = receipt.data ?? {};
+      setDiaryResultStatus(data.available === false
+        ? t.diaryResultUnavailable
+        : t.diaryResultEmpty);
+      pushReceipt(receipt);
+    } catch (exc) {
+      setDiaryResultStatus(exc instanceof Error ? exc.message : String(exc));
+      pushReceipt(errorReceipt("obsidian.diary.results", exc));
+    }
+  };
   const useScannedNote = (note: Record<string, unknown>) => {
     const payload = (note.payload && typeof note.payload === "object" && !Array.isArray(note.payload))
       ? note.payload as Record<string, unknown>
@@ -7215,6 +7297,7 @@ function ObsidianDraftCard({
         destination: "isolated_compartment",
         workspace_id: "memory_graph",
         subgraph_label: "Obsidian source pack",
+        allow_uuid_free_ref: true,
         dry_run: true,
         operator_mode: false
       }));
@@ -7231,6 +7314,7 @@ function ObsidianDraftCard({
       showImportReceipt(await api.obsidianVaultImport({
         vault_path: vaultPath,
         paths: selectedNotePaths,
+        allow_uuid_free_ref: true,
         dry_run: true,
         operator_mode: false
       }));
@@ -7253,6 +7337,10 @@ function ObsidianDraftCard({
       const receipt = await api.obsidianVaultImport({
         vault_path: vaultPath,
         paths: selectedNotePaths,
+        allow_uuid_free_ref: true,
+        push_to_brain_context: true,
+        push_to_goslo_context: true,
+        notify_goslo: true,
         dry_run: !operatorMode,
         operator_mode: operatorMode
       });
@@ -7309,11 +7397,32 @@ function ObsidianDraftCard({
         <span>{t.obsidianVaultPath}</span>
         <input value={vaultPath} onChange={(event) => updateVaultPath(event.target.value)} placeholder="D:/GOSLOParrot/GOSLObsidian" />
       </label>
-      <button className="button" onClick={() => void scanVault()}><Search size={16} /> {t.scanVault}</button>
+      <div className="button-row compact">
+        <button className="button" onClick={() => void scanVault()}><Search size={16} /> {t.scanVault}</button>
+        <button className="button ghost" onClick={() => void queryDiary()} disabled={diaryQuerying}><BookOpen size={16} /> {operatorMode ? t.diaryQuery : t.dryApply}</button>
+        <button className="button" onClick={() => void loadDiaryResults()}><RefreshCw size={16} /> {t.diaryResults}</button>
+      </div>
       {vaultStatus ? (
         <div className="preview-row">
           <span>{`${t.vaultStatus}: ${String(vaultStatus.status || "-")}`}</span>
           <small>{`${t.readyCount}: ${String(vaultStatus.ingest_ready_count ?? 0)} / ${String(vaultStatus.markdown_count ?? 0)}; ${t.invalidNotes}: ${String(vaultStatus.invalid_count ?? 0)}`}</small>
+        </div>
+      ) : null}
+      {diaryResultRows.length ? (
+        <div className="note-preview-list calendar-result-list">
+          <strong>{t.diaryResults}</strong>
+          {diaryResultRows.slice(0, 4).map((row, index) => (
+            <div className="preview-row mapping-row" key={`${String(row.stream_id || row.task_id || index)}:diary-result`}>
+              <span>{`${String(row.status || "-")} / ${String(row.entry_count ?? 0)} notes`}</span>
+              <small>{`${String(row.task_id || "-")} / ${String(row.original_type || "-")}`}</small>
+              <small>{String(row.result_summary || "")}</small>
+            </div>
+          ))}
+        </div>
+      ) : diaryResultStatus ? (
+        <div className="note-preview-list calendar-result-list">
+          <strong>{t.diaryResults}</strong>
+          <small className="muted">{diaryResultStatus}</small>
         </div>
       ) : null}
       {scanNotes.length ? (

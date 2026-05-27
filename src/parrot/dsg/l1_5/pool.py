@@ -195,13 +195,16 @@ class L15Pool:
             decision = self._policy.evaluate(obs, ctx)
             bucket = target_bucket or decision.target_bucket
 
-            # Obsidian profile=ref is a lightweight strengthening link, not a
-            # new L2-B node. It binds the note UUID to an already-known node and
-            # exits before bucket assignment/commit so daily/roleplay authority
-            # buckets stay reserved for real setting nodes.
+            # Obsidian profile=ref is normally a lightweight strengthening
+            # link, not a new L2-B node. Operator-selected UUID-free ref diary
+            # notes set ref_mode=direct_context; those continue through the
+            # normal commit path so the note becomes visible to L2-B and the
+            # high-priority context channel without pretending it has a stable
+            # RefBinding target.
             if (
                 obs.source == ObservationSource.USER_TAG_OBSIDIAN
                 and (obs.meta or {}).get("profile") == "ref"
+                and (obs.meta or {}).get("ref_mode") != "direct_context"
             ):
                 ref_node_uuid = self._bind_obsidian_ref_observation(obs, runner)
                 if ref_node_uuid:
